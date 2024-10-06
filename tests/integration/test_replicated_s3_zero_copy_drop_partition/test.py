@@ -53,6 +53,8 @@ CREATE TABLE test_s3(c1 Int8, c2 Date) ENGINE = ReplicatedMergeTree('/test/table
 
     assert node1.query("SELECT count() FROM test_local") == "2\n"
 
+    time.sleep(1)
+
     objects_before = get_objects_in_data_path()
     node1.query(
         "ALTER TABLE test_s3 FETCH PARTITION '2023-10-04' FROM '/test/tables/shard/test_local'"
@@ -62,6 +64,7 @@ CREATE TABLE test_s3(c1 Int8, c2 Date) ENGINE = ReplicatedMergeTree('/test/table
         "ALTER TABLE test_s3 DROP DETACHED PARTITION '2023-10-04' SETTINGS allow_drop_detached = 1"
     )
 
+    time.sleep(1)
     objects_after = get_objects_in_data_path()
 
     assert objects_before == objects_after
@@ -95,12 +98,14 @@ vertical_merge_algorithm_min_columns_to_activate=1;"""
         "insert into test_s3_complex_types values(1,toDate('2020-10-01'), ['a','b'], [7,8], [9,10], [11,12])"
     )
 
+    time.sleep(1)
     print("Objects in insert", get_objects_in_data_path())
     node1.query("optimize table test_s3_complex_types final")
 
     print("Objects in optimize", get_objects_in_data_path())
 
     node1.query("DROP TABLE test_s3_complex_types SYNC")
+    time.sleep(1)
     end_objects = get_objects_in_data_path()
     print("Objects after drop", end_objects)
     assert start_objects == end_objects

@@ -74,7 +74,7 @@ private:
       */
     void writeImpl(const Block & block, const IColumn::Permutation * permutation);
 
-    using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
+    using WrittenFiles = std::vector<std::unique_ptr<WriteBuffer>>;
     WrittenFiles finalizePartOnDisk(
         const MergeTreeMutableDataPartPtr & new_part,
         MergeTreeData::DataPart::Checksums & checksums);

@@ -23,6 +23,7 @@ namespace ErrorCodes
 }
 
 class IMetadataStorage;
+struct DiskObjectStorageMetadata;
 
 /// Return the result of operation to the caller.
 /// It is used in `IDiskObjectStorageOperation::finalize` after metadata transaction executed to make decision on blob removal.
@@ -58,6 +59,12 @@ public:
 
     /// Write metadata string to file
     virtual void writeStringToFile(const std::string & /* path */, const std::string & /* data */)
+    {
+        throwNotImplemented();
+    }
+
+    /// Write metadata to file
+    virtual void writeMetadataToFile(const std::string & /* path */, const DiskObjectStorageMetadata & /* metadata */)
     {
         throwNotImplemented();
     }

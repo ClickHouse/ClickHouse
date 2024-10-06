@@ -107,6 +107,12 @@ public:
         const WriteSettings & settings = {},
         bool autocommit = true) override;
 
+    std::unique_ptr<WriteBuffer> writeMetadataFile( /// NOLINT
+        const std::string & path,
+        WriteMode mode = WriteMode::Rewrite,
+        const WriteSettings & settings = {},
+        bool autocommit = true) override;
+
     /// Write a file using a custom function to write an object to the disk's object storage.
     void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
 

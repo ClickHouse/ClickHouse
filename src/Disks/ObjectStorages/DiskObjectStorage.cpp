@@ -518,6 +518,20 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     return transaction->writeFile(path, buf_size, mode, write_settings);
 }
 
+
+std::unique_ptr<WriteBuffer> DiskObjectStorage::writeMetadataFile(
+    const String & path,
+    WriteMode mode,
+    const WriteSettings & settings)
+{
+    LOG_TEST(log, "Write metadata file: {}", path);
+
+    WriteSettings write_settings = updateResourceLink(settings, getWriteResourceName());
+    auto transaction = createObjectStorageTransaction();
+    return transaction->writeMetadataFile(path, mode, write_settings, true);    
+}
+
+
 Strings DiskObjectStorage::getBlobPath(const String & path) const
 {
     auto objects = getStorageObjects(path);

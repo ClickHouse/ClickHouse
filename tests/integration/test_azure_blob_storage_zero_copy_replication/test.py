@@ -110,7 +110,7 @@ def create_table(node, table_name, replica, **additional_settings):
 
 def get_large_objects_count(blob_container_client, large_size_threshold=100):
     return sum(
-        blob["size"] > large_size_threshold
+        blob["size"] > large_size_threshold and not blob["name"].startswith("snapshot")
         for blob in blob_container_client.list_blobs()
     )
 

@@ -76,7 +76,7 @@ struct MergedBlockOutputStream::Finalizer::Impl
     IMergeTreeDataPartWriter & writer;
     MergeTreeData::MutableDataPartPtr part;
     NameSet files_to_remove_after_finish;
-    std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
+    std::vector<std::unique_ptr<WriteBuffer>> written_files;
     bool sync;
 
     Impl(IMergeTreeDataPartWriter & writer_, MergeTreeData::MutableDataPartPtr part_, const NameSet & files_to_remove_after_finish_, bool sync_)

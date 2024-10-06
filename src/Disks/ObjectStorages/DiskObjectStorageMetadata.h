@@ -110,6 +110,11 @@ public:
         return inline_data;
     }
 
+    const std::string & getMetadataFilePath() const
+    {
+        return metadata_file_path;
+    }
+
     static bool getWriteFullObjectKeySetting();
 };
 

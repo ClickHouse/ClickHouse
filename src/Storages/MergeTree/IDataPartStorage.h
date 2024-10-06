@@ -299,6 +299,13 @@ public:
         return writeFile(name, buf_size, WriteMode::Rewrite, settings);
     }
 
+    /// A special method for writing only metadata file pointing to the data saved on the object storage disk.
+    /// It is used for zero-copy replication when only metadata is replicated between replicas
+    /// and is put on the metadata storage.
+    virtual std::unique_ptr<WriteBuffer> writeMetadataFile(
+        const String & name,
+        const WriteSettings & settings) = 0;
+
     /// A special const method to write transaction file.
     /// It's const, because file with transaction metadata
     /// can be modified after part creation.

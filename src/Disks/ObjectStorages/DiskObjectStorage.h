@@ -148,6 +148,11 @@ public:
         WriteMode mode,
         const WriteSettings & settings) override;
 
+    std::unique_ptr<WriteBuffer> writeMetadataFile(
+        const String & path,
+        WriteMode mode,
+        const WriteSettings & settings) override;
+
     Strings getBlobPath(const String & path) const override;
     void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
 

@@ -100,6 +100,8 @@ def drop_table(cluster):
     for node in list(cluster.instances.values()):
         node.query("DROP TABLE IF EXISTS s3_test SYNC")
         node.query("DROP TABLE IF EXISTS test_drop_table SYNC")
+    
+    time.sleep(1.5)
 
     minio = cluster.minio_client
     # Remove extra objects to prevent tests cascade failing
@@ -138,8 +140,11 @@ def test_insert_select_replicated(cluster, min_rows_for_wide_part, files_per_par
             )
             == all_values
         )
+    
+    # Wait GC to remove all unlinked
+    time.sleep(1.5)
 
-    minio = cluster.minio_client
+    minio = cluster.minio_client    
     assert len(
         list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))
     ) == (3 * FILES_OVERHEAD) + (files_per_part * 3)

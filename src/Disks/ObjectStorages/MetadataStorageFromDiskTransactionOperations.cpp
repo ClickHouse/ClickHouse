@@ -27,6 +27,7 @@ static std::string getTempFileName(const std::string & dir)
     return fs::path(dir) / getRandomASCIIString(32);
 }
 
+/* OK */
 SetLastModifiedOperation::SetLastModifiedOperation(const std::string & path_, Poco::Timestamp new_timestamp_, IDisk & disk_)
     : path(path_)
     , new_timestamp(new_timestamp_)
@@ -45,6 +46,7 @@ void SetLastModifiedOperation::undo(std::unique_lock<SharedMutex> &)
     disk.setLastModified(path, old_timestamp);
 }
 
+/* OK */
 ChmodOperation::ChmodOperation(const std::string & path_, mode_t mode_, IDisk & disk_)
     : path(path_)
     , mode(mode_)
@@ -63,6 +65,8 @@ void ChmodOperation::undo(std::unique_lock<SharedMutex> &)
     disk.chmod(path, old_mode);
 }
 
+
+/* OK */
 UnlinkFileOperation::UnlinkFileOperation(const std::string & path_, IDisk & disk_)
     : path(path_)
     , disk(disk_)
@@ -83,6 +87,8 @@ void UnlinkFileOperation::undo(std::unique_lock<SharedMutex> &)
     buf->finalize();
 }
 
+
+/* OK */
 CreateDirectoryOperation::CreateDirectoryOperation(const std::string & path_, IDisk & disk_)
     : path(path_)
     , disk(disk_)
@@ -99,6 +105,8 @@ void CreateDirectoryOperation::undo(std::unique_lock<SharedMutex> &)
     disk.removeDirectory(path);
 }
 
+
+/* OK */
 CreateDirectoryRecursiveOperation::CreateDirectoryRecursiveOperation(const std::string & path_, IDisk & disk_)
     : path(path_)
     , disk(disk_)
@@ -126,6 +134,8 @@ void CreateDirectoryRecursiveOperation::undo(std::unique_lock<SharedMutex> &)
         disk.removeDirectory(path_created);
 }
 
+
+/* OK */
 RemoveDirectoryOperation::RemoveDirectoryOperation(const std::string & path_, IDisk & disk_)
     : path(path_)
     , disk(disk_)
@@ -141,6 +151,9 @@ void RemoveDirectoryOperation::undo(std::unique_lock<SharedMutex> &)
 {
     disk.createDirectory(path);
 }
+
+/* OK */
+// TODO: RemoveRecursive is not supported for VFS
 
 RemoveRecursiveOperation::RemoveRecursiveOperation(const std::string & path_, IDisk & disk_)
     : path(path_)
@@ -174,6 +187,7 @@ void RemoveRecursiveOperation::finalize()
         disk.removeRecursive(path);
 }
 
+
 CreateHardlinkOperation::CreateHardlinkOperation(const std::string & path_from_, const std::string & path_to_, IDisk & disk_, const MetadataStorageFromDisk & metadata_storage_)
     : path_from(path_from_)
     , path_to(path_to_)
@@ -202,6 +216,35 @@ void CreateHardlinkOperation::undo(std::unique_lock<SharedMutex> & lock)
     disk.removeFile(path_to);
 }
 
+
+/* OK */
+VFSCreateHardlinkOperation::VFSCreateHardlinkOperation(const std::string & path_from_, const std::string & path_to_, IDisk & disk_, const MetadataStorageFromDisk & metadata_storage_, VFSLog & vfs_log_)
+    : path_from(path_from_)
+    , path_to(path_to_)
+    , disk(disk_)
+    , metadata_storage(metadata_storage_)
+    , vfs_log(vfs_log_)
+{
+}
+
+void VFSCreateHardlinkOperation::execute(std::unique_lock<SharedMutex> & lock)
+{
+    metadata = metadata_storage.readMetadataUnlocked(path_from, lock);
+
+    vfs_log.link(*metadata);
+
+    create_hardlink_operation = std::make_unique<CreateHardlinkOperation>(path_from, path_to, disk, metadata_storage);
+    create_hardlink_operation->execute(lock);
+}
+
+void VFSCreateHardlinkOperation::undo(std::unique_lock<SharedMutex> & lock)
+{
+    create_hardlink_operation->undo(lock);
+    vfs_log.unlink(*metadata);
+}
+
+
+/* OK */
 MoveFileOperation::MoveFileOperation(const std::string & path_from_, const std::string & path_to_, IDisk & disk_)
     : path_from(path_from_)
     , path_to(path_to_)
@@ -219,6 +262,7 @@ void MoveFileOperation::undo(std::unique_lock<SharedMutex> &)
     disk.moveFile(path_to, path_from);
 }
 
+/* OK */
 MoveDirectoryOperation::MoveDirectoryOperation(const std::string & path_from_, const std::string & path_to_, IDisk & disk_)
     : path_from(path_from_)
     , path_to(path_to_)
@@ -263,6 +307,34 @@ void ReplaceFileOperation::finalize()
     disk.removeFileIfExists(temp_path_to);
 }
 
+/* OK */
+VFSReplaceFileOperation::VFSReplaceFileOperation(const std::string & path_from_, const std::string & path_to_, IDisk & disk_, const MetadataStorageFromDisk & metadata_storage_, VFSLog & vfs_log_)
+    : path_from(path_from_)
+    , path_to(path_to_)
+    , disk(disk_)
+    , metadata_storage(metadata_storage_)
+    , vfs_log(vfs_log_)
+{
+}
+
+void VFSReplaceFileOperation::execute(std::unique_lock<SharedMutex> & lock)
+{
+    prev_metadata = metadata_storage.readMetadataUnlocked(path_from, lock);
+    replace_file_operation = std::make_unique<ReplaceFileOperation>(path_from, path_to, disk);
+    replace_file_operation->execute(lock);
+}
+
+void VFSReplaceFileOperation::undo(std::unique_lock<SharedMutex> & lock)
+{
+    replace_file_operation->undo(lock);    
+}
+
+void VFSReplaceFileOperation::finalize()
+{
+    replace_file_operation->finalize();
+    vfs_log.unlink(*prev_metadata);
+}
+
 WriteFileOperation::WriteFileOperation(const std::string & path_, IDisk & disk_, const std::string & data_)
     : path(path_)
     , disk(disk_)
@@ -296,6 +368,43 @@ void WriteFileOperation::undo(std::unique_lock<SharedMutex> &)
     }
 }
 
+VFSWriteMetadataFileOperation::VFSWriteMetadataFileOperation(const std::string & path_, IDisk & disk_, const MetadataStorageFromDisk & metadata_storage_, const DiskObjectStorageMetadata & metadata_, VFSLog & vfs_log_)
+    : path(path_)
+    , disk(disk_)
+    , metadata_storage(metadata_storage_)
+    , vfs_log(vfs_log_)
+    , metadata(metadata_)
+    
+{
+}
+
+void VFSWriteMetadataFileOperation::execute(std::unique_lock<SharedMutex> & lock)
+{
+    vfs_log.link(metadata);
+
+    if (disk.exists(path))
+    {
+        existed = true;
+        prev_metadata = metadata_storage.readMetadataUnlocked(path, lock);
+    }
+    write_operation = std::make_unique<WriteFileOperation>(path, disk, metadata.serializeToString());
+    write_operation->execute(lock);
+}
+
+void VFSWriteMetadataFileOperation::undo(std::unique_lock<SharedMutex> & lock)
+{
+    if (write_operation)
+        write_operation->undo(lock);
+    vfs_log.unlink(metadata);
+
+}
+
+void VFSWriteMetadataFileOperation::finalize()
+{
+    if (prev_metadata)
+        vfs_log.unlink(*prev_metadata);
+}
+
 void AddBlobOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
 {
     DiskObjectStorageMetadataPtr metadata;
@@ -315,6 +424,23 @@ void AddBlobOperation::undo(std::unique_lock<SharedMutex> & lock)
 {
     if (write_operation)
         write_operation->undo(lock);
+}
+
+
+/* OK */
+void VFSAddBlobOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
+{
+    vfs_log.link(object_key.serialize(), path);
+    add_blob_operation = std::make_unique<AddBlobOperation>(path, object_key, size_in_bytes, disk, metadata_storage);
+    add_blob_operation->execute(metadata_lock);
+}
+
+void VFSAddBlobOperation::undo(std::unique_lock<SharedMutex> & lock)
+{
+    if (add_blob_operation)
+        add_blob_operation->undo(lock);
+    
+    vfs_log.unlink(object_key.serialize(), path);
 }
 
 void UnlinkMetadataFileOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
@@ -349,6 +475,30 @@ void UnlinkMetadataFileOperation::undo(std::unique_lock<SharedMutex> & lock)
     outcome->num_hardlinks++;
 }
 
+
+/* OK */
+void VFSUnlinkMetadataFileOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
+{
+    prev_metadata = metadata_storage.readMetadataUnlocked(path, metadata_lock);    
+    unlink_operation = std::make_unique<UnlinkMetadataFileOperation>(path, disk, metadata_storage);
+    unlink_operation->execute(metadata_lock);
+    *outcome = *unlink_operation->outcome;
+}
+
+void VFSUnlinkMetadataFileOperation::undo(std::unique_lock<SharedMutex> & lock)
+{
+    unlink_operation->undo(lock);
+    *outcome = *unlink_operation->outcome;
+}
+
+void VFSUnlinkMetadataFileOperation::finalize()
+{
+    vfs_log.unlink(*prev_metadata);
+}
+
+
+
+/* OK */
 void TruncateMetadataFileOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
 {
     if (metadata_storage.exists(path))
@@ -378,6 +528,23 @@ void TruncateMetadataFileOperation::undo(std::unique_lock<SharedMutex> & lock)
 }
 
 
+void VFSTruncateMetadataFileOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
+{
+    truncate_operation->execute(metadata_lock);
+}
+
+void VFSTruncateMetadataFileOperation::undo(std::unique_lock<SharedMutex> & lock)
+{
+    truncate_operation->undo(lock);
+}
+
+void VFSTruncateMetadataFileOperation::finalize()
+{
+    for (const auto & obj: outcome->objects_to_remove)
+        vfs_log.unlink(obj.remote_path, path);
+}
+
+/* OK */
 void SetReadonlyFileOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
 {
     auto metadata = metadata_storage.readMetadataUnlocked(path, metadata_lock);

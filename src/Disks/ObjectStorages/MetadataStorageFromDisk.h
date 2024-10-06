@@ -8,6 +8,8 @@
 #include <Disks/ObjectStorages/MetadataOperationsHolder.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
 #include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
+#include <Disks/ObjectStorages/VFS/VFSLog.h>
+#include <Disks/ObjectStorages/VFS/VFSGarbageCollector.h>
 
 namespace DB
 {
@@ -17,17 +19,19 @@ using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFile
 
 /// Store metadata on a separate disk
 /// (used for object storages, like S3 and related).
-class MetadataStorageFromDisk final : public IMetadataStorage
+class MetadataStorageFromDisk : public IMetadataStorage
 {
 private:
     friend class MetadataStorageFromDiskTransaction;
 
     mutable SharedMutex metadata_mutex;
     DiskPtr disk;
-    String compatible_key_prefix;
+    
 
 public:
-    MetadataStorageFromDisk(DiskPtr disk_, String compatible_key_prefix);
+    String compatible_key_prefix;
+
+    MetadataStorageFromDisk(DiskPtr disk_, String compatible_key_prefix_);
 
     MetadataTransactionPtr createTransaction() override;
 
@@ -75,9 +79,35 @@ public:
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<SharedMutex> & lock) const;
 };
 
-class MetadataStorageFromDiskTransaction final : public IMetadataTransaction, private MetadataOperationsHolder
+
+/// TODO: While inheritance but composition with delegating is better
+class VFSMetadataStorageFromDisk final : public MetadataStorageFromDisk
 {
+public:
+    VFSMetadataStorageFromDisk(DiskPtr disk_, String compatible_key_prefix_, VFSLogPtr vfs_log_, VFSGarbageCollectorPtr gc_)
+    : MetadataStorageFromDisk(disk_, compatible_key_prefix_)
+    , vfs_log(vfs_log_)
+    , gc(gc_)
+    {
+    }
+
+    MetadataTransactionPtr createTransaction() override;
+
+    void shutdown() override
+    {
+        // close vfs_log
+        gc->shutdown();
+    }
+
 private:
+    VFSLogPtr vfs_log;
+    VFSGarbageCollectorPtr gc;
+};
+
+
+class MetadataStorageFromDiskTransaction : public IMetadataTransaction, public MetadataOperationsHolder
+{
+protected:  // TODO check needed
     const MetadataStorageFromDisk & metadata_storage;
 
 public:
@@ -92,6 +122,8 @@ public:
     void commit() final;
 
     void writeStringToFile(const std::string & path, const std::string & data) override;
+
+    void writeMetadataToFile(const std::string & path, const DiskObjectStorageMetadata & metadata) override;
 
     void writeInlineDataToFile(const std::string & path, const std::string & data) override;
 
@@ -130,8 +162,34 @@ public:
     UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
     TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t target_size) override;
-
 };
 
+
+/// TODO: While inheritance but composition with delegating is better
+class VFSMetadataStorageFromDiskTransaction final : public MetadataStorageFromDiskTransaction
+{
+    VFSLogPtr vfs_log;
+public:
+    explicit VFSMetadataStorageFromDiskTransaction(const MetadataStorageFromDisk & metadata_storage_, VFSLogPtr vfs_log_)
+        : MetadataStorageFromDiskTransaction(metadata_storage_),
+          vfs_log(vfs_log_)
+    {}
+
+    ~VFSMetadataStorageFromDiskTransaction() override = default;
+
+    void writeMetadataToFile(const std::string & path, const DiskObjectStorageMetadata & metadata) override;
+
+    void createMetadataFile(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override;
+
+    void addBlobToMetadata(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override;
+
+    void createHardLink(const std::string & path_from, const std::string & path_to) override;
+
+    void replaceFile(const std::string & path_from, const std::string & path_to) override;
+
+    UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
+
+    TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t target_size) override;
+};
 
 }

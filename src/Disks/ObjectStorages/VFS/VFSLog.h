@@ -47,10 +47,17 @@ struct VFSLogItem
 
 using VFSLogItems = std::vector<VFSLogItem>;
 
+struct DiskObjectStorageMetadata;
 class VFSLog
 {
 public:
     VFSLog(const String & log_dir);
+    
+    void link(const String & remote_path, const String & local_path);
+    void link(const DiskObjectStorageMetadata & metadata);
+    void unlink(const String & remote_path, const String & local_path);
+    void unlink(const DiskObjectStorageMetadata & metadata);
+
     UInt64 write(const VFSEvent & event);
     VFSLogItems read(size_t count) const;
     size_t dropUpTo(UInt64 index);

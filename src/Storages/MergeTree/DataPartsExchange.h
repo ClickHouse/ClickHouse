@@ -85,7 +85,7 @@ public:
     ActionBlocker blocker;
 
 private:
-    using OutputBufferGetter = std::function<std::unique_ptr<WriteBufferFromFileBase>(IDataPartStorage &, const String &, size_t)>;
+    using OutputBufferGetter = std::function<std::unique_ptr<WriteBuffer>(IDataPartStorage &, const String &, size_t)>;
 
     void downloadBaseOrProjectionPartToDisk(
         const String & replica_path,

@@ -28,15 +28,19 @@ struct GarbageCollectorSettings
 class ZooKeeperWithFaultInjection;
 using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjection>;
 
-class VFSGarbageCollector : private BackgroundSchedulePoolTaskHolder
+class VFSGarbageCollector
 {
 public:
     VFSGarbageCollector(
         const String & gc_name_,
         ObjectStoragePtr object_storage_,
-        VFSLog & wal_,
+        VFSLogPtr wal_,
         BackgroundSchedulePool & pool,
         const GarbageCollectorSettings & settings_);
+    
+    ~VFSGarbageCollector();
+
+    void shutdown();
 
 private:
     void run();
@@ -54,9 +58,12 @@ private:
     String gc_name;
     ObjectStoragePtr object_storage;
     VFSSnapshotDataFromObjectStorage vfs_shapshot_data;
-    VFSLog & wal;
+    VFSLogPtr wal;
 
     const GarbageCollectorSettings settings;
     LoggerPtr log;
+
+    BackgroundSchedulePoolTaskHolder task_handle;
 };
+using VFSGarbageCollectorPtr = std::shared_ptr<VFSGarbageCollector>;
 }

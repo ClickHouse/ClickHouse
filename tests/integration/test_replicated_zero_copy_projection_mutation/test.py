@@ -150,6 +150,8 @@ def test_all_projection_files_are_dropped_when_part_is_dropped(
             "ALTER TABLE test_all_projection_files_are_dropped DROP PARTITION ID 'all'"
         )
 
+        time.sleep(1)
+
         objects_at_the_end = list_objects(cluster)
         assert objects_at_the_end == objects_empty_table
 

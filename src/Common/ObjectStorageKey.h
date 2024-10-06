@@ -19,6 +19,8 @@ namespace DB
         static ObjectStorageKey createAsRelative(String key_);
         static ObjectStorageKey createAsAbsolute(String key_);
 
+        explicit operator String() { return serialize(); }
+
     private:
         String prefix;
         String suffix;

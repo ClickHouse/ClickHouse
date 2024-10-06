@@ -230,6 +230,19 @@ public:
         WriteMode mode = WriteMode::Rewrite,
         const WriteSettings & settings = {}) = 0;
 
+    /// A special method for writing only metadata file pointing to the data saved on the object storage disk.
+    /// It is used for zero-copy replication when only metadata is replicated between replicas
+    /// and is put on the metadata storage.
+    virtual std::unique_ptr<WriteBuffer> writeMetadataFile(
+        const String & /* path */, 
+        const WriteSettings & /* settings */ = {})
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method writeMetadataFile() is not implemented for disk type: {}",
+            getDataSourceDescription().toString());
+    }
+
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     /// Return whether file was finally removed. (For remote disks it is not always removed).
     virtual void removeFile(const String & path) = 0;

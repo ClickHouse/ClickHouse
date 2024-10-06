@@ -10,14 +10,14 @@
 #include <Common/ZooKeeper/ZooKeeperLock.h>
 
 
-namespace ProfileEvents
-{
-extern const Event VFSGcRunsCompleted;
-extern const Event VFSGcRunsException;
-extern const Event VFSGcRunsSkipped;
-extern const Event VFSGcTotalSeconds;
-extern const Event VFSGcCumulativeWALSItemsMerged;
-}
+// namespace ProfileEvents
+// {
+// extern const Event VFSGcRunsCompleted;
+// extern const Event VFSGcRunsException;
+// extern const Event VFSGcRunsSkipped;
+// extern const Event VFSGcTotalSeconds;
+// extern const Event VFSGcCumulativeWALSItemsMerged;
+// }
 
 namespace DB
 {
@@ -35,7 +35,7 @@ extern const char vfs_gc_optimistic_lock_delay[];
 VFSGarbageCollector::VFSGarbageCollector(
     const String & gc_name_,
     ObjectStoragePtr object_storage_,
-    VFSLog & wal_,
+    VFSLogPtr wal_,
     BackgroundSchedulePool & pool,
     const GarbageCollectorSettings & settings_)
     : gc_name(gc_name_)
@@ -47,22 +47,27 @@ VFSGarbageCollector::VFSGarbageCollector(
 {
     LOG_INFO(log, "GC started");
     initGCState();
-    *static_cast<BackgroundSchedulePoolTaskHolder *>(this) = pool.createTask(
+    task_handle = pool.createTask(
         log->name(),
         [this]
         {
             try
-            {
+            {                                
                 run();
             }
             catch (...)
             {
-                ProfileEvents::increment(ProfileEvents::VFSGcRunsException);
+                //ProfileEvents::increment(ProfileEvents::VFSGcRunsException);
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
             }
-            (*this)->scheduleAfter(settings.gc_sleep_ms);
+            task_handle->scheduleAfter(settings.gc_sleep_ms);
         });
-    (*this)->activateAndSchedule();
+    task_handle->activateAndSchedule();
+}
+
+void VFSGarbageCollector::shutdown()
+{
+    task_handle->deactivate();
 }
 
 void VFSGarbageCollector::initGCState() const
@@ -70,6 +75,12 @@ void VFSGarbageCollector::initGCState() const
     auto zookeeper = getZookeeper();
     auto path = settings.zk_gc_path + "/garbage_collector";
     zookeeper->tryCreate(path, "", zkutil::CreateMode::Persistent);
+    zookeeper->createIfNotExists(getZKSnapshotPath(), "");
+}
+
+VFSGarbageCollector::~VFSGarbageCollector()
+{
+    shutdown();
 }
 
 
@@ -90,8 +101,8 @@ void VFSGarbageCollector::run()
 
     updateSnapshot();
 
-    ProfileEvents::increment(ProfileEvents::VFSGcRunsCompleted);
-    ProfileEvents::increment(ProfileEvents::VFSGcTotalSeconds, stop_watch.elapsedMilliseconds() / 1000);
+    //ProfileEvents::increment(ProfileEvents::VFSGcRunsCompleted);
+    //ProfileEvents::increment(ProfileEvents::VFSGcTotalSeconds, stop_watch.elapsedMilliseconds() / 1000);
     LOG_DEBUG(log, "GC iteration finished");
 }
 
@@ -138,20 +149,50 @@ void VFSGarbageCollector::updateShapshotMetadata(const SnapshotMetadata & new_sn
 
 void VFSGarbageCollector::updateSnapshot()
 {
+    LOG_DEBUG(log, "List object storage started ==============================");
+    RelativePathsWithMetadata files;
+    object_storage->listObjects("", files, 0);
+    for (auto && file: files)
+    {
+        LOG_DEBUG(log, "Object: {} {}", file->relative_path, file->metadata->size_bytes);
+    }
+    LOG_DEBUG(log, "List object storage finished {} ==============================", files.size());
+
     SnapshotMetadata snapshot_meta = getSnapshotMetadata();
-    auto wal_items_batch = wal.read(settings.batch_size);
+    auto wal_items_batch = wal->read(settings.batch_size);    
     if (wal_items_batch.size() == 0ul)
     {
         LOG_DEBUG(log, "Merge snapshot exit due to empty wal.");
         return;
     }
+    auto next_index = wal_items_batch.back().wal.index + 1;
     LOG_DEBUG(log, "Merge snapshot with {} entries from wal.", wal_items_batch.size());
 
     auto new_snaphot_meta = vfs_shapshot_data.mergeWithWals(std::move(wal_items_batch), snapshot_meta);
 
+    LOG_DEBUG(log, "List object storage started ==============================");
+    files.clear();
+    object_storage->listObjects("", files, 0);
+    for (auto && file: files)
+    {
+        LOG_DEBUG(log, "Object: {} {}", file->relative_path, file->metadata->size_bytes);
+    }
+    LOG_DEBUG(log, "List object storage finished {} remove snapshot path: {} ==============================", files.size(), snapshot_meta.object_storage_key);
+
     updateShapshotMetadata(new_snaphot_meta, snapshot_meta.znode_version);
-    wal.dropUpTo(wal_items_batch.back().wal.index + 1);
+    if (!snapshot_meta.is_initial_snaphot)
+        object_storage->removeObject(StoredObject(snapshot_meta.object_storage_key));
+    wal->dropUpTo(next_index);
 
     LOG_DEBUG(log, "Snapshot update finished with new shapshot key {}", new_snaphot_meta.object_storage_key);
+
+    LOG_DEBUG(log, "List object storage started 3 ==============================");
+    files.clear();    
+    object_storage->listObjects("", files, 0);
+    for (auto && file: files)
+    {
+        LOG_DEBUG(log, "Object: {} {}", file->relative_path, file->metadata->size_bytes);
+    }
+    LOG_DEBUG(log, "List object storage finished {} ==============================", files.size());
 }
 }
