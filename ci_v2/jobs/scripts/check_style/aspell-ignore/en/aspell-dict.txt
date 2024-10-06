@@ -3124,3 +3124,10 @@ TotalsMode
 TransactionsWaitCSNMode
 undelete
 unmerged
+DataPacket
+DDLs
+DistributedCacheLogMode
+DistributedCachePoolBehaviourOnLimit
+SharedJoin
+ShareSet
+unacked
