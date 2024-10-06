@@ -644,7 +644,7 @@ The maximum allowed size for Array in RowBinary format. It prevents allocating l
 Read data types in binary format instead of type names in RowBinaryWithNamesAndTypes input format
 )", 0) \
     M(Bool, output_format_binary_encode_types_in_binary_format, false, R"(
-Write data types in binary format instead of type names in RowBinaryWithNamesAndTypes output format 
+Write data types in binary format instead of type names in RowBinaryWithNamesAndTypes output format
 )", 0) \
     M(URI, format_avro_schema_registry_url, "", R"(
 For AvroConfluent format: Confluent Schema Registry URL.
