@@ -226,7 +226,7 @@ message Message {
     instance.create_format_schema("schema_test_errors.proto", protobuf_schema)
 
     for format_name in ["Protobuf", "ProtobufSingle", "ProtobufList"]:
-        topic_name = f"{format_name}_{handle_error_mode}_err"
+        topic_name = f"{format_name}_{handle_error_mode}_err_{int(time.time())}"
         instance.query(
             f"""
             DROP TABLE IF EXISTS view;
@@ -267,7 +267,7 @@ struct Message
 """
 
     instance.create_format_schema("schema_test_errors.capnp", capn_proto_schema)
-    topic_name = f"CapnProto_{handle_error_mode}_err"
+    topic_name = f"CapnProto_{handle_error_mode}_err_{int(time.time())}"
     instance.query(
         f"""
             DROP TABLE IF EXISTS view;
