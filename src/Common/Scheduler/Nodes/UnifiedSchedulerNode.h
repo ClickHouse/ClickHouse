@@ -465,6 +465,11 @@ public:
             reparent(new_child, this);
     }
 
+    const SchedulingSettings & getSettings() const
+    {
+        return impl.settings;
+    }
+
     /// Returns the queue to be used for resource requests or `nullptr` if it has unified children
     std::shared_ptr<ISchedulerQueue> getQueue()
     {

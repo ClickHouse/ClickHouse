@@ -403,23 +403,23 @@ TEST(SchedulerUnifiedNode, ThrottlerAndFairness)
         t.enqueue(b, {req_cost});
     }
 
-    double shareA = 0.1;
-    double shareB = 0.9;
+    double share_a = 0.1;
+    double share_b = 0.9;
 
     // Bandwidth-latency coupling due to fairness: worst latency is inversely proportional to share
-    auto max_latencyA = static_cast<ResourceCost>(req_cost * (1.0 + 1.0 / shareA));
-    auto max_latencyB = static_cast<ResourceCost>(req_cost * (1.0 + 1.0 / shareB));
+    auto max_latency_a = static_cast<ResourceCost>(req_cost * (1.0 + 1.0 / share_a));
+    auto max_latency_b = static_cast<ResourceCost>(req_cost * (1.0 + 1.0 / share_b));
 
-    double consumedA = 0;
-    double consumedB = 0;
+    double consumed_a = 0;
+    double consumed_b = 0;
     for (int seconds = 0; seconds < 100; seconds++)
     {
         t.process(start + std::chrono::seconds(seconds));
         double arrival_curve = 100.0 + 10.0 * seconds + req_cost;
-        t.consumed("A", static_cast<ResourceCost>(arrival_curve * shareA - consumedA), max_latencyA);
-        t.consumed("B", static_cast<ResourceCost>(arrival_curve * shareB - consumedB), max_latencyB);
-        consumedA = arrival_curve * shareA;
-        consumedB = arrival_curve * shareB;
+        t.consumed("A", static_cast<ResourceCost>(arrival_curve * share_a - consumed_a), max_latency_a);
+        t.consumed("B", static_cast<ResourceCost>(arrival_curve * share_b - consumed_b), max_latency_b);
+        consumed_a = arrival_curve * share_a;
+        consumed_b = arrival_curve * share_b;
     }
 }
 
@@ -492,4 +492,64 @@ TEST(SchedulerUnifiedNode, ResourceGuardException)
     }
     t.dequeue(2);
     t.consumed("A", 20);
+}
+
+TEST(SchedulerUnifiedNode, UpdateWeight)
+{
+    ResourceTest t;
+
+    auto all = t.createUnifiedNode("all");
+    auto a = t.createUnifiedNode("A", all, {.weight = 1.0, .priority = Priority{}});
+    auto b = t.createUnifiedNode("B", all, {.weight = 3.0, .priority = Priority{}});
+
+    t.enqueue(a, {10, 10, 10, 10, 10, 10, 10, 10});
+    t.enqueue(b, {10, 10, 10, 10, 10, 10, 10, 10});
+
+    t.dequeue(4);
+    t.consumed("A", 10);
+    t.consumed("B", 30);
+
+    t.updateUnifiedNode(b, all, all, {.weight = 1.0, .priority = Priority{}});
+
+    t.dequeue(4);
+    t.consumed("A", 20);
+    t.consumed("B", 20);
+
+    t.dequeue(4);
+    t.consumed("A", 20);
+    t.consumed("B", 20);
+}
+
+TEST(SchedulerUnifiedNode, UpdatePriority)
+{
+    ResourceTest t;
+
+    auto all = t.createUnifiedNode("all");
+    auto a = t.createUnifiedNode("A", all, {.weight = 1.0, .priority = Priority{}});
+    auto b = t.createUnifiedNode("B", all, {.weight = 1.0, .priority = Priority{}});
+
+    t.enqueue(a, {10, 10, 10, 10, 10, 10, 10, 10});
+    t.enqueue(b, {10, 10, 10, 10, 10, 10, 10, 10});
+
+    t.dequeue(2);
+    t.consumed("A", 10);
+    t.consumed("B", 10);
+
+    t.updateUnifiedNode(a, all, all, {.weight = 1.0, .priority = Priority{-1}});
+
+    t.dequeue(2);
+    t.consumed("A", 20);
+    t.consumed("B", 0);
+
+    t.updateUnifiedNode(b, all, all, {.weight = 1.0, .priority = Priority{-2}});
+
+    t.dequeue(2);
+    t.consumed("A", 0);
+    t.consumed("B", 20);
+
+    t.updateUnifiedNode(a, all, all, {.weight = 1.0, .priority = Priority{-2}});
+
+    t.dequeue(2);
+    t.consumed("A", 10);
+    t.consumed("B", 10);
 }
