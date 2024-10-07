@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -110,22 +111,17 @@ inline const char * toString(IdentifierResolvePlace resolved_identifier_place)
     }
 }
 
+struct IdentifierResolveScope;
+
 struct IdentifierResolveResult
 {
-    IdentifierResolveResult() = default;
-
     QueryTreeNodePtr resolved_identifier;
+    IdentifierResolveScope * scope = nullptr;
     IdentifierResolvePlace resolve_place = IdentifierResolvePlace::NONE;
-    bool resolved_from_parent_scopes = false;
 
     [[maybe_unused]] bool isResolved() const
     {
         return resolve_place != IdentifierResolvePlace::NONE;
-    }
-
-    [[maybe_unused]] bool isResolvedFromParentScopes() const
-    {
-        return resolved_from_parent_scopes;
     }
 
     [[maybe_unused]] bool isResolvedFromExpressionArguments() const
@@ -156,7 +152,7 @@ struct IdentifierResolveResult
             return;
         }
 
-        buffer << resolved_identifier->formatASTForErrorMessage() << " place " << toString(resolve_place) << " resolved from parent scopes " << resolved_from_parent_scopes;
+        buffer << resolved_identifier->formatASTForErrorMessage() << " place " << toString(resolve_place);
     }
 
     [[maybe_unused]] String dump() const
@@ -170,11 +166,10 @@ struct IdentifierResolveResult
 
 struct IdentifierResolveState
 {
-    IdentifierResolveResult resolve_result;
-    bool cyclic_identifier_resolve = false;
+    size_t count = 1;
 };
 
-struct IdentifierResolveSettings
+struct IdentifierResolveContext
 {
     /// Allow to check join tree during identifier resolution
     bool allow_to_check_join_tree = true;
@@ -190,6 +185,18 @@ struct IdentifierResolveSettings
 
     /// Allow to resolve subquery during identifier resolution
     bool allow_to_resolve_subquery_during_identifier_resolution = true;
+
+    bool allow_to_resolve_result_node = true;
+
+    IdentifierResolveScope * scope_to_resolve_alias_expression = nullptr;
+
+    IdentifierResolveContext resolveAliasesAt(IdentifierResolveScope * scope_to_resolve_alias_expression_) const
+    {
+        IdentifierResolveContext temp = *this;
+        if (!scope_to_resolve_alias_expression)
+            temp.scope_to_resolve_alias_expression = scope_to_resolve_alias_expression_;
+        return temp;
+    }
 };
 
 }

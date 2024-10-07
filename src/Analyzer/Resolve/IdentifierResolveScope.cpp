@@ -27,6 +27,7 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
         subquery_depth = parent_scope->subquery_depth;
         context = parent_scope->context;
         projection_mask_map = parent_scope->projection_mask_map;
+        scope_depth = parent_scope->scope_depth + 1;
     }
     else
         projection_mask_map = std::make_shared<std::map<IQueryTreeNode::Hash, size_t>>();
@@ -46,8 +47,6 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
         join_use_nulls = context->getSettingsRef()[Setting::join_use_nulls];
     else if (parent_scope)
         join_use_nulls = parent_scope->join_use_nulls;
-
-    aliases.alias_name_to_expression_node = &aliases.alias_name_to_expression_node_before_group_by;
 }
 
 [[maybe_unused]] const IdentifierResolveScope * IdentifierResolveScope::getNearestQueryScope() const
@@ -108,29 +107,39 @@ const AnalysisTableExpressionData & IdentifierResolveScope::getTableExpressionDa
 
 void IdentifierResolveScope::pushExpressionNode(const QueryTreeNodePtr & node)
 {
-    bool had_aggregate_function = expressions_in_resolve_process_stack.hasAggregateFunction();
     expressions_in_resolve_process_stack.push(node);
-    if (group_by_use_nulls && had_aggregate_function != expressions_in_resolve_process_stack.hasAggregateFunction())
-        aliases.alias_name_to_expression_node = &aliases.alias_name_to_expression_node_before_group_by;
 }
 
 void IdentifierResolveScope::popExpressionNode()
 {
-    bool had_aggregate_function = expressions_in_resolve_process_stack.hasAggregateFunction();
     expressions_in_resolve_process_stack.pop();
-    if (group_by_use_nulls && had_aggregate_function != expressions_in_resolve_process_stack.hasAggregateFunction())
-        aliases.alias_name_to_expression_node = &aliases.alias_name_to_expression_node_after_group_by;
 }
 
 /// Dump identifier resolve scope
 [[maybe_unused]] void IdentifierResolveScope::dump(WriteBuffer & buffer) const
 {
-    buffer << "Scope node " << scope_node->formatASTForErrorMessage() << '\n';
-    buffer << "Identifier lookup to resolve state " << identifier_lookup_to_resolve_state.size() << '\n';
-    for (const auto & [identifier, state] : identifier_lookup_to_resolve_state)
+    buffer << "Scope node " << scope_node->formatConvertedASTForErrorMessage() << '\n';
+
+    if (auto* query = scope_node->as<QueryNode>())
     {
-        buffer << "Identifier " << identifier.dump() << " resolve result ";
-        state.resolve_result.dump(buffer);
+        buffer << "Table expression data: ";
+        auto it = table_expression_node_to_data.find(scope_node);
+        if (it != table_expression_node_to_data.end())
+        {
+            buffer << it->second.dump();
+        }
+        else
+        {
+            buffer << "Not initialized";
+        }
+        buffer << '\n';
+    }
+
+    buffer << "Identifier lookup to resolve state " << identifier_in_lookup_process.size() << '\n';
+    for (const auto & [identifier, state] : identifier_in_lookup_process)
+    {
+        buffer << "Identifier " << identifier.dump() << " count ";
+        buffer << state.count;
         buffer << '\n';
     }
 
@@ -138,8 +147,8 @@ void IdentifierResolveScope::popExpressionNode()
     for (const auto & [alias_name, node] : expression_argument_name_to_node)
         buffer << "Alias name " << alias_name << " node " << node->formatASTForErrorMessage() << '\n';
 
-    buffer << "Alias name to expression node table size " << aliases.alias_name_to_expression_node->size() << '\n';
-    for (const auto & [alias_name, node] : *aliases.alias_name_to_expression_node)
+    buffer << "Alias name to expression node table size " << aliases.alias_name_to_expression_node.size() << '\n';
+    for (const auto & [alias_name, node] : aliases.alias_name_to_expression_node)
         buffer << "Alias name " << alias_name << " expression node " << node->dumpTree() << '\n';
 
     buffer << "Alias name to function node table size " << aliases.alias_name_to_lambda_node.size() << '\n';

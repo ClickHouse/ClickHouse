@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <Interpreters/Context_fwd.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -137,7 +138,10 @@ struct IdentifierResolveScope
     ContextPtr context;
 
     /// Identifier lookup to result
-    std::unordered_map<IdentifierLookup, IdentifierResolveState, IdentifierLookupHash> identifier_lookup_to_resolve_state;
+    std::unordered_map<IdentifierLookup, IdentifierResolveState, IdentifierLookupHash> identifier_in_lookup_process;
+
+    /// Identifier lookup to result
+    std::unordered_map<IdentifierLookup, IdentifierResolveResult, IdentifierLookupHash> identifier_lookup_to_resolve_result;
 
     /// Argument can be expression like constant, column, function or table expression
     std::unordered_map<std::string, QueryTreeNodePtr> expression_argument_name_to_node;
@@ -193,6 +197,8 @@ struct IdentifierResolveScope
 
     /// Subquery depth
     size_t subquery_depth = 0;
+
+    size_t scope_depth = 1;
 
     /** Scope join tree node for expression.
       * Valid only during analysis construction for single expression.
