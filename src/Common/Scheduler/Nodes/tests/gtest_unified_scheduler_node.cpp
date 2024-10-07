@@ -671,3 +671,76 @@ TEST(SchedulerUnifiedNode, UpdateParentOfIntermediateNode)
     t.consumed("X2", 0);
     t.consumed("Y2", 20);
 }
+
+TEST(SchedulerUnifiedNode, UpdateThrottlerMaxSpeed)
+{
+    ResourceTest t;
+    EventQueue::TimePoint start = std::chrono::system_clock::now();
+    t.process(start, 0);
+
+    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .max_speed = 10.0, .max_burst = 20.0});
+
+    t.enqueue(all, {10, 10, 10, 10, 10, 10, 10, 10});
+
+    t.process(start + std::chrono::seconds(0));
+    t.consumed("all", 30); // It is allowed to go below zero for exactly one resource request
+
+    t.process(start + std::chrono::seconds(1));
+    t.consumed("all", 10);
+
+    t.process(start + std::chrono::seconds(2));
+    t.consumed("all", 10);
+
+    t.updateUnifiedNode(all, {}, {}, {.priority = Priority{}, .max_speed = 1.0, .max_burst = 20.0});
+
+    t.process(start + std::chrono::seconds(12));
+    t.consumed("all", 10);
+
+    t.process(start + std::chrono::seconds(22));
+    t.consumed("all", 10);
+
+    t.process(start + std::chrono::seconds(100500));
+    t.consumed("all", 10);
+}
+
+TEST(SchedulerUnifiedNode, UpdateThrottlerMaxBurst)
+{
+    ResourceTest t;
+    EventQueue::TimePoint start = std::chrono::system_clock::now();
+    t.process(start, 0);
+
+    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .max_speed = 10.0, .max_burst = 100.0});
+
+    t.enqueue(all, {100});
+
+    t.process(start + std::chrono::seconds(0));
+    t.consumed("all", 100); // consume all tokens, but it is still active (not negative)
+
+    t.process(start + std::chrono::seconds(2));
+    t.consumed("all", 0); // There was nothing to consume
+    t.updateUnifiedNode(all, {}, {}, {.priority = Priority{}, .max_speed = 10.0, .max_burst = 30.0});
+
+    t.process(start + std::chrono::seconds(5));
+    t.consumed("all", 0); // There was nothing to consume
+
+    t.enqueue(all, {10, 10, 10, 10, 10, 10, 10, 10, 10, 10});
+    t.process(start + std::chrono::seconds(5));
+    t.consumed("all", 40); // min(30 tokens, 5 sec * 10 tokens/sec) = 30 tokens + 1 extra request to go below zero
+
+    t.updateUnifiedNode(all, {}, {}, {.priority = Priority{}, .max_speed = 10.0, .max_burst = 100.0});
+
+    t.process(start + std::chrono::seconds(100));
+    t.consumed("all", 60); // Consume rest
+
+    t.process(start + std::chrono::seconds(150));
+    t.updateUnifiedNode(all, {}, {}, {.priority = Priority{}, .max_speed = 100.0, .max_burst = 200.0});
+
+    t.process(start + std::chrono::seconds(200));
+
+    t.enqueue(all, {195, 1, 1, 1, 1, 1, 1, 1, 1, 1});
+    t.process(start + std::chrono::seconds(200));
+    t.consumed("all", 201); // check we cannot consume more than max_burst + 1 request
+
+    t.process(start + std::chrono::seconds(100500));
+    t.consumed("all", 3);
+}

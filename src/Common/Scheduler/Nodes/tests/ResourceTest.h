@@ -187,7 +187,12 @@ public:
     {
         EXPECT_TRUE((old_parent && new_parent) || (!old_parent && !new_parent)); // changing root node is not supported
         bool detached = false;
-        if (UnifiedSchedulerNode::updateRequiresDetach(old_parent->basename, new_parent->basename, node->getSettings(), new_settings)) {
+        if (UnifiedSchedulerNode::updateRequiresDetach(
+            old_parent ? old_parent->basename : "",
+            new_parent ? new_parent->basename : "",
+            node->getSettings(),
+            new_settings))
+        {
             if (old_parent)
                 old_parent->detachUnifiedChild(node);
             detached = true;
