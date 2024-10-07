@@ -19,6 +19,8 @@ public:
 
     void transform(Chunk & chunk) override;
 
+    static Block permute(const Block & block, const std::vector<size_t> & permutation);
+
 private:
     Names column_names;
     std::vector<size_t> permutation;

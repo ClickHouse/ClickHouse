@@ -16,13 +16,6 @@ void applyPermutation(std::vector<T> & data, const std::vector<size_t> & permuta
     data = std::move(res);
 }
 
-Block permuteBlock(const Block & block, const std::vector<size_t> & permutation)
-{
-    auto columns = block.getColumnsWithTypeAndName();
-    applyPermutation(columns, permutation);
-    return Block(columns);
-}
-
 void permuteChunk(Chunk & chunk, const std::vector<size_t> & permutation)
 {
     size_t num_rows = chunk.getNumRows();
@@ -33,8 +26,15 @@ void permuteChunk(Chunk & chunk, const std::vector<size_t> & permutation)
 
 }
 
+Block ColumnPermuteTransform::permute(const Block & block, const std::vector<size_t> & permutation)
+{
+    auto columns = block.getColumnsWithTypeAndName();
+    applyPermutation(columns, permutation);
+    return Block(columns);
+}
+
 ColumnPermuteTransform::ColumnPermuteTransform(const Block & header_, const std::vector<size_t> & permutation_)
-    : ISimpleTransform(header_, permuteBlock(header_, permutation_), false)
+    : ISimpleTransform(header_, permute(header_, permutation_), false)
     , permutation(permutation_)
 {
 }

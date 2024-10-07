@@ -19,7 +19,7 @@ namespace ErrorCodes
 namespace
 {
 
-std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join)
+static std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join)
 {
     std::vector<std::pair<String, String>> description;
     const auto & table_join = join->getTableJoin();
@@ -37,50 +37,35 @@ std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join)
     return description;
 }
 
-size_t getPrefixLength(const NameSet & prefix, const Names & names)
+std::vector<size_t> getPermutationForBlock(
+    const Block & block,
+    const Block & lhs_block,
+    const Block & rhs_block,
+    const NameSet & name_filter)
 {
-    size_t i = 0;
-    for (; i < names.size(); ++i)
-    {
-        if (!prefix.contains(names[i]))
-            break;
-    }
-    return i;
-}
+    std::vector<size_t> permutation;
+    permutation.reserve(block.columns());
+    Block::NameMap name_map = block.getNamesToIndexesMap();
 
-std::vector<size_t> getPermutationToRotate(size_t prefix_size, size_t total_size)
-{
-    std::vector<size_t> permutation(total_size);
-    size_t i = prefix_size % total_size;
-    for (auto & elem : permutation)
+    bool is_trivial = true;
+    for (const auto & other_block : {lhs_block, rhs_block})
     {
-        elem = i;
-        i = (i + 1) % total_size;
+        for (const auto & col : other_block)
+        {
+            if (!name_filter.contains(col.name))
+                continue;
+            if (auto it = name_map.find(col.name); it != name_map.end())
+            {
+                is_trivial = is_trivial && it->second == permutation.size();
+                permutation.push_back(it->second);
+            }
+        }
     }
+
+    if (is_trivial && permutation.size() == block.columns())
+        return {};
+
     return permutation;
-}
-
-Block rotateBlock(const Block & block, size_t prefix_size)
-{
-    auto columns = block.getColumnsWithTypeAndName();
-    std::rotate(columns.begin(), columns.begin() + prefix_size, columns.end());
-    auto res = Block(std::move(columns));
-    return res;
-}
-
-NameSet getNameSetFromBlock(const Block & block)
-{
-    NameSet names;
-    for (const auto & column : block)
-        names.insert(column.name);
-    return names;
-}
-
-Block rotateBlock(const Block & block, const Block & prefix_block)
-{
-    NameSet prefix_names_set = getNameSetFromBlock(prefix_block);
-    size_t prefix_size = getPrefixLength(prefix_names_set, block.getNames());
-    return rotateBlock(block, prefix_size);
 }
 
 }
@@ -109,7 +94,8 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     if (pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStep expect two input steps");
 
-    NameSet rhs_names = getNameSetFromBlock(pipelines[1]->getHeader());
+    Block lhs_header = pipelines[0]->getHeader();
+    Block rhs_header = pipelines[1]->getHeader();
 
     if (swap_streams)
         std::swap(pipelines[0], pipelines[1]);
@@ -135,28 +121,14 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     if (!use_new_analyzer)
         return pipeline;
 
-    const auto & result_names = pipeline->getHeader().getNames();
-    size_t prefix_size = getPrefixLength(rhs_names, result_names);
-    if (!columns_to_remove.empty() || (0 < prefix_size && prefix_size < result_names.size()))
+    auto column_permutation = getPermutationForBlock(pipeline->getHeader(), lhs_header, rhs_header, required_output);
+    if (!column_permutation.empty())
     {
-        auto column_permutation = getPermutationToRotate(prefix_size, result_names.size());
-        size_t n = 0;
-        auto it = columns_to_remove.begin();
-        for (size_t i = 0; i < column_permutation.size(); ++i)
-        {
-            if (it != columns_to_remove.end() && *it == i)
-                ++it;
-            else
-                column_permutation[n++] = column_permutation[i];
-        }
-        column_permutation.resize(n);
-
         pipeline->addSimpleTransform([&column_permutation](const Block & header)
         {
             return std::make_shared<ColumnPermuteTransform>(header, column_permutation);
         });
     }
-
 
     return pipeline;
 }
@@ -177,12 +149,16 @@ void JoinStep::describeActions(FormatSettings & settings) const
 
     for (const auto & [name, value] : describeJoinActions(join))
         settings.out << prefix << name << ": " << value << '\n';
+    if (swap_streams)
+        settings.out << prefix << "Swapped: true\n";
 }
 
 void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     for (const auto & [name, value] : describeJoinActions(join))
         map.add(name, value);
+    if (swap_streams)
+        map.add("Swapped", true);
 }
 
 void JoinStep::setJoin(JoinPtr join_, bool swap_streams_)
@@ -210,20 +186,10 @@ void JoinStep::updateOutputStream()
         return;
     }
 
-    if (swap_streams)
-        result_header = rotateBlock(result_header, input_streams[1].header);
+    auto column_permutation = getPermutationForBlock(result_header, input_streams[0].header, input_streams[1].header, required_output);
+    if (!column_permutation.empty())
+        result_header = ColumnPermuteTransform::permute(std::move(result_header), column_permutation);
 
-    columns_to_remove.clear();
-    for (size_t i = 0; i < result_header.columns(); ++i)
-    {
-        if (!required_output.contains(result_header.getByPosition(i).name))
-            columns_to_remove.insert(i);
-    }
-    /// Do not remove all columns, keep at least one
-    if (!columns_to_remove.empty() && columns_to_remove.size() == result_header.columns())
-        columns_to_remove.erase(columns_to_remove.begin());
-
-    result_header.erase(columns_to_remove);
     output_stream = DataStream { .header = result_header };
 }
 
