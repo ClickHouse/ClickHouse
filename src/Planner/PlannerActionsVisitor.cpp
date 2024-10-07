@@ -38,6 +38,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool enable_named_columns_in_function_tuple;
     extern const SettingsBool transform_null_in;
 }
 
@@ -182,26 +183,29 @@ public:
                     break;
                 }
 
-                /// Function "tuple" which generates named tuple should use argument aliases to construct its name.
-                if (function_node.getFunctionName() == "tuple")
+                if (planner_context.getQueryContext()->getSettingsRef()[Setting::enable_named_columns_in_function_tuple])
                 {
-                    if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(function_node.getResultType().get()))
+                    /// Function "tuple" which generates named tuple should use argument aliases to construct its name.
+                    if (function_node.getFunctionName() == "tuple")
                     {
-                        if (type_tuple->haveExplicitNames())
+                        if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(function_node.getResultType().get()))
                         {
-                            const auto & names = type_tuple->getElementNames();
-                            size_t size = names.size();
-                            WriteBufferFromOwnString s;
-                            s << "tuple(";
-                            for (size_t i = 0; i < size; ++i)
+                            if (type_tuple->haveExplicitNames())
                             {
-                                if (i != 0)
-                                    s << ", ";
-                                s << names[i];
+                                const auto & names = type_tuple->getElementNames();
+                                size_t size = names.size();
+                                WriteBufferFromOwnString s;
+                                s << "tuple(";
+                                for (size_t i = 0; i < size; ++i)
+                                {
+                                    if (i != 0)
+                                        s << ", ";
+                                    s << names[i];
+                                }
+                                s << ")";
+                                result = s.str();
+                                break;
                             }
-                            s << ")";
-                            result = s.str();
-                            break;
                         }
                     }
                 }
