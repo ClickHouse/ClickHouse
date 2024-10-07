@@ -2305,5 +2305,3 @@ Type: Bool
 Default value: 1
 
 Validate usage of experimental and suspicious types inside nested types like Array/Map/Tuple
-
-Disabled by default.
