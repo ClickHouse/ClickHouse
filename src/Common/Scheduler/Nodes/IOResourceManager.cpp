@@ -137,7 +137,7 @@ void IOResourceManager::Resource::updateNode(const NodeInfo & old_info, const No
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Updating a name of workload '{}' to '{}' is not allowed in resource '{}'",
             old_info.name, new_info.name, resource_name);
 
-    if (old_info.parent != new_info.parent && (old_info.parent.empty() || old_info.parent.empty()))
+    if (old_info.parent != new_info.parent && (old_info.parent.empty() || new_info.parent.empty()))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Workload '{}' invalid update of parent from '{}' to '{}' in resource '{}'",
             old_info.name, old_info.parent, new_info.parent, resource_name);
 
@@ -157,22 +157,20 @@ void IOResourceManager::Resource::updateNode(const NodeInfo & old_info, const No
     {
         auto node = node_for_workload[old_info.name];
         bool detached = false;
-        if (old_info.parent != new_info.parent)
+        if (UnifiedSchedulerNode::updateRequiresDetach(old_info.parent, new_info.parent, old_info.settings, new_info.settings))
         {
-            node_for_workload[old_info.parent]->detachUnifiedChild(node);
+            if (!old_info.parent.empty())
+                node_for_workload[old_info.parent]->detachUnifiedChild(node);
             detached = true;
         }
 
         node->updateSchedulingSettings(new_info.settings);
-        if (!detached && !old_info.parent.empty() && old_info.settings.priority != new_info.settings.priority)
-            node_for_workload[old_info.parent]->updateUnifiedChildPriority(
-                node,
-                old_info.settings.priority,
-                new_info.settings.priority);
 
         if (detached)
-            node_for_workload[new_info.parent]->attachUnifiedChild(node);
-
+        {
+            if (!new_info.parent.empty())
+                node_for_workload[new_info.parent]->attachUnifiedChild(node);
+        }
         updateCurrentVersion();
     });
 }
@@ -268,7 +266,7 @@ IOResourceManager::IOResourceManager(IWorkloadEntityStorage & storage_)
                     case WorkloadEntityType::Resource:
                     {
                         if (entity)
-                            createResource(entity_name, entity);
+                            createOrUpdateResource(entity_name, entity);
                         else
                             deleteResource(entity_name);
                         break;
@@ -315,14 +313,11 @@ void IOResourceManager::deleteWorkload(const String & workload_name)
     }
 }
 
-void IOResourceManager::createResource(const String & resource_name, const ASTPtr & ast)
+void IOResourceManager::createOrUpdateResource(const String & resource_name, const ASTPtr & ast)
 {
     std::unique_lock lock{mutex};
     if (auto resource_iter = resources.find(resource_name); resource_iter != resources.end())
-    {
-        // Resource to be created already exist -- do nothing, throwing exceptions from a subscription is pointless
-        // TODO(serxa): add logging
-    }
+        resource_iter->second->updateResource(ast);
     else
     {
         // Add all workloads into the new resource
@@ -418,6 +413,12 @@ void IOResourceManager::Classifier::attach(const ResourcePtr & resource, const V
     std::unique_lock lock{mutex};
     chassert(!attachments.contains(resource->getName()));
     attachments[resource->getName()] = Attachment{.resource = resource, .version = version, .link = link};
+}
+
+void IOResourceManager::Resource::updateResource(const ASTPtr & new_resource_entity)
+{
+    chassert(getEntityName(new_resource_entity) == resource_name);
+    resource_entity = new_resource_entity;
 }
 
 std::future<void> IOResourceManager::Resource::attachClassifier(Classifier & classifier, const String & workload_name)

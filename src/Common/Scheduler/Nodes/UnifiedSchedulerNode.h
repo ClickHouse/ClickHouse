@@ -160,6 +160,14 @@ private:
         // Returns true iff there are no unified children attached
         bool empty() const { return branches.empty(); }
 
+        SchedulerNodePtr getRoot()
+        {
+            chassert(!branches.empty());
+            if (root)
+                return root;
+            return branches.begin()->second.getRoot(); // There should be exactly one child-branch
+        }
+
         /// Attaches a new child.
         /// Returns root node if it has been changed to a different node, otherwise returns null.
         [[nodiscard]] SchedulerNodePtr attachUnifiedChild(EventQueue * event_queue_, const UnifiedSchedulerNodePtr & child)
@@ -243,6 +251,14 @@ private:
     {
         SchedulerNodePtr queue; /// FifoQueue node is used if there are no children
         ChildrenBranch branch; /// Used if there is at least one child
+
+        SchedulerNodePtr getRoot()
+        {
+            if (queue)
+                return queue;
+            else
+                return branch.getRoot();
+        }
 
         // Should be called after constructor, before any other methods
         [[nodiscard]] SchedulerNodePtr initialize(EventQueue * event_queue_)
@@ -354,6 +370,52 @@ private:
             }
             return {};
         }
+
+        /// Detaches a child.
+        /// Returns root node if it has been changed to a different node, otherwise returns null.
+        [[nodiscard]] SchedulerNodePtr updateSchedulingSettings(EventQueue * event_queue_, const SchedulingSettings & new_settings)
+        {
+            SchedulerNodePtr node = branch.getRoot();
+
+            if (!settings.hasSemaphore() && new_settings.hasSemaphore()) // Add semaphore
+            {
+                semaphore = std::make_shared<SemaphoreConstraint>(event_queue_, SchedulerNodeInfo{}, new_settings.max_requests, new_settings.max_cost);
+                semaphore->basename = "semaphore";
+                reparent(node, semaphore);
+                node = semaphore;
+            }
+            else if (settings.hasSemaphore() && !new_settings.hasSemaphore()) // Remove semaphore
+            {
+                detach(semaphore);
+                semaphore.reset();
+            }
+            else if (settings.hasSemaphore() && new_settings.hasSemaphore()) // Update semaphore
+            {
+                static_cast<SemaphoreConstraint&>(*semaphore).updateConstraints(semaphore, new_settings.max_requests, new_settings.max_cost);
+                node = semaphore;
+            }
+
+            if (!settings.hasThrottler() && new_settings.hasThrottler()) // Add throttler
+            {
+                throttler = std::make_shared<ThrottlerConstraint>(event_queue_, SchedulerNodeInfo{}, new_settings.max_speed, new_settings.max_burst);
+                throttler->basename = "throttler";
+                reparent(node, throttler);
+                node = throttler;
+            }
+            else if (settings.hasThrottler() && !new_settings.hasThrottler()) // Remove throttler
+            {
+                detach(throttler);
+                throttler.reset();
+            }
+            else if (settings.hasThrottler() && new_settings.hasThrottler()) // Update throttler
+            {
+                static_cast<ThrottlerConstraint&>(*throttler).updateConstraints(new_settings.max_speed, new_settings.max_burst);
+                node = throttler;
+            }
+
+            settings = new_settings;
+            return node;
+        }
     };
 
 public:
@@ -388,20 +450,19 @@ public:
             reparent(new_child, this);
     }
 
-    /// Updates intermediate nodes subtree according with new priority (priority is set by the caller beforehand)
-    /// NOTE: Changing a priority of a unified child may lead to change of its parent.
-    void updateUnifiedChildPriority(const UnifiedSchedulerNodePtr & child, Priority old_priority, Priority new_priority)
+    static bool updateRequiresDetach(const String & old_parent, const String & new_parent, const SchedulingSettings & old_settings, const SchedulingSettings & new_settings)
     {
-        UNUSED(child, old_priority, new_priority); // TODO(serxa): implement updateUnifiedChildPriority()
+        return old_parent != new_parent || old_settings.priority != new_settings.priority;
     }
 
     /// Updates scheduling settings. Set of constraints might change.
-    /// NOTE: Caller is responsible for calling `updateUnifiedChildPriority` in parent unified node (if any)
+    /// NOTE: Caller is responsible for detaching and attaching if `updateRequiresDetach` returns true
     void updateSchedulingSettings(const SchedulingSettings & new_settings)
     {
-        UNUSED(new_settings); // TODO(serxa): implement updateSchedulingSettings()
         info.setPriority(new_settings.priority);
         info.setWeight(new_settings.weight);
+        if (auto new_child = impl.updateSchedulingSettings(event_queue, new_settings))
+            reparent(new_child, this);
     }
 
     /// Returns the queue to be used for resource requests or `nullptr` if it has unified children
@@ -418,8 +479,7 @@ public:
     /// all unified nodes. Such a version control is done by `IOResourceManager`.
     void addRawPointerNodes(std::vector<SchedulerNodePtr> & nodes)
     {
-        if (impl.throttler)
-            nodes.push_back(impl.throttler);
+        // NOTE: `impl.throttler` could be skipped, because ThrottlerConstraint does not call `request->addConstraint()`
         if (impl.semaphore)
             nodes.push_back(impl.semaphore);
         if (impl.branch.queue)

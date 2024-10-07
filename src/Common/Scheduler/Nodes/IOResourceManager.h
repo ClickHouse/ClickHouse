@@ -173,6 +173,9 @@ private:
         void deleteNode(const NodeInfo & info);
         void updateNode(const NodeInfo & old_info, const NodeInfo & new_info);
 
+        /// Updates resource entity
+        void updateResource(const ASTPtr & new_resource_entity);
+
         /// Updates a classifier to contain a reference for specified workload
         std::future<void> attachClassifier(Classifier & classifier, const String & workload_name);
 
@@ -205,7 +208,7 @@ private:
             future.get(); // Blocks until execution is done in the scheduler thread
         }
 
-        const ASTPtr resource_entity;
+        ASTPtr resource_entity;
         const String resource_name;
         SchedulerRoot scheduler;
 
@@ -256,7 +259,7 @@ private:
 
     void createOrUpdateWorkload(const String & workload_name, const ASTPtr & ast);
     void deleteWorkload(const String & workload_name);
-    void createResource(const String & resource_name, const ASTPtr & ast);
+    void createOrUpdateResource(const String & resource_name, const ASTPtr & ast);
     void deleteResource(const String & resource_name);
 
     // Topological sorting of worklaods
