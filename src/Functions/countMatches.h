@@ -61,7 +61,7 @@ public:
             uint64_t matches_count = countMatches(str, re, matches);
             return result_type->createColumnConst(input_rows_count, matches_count);
         }
-        else if (const ColumnString * col_haystack_string = checkAndGetColumn<ColumnString>(col_haystack))
+        if (const ColumnString * col_haystack_string = checkAndGetColumn<ColumnString>(col_haystack))
         {
             auto col_res = ColumnUInt64::create();
 
@@ -85,7 +85,7 @@ public:
 
             return col_res;
         }
-        else if (const ColumnFixedString * col_haystack_fixedstring = checkAndGetColumn<ColumnFixedString>(col_haystack))
+        if (const ColumnFixedString * col_haystack_fixedstring = checkAndGetColumn<ColumnFixedString>(col_haystack))
         {
             auto col_res = ColumnUInt64::create();
 
@@ -100,8 +100,7 @@ public:
 
             return col_res;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Could not cast haystack argument to String or FixedString");
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Could not cast haystack argument to String or FixedString");
     }
 
     static uint64_t countMatches(std::string_view src, const OptimizedRegularExpression & re, OptimizedRegularExpression::MatchVec & matches)
