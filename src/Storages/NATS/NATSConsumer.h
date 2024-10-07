@@ -29,6 +29,7 @@ public:
         LoggerPtr log_,
         uint32_t queue_size_,
         const std::atomic<bool> & stopped_);
+    ~NATSConsumer();
 
     struct MessageData
     {

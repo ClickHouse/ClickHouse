@@ -26,6 +26,7 @@ public:
         const String & comment,
         std::unique_ptr<NATSSettings> nats_settings_,
         LoadingStrictnessLevel mode);
+    ~StorageNATS() override;
 
     std::string getName() const override { return "NATS"; }
 
@@ -80,6 +81,8 @@ private:
 
     LoggerPtr log;
 
+    NATSHandler event_handler;
+
     NATSConnectionPtr consumers_connection; /// Connection for all consumers
     NATSConfiguration configuration;
 
@@ -95,6 +98,7 @@ private:
     std::once_flag flag; /// remove exchange only once
     std::mutex task_mutex;
     BackgroundSchedulePool::TaskHolder streaming_task;
+    BackgroundSchedulePool::TaskHolder looping_task;
     BackgroundSchedulePool::TaskHolder reconnection_task;
 
     /// True if consumers have subscribed to all subjects
@@ -125,9 +129,15 @@ private:
 
     /// Functions working in the background
     void streamingToViewsFunc();
+    void loopingFunc();
     void reconnectionFunc();
 
     bool subscribeConsumers();
+
+    void stopLoop();
+    void stopLoopIfNoReaders();
+
+    void startReconnection(NATSConnectionPtr connection_);
 
     static Names parseList(const String & list, char delim);
     static String getTableBasedName(String name, const StorageID & table_id);
@@ -135,7 +145,7 @@ private:
 
     ContextMutablePtr addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;
-    void deactivateTask(BackgroundSchedulePool::TaskHolder & task);
+    void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool stop_loop);
 
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
