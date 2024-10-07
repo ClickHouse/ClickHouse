@@ -105,19 +105,17 @@ struct ArrayFirstLastImpl
 
                 return out;
             }
-            else
+
+            auto out = array.getData().cloneEmpty();
+            out->insertManyDefaults(array.size());
+
+            if constexpr (element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null)
             {
-                auto out = array.getData().cloneEmpty();
-                out->insertManyDefaults(array.size());
-
-                if constexpr (element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null)
-                {
-                    auto col_null_map_to = ColumnUInt8::create(out->size(), true);
-                    return createNullableColumn(std::move(out), std::move(col_null_map_to));
-                }
-
-                return out;
+                auto col_null_map_to = ColumnUInt8::create(out->size(), true);
+                return createNullableColumn(std::move(out), std::move(col_null_map_to));
             }
+
+            return out;
         }
 
         const auto & filter = column_filter->getData();

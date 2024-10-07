@@ -340,8 +340,7 @@ private:
                 dest[0] = '0' + month;
                 return 1;
             }
-            else
-                return writeNumber2(dest, month);
+            return writeNumber2(dest, month);
         }
 
         static size_t monthOfYearText(char * dest, Time source, bool abbreviate, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -434,8 +433,7 @@ private:
                 dest[0] = '0' + hour;
                 return 1;
             }
-            else
-                return writeNumber2(dest, hour);
+            return writeNumber2(dest, hour);
         }
 
         size_t mysqlHour12(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -454,8 +452,7 @@ private:
                 dest[0] = '0' + hour;
                 return 1;
             }
-            else
-                return writeNumber2(dest, hour);
+            return writeNumber2(dest, hour);
         }
 
         size_t mysqlMinute(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -585,11 +582,9 @@ private:
             auto year = static_cast<Int32>(ToYearImpl::execute(source, timezone));
             if (min_represent_digits == 2)
                 return writeNumberWithPadding(dest, std::abs(year) % 100, 2);
-            else
-            {
-                year = year <= 0 ? std::abs(year - 1) : year;
-                return writeNumberWithPadding(dest, year, min_represent_digits);
-            }
+
+            year = year <= 0 ? std::abs(year - 1) : year;
+            return writeNumberWithPadding(dest, year, min_represent_digits);
         }
 
         static size_t jodaDayOfWeek1Based(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -613,8 +608,7 @@ private:
                 auto two_digit_year = year % 100;
                 return writeNumberWithPadding(dest, two_digit_year, 2);
             }
-            else
-                return writeNumberWithPadding(dest, year, min_represent_digits);
+            return writeNumberWithPadding(dest, year, min_represent_digits);
         }
 
         static size_t jodaWeekYear(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -864,26 +858,30 @@ public:
             {
                 return castColumn(arguments[0], result_type);
             }
-            else
-            {
-                if (!castType(arguments[0].type.get(), [&](const auto & type)
+
+            if (!castType(
+                    arguments[0].type.get(),
+                    [&](const auto & type)
                     {
                         using FromDataType = std::decay_t<decltype(type)>;
                         if (!(res = executeType<FromDataType>(arguments, result_type, input_rows_count)))
-                            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            throw Exception(
+                                ErrorCodes::ILLEGAL_COLUMN,
                                 "Illegal column {} of function {}, must be Integer, Date, Date32, DateTime or DateTime64.",
-                                arguments[0].column->getName(), getName());
+                                arguments[0].column->getName(),
+                                getName());
                         return true;
                     }))
-                {
-                    if (!((res = executeType<DataTypeDate>(arguments, result_type, input_rows_count))
-                        || (res = executeType<DataTypeDate32>(arguments, result_type, input_rows_count))
-                        || (res = executeType<DataTypeDateTime>(arguments, result_type, input_rows_count))
-                        || (res = executeType<DataTypeDateTime64>(arguments, result_type, input_rows_count))))
-                        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                            "Illegal column {} of function {}, must be Integer or DateTime.",
-                            arguments[0].column->getName(), getName());
-                }
+            {
+                if (!((res = executeType<DataTypeDate>(arguments, result_type, input_rows_count))
+                      || (res = executeType<DataTypeDate32>(arguments, result_type, input_rows_count))
+                      || (res = executeType<DataTypeDateTime>(arguments, result_type, input_rows_count))
+                      || (res = executeType<DataTypeDateTime64>(arguments, result_type, input_rows_count))))
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_COLUMN,
+                        "Illegal column {} of function {}, must be Integer or DateTime.",
+                        arguments[0].column->getName(),
+                        getName());
             }
         }
         else
@@ -1587,20 +1585,18 @@ public:
                     Int64 count = numLiteralChars(cur_token + 1, end);
                     if (count == -1)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "No closing single quote for literal");
-                    else
+
+                    for (Int64 i = 1; i <= count; i++)
                     {
-                        for (Int64 i = 1; i <= count; i++)
-                        {
-                            Instruction<T> instruction;
-                            std::string_view literal(cur_token + i, 1);
-                            instruction.setJodaFunc(std::bind_front(&Instruction<T>::template jodaLiteral<decltype(literal)>, literal));
-                            instructions.push_back(std::move(instruction));
-                            ++reserve_size;
-                            if (*(cur_token + i) == '\'')
-                                i += 1;
-                        }
-                        pos += count + 2;
+                        Instruction<T> instruction;
+                        std::string_view literal(cur_token + i, 1);
+                        instruction.setJodaFunc(std::bind_front(&Instruction<T>::template jodaLiteral<decltype(literal)>, literal));
+                        instructions.push_back(std::move(instruction));
+                        ++reserve_size;
+                        if (*(cur_token + i) == '\'')
+                            i += 1;
                     }
+                    pos += count + 2;
                 }
             }
             else

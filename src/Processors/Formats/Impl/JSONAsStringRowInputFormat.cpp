@@ -41,7 +41,7 @@ bool JSONAsRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
             /// ';' means the end of query, but it cannot be before ']'.
             return allow_new_rows = false;
         }
-        else if (data_in_square_brackets && *in->position() == ']')
+        if (data_in_square_brackets && *in->position() == ']')
         {
             /// ']' means the end of query.
             return allow_new_rows = false;
