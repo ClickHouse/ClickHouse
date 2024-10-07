@@ -29,6 +29,14 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_distributed_ddl;
+    extern const SettingsBool database_replicated_enforce_synchronous_settings;
+    extern const SettingsDistributedDDLOutputMode distributed_ddl_output_mode;
+    extern const SettingsInt64 distributed_ddl_task_timeout;
+    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
+}
 
 namespace ErrorCodes
 {
@@ -68,7 +76,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
 {
     OpenTelemetry::SpanHolder span(__FUNCTION__, OpenTelemetry::SpanKind::PRODUCER);
 
-    if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
+    if (context->getCurrentTransaction() && context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction])
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ON CLUSTER queries inside transactions are not supported");
 
     /// Remove FORMAT <fmt> and INTO OUTFILE <file> if exists
@@ -82,7 +90,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Distributed execution is not supported for such DDL queries");
     }
 
-    if (!context->getSettingsRef().allow_distributed_ddl)
+    if (!context->getSettingsRef()[Setting::allow_distributed_ddl])
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Distributed DDL queries are prohibited for the user");
 
     if (const auto * query_alter = query_ptr->as<ASTAlterQuery>())
@@ -249,14 +257,14 @@ private:
 BlockIO getDistributedDDLStatus(const String & node_path, const DDLLogEntry & entry, ContextPtr context, const Strings * hosts_to_wait)
 {
     BlockIO io;
-    if (context->getSettingsRef().distributed_ddl_task_timeout == 0)
+    if (context->getSettingsRef()[Setting::distributed_ddl_task_timeout] == 0)
         return io;
 
     auto source = std::make_shared<DDLQueryStatusSource>(node_path, entry, context, hosts_to_wait);
     io.pipeline = QueryPipeline(std::move(source));
 
-    if (context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE ||
-        context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE_ONLY_ACTIVE)
+    if (context->getSettingsRef()[Setting::distributed_ddl_output_mode] == DistributedDDLOutputMode::NONE
+        || context->getSettingsRef()[Setting::distributed_ddl_output_mode] == DistributedDDLOutputMode::NONE_ONLY_ACTIVE)
         io.pipeline.complete(std::make_shared<EmptySink>(io.pipeline.getHeader()));
 
     return io;
@@ -264,7 +272,7 @@ BlockIO getDistributedDDLStatus(const String & node_path, const DDLLogEntry & en
 
 Block DDLQueryStatusSource::getSampleBlock(ContextPtr context_, bool hosts_to_wait)
 {
-    auto output_mode = context_->getSettingsRef().distributed_ddl_output_mode;
+    auto output_mode = context_->getSettingsRef()[Setting::distributed_ddl_output_mode];
 
     auto maybe_make_nullable = [&](const DataTypePtr & type) -> DataTypePtr
     {
@@ -317,7 +325,7 @@ DDLQueryStatusSource::DDLQueryStatusSource(
     , watch(CLOCK_MONOTONIC_COARSE)
     , log(getLogger("DDLQueryStatusSource"))
 {
-    auto output_mode = context->getSettingsRef().distributed_ddl_output_mode;
+    auto output_mode = context->getSettingsRef()[Setting::distributed_ddl_output_mode];
     throw_on_timeout = output_mode == DistributedDDLOutputMode::THROW || output_mode == DistributedDDLOutputMode::NONE;
     throw_on_timeout_only_active = output_mode == DistributedDDLOutputMode::THROW_ONLY_ACTIVE || output_mode == DistributedDDLOutputMode::NONE_ONLY_ACTIVE;
 
@@ -336,7 +344,7 @@ DDLQueryStatusSource::DDLQueryStatusSource(
     }
 
     addTotalRowsApprox(waiting_hosts.size());
-    timeout_seconds = context->getSettingsRef().distributed_ddl_task_timeout;
+    timeout_seconds = context->getSettingsRef()[Setting::distributed_ddl_task_timeout];
 }
 
 std::pair<String, UInt16> DDLQueryStatusSource::parseHostAndPort(const String & host_id) const
@@ -432,7 +440,7 @@ Chunk DDLQueryStatusSource::generate()
         return {};
 
     String node_to_wait = "finished";
-    if (is_replicated_database && context->getSettingsRef().database_replicated_enforce_synchronous_settings)
+    if (is_replicated_database && context->getSettingsRef()[Setting::database_replicated_enforce_synchronous_settings])
         node_to_wait = "synced";
 
     size_t try_number = 0;
@@ -567,7 +575,7 @@ Chunk DDLQueryStatusSource::generate()
 
 
             if (status.code != 0 && !first_exception
-                && context->getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW)
+                && context->getSettingsRef()[Setting::distributed_ddl_output_mode] != DistributedDDLOutputMode::NEVER_THROW)
             {
                 if (is_replicated_database)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "There was an error on {}: {} (probably it's a bug)", host_id, status.message);

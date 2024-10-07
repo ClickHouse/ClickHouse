@@ -35,6 +35,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool iceberg_engine_ignore_schema_evolution;
+}
 
 namespace ErrorCodes
 {
@@ -394,7 +398,8 @@ DataLakeMetadataPtr IcebergMetadata::create(
     Poco::JSON::Object::Ptr object = json.extract<Poco::JSON::Object::Ptr>();
 
     auto format_version = object->getValue<int>("format-version");
-    auto [schema, schema_id] = parseTableSchema(object, format_version, local_context->getSettingsRef().iceberg_engine_ignore_schema_evolution);
+    auto [schema, schema_id]
+        = parseTableSchema(object, format_version, local_context->getSettingsRef()[Setting::iceberg_engine_ignore_schema_evolution]);
 
     auto current_snapshot_id = object->getValue<Int64>("current-snapshot-id");
     auto snapshots = object->get("snapshots").extract<Poco::JSON::Array::Ptr>();
@@ -493,7 +498,8 @@ Strings IcebergMetadata::getDataFiles() const
         Poco::JSON::Parser parser;
         Poco::Dynamic::Var json = parser.parse(schema_json_string);
         Poco::JSON::Object::Ptr schema_object = json.extract<Poco::JSON::Object::Ptr>();
-        if (!context->getSettingsRef().iceberg_engine_ignore_schema_evolution && schema_object->getValue<int>("schema-id") != current_schema_id)
+        if (!context->getSettingsRef()[Setting::iceberg_engine_ignore_schema_evolution]
+            && schema_object->getValue<int>("schema-id") != current_schema_id)
             throw Exception(
                 ErrorCodes::UNSUPPORTED_METHOD,
                 "Cannot read Iceberg table: the table schema has been changed at least 1 time, reading tables with evolved schema is not "

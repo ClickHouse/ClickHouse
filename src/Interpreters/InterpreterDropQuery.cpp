@@ -30,6 +30,14 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool check_referential_table_dependencies;
+    extern const SettingsBool check_table_dependencies;
+    extern const SettingsBool database_atomic_wait_for_drop_and_detach_synchronously;
+    extern const SettingsFloat ignore_drop_queries_probability;
+    extern const SettingsSeconds lock_acquire_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -80,7 +88,7 @@ BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_p
         return executeDDLQueryOnCluster(current_query_ptr, getContext(), params);
     }
 
-    if (getContext()->getSettingsRef().database_atomic_wait_for_drop_and_detach_synchronously)
+    if (getContext()->getSettingsRef()[Setting::database_atomic_wait_for_drop_and_detach_synchronously])
         drop.sync = true;
 
     if (drop.table)
@@ -165,7 +173,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 "Table {} is not a Dictionary",
                 table_id.getNameForLogs());
 
-        if (settings.ignore_drop_queries_probability != 0 && ast_drop_query.kind == ASTDropQuery::Kind::Drop && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= settings.ignore_drop_queries_probability)
+        if (settings[Setting::ignore_drop_queries_probability] != 0 && ast_drop_query.kind == ASTDropQuery::Kind::Drop
+            && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= settings[Setting::ignore_drop_queries_probability])
         {
             ast_drop_query.sync = false;
             if (table->storesDataOnDisk())
@@ -239,13 +248,13 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             TableExclusiveLockHolder table_lock;
 
             if (database->getUUID() == UUIDHelpers::Nil)
-                table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
+                table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
 
             if (query.permanently)
             {
                 /// Server may fail to restart of DETACH PERMANENTLY if table has dependent ones
-                bool check_ref_deps = getContext()->getSettingsRef().check_referential_table_dependencies;
-                bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef().check_table_dependencies;
+                bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
+                bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
                 DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
                 /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
                 database->detachTablePermanently(context_, table_id.table_name);
@@ -271,7 +280,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             /// We don't need any lock for ReplicatedMergeTree and for simple MergeTree
             /// For the rest of tables types exclusive lock is needed
             if (!std::dynamic_pointer_cast<MergeTreeData>(table))
-                table_excl_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
+                table_excl_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
 
             auto metadata_snapshot = table->getInMemoryMetadataPtr();
             /// Drop table data, don't touch metadata
@@ -291,15 +300,15 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 table->checkTableCanBeDropped(context_);
 
             /// Check dependencies before shutting table down
-            bool check_ref_deps = getContext()->getSettingsRef().check_referential_table_dependencies;
-            bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef().check_table_dependencies;
+            bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
+            bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
             DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
 
             table->flushAndShutdown(true);
 
             TableExclusiveLockHolder table_lock;
             if (database->getUUID() == UUIDHelpers::Nil)
-                table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
+                table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
 
             DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
             database->dropTable(context_, table_id.table_name, query.sync);
@@ -331,7 +340,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
             if (kind == ASTDropQuery::Kind::Truncate)
             {
                 auto table_lock
-                    = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
+                    = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
                 /// Drop table data, don't touch metadata
                 auto metadata_snapshot = table->getInMemoryMetadataPtr();
                 table->truncate(current_query_ptr, metadata_snapshot, getContext(), table_lock);

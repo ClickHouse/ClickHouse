@@ -52,6 +52,12 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool implicit_transaction;
+    extern const SettingsUInt64 readonly;
+    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
+}
 
 namespace ErrorCodes
 {
@@ -115,7 +121,7 @@ DDLWorker::DDLWorker(
             context->setSetting("profile", config->getString(prefix + ".profile"));
     }
 
-    if (context->getSettingsRef().readonly)
+    if (context->getSettingsRef()[Setting::readonly])
     {
         LOG_WARNING(log, "Distributed DDL worker is run with readonly settings, it will not be able to execute DDL queries Set appropriate system_profile or distributed_ddl.profile to fix this.");
     }
@@ -170,7 +176,7 @@ ZooKeeperPtr DDLWorker::getAndSetZooKeeper()
 }
 
 
-DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper)
+DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper, bool /*dry_run*/)
 {
     if (entries_to_skip.contains(entry_name))
         return {};
@@ -378,7 +384,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     {
         /// We should return true if some invariants are violated.
         String reason;
-        auto task = initAndCheckTask(entry_name, reason, zookeeper);
+        auto task = initAndCheckTask(entry_name, reason, zookeeper, /*dry_run*/ true);
         bool maybe_currently_processing = current_tasks.end() != std::find_if(current_tasks.begin(), current_tasks.end(), [&](const auto & t)
         {
             return t->entry_name == entry_name;
@@ -412,7 +418,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         LOG_TRACE(log, "Checking task {}", entry_name);
 
         String reason;
-        auto task = initAndCheckTask(entry_name, reason, zookeeper);
+        auto task = initAndCheckTask(entry_name, reason, zookeeper, /*dry_run*/ false);
         if (task)
         {
             queue_fully_loaded_after_initialization_debug_helper = true;
@@ -483,9 +489,9 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
         auto query_context = task.makeQueryContext(context, zookeeper);
 
         chassert(!query_context->getCurrentTransaction());
-        if (query_context->getSettingsRef().implicit_transaction)
+        if (query_context->getSettingsRef()[Setting::implicit_transaction])
         {
-            if (query_context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
+            if (query_context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction])
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot begin an implicit transaction inside distributed DDL query");
             query_context->setSetting("implicit_transaction", Field{0});
         }
@@ -1039,7 +1045,7 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
     if (is_currently_deleting)
     {
         cleanup_event->set();
-        throw Exception(ErrorCodes::UNFINISHED, "Cannot create status dirs for {}, "
+        throw Exception(ErrorCodes::UNFINISHED, "Cannot create znodes (status) for {} in [Zoo]Keeper, "
                         "most likely because someone is deleting it concurrently", node_path);
     }
 

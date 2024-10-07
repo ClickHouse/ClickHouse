@@ -36,6 +36,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool transform_null_in;
+}
 
 namespace ErrorCodes
 {
@@ -818,7 +822,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
         if (left_tuple_type && left_tuple_type->getElements().size() != 1)
             set_element_types = left_tuple_type->getElements();
 
-        set_element_types = Set::getElementTypes(std::move(set_element_types), planner_context->getQueryContext()->getSettingsRef().transform_null_in);
+        set_element_types
+            = Set::getElementTypes(std::move(set_element_types), planner_context->getQueryContext()->getSettingsRef()[Setting::transform_null_in]);
         set = planner_context->getPreparedSets().findTuple(set_key, set_element_types);
     }
     else

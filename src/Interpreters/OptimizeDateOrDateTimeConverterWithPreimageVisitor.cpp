@@ -127,7 +127,7 @@ void OptimizeDateOrDateTimeConverterWithPreimageMatcher::visit(const ASTFunction
     size_t func_id = function.arguments->children.size();
 
     for (size_t i = 0; i < function.arguments->children.size(); i++)
-        if (const auto * func = function.arguments->children[i]->as<ASTFunction>())
+        if (const auto * /*func*/ _ = function.arguments->children[i]->as<ASTFunction>())
             func_id = i;
 
     if (func_id == function.arguments->children.size())

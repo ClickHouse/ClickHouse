@@ -298,12 +298,13 @@ public:
                     Field value = values[col_idx];
 
                     /// Compatibility with previous versions.
-                    if (value.getType() == Field::Types::Decimal32)
+                    WhichDataType value_type(values_types[col_idx]);
+                    if (value_type.isDecimal32())
                     {
                         auto source = value.safeGet<DecimalField<Decimal32>>();
                         value = DecimalField<Decimal128>(source.getValue(), source.getScale());
                     }
-                    else if (value.getType() == Field::Types::Decimal64)
+                    else if (value_type.isDecimal64())
                     {
                         auto source = value.safeGet<DecimalField<Decimal64>>();
                         value = DecimalField<Decimal128>(source.getValue(), source.getScale());
@@ -545,7 +546,28 @@ public:
         }
     }
 
-    bool keepKey(const Field & key) const { return keys_to_keep.contains(key); }
+    bool keepKey(const Field & key) const
+    {
+        if (keys_to_keep.contains(key))
+            return true;
+
+        // Determine whether the numerical value of the key can have both types (UInt or Int),
+        // and use the other type with the same numerical value for keepKey verification.
+        if (key.getType() == Field::Types::UInt64)
+        {
+            const auto & value = key.safeGet<const UInt64 &>();
+            if (value <= std::numeric_limits<Int64>::max())
+                return keys_to_keep.contains(Field(Int64(value)));
+        }
+        else if (key.getType() == Field::Types::Int64)
+        {
+            const auto & value = key.safeGet<const Int64 &>();
+            if (value >= 0)
+                return keys_to_keep.contains(Field(UInt64(value)));
+        }
+
+        return false;
+    }
 };
 
 

@@ -1667,8 +1667,18 @@ public:
                 if (!mergeElement())
                     return false;
 
-                to_remove = makeASTFunction("regexpQuoteMeta", elements[0]);
-                elements.clear();
+                /// Trimming an empty string is a no-op.
+                ASTLiteral * ast_literal = typeid_cast<ASTLiteral *>(elements[0].get());
+                if (ast_literal && ast_literal->value.getType() == Field::Types::String && ast_literal->value.safeGet<String>().empty())
+                {
+                    noop = true;
+                }
+                else
+                {
+                    to_remove = makeASTFunction("regexpQuoteMeta", elements[0]);
+                    elements.clear();
+                }
+
                 state = 2;
             }
         }
@@ -1680,15 +1690,20 @@ public:
                 if (!mergeElement())
                     return false;
 
-                ASTPtr pattern_node;
-
+                if (noop)
+                {
+                    /// The operation does nothing.
+                }
                 if (char_override)
                 {
+                    ASTPtr pattern_node;
+
                     auto pattern_func_node = std::make_shared<ASTFunction>();
                     auto pattern_list_args = std::make_shared<ASTExpressionList>();
                     if (trim_left && trim_right)
                     {
-                        pattern_list_args->children = {
+                        pattern_list_args->children =
+                        {
                             std::make_shared<ASTLiteral>("^["),
                             to_remove,
                             std::make_shared<ASTLiteral>("]+|["),
@@ -1701,7 +1716,8 @@ public:
                     {
                         if (trim_left)
                         {
-                            pattern_list_args->children = {
+                            pattern_list_args->children =
+                            {
                                 std::make_shared<ASTLiteral>("^["),
                                 to_remove,
                                 std::make_shared<ASTLiteral>("]+")
@@ -1710,7 +1726,8 @@ public:
                         else
                         {
                             /// trim_right == false not possible
-                            pattern_list_args->children = {
+                            pattern_list_args->children =
+                            {
                                 std::make_shared<ASTLiteral>("["),
                                 to_remove,
                                 std::make_shared<ASTLiteral>("]+$")
@@ -1724,6 +1741,9 @@ public:
                     pattern_func_node->children.push_back(pattern_func_node->arguments);
 
                     pattern_node = std::move(pattern_func_node);
+
+                    elements.push_back(pattern_node);
+                    elements.push_back(std::make_shared<ASTLiteral>(""));
                 }
                 else
                 {
@@ -1740,12 +1760,6 @@ public:
                     }
                 }
 
-                if (char_override)
-                {
-                    elements.push_back(pattern_node);
-                    elements.push_back(std::make_shared<ASTLiteral>(""));
-                }
-
                 finished = true;
             }
         }
@@ -1756,7 +1770,10 @@ public:
 protected:
     bool getResultImpl(ASTPtr & node) override
     {
-        node = makeASTFunction(function_name, std::move(elements));
+        if (noop)
+            node = std::move(elements.at(1));
+        else
+            node = makeASTFunction(function_name, std::move(elements));
         return true;
     }
 
@@ -1764,6 +1781,7 @@ private:
     bool trim_left;
     bool trim_right;
     bool char_override = false;
+    bool noop = false;
 
     ASTPtr to_remove;
     String function_name;

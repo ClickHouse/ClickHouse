@@ -71,6 +71,13 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool insert_allow_materialized_columns;
+    extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsUInt64 readonly;
+}
 
 namespace ErrorCodes
 {
@@ -251,7 +258,7 @@ void StorageBuffer::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    bool allow_experimental_analyzer = local_context->getSettingsRef().allow_experimental_analyzer;
+    bool allow_experimental_analyzer = local_context->getSettingsRef()[Setting::allow_experimental_analyzer];
 
     if (allow_experimental_analyzer && processed_stage > QueryProcessingStage::FetchColumns)
     {
@@ -278,7 +285,8 @@ void StorageBuffer::read(
 
     if (auto destination = getDestinationTable())
     {
-        auto destination_lock = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+        auto destination_lock
+            = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
         auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr();
         auto destination_snapshot = destination->getStorageSnapshot(destination_metadata_snapshot, local_context);
@@ -761,7 +769,7 @@ SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMet
 
 void StorageBuffer::startup()
 {
-    if (getContext()->getSettingsRef().readonly)
+    if (getContext()->getSettingsRef()[Setting::readonly])
     {
         LOG_WARNING(log, "Storage {} is run with readonly settings, it will not be able to insert data. Set appropriate buffer_profile to fix this.", getName());
     }
@@ -1264,7 +1272,7 @@ void registerStorageBuffer(StorageFactory & factory)
             max,
             flush,
             destination_id,
-            static_cast<bool>(args.getLocalContext()->getSettingsRef().insert_allow_materialized_columns));
+            static_cast<bool>(args.getLocalContext()->getSettingsRef()[Setting::insert_allow_materialized_columns]));
     },
     {
         .supports_parallel_insert = true,

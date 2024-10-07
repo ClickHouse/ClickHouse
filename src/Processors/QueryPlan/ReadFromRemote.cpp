@@ -26,6 +26,16 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool async_query_sending_for_remote;
+    extern const SettingsBool async_socket_for_remote;
+    extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsBool extremes;
+    extern const SettingsSeconds max_execution_time;
+    extern const SettingsNonZeroUInt64 max_parallel_replicas;
+    extern const SettingsUInt64 parallel_replicas_mark_segment_size;
+}
 
 namespace ErrorCodes
 {
@@ -62,7 +72,7 @@ static void addConvertingActions(Pipe & pipe, const Block & header, bool use_pos
     });
 }
 
-static void enforceSorting(QueryProcessingStage::Enum stage, DataStream & output_stream, Context & context, SortDescription output_sort_description)
+static void enableMemoryBoundMerging(QueryProcessingStage::Enum stage, Context & context)
 {
     if (stage != QueryProcessingStage::WithMergeableState)
         throw Exception(
@@ -71,9 +81,6 @@ static void enforceSorting(QueryProcessingStage::Enum stage, DataStream & output
             QueryProcessingStage::toString(stage));
 
     context.setSetting("enable_memory_bound_merging_of_aggregation_results", true);
-
-    output_stream.sort_description = std::move(output_sort_description);
-    output_stream.sort_scope = DataStream::SortScope::Stream;
 }
 
 static void enforceAggregationInOrder(QueryProcessingStage::Enum stage, Context & context)
@@ -94,7 +101,8 @@ static String formattedAST(const ASTPtr & ast)
         return {};
 
     WriteBufferFromOwnString buf;
-    IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true, /*hilite*/ false, /*always_quote_identifiers*/ true);
+    IAST::FormatSettings ast_format_settings(
+        /*ostr_=*/buf, /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
     ast->format(ast_format_settings);
     return buf.str();
 }
@@ -129,9 +137,9 @@ ReadFromRemote::ReadFromRemote(
 {
 }
 
-void ReadFromRemote::enforceSorting(SortDescription output_sort_description)
+void ReadFromRemote::enableMemoryBoundMerging()
 {
-    DB::enforceSorting(stage, *output_stream, *context, output_sort_description);
+    DB::enableMemoryBoundMerging(stage, *context);
 }
 
 void ReadFromRemote::enforceAggregationInOrder()
@@ -144,13 +152,13 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
     bool add_extremes = false;
-    bool async_read = context->getSettingsRef().async_socket_for_remote;
-    const bool async_query_sending = context->getSettingsRef().async_query_sending_for_remote;
+    bool async_read = context->getSettingsRef()[Setting::async_socket_for_remote];
+    const bool async_query_sending = context->getSettingsRef()[Setting::async_query_sending_for_remote];
 
     if (stage == QueryProcessingStage::Complete)
     {
         add_totals = shard.query->as<ASTSelectQuery &>().group_by_with_totals;
-        add_extremes = context->getSettingsRef().extremes;
+        add_extremes = context->getSettingsRef()[Setting::extremes];
     }
 
     auto lazily_create_stream = [
@@ -164,7 +172,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
     {
         auto current_settings = my_context->getSettingsRef();
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings)
-                            .getSaturated(current_settings.max_execution_time);
+                            .getSaturated(current_settings[Setting::max_execution_time]);
 
         std::vector<ConnectionPoolWithFailover::TryResult> try_results;
         try
@@ -231,12 +239,12 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
     bool add_extremes = false;
-    bool async_read = context->getSettingsRef().async_socket_for_remote;
-    bool async_query_sending = context->getSettingsRef().async_query_sending_for_remote;
+    bool async_read = context->getSettingsRef()[Setting::async_socket_for_remote];
+    bool async_query_sending = context->getSettingsRef()[Setting::async_query_sending_for_remote];
     if (stage == QueryProcessingStage::Complete)
     {
         add_totals = shard.query->as<ASTSelectQuery &>().group_by_with_totals;
-        add_extremes = context->getSettingsRef().extremes;
+        add_extremes = context->getSettingsRef()[Setting::extremes];
     }
 
     scalars["_shard_num"]
@@ -244,9 +252,9 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
 
     if (context->canUseTaskBasedParallelReplicas())
     {
-        if (context->getSettingsRef().cluster_for_parallel_replicas.changed)
+        if (context->getSettingsRef()[Setting::cluster_for_parallel_replicas].changed)
         {
-            const String cluster_for_parallel_replicas = context->getSettingsRef().cluster_for_parallel_replicas;
+            const String cluster_for_parallel_replicas = context->getSettingsRef()[Setting::cluster_for_parallel_replicas];
             if (cluster_for_parallel_replicas != cluster_name)
                 LOG_INFO(
                     log,
@@ -405,9 +413,9 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     setStepDescription(std::move(description));
 }
 
-void ReadFromParallelRemoteReplicasStep::enforceSorting(SortDescription output_sort_description)
+void ReadFromParallelRemoteReplicasStep::enableMemoryBoundMerging()
 {
-    DB::enforceSorting(stage, *output_stream, *context, output_sort_description);
+    DB::enableMemoryBoundMerging(stage, *context);
 }
 
 void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder()
@@ -458,13 +466,13 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
     bool add_extremes = false;
-    bool async_read = context->getSettingsRef().async_socket_for_remote;
-    bool async_query_sending = context->getSettingsRef().async_query_sending_for_remote;
+    bool async_read = context->getSettingsRef()[Setting::async_socket_for_remote];
+    bool async_query_sending = context->getSettingsRef()[Setting::async_query_sending_for_remote];
 
     if (stage == QueryProcessingStage::Complete)
     {
         add_totals = query_ast->as<ASTSelectQuery &>().group_by_with_totals;
-        add_extremes = context->getSettingsRef().extremes;
+        add_extremes = context->getSettingsRef()[Setting::extremes];
     }
 
     String query_string = formattedAST(query_ast);

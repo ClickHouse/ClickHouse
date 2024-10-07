@@ -392,7 +392,7 @@ size_t DiskEncrypted::getFileSize(const String & path) const
 UInt128 DiskEncrypted::getEncryptedFileIV(const String & path) const
 {
     auto wrapped_path = wrappedPath(path);
-    auto read_buffer = delegate->readFile(wrapped_path, ReadSettings().adjustBufferSize(FileEncryption::Header::kSize));
+    auto read_buffer = delegate->readFile(wrapped_path, getReadSettings().adjustBufferSize(FileEncryption::Header::kSize));
     if (read_buffer->eof())
         return 0;
     auto header = readHeader(*read_buffer);

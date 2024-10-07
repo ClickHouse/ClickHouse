@@ -1,3 +1,4 @@
+#include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/JSONAsStringRowInputFormat.h>
 #include <Formats/JSONUtils.h>
 #include <DataTypes/DataTypeNullable.h>

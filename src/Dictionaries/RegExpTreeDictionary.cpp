@@ -41,6 +41,13 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool dictionary_use_async_executor;
+    extern const SettingsBool regexp_dict_allow_hyperscan;
+    extern const SettingsBool regexp_dict_flag_case_insensitive;
+    extern const SettingsBool regexp_dict_flag_dotall;
+}
 
 namespace ErrorCodes
 {
@@ -990,7 +997,8 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
 
         auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
         const auto * clickhouse_source = typeid_cast<const ClickHouseDictionarySource *>(source_ptr.get());
-        bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && context->getSettingsRef().dictionary_use_async_executor;
+        bool use_async_executor
+            = clickhouse_source && clickhouse_source->isLocal() && context->getSettingsRef()[Setting::dictionary_use_async_executor];
 
         RegExpTreeDictionary::Configuration configuration{
             .require_nonempty = config.getBool(config_prefix + ".require_nonempty", false),
@@ -1003,9 +1011,9 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
             dict_struct,
             std::move(source_ptr),
             configuration,
-            context->getSettingsRef().regexp_dict_allow_hyperscan,
-            context->getSettingsRef().regexp_dict_flag_case_insensitive,
-            context->getSettingsRef().regexp_dict_flag_dotall);
+            context->getSettingsRef()[Setting::regexp_dict_allow_hyperscan],
+            context->getSettingsRef()[Setting::regexp_dict_flag_case_insensitive],
+            context->getSettingsRef()[Setting::regexp_dict_flag_dotall]);
     };
 
     factory.registerLayout("regexp_tree", create_layout, true);

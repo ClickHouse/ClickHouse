@@ -22,6 +22,17 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool enable_lightweight_delete;
+    extern const SettingsUInt64 lightweight_deletes_sync;
+    extern const SettingsSeconds lock_acquire_timeout;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsLightweightMutationProjectionMode lightweight_mutation_projection_mode;
+}
 
 namespace ErrorCodes
 {
@@ -64,7 +75,7 @@ BlockIO InterpreterDeleteQuery::execute()
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext());
     }
 
-    auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
+    auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     if (table->supportsDelete())
@@ -86,7 +97,7 @@ BlockIO InterpreterDeleteQuery::execute()
     }
     else if (table->supportsLightweightDelete())
     {
-        if (!getContext()->getSettingsRef().enable_lightweight_delete)
+        if (!getContext()->getSettingsRef()[Setting::enable_lightweight_delete])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Lightweight delete mutate is disabled. "
                             "Set `enable_lightweight_delete` setting to enable it");
@@ -94,7 +105,7 @@ BlockIO InterpreterDeleteQuery::execute()
         if (metadata_snapshot->hasProjections())
         {
             if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(table.get()))
-                if (merge_tree_data->getSettings()->lightweight_mutation_projection_mode == LightweightMutationProjectionMode::THROW)
+                if ((*merge_tree_data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode] == LightweightMutationProjectionMode::THROW)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "DELETE query is not allowed for table {} because as it has projections and setting "
                         "lightweight_mutation_projection_mode is set to THROW. "
@@ -122,7 +133,7 @@ BlockIO InterpreterDeleteQuery::execute()
             DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
         auto context = Context::createCopy(getContext());
-        context->setSetting("mutations_sync", Field(context->getSettingsRef().lightweight_deletes_sync));
+        context->setSetting("mutations_sync", Field(context->getSettingsRef()[Setting::lightweight_deletes_sync]));
         InterpreterAlterQuery alter_interpreter(alter_ast, context);
         return alter_interpreter.execute();
     }

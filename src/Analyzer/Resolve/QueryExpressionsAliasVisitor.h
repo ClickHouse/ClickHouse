@@ -45,7 +45,7 @@ public:
 
     bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child)
     {
-        if (auto * lambda_node = child->as<LambdaNode>())
+        if (auto * /*lambda_node*/ _ = child->as<LambdaNode>())
         {
             updateAliasesIfNeeded(child, true /*is_lambda_node*/);
             return false;

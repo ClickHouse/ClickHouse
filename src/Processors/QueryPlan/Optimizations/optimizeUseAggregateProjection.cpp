@@ -27,6 +27,14 @@
 #include <Storages/ProjectionsDescription.h>
 #include <Parsers/queryToString.h>
 
+namespace DB
+{
+namespace Setting
+{
+    extern const SettingsString preferred_optimize_projection_name;
+}
+}
+
 namespace DB::QueryPlanOptimizations
 {
 
@@ -513,7 +521,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
             agg_projections.begin(),
             agg_projections.end(),
             [&](const auto * projection)
-            { return projection->name == context->getSettingsRef().preferred_optimize_projection_name.value; });
+            { return projection->name == context->getSettingsRef()[Setting::preferred_optimize_projection_name].value; });
 
         if (it != agg_projections.end())
         {
@@ -544,7 +552,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
 static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
 {
     IQueryPlanStep * step = node.step.get();
-    if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
+    if (auto * /*reading*/ _ = typeid_cast<ReadFromMergeTree *>(step))
         return &node;
 
     if (node.children.size() != 1)

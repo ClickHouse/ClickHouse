@@ -634,6 +634,8 @@ static void buildORCSearchArgumentImpl(
         }
         /// There is no optimization with space-filling curves for ORC.
         case KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
+        /// There is no optimization with pointInPolygon for ORC.
+        case KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON:
         case KeyCondition::RPNElement::FUNCTION_UNKNOWN:
         {
             builder.literal(orc::TruthValue::YES_NO_NULL);
@@ -844,7 +846,10 @@ static void updateIncludeTypeIds(
 }
 
 NativeORCBlockInputFormat::NativeORCBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
-    : IInputFormat(std::move(header_), &in_), format_settings(format_settings_), skip_stripes(format_settings.orc.skip_stripes)
+    : IInputFormat(std::move(header_), &in_)
+    , block_missing_values(getPort().getHeader().columns())
+    , format_settings(format_settings_)
+    , skip_stripes(format_settings.orc.skip_stripes)
 {
 }
 
@@ -973,9 +978,9 @@ void NativeORCBlockInputFormat::resetParser()
     block_missing_values.clear();
 }
 
-const BlockMissingValues & NativeORCBlockInputFormat::getMissingValues() const
+const BlockMissingValues * NativeORCBlockInputFormat::getMissingValues() const
 {
-    return block_missing_values;
+    return &block_missing_values;
 }
 
 NativeORCSchemaReader::NativeORCSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
