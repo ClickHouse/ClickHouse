@@ -729,7 +729,7 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::deserializeSnapshotB
 {
     const auto & [snapshot_path, snapshot_disk, size] = *existing_snapshots.at(up_to_log_idx);
     WriteBufferFromNuraftBuffer writer;
-    auto reader = snapshot_disk->readFile(snapshot_path);
+    auto reader = snapshot_disk->readFile(snapshot_path, getReadSettings());
     copyData(*reader, writer);
     return writer.getBuffer();
 }

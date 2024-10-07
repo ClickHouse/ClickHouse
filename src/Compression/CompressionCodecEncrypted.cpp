@@ -5,6 +5,7 @@
 #include <IO/VarInt.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionCodecEncrypted.h>
+#include <Parsers/IAST.h>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/safe_cast.h>
