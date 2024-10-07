@@ -75,7 +75,6 @@ public:
     size_t getDimensions() const;
     String getColumnName() const;
     Info::DistanceFunction getDistanceFunction() const;
-    UInt64 getIndexGranularity() const { return index_granularity; }
     UInt64 getLimit() const;
 
 private:
@@ -155,9 +154,6 @@ private:
 
     /// true if we have one of two supported query types
     std::optional<Info> query_information;
-
-    // Get from settings ANNIndex parameters
-    const UInt64 index_granularity;
 
     /// only queries with a lower limit can be considered to avoid memory overflow
     const UInt64 max_limit_for_ann_queries;

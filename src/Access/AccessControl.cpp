@@ -22,8 +22,10 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
 #include <base/defines.h>
+#include <base/range.h>
 #include <IO/Operators.h>
 #include <Common/re2.h>
+
 #include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
 #include <filesystem>
@@ -132,8 +134,8 @@ public:
                             "' registered for user-defined settings",
                             String{setting_name}, boost::algorithm::join(registered_prefixes, "' or '"));
         }
-        else
-            BaseSettingsHelpers::throwSettingNotFound(setting_name);
+
+        throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}'", String{setting_name});
     }
 
 private:
@@ -828,8 +830,7 @@ std::shared_ptr<const EnabledQuota> AccessControl::getAuthenticationQuota(
                                             quota_key,
                                             throw_if_client_key_empty);
     }
-    else
-        return nullptr;
+    return nullptr;
 }
 
 

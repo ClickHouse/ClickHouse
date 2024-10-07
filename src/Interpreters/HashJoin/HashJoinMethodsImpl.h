@@ -307,11 +307,9 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchNu
         return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, true>(
             std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags);
     }
-    else
-    {
-        return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, false>(
-            std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags);
-    }
+
+    return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, false>(
+        std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags);
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
@@ -788,8 +786,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
                             selected_right_row_it = selected_right_row_it + row_replicate_offset[i] - replicated_row;
                             break;
                         }
-                        else
-                            ++selected_right_row_it;
+                        ++selected_right_row_it;
                     }
                 }
             }

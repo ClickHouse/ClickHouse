@@ -68,12 +68,12 @@ RemoteInserter::RemoteInserter(
             header = packet.block;
             break;
         }
-        else if (Protocol::Server::Exception == packet.type)
+        if (Protocol::Server::Exception == packet.type)
         {
             packet.exception->rethrow();
             break;
         }
-        else if (Protocol::Server::Log == packet.type)
+        if (Protocol::Server::Log == packet.type)
         {
             /// Pass logs from remote server to client
             if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
@@ -133,7 +133,7 @@ void RemoteInserter::onFinish()
 
         if (Protocol::Server::EndOfStream == packet.type)
             break;
-        else if (Protocol::Server::Exception == packet.type)
+        if (Protocol::Server::Exception == packet.type)
             packet.exception->rethrow();
         else if (Protocol::Server::Log == packet.type || Protocol::Server::TimezoneUpdate == packet.type)
         {
