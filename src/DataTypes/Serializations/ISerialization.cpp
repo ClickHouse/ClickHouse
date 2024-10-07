@@ -42,10 +42,9 @@ ISerialization::Kind ISerialization::stringToKind(const String & str)
 {
     if (str == "Default")
         return Kind::DEFAULT;
-    else if (str == "Sparse")
+    if (str == "Sparse")
         return Kind::SPARSE;
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind '{}'", str);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind '{}'", str);
 }
 
 const std::set<SubstreamType> ISerialization::Substream::named_types
@@ -418,6 +417,21 @@ bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPat
 
     size_t last_elem = prefix_len - 1;
     return path[last_elem].type == Substream::VariantElementNullMap;
+}
+
+bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
+{
+    if (prefix_len == 0 || prefix_len > path.size())
+        return false;
+
+    for (size_t i = 0; i != prefix_len; ++i)
+    {
+        if (path[i].type == SubstreamType::DynamicData || path[i].type == SubstreamType::DynamicStructure
+            || path[i].type == SubstreamType::ObjectData || path[i].type == SubstreamType::ObjectStructure)
+            return true;
+    }
+
+    return false;
 }
 
 ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)

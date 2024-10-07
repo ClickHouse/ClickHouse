@@ -31,7 +31,7 @@ $CLICKHOUSE_CLIENT -q "SELECT name,
                               splitByChar('/', metadata_path)[-2] as uuid_path, ((splitByChar('/', metadata_path)[-3] as metadata) = substr(uuid_path, 1, 3)) OR metadata='metadata'
                               FROM system.databases WHERE name LIKE '${CLICKHOUSE_DATABASE}_%'" | sed "s/$uuid_db_1/00001114-1000-4000-8000-000000000001/g" | sed "s/$uuid_db_2/00001114-1000-4000-8000-000000000002/g"
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
 CREATE TABLE ${DATABASE_1}.mt_tmp (n UInt64) ENGINE=MergeTree() ORDER BY tuple();
 INSERT INTO ${DATABASE_1}.mt_tmp SELECT * FROM numbers(100);
 CREATE TABLE ${DATABASE_3}.mt (n UInt64) ENGINE=MergeTree() ORDER BY tuple() PARTITION BY (n % 5);
@@ -65,7 +65,7 @@ while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE que
     sleep 0.1
 done
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
 RENAME TABLE ${DATABASE_1}.mt TO ${DATABASE_1}.mt_tmp;
 RENAME TABLE ${DATABASE_1}.mt_tmp TO ${DATABASE_2}.mt_tmp;
 EXCHANGE TABLES ${DATABASE_2}.mt AND ${DATABASE_2}.mt_tmp;
@@ -79,7 +79,7 @@ uuid_mt1=$($CLICKHOUSE_CLIENT -q "SELECT uuid FROM system.tables WHERE database=
 $CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=1 -q "SHOW CREATE TABLE ${DATABASE_1}.mt" | sed "s/$uuid_mt1/00001114-0000-4000-8000-000000000001/g"
 $CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=1 -q "SHOW CREATE TABLE ${DATABASE_2}.mt" | sed "s/$explicit_uuid/00001114-0000-4000-8000-000000000002/g"
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
 DROP TABLE ${DATABASE_1}.mt SETTINGS database_atomic_wait_for_drop_and_detach_synchronously=0;
 CREATE TABLE ${DATABASE_1}.mt (s String) ENGINE=Log();
 INSERT INTO ${DATABASE_1}.mt SELECT 's' || toString(number) FROM numbers(5);

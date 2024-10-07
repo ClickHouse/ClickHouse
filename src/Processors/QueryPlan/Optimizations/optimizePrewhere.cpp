@@ -12,6 +12,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool optimize_move_to_prewhere;
+    extern const SettingsBool optimize_move_to_prewhere_if_final;
+}
 
 namespace QueryPlanOptimizations
 {
@@ -69,8 +74,8 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     const auto & settings = context->getSettingsRef();
 
     bool is_final = source_step_with_filter->isQueryWithFinal();
-    bool optimize_move_to_prewhere = settings.optimize_move_to_prewhere && (!is_final || settings.optimize_move_to_prewhere_if_final);
-    if (!optimize_move_to_prewhere)
+    bool optimize = settings[Setting::optimize_move_to_prewhere] && (!is_final || settings[Setting::optimize_move_to_prewhere_if_final]);
+    if (!optimize)
         return;
 
     const auto & storage_metadata = storage_snapshot->metadata;

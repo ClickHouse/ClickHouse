@@ -1,10 +1,10 @@
 import random
 import re
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
-from typing import Dict, Optional, List
+from typing import Dict, List, Optional
 
+from ci_definitions import *  # pylint:disable=unused-wildcard-import
 from ci_utils import Utils
-from ci_definitions import *
 
 
 class CI:
@@ -17,24 +17,24 @@ class CI:
 
     # reimport types to CI class so that they visible as CI.* and mypy is happy
     # pylint:disable=useless-import-alias,reimported,import-outside-toplevel
+    from ci_definitions import MQ_JOBS as MQ_JOBS
+    from ci_definitions import REQUIRED_CHECKS as REQUIRED_CHECKS
     from ci_definitions import BuildConfig as BuildConfig
+    from ci_definitions import BuildNames as BuildNames
     from ci_definitions import DigestConfig as DigestConfig
     from ci_definitions import JobConfig as JobConfig
-    from ci_definitions import Tags as Tags
     from ci_definitions import JobNames as JobNames
-    from ci_definitions import BuildNames as BuildNames
-    from ci_definitions import StatusNames as StatusNames
-    from ci_definitions import REQUIRED_CHECKS as REQUIRED_CHECKS
-    from ci_definitions import SyncState as SyncState
-    from ci_definitions import MQ_JOBS as MQ_JOBS
-    from ci_definitions import WorkflowStages as WorkflowStages
-    from ci_definitions import Runners as Runners
-    from ci_utils import Envs as Envs
-    from ci_utils import Utils as Utils
-    from ci_utils import GH as GH
-    from ci_utils import Shell as Shell
     from ci_definitions import Labels as Labels
+    from ci_definitions import Runners as Runners
+    from ci_definitions import StatusNames as StatusNames
+    from ci_definitions import SyncState as SyncState
+    from ci_definitions import Tags as Tags
     from ci_definitions import WorkFlowNames as WorkFlowNames
+    from ci_definitions import WorkflowStages as WorkflowStages
+    from ci_utils import GH as GH
+    from ci_utils import Envs as Envs
+    from ci_utils import Shell as Shell
+    from ci_utils import Utils as Utils
 
     # Jobs that run for doc related updates
     _DOCS_CHECK_JOBS = [JobNames.DOCS_CHECK, JobNames.STYLE_CHECK]
@@ -261,7 +261,7 @@ class CI:
                 compiler="clang-18",
                 package_type="fuzzers",
             ),
-            run_by_label=Tags.libFuzzer,
+            run_by_labels=[Tags.libFuzzer],
         ),
         JobNames.BUILD_CHECK: CommonJobConfigs.BUILD_REPORT.with_properties(),
         JobNames.INSTALL_TEST_AMD: CommonJobConfigs.INSTALL_TEST.with_properties(
@@ -410,7 +410,9 @@ class CI:
             num_batches=6,
         ),
         JobNames.INTEGRATION_TEST_TSAN: CommonJobConfigs.INTEGRATION_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_TSAN], num_batches=6
+            required_builds=[BuildNames.PACKAGE_TSAN],
+            num_batches=6,
+            timeout=9000,  # the job timed out with default value (7200)
         ),
         JobNames.INTEGRATION_TEST_ARM: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
@@ -471,19 +473,19 @@ class CI:
         JobNames.STATELESS_TEST_FLAKY_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN],
             pr_only=True,
-            timeout=3600,
+            timeout=3 * 3600,
             # TODO: approach with reference job names does not work because digest may not be calculated if job skipped in wf
             # reference_job_name=JobNames.STATELESS_TEST_RELEASE,
         ),
         JobNames.JEPSEN_KEEPER: JobConfig(
             required_builds=[BuildNames.BINARY_RELEASE],
-            run_by_label="jepsen-test",
+            run_by_labels=[Labels.JEPSEN_TEST],
             run_command="jepsen_check.py keeper",
             runner_type=Runners.STYLE_CHECKER_ARM,
         ),
         JobNames.JEPSEN_SERVER: JobConfig(
             required_builds=[BuildNames.BINARY_RELEASE],
-            run_by_label="jepsen-test",
+            run_by_labels=[Labels.JEPSEN_TEST],
             run_command="jepsen_check.py server",
             runner_type=Runners.STYLE_CHECKER_ARM,
         ),
@@ -493,7 +495,7 @@ class CI:
         JobNames.PERFORMANCE_TEST_ARM64: CommonJobConfigs.PERF_TESTS.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
             num_batches=4,
-            run_by_label="pr-performance",
+            run_by_labels=[Labels.PR_PERFORMANCE],
             runner_type=Runners.FUNC_TESTER_ARM,
         ),
         JobNames.SQLANCER: CommonJobConfigs.SQLLANCER_TEST.with_properties(
@@ -518,7 +520,7 @@ class CI:
         ),
         JobNames.LIBFUZZER_TEST: JobConfig(
             required_builds=[BuildNames.FUZZERS],
-            run_by_label=Tags.libFuzzer,
+            run_by_labels=[Tags.libFuzzer],
             timeout=10800,
             run_command='libfuzzer_test_check.py "$CHECK_NAME"',
             runner_type=Runners.STYLE_CHECKER,
@@ -555,9 +557,9 @@ class CI:
             runner_type=Runners.STYLE_CHECKER_ARM,
         ),
         JobNames.BUGFIX_VALIDATE: JobConfig(
-            run_by_label="pr-bugfix",
+            run_by_labels=[Labels.PR_BUGFIX, Labels.PR_CRITICAL_BUGFIX],
             run_command="bugfix_validate_check.py",
-            timeout=900,
+            timeout=2400,
             runner_type=Runners.STYLE_CHECKER,
         ),
     }

@@ -163,7 +163,7 @@ void LDAPAccessStorage::applyRoleChangeNoLock(bool grant, const UUID & role_id, 
     // Update the granted roles of the relevant users.
     if (!user_ids.empty())
     {
-        auto update_func = [&role_id, &grant] (const AccessEntityPtr & entity_) -> AccessEntityPtr
+        auto update_func = [&role_id, &grant] (const AccessEntityPtr & entity_, const UUID &) -> AccessEntityPtr
         {
             if (auto user = typeid_cast<std::shared_ptr<const User>>(entity_))
             {
@@ -191,8 +191,8 @@ void LDAPAccessStorage::applyRoleChangeNoLock(bool grant, const UUID & role_id, 
     }
     else
     {
-        granted_role_names.erase(role_id);
         granted_role_ids.erase(role_name);
+        granted_role_names.erase(role_id);
     }
 }
 
@@ -301,7 +301,7 @@ void LDAPAccessStorage::updateAssignedRolesNoLock(const UUID & id, const String 
     if (it != external_role_hashes.end() && it->second == external_roles_hash)
         return;
 
-    auto update_func = [this, &external_roles, external_roles_hash] (const AccessEntityPtr & entity_) -> AccessEntityPtr
+    auto update_func = [this, &external_roles, external_roles_hash] (const AccessEntityPtr & entity_, const UUID &) -> AccessEntityPtr
     {
         if (auto user = typeid_cast<std::shared_ptr<const User>>(entity_))
         {
@@ -330,10 +330,7 @@ std::set<String> LDAPAccessStorage::mapExternalRolesNoLock(const LDAPClient::Sea
 
         for (const auto & external_role : external_role_set)
         {
-            if (
-                prefix.size() < external_role.size() &&
-                external_role.compare(0, prefix.size(), prefix) == 0
-            )
+            if (prefix.size() < external_role.size() && external_role.starts_with(prefix))
             {
                 role_names.emplace(external_role, prefix.size());
             }
@@ -468,8 +465,8 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
         // User does not exist, so we create one, and will add it if authentication is successful.
         new_user = std::make_shared<User>();
         new_user->setName(credentials.getUserName());
-        new_user->auth_data = AuthenticationData(AuthenticationType::LDAP);
-        new_user->auth_data.setLDAPServerName(ldap_server_name);
+        new_user->authentication_methods.emplace_back(AuthenticationType::LDAP);
+        new_user->authentication_methods.back().setLDAPServerName(ldap_server_name);
         user = new_user;
     }
 
@@ -504,7 +501,7 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
     }
 
     if (id)
-        return AuthResult{ .user_id = *id };
+        return AuthResult{ .user_id = *id, .authentication_data = AuthenticationData(AuthenticationType::LDAP) };
     return std::nullopt;
 }
 
