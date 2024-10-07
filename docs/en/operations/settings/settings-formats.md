@@ -1859,6 +1859,14 @@ Default value: 0
 
 Write data types in binary format instead of type names in Native output format
 
+### output_format_native_write_json_as_string {#output_format_native_write_json_as_string}
+
+Type: Bool
+
+Default value: 0
+
+Write data of [JSON](../../sql-reference/data-types/newjson.md) column as [String](../../sql-reference/data-types/string.md) column containing JSON strings instead of default native JSON serialization.
+
 ## output_format_orc_compression_method {#output_format_orc_compression_method}
 
 Type: ORCCompression
@@ -2297,11 +2305,5 @@ Type: Bool
 Default value: 1
 
 Validate usage of experimental and suspicious types inside nested types like Array/Map/Tuple
-
-Disabled by default.
-
-### output_format_native_write_json_as_string {#output_format_native_write_json_as_string}
-
-Write data of [JSON](../../sql-reference/data-types/newjson.md) column as [String](../../sql-reference/data-types/string.md) column containing JSON strings instead of default native JSON serialization.
 
 Disabled by default.
