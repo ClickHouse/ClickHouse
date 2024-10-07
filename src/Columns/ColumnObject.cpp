@@ -1299,6 +1299,31 @@ void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_col
     }
 }
 
+bool ColumnObject::dynamicStructureEquals(const IColumn & rhs) const
+{
+    const auto * rhs_object = typeid_cast<const ColumnObject *>(&rhs);
+    if (!rhs_object || typed_paths.size() != rhs_object->typed_paths.size()
+        || global_max_dynamic_paths != rhs_object->global_max_dynamic_paths || max_dynamic_types != rhs_object->max_dynamic_types
+        || dynamic_paths.size() != rhs_object->dynamic_paths.size())
+        return false;
+
+    for (const auto & [path, column] : typed_paths)
+    {
+        auto it = rhs_object->typed_paths.find(path);
+        if (it == rhs_object->typed_paths.end() || !it->second->dynamicStructureEquals(*column))
+            return false;
+    }
+
+    for (const auto & [path, column] : dynamic_paths)
+    {
+        auto it = rhs_object->dynamic_paths.find(path);
+        if (it == rhs_object->dynamic_paths.end() || !it->second->dynamicStructureEquals(*column))
+            return false;
+    }
+
+    return true;
+}
+
 void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & source_columns)
 {
     if (!empty())

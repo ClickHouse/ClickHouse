@@ -106,23 +106,6 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     }
 }
 
-void MergeTreeDataPartWriterWide::initDynamicStreamsIfNeeded(const DB::Block & block)
-{
-    if (is_dynamic_streams_initialized)
-        return;
-
-    is_dynamic_streams_initialized = true;
-    block_sample = block.cloneEmpty();
-    for (const auto & column : columns_list)
-    {
-        if (column.type->hasDynamicSubcolumns())
-        {
-            auto compression = getCodecDescOrDefault(column.name, default_codec);
-            addStreams(column, block_sample.getByName(column.name).column, compression);
-        }
-    }
-}
-
 void MergeTreeDataPartWriterWide::addStreams(
     const NameAndTypePair & name_and_type,
     const ColumnPtr & column,
@@ -260,15 +243,20 @@ void MergeTreeDataPartWriterWide::shiftCurrentMark(const Granules & granules_wri
 
 void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Permutation * permutation)
 {
-    /// On first block of data initialize streams for dynamic subcolumns.
-    initDynamicStreamsIfNeeded(block);
+    Block block_to_write = block;
+
+    /// During serialization columns with dynamic subcolumns (like JSON/Dynamic) must have the same dynamic structure.
+    /// But it may happen that they don't (for example during ALTER MODIFY COLUMN from some type to JSON/Dynamic).
+    /// In this case we use dynamic structure of the column from the first written block and adjust columns from
+    /// the next blocks so they match this dynamic structure.
+    initOrAdjustDynamicStructureIfNeeded(block_to_write);
 
     /// Fill index granularity for this block
     /// if it's unknown (in case of insert data or horizontal merge,
     /// but not in case of vertical part of vertical merge)
     if (compute_granularity)
     {
-        size_t index_granularity_for_block = computeIndexGranularity(block);
+        size_t index_granularity_for_block = computeIndexGranularity(block_to_write);
         if (rows_written_in_last_mark > 0)
         {
             size_t rows_left_in_last_mark = index_granularity.getMarkRows(getCurrentMark()) - rows_written_in_last_mark;
@@ -286,10 +274,8 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
             }
         }
 
-        fillIndexGranularity(index_granularity_for_block, block.rows());
+        fillIndexGranularity(index_granularity_for_block, block_to_write.rows());
     }
-
-    Block block_to_write = block;
 
     auto granules_to_write = getGranulesToWrite(index_granularity, block_to_write.rows(), getCurrentMark(), rows_written_in_last_mark);
 

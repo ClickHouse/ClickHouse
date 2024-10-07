@@ -327,6 +327,7 @@ public:
     void extend(const std::vector<Discriminator> & old_to_new_global_discriminators, std::vector<std::pair<MutableColumnPtr, Discriminator>> && new_variants_and_discriminators);
 
     bool hasDynamicStructure() const override;
+    bool dynamicStructureEquals(const IColumn & rhs) const override;
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
 
 private:

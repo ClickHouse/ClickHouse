@@ -83,6 +83,7 @@ namespace Setting
     extern const SettingsBool input_format_ipv4_default_on_conversion_error;
     extern const SettingsBool input_format_ipv6_default_on_conversion_error;
     extern const SettingsBool precise_float_parsing;
+    extern const SettingsBool cast_to_json_disable_dynamic_subcolumns;
 }
 
 namespace ErrorCodes
@@ -4056,9 +4057,7 @@ private:
         {
             return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
             {
-                auto res = ConvertImplGenericFromString<true>::execute(arguments, result_type, nullable_source, input_rows_count, context)->assumeMutable();
-                res->finalize();
-                return res;
+                return ConvertImplGenericFromString<true>::execute(arguments, result_type, nullable_source, input_rows_count, context)->assumeMutable();
             };
         }
 

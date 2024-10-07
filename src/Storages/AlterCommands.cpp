@@ -1466,13 +1466,13 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         "The change of data type {} of column {} to {} is not allowed. It has known bugs",
                         old_data_type->getName(), backQuote(column_name), command.data_type->getName());
 
-                bool has_object_type = isObject(command.data_type);
-                command.data_type->forEachChild([&](const IDataType & type){ has_object_type |= isObject(type); });
-                if (has_object_type)
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "The change of data type {} of column {} to {} is not supported.",
-                        old_data_type->getName(), backQuote(column_name), command.data_type->getName());
+//                bool has_object_type = isObject(command.data_type);
+//                command.data_type->forEachChild([&](const IDataType & type){ has_object_type |= isObject(type); });
+//                if (has_object_type)
+//                    throw Exception(
+//                        ErrorCodes::BAD_ARGUMENTS,
+//                        "The change of data type {} of column {} to {} is not supported.",
+//                        old_data_type->getName(), backQuote(column_name), command.data_type->getName());
             }
 
             if (command.isRemovingProperty())

@@ -557,6 +557,45 @@ Names MergeTreeDataPartWriterOnDisk::getSkipIndicesColumns() const
     return Names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
 }
 
+void MergeTreeDataPartWriterOnDisk::initOrAdjustDynamicStructureIfNeeded(Block & block)
+{
+    if (!is_dynamic_streams_initialized)
+    {
+        for (const auto & column : columns_list)
+        {
+            if (column.type->hasDynamicSubcolumns())
+            {
+                /// Create all streams for dynamic subcolumns using dynamic structure from block.
+                auto compression = getCodecDescOrDefault(column.name, default_codec);
+                addStreams(column, block.getByName(column.name).column, compression);
+            }
+        }
+        is_dynamic_streams_initialized = true;
+        block_sample = block.cloneEmpty();
+    }
+    else
+    {
+        size_t size = block.columns();
+        for (size_t i = 0; i != size; ++i)
+        {
+            auto & column = block.getByPosition(i);
+            const auto & sample_column = block_sample.getByPosition(i);
+            /// Check if the dynamic structure of this column is different from the sample column.
+            if (column.type->hasDynamicSubcolumns() && !column.column->dynamicStructureEquals(*sample_column.column))
+            {
+                /// We need to change the dynamic structure of the column so it matches the sample column.
+                /// To do it, we create empty column of this type, take dynamic structure from sample column
+                /// and insert data into it. Resulting column will have required dynamic structure and the content
+                /// of the column in current block.
+                auto new_column = sample_column.type->createColumn();
+                new_column->takeDynamicStructureFromSourceColumns({sample_column.column});
+                new_column->insertRangeFrom(*column.column, 0, column.column->size());
+                column.column = std::move(new_column);
+            }
+        }
+    }
+}
+
 template struct MergeTreeDataPartWriterOnDisk::Stream<false>;
 template struct MergeTreeDataPartWriterOnDisk::Stream<true>;
 

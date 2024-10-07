@@ -91,9 +91,7 @@ private:
     void addStreams(
         const NameAndTypePair & name_and_type,
         const ColumnPtr & column,
-        const ASTPtr & effective_codec_desc);
-
-    void initDynamicStreamsIfNeeded(const Block & block);
+        const ASTPtr & effective_codec_desc) override;
 
     /// Method for self check (used in debug-build only). Checks that written
     /// data and corresponding marks are consistent. Otherwise throws logical
@@ -139,10 +137,6 @@ private:
     /// How many rows we have already written in the current mark.
     /// More than zero when incoming blocks are smaller then their granularity.
     size_t rows_written_in_last_mark = 0;
-
-    Block block_sample;
-
-    bool is_dynamic_streams_initialized = false;
 };
 
 }

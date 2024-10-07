@@ -1153,6 +1153,15 @@ void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns)
     }
 }
 
+bool ColumnDynamic::dynamicStructureEquals(const IColumn & rhs) const
+{
+    if (const auto * rhs_concrete = typeid_cast<const ColumnDynamic *>(&rhs))
+        return max_dynamic_types == rhs_concrete->max_dynamic_types && global_max_dynamic_types == rhs_concrete->global_max_dynamic_types
+            && variant_info.variant_name == rhs_concrete->variant_info.variant_name
+            && variant_column->dynamicStructureEquals(*rhs_concrete->variant_column);
+    return false;
+}
+
 void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
 {
     if (!empty())

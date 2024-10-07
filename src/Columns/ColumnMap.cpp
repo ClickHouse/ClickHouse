@@ -330,6 +330,13 @@ bool ColumnMap::structureEquals(const IColumn & rhs) const
     return false;
 }
 
+bool ColumnMap::dynamicStructureEquals(const IColumn & rhs) const
+{
+    if (const auto * rhs_map = typeid_cast<const ColumnMap *>(&rhs))
+        return nested->dynamicStructureEquals(*rhs_map->nested);
+    return false;
+}
+
 ColumnPtr ColumnMap::compress() const
 {
     auto compressed = nested->compress();

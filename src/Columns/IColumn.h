@@ -590,6 +590,9 @@ public:
 
     /// Checks if column has dynamic subcolumns.
     virtual bool hasDynamicStructure() const { return false; }
+
+    /// For columns with dynamic subcolumns checks if columns have equal dynamic structure.
+    [[nodiscard]] virtual bool dynamicStructureEquals(const IColumn & rhs) const { return structureEquals(rhs); }
     /// For columns with dynamic subcolumns this method takes dynamic structure from source columns
     /// and creates proper resulting dynamic structure in advance for merge of these source columns.
     virtual void takeDynamicStructureFromSourceColumns(const std::vector<Ptr> & /*source_columns*/) {}

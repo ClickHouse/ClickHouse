@@ -727,6 +727,26 @@ bool ColumnTuple::hasDynamicStructure() const
     return false;
 }
 
+bool ColumnTuple::dynamicStructureEquals(const IColumn & rhs) const
+{
+    if (const auto * rhs_tuple = typeid_cast<const ColumnTuple *>(&rhs))
+    {
+        const size_t tuple_size = columns.size();
+        if (tuple_size != rhs_tuple->columns.size())
+            return false;
+
+        for (size_t i = 0; i < tuple_size; ++i)
+            if (!columns[i]->dynamicStructureEquals(*rhs_tuple->columns[i]))
+                return false;
+
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
 void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
 {
     std::vector<Columns> nested_source_columns;

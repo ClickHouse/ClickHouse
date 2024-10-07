@@ -138,6 +138,7 @@ public:
     ColumnPtr & getColumnPtr(size_t idx) { return columns[idx]; }
 
     bool hasDynamicStructure() const override;
+    bool dynamicStructureEquals(const IColumn & rhs) const override;
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
 
     /// Empty tuple needs a public method to manage its size.

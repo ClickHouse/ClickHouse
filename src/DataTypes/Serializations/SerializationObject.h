@@ -19,7 +19,20 @@ public:
     {
         enum Value
         {
-            BASIC = 0,
+            /// V1 serialization:
+            /// - ObjectStructure stream:
+            ///     <max_dynamic_paths parameter>
+            ///     <actual number of dynamic paths>
+            ///     <sorted list of dynamic paths>
+            ///     <statistics with number of non-null values for dynamic paths> (only in MergeTree serialization)
+            ///     <statistics with number of non-null values for some paths in shared data> (only in MergeTree serialization)
+            /// - ObjectData stream:
+            ///   - ObjectTypedPath stream for each column in typed paths
+            ///   - ObjectDynamicPath stream for each column in dynamic paths
+            ///   - ObjectSharedData stream shared data column.
+            V1 = 0,
+            /// V2 serialization: the same as V1 but without max_dynamic_paths parameter in ObjectStructure stream.
+            V2 = 2,
         };
 
         Value value;
@@ -82,7 +95,6 @@ private:
     struct DeserializeBinaryBulkStateObjectStructure : public ISerialization::DeserializeBinaryBulkState
     {
         ObjectSerializationVersion structure_version;
-        size_t max_dynamic_paths;
         std::vector<String> sorted_dynamic_paths;
         std::unordered_set<String> dynamic_paths;
         /// Paths statistics. Map (dynamic path) -> (number of non-null values in this path).
