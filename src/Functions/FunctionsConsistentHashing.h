@@ -72,9 +72,7 @@ public:
     {
         if (isColumnConst(*arguments[1].column))
             return executeConstBuckets(arguments);
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second argument of function {} (number of buckets) must be constant",
-                getName());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second argument of function {} (number of buckets) must be constant", getName());
     }
 
 private:

@@ -221,8 +221,7 @@ public:
 
                 if (is_col_start_pos_const)
                     return result_type->createColumnConst(col_haystack_const->size(), toField(vec_res[0]));
-                else
-                    return col_res;
+                return col_res;
             }
         }
 
