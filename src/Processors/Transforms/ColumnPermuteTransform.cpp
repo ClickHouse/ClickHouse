@@ -12,7 +12,7 @@ void applyPermutation(std::vector<T> & data, const std::vector<size_t> & permuta
     std::vector<T> res;
     res.reserve(permutation.size());
     for (size_t i : permutation)
-        res.emplace_back(std::move(data[i]));
+        res.push_back(data[i]);
     data = std::move(res);
 }
 
