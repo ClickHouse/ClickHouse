@@ -739,9 +739,9 @@ private:
 
             return col_to;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                    arguments[0].column->getName(), Name::name);
+
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                arguments[0].column->getName(), Name::name);
     }
 
 public:
@@ -772,35 +772,35 @@ public:
 
         if (which.isUInt8())
             return executeType<UInt8>(arguments);
-        else if (which.isUInt16())
+        if (which.isUInt16())
             return executeType<UInt16>(arguments);
-        else if (which.isUInt32())
+        if (which.isUInt32())
             return executeType<UInt32>(arguments);
-        else if (which.isUInt64())
+        if (which.isUInt64())
             return executeType<UInt64>(arguments);
-        else if (which.isInt8())
+        if (which.isInt8())
             return executeType<Int8>(arguments);
-        else if (which.isInt16())
+        if (which.isInt16())
             return executeType<Int16>(arguments);
-        else if (which.isInt32())
+        if (which.isInt32())
             return executeType<Int32>(arguments);
-        else if (which.isInt64())
+        if (which.isInt64())
             return executeType<Int64>(arguments);
-        else if (which.isDate())
+        if (which.isDate())
             return executeType<UInt16>(arguments);
-        else if (which.isDate32())
+        if (which.isDate32())
             return executeType<Int32>(arguments);
-        else if (which.isDateTime())
+        if (which.isDateTime())
             return executeType<UInt32>(arguments);
-        else if (which.isDecimal32())
+        if (which.isDecimal32())
             return executeType<Decimal32>(arguments);
-        else if (which.isDecimal64())
+        if (which.isDecimal64())
             return executeType<Decimal64>(arguments);
-        else if (which.isIPv4())
+        if (which.isIPv4())
             return executeType<IPv4>(arguments);
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0].type->getName(), getName());
+
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+            arguments[0].type->getName(), getName());
     }
 };
 
@@ -1434,8 +1434,7 @@ struct URLHierarchyHashImpl
         {
             return 0 == level ? end - begin : 0;
         }
-        else
-            pos += 3;
+        pos += 3;
 
         /// The domain for simplicity is everything that after the protocol and the two slashes, until the next slash or before `?` or `#`
         while (pos < end && !(*pos == '/' || *pos == '?' || *pos == '#'))
@@ -1516,10 +1515,9 @@ public:
 
         if (arg_count == 1)
             return executeSingleArg(arguments);
-        else if (arg_count == 2)
+        if (arg_count == 2)
             return executeTwoArgs(arguments);
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "got into IFunction::execute with unexpected number of arguments");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "got into IFunction::execute with unexpected number of arguments");
     }
 
 private:
@@ -1548,9 +1546,8 @@ private:
 
             return col_to;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 
     ColumnPtr executeTwoArgs(const ColumnsWithTypeAndName & arguments) const
@@ -1580,7 +1577,7 @@ private:
 
             return col_to;
         }
-        else if (const auto * col_const_from = checkAndGetColumnConstData<ColumnString>(col_untyped))
+        if (const auto * col_const_from = checkAndGetColumnConstData<ColumnString>(col_untyped))
         {
             auto col_to = ColumnUInt64::create(size);
             auto & out = col_to->getData();
@@ -1590,17 +1587,13 @@ private:
 
             for (size_t i = 0; i < size; ++i)
             {
-                out[i] = URLHierarchyHashImpl::apply(
-                    level_col->getUInt(i),
-                    reinterpret_cast<const char *>(chars.data()),
-                    offsets[0] - 1);
+                out[i] = URLHierarchyHashImpl::apply(level_col->getUInt(i), reinterpret_cast<const char *>(chars.data()), offsets[0] - 1);
             }
 
             return col_to;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 };
 

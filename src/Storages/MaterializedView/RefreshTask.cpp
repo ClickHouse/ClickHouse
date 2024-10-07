@@ -879,8 +879,7 @@ std::chrono::system_clock::time_point RefreshTask::currentTime() const
     Int64 fake = scheduling.fake_clock.load(std::memory_order::relaxed);
     if (fake == INT64_MIN)
         return std::chrono::system_clock::now();
-    else
-        return std::chrono::system_clock::time_point(std::chrono::seconds(fake));
+    return std::chrono::system_clock::time_point(std::chrono::seconds(fake));
 }
 
 void RefreshTask::setRefreshSetHandleUnlock(RefreshSet::Handle && set_handle_)

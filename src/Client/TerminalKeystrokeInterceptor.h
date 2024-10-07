@@ -1,5 +1,6 @@
 #pragma once
 
+#include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -38,7 +39,9 @@ private:
     std::unique_ptr<std::thread> intercept_thread;
     std::unique_ptr<struct termios> orig_termios;
 
-    std::atomic_bool stop_requested = false;
+    bool stop_requested = false;
+    std::mutex stop_requested_mutex;
+    std::condition_variable stop_requested_cv;
 };
 
 }

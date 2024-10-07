@@ -609,13 +609,13 @@ void DefaultCoordinator::tryToStealFromQueue(
             }
             if (can_take)
             {
-                if (auto taken = takeFromRange(range, min_number_of_marks, current_marks_amount, result); taken == range.getNumberOfMarks())
+                auto taken = takeFromRange(range, min_number_of_marks, current_marks_amount, result);
+                if (taken == range.getNumberOfMarks())
                 {
                     it = decltype(it)(queue.erase(std::next(it).base()));
                     continue;
                 }
-                else
-                    range.begin += taken;
+                range.begin += taken;
             }
         }
 

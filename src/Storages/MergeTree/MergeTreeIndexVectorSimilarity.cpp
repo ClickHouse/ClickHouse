@@ -102,10 +102,10 @@ USearchIndexWithSerialization::USearchIndexWithSerialization(
     unum::usearch::index_dense_config_t config(usearch_hnsw_params.m, usearch_hnsw_params.ef_construction, usearch_hnsw_params.ef_search);
     config.enable_key_lookups = false; /// we don't do row-to-vector lookups
 
-    if (auto result = USearchIndex::make(metric, config); !result)
+    auto result = USearchIndex::make(metric, config);
+    if (!result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not create vector similarity index. Error: {}", String(result.error.release()));
-    else
-        swap(result.index);
+    swap(result.index);
 }
 
 void USearchIndexWithSerialization::serialize(WriteBuffer & ostr) const
@@ -291,16 +291,15 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
             CurrentThread::attachToGroupIfDetached(thread_group);
 
         /// add is thread-safe
-        if (auto result = index->add(key, &column_array_data_float_data[column_array_offsets[row - 1]]); !result)
+        auto result = index->add(key, &column_array_data_float_data[column_array_offsets[row - 1]]);
+        if (!result)
         {
             throw Exception(ErrorCodes::INCORRECT_DATA, "Could not add data to vector similarity index. Error: {}", String(result.error.release()));
         }
-        else
-        {
-            ProfileEvents::increment(ProfileEvents::USearchAddCount);
-            ProfileEvents::increment(ProfileEvents::USearchAddVisitedMembers, result.visited_members);
-            ProfileEvents::increment(ProfileEvents::USearchAddComputedDistances, result.computed_distances);
-        }
+
+        ProfileEvents::increment(ProfileEvents::USearchAddCount);
+        ProfileEvents::increment(ProfileEvents::USearchAddVisitedMembers, result.visited_members);
+        ProfileEvents::increment(ProfileEvents::USearchAddComputedDistances, result.computed_distances);
     };
 
     size_t index_size = index->size();
