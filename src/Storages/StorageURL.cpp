@@ -1357,19 +1357,17 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             headers,
             http_method);
     }
-    else
-    {
-        return std::make_shared<StorageURLSink>(
-            uri,
-            format_name,
-            format_settings,
-            metadata_snapshot->getSampleBlock(),
-            context,
-            getHTTPTimeouts(context),
-            compression_method,
-            headers,
-            http_method);
-    }
+
+    return std::make_shared<StorageURLSink>(
+        uri,
+        format_name,
+        format_settings,
+        metadata_snapshot->getSampleBlock(),
+        context,
+        getHTTPTimeouts(context),
+        compression_method,
+        headers,
+        http_method);
 }
 
 SchemaCache & IStorageURLBase::getSchemaCache(const ContextPtr & context)

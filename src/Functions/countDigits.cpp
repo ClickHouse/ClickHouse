@@ -38,8 +38,7 @@ int digits10(T x)
             {
                 if (x < 10000ULL)
                     return 4;
-                else
-                    return 5 + (x >= 100000ULL);
+                return 5 + (x >= 100000ULL);
             }
 
             return 7 + (x >= 10000000ULL);

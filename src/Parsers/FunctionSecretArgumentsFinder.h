@@ -256,7 +256,7 @@ protected:
             findSecretNamedArgument("account_key", 1);
             return;
         }
-        else if (is_cluster_function && isNamedCollectionName(1))
+        if (is_cluster_function && isNamedCollectionName(1))
         {
             /// azureBlobStorageCluster(cluster, named_collection, ..., account_key = 'account_key', ...)
             if (maskAzureConnectionString(-1, true, 2))

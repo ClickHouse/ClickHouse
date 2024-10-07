@@ -291,9 +291,10 @@ bool applyTrivialCountIfPossible(
         (table_node->getTableExpressionModifiers()->hasFinal() || table_node->getTableExpressionModifiers()->hasSampleSizeRatio() ||
          table_node->getTableExpressionModifiers()->hasSampleOffsetRatio()))
         return false;
-    else if (table_function_node && table_function_node->getTableExpressionModifiers().has_value() &&
-        (table_function_node->getTableExpressionModifiers()->hasFinal() || table_function_node->getTableExpressionModifiers()->hasSampleSizeRatio() ||
-         table_function_node->getTableExpressionModifiers()->hasSampleOffsetRatio()))
+    if (table_function_node && table_function_node->getTableExpressionModifiers().has_value()
+        && (table_function_node->getTableExpressionModifiers()->hasFinal()
+            || table_function_node->getTableExpressionModifiers()->hasSampleSizeRatio()
+            || table_function_node->getTableExpressionModifiers()->hasSampleOffsetRatio()))
         return false;
 
     // TODO: It's possible to optimize count() given only partition predicates

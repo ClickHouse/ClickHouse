@@ -54,8 +54,7 @@ private:
         /// Integers are converted to Float64.
         if (Impl::always_returns_float64 || !isFloat(argument))
             return std::make_shared<DataTypeFloat64>();
-        else
-            return argument;
+        return argument;
     }
 
     template <typename T, typename ReturnType>
