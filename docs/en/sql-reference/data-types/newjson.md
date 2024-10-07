@@ -630,6 +630,28 @@ SELECT arrayJoin(distinctJSONPathsAndTypes(json)) FROM s3('s3://clickhouse-publi
 └─arrayJoin(distinctJSONPathsAndTypes(json))──────────────────┘
 ```
 
+## ALTER MODIFY COLUMN to JSON type
+
+It's possible to alter an existing table and change the type of the column to the new `JSON` type. Right now only alter from `String` type is supported.
+
+**Example**
+
+```sql
+CREATE TABLE test (json String) ENGINE=MergeTree ORDeR BY tuple();
+INSERT INTO test VALUES ('{"a" : 42}'), ('{"a" : 43, "b" : "Hello"}'), ('{"a" : 44, "b" : [1, 2, 3]}')), ('{"c" : "2020-01-01"}');
+ALTER TABLE test MODIFY COLUMN json JSON;
+SELECT json, json.a, json.b, json.c FROM test;
+```
+
+```text
+   ┌─json─────────────────────────┬─json.a─┬─json.b──┬─json.c─────┐
+1. │ {"a":"42"}                   │ 42     │ ᴺᵁᴸᴸ    │ ᴺᵁᴸᴸ       │
+2. │ {"a":"43","b":"Hello"}       │ 43     │ Hello   │ ᴺᵁᴸᴸ       │
+3. │ {"a":"44","b":["1","2","3"]} │ 44     │ [1,2,3] │ ᴺᵁᴸᴸ       │
+4. │ {"c":"2020-01-01"}           │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ    │ 2020-01-01 │
+   └──────────────────────────────┴────────┴─────────┴────────────┘
+```
+
 ## Tips for better usage of the JSON type
 
 Before creating `JSON` column and loading data into it, consider the following tips:
