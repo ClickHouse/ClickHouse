@@ -70,7 +70,7 @@ std::unique_ptr<WriteBufferFromFileBase> TemporaryDataOnDisk::createRawStream(si
         auto holder = createCacheFile(max_file_size);
         return std::make_unique<WriteBufferToFileSegment>(std::move(holder));
     }
-    else if (volume)
+    if (volume)
     {
         auto tmp_file = createRegularFile(max_file_size);
         return std::make_unique<WriteBufferFromTemporaryFile>(std::move(tmp_file));
@@ -89,11 +89,12 @@ TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, si
         TemporaryFileStreamPtr & tmp_stream = streams.emplace_back(std::make_unique<TemporaryFileStream>(std::move(holder), header, this));
         return *tmp_stream;
     }
-    else if (volume)
+    if (volume)
     {
         auto tmp_file = createRegularFile(max_file_size);
         std::lock_guard lock(mutex);
-        TemporaryFileStreamPtr & tmp_stream = streams.emplace_back(std::make_unique<TemporaryFileStream>(std::move(tmp_file), header, this));
+        TemporaryFileStreamPtr & tmp_stream
+            = streams.emplace_back(std::make_unique<TemporaryFileStream>(std::move(tmp_file), header, this));
         return *tmp_stream;
     }
 
