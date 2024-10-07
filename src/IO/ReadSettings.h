@@ -1,12 +1,13 @@
 #pragma once
 
 #include <cstddef>
-#include <string>
 #include <Core/Defines.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Common/Throttler_fwd.h>
 #include <Common/Priority.h>
 #include <Common/Scheduler/ResourceLink.h>
+#include <IO/DistributedCacheSettings.h>
+#include <Interpreters/Cache/UserInfo.h>
 
 namespace DB
 {
@@ -62,9 +63,13 @@ enum class RemoteFSReadMethod : uint8_t
 
 class MMappedFileCache;
 class PageCache;
+class Context;
 
 struct ReadSettings
 {
+    ReadSettings() = default;
+    explicit ReadSettings(const Context & context);
+
     /// Method to use reading from local filesystem.
     LocalFSReadMethod local_fs_method = LocalFSReadMethod::pread;
     /// Method to use reading from remote filesystem.
@@ -112,20 +117,24 @@ struct ReadSettings
 
     size_t remote_read_min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE;
 
-    FileCachePtr remote_fs_cache;
+    bool remote_read_buffer_restrict_seek = false;
+    bool remote_read_buffer_use_external_buffer = false;
 
     /// Bandwidth throttler to use during reading
     ThrottlerPtr remote_throttler;
     ThrottlerPtr local_throttler;
 
-    // Resource to be used during reading
-    ResourceLink resource_link;
+    IOSchedulingSettings io_scheduling;
 
     size_t http_max_tries = 10;
     size_t http_retry_initial_backoff_ms = 100;
     size_t http_retry_max_backoff_ms = 1600;
     bool http_skip_not_found_url_for_globs = true;
     bool http_make_head_request = true;
+
+    bool read_through_distributed_cache = false;
+    DistributedCacheSettings distributed_cache_settings;
+    std::optional<FileCacheUserInfo> filecache_user_info;
 
     ReadSettings adjustBufferSize(size_t file_size) const
     {
@@ -135,6 +144,16 @@ struct ReadSettings
         res.prefetch_buffer_size = std::min(std::max(1ul, file_size), prefetch_buffer_size);
         return res;
     }
+
+    ReadSettings withNestedBuffer() const
+    {
+        ReadSettings res = *this;
+        res.remote_read_buffer_restrict_seek = true;
+        res.remote_read_buffer_use_external_buffer = true;
+        return res;
+    }
 };
+
+ReadSettings getReadSettings();
 
 }

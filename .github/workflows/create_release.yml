@@ -3,6 +3,9 @@ name: CreateRelease
 concurrency:
   group: release
 
+env:
+  PYTHONUNBUFFERED: 1
+
 'on':
   workflow_dispatch:
     inputs:
@@ -56,13 +59,13 @@ jobs:
       GH_TOKEN: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
     runs-on: [self-hosted, release-maker]
     steps:
-      - name: DebugInfo
-        uses: hmarr/debug-action@f7318c783045ac39ed9bb497e22ce835fdafbfe6
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
         with:
           token: ${{secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN}}
           fetch-depth: 0
+      - name: Debug Info
+        uses: ./.github/actions/debug
       - name: Prepare Release Info
         shell: bash
         run: |

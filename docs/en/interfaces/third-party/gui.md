@@ -233,6 +233,16 @@ Features:
 - Useful tools: Zookeeper data exploration, query EXPLAIN, kill queries, etc.
 - Visualization metric charts: queries and resource usage, number of merges/mutation, merge performance, query performance, etc.
 
+### CKibana {#ckibana}
+
+[CKibana](https://github.com/TongchengOpenSource/ckibana) is a lightweight service that allows you to effortlessly search, explore, and visualize ClickHouse data using the native Kibana UI.
+
+Features:
+
+- Translates chart requests from the native Kibana UI into ClickHouse query syntax.
+- Supports advanced features such as sampling and caching to enhance query performance.
+- Minimizes the learning cost for users after migrating from ElasticSearch to ClickHouse.
+
 ## Commercial {#commercial}
 
 ### DataGrip {#datagrip}

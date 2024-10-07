@@ -212,6 +212,8 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
         std::make_shared<FourLetterWordCommand>(),
         std::make_shared<GetDirectChildrenNumberCommand>(),
         std::make_shared<GetAllChildrenNumberCommand>(),
+        std::make_shared<CPCommand>(),
+        std::make_shared<MVCommand>(),
     });
 
     String home_path;

@@ -238,7 +238,7 @@ static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map,
         step.describeIndexes(map);
 }
 
-JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options)
+JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) const
 {
     checkInitialized();
 
@@ -340,14 +340,10 @@ static void explainStep(
 
     if (options.sorting)
     {
-        if (step.hasOutputStream())
+        if (const auto & sort_description = step.getSortDescription(); !sort_description.empty())
         {
-            settings.out << prefix << "Sorting (" << step.getOutputStream().sort_scope << ")";
-            if (step.getOutputStream().sort_scope != DataStream::SortScope::None)
-            {
-                settings.out << ": ";
-                dumpSortDescription(step.getOutputStream().sort_description, settings.out);
-            }
+            settings.out << prefix << "Sorting: ";
+            dumpSortDescription(sort_description, settings.out);
             settings.out.write('\n');
         }
     }
@@ -368,7 +364,7 @@ std::string debugExplainStep(const IQueryPlanStep & step)
     return out.str();
 }
 
-void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent)
+void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent) const
 {
     checkInitialized();
 
@@ -422,7 +418,7 @@ static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSet
         settings.offset += settings.indent;
 }
 
-void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options)
+void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const
 {
     checkInitialized();
 
@@ -504,12 +500,13 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
     QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
-    QueryPlanOptimizations::optimizeTreeThirdPass(*this, *root, nodes);
+    if (optimization_settings.build_sets)
+        QueryPlanOptimizations::addStepsToBuildSets(*this, *root, nodes);
 
     updateDataStreams(*root);
 }
 
-void QueryPlan::explainEstimate(MutableColumns & columns)
+void QueryPlan::explainEstimate(MutableColumns & columns) const
 {
     checkInitialized();
 

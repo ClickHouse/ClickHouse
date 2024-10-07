@@ -1,9 +1,10 @@
 import itertools
+import logging
 import os.path
 import timeit
 
 import pytest
-import logging
+
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV

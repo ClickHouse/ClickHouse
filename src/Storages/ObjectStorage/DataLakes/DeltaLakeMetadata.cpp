@@ -205,20 +205,30 @@ struct DeltaLakeMetadataImpl
 
             Poco::JSON::Parser parser;
             Poco::Dynamic::Var json = parser.parse(json_str);
-            Poco::JSON::Object::Ptr object = json.extract<Poco::JSON::Object::Ptr>();
+            const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
+            if (!object)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse metadata file");
+
+#ifdef ABORT_ON_LOGICAL_ERROR
             std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             object->stringify(oss);
             LOG_TEST(log, "Metadata: {}", oss.str());
+#endif
 
             if (object->has("metaData"))
             {
                 const auto metadata_object = object->get("metaData").extract<Poco::JSON::Object::Ptr>();
+                if (!metadata_object)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `metaData` field");
+
                 const auto schema_object = metadata_object->getValue<String>("schemaString");
 
                 Poco::JSON::Parser p;
                 Poco::Dynamic::Var fields_json = parser.parse(schema_object);
                 const Poco::JSON::Object::Ptr & fields_object = fields_json.extract<Poco::JSON::Object::Ptr>();
+                if (!fields_object)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `fields` field");
 
                 auto current_schema = parseMetadata(fields_object);
                 if (file_schema.empty())
@@ -237,6 +247,9 @@ struct DeltaLakeMetadataImpl
             if (object->has("add"))
             {
                 auto add_object = object->get("add").extract<Poco::JSON::Object::Ptr>();
+                if (!add_object)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `add` field");
+
                 auto path = add_object->getValue<String>("path");
                 result.insert(fs::path(configuration->getPath()) / path);
 
@@ -247,6 +260,9 @@ struct DeltaLakeMetadataImpl
                     if (add_object->has("partitionValues"))
                     {
                         auto partition_values = add_object->get("partitionValues").extract<Poco::JSON::Object::Ptr>();
+                        if (!partition_values)
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `partitionValues` field");
+
                         if (partition_values->size())
                         {
                             auto & current_partition_columns = file_partition_columns[filename];
@@ -274,7 +290,11 @@ struct DeltaLakeMetadataImpl
             }
             else if (object->has("remove"))
             {
-                auto path = object->get("remove").extract<Poco::JSON::Object::Ptr>()->getValue<String>("path");
+                auto remove_object = object->get("remove").extract<Poco::JSON::Object::Ptr>();
+                if (!remove_object)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `remove` field");
+
+                auto path = remove_object->getValue<String>("path");
                 result.erase(fs::path(configuration->getPath()) / path);
             }
         }
@@ -333,33 +353,33 @@ struct DeltaLakeMetadataImpl
         WhichDataType which(check_type->getTypeId());
         if (which.isStringOrFixedString())
             return value;
-        else if (isBool(check_type))
+        if (isBool(check_type))
             return parse<bool>(value);
-        else if (which.isInt8())
+        if (which.isInt8())
             return parse<Int8>(value);
-        else if (which.isUInt8())
+        if (which.isUInt8())
             return parse<UInt8>(value);
-        else if (which.isInt16())
+        if (which.isInt16())
             return parse<Int16>(value);
-        else if (which.isUInt16())
+        if (which.isUInt16())
             return parse<UInt16>(value);
-        else if (which.isInt32())
+        if (which.isInt32())
             return parse<Int32>(value);
-        else if (which.isUInt32())
+        if (which.isUInt32())
             return parse<UInt32>(value);
-        else if (which.isInt64())
+        if (which.isInt64())
             return parse<Int64>(value);
-        else if (which.isUInt64())
+        if (which.isUInt64())
             return parse<UInt64>(value);
-        else if (which.isFloat32())
+        if (which.isFloat32())
             return parse<Float32>(value);
-        else if (which.isFloat64())
+        if (which.isFloat64())
             return parse<Float64>(value);
-        else if (which.isDate())
+        if (which.isDate())
             return UInt16{LocalDate{std::string(value)}.getDayNum()};
-        else if (which.isDate32())
+        if (which.isDate32())
             return Int32{LocalDate{std::string(value)}.getExtenedDayNum()};
-        else if (which.isDateTime64())
+        if (which.isDateTime64())
         {
             ReadBufferFromString in(value);
             DateTime64 time = 0;

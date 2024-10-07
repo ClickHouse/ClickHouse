@@ -718,7 +718,12 @@ FileCache::getOrSet(
         }
     }
 
-    chassert(file_segments_limit ? file_segments.back()->range().left <= result_range.right : file_segments.back()->range().contains(result_range.right));
+    chassert(file_segments_limit
+             ? file_segments.back()->range().left <= result_range.right
+             : file_segments.back()->range().contains(result_range.right),
+             fmt::format("Unexpected state. Back: {}, result range: {}, limit: {}",
+                         file_segments.back()->range().toString(), result_range.toString(), file_segments_limit));
+
     chassert(!file_segments_limit || file_segments.size() <= file_segments_limit);
 
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));

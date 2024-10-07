@@ -830,7 +830,7 @@ TEST_F(FileCacheTest, writeBuffer)
     auto write_to_cache = [&, this](const String & key, const Strings & data, bool flush, ReadBufferPtr * out_read_buffer = nullptr)
     {
         CreateFileSegmentSettings segment_settings;
-        segment_settings.kind = FileSegmentKind::Temporary;
+        segment_settings.kind = FileSegmentKind::Ephemeral;
         segment_settings.unbounded = true;
 
         auto cache_key = FileCache::createKeyForPath(key);

@@ -1,0 +1,16 @@
+{
+	"meta":
+	[
+		{
+			"name": "unhex('f0')",
+			"type": "String"
+		}
+	],
+
+	"data":
+	[
+		["�"]
+	],
+
+	"rows": 1
+}
