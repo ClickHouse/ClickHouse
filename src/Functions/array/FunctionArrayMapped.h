@@ -206,49 +206,47 @@ public:
 
             return Impl::getReturnType(nested_type, nested_type);
         }
-        else
-        {
-            if (arguments.size() > 2 + num_fixed_params && Impl::needOneArray())
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} needs one argument with data", getName());
 
-            const auto * data_type_function = checkAndGetDataType<DataTypeFunction>(arguments[0].type.get());
+        if (arguments.size() > 2 + num_fixed_params && Impl::needOneArray())
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} needs one argument with data", getName());
 
-            if (!data_type_function)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} must be a function. Actual {}",
-                    getName(),
-                    arguments[0].type->getName());
+        const auto * data_type_function = checkAndGetDataType<DataTypeFunction>(arguments[0].type.get());
 
-            if constexpr (num_fixed_params)
-                Impl::checkArguments(getName(), arguments.data() + 1);
+        if (!data_type_function)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} must be a function. Actual {}",
+                getName(),
+                arguments[0].type->getName());
 
-            /// The types of the remaining arguments are already checked in getLambdaArgumentTypes.
+        if constexpr (num_fixed_params)
+            Impl::checkArguments(getName(), arguments.data() + 1);
 
-            DataTypePtr return_type = removeLowCardinality(data_type_function->getReturnType());
+        /// The types of the remaining arguments are already checked in getLambdaArgumentTypes.
 
-            /// Special cases when we need boolean lambda result:
-            ///  - lambda may return Nullable(UInt8) column, in this case after lambda execution we will
-            ///    replace all NULLs with 0 and return nested UInt8 column.
-            ///  - lambda may return Nothing or Nullable(Nothing) because of default implementation of functions
-            ///    for these types. In this case we will just create UInt8 const column full of 0.
-            if (Impl::needBoolean() && !isUInt8(removeNullable(return_type)) && !isNothing(removeNullable(return_type)))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Expression for function {} must return UInt8 or Nullable(UInt8), found {}",
-                    getName(),
-                    return_type->getName());
+        DataTypePtr return_type = removeLowCardinality(data_type_function->getReturnType());
 
-            if (arguments.size() < 2 + num_fixed_params)
-                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect number of arguments: {}", arguments.size());
+        /// Special cases when we need boolean lambda result:
+        ///  - lambda may return Nullable(UInt8) column, in this case after lambda execution we will
+        ///    replace all NULLs with 0 and return nested UInt8 column.
+        ///  - lambda may return Nothing or Nullable(Nothing) because of default implementation of functions
+        ///    for these types. In this case we will just create UInt8 const column full of 0.
+        if (Impl::needBoolean() && !isUInt8(removeNullable(return_type)) && !isNothing(removeNullable(return_type)))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Expression for function {} must return UInt8 or Nullable(UInt8), found {}",
+                getName(),
+                return_type->getName());
 
-            const auto * first_array_type = checkAndGetDataType<DataTypeArray>(arguments[1 + num_fixed_params].type.get());
-            if (!first_array_type)
-                throw DB::Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported type {}", arguments[1 + num_fixed_params].type->getName());
+        if (arguments.size() < 2 + num_fixed_params)
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect number of arguments: {}", arguments.size());
 
-            return Impl::getReturnType(return_type, first_array_type->getNestedType());
-        }
+        const auto * first_array_type = checkAndGetDataType<DataTypeArray>(arguments[1 + num_fixed_params].type.get());
+        if (!first_array_type)
+            throw DB::Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported type {}", arguments[1 + num_fixed_params].type->getName());
+
+        return Impl::getReturnType(return_type, first_array_type->getNestedType());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override

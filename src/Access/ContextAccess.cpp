@@ -728,8 +728,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
                     "For queries over HTTP, method GET implies readonly. "
                     "You should use method POST for modifying queries");
             }
-            else
-                return access_denied(ErrorCodes::READONLY, "{}: Cannot execute query in readonly mode");
+            return access_denied(ErrorCodes::READONLY, "{}: Cannot execute query in readonly mode");
         }
     }
 
@@ -770,17 +769,17 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, const Acce
     {
         if (element.anyParameter())
             return checkAccessImpl<throw_if_denied, grant_option, wildcard>(context, element.access_flags);
-        else
-            return checkAccessImpl<throw_if_denied, grant_option, wildcard>(context, element.access_flags, element.parameter);
+
+        return checkAccessImpl<throw_if_denied, grant_option, wildcard>(context, element.access_flags, element.parameter);
     }
-    else if (element.anyDatabase())
+    if (element.anyDatabase())
         return checkAccessImpl<throw_if_denied, grant_option, wildcard>(context, element.access_flags);
-    else if (element.anyTable())
+    if (element.anyTable())
         return checkAccessImpl<throw_if_denied, grant_option, wildcard>(context, element.access_flags, element.database);
-    else if (element.anyColumn())
+    if (element.anyColumn())
         return checkAccessImpl<throw_if_denied, grant_option, wildcard>(context, element.access_flags, element.database, element.table);
-    else
-        return checkAccessImpl<throw_if_denied, grant_option, wildcard>(context, element.access_flags, element.database, element.table, element.columns);
+
+    return checkAccessImpl<throw_if_denied, grant_option, wildcard>(context, element.access_flags, element.database, element.table, element.columns);
 }
 
 template <bool throw_if_denied, bool grant_option, bool wildcard>
@@ -790,16 +789,14 @@ bool ContextAccess::checkAccessImpl(const ContextPtr & context, const AccessRigh
     {
         if (element.grant_option)
             return checkAccessImplHelper<throw_if_denied, true, true>(context, element);
-        else
-            return checkAccessImplHelper<throw_if_denied, grant_option, true>(context, element);
+
+        return checkAccessImplHelper<throw_if_denied, grant_option, true>(context, element);
     }
-    else
-    {
-        if (element.grant_option)
-            return checkAccessImplHelper<throw_if_denied, true, wildcard>(context, element);
-        else
-            return checkAccessImplHelper<throw_if_denied, grant_option, wildcard>(context, element);
-    }
+
+    if (element.grant_option)
+        return checkAccessImplHelper<throw_if_denied, true, wildcard>(context, element);
+
+    return checkAccessImplHelper<throw_if_denied, grant_option, wildcard>(context, element);
 }
 
 template <bool throw_if_denied, bool grant_option, bool wildcard>

@@ -306,10 +306,9 @@ private:
             {
                 if (first_event)
                     break;
-                else
-                    continue;
+                continue;
             }
-            else if (event_idx == 0)
+            if (event_idx == 0)
             {
                 events_timestamp[0] = std::make_pair(timestamp, timestamp);
                 first_event = true;
@@ -573,7 +572,6 @@ createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & 
                             cond_arg->getName(), toString(i + 1), name);
     }
 
-
     bool strict_once = params.size() > 1 && std::any_of(params.begin() + 1, params.end(), [](const auto & f) { return f.template safeGet<String>() == "strict_once"; });
     if (strict_once)
     {
@@ -581,9 +579,9 @@ createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & 
         WhichDataType which(arguments.front().get());
         if (res)
             return res;
-        else if (which.isDate())
+        if (which.isDate())
             return std::make_shared<AggregateFunctionWindowFunnel<DataTypeDate::FieldType, AggregateFunctionWindowFunnelStrictOnceData<DataTypeDate::FieldType>>>(arguments, params);
-        else if (which.isDateTime())
+        if (which.isDateTime())
             return std::make_shared<AggregateFunctionWindowFunnel<DataTypeDateTime::FieldType, AggregateFunctionWindowFunnelStrictOnceData<DataTypeDateTime::FieldType>>>(arguments, params);
     }
     else
@@ -592,9 +590,9 @@ createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & 
         WhichDataType which(arguments.front().get());
         if (res)
             return res;
-        else if (which.isDate())
+        if (which.isDate())
             return std::make_shared<AggregateFunctionWindowFunnel<DataTypeDate::FieldType, AggregateFunctionWindowFunnelData<DataTypeDate::FieldType>>>(arguments, params);
-        else if (which.isDateTime())
+        if (which.isDateTime())
             return std::make_shared<AggregateFunctionWindowFunnel<DataTypeDateTime::FieldType, AggregateFunctionWindowFunnelData<DataTypeDateTime::FieldType>>>(arguments, params);
     }
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
