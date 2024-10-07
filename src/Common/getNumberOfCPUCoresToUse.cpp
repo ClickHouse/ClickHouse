@@ -26,8 +26,7 @@ int32_t readFrom(const std::filesystem::path & filename, int default_value)
     int idata;
     if (infile >> idata)
         return idata;
-    else
-        return default_value;
+    return default_value;
 }
 
 /// Try to look at cgroups limit if it is available.

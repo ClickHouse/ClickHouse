@@ -222,7 +222,7 @@ void PipelineExecutor::finalizeExecution()
             all_processors_finished = false;
             break;
         }
-        else if (node->processor && read_progress_callback)
+        if (node->processor && read_progress_callback)
         {
             /// Some executors might have reported progress as part of their finish() call
             /// For example, when reading from parallel replicas the coordinator will cancel the queries as soon as it

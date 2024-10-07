@@ -1349,7 +1349,7 @@ namespace
                     return std::make_shared<DataTypeNothing>();
                 return makeNullable(std::make_shared<DataTypeNothing>());
             }
-            else if (checkStringCaseInsensitive("an", buf))
+            if (checkStringCaseInsensitive("an", buf))
                 return std::make_shared<DataTypeFloat64>();
         }
 

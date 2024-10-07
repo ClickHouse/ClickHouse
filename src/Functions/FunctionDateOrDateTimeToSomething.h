@@ -62,20 +62,22 @@ public:
 
         if (isDate(from_type))
             return DateTimeTransformImpl<DataTypeDate, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
-        else if (isDate32(from_type))
+        if (isDate32(from_type))
             return DateTimeTransformImpl<DataTypeDate32, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
-        else if (isDateTime(from_type))
+        if (isDateTime(from_type))
             return DateTimeTransformImpl<DataTypeDateTime, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
-        else if (isDateTime64(from_type))
+        if (isDateTime64(from_type))
         {
             const auto scale = static_cast<const DataTypeDateTime64 *>(from_type)->getScale();
             const TransformDateTime64<Transform> transformer(scale);
-            return DateTimeTransformImpl<DataTypeDateTime64, ToDataType, decltype(transformer)>::execute(arguments, result_type, input_rows_count, transformer);
+            return DateTimeTransformImpl<DataTypeDateTime64, ToDataType, decltype(transformer)>::execute(
+                arguments, result_type, input_rows_count, transformer);
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}",
-                arguments[0].type->getName(), this->getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal type {} of argument of function {}",
+            arguments[0].type->getName(),
+            this->getName());
     }
 
     bool hasInformationAboutPreimage() const override { return Transform::hasPreimage(); }
