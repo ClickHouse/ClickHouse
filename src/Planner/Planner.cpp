@@ -825,7 +825,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                 ///
                 /// However, INPUT `s` does not exist. Instead, we have a constant with execution name 'Hello'_String.
                 /// To fix this, we prepend a rename : 'Hello'_String -> s
-                if (const auto * constant_node = interpolate_node_typed.getExpression()->as<const ConstantNode>())
+                if (const auto * /*constant_node*/ _ = interpolate_node_typed.getExpression()->as<const ConstantNode>())
                 {
                     const auto * node = &rename_dag.addInput(alias_node->result_name, alias_node->result_type);
                     node = &rename_dag.addAlias(*node, interpolate_node_typed.getExpressionName());

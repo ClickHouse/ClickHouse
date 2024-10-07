@@ -52,7 +52,7 @@ public:
     {
         if (!ISchedulerNode::equals(other))
             return false;
-        if (auto * o = dynamic_cast<FairPolicy *>(other))
+        if (auto * _ = dynamic_cast<FairPolicy *>(other))
             return true;
         return false;
     }
