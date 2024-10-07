@@ -118,6 +118,21 @@ public:
                 parent->activateChild(this);
     }
 
+    /// Update limits.
+    /// Should be called from the scheduler thread because it could lead to activation
+    void updateConstraints(double new_max_speed, double new_max_burst)
+    {
+        event_queue->cancelPostponed(postponed);
+        postponed = EventQueue::not_postponed;
+        bool was_active = active();
+        updateBucket(0, true); // To apply previous params for duration since `last_update`
+        max_speed = new_max_speed;
+        max_burst = new_max_burst;
+        updateBucket(0, false); // To postpone (if needed) using new params
+        if (!was_active && active() && parent)
+            parent->activateChild(this);
+    }
+
     bool isActive() override
     {
         return active();
@@ -160,7 +175,7 @@ private:
             parent->activateChild(this);
     }
 
-    void updateBucket(ResourceCost use = 0)
+    void updateBucket(ResourceCost use = 0, bool do_not_postpone = false)
     {
         auto now = event_queue->now();
         if (max_speed > 0.0)
@@ -170,7 +185,7 @@ private:
             tokens -= use; // This is done outside min() to avoid passing large requests w/o token consumption after long idle period
 
             // Postpone activation until there is positive amount of tokens
-            if (tokens < 0.0)
+            if (!do_not_postpone && tokens < 0.0)
             {
                 auto delay_ns = std::chrono::nanoseconds(static_cast<Int64>(-tokens / max_speed * 1e9));
                 if (postponed == EventQueue::not_postponed)
@@ -194,8 +209,8 @@ private:
         return satisfied() && child_active;
     }
 
-    const double max_speed{0}; /// in tokens per second
-    const double max_burst{0}; /// in tokens
+    double max_speed{0}; /// in tokens per second
+    double max_burst{0}; /// in tokens
 
     EventQueue::TimePoint last_update;
     UInt64 postponed = EventQueue::not_postponed;
