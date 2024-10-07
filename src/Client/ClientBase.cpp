@@ -1577,8 +1577,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
         const auto & settings = client_context->getSettingsRef();
         if (settings[Setting::throw_if_no_data_to_insert])
             throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
-        else
-            return;
+        return;
     }
 
     query_interrupt_handler.start();

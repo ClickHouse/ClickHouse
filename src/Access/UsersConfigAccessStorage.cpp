@@ -649,8 +649,7 @@ namespace
                 {
                     if (users_without_row_policies_can_read_rows)
                         continue;
-                    else
-                        filter = "1";
+                    filter = "1";
                 }
 
                 auto policy = std::make_shared<RowPolicy>();

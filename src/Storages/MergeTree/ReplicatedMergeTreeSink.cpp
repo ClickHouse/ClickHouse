@@ -1009,21 +1009,19 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                 block_number_lock->assumeUnlocked();
                 return CommitRetryContext::SUCCESS;
             }
-            else
-            {
-                LOG_DEBUG(log, "Insert of part {} was not committed to keeper. Will try again with a new block", part->name);
-                /// We checked in keeper and the the data in ops being written so we can retry the process again, but
-                /// there is a caveat: as we lost the connection the block number that we got (EphemeralSequential)
-                /// might or might not be there (and it belongs to a different session anyway) so we need to assume
-                /// it's not there and will be removed automatically, and start from scratch
-                /// In order to start from scratch we need to undo the changes that we've done as part of the
-                /// transaction: renameTempPartAndAdd
-                transaction.rollbackPartsToTemporaryState();
-                part->is_temp = true;
-                part->renameTo(temporary_part_relative_path, false);
-                /// Throw an exception to set the proper keeper error and force a retry (if possible)
-                zkutil::KeeperMultiException::check(multi_code, ops, responses);
-            }
+
+            LOG_DEBUG(log, "Insert of part {} was not committed to keeper. Will try again with a new block", part->name);
+            /// We checked in keeper and the the data in ops being written so we can retry the process again, but
+            /// there is a caveat: as we lost the connection the block number that we got (EphemeralSequential)
+            /// might or might not be there (and it belongs to a different session anyway) so we need to assume
+            /// it's not there and will be removed automatically, and start from scratch
+            /// In order to start from scratch we need to undo the changes that we've done as part of the
+            /// transaction: renameTempPartAndAdd
+            transaction.rollbackPartsToTemporaryState();
+            part->is_temp = true;
+            part->renameTo(temporary_part_relative_path, false);
+            /// Throw an exception to set the proper keeper error and force a retry (if possible)
+            zkutil::KeeperMultiException::check(multi_code, ops, responses);
         }
 
         transaction.rollback();

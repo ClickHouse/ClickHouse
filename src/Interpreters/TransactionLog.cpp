@@ -283,7 +283,7 @@ void TransactionLog::removeOldEntries()
     CSN new_tail_ptr = getOldestSnapshot();
     if (new_tail_ptr < old_tail_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected tail_ptr {}, oldest snapshot is {}, it's a bug", old_tail_ptr, new_tail_ptr);
-    else if (new_tail_ptr == old_tail_ptr)
+    if (new_tail_ptr == old_tail_ptr)
         return;
 
     /// (it's not supposed to fail with ZBADVERSION while there is only one host)
