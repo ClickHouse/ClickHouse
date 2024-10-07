@@ -2096,7 +2096,8 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(
 
 bool IMergeTreeDataPart::isReplicatedZeroCopy() const
 {
-    return isStoredOnRemoteDiskWithZeroCopySupport() && storage.supportsReplication() && (*storage.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
+    return isStoredOnRemoteDiskWithZeroCopySupport() && storage.supportsReplication()
+        && (*storage.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
 }
 
 MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(
