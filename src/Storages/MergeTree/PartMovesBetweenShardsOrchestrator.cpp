@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/PartMovesBetweenShardsOrchestrator.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Poco/JSON/JSON.h>
@@ -9,12 +8,6 @@
 
 namespace DB
 {
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsUInt64 part_moves_between_shards_delay_seconds;
-    extern const MergeTreeSettingsUInt64 part_moves_between_shards_enable;
-}
 
 namespace ErrorCodes
 {
@@ -36,7 +29,7 @@ PartMovesBetweenShardsOrchestrator::PartMovesBetweenShardsOrchestrator(StorageRe
 
 void PartMovesBetweenShardsOrchestrator::run()
 {
-    if (!(*storage.getSettings())[MergeTreeSetting::part_moves_between_shards_enable])
+    if (!storage.getSettings()->part_moves_between_shards_enable)
         return;
 
     if (need_stop)
@@ -532,7 +525,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
             }
             else
             {
-                std::this_thread::sleep_for(std::chrono::seconds((*storage.getSettings())[MergeTreeSetting::part_moves_between_shards_delay_seconds]));
+                std::this_thread::sleep_for(std::chrono::seconds(storage.getSettings()->part_moves_between_shards_delay_seconds));
                 entry.state = EntryState::SOURCE_DROP;
                 return entry;
             }
@@ -604,7 +597,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "It is not possible to rollback from this state. This is a bug.");
             else
             {
-                std::this_thread::sleep_for(std::chrono::seconds((*storage.getSettings())[MergeTreeSetting::part_moves_between_shards_delay_seconds]));
+                std::this_thread::sleep_for(std::chrono::seconds(storage.getSettings()->part_moves_between_shards_delay_seconds));
                 entry.state = EntryState::REMOVE_UUID_PIN;
                 return entry;
             }
@@ -623,6 +616,8 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
             }
         }
     }
+
+    UNREACHABLE();
 }
 
 void PartMovesBetweenShardsOrchestrator::removePins(const Entry & entry, zkutil::ZooKeeperPtr zk)

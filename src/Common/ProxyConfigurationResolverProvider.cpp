@@ -1,11 +1,10 @@
 #include <Common/ProxyConfigurationResolverProvider.h>
 
 #include <Common/EnvironmentProxyConfigurationResolver.h>
-#include <Common/proxyConfigurationToPocoProxyConfig.h>
 #include <Common/Exception.h>
 #include <Common/ProxyListConfigurationResolver.h>
 #include <Common/RemoteProxyConfigurationResolver.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -18,11 +17,6 @@ namespace ErrorCodes
 
 namespace
 {
-    std::string getNoProxyHosts(const Poco::Util::AbstractConfiguration & configuration)
-    {
-        return configuration.getString("proxy.no_proxy", "");
-    }
-
     bool isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(
         const Poco::Util::AbstractConfiguration & configuration)
     {
@@ -49,14 +43,12 @@ namespace
             endpoint,
             proxy_scheme,
             proxy_port,
-            std::chrono::seconds {cache_ttl}
+            cache_ttl
         };
 
         return std::make_shared<RemoteProxyConfigurationResolver>(
             server_configuration,
             request_protocol,
-            buildPocoNonProxyHosts(getNoProxyHosts(configuration)),
-            std::make_shared<RemoteProxyHostFetcherImpl>(),
             isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration));
     }
 
@@ -95,11 +87,7 @@ namespace
 
         return uris.empty()
             ? nullptr
-            : std::make_shared<ProxyListConfigurationResolver>(
-                  uris,
-                  request_protocol,
-                  buildPocoNonProxyHosts(getNoProxyHosts(configuration)),
-                  isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration));
+            : std::make_shared<ProxyListConfigurationResolver>(uris, request_protocol, isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration));
     }
 
     bool hasRemoteResolver(const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration)
@@ -112,8 +100,9 @@ namespace
         return configuration.has(config_prefix + ".uri");
     }
 
-    /* New syntax requires protocol prefix "<http> or <https>"
-     */
+    /*
+     * New syntax requires protocol prefix "<http> or <https>"
+     * */
     std::optional<std::string> getProtocolPrefix(
         ProxyConfiguration::Protocol request_protocol,
         const String & config_prefix,
@@ -129,18 +118,22 @@ namespace
         return protocol_prefix;
     }
 
+    template <bool new_syntax>
     std::optional<std::string> calculatePrefixBasedOnSettingsSyntax(
-        bool new_syntax,
         ProxyConfiguration::Protocol request_protocol,
         const String & config_prefix,
         const Poco::Util::AbstractConfiguration & configuration
     )
     {
         if (!configuration.has(config_prefix))
+        {
             return std::nullopt;
+        }
 
-        if (new_syntax)
+        if constexpr (new_syntax)
+        {
             return getProtocolPrefix(request_protocol, config_prefix, configuration);
+        }
 
         return config_prefix;
     }
@@ -150,21 +143,24 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
     Protocol request_protocol,
     const Poco::Util::AbstractConfiguration & configuration)
 {
-    if (auto resolver = getFromSettings(true, request_protocol, "proxy", configuration))
+    if (auto resolver = getFromSettings(request_protocol, "proxy", configuration))
+    {
         return resolver;
+    }
 
     return std::make_shared<EnvironmentProxyConfigurationResolver>(
         request_protocol,
         isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration));
 }
 
+template <bool is_new_syntax>
 std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::getFromSettings(
-    bool new_syntax,
     Protocol request_protocol,
     const String & config_prefix,
-    const Poco::Util::AbstractConfiguration & configuration)
+    const Poco::Util::AbstractConfiguration & configuration
+)
 {
-    auto prefix_opt = calculatePrefixBasedOnSettingsSyntax(new_syntax, request_protocol, config_prefix, configuration);
+    auto prefix_opt = calculatePrefixBasedOnSettingsSyntax<is_new_syntax>(request_protocol, config_prefix, configuration);
 
     if (!prefix_opt)
     {
@@ -187,17 +183,20 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
 std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
     Protocol request_protocol,
     const String & config_prefix,
-    const Poco::Util::AbstractConfiguration & configuration)
+    const Poco::Util::AbstractConfiguration & configuration
+)
 {
-    /* First try to get it from settings only using the combination of config_prefix and configuration.
+    /*
+     * First try to get it from settings only using the combination of config_prefix and configuration.
      * This logic exists for backward compatibility with old S3 storage specific proxy configuration.
      * */
-    if (auto resolver = ProxyConfigurationResolverProvider::getFromSettings(false, request_protocol, config_prefix + ".proxy", configuration))
+    if (auto resolver = ProxyConfigurationResolverProvider::getFromSettings<false>(request_protocol, config_prefix + ".proxy", configuration))
     {
         return resolver;
     }
 
-    /* In case the combination of config_prefix and configuration does not provide a resolver, try to get it from general / new settings.
+    /*
+     * In case the combination of config_prefix and configuration does not provide a resolver, try to get it from general / new settings.
      * Falls back to Environment resolver if no configuration is found.
      * */
     return ProxyConfigurationResolverProvider::get(request_protocol, configuration);

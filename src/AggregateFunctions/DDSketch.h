@@ -147,8 +147,6 @@ public:
         negative_store->merge(other.negative_store.get());
     }
 
-    /// NOLINTBEGIN(readability-static-accessed-through-instance)
-
     void serialize(WriteBuffer& buf) const
     {
         // Write the mapping
@@ -200,10 +198,8 @@ public:
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid flag for zero count");
         }
         readBinary(zero_count, buf);
-        count = negative_store->count + zero_count + store->count;
+        count = static_cast<Float64>(negative_store->count + zero_count + store->count);
     }
-
-    /// NOLINTEND(readability-static-accessed-through-instance)
 
 private:
     std::unique_ptr<DDSketchLogarithmicMapping> mapping;

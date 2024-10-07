@@ -38,27 +38,25 @@ Field executeFunctionOnField(
     return (*ret.column)[0];
 }
 
-/// @param column_value - one of values from IN
+/// @param sharding_column_value - one of values from IN
 /// @param sharding_column_name - name of that column
 /// @return true if shard may contain such value (or it is unknown), otherwise false.
 bool shardContains(
-    Field column_value,
+    Field sharding_column_value,
     const std::string & sharding_column_name,
     const OptimizeShardingKeyRewriteInMatcher::Data & data)
 {
-    /// Type of column in storage (used for implicit conversion from i.e. String to Int)
-    const DataTypePtr & column_type = data.sharding_key_expr->getSampleBlock().getByName(sharding_column_name).type;
     /// Implicit conversion.
-    column_value = convertFieldToType(column_value, *column_type);
+    sharding_column_value = convertFieldToType(sharding_column_value, *data.sharding_key_type);
 
     /// NULL is not allowed in sharding key,
     /// so it should be safe to assume that shard cannot contain it.
-    if (column_value.isNull())
+    if (sharding_column_value.isNull())
         return false;
 
     Field sharding_value = executeFunctionOnField(
-        column_value, sharding_column_name,
-        data.sharding_key_expr, column_type,
+        sharding_column_value, sharding_column_name,
+        data.sharding_key_expr, data.sharding_key_type,
         data.sharding_key_column_name);
     /// The value from IN can be non-numeric,
     /// but in this case it should be convertible to numeric type, let's try.
@@ -72,7 +70,7 @@ bool shardContains(
     if (sharding_value.isNull())
         return false;
 
-    UInt64 value = sharding_value.safeGet<UInt64>();
+    UInt64 value = sharding_value.get<UInt64>();
     const auto shard_num = data.slots[value % data.slots.size()] + 1;
     return data.shard_info.shard_num == shard_num;
 }
@@ -120,20 +118,11 @@ void OptimizeShardingKeyRewriteInMatcher::visit(ASTFunction & function, Data & d
     else if (auto * tuple_literal = right->as<ASTLiteral>();
         tuple_literal && tuple_literal->value.getType() == Field::Types::Tuple)
     {
-        auto & tuple = tuple_literal->value.safeGet<Tuple>();
-        if (tuple.size() > 1)
+        auto & tuple = tuple_literal->value.get<Tuple &>();
+        std::erase_if(tuple, [&](auto & child)
         {
-            Tuple new_tuple;
-
-            for (auto & child : tuple)
-                if (shardContains(child, name, data))
-                    new_tuple.emplace_back(std::move(child));
-
-            if (new_tuple.empty())
-                new_tuple.emplace_back(std::move(tuple.back()));
-
-            tuple_literal->value = std::move(new_tuple);
-        }
+            return tuple.size() > 1 && !shardContains(child, name, data);
+        });
     }
 }
 
@@ -168,7 +157,7 @@ public:
         {
             if (isTuple(constant->getResultType()))
             {
-                const auto & tuple = constant->getValue().safeGet<Tuple &>();
+                const auto & tuple = constant->getValue().get<Tuple &>();
                 Tuple new_tuple;
                 new_tuple.reserve(tuple.size());
 

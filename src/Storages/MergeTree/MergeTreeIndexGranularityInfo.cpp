@@ -1,18 +1,11 @@
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 
 namespace fs = std::filesystem;
 
 namespace DB
 {
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool compress_marks;
-    extern const MergeTreeSettingsUInt64 index_granularity;
-}
 
 namespace ErrorCodes
 {
@@ -109,14 +102,14 @@ std::optional<MarkType> MergeTreeIndexGranularityInfo::getMarksTypeFromFilesyste
 }
 
 MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MergeTreeDataPartType type_)
-    : MergeTreeIndexGranularityInfo(storage, {storage.canUseAdaptiveGranularity(), (*storage.getSettings())[MergeTreeSetting::compress_marks], type_.getValue()})
+    : MergeTreeIndexGranularityInfo(storage, {storage.canUseAdaptiveGranularity(), storage.getSettings()->compress_marks, type_.getValue()})
 {
 }
 
 MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MarkType mark_type_)
     : mark_type(mark_type_)
 {
-    fixed_index_granularity = (*storage.getSettings())[MergeTreeSetting::index_granularity];
+    fixed_index_granularity = storage.getSettings()->index_granularity;
 }
 
 void MergeTreeIndexGranularityInfo::changeGranularityIfRequired(const IDataPartStorage & data_part_storage)

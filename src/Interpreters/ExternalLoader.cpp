@@ -1,20 +1,19 @@
 #include "ExternalLoader.h"
 
 #include <mutex>
-#include <unordered_set>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/Config/AbstractConfigurationComparison.h>
+#include <Common/Exception.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/ThreadPool.h>
+#include <Common/randomSeed.h>
+#include <Common/setThreadName.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/logger_useful.h>
 #include <base/chrono_io.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
-#include <Common/Config/AbstractConfigurationComparison.h>
-#include <Common/CurrentThread.h>
-#include <Common/Exception.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/StringUtils.h>
-#include <Common/ThreadPool.h>
-#include <Common/logger_useful.h>
-#include <Common/randomSeed.h>
-#include <Common/scope_guard_safe.h>
-#include <Common/setThreadName.h>
+#include <unordered_set>
 
 
 namespace DB
@@ -922,16 +921,7 @@ private:
         if (enable_async_loading)
         {
             /// Put a job to the thread pool for the loading.
-            ThreadFromGlobalPool thread;
-            try
-            {
-                thread = ThreadFromGlobalPool{&LoadingDispatcher::doLoading, this, info.name, loading_id, forced_to_reload, min_id_to_finish_loading_dependencies_, true, CurrentThread::getGroup()};
-            }
-            catch (...)
-            {
-                cancelLoading(info);
-                throw;
-            }
+            auto thread = ThreadFromGlobalPool{&LoadingDispatcher::doLoading, this, info.name, loading_id, forced_to_reload, min_id_to_finish_loading_dependencies_, true, CurrentThread::getGroup()};
             loading_threads.try_emplace(loading_id, std::move(thread));
         }
         else
@@ -1196,7 +1186,7 @@ private:
         else
         {
             auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
-            LOG_TRACE(log, "Supposed update time for unspecified object is {} (backoff, {} errors)", to_string(result), error_count);
+            LOG_TRACE(log, "Supposed update time for unspecified object is {} (backoff, {} errors.", to_string(result), error_count);
             return result;
         }
     }

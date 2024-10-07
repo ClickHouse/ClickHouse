@@ -48,7 +48,7 @@ namespace
                 {"json", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
             };
 
-            validateFunctionArguments(*this, arguments, args);
+            validateFunctionArgumentTypes(*this, arguments, args);
             return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>());
         }
 
@@ -104,7 +104,7 @@ REGISTER_FUNCTION(JSONArrayLength)
         .description="Returns the number of elements in the outermost JSON array. The function returns NULL if input JSON string is invalid."});
 
     /// For Spark compatibility.
-    factory.registerAlias("JSON_ARRAY_LENGTH", "JSONArrayLength", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("JSON_ARRAY_LENGTH", "JSONArrayLength", FunctionFactory::CaseInsensitive);
 }
 
 }

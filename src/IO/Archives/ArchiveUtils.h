@@ -10,17 +10,3 @@
 #include <archive.h>
 #include <archive_entry.h>
 #endif
-
-#include <string_view>
-
-namespace DB
-{
-
-bool hasSupportedTarExtension(std::string_view path);
-bool hasSupportedZipExtension(std::string_view path);
-bool hasSupported7zExtension(std::string_view path);
-
-bool hasSupportedArchiveExtension(std::string_view path);
-
-
-}

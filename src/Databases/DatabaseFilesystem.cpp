@@ -1,7 +1,6 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseFilesystem.h>
 
-#include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
@@ -22,11 +21,6 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
-}
 
 namespace ErrorCodes
 {
@@ -193,8 +187,7 @@ ASTPtr DatabaseFilesystem::getCreateDatabaseQuery() const
     const String query = fmt::format("CREATE DATABASE {} ENGINE = Filesystem('{}')", backQuoteIfNeed(getDatabaseName()), path);
 
     ParserCreateQuery parser;
-    ASTPtr ast
-        = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth, settings.max_parser_backtracks);
 
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
     {
@@ -236,7 +229,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseFilesystem::getTablesForBacku
  * Returns an empty iterator because the database does not have its own tables
  * But only caches them for quick access
  */
-DatabaseTablesIteratorPtr DatabaseFilesystem::getTablesIterator(ContextPtr, const FilterByNameFunction &, bool) const
+DatabaseTablesIteratorPtr DatabaseFilesystem::getTablesIterator(ContextPtr, const FilterByNameFunction &) const
 {
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
@@ -263,6 +256,6 @@ void registerDatabaseFilesystem(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseFilesystem>(args.database_name, init_path, args.context);
     };
-    factory.registerDatabase("Filesystem", create_fn, {.supports_arguments = true});
+    factory.registerDatabase("Filesystem", create_fn);
 }
 }

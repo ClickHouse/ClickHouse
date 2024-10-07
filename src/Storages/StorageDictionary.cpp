@@ -1,4 +1,3 @@
-#include <Access/Common/AccessFlags.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -10,7 +9,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/quoteString.h>
-#include <Core/Settings.h>
 #include <QueryPipeline/Pipe.h>
 #include <IO/Operators.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
@@ -20,11 +18,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool dictionary_validate_primary_key_type;
-}
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -32,14 +25,13 @@ namespace ErrorCodes
     extern const int CANNOT_DETACH_DICTIONARY_AS_TABLE;
     extern const int DICTIONARY_ALREADY_EXISTS;
     extern const int NOT_IMPLEMENTED;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace
 {
     void checkNamesAndTypesCompatibleWithDictionary(const String & dictionary_name, const ColumnsDescription & columns, const DictionaryStructure & dictionary_structure)
     {
-        auto dictionary_names_and_types = StorageDictionary::getNamesAndTypes(dictionary_structure, false);
+        auto dictionary_names_and_types = StorageDictionary::getNamesAndTypes(dictionary_structure);
         std::set<NameAndTypePair> names_and_types_set(dictionary_names_and_types.begin(), dictionary_names_and_types.end());
 
         for (const auto & column : columns.getOrdinary())
@@ -55,17 +47,13 @@ namespace
 }
 
 
-NamesAndTypesList StorageDictionary::getNamesAndTypes(const DictionaryStructure & dictionary_structure, bool validate_id_type)
+NamesAndTypesList StorageDictionary::getNamesAndTypes(const DictionaryStructure & dictionary_structure)
 {
     NamesAndTypesList dictionary_names_and_types;
 
     if (dictionary_structure.id)
-    {
-        if (validate_id_type && dictionary_structure.id->type->getTypeId() != TypeIndex::UInt64)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect type of ID column: must be UInt64, but it is {}", dictionary_structure.id->type->getFamilyName());
-
         dictionary_names_and_types.emplace_back(dictionary_structure.id->name, std::make_shared<DataTypeUInt64>());
-    }
+
     /// In old-style (XML) configuration we don't have this attributes in the
     /// main attribute list, so we have to add them to columns list explicitly.
     /// In the new configuration (DDL) we have them both in range_* nodes and
@@ -117,12 +105,7 @@ StorageDictionary::StorageDictionary(
     Location location_,
     ContextPtr context_)
     : StorageDictionary(
-          table_id_,
-          dictionary_name_,
-          ColumnsDescription{getNamesAndTypes(dictionary_structure_, context_->getSettingsRef()[Setting::dictionary_validate_primary_key_type])},
-          comment,
-          location_,
-          context_)
+        table_id_, dictionary_name_, ColumnsDescription{getNamesAndTypes(dictionary_structure_)}, comment, location_, context_)
 {
 }
 
@@ -133,7 +116,7 @@ StorageDictionary::StorageDictionary(
     : StorageDictionary(
         table_id,
         table_id.getFullNameNotQuoted(),
-        context_->getExternalDictionariesLoader().getDictionaryStructure(*dictionary_configuration), /// NOLINT(readability-static-accessed-through-instance)
+        context_->getExternalDictionariesLoader().getDictionaryStructure(*dictionary_configuration),
         dictionary_configuration->getString("dictionary.comment", ""),
         Location::SameDatabaseAndNameAsDictionary,
         context_)
@@ -179,7 +162,6 @@ Pipe StorageDictionary::read(
 {
     auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
     auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, local_context);
-    local_context->checkAccess(AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
     return dictionary->read(column_names, max_block_size, threads);
 }
 

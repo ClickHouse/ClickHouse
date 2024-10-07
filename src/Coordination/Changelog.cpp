@@ -217,7 +217,7 @@ public:
                     std::move(file_buf),
                     /* compressi)on level = */ 3,
                     /* append_to_existing_file_ = */ mode == WriteMode::Append,
-                    [latest_log_disk, path = current_file_description->path, read_settings = getReadSettings()] { return latest_log_disk->readFile(path, read_settings); });
+                    [latest_log_disk, path = current_file_description->path] { return latest_log_disk->readFile(path); });
 
             prealloc_done = false;
         }
@@ -601,7 +601,7 @@ public:
     explicit ChangelogReader(ChangelogFileDescriptionPtr changelog_description_) : changelog_description(changelog_description_)
     {
         compression_method = chooseCompressionMethod(changelog_description->path, "");
-        auto read_buffer_from_file = changelog_description->disk->readFile(changelog_description->path, getReadSettings());
+        auto read_buffer_from_file = changelog_description->disk->readFile(changelog_description->path);
         read_buf = wrapReadBufferWithCompressionMethod(std::move(read_buffer_from_file), compression_method);
     }
 
@@ -728,7 +728,7 @@ void LogEntryStorage::prefetchCommitLogs()
                     [&]
                     {
                         const auto & [changelog_description, position, count] = prefetch_file_info;
-                        auto file = changelog_description->disk->readFile(changelog_description->path, getReadSettings());
+                        auto file = changelog_description->disk->readFile(changelog_description->path, ReadSettings());
                         file->seek(position, SEEK_SET);
                         LOG_TRACE(
                             log, "Prefetching {} log entries from path {}, from position {}", count, changelog_description->path, position);
@@ -1266,7 +1266,7 @@ LogEntryPtr LogEntryStorage::getEntry(uint64_t index) const
             [&]
             {
                 const auto & [changelog_description, position, size] = it->second;
-                auto file = changelog_description->disk->readFile(changelog_description->path, getReadSettings());
+                auto file = changelog_description->disk->readFile(changelog_description->path, ReadSettings());
                 file->seek(position, SEEK_SET);
                 LOG_TRACE(
                     log,
@@ -1392,7 +1392,7 @@ LogEntriesPtr LogEntryStorage::getLogEntriesBetween(uint64_t start, uint64_t end
             [&]
             {
                 const auto & [file_description, start_position, count] = *read_info;
-                auto file = file_description->disk->readFile(file_description->path, getReadSettings());
+                auto file = file_description->disk->readFile(file_description->path);
                 file->seek(start_position, SEEK_SET);
 
                 for (size_t i = 0; i < count; ++i)
@@ -2227,7 +2227,7 @@ uint64_t Changelog::getStartIndex() const
 LogEntryPtr Changelog::getLastEntry() const
 {
     /// This entry treaded in special way by NuRaft
-    static LogEntryPtr fake_entry = nuraft::cs_new<nuraft::log_entry>(0, nuraft::buffer::alloc(0));
+    static LogEntryPtr fake_entry = nuraft::cs_new<nuraft::log_entry>(0, nuraft::buffer::alloc(sizeof(uint64_t)));
 
     auto entry = entry_storage.getEntry(max_log_id);
     if (entry == nullptr)
@@ -2270,7 +2270,7 @@ nuraft::ptr<nuraft::buffer> Changelog::serializeEntriesToBuffer(uint64_t index, 
 
     nuraft::ptr<nuraft::buffer> buf_out = nuraft::buffer::alloc(sizeof(int32_t) + count * sizeof(int32_t) + size_total);
     buf_out->pos(0);
-    buf_out->put(count);
+    buf_out->put(static_cast<int32_t>(count));
 
     for (auto & entry : returned_logs)
     {

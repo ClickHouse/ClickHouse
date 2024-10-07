@@ -1,12 +1,12 @@
+#include <cassert>
+#include <memory>
+
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadHelpersArena.h>
 
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDate32.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <Columns/ColumnArray.h>
@@ -15,14 +15,18 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/assert_cast.h>
 
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/KeyHolderHelpers.h>
+
 #include <Core/Field.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
-#include <AggregateFunctions/IAggregateFunction.h>
-
-#include <memory>
+#include <AggregateFunctions/FactoryHelpers.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 
 
 namespace DB
@@ -47,7 +51,7 @@ struct AggregateFunctionGroupArrayIntersectData
 };
 
 
-/// Puts all values to the hash set. Returns an array of unique values present in all inputs. Implemented for numeric types.
+/// Puts all values to the hash set. Returns an array of unique values. Implemented for numeric types.
 template <typename T>
 class AggregateFunctionGroupArrayIntersect
     : public IAggregateFunctionDataHelper<AggregateFunctionGroupArrayIntersectData<T>, AggregateFunctionGroupArrayIntersect<T>>
@@ -65,7 +69,7 @@ public:
         : IAggregateFunctionDataHelper<AggregateFunctionGroupArrayIntersectData<T>,
           AggregateFunctionGroupArrayIntersect<T>>({argument_type}, parameters_, result_type_) {}
 
-    String getName() const override { return "groupArrayIntersect"; }
+    String getName() const override { return "GroupArrayIntersect"; }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -83,16 +87,16 @@ public:
         if (version == 1)
         {
             for (size_t i = 0; i < arr_size; ++i)
-                set.insert(static_cast<T>((*data_column)[offset + i].safeGet<T>()));
+                set.insert(static_cast<T>((*data_column)[offset + i].get<T>()));
         }
         else if (!set.empty())
         {
             typename State::Set new_set;
             for (size_t i = 0; i < arr_size; ++i)
             {
-                typename State::Set::LookupResult set_value = set.find(static_cast<T>((*data_column)[offset + i].safeGet<T>()));
+                typename State::Set::LookupResult set_value = set.find(static_cast<T>((*data_column)[offset + i].get<T>()));
                 if (set_value != nullptr)
-                    new_set.insert(static_cast<T>((*data_column)[offset + i].safeGet<T>()));
+                    new_set.insert(static_cast<T>((*data_column)[offset + i].get<T>()));
             }
             set = std::move(new_set);
         }
@@ -146,18 +150,8 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        auto & set = this->data(place).value;
-        auto & version = this->data(place).version;
-        size_t size;
-        readVarUInt(version, buf);
-        readVarUInt(size, buf);
-        set.reserve(size);
-        for (size_t i = 0; i < size; ++i)
-        {
-            T key;
-            readIntBinary(key, buf);
-            set.insert(key);
-        }
+        readVarUInt(this->data(place).version, buf);
+        this->data(place).value.read(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -209,7 +203,7 @@ public:
         : IAggregateFunctionDataHelper<AggregateFunctionGroupArrayIntersectGenericData, AggregateFunctionGroupArrayIntersectGeneric<is_plain_column>>({input_data_type_}, parameters_, result_type_)
         , input_data_type(result_type_) {}
 
-    String getName() const override { return "groupArrayIntersect"; }
+    String getName() const override { return "GroupArrayIntersect"; }
 
     bool allocatesMemoryInArena() const override { return true; }
 
@@ -236,7 +230,7 @@ public:
                 {
                     const char * begin = nullptr;
                     StringRef serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
-                    chassert(serialized.data != nullptr);
+                    assert(serialized.data != nullptr);
                     set.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
                 }
             }
@@ -256,7 +250,7 @@ public:
                 {
                     const char * begin = nullptr;
                     StringRef serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
-                    chassert(serialized.data != nullptr);
+                    assert(serialized.data != nullptr);
                     it = set.find(serialized);
 
                     if (it != nullptr)
@@ -298,7 +292,7 @@ public:
                 }
                 return new_map;
             };
-            auto new_map = create_new_map(set, rhs_value);
+            auto new_map = rhs_value.size() < set.size() ? create_new_map(rhs_value, set) : create_new_map(set, rhs_value);
             set = std::move(new_map);
         }
     }
@@ -322,9 +316,11 @@ public:
         readVarUInt(version, buf);
         readVarUInt(size, buf);
         set.reserve(size);
+        UInt64 elem_version;
         for (size_t i = 0; i < size; ++i)
         {
             auto key = readStringBinaryInto(*arena, buf);
+            readVarUInt(elem_version, buf);
             set.insert(key);
         }
     }

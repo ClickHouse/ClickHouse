@@ -11,7 +11,6 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <Formats/FormatSettings.h>
-#include <Formats/JSONUtils.h>
 
 namespace DB
 {
@@ -30,7 +29,7 @@ static constexpr size_t MAX_ARRAYS_SIZE = 1ULL << 40;
 
 void SerializationArray::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const Array & a = field.safeGet<const Array &>();
+    const Array & a = field.get<const Array &>();
     writeVarUInt(a.size(), ostr);
     for (const auto & i : a)
     {
@@ -43,16 +42,16 @@ void SerializationArray::deserializeBinary(Field & field, ReadBuffer & istr, con
 {
     size_t size;
     readVarUInt(size, istr);
-    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
+    if (settings.max_binary_array_size && size > settings.max_binary_array_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_ARRAY_SIZE,
             "Too large array size: {}. The maximum is: {}. To increase the maximum, use setting "
             "format_binary_max_array_size",
             size,
-            settings.binary.max_binary_string_size);
+            settings.max_binary_array_size);
 
     field = Array();
-    Array & arr = field.safeGet<Array &>();
+    Array & arr = field.get<Array &>();
     arr.reserve(size);
     for (size_t i = 0; i < size; ++i)
         nested->deserializeBinary(arr.emplace_back(), istr, settings);
@@ -83,13 +82,13 @@ void SerializationArray::deserializeBinary(IColumn & column, ReadBuffer & istr, 
 
     size_t size;
     readVarUInt(size, istr);
-    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
+    if (settings.max_binary_array_size && size > settings.max_binary_array_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_ARRAY_SIZE,
             "Too large array size: {}. The maximum is: {}. To increase the maximum, use setting "
             "format_binary_max_array_size",
             size,
-            settings.binary.max_binary_string_size);
+            settings.max_binary_array_size);
 
     IColumn & nested_column = column_array.getData();
 
@@ -255,8 +254,7 @@ void SerializationArray::enumerateStreams(
     auto next_data = SubstreamData(nested)
         .withType(type_array ? type_array->getNestedType() : nullptr)
         .withColumn(column_array ? column_array->getDataPtr() : nullptr)
-        .withSerializationInfo(data.serialization_info)
-        .withDeserializeState(data.deserialize_state);
+        .withSerializationInfo(data.serialization_info);
 
     nested->enumerateStreams(settings, callback, next_data);
     settings.path.pop_back();
@@ -286,11 +284,10 @@ void SerializationArray::serializeBinaryBulkStateSuffix(
 
 void SerializationArray::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state,
-    SubstreamsDeserializeStatesCache * cache) const
+    DeserializeBinaryBulkStatePtr & state) const
 {
     settings.path.push_back(Substream::ArrayElements);
-    nested->deserializeBinaryBulkStatePrefix(settings, state, cache);
+    nested->deserializeBinaryBulkStatePrefix(settings, state);
     settings.path.pop_back();
 }
 
@@ -616,49 +613,28 @@ void SerializationArray::serializeTextJSONPretty(const IColumn & column, size_t 
 }
 
 
-template <typename ReturnType>
-ReturnType SerializationArray::deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    auto deserialize_nested = [&settings, this](IColumn & nested_column, ReadBuffer & buf) -> ReturnType
-    {
-        if constexpr (std::is_same_v<ReturnType, void>)
-        {
-            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
-                SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(nested_column, buf, settings, nested);
-            else
-                nested->deserializeTextJSON(nested_column, buf, settings);
-        }
-        else
-        {
-            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
-                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(nested_column, buf, settings, nested);
-            return nested->tryDeserializeTextJSON(nested_column, buf, settings);
-        }
-    };
-
-    if (settings.json.empty_as_default)
-        return deserializeTextImpl<ReturnType>(column, istr,
-            [&deserialize_nested, &istr](IColumn & nested_column) -> ReturnType
-            {
-                return JSONUtils::deserializeEmpyStringAsDefaultOrNested<ReturnType>(nested_column, istr, deserialize_nested);
-            }, false);
-    else
-        return deserializeTextImpl<ReturnType>(column, istr,
-            [&deserialize_nested, &istr](IColumn & nested_column) -> ReturnType
-            {
-                return deserialize_nested(nested_column, istr);
-            }, false);
-}
-
-
 void SerializationArray::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeTextJSONImpl<void>(column, istr, settings);
+    deserializeTextImpl(column, istr,
+        [&](IColumn & nested_column)
+        {
+            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
+                SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(nested_column, istr, settings, nested);
+            else
+                nested->deserializeTextJSON(nested_column, istr, settings);
+        }, false);
 }
 
 bool SerializationArray::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    return deserializeTextJSONImpl<bool>(column, istr, settings);
+    auto read_nested = [&](IColumn & nested_column)
+    {
+        if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
+            return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(nested_column, istr, settings, nested);
+        return nested->tryDeserializeTextJSON(nested_column, istr, settings);
+    };
+
+    return deserializeTextImpl<bool>(column, istr, std::move(read_nested), false);
 }
 
 

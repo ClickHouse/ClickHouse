@@ -42,13 +42,13 @@ ASTPtr generateOptimizedDateFilterAST(const String & comparator, const NameAndTy
 
     if (isDateOrDate32(column.type.get()))
     {
-        start_date_or_date_time = date_lut.dateToString(range.first.safeGet<DateLUTImpl::Time>());
-        end_date_or_date_time = date_lut.dateToString(range.second.safeGet<DateLUTImpl::Time>());
+        start_date_or_date_time = date_lut.dateToString(range.first.get<DateLUTImpl::Time>());
+        end_date_or_date_time = date_lut.dateToString(range.second.get<DateLUTImpl::Time>());
     }
     else if (isDateTime(column.type.get()) || isDateTime64(column.type.get()))
     {
-        start_date_or_date_time = date_lut.timeToString(range.first.safeGet<DateLUTImpl::Time>());
-        end_date_or_date_time = date_lut.timeToString(range.second.safeGet<DateLUTImpl::Time>());
+        start_date_or_date_time = date_lut.timeToString(range.first.get<DateLUTImpl::Time>());
+        end_date_or_date_time = date_lut.timeToString(range.second.get<DateLUTImpl::Time>());
     }
     else [[unlikely]] return {};
 
@@ -127,7 +127,7 @@ void OptimizeDateOrDateTimeConverterWithPreimageMatcher::visit(const ASTFunction
     size_t func_id = function.arguments->children.size();
 
     for (size_t i = 0; i < function.arguments->children.size(); i++)
-        if (const auto * /*func*/ _ = function.arguments->children[i]->as<ASTFunction>())
+        if (const auto * func = function.arguments->children[i]->as<ASTFunction>())
             func_id = i;
 
     if (func_id == function.arguments->children.size())

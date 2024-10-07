@@ -339,7 +339,7 @@ void KeeperStateManager::save_state(const nuraft::srv_state & state)
     {
         auto buf = disk->writeFile(copy_lock_file);
         buf->finalize();
-        disk->copyFile(server_state_file_name, *disk, old_path, ReadSettings{});
+        disk->copyFile(server_state_file_name, *disk, old_path);
         disk->removeFile(copy_lock_file);
         disk->removeFile(old_path);
     }
@@ -374,7 +374,7 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
     {
         try
         {
-            auto read_buf = disk->readFile(path, getReadSettings());
+            auto read_buf = disk->readFile(path);
             auto content_size = read_buf->getFileSize();
 
             if (content_size == 0)
@@ -508,7 +508,7 @@ ClusterUpdateActions KeeperStateManager::getRaftConfigurationDiff(
     }
 
     /// After that remove old ones
-    for (const auto & [old_id, server_config] : old_ids)
+    for (auto [old_id, server_config] : old_ids)
         if (!new_ids.contains(old_id))
             result.emplace_back(RemoveRaftServer{old_id});
 

@@ -1,8 +1,6 @@
 #include <IO/ReadBufferFromIStream.h>
 #include <Common/Exception.h>
 
-#include <istream>
-
 
 namespace DB
 {

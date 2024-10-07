@@ -2,8 +2,6 @@
 
 #include <Common/typeid_cast.h>
 
-#include <Core/Settings.h>
-
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 
@@ -13,11 +11,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool asterisk_include_alias_columns;
-    extern const SettingsBool asterisk_include_materialized_columns;
-}
 
 namespace ErrorCodes
 {
@@ -319,8 +312,9 @@ IdentifierMembershipCollector::IdentifierMembershipCollector(const ASTSelectQuer
     QueryAliasesNoSubqueriesVisitor(aliases).visit(select.select());
 
     const auto & settings = context->getSettingsRef();
-    tables = getDatabaseAndTablesWithColumns(
-        getTableExpressions(select), context, settings[Setting::asterisk_include_alias_columns], settings[Setting::asterisk_include_materialized_columns]);
+    tables = getDatabaseAndTablesWithColumns(getTableExpressions(select), context,
+                                             settings.asterisk_include_alias_columns,
+                                             settings.asterisk_include_materialized_columns);
 }
 
 std::optional<size_t> IdentifierMembershipCollector::getIdentsMembership(ASTPtr ast) const

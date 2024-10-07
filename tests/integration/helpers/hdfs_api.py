@@ -1,16 +1,15 @@
 # -*- coding: utf-8 -*-
-import gzip
 import io
-import logging
-import os
-import socket
+import gzip
 import subprocess
-import tempfile
 import time
 from tempfile import NamedTemporaryFile
-
 import requests
 import requests_kerberos as reqkerb
+import socket
+import tempfile
+import logging
+import os
 
 
 class mk_krb_conf(object):
@@ -111,9 +110,10 @@ class HDFSApi(object):
                         logging.debug(
                             "Stdout:\n{}\n".format(res.stdout.decode("utf-8"))
                         )
+                        logging.debug("Env:\n{}\n".format(env))
                         raise Exception(
                             "Command {} return non-zero code {}: {}".format(
-                                cmd, res.returncode, res.stderr.decode("utf-8")
+                                args, res.returncode, res.stderr.decode("utf-8")
                             )
                         )
 

@@ -43,7 +43,7 @@ public:
     {
         if (!ISchedulerNode::equals(other))
             return false;
-        if (auto * _ = dynamic_cast<PriorityPolicy *>(other))
+        if (auto * o = dynamic_cast<PriorityPolicy *>(other))
             return true;
         return false;
     }
@@ -122,7 +122,8 @@ public:
 
             if (request)
             {
-                incrementDequeued(request->cost);
+                dequeued_requests++;
+                dequeued_cost += request->cost;
                 return {request, !items.empty()};
             }
         }

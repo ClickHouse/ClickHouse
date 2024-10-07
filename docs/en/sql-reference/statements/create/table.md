@@ -17,11 +17,11 @@ By default, tables are created only on the current server. Distributed DDL queri
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [COMMENT 'comment for column'] [compression_codec] [TTL expr1],
-    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [COMMENT 'comment for column'] [compression_codec] [TTL expr2],
+    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [compression_codec] [TTL expr1] [COMMENT 'comment for column'],
+    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [compression_codec] [TTL expr2] [COMMENT 'comment for column'],
     ...
 ) ENGINE = engine
-  [COMMENT 'comment for table']
+  COMMENT 'comment for table'
 ```
 
 Creates a table named `table_name` in the `db` database or the current database if `db` is not set, with the structure specified in brackets and the `engine` engine.
@@ -42,19 +42,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 ```
 
 Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the `db2.name2` table.
-
-### With a Schema and Data Cloned from Another Table 
-
-``` sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name CLONE AS [db2.]name2 [ENGINE = engine]
-```
-
-Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the `db2.name2` table. After the new table is created, all partitions from `db2.name2` are attached to it. In other words, the data of `db2.name2` is cloned into `db.table_name` upon creation. This query is equivalent to the following:
-
-``` sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine];
-ALTER TABLE [db.]table_name ATTACH PARTITION ALL FROM [db2].name2;
-```
 
 ### From a Table Function
 
@@ -165,7 +152,7 @@ SELECT * FROM test;
 
 `MATERIALIZED expr`
 
-Materialized expression. Values of such columns are automatically calculated according to the specified materialized expression when rows are inserted. Values cannot be explicitly specified during `INSERT`s.
+Materialized expression. Values of such columns are always calculated, they cannot be specified in INSERT queries.
 
 Also, default value columns of this type are not included in the result of `SELECT *`. This is to preserve the invariant that the result of a `SELECT *` can always be inserted back into the table using `INSERT`. This behavior can be disabled with setting `asterisk_include_materialized_columns`.
 
@@ -254,12 +241,12 @@ CREATE OR REPLACE TABLE test
 (
     id UInt64,
     size_bytes Int64,
-    size String ALIAS formatReadableSize(size_bytes)
+    size String Alias formatReadableSize(size_bytes)
 )
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO test VALUES (1, 4678899);
+INSERT INTO test Values (1, 4678899);
 
 SELECT id, size_bytes, size FROM test;
 ┌─id─┬─size_bytes─┬─size─────┐
@@ -350,7 +337,7 @@ Then, when executing the query `SELECT name FROM users_a WHERE length(name) < 5;
 
 Defines storage time for values. Can be specified only for MergeTree-family tables. For the detailed description, see [TTL for columns and tables](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
 
-## Column Compression Codecs {#column_compression_codec}
+## Column Compression Codecs
 
 By default, ClickHouse applies `lz4` compression in the self-managed version, and `zstd` in ClickHouse Cloud. 
 
@@ -422,10 +409,6 @@ High compression levels are useful for asymmetric scenarios, like compress once,
 - ZSTD_QAT is disabled by default and can only be used after enabling configuration setting [enable_zstd_qat_codec](../../../operations/settings/settings.md#enable_zstd_qat_codec).
 - For compression, ZSTD_QAT tries to use an Intel® QAT offloading device ([QuickAssist Technology](https://www.intel.com/content/www/us/en/developer/topic-technology/open/quick-assist-technology/overview.html)). If no such device was found, it will fallback to ZSTD compression in software.
 - Decompression is always performed in software.
-
-:::note
-ZSTD_QAT is not available in ClickHouse Cloud.
-:::
 
 #### DEFLATE_QPL
 
@@ -510,7 +493,7 @@ If you perform a SELECT query mentioning a specific value in an encrypted column
 ```sql
 CREATE TABLE mytable
 (
-    x String CODEC(AES_128_GCM_SIV)
+    x String Codec(AES_128_GCM_SIV)
 )
 ENGINE = MergeTree ORDER BY x;
 ```
@@ -638,6 +621,11 @@ SELECT * FROM base.t1;
 ## COMMENT Clause
 
 You can add a comment to the table when you creating it.
+
+:::note
+The comment clause is supported by all table engines except [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) and [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
+:::
+
 
 **Syntax**
 

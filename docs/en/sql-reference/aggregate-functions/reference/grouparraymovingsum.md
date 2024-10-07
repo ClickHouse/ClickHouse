@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/grouparraymovingsum
-sidebar_position: 144
+sidebar_position: 113
 ---
 
 # groupArrayMovingSum

@@ -10,13 +10,11 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/LocalDateTime.h>
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "readInvalidateQuery.h"
 #include "registerDictionaries.h"
 #include <Common/escapeForFileName.h>
-#include <Core/ServerSettings.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Formats/IInputFormat.h>
 #include "config.h"
@@ -24,12 +22,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsSeconds http_receive_timeout;
-    extern const SettingsBool odbc_bridge_use_connection_pooling;
-}
-
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
@@ -247,10 +239,10 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
 #if USE_ODBC
         BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(
             global_context,
-            global_context->getSettingsRef()[Setting::http_receive_timeout],
+            global_context->getSettings().http_receive_timeout,
             config.getString(config_prefix + ".odbc.connection_string"),
             config.getBool(config_prefix + ".settings.odbc_bridge_use_connection_pooling",
-            global_context->getSettingsRef()[Setting::odbc_bridge_use_connection_pooling]));
+            global_context->getSettingsRef().odbc_bridge_use_connection_pooling));
 
         std::string settings_config_prefix = config_prefix + ".odbc";
 

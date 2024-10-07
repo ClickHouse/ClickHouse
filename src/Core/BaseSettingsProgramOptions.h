@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Settings.h>
 #include <Core/Types_fwd.h>
 
 #include <boost/program_options.hpp>
@@ -33,11 +34,11 @@ void addProgramOptionsAsMultitokens(T &cmd_settings, boost::program_options::opt
 /// Adds program options to set the settings from a command line.
 /// (Don't forget to call notify() on the `variables_map` after parsing it!)
 template <typename T>
-void addProgramOption(T & cmd_settings, boost::program_options::options_description & options, std::string_view name, const typename T::SettingFieldRef & field)
+void addProgramOption(T &cmd_settings, boost::program_options::options_description & options, std::string_view name, const typename T::SettingFieldRef  & field)
 {
     auto on_program_option = boost::function1<void, const std::string &>([&cmd_settings, name](const std::string & value) { cmd_settings.set(name, value); });
     options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
-            name.data(), boost::program_options::value<std::string>()->composing()->notifier(on_program_option), field.getDescription()))); // NOLINT
+            name.data(), boost::program_options::value<std::string>()->composing()->notifier(on_program_option), field.getDescription())));
 }
 
 template <typename T>

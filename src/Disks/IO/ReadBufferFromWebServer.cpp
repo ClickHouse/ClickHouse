@@ -1,22 +1,14 @@
 #include "ReadBufferFromWebServer.h"
 
-#include <Core/ServerSettings.h>
-#include <Core/Settings.h>
-#include <IO/Operators.h>
+#include <Common/logger_useful.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromString.h>
-#include <Common/logger_useful.h>
-
+#include <IO/Operators.h>
 #include <thread>
 
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsSeconds http_connection_timeout;
-    extern const SettingsSeconds http_receive_timeout;
-}
 
 namespace ErrorCodes
 {
@@ -29,11 +21,10 @@ namespace ErrorCodes
 ReadBufferFromWebServer::ReadBufferFromWebServer(
     const String & url_,
     ContextPtr context_,
-    size_t file_size_,
     const ReadSettings & settings_,
     bool use_external_buffer_,
     size_t read_until_position_)
-    : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
+    : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0)
     , log(getLogger("ReadBufferFromWebServer"))
     , context(context_)
     , url(url_)
@@ -45,7 +36,7 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
 }
 
 
-std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
+std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
 {
     Poco::URI uri(url);
     if (read_until_position)
@@ -58,8 +49,8 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
     const auto & server_settings = context->getServerSettings();
 
     auto connection_timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, server_settings.keep_alive_timeout);
-    connection_timeouts.withConnectionTimeout(std::max<Poco::Timespan>(settings[Setting::http_connection_timeout], Poco::Timespan(20, 0)));
-    connection_timeouts.withReceiveTimeout(std::max<Poco::Timespan>(settings[Setting::http_receive_timeout], Poco::Timespan(20, 0)));
+    connection_timeouts.withConnectionTimeout(std::max<Poco::Timespan>(settings.http_connection_timeout, Poco::Timespan(20, 0)));
+    connection_timeouts.withReceiveTimeout(std::max<Poco::Timespan>(settings.http_receive_timeout, Poco::Timespan(20, 0)));
 
     auto res = BuilderRWBufferFromHTTP(uri)
                    .withConnectionGroup(HTTPConnectionGroupType::DISK)
@@ -128,8 +119,9 @@ bool ReadBufferFromWebServer::nextImpl()
 
     auto result = impl->next();
 
-    working_buffer = impl->buffer();
-    pos = impl->position();
+    BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
+
+    chassert(working_buffer.begin() == impl->buffer().begin());
 
     if (result)
         offset += working_buffer.size();
@@ -140,29 +132,16 @@ bool ReadBufferFromWebServer::nextImpl()
 
 off_t ReadBufferFromWebServer::seek(off_t offset_, int whence)
 {
+    if (impl)
+        throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Seek is allowed only before first read attempt from the buffer");
+
     if (whence != SEEK_SET)
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed");
 
     if (offset_ < 0)
         throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}", offset_);
 
-    if (impl)
-    {
-        if (use_external_buffer)
-        {
-            impl->set(internal_buffer.begin(), internal_buffer.size());
-        }
-
-        impl->seek(offset_, SEEK_SET);
-
-        working_buffer = impl->buffer();
-        pos = impl->position();
-        offset = offset_ + available();
-    }
-    else
-    {
-        offset = offset_;
-    }
+    offset = offset_;
 
     return offset;
 }

@@ -112,7 +112,7 @@ struct fmt::formatter<DB::Part>
     static constexpr auto parse(format_parse_context & ctx) { return ctx.begin(); }
 
     template <typename FormatContext>
-    auto format(const DB::Part & part, FormatContext & ctx) const
+    auto format(const DB::Part & part, FormatContext & ctx)
     {
         return fmt::format_to(ctx.out(), "{} in replicas [{}]", part.description.describe(), fmt::join(part.replicas, ", "));
     }
@@ -125,7 +125,6 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
-extern const int ALL_CONNECTION_TRIES_FAILED;
 }
 
 class ParallelReplicasReadingCoordinator::ImplInterface
@@ -168,7 +167,6 @@ public:
     Stats stats;
     size_t replicas_count{0};
     size_t unavailable_replicas_count{0};
-    size_t sent_initial_requests{0};
     ProgressCallback progress_callback;
 
     explicit ImplInterface(size_t replicas_count_)
@@ -179,17 +177,8 @@ public:
     virtual ~ImplInterface() = default;
 
     virtual ParallelReadResponse handleRequest(ParallelReadRequest request) = 0;
-    virtual void doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) = 0;
+    virtual void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) = 0;
     virtual void markReplicaAsUnavailable(size_t replica_number) = 0;
-
-    void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
-    {
-        if (++sent_initial_requests > replicas_count)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Initiator received more initial requests than there are replicas: replica_num={}", announcement.replica_num);
-
-        doHandleInitialAllRangesAnnouncement(std::move(announcement));
-    }
 
     void setProgressCallback(ProgressCallback callback) { progress_callback = std::move(callback); }
 };
@@ -212,25 +201,29 @@ using PartRefs = std::deque<Parts::iterator>;
 class DefaultCoordinator : public ParallelReplicasReadingCoordinator::ImplInterface
 {
 public:
-    explicit DefaultCoordinator(size_t replicas_count_)
+    explicit DefaultCoordinator(size_t replicas_count_, size_t mark_segment_size_)
         : ParallelReplicasReadingCoordinator::ImplInterface(replicas_count_)
+        , mark_segment_size(mark_segment_size_)
         , replica_status(replicas_count_)
         , distribution_by_hash_queue(replicas_count_)
     {
+        if (mark_segment_size == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Zero value provided for `mark_segment_size`");
     }
 
     ~DefaultCoordinator() override;
 
     ParallelReadResponse handleRequest(ParallelReadRequest request) override;
 
-    void doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) override;
+    void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) override;
 
     void markReplicaAsUnavailable(size_t replica_number) override;
 
 private:
     /// This many granules will represent a single segment of marks that will be assigned to a replica
-    size_t mark_segment_size{0};
+    const size_t mark_segment_size{0};
 
+    size_t sent_initial_requests{0};
     bool state_initialized{false};
     size_t finished_replicas{0};
 
@@ -298,7 +291,7 @@ private:
 
     void setProgressCallback();
 
-    enum class ScanMode : uint8_t
+    enum class ScanMode
     {
         /// Main working set for the replica
         TakeWhatsMineByHash,
@@ -373,20 +366,17 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
     if (state_initialized)
         return;
 
+    for (auto && part : announcement.description)
     {
-        /// To speedup search for adjacent parts
-        Parts known_parts(all_parts_to_read.begin(), all_parts_to_read.end());
+        auto intersecting_it = std::find_if(
+            all_parts_to_read.begin(),
+            all_parts_to_read.end(),
+            [&part](const Part & other) { return !other.description.info.isDisjoint(part.info); });
 
-        for (auto && part : announcement.description)
-        {
-            auto intersecting_it = known_parts.lower_bound(Part{.description = part, .replicas = {}});
+        if (intersecting_it != all_parts_to_read.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Intersecting parts found in announcement");
 
-            if (intersecting_it != known_parts.end() && !intersecting_it->description.info.isDisjoint(part.info))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Intersecting parts found in announcement");
-
-            known_parts.emplace(Part{.description = part, .replicas = {}});
-            all_parts_to_read.push_back(Part{.description = std::move(part), .replicas = {announcement.replica_num}});
-        }
+        all_parts_to_read.push_back(Part{.description = std::move(part), .replicas = {announcement.replica_num}});
     }
 
     std::ranges::sort(
@@ -394,11 +384,7 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
     state_initialized = true;
     source_replica_for_parts_snapshot = announcement.replica_num;
 
-    mark_segment_size = announcement.mark_segment_size;
-    if (mark_segment_size == 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Zero value provided for `mark_segment_size`");
-
-    LOG_DEBUG(log, "Reading state is fully initialized: {}, mark_segment_size: {}", fmt::join(all_parts_to_read, "; "), mark_segment_size);
+    LOG_DEBUG(log, "Reading state is fully initialized: {}", fmt::join(all_parts_to_read, "; "));
 }
 
 void DefaultCoordinator::markReplicaAsUnavailable(size_t replica_number)
@@ -436,11 +422,11 @@ void DefaultCoordinator::setProgressCallback()
     }
 }
 
-void DefaultCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
+void DefaultCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
-    LOG_DEBUG(log, "Initial request: {}", announcement.describe());
-
     const auto replica_num = announcement.replica_num;
+
+    LOG_DEBUG(log, "Initial request from replica {}: {}", announcement.replica_num, announcement.describe());
 
     initializeReadingState(std::move(announcement));
 
@@ -449,14 +435,12 @@ void DefaultCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
             ErrorCodes::LOGICAL_ERROR, "Replica number ({}) is bigger than total replicas count ({})", replica_num, stats.size());
 
     ++stats[replica_num].number_of_requests;
-
-    if (replica_status[replica_num].is_announcement_received)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate announcement received for replica number {}", replica_num);
     replica_status[replica_num].is_announcement_received = true;
 
+    ++sent_initial_requests;
     LOG_DEBUG(log, "Sent initial requests: {} Replicas count: {}", sent_initial_requests, replicas_count);
 
-    if (sent_initial_requests == replicas_count - unavailable_replicas_count)
+    if (sent_initial_requests == replicas_count)
         setProgressCallback();
 
     /// Sift the queue to move out all invisible segments
@@ -754,12 +738,7 @@ size_t DefaultCoordinator::computeConsistentHash(const std::string & part_name, 
 
 ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest request)
 {
-    LOG_TRACE(
-        log,
-        "Handling request from replica {}, minimal marks size is {}, request count {}",
-        request.replica_num,
-        request.min_number_of_marks,
-        stats[request.replica_num].number_of_requests);
+    LOG_TRACE(log, "Handling request from replica {}, minimal marks size is {}", request.replica_num, request.min_number_of_marks);
 
     ParallelReadResponse response;
 
@@ -802,11 +781,6 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
         {
             /// Nobody will come to process any more data
 
-            for (const auto & part : all_parts_to_read)
-                if (!part.description.ranges.empty())
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR, "Some segments were left unread for the part {}", part.description.describe());
-
             if (!ranges_for_stealing_queue.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Some orphaned segments were left unread");
 
@@ -844,12 +818,11 @@ public:
     }
 
     ParallelReadResponse handleRequest([[ maybe_unused ]]  ParallelReadRequest request) override;
-    void doHandleInitialAllRangesAnnouncement([[maybe_unused]] InitialAllRangesAnnouncement announcement) override;
+    void handleInitialAllRangesAnnouncement([[ maybe_unused ]]  InitialAllRangesAnnouncement announcement) override;
     void markReplicaAsUnavailable(size_t replica_number) override;
 
     Parts all_parts_to_read;
     size_t total_rows_to_read = 0;
-    bool state_initialized{false};
 
     LoggerPtr log = getLogger(fmt::format("{}{}", magic_enum::enum_name(mode), "Coordinator"));
 };
@@ -867,51 +840,31 @@ void InOrderCoordinator<mode>::markReplicaAsUnavailable(size_t replica_number)
 }
 
 template <CoordinationMode mode>
-void InOrderCoordinator<mode>::doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
+void InOrderCoordinator<mode>::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
-    LOG_TRACE(log, "Received an announcement : {}", announcement.describe());
-
-    ++stats[announcement.replica_num].number_of_requests;
+    LOG_TRACE(log, "Received an announcement {}", announcement.describe());
 
     size_t new_rows_to_read = 0;
 
     /// To get rid of duplicates
     for (auto && part: announcement.description)
     {
-        auto the_same_it = all_parts_to_read.find(Part{.description = part, .replicas = {}});
+        auto the_same_it = std::find_if(all_parts_to_read.begin(), all_parts_to_read.end(),
+            [&part] (const Part & other) { return other.description.info == part.info; });
 
-        /// We have the same part - add the info about presence on the corresponding replica to it
+        /// We have the same part - add the info about presence on current replica to it
         if (the_same_it != all_parts_to_read.end())
         {
             the_same_it->replicas.insert(announcement.replica_num);
             continue;
         }
 
-        if (state_initialized)
+        auto covering_or_the_same_it = std::find_if(all_parts_to_read.begin(), all_parts_to_read.end(),
+            [&part] (const Part & other) { return other.description.info.contains(part.info) ||  part.info.contains(other.description.info); });
+
+        /// It is covering part or we have covering - skip it
+        if (covering_or_the_same_it != all_parts_to_read.end())
             continue;
-
-        /// Look for the first part >= current
-        auto covering_it = all_parts_to_read.lower_bound(Part{.description = part, .replicas = {}});
-
-        if (covering_it != all_parts_to_read.end())
-        {
-            /// Checks if other part covers this one or this one covers the other
-            auto is_covered_or_covering = [&part] (const Part & other)
-                {
-                    return other.description.info.contains(part.info) || part.info.contains(other.description.info);
-                };
-
-            if (is_covered_or_covering(*covering_it))
-                continue;
-
-            /// Also look at the previous part, it could be covering the current one
-            if (covering_it != all_parts_to_read.begin())
-            {
-                --covering_it;
-                if (is_covered_or_covering(*covering_it))
-                    continue;
-            }
-        }
 
         new_rows_to_read += part.rows;
 
@@ -920,25 +873,9 @@ void InOrderCoordinator<mode>::doHandleInitialAllRangesAnnouncement(InitialAllRa
         std::sort(ranges.begin(), ranges.end());
     }
 
-#ifndef NDEBUG
-    /// Double check that there are no intersecting parts
-    {
-        auto intersecting_part_it = std::adjacent_find(all_parts_to_read.begin(), all_parts_to_read.end(),
-            [] (const Part & lhs, const Part & rhs)
-            {
-                return !lhs.description.info.isDisjoint(rhs.description.info);
-            });
+    ++stats[announcement.replica_num].number_of_requests;
 
-        if (intersecting_part_it != all_parts_to_read.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parts {} and {} intersect",
-                intersecting_part_it->description.info.getPartNameV1(), std::next(intersecting_part_it)->description.info.getPartNameV1());
-    }
-#endif
-
-    state_initialized = true;
-
-    // progress_callback is not set when local plan is used for initiator
-    if (progress_callback && new_rows_to_read > 0)
+    if (new_rows_to_read > 0)
     {
         Progress progress;
         progress.total_rows_to_read = new_rows_to_read;
@@ -958,7 +895,7 @@ ParallelReadResponse InOrderCoordinator<mode>::handleRequest(ParallelReadRequest
             "Replica {} decided to read in {} mode, not in {}. This is a bug",
             request.replica_num, magic_enum::enum_name(request.mode), magic_enum::enum_name(mode));
 
-    LOG_TRACE(log, "Got read request: {}", request.describe());
+    LOG_TRACE(log, "Got request from replica {}, data {}", request.replica_num, request.describe());
 
     ParallelReadResponse response;
     response.description = request.description;
@@ -972,15 +909,8 @@ ParallelReadResponse InOrderCoordinator<mode>::handleRequest(ParallelReadRequest
         if (global_part_it == all_parts_to_read.end())
             continue;
 
-        if (global_part_it->replicas.empty())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Part {} requested by replica {} is not registered in working set",
-                part.info.getPartNameV1(),
-                request.replica_num);
-
         if (!global_part_it->replicas.contains(request.replica_num))
-            continue;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} doesn't exist on replica {} according to the global state", part.info.getPartNameV1(), request.replica_num);
 
         size_t current_mark_size = 0;
 
@@ -1051,23 +981,25 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
     std::lock_guard lock(mutex);
 
     if (!pimpl)
-        initialize(announcement.mode);
+    {
+        mode = announcement.mode;
+        initialize();
+    }
 
-    pimpl->handleInitialAllRangesAnnouncement(std::move(announcement));
+    return pimpl->handleInitialAllRangesAnnouncement(std::move(announcement));
 }
 
 ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelReadRequest request)
 {
-    if (request.min_number_of_marks == 0)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
-
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasHandleRequestMicroseconds);
 
     std::lock_guard lock(mutex);
 
     if (!pimpl)
-        initialize(request.mode);
+    {
+        mode = request.mode;
+        initialize();
+    }
 
     const auto replica_num = request.replica_num;
     auto response = pimpl->handleRequest(std::move(request));
@@ -1087,21 +1019,17 @@ void ParallelReplicasReadingCoordinator::markReplicaAsUnavailable(size_t replica
     std::lock_guard lock(mutex);
 
     if (!pimpl)
-    {
         unavailable_nodes_registered_before_initialization.push_back(replica_number);
-        if (unavailable_nodes_registered_before_initialization.size() == replicas_count)
-            throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Can't connect to any replica chosen for query execution");
-    }
     else
         pimpl->markReplicaAsUnavailable(replica_number);
 }
 
-void ParallelReplicasReadingCoordinator::initialize(CoordinationMode mode)
+void ParallelReplicasReadingCoordinator::initialize()
 {
     switch (mode)
     {
         case CoordinationMode::Default:
-            pimpl = std::make_unique<DefaultCoordinator>(replicas_count);
+            pimpl = std::make_unique<DefaultCoordinator>(replicas_count, mark_segment_size);
             break;
         case CoordinationMode::WithOrder:
             pimpl = std::make_unique<InOrderCoordinator<CoordinationMode::WithOrder>>(replicas_count);
@@ -1111,7 +1039,6 @@ void ParallelReplicasReadingCoordinator::initialize(CoordinationMode mode)
             break;
     }
 
-    // progress_callback is not set when local plan is used for initiator
     if (progress_callback)
         pimpl->setProgressCallback(std::move(progress_callback));
 
@@ -1119,7 +1046,8 @@ void ParallelReplicasReadingCoordinator::initialize(CoordinationMode mode)
         pimpl->markReplicaAsUnavailable(replica);
 }
 
-ParallelReplicasReadingCoordinator::ParallelReplicasReadingCoordinator(size_t replicas_count_) : replicas_count(replicas_count_)
+ParallelReplicasReadingCoordinator::ParallelReplicasReadingCoordinator(size_t replicas_count_, size_t mark_segment_size_)
+    : replicas_count(replicas_count_), mark_segment_size(mark_segment_size_)
 {
 }
 

@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/entropy
-sidebar_position: 131
+sidebar_position: 302
 ---
 
 # entropy

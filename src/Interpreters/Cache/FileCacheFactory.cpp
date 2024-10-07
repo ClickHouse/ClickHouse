@@ -155,17 +155,7 @@ void FileCacheFactory::updateSettingsFromConfig(const Poco::Util::AbstractConfig
 
         FileCacheSettings old_settings = cache_info->getSettings();
         if (old_settings == new_settings)
-        {
             continue;
-        }
-
-        /// FIXME: registerDiskCache modifies `path` setting of FileCacheSettings if path is relative.
-        /// This can lead to calling applySettingsIfPossible even though nothing changed, which is avoidable.
-
-        // LOG_TRACE(log, "Will apply settings changes for cache {}. "
-        //           "Settings changes: {} (new settings: {}, old_settings: {})",
-        //           cache_name, fmt::join(new_settings.getSettingsDiff(old_settings), ", "),
-        //           new_settings.toString(), old_settings.toString());
 
         try
         {
@@ -176,23 +166,10 @@ void FileCacheFactory::updateSettingsFromConfig(const Poco::Util::AbstractConfig
             /// Settings changes could be partially applied in case of exception,
             /// make sure cache_info->settings show correct state of applied settings.
             cache_info->setSettings(old_settings);
-            tryLogCurrentException(__PRETTY_FUNCTION__);
             throw;
         }
 
         cache_info->setSettings(old_settings);
-    }
-}
-
-void FileCacheFactory::remove(FileCachePtr cache)
-{
-    std::lock_guard lock(mutex);
-    for (auto it = caches_by_name.begin(); it != caches_by_name.end();)
-    {
-        if (it->second->cache == cache)
-            it = caches_by_name.erase(it);
-        else
-            ++it;
     }
 }
 

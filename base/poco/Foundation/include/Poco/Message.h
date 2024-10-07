@@ -19,7 +19,6 @@
 
 
 #include <map>
-#include <vector>
 #include "Poco/Foundation.h"
 #include "Poco/Timestamp.h"
 
@@ -67,11 +66,9 @@ public:
     /// The thread and process ids are set.
 
     Message(
-        const std::string & source, const std::string & text, Priority prio, const char * file, int line,
-        std::string_view fmt_str = {}, const std::vector<std::string> & fmt_str_args = {});
+        const std::string & source, const std::string & text, Priority prio, const char * file, int line, std::string_view fmt_str = {});
     Message(
-        std::string && source, std::string && text, Priority prio, const char * file, int line,
-        std::string_view fmt_str, std::vector<std::string> && fmt_str_args);
+        std::string && source, std::string && text, Priority prio, const char * file, int line, std::string_view fmt_str);
     /// Creates a Message with the given source, text, priority,
     /// source file path and line.
     ///
@@ -164,9 +161,6 @@ public:
     std::string_view getFormatString() const;
     void setFormatString(std::string_view fmt_str);
 
-    const std::vector<std::string> & getFormatStringArgs() const;
-    void setFormatStringArgs(const std::vector<std::string> & fmt_str_args);
-
     int getSourceLine() const;
     /// Returns the source file line of the statement
     /// generating the log message. May be 0
@@ -216,7 +210,6 @@ private:
     int _line;
     StringMap * _pMap;
     std::string_view _fmt_str;
-    std::vector<std::string> _fmt_str_args;
 };
 
 

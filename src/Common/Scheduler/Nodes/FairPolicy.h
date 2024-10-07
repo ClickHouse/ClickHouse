@@ -52,7 +52,7 @@ public:
     {
         if (!ISchedulerNode::equals(other))
             return false;
-        if (auto * _ = dynamic_cast<FairPolicy *>(other))
+        if (auto * o = dynamic_cast<FairPolicy *>(other))
             return true;
         return false;
     }
@@ -188,7 +188,8 @@ public:
 
             if (request)
             {
-                incrementDequeued(request->cost);
+                dequeued_requests++;
+                dequeued_cost += request->cost;
                 return {request, heap_size > 0};
             }
         }

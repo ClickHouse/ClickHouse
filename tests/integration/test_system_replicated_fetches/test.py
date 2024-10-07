@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 
 
-import json
-import random
-import string
-import time
-
 import pytest
-
+import time
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
+import random
+import string
+import json
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", with_zookeeper=True)

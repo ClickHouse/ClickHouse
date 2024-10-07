@@ -15,7 +15,18 @@ namespace DB
 
 static String typeToString(FilesystemCacheLogElement::CacheType type)
 {
-    return String(magic_enum::enum_name(type));
+    switch (type)
+    {
+        case FilesystemCacheLogElement::CacheType::READ_FROM_CACHE:
+            return "READ_FROM_CACHE";
+        case FilesystemCacheLogElement::CacheType::READ_FROM_FS_AND_DOWNLOADED_TO_CACHE:
+            return "READ_FROM_FS_AND_DOWNLOADED_TO_CACHE";
+        case FilesystemCacheLogElement::CacheType::READ_FROM_FS_BYPASSING_CACHE:
+            return "READ_FROM_FS_BYPASSING_CACHE";
+        case FilesystemCacheLogElement::CacheType::WRITE_THROUGH_CACHE:
+            return "WRITE_THROUGH_CACHE";
+    }
+    UNREACHABLE();
 }
 
 ColumnsDescription FilesystemCacheLogElement::getColumnsDescription()
@@ -24,8 +35,6 @@ ColumnsDescription FilesystemCacheLogElement::getColumnsDescription()
         std::make_shared<DataTypeNumber<UInt64>>(),
         std::make_shared<DataTypeNumber<UInt64>>(),
     };
-
-    auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
     return ColumnsDescription
     {
@@ -41,7 +50,7 @@ ColumnsDescription FilesystemCacheLogElement::getColumnsDescription()
         {"size", std::make_shared<DataTypeUInt64>(), "Read size"},
         {"read_type", std::make_shared<DataTypeString>(), "Read type: READ_FROM_CACHE, READ_FROM_FS_AND_DOWNLOADED_TO_CACHE, READ_FROM_FS_BYPASSING_CACHE"},
         {"read_from_cache_attempted", std::make_shared<DataTypeUInt8>(), "Whether reading from cache was attempted"},
-        {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "Profile events collected while reading this file segment"},
+        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()), "Profile events collected while reading this file segment"},
         {"read_buffer_id", std::make_shared<DataTypeString>(), "Internal implementation read buffer id"},
     };
 }

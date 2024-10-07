@@ -4,7 +4,6 @@
 
 #include "registerTableFunctions.h"
 #include <Access/Common/AccessFlags.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageFile.h>
@@ -15,11 +14,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_archive_path_syntax;
-    extern const SettingsString rename_files_after_processing;
-}
 
 namespace ErrorCodes
 {
@@ -31,7 +25,7 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
     if (context->getApplicationType() != Context::ApplicationType::LOCAL)
     {
         ITableFunctionFileLike::parseFirstArguments(arg, context);
-        StorageFile::parseFileSource(std::move(filename), filename, path_to_archive, context->getSettingsRef()[Setting::allow_archive_path_syntax]);
+        StorageFile::parseFileSource(std::move(filename), filename, path_to_archive);
         return;
     }
 
@@ -47,13 +41,12 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
         else if (filename == "stderr")
             fd = STDERR_FILENO;
         else
-            StorageFile::parseFileSource(
-                std::move(filename), filename, path_to_archive, context->getSettingsRef()[Setting::allow_archive_path_syntax]);
+            StorageFile::parseFileSource(std::move(filename), filename, path_to_archive);
     }
     else if (type == Field::Types::Int64 || type == Field::Types::UInt64)
     {
         fd = static_cast<int>(
-            (type == Field::Types::Int64) ? literal->value.safeGet<Int64>() : literal->value.safeGet<UInt64>());
+            (type == Field::Types::Int64) ? literal->value.get<Int64>() : literal->value.get<UInt64>());
         if (fd < 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "File descriptor must be non-negative");
     }
@@ -69,12 +62,9 @@ std::optional<String> TableFunctionFile::tryGetFormatFromFirstArgument()
         return FormatFactory::instance().tryGetFormatFromFileName(filename);
 }
 
-StoragePtr TableFunctionFile::getStorage(
-    const String & source,
-    const String & format_,
-    const ColumnsDescription & columns,
-    ContextPtr global_context,
-    const std::string & table_name,
+StoragePtr TableFunctionFile::getStorage(const String & source,
+    const String & format_, const ColumnsDescription & columns,
+    ContextPtr global_context, const std::string & table_name,
     const std::string & compression_method_) const
 {
     // For `file` table function, we are going to use format settings from the
@@ -88,7 +78,7 @@ StoragePtr TableFunctionFile::getStorage(
         columns,
         ConstraintsDescription{},
         String{},
-        global_context->getSettingsRef()[Setting::rename_files_after_processing],
+        global_context->getSettingsRef().rename_files_after_processing,
         path_to_archive,
     };
 

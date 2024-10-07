@@ -100,7 +100,7 @@ public:
         FunctionArgumentDescriptors args{
             {"sqid", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
         };
-        validateFunctionArguments(*this, arguments, args);
+        validateFunctionArgumentTypes(*this, arguments, args);
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
@@ -123,8 +123,7 @@ public:
             {
                 std::string_view sqid = col_non_const->getDataAt(i).toView();
                 std::vector<UInt64> integers = sqids.decode(String(sqid));
-                if (!integers.empty())
-                    res_nested_data.insert(integers.begin(), integers.end());
+                res_nested_data.insert(integers.begin(), integers.end());
                 res_offsets_data.push_back(res_offsets_data.back() + integers.size());
             }
         }

@@ -1,10 +1,6 @@
 #include <DataTypes/EnumValues.h>
 #include <boost/algorithm/string.hpp>
 #include <base/sort.h>
-#include <Common/CurrentThread.h>
-#include <Interpreters/Context.h>
-#include <Core/Settings.h>
-#include <IO/ReadHelpers.h>
 
 
 namespace DB
@@ -54,39 +50,47 @@ void EnumValues<T>::fillMaps()
 }
 
 template <typename T>
-T EnumValues<T>::getValue(StringRef field_name) const
+T EnumValues<T>::getValue(StringRef field_name, bool try_treat_as_id) const
 {
-    T x;
-    if (auto it = name_to_value_map.find(field_name); it != name_to_value_map.end())
+    const auto it = name_to_value_map.find(field_name);
+    if (!it)
     {
-        return it->getMapped();
-    }
-    else if (tryParse(x, field_name.data, field_name.size) && value_to_name_map.contains(x))
-    {
-        /// If we fail to find given string in enum names, we will try to treat it as enum id.
-        return x;
-    }
-    else
-    {
+        /// It is used in CSV and TSV input formats. If we fail to find given string in
+        /// enum names, we will try to treat it as enum id.
+        if (try_treat_as_id)
+        {
+            T x;
+            ReadBufferFromMemory tmp_buf(field_name.data, field_name.size);
+            readText(x, tmp_buf);
+            /// Check if we reached end of the tmp_buf (otherwise field_name is not a number)
+            /// and try to find it in enum ids
+            if (tmp_buf.eof() && value_to_name_map.find(x) != value_to_name_map.end())
+                return x;
+        }
         auto hints = this->getHints(field_name.toString());
         auto hints_string = !hints.empty() ? ", maybe you meant: " + toString(hints) : "";
         throw Exception(ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM, "Unknown element '{}' for enum{}", field_name.toString(), hints_string);
     }
+    return it->getMapped();
 }
 
 template <typename T>
-bool EnumValues<T>::tryGetValue(T & x, StringRef field_name) const
+bool EnumValues<T>::tryGetValue(T & x, StringRef field_name, bool try_treat_as_id) const
 {
-    if (auto it = name_to_value_map.find(field_name); it != name_to_value_map.end())
+    const auto it = name_to_value_map.find(field_name);
+    if (!it)
     {
-        x = it->getMapped();
-        return true;
+        /// It is used in CSV and TSV input formats. If we fail to find given string in
+        /// enum names, we will try to treat it as enum id.
+        if (try_treat_as_id)
+        {
+            ReadBufferFromMemory tmp_buf(field_name.data, field_name.size);
+            return tryReadText(x, tmp_buf) && tmp_buf.eof() && value_to_name_map.contains(x);
+        }
+        return false;
     }
-    else
-    {
-        /// If we fail to find given string in enum names, we will try to treat it as enum id.
-        return tryParse(x, field_name.data, field_name.size) && value_to_name_map.contains(x);
-    }
+    x = it->getMapped();
+    return true;
 }
 
 template <typename T>
