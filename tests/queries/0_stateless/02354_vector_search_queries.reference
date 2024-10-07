@@ -60,6 +60,24 @@ Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))
     Sorting (Sorting for ORDER BY)
       Expression (Before ORDER BY)
+        ReadFromMergeTree (default.tab_f64)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 4/4
+          Skip
+            Name: idx
+            Description: vector_similarity GRANULARITY 2
+            Parts: 1/1
+            Granules: 2/4
+1	[2,3.2]	2.3323807824711897
+2	[4.2,3.4]	4.427188573446585
+0	[4.6,2.3]	4.609772130377966
+Expression (Projection)
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Expression (Before ORDER BY)
         ReadFromMergeTree (default.tab_f32)
         Indexes:
           PrimaryKey
@@ -79,6 +97,24 @@ Expression (Projection)
     Sorting (Sorting for ORDER BY)
       Expression (Before ORDER BY)
         ReadFromMergeTree (default.tab_f16)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 4/4
+          Skip
+            Name: idx
+            Description: vector_similarity GRANULARITY 2
+            Parts: 1/1
+            Granules: 2/4
+1	[2,3.2]	2.3323807824711897
+2	[4.2,3.4]	4.427188573446585
+0	[4.6,2.3]	4.609772130377966
+Expression (Projection)
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Expression (Before ORDER BY)
+        ReadFromMergeTree (default.tab_bf16)
         Indexes:
           PrimaryKey
             Condition: true
