@@ -214,6 +214,19 @@ Bloom filter for ipv4 column. BF is on
     "bytes_read": 4005
   }
 }
+Bloom filter for ipv4 column. BF is on. Specified in the schema
+{
+  "data": [
+    {
+      "ipv4": "0.0.1.143"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 72,
+    "bytes_read": 4005
+  }
+}
 Bloom filter for ipv4 column. Even though column is transformed, we know it is a safe transformation.
 {
   "data": [
@@ -238,6 +251,19 @@ Bloom filter for ipv4 column. Even though column is transformed, we know it is a
   "statistics": {
     "rows_read": 72,
     "bytes_read": 4005
+  }
+}
+Bloom filter on 64 bit column read as ipv4. We explicitly deny it, should read all rg
+{
+  "data": [
+    {
+      "uint64_logical": "22.230.220.164"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 1000,
+    "bytes_read": 47419
   }
 }
 BF off for parquet uint64 logical type. Should read everything
@@ -321,31 +347,5 @@ BF on for parquet int8 logical type. Should skip row groups
   "statistics": {
     "rows_read": 536,
     "bytes_read": 25716
-  }
-}
-BF off for parquet UUID logical type. Should read everything
-{
-  "data": [
-    {
-      "json": "{\"key\":208, \"value\":\"LOCNZ\"}"
-    }
-  ],
-  "rows": 1,
-  "statistics": {
-    "rows_read": 1000,
-    "bytes_read": 47419
-  }
-}
-BF on for parquet UUID logical type. Should skip row groups
-{
-  "data": [
-    {
-      "json": "{\"key\":208, \"value\":\"LOCNZ\"}"
-    }
-  ],
-  "rows": 1,
-  "statistics": {
-    "rows_read": 464,
-    "bytes_read": 21703
   }
 }
