@@ -46,6 +46,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("enable_zstd_qat_codec", 1);
     context->setSetting("allow_create_index_without_type", 1);
     context->setSetting("allow_experimental_s3queue", 1);
+    context->setSetting("allow_experimental_shared_set_join", 1);
 }
 
 }

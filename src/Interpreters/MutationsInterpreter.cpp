@@ -54,6 +54,13 @@ namespace Setting
     extern const SettingsUInt64 max_block_size;
 }
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsUInt64 index_granularity_bytes;
+    extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
+    extern const MergeTreeSettingsBool ttl_only_drop_parts;
+}
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -342,7 +349,7 @@ bool MutationsInterpreter::Source::hasLightweightDeleteMask() const
 
 bool MutationsInterpreter::Source::materializeTTLRecalculateOnly() const
 {
-    return data && data->getSettings()->materialize_ttl_recalculate_only;
+    return data && (*data->getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only];
 }
 
 bool MutationsInterpreter::Source::hasSecondaryIndex(const String & name) const
@@ -771,7 +778,7 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             /// If the part is compact and adaptive index granularity is enabled, modify data in one column via ALTER UPDATE can change
             /// the part granularity, so we need to rebuild indexes
-            if (source.isCompactPart() && source.getMergeTreeData() && source.getMergeTreeData()->getSettings()->index_granularity_bytes > 0)
+            if (source.isCompactPart() && source.getMergeTreeData() && (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::index_granularity_bytes] > 0)
                 need_rebuild_indexes = true;
         }
         else if (command.type == MutationCommand::MATERIALIZE_COLUMN)
@@ -857,7 +864,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
-            bool suitable_for_ttl_optimization = source.getMergeTreeData()->getSettings()->ttl_only_drop_parts
+            bool suitable_for_ttl_optimization = (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::ttl_only_drop_parts]
                 && metadata_snapshot->hasOnlyRowsTTL();
 
             if (materialize_ttl_recalculate_only || suitable_for_ttl_optimization)

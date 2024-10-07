@@ -77,7 +77,7 @@ public:
 
         for (size_t i = 0; i < function->getArguments().getNodes().size(); i++)
         {
-            if (const auto * func = function->getArguments().getNodes()[i]->as<FunctionNode>())
+            if (const auto * /*func*/ _ = function->getArguments().getNodes()[i]->as<FunctionNode>())
             {
                 func_id = i;
                 break;

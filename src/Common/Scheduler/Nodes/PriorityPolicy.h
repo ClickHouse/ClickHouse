@@ -43,7 +43,7 @@ public:
     {
         if (!ISchedulerNode::equals(other))
             return false;
-        if (auto * o = dynamic_cast<PriorityPolicy *>(other))
+        if (auto * _ = dynamic_cast<PriorityPolicy *>(other))
             return true;
         return false;
     }

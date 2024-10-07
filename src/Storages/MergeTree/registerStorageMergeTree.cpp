@@ -38,6 +38,14 @@ namespace Setting
     extern const SettingsUInt64 database_replicated_allow_replicated_engine_arguments;
 }
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool add_implicit_sign_column_constraint_for_collapsing_engine;
+    extern const MergeTreeSettingsBool allow_floating_point_partition_key;
+    extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
+    extern const MergeTreeSettingsUInt64 index_granularity;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -701,7 +709,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 constraints.push_back(constraint);
         if ((merging_params.mode == MergeTreeData::MergingParams::Collapsing ||
             merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing) &&
-            storage_settings->add_implicit_sign_column_constraint_for_collapsing_engine)
+            (*storage_settings)[MergeTreeSetting::add_implicit_sign_column_constraint_for_collapsing_engine])
         {
             auto sign_column_check_constraint = std::make_unique<ASTConstraintDeclaration>();
             sign_column_check_constraint->name = "check_sign_column";
@@ -767,11 +775,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         const auto * ast = engine_args[arg_num]->as<ASTLiteral>();
         if (ast && ast->value.getType() == Field::Types::UInt64)
         {
-            storage_settings->index_granularity = ast->value.safeGet<UInt64>();
+            (*storage_settings)[MergeTreeSetting::index_granularity] = ast->value.safeGet<UInt64>();
             if (args.mode <= LoadingStrictnessLevel::CREATE)
             {
                 SettingsChanges changes;
-                changes.emplace_back("index_granularity", Field(storage_settings->index_granularity));
+                changes.emplace_back("index_granularity", Field((*storage_settings)[MergeTreeSetting::index_granularity]));
                 args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, changes);
             }
         }
@@ -784,7 +792,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
 
     DataTypes data_types = metadata.partition_key.data_types;
-    if (args.mode <= LoadingStrictnessLevel::CREATE && !storage_settings->allow_floating_point_partition_key)
+    if (args.mode <= LoadingStrictnessLevel::CREATE && !(*storage_settings)[MergeTreeSetting::allow_floating_point_partition_key])
     {
         for (size_t i = 0; i < data_types.size(); ++i)
             if (isFloat(data_types[i]))
@@ -797,7 +805,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// Now let's handle the merge tree family. Note we only handle in the mode of CREATE due to backward compatibility.
         /// Otherwise, it would fail to start in the case of existing projections with special mergetree.
         if (merging_params.mode != MergeTreeData::MergingParams::Mode::Ordinary
-            && storage_settings->deduplicate_merge_projection_mode == DeduplicateMergeProjectionMode::THROW)
+            && (*storage_settings)[MergeTreeSetting::deduplicate_merge_projection_mode] == DeduplicateMergeProjectionMode::THROW)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Projection is fully supported in {}MergeTree with deduplicate_merge_projection_mode = throw. "
                 "Use 'drop' or 'rebuild' option of deduplicate_merge_projection_mode.",
