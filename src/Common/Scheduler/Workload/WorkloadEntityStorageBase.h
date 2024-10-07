@@ -73,14 +73,11 @@ protected:
     /// Called by derived class after a new workload entity has been added.
     void onEntityAdded(WorkloadEntityType entity_type, const String & entity_name, const ASTPtr & new_entity);
 
-    /// Called by derived class after an workload entity has been changed.
-    void onEntityUpdated(WorkloadEntityType entity_type, const String & entity_name, const ASTPtr & changed_entity);
-
     /// Called by derived class after an workload entity has been removed.
     void onEntityRemoved(WorkloadEntityType entity_type, const String & entity_name);
 
     /// Sends notifications to subscribers about changes in workload entities
-    /// (added with previous calls onEntityAdded(), onEntityUpdated(), onEntityRemoved()).
+    /// (added with previous calls onEntityAdded(), onEntityRemoved()).
     void unlockAndNotify(std::unique_lock<std::recursive_mutex> & lock);
 
     /// Return true iff `references` has a path from `source` to `target`
