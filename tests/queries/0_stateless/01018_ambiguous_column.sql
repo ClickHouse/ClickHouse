@@ -13,6 +13,8 @@ SELECT dummy FROM one AS A JOIN one ON A.dummy = one.dummy;
 SELECT dummy FROM one JOIN one AS A ON A.dummy = one.dummy;
 SELECT dummy FROM one l JOIN one r ON dummy = r.dummy;
 SELECT dummy FROM one l JOIN one r ON one.dummy = r.dummy;
+SELECT dummy FROM one l JOIN one r ON l.dummy = dummy;
+SELECT dummy FROM one l JOIN one r ON l.dummy = one.dummy;
 
 SELECT * from one
 JOIN one A ON one.dummy = A.dummy
@@ -24,5 +26,4 @@ JOIN system.one one ON A.dummy = one.dummy
 JOIN system.one two ON A.dummy = two.dummy
 FORMAT PrettyCompact;
 
--- SELECT one.dummy FROM one AS A FULL JOIN (SELECT 0 AS dymmy) AS one USING dummy;
 SELECT one.dummy FROM one AS A JOIN (SELECT 0 AS dummy) B USING dummy;

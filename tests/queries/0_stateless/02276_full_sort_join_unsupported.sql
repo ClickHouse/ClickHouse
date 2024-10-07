@@ -26,5 +26,8 @@ SELECT * FROM t1 JOIN ( SELECT key, sum(val) AS val FROM t2 GROUP BY key WITH TO
 
 SELECT * FROM ( SELECT key, sum(val) AS val FROM t1 GROUP BY key WITH TOTALS ) as t1 JOIN t2 ON t1.key = t2.key; -- { serverError NOT_IMPLEMENTED }
 
+SELECT * FROM t1 FULL JOIN t2 ON t1.key = t2.key AND t2.key > 0; -- { serverError NOT_IMPLEMENTED }
+SELECT * FROM t1 FULL JOIN t2 ON t1.key = t2.key AND t1.key > 0; -- { serverError NOT_IMPLEMENTED }
+
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
