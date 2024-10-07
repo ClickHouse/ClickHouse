@@ -553,3 +553,42 @@ TEST(SchedulerUnifiedNode, UpdatePriority)
     t.consumed("A", 10);
     t.consumed("B", 10);
 }
+
+TEST(SchedulerUnifiedNode, UpdateParentOfLeafNode)
+{
+    ResourceTest t;
+
+    auto all = t.createUnifiedNode("all");
+    auto a = t.createUnifiedNode("A", all, {.weight = 1.0, .priority = Priority{1}});
+    auto b = t.createUnifiedNode("B", all, {.weight = 1.0, .priority = Priority{2}});
+
+    auto x = t.createUnifiedNode("X", a, {});
+    auto y = t.createUnifiedNode("Y", b, {});
+
+    t.enqueue(x, {10, 10, 10, 10, 10, 10, 10, 10});
+    t.enqueue(y, {10, 10, 10, 10, 10, 10, 10, 10});
+
+    t.dequeue(2);
+    t.consumed("X", 20);
+    t.consumed("Y", 0);
+
+    t.updateUnifiedNode(x, a, b, {});
+
+    t.dequeue(2);
+    t.consumed("X", 10);
+    t.consumed("Y", 10);
+
+    t.updateUnifiedNode(y, b, a, {});
+
+    t.dequeue(2);
+    t.consumed("X", 0);
+    t.consumed("Y", 20);
+
+    t.updateUnifiedNode(y, a, all, {});
+    t.updateUnifiedNode(x, b, all, {});
+
+    t.dequeue(4);
+    t.consumed("X", 20);
+    t.consumed("Y", 20);
+}
+
