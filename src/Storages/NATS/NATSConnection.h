@@ -2,8 +2,6 @@
 
 #include <Common/Logger.h>
 
-#include <base/types.h>
-
 #include <nats.h>
 
 #include <mutex>
