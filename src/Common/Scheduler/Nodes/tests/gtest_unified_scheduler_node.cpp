@@ -451,7 +451,6 @@ TEST(SchedulerUnifiedNode, QueueWithRequestsDestruction)
     t.consumed("A", 20);
 }
 
-
 TEST(SchedulerUnifiedNode, ResourceGuardException)
 {
     ResourceTest t;
@@ -561,7 +560,6 @@ TEST(SchedulerUnifiedNode, UpdateParentOfLeafNode)
     auto all = t.createUnifiedNode("all");
     auto a = t.createUnifiedNode("A", all, {.weight = 1.0, .priority = Priority{1}});
     auto b = t.createUnifiedNode("B", all, {.weight = 1.0, .priority = Priority{2}});
-
     auto x = t.createUnifiedNode("X", a, {});
     auto y = t.createUnifiedNode("Y", b, {});
 
@@ -592,3 +590,84 @@ TEST(SchedulerUnifiedNode, UpdateParentOfLeafNode)
     t.consumed("Y", 20);
 }
 
+TEST(SchedulerUnifiedNode, UpdatePriorityOfIntermediateNode)
+{
+    ResourceTest t;
+
+    auto all = t.createUnifiedNode("all");
+    auto a = t.createUnifiedNode("A", all, {.weight = 1.0, .priority = Priority{1}});
+    auto b = t.createUnifiedNode("B", all, {.weight = 1.0, .priority = Priority{2}});
+    auto x1 = t.createUnifiedNode("X1", a, {});
+    auto y1 = t.createUnifiedNode("Y1", b, {});
+    auto x2 = t.createUnifiedNode("X2", a, {});
+    auto y2 = t.createUnifiedNode("Y2", b, {});
+
+    t.enqueue(x1, {10, 10, 10, 10, 10, 10, 10, 10});
+    t.enqueue(y1, {10, 10, 10, 10, 10, 10, 10, 10});
+    t.enqueue(x2, {10, 10, 10, 10, 10, 10, 10, 10});
+    t.enqueue(y2, {10, 10, 10, 10, 10, 10, 10, 10});
+
+    t.dequeue(4);
+    t.consumed("X1", 20);
+    t.consumed("Y1", 0);
+    t.consumed("X2", 20);
+    t.consumed("Y2", 0);
+
+    t.updateUnifiedNode(a, all, all, {.weight = 1.0, .priority = Priority{2}});
+
+    t.dequeue(4);
+    t.consumed("X1", 10);
+    t.consumed("Y1", 10);
+    t.consumed("X2", 10);
+    t.consumed("Y2", 10);
+
+    t.updateUnifiedNode(b, all, all, {.weight = 1.0, .priority = Priority{1}});
+
+    t.dequeue(4);
+    t.consumed("X1", 0);
+    t.consumed("Y1", 20);
+    t.consumed("X2", 0);
+    t.consumed("Y2", 20);
+}
+
+TEST(SchedulerUnifiedNode, UpdateParentOfIntermediateNode)
+{
+    ResourceTest t;
+
+    auto all = t.createUnifiedNode("all");
+    auto a = t.createUnifiedNode("A", all, {.weight = 1.0, .priority = Priority{1}});
+    auto b = t.createUnifiedNode("B", all, {.weight = 1.0, .priority = Priority{2}});
+    auto c = t.createUnifiedNode("C", a, {});
+    auto d = t.createUnifiedNode("D", b, {});
+    auto x1 = t.createUnifiedNode("X1", c, {});
+    auto y1 = t.createUnifiedNode("Y1", d, {});
+    auto x2 = t.createUnifiedNode("X2", c, {});
+    auto y2 = t.createUnifiedNode("Y2", d, {});
+
+    t.enqueue(x1, {10, 10, 10, 10, 10, 10, 10, 10});
+    t.enqueue(y1, {10, 10, 10, 10, 10, 10, 10, 10});
+    t.enqueue(x2, {10, 10, 10, 10, 10, 10, 10, 10});
+    t.enqueue(y2, {10, 10, 10, 10, 10, 10, 10, 10});
+
+    t.dequeue(4);
+    t.consumed("X1", 20);
+    t.consumed("Y1", 0);
+    t.consumed("X2", 20);
+    t.consumed("Y2", 0);
+
+    t.updateUnifiedNode(c, a, b, {});
+
+    t.dequeue(4);
+    t.consumed("X1", 10);
+    t.consumed("Y1", 10);
+    t.consumed("X2", 10);
+    t.consumed("Y2", 10);
+
+    t.updateUnifiedNode(d, b, a, {});
+
+    t.dequeue(4);
+    t.consumed("X1", 0);
+    t.consumed("Y1", 20);
+    t.consumed("X2", 0);
+    t.consumed("Y2", 20);
+}
