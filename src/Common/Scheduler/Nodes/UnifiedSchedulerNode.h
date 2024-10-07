@@ -135,6 +135,7 @@ private:
             if (it == children.end())
                 return {}; // unknown child
 
+            detach(child);
             children.erase(it);
             if (children.size() == 1)
             {
