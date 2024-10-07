@@ -48,10 +48,9 @@ VectorSimilarityCondition::Info::DistanceFunction stringToDistanceFunction(const
 {
     if (distance_function == "L2Distance")
         return VectorSimilarityCondition::Info::DistanceFunction::L2;
-    else if (distance_function == "cosineDistance")
+    if (distance_function == "cosineDistance")
         return VectorSimilarityCondition::Info::DistanceFunction::Cosine;
-    else
-        return VectorSimilarityCondition::Info::DistanceFunction::Unknown;
+    return VectorSimilarityCondition::Info::DistanceFunction::Unknown;
 }
 
 }
@@ -184,7 +183,7 @@ bool VectorSimilarityCondition::traverseAtomAST(const ASTPtr & node, RPNElement 
         return true;
     }
     /// Match identifier
-    else if (const auto * identifier = node->as<ASTIdentifier>())
+    if (const auto * identifier = node->as<ASTIdentifier>())
     {
         out.function = RPNElement::FUNCTION_IDENTIFIER;
         out.identifier.emplace(identifier->name());

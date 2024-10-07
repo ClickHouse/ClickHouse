@@ -212,7 +212,7 @@ public:
         const auto & input_column = arguments[0].column;
         if (const auto * src_column_as_fixed_string = checkAndGetColumn<ColumnFixedString>(&*input_column))
             return execute(*src_column_as_fixed_string, input_rows_count);
-        else if (const auto * src_column_as_string = checkAndGetColumn<ColumnString>(&*input_column))
+        if (const auto * src_column_as_string = checkAndGetColumn<ColumnString>(&*input_column))
             return execute(*src_column_as_string, input_rows_count);
 
         throw Exception(

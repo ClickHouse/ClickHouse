@@ -357,15 +357,13 @@ public:
         }
         if (postponed.empty())
             return false;
-        else
+
+        if (postponed.front().key <= now())
         {
-            if (postponed.front().key <= now())
-            {
-                processPostponed(std::move(lock));
-                return true;
-            }
-            return false;
+            processPostponed(std::move(lock));
+            return true;
         }
+        return false;
     }
 
     /// Wait for single event (if not available) and process it
@@ -379,7 +377,7 @@ public:
                 processQueue(std::move(lock));
                 return;
             }
-            else if (postponed.empty())
+            if (postponed.empty())
             {
                 wait(lock);
             }
@@ -390,20 +388,18 @@ public:
                     processPostponed(std::move(lock));
                     return;
                 }
-                else
-                {
-                    waitUntil(lock, postponed.front().key);
-                }
+
+                waitUntil(lock, postponed.front().key);
             }
         }
     }
 
     TimePoint now()
     {
-        if (auto result = manual_time.load(); likely(result == TimePoint()))
+        auto result = manual_time.load();
+        if (likely(result == TimePoint()))
             return std::chrono::system_clock::now();
-        else
-            return result;
+        return result;
     }
 
     /// For testing only

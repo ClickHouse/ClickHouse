@@ -22,8 +22,7 @@ size_t MergeTreeIndexGranularity::getMarkRows(size_t mark_index) const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get non existing mark {}, while size is {}", mark_index, getMarksCount());
     if (mark_index == 0)
         return marks_rows_partial_sums[0];
-    else
-        return marks_rows_partial_sums[mark_index] - marks_rows_partial_sums[mark_index - 1];
+    return marks_rows_partial_sums[mark_index] - marks_rows_partial_sums[mark_index - 1];
 }
 
 size_t MergeTreeIndexGranularity::getMarkStartingRow(size_t mark_index) const

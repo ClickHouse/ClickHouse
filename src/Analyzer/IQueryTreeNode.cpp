@@ -127,9 +127,9 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
 
             if (!lhs_child && !rhs_child)
                 continue;
-            else if (lhs_child && !rhs_child)
+            if (lhs_child && !rhs_child)
                 return false;
-            else if (!lhs_child && rhs_child)
+            if (!lhs_child && rhs_child)
                 return false;
 
             nodes_to_process.emplace_back(lhs_child.get(), rhs_child.get());
@@ -150,9 +150,9 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
 
             if (!lhs_strong_pointer && !rhs_strong_pointer)
                 continue;
-            else if (lhs_strong_pointer && !rhs_strong_pointer)
+            if (lhs_strong_pointer && !rhs_strong_pointer)
                 return false;
-            else if (!lhs_strong_pointer && rhs_strong_pointer)
+            if (!lhs_strong_pointer && rhs_strong_pointer)
                 return false;
 
             nodes_to_process.emplace_back(lhs_strong_pointer.get(), rhs_strong_pointer.get());

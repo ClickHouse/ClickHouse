@@ -3696,21 +3696,19 @@ bool Context::tryCheckClientConnectionToMyKeeperCluster() const
             /// Connected, return true
             return true;
         }
-        else
-        {
-            Poco::Util::AbstractConfiguration::Keys keys;
-            getConfigRef().keys("auxiliary_zookeepers", keys);
 
-            /// If our server is part of some auxiliary_zookeeper
-            for (const auto & aux_zk_name : keys)
+        Poco::Util::AbstractConfiguration::Keys keys;
+        getConfigRef().keys("auxiliary_zookeepers", keys);
+
+        /// If our server is part of some auxiliary_zookeeper
+        for (const auto & aux_zk_name : keys)
+        {
+            if (checkZooKeeperConfigIsLocal(getConfigRef(), "auxiliary_zookeepers." + aux_zk_name))
             {
-                if (checkZooKeeperConfigIsLocal(getConfigRef(), "auxiliary_zookeepers." + aux_zk_name))
-                {
-                    LOG_DEBUG(shared->log, "Our Keeper server is participant of the auxiliary zookeeper cluster ({}), will try to connect to it", aux_zk_name);
-                    getAuxiliaryZooKeeper(aux_zk_name);
-                    /// Connected, return true
-                    return true;
-                }
+                LOG_DEBUG(shared->log, "Our Keeper server is participant of the auxiliary zookeeper cluster ({}), will try to connect to it", aux_zk_name);
+                getAuxiliaryZooKeeper(aux_zk_name);
+                /// Connected, return true
+                return true;
             }
         }
 
@@ -4028,8 +4026,7 @@ UInt16 Context::getServerPort(const String & port_name) const
     auto it = shared->server_ports.find(port_name);
     if (it == shared->server_ports.end())
         throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "There is no port named {}", port_name);
-    else
-        return it->second;
+    return it->second;
 }
 
 void Context::setMaxPartNumToWarn(size_t max_part_to_warn)

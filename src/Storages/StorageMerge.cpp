@@ -1388,11 +1388,9 @@ DatabaseTablesIteratorPtr StorageMerge::DatabaseNameOrRegexp::getDatabaseIterato
         {
             if (auto it = source_databases_and_tables->find(database_name); it != source_databases_and_tables->end())
                 return it->second.contains(table_name_);
-            else
-                return false;
+            return false;
         }
-        else
-            return source_table_regexp->match(table_name_);
+        return source_table_regexp->match(table_name_);
     };
 
     return database->getTablesIterator(local_context, table_name_match);
