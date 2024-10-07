@@ -3,7 +3,7 @@
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/SelectUnionMode.h>
 
 #include <Interpreters/SelectQueryOptions.h>

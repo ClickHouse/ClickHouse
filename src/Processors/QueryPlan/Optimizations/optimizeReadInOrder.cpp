@@ -91,7 +91,7 @@ using StepStack = std::vector<IQueryPlanStep*>;
 QueryPlan::Node * findReadingStep(QueryPlan::Node & node, bool allow_existing_order)
 {
     IQueryPlanStep * step = node.step.get();
-    if (auto * reading = checkSupportedReadingStep(step, allow_existing_order))
+    if (auto * /*reading*/ _ = checkSupportedReadingStep(step, allow_existing_order))
         return &node;
 
     if (node.children.size() != 1)

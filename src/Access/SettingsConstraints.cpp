@@ -431,8 +431,8 @@ SettingsConstraints::Checker SettingsConstraints::getMergeTreeChecker(std::strin
     auto full_name = settingFullName<MergeTreeSettings>(short_name);
     auto it = constraints.find(resolveSettingNameWithCache(full_name));
     if (it == constraints.end())
-        return Checker(MergeTreeSettings::Traits::resolveName); // Allowed
-    return Checker(it->second, MergeTreeSettings::Traits::resolveName);
+        return Checker(MergeTreeSettings::resolveName); // Allowed
+    return Checker(it->second, MergeTreeSettings::resolveName);
 }
 
 bool SettingsConstraints::Constraint::operator==(const Constraint & other) const

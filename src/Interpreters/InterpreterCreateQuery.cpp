@@ -869,6 +869,26 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         {
             properties.indices = as_storage_metadata->getSecondaryIndices();
             properties.projections = as_storage_metadata->getProjections().clone();
+
+            /// CREATE TABLE AS should copy PRIMARY KEY, ORDER BY, and similar clauses.
+            /// Note: only supports the source table engine is using the new syntax.
+            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(as_storage.get()))
+            {
+                if (merge_tree_data->format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+                {
+                    if (!create.storage->primary_key && as_storage_metadata->isPrimaryKeyDefined() && as_storage_metadata->hasPrimaryKey())
+                        create.storage->set(create.storage->primary_key, as_storage_metadata->getPrimaryKeyAST()->clone());
+
+                    if (!create.storage->partition_by && as_storage_metadata->isPartitionKeyDefined() && as_storage_metadata->hasPartitionKey())
+                        create.storage->set(create.storage->partition_by, as_storage_metadata->getPartitionKeyAST()->clone());
+
+                    if (!create.storage->order_by && as_storage_metadata->isSortingKeyDefined() && as_storage_metadata->hasSortingKey())
+                        create.storage->set(create.storage->order_by, as_storage_metadata->getSortingKeyAST()->clone());
+
+                    if (!create.storage->sample_by && as_storage_metadata->isSamplingKeyDefined() && as_storage_metadata->hasSamplingKey())
+                        create.storage->set(create.storage->sample_by, as_storage_metadata->getSamplingKeyAST()->clone());
+                }
+            }
         }
         else
         {
@@ -1047,9 +1067,9 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
 
     if (create.refresh_strategy && !create.refresh_strategy->append)
     {
-        if (database && database->getEngineName() != "Atomic")
+        if (database && database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")
             throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Refreshable materialized views (except with APPEND) only support Atomic database engine, but database {} has engine {}", create.getDatabase(), database->getEngineName());
+                "Refreshable materialized views (except with APPEND) only support Atomic and Replicated database engines, but database {} has engine {}", create.getDatabase(), database->getEngineName());
 
         std::string message;
         if (!supportsAtomicRename(&message))
@@ -1342,7 +1362,7 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
     bool from_path = create.attach_from_path.has_value();
     bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    if (database->getEngineName() == "Replicated" && create.uuid != UUIDHelpers::Nil && !is_replicated_database_internal && !is_on_cluster && !create.attach)
+    if (database->getEngineName() == "Replicated" && create.uuid != UUIDHelpers::Nil && !is_replicated_database_internal && !internal && !is_on_cluster && !create.attach)
     {
         if (getContext()->getSettingsRef()[Setting::database_replicated_allow_explicit_uuid] == 0)
         {
