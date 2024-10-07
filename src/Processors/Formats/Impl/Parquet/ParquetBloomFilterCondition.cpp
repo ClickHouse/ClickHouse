@@ -19,64 +19,94 @@ namespace ErrorCodes
 namespace
 {
 
-bool isParquetStringTypeSupportedForBloomFilters(const std::shared_ptr<const parquet::LogicalType> & logical_type, parquet::ConvertedType::type converted_type)
+bool isParquetStringTypeSupportedForBloomFilters(
+    const std::shared_ptr<const parquet::LogicalType> & logical_type,
+    parquet::ConvertedType::type converted_type)
 {
-    if ((!logical_type || logical_type->is_none()) && parquet::ConvertedType::type::NONE == converted_type)
+    if (logical_type &&
+        !logical_type->is_none()
+        && !(logical_type->is_string() || logical_type->is_BSON() || logical_type->is_JSON()))
     {
-        return true;
+        return false;
     }
 
-    if (logical_type && (logical_type->is_string() || logical_type->is_BSON() || logical_type->is_JSON() || logical_type->is_UUID()))
+    if (parquet::ConvertedType::type::NONE != converted_type &&
+        !(converted_type == parquet::ConvertedType::JSON || converted_type == parquet::ConvertedType::UTF8
+          || converted_type == parquet::ConvertedType::BSON))
     {
-        return true;
+        return false;
     }
 
-    if (converted_type == parquet::ConvertedType::JSON || converted_type == parquet::ConvertedType::UTF8 || converted_type == parquet::ConvertedType::BSON)
-    {
-        return true;
-    }
-
-    return false;
+    return true;
 }
 
 bool isParquetIntegerTypeSupportedForBloomFilters(const std::shared_ptr<const parquet::LogicalType> & logical_type, parquet::ConvertedType::type converted_type)
 {
-    if (!logical_type && parquet::ConvertedType::type::NONE == converted_type)
+    if (logical_type && !logical_type->is_none() && !logical_type->is_int())
     {
-        return true;
+        return false;
     }
 
-    if (logical_type && logical_type->is_int())
-    {
-        return true;
-    }
-
-    if (converted_type == parquet::ConvertedType::INT_8 || converted_type == parquet::ConvertedType::INT_16
+    if (parquet::ConvertedType::type::NONE != converted_type && !(converted_type == parquet::ConvertedType::INT_8 || converted_type == parquet::ConvertedType::INT_16
         || converted_type == parquet::ConvertedType::INT_32 || converted_type == parquet::ConvertedType::INT_64
         || converted_type == parquet::ConvertedType::UINT_8 || converted_type == parquet::ConvertedType::UINT_16
-        || converted_type == parquet::ConvertedType::UINT_32 || converted_type == parquet::ConvertedType::UINT_64)
+        || converted_type == parquet::ConvertedType::UINT_32 || converted_type == parquet::ConvertedType::UINT_64))
     {
-        return true;
+        return false;
     }
 
-    return false;
+    return true;
 }
 
-
-std::optional<uint64_t> tryHashString(const Field & field, const std::shared_ptr<const parquet::LogicalType> & logical_type, parquet::ConvertedType::type converted_type)
+template <typename T>
+uint64_t hashSpecialFLBATypes(const Field & field)
 {
-    if (field.getType() != Field::Types::Which::String && isParquetStringTypeSupportedForBloomFilters(logical_type, converted_type))
+    const T value = field.safeGet<T>();
+
+    uint8_t buffer[sizeof(T)] = {0};
+
+    memcpy(buffer, &value, sizeof(T));
+
+    parquet::FLBA flba(buffer);
+
+    parquet::XxHasher hasher;
+
+    return hasher.Hash(&flba, sizeof(T));
+};
+
+template <bool FIXED_LEN>
+std::optional<uint64_t> tryHashString(
+    const Field & field,
+    const std::shared_ptr<const parquet::LogicalType> & logical_type,
+    parquet::ConvertedType::type converted_type)
+{
+    if (!isParquetStringTypeSupportedForBloomFilters(logical_type, converted_type))
     {
         return std::nullopt;
     }
 
-    parquet::XxHasher hasher;
-    parquet::ByteArray ba { field.safeGet<std::string>() };
+    const auto field_type = field.getType();
 
-    return hasher.Hash(&ba);
+    if (field_type == Field::Types::Which::String)
+    {
+        parquet::XxHasher hasher;
+        parquet::ByteArray ba { field.safeGet<std::string>() };
+
+        return hasher.Hash(&ba);
+    }
+
+    if constexpr (FIXED_LEN)
+    {
+        if (field_type == Field::Types::Which::IPv6)
+        {
+            return hashSpecialFLBATypes<IPv6>(field);
+        }
+    }
+
+    return std::nullopt;
 }
 
-template <typename HashingType>
+template <typename ParquetPhysicalType>
 std::optional<uint64_t> tryHashInt(const Field & field, const std::shared_ptr<const parquet::LogicalType> & logical_type, parquet::ConvertedType::type converted_type)
 {
     if (!isParquetIntegerTypeSupportedForBloomFilters(logical_type, converted_type))
@@ -88,15 +118,24 @@ std::optional<uint64_t> tryHashInt(const Field & field, const std::shared_ptr<co
 
     if (field.getType() == Field::Types::Which::Int64)
     {
-        return hasher.Hash(static_cast<HashingType>(field.safeGet<int64_t>()));
+        return hasher.Hash(static_cast<ParquetPhysicalType>(field.safeGet<int64_t>()));
     }
     else if (field.getType() == Field::Types::Which::UInt64)
     {
-        return hasher.Hash(static_cast<HashingType>(field.safeGet<uint64_t>()));
+        return hasher.Hash(static_cast<ParquetPhysicalType>(field.safeGet<uint64_t>()));
     }
     else if (field.getType() == Field::Types::IPv4)
     {
-        return hasher.Hash(static_cast<HashingType>(field.safeGet<IPv4>()));
+        /*
+         * In theory, we could accept IPv4 over 64 bits variables. It would only be a problem in case it was hashed using the byte array api
+         * with a zero-ed buffer that had a 32 bits variable copied into it.
+         *
+         * To be on the safe side, accept only in case physical type is 32 bits.
+         * */
+        if constexpr (std::is_same_v<int32_t, ParquetPhysicalType>)
+        {
+            return hasher.Hash(static_cast<ParquetPhysicalType>(field.safeGet<IPv4>()));
+        }
     }
 
     return std::nullopt;
@@ -115,8 +154,9 @@ std::optional<uint64_t> tryHash(const Field & field, const parquet::ColumnDescri
         case parquet::Type::type::INT64:
             return tryHashInt<int64_t>(field, logical_type, converted_type);
         case parquet::Type::type::BYTE_ARRAY:
+            return tryHashString<false>(field, logical_type, converted_type);
         case parquet::Type::type::FIXED_LEN_BYTE_ARRAY:
-            return tryHashString(field, logical_type, converted_type);
+            return tryHashString<true>(field, logical_type, converted_type);
         default:
             return std::nullopt;
     }
