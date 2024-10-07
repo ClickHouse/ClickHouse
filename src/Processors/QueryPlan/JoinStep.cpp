@@ -19,7 +19,7 @@ namespace ErrorCodes
 namespace
 {
 
-static std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join)
+std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join)
 {
     std::vector<std::pair<String, String>> description;
     const auto & table_join = join->getTableJoin();
@@ -188,7 +188,7 @@ void JoinStep::updateOutputStream()
 
     auto column_permutation = getPermutationForBlock(result_header, input_streams[0].header, input_streams[1].header, required_output);
     if (!column_permutation.empty())
-        result_header = ColumnPermuteTransform::permute(std::move(result_header), column_permutation);
+        result_header = ColumnPermuteTransform::permute(result_header, column_permutation);
 
     output_stream = DataStream { .header = result_header };
 }
