@@ -609,13 +609,13 @@ void DefaultCoordinator::tryToStealFromQueue(
             }
             if (can_take)
             {
-                if (auto taken = takeFromRange(range, min_number_of_marks, current_marks_amount, result); taken == range.getNumberOfMarks())
+                auto taken = takeFromRange(range, min_number_of_marks, current_marks_amount, result);
+                if (taken == range.getNumberOfMarks())
                 {
                     it = decltype(it)(queue.erase(std::next(it).base()));
                     continue;
                 }
-                else
-                    range.begin += taken;
+                range.begin += taken;
             }
         }
 
@@ -754,7 +754,12 @@ size_t DefaultCoordinator::computeConsistentHash(const std::string & part_name, 
 
 ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest request)
 {
-    LOG_TRACE(log, "Handling request from replica {}, minimal marks size is {}", request.replica_num, request.min_number_of_marks);
+    LOG_TRACE(
+        log,
+        "Handling request from replica {}, minimal marks size is {}, request count {}",
+        request.replica_num,
+        request.min_number_of_marks,
+        stats[request.replica_num].number_of_requests);
 
     ParallelReadResponse response;
 

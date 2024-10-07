@@ -90,7 +90,7 @@ BlockIO InterpreterCreateSettingsProfileQuery::execute()
 
     if (query.alter)
     {
-        auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
+        auto update_func = [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
         {
             auto updated_profile = typeid_cast<std::shared_ptr<SettingsProfile>>(entity->clone());
             updateSettingsProfileFromQueryImpl(*updated_profile, query, {}, settings_from_query, roles_from_query);
