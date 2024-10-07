@@ -123,6 +123,32 @@ public:
                 parent->activateChild(this);
     }
 
+    /// Update limits.
+    /// Should be called from the scheduler thread because it could lead to activation or deactivation
+    void updateConstraints(const SchedulerNodePtr & self, Int64 new_max_requests, UInt64 new_max_cost)
+    {
+        std::unique_lock lock(mutex);
+        bool was_active = active();
+        max_requests = new_max_requests;
+        max_cost = new_max_cost;
+
+        if (parent)
+        {
+            // Activate on transition from inactive state
+            if (!was_active && active())
+                parent->activateChild(this);
+            // Deactivate on transition into inactive state
+            else if (was_active && !active())
+            {
+                // Node deactivation is usually done in dequeueRequest(), but we do not want to
+                // do extra call to active() on every request just to make sure there was no update().
+                // There is no interface method to do deactivation, so we do the following trick.
+                parent->removeChild(this);
+                parent->attachChild(self); // This call is the only reason we have `recursive_mutex`
+            }
+        }
+    }
+
     bool isActive() override
     {
         std::unique_lock lock(mutex);
@@ -164,10 +190,10 @@ private:
         return satisfied() && child_active;
     }
 
-    const Int64 max_requests = default_max_requests;
-    const Int64 max_cost = default_max_cost;
+    Int64 max_requests = default_max_requests;
+    Int64 max_cost = default_max_cost;
 
-    std::mutex mutex;
+    std::recursive_mutex mutex;
     Int64 requests = 0;
     Int64 cost = 0;
     bool child_active = false;
