@@ -382,11 +382,6 @@ void WorkloadEntityStorageBase::onEntityAdded(WorkloadEntityType entity_type, co
     queue.push_back(Event{.type = entity_type, .name = entity_name, .entity = new_entity});
 }
 
-void WorkloadEntityStorageBase::onEntityUpdated(WorkloadEntityType entity_type, const String & entity_name, const ASTPtr & changed_entity)
-{
-    queue.push_back(Event{.type = entity_type, .name = entity_name, .entity = changed_entity});
-}
-
 void WorkloadEntityStorageBase::onEntityRemoved(WorkloadEntityType entity_type, const String & entity_name)
 {
     queue.push_back(Event{.type = entity_type, .name = entity_name, .entity = {}});
@@ -465,11 +460,13 @@ void WorkloadEntityStorageBase::makeEventsForAllEntities(std::unique_lock<std::r
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid workload entity type '{}'", ast->getID());
     }
 
-    for (auto & [entity_name, ast] : topologicallySortedWorkloads(workloads))
-        onEntityAdded(WorkloadEntityType::Workload, entity_name, ast);
-
+    // Resources should be created first becase workloads could reference them
     for (auto & [entity_name, ast] : resources)
         onEntityAdded(WorkloadEntityType::Resource, entity_name, ast);
+
+    // Workloads should be created in an order such that children are created only after its parent is created
+    for (auto & [entity_name, ast] : topologicallySortedWorkloads(workloads))
+        onEntityAdded(WorkloadEntityType::Workload, entity_name, ast);
 }
 
 std::vector<std::pair<String, ASTPtr>> WorkloadEntityStorageBase::getAllEntities() const
