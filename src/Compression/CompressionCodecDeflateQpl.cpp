@@ -5,6 +5,7 @@
 #include <Common/MemorySanitizer.h>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
+#include <Parsers/IAST.h>
 #include <base/scope_guard.h>
 #include <base/getPageSize.h>
 #include <cstdio>

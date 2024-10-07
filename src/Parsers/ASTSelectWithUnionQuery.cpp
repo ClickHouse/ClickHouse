@@ -61,7 +61,7 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
                           << mode_to_str((is_normalized) ? union_mode : list_of_modes[it - list_of_selects->children.begin() - 1])
                           << (settings.hilite ? hilite_none : "");
 
-        if (auto * node = (*it)->as<ASTSelectWithUnionQuery>())
+        if (auto * /*node*/ _ = (*it)->as<ASTSelectWithUnionQuery>())
         {
             if (it != list_of_selects->children.begin())
                 settings.ostr << settings.nl_or_ws;

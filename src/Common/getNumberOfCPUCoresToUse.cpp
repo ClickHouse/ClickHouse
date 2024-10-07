@@ -176,7 +176,7 @@ unsigned getNumberOfCPUCoresToUseImpl()
     ///
     /// On really big machines, SMT is detrimental to performance (+ ~5% overhead in ClickBench). On such machines, we limit ourself to the physical cores.
     /// Few cores indicate it is a small machine, runs in a VM or is a limited cloud instance --> it is reasonable to use all the cores.
-    if (cores >= 32)
+    if (cores >= 64)
         cores = physical_concurrency();
 #endif
 
