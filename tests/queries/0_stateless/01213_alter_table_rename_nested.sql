@@ -25,14 +25,20 @@ SHOW CREATE TABLE table_for_rename_nested;
 SELECT key, n.renamed_x FROM table_for_rename_nested WHERE key = 7;
 SELECT key, n.renamed_y FROM table_for_rename_nested WHERE key = 7;
 
-ALTER TABLE table_for_rename_nested RENAME COLUMN n.renamed_x TO not_nested_x; --{serverError BAD_ARGUMENTS}
-
-ALTER TABLE table_for_rename_nested RENAME COLUMN n.renamed_x TO q.renamed_x; --{serverError BAD_ARGUMENTS}
-
-ALTER TABLE table_for_rename_nested RENAME COLUMN value1 TO q.renamed_x; --{serverError BAD_ARGUMENTS}
-
 -- Currently not implemented
 ALTER TABLE table_for_rename_nested RENAME COLUMN n TO renamed_n; --{serverError NOT_IMPLEMENTED}
+
+ALTER TABLE table_for_rename_nested RENAME COLUMN n.renamed_x TO not_nested_x;
+SHOW CREATE TABLE table_for_rename_nested;
+
+ALTER TABLE table_for_rename_nested RENAME COLUMN n.renamed_y TO q.renamed_y; --{serverError BAD_ARGUMENTS}
+ALTER TABLE table_for_rename_nested RENAME COLUMN value1 TO n.renamed_y; --{serverError DUPLICATE_COLUMN}
+
+ALTER TABLE table_for_rename_nested RENAME COLUMN value1 TO value.one;
+SHOW CREATE TABLE table_for_rename_nested;
+
+
+SELECT * FROM table_for_rename_nested WHERE key = 7 FORMAT TSVWithNames;
 
 DROP TABLE IF EXISTS table_for_rename_nested;
 
