@@ -60,19 +60,19 @@ llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const IDataType & type)
     /// LLVM doesn't have unsigned types, it has unsigned instructions.
     if (data_type.isInt8() || data_type.isUInt8())
         return builder.getInt8Ty();
-    else if (data_type.isInt16() || data_type.isUInt16() || data_type.isDate())
+    if (data_type.isInt16() || data_type.isUInt16() || data_type.isDate())
         return builder.getInt16Ty();
-    else if (data_type.isInt32() || data_type.isUInt32() || data_type.isDate32() || data_type.isDateTime())
+    if (data_type.isInt32() || data_type.isUInt32() || data_type.isDate32() || data_type.isDateTime())
         return builder.getInt32Ty();
-    else if (data_type.isInt64() || data_type.isUInt64())
+    if (data_type.isInt64() || data_type.isUInt64())
         return builder.getInt64Ty();
-    else if (data_type.isFloat32())
+    if (data_type.isFloat32())
         return builder.getFloatTy();
-    else if (data_type.isFloat64())
+    if (data_type.isFloat64())
         return builder.getDoubleTy();
-    else if (data_type.isEnum8())
+    if (data_type.isEnum8())
         return builder.getInt8Ty();
-    else if (data_type.isEnum16())
+    if (data_type.isEnum16())
         return builder.getInt16Ty();
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid cast to native type");
@@ -95,7 +95,7 @@ llvm::Value * nativeBoolCast(llvm::IRBuilderBase & b, const DataTypePtr & from_t
 
     if (value->getType()->isIntegerTy())
         return b.CreateICmpNE(value, zero);
-    else if (value->getType()->isFloatingPointTy())
+    if (value->getType()->isFloatingPointTy())
         return b.CreateFCmpUNE(value, zero);
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast non-number {} to bool", from_type->getName());
@@ -112,37 +112,34 @@ llvm::Value * nativeCast(llvm::IRBuilderBase & b, const DataTypePtr & from_type,
     {
         return value;
     }
-    else if (from_type->isNullable() && to_type->isNullable())
+    if (from_type->isNullable() && to_type->isNullable())
     {
         auto * inner = nativeCast(b, removeNullable(from_type), b.CreateExtractValue(value, {0}), to_type);
         return b.CreateInsertValue(inner, b.CreateExtractValue(value, {1}), {1});
     }
-    else if (from_type->isNullable())
+    if (from_type->isNullable())
     {
         return nativeCast(b, removeNullable(from_type), b.CreateExtractValue(value, {0}), to_type);
     }
-    else if (to_type->isNullable())
+    if (to_type->isNullable())
     {
         auto * to_native_type = toNativeType(b, to_type);
         auto * inner = nativeCast(b, from_type, value, removeNullable(to_type));
         return b.CreateInsertValue(llvm::Constant::getNullValue(to_native_type), inner, {0});
     }
-    else
-    {
-        auto * from_native_type = toNativeType(b, from_type);
-        auto * to_native_type = toNativeType(b, to_type);
+    auto * from_native_type = toNativeType(b, from_type);
+    auto * to_native_type = toNativeType(b, to_type);
 
-        if (from_native_type == to_native_type)
-            return value;
-        else if (from_native_type->isIntegerTy() && to_native_type->isFloatingPointTy())
-            return typeIsSigned(*from_type) ? b.CreateSIToFP(value, to_native_type) : b.CreateUIToFP(value, to_native_type);
-        else if (from_native_type->isFloatingPointTy() && to_native_type->isIntegerTy())
-            return typeIsSigned(*to_type) ? b.CreateFPToSI(value, to_native_type) : b.CreateFPToUI(value, to_native_type);
-        else if (from_native_type->isIntegerTy() && from_native_type->isIntegerTy())
-            return b.CreateIntCast(value, to_native_type, typeIsSigned(*from_type));
-        else if (to_native_type->isFloatingPointTy() && to_native_type->isFloatingPointTy())
-            return b.CreateFPCast(value, to_native_type);
-    }
+    if (from_native_type == to_native_type)
+        return value;
+    if (from_native_type->isIntegerTy() && to_native_type->isFloatingPointTy())
+        return typeIsSigned(*from_type) ? b.CreateSIToFP(value, to_native_type) : b.CreateUIToFP(value, to_native_type);
+    if (from_native_type->isFloatingPointTy() && to_native_type->isIntegerTy())
+        return typeIsSigned(*to_type) ? b.CreateFPToSI(value, to_native_type) : b.CreateFPToUI(value, to_native_type);
+    if (from_native_type->isIntegerTy() && from_native_type->isIntegerTy())
+        return b.CreateIntCast(value, to_native_type, typeIsSigned(*from_type));
+    if (to_native_type->isFloatingPointTy() && to_native_type->isFloatingPointTy())
+        return b.CreateFPCast(value, to_native_type);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR,
         "Invalid cast to native value from type {} to type {}",
@@ -173,19 +170,19 @@ llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builder, const DataT
 
         return llvm::ConstantStruct::get(static_cast<llvm::StructType *>(type), value, is_null);
     }
-    else if (column_data_type.isFloat32())
+    if (column_data_type.isFloat32())
     {
         return llvm::ConstantFP::get(type, assert_cast<const ColumnVector<Float32> &>(column).getElement(index));
     }
-    else if (column_data_type.isFloat64())
+    if (column_data_type.isFloat64())
     {
         return llvm::ConstantFP::get(type, assert_cast<const ColumnVector<Float64> &>(column).getElement(index));
     }
-    else if (column_data_type.isNativeUInt() || column_data_type.isDate() || column_data_type.isDateTime())
+    if (column_data_type.isNativeUInt() || column_data_type.isDate() || column_data_type.isDateTime())
     {
         return llvm::ConstantInt::get(type, column.getUInt(index));
     }
-    else if (column_data_type.isNativeInt() || column_data_type.isEnum() || column_data_type.isDate32())
+    if (column_data_type.isNativeInt() || column_data_type.isEnum() || column_data_type.isDate32())
     {
         return llvm::ConstantInt::get(type, column.getInt(index));
     }

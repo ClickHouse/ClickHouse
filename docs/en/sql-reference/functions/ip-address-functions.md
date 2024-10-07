@@ -335,6 +335,36 @@ toIPv4OrNull(value)
 
 **Arguments**
 
+- `value` — The value with IPv4 address.
+
+**Returned value**
+
+- `value` converted to the current IPv4 address. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+  toIPv4OrNull('192.168.0.1') AS s1,
+  toIPv4OrNull('192.168.0') AS s2
+```
+
+Result:
+
+```response
+┌─s1──────────┬─s2───┐
+│ 192.168.0.1 │ ᴺᵁᴸᴸ │
+└─────────────┴──────┘
+```
+
+```sql
+toIPv4OrNull(value)
+```
+
+**Arguments**
+
 - `value` — IP address. [String](../data-types/string.md).
 
 **Returned value**

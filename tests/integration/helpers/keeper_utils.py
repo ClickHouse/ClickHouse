@@ -1,11 +1,13 @@
 import contextlib
 import io
+import logging
 import re
 import select
 import socket
 import subprocess
 import time
-import typing as tp
+from os import path as p
+from typing import Iterable, List, Optional, Sequence, Union
 
 from kazoo.client import KazooClient
 
@@ -23,7 +25,7 @@ ss_established = [
 ]
 
 
-def get_active_zk_connections(node: ClickHouseInstance) -> tp.List[str]:
+def get_active_zk_connections(node: ClickHouseInstance) -> List[str]:
     return (
         str(node.exec_in_container(ss_established, privileged=True, user="root"))
         .strip()
@@ -41,6 +43,7 @@ def get_zookeeper_which_node_connected_to(node: ClickHouseInstance) -> str:
     assert (
         len(result) == 1
     ), "ClickHouse must be connected only to one Zookeeper at a time"
+    assert isinstance(result[0], str)
     return result[0]
 
 
@@ -118,8 +121,10 @@ class KeeperClient(object):
                     in str(e)
                     and retry_count < connection_tries
                 ):
-                    print(
-                        f"Got exception while connecting to Keeper: {e}\nWill reconnect, reconnect count = {retry_count}"
+                    logging.debug(
+                        "Got exception while connecting to Keeper: %s\nWill reconnect, reconnect count = %s",
+                        e,
+                        retry_count,
                     )
                     time.sleep(1)
                 else:
@@ -169,12 +174,12 @@ class KeeperClient(object):
     def get(self, path: str, timeout: float = 60.0) -> str:
         return self.execute_query(f"get '{path}'", timeout)
 
-    def set(self, path: str, value: str, version: tp.Optional[int] = None) -> None:
+    def set(self, path: str, value: str, version: Optional[int] = None) -> None:
         self.execute_query(
             f"set '{path}' '{value}' {version if version is not None else ''}"
         )
 
-    def rm(self, path: str, version: tp.Optional[int] = None) -> None:
+    def rm(self, path: str, version: Optional[int] = None) -> None:
         self.execute_query(f"rm '{path}' {version if version is not None else ''}")
 
     def exists(self, path: str, timeout: float = 60.0) -> bool:
@@ -208,9 +213,9 @@ class KeeperClient(object):
 
     def reconfig(
         self,
-        joining: tp.Optional[str],
-        leaving: tp.Optional[str],
-        new_members: tp.Optional[str],
+        joining: Optional[str],
+        leaving: Optional[str],
+        new_members: Optional[str],
         timeout: float = 60.0,
     ) -> str:
         if bool(joining) + bool(leaving) + bool(new_members) != 1:
@@ -236,7 +241,7 @@ class KeeperClient(object):
     @classmethod
     @contextlib.contextmanager
     def from_cluster(
-        cls, cluster: ClickHouseCluster, keeper_node: str, port: tp.Optional[int] = None
+        cls, cluster: ClickHouseCluster, keeper_node: str, port: Optional[int] = None
     ) -> "KeeperClient":
         client = cls(
             cluster.server_bin_path,
@@ -353,3 +358,22 @@ def wait_configs_equal(left_config: str, right_zk: KeeperClient, timeout: float 
                 f"timeout while checking nodes configs to get equal. "
                 f"Left: {left_config}, right: {right_config}"
             )
+
+
+def replace_zookeeper_config(
+    nodes: Union[Sequence[ClickHouseInstance], ClickHouseInstance], new_config: str
+) -> None:
+    if not isinstance(nodes, Sequence):
+        nodes = (nodes,)
+    for node in nodes:
+        node.replace_config("/etc/clickhouse-server/conf.d/zookeeper.xml", new_config)
+        node.query("SYSTEM RELOAD CONFIG")
+
+
+def reset_zookeeper_config(
+    nodes: Union[Sequence[ClickHouseInstance], ClickHouseInstance],
+    file_path: str = p.join(p.dirname(p.realpath(__file__)), "zookeeper_config.xml"),
+) -> None:
+    """Resets the keeper config to default or to a given path on the disk"""
+    with open(file_path, "r", encoding="utf-8") as cf:
+        replace_zookeeper_config(nodes, cf.read())
