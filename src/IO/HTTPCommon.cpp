@@ -3,6 +3,7 @@
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Poco/Any.h>
 #include <Common/Exception.h>
+#include <Common/escapeForFileName.h>
 
 #include "config.h"
 
@@ -99,11 +100,15 @@ Exception HTTPException::makeExceptionMessage(
     const std::string & reason,
     const std::string & body)
 {
+    std::string body_log_buffer;
+
     return Exception(code,
         "Received error from remote server {}. "
-        "HTTP status code: {} {}, "
-        "body: {}",
-        uri, static_cast<int>(http_status), reason, body);
+        "HTTP status code: {} '{}', "
+        "body: '{}'",
+        uri,
+        static_cast<int>(http_status), reason,
+        escapeForLogs(body, /* max_length= */ 120, body_log_buffer));
 }
 
 }
