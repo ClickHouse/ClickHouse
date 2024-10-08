@@ -254,6 +254,16 @@ An alias to `IPv4StringToNum()` that takes a string form of IPv4 address and ret
 toIPv4(string)
 ```
 
+**Arguments**
+
+- `string` — IP address. [String](../data-types/string.md).
+
+**Returned value**
+
+- `string` converted to the current IPv4 address. [String](../data-types/string.md).
+
+**Examples**
+
 ``` sql
 WITH
     '171.225.130.45' as IPv4_string
@@ -289,17 +299,17 @@ Same as `toIPv4`, but if the IPv4 address has an invalid format, it returns `0.0
 **Syntax**
 
 ```sql
-toIPv4OrDefault(value [, default])
+toIPv4OrDefault(string [, default])
 ```
 
 **Arguments**
 
-- `value` — IP address. [String](../data-types/string.md).
+- `string` — IP address. [String](../data-types/string.md).
 - `default` (optional) — The default to return if `string` has an invalid format. [IPv4](../data-types/ipv4.md).
 
 **Returned value**
 
-- `value` converted to the current IPv4 address. [String](../data-types/string.md).
+- `string` converted to the current IPv4 address. [String](../data-types/string.md).
 
 **Example**
 
@@ -330,46 +340,16 @@ Same as [`toIPv4`](#toipv4), but if the IPv4 address has an invalid format, it r
 **Syntax**
 
 ```sql
-toIPv4OrNull(value)
+toIPv4OrNull(string)
 ```
 
 **Arguments**
 
-- `value` — The value with IPv4 address.
+- `string` — IP address. [String](../data-types/string.md).
 
 **Returned value**
 
-- `value` converted to the current IPv4 address. [String](../data-types/string.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT
-  toIPv4OrNull('192.168.0.1') AS s1,
-  toIPv4OrNull('192.168.0') AS s2
-```
-
-Result:
-
-```response
-┌─s1──────────┬─s2───┐
-│ 192.168.0.1 │ ᴺᵁᴸᴸ │
-└─────────────┴──────┘
-```
-
-```sql
-toIPv4OrNull(value)
-```
-
-**Arguments**
-
-- `value` — IP address. [String](../data-types/string.md).
-
-**Returned value**
-
-- `value` converted to the current IPv4 address, or null if `value` is an invalid address. [String](../data-types/string.md).
+- `string` converted to the current IPv4 address, or null if `string` is an invalid address. [String](../data-types/string.md).
 
 **Example**
 
@@ -395,16 +375,16 @@ Same as [`toIPv4`](#toipv4), but if the IPv4 address has an invalid format, it r
 **Syntax**
 
 ```sql
-toIPv4OrZero(value)
+toIPv4OrZero(string)
 ```
 
 **Arguments**
 
-- `value` — IP address. [String](../data-types/string.md).
+- `string` — IP address. [String](../data-types/string.md).
 
 **Returned value**
 
-- `value` converted to the current IPv4 address, or zero (0 IPv4) if `value` is an invalid address. [String](../data-types/string.md).
+- `string` converted to the current IPv4 address, or zero (0 IPv4) if `string` is an invalid address. [String](../data-types/string.md).
 
 **Example**
 
