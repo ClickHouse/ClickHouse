@@ -3915,7 +3915,7 @@ None.
 
 **Returned value**
 
-Returns an integer of type UInt64. [UInt64](../data-types/int-uint.md).
+Returns an integer of type UInt64.
 
 **Implementation details**
 
