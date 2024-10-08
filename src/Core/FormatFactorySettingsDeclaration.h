@@ -197,7 +197,9 @@ Allow missing columns while reading Parquet input formats
     M(UInt64, input_format_parquet_local_file_min_bytes_for_seek, 8192, R"(
 Min bytes required for local read (file) to do seek, instead of read with ignore in Parquet input format
 )", 0) \
-    M(Bool, input_format_parquet_enable_row_group_prefetch, true, "Enable row group prefetching during parquet parsing. Currently, only single-threaded parsing can prefetch.", 0) \
+    M(Bool, input_format_parquet_enable_row_group_prefetch, true, R"(
+Enable row group prefetching during parquet parsing. Currently, only single-threaded parsing can prefetch.
+)", 0) \
     M(Bool, input_format_arrow_allow_missing_columns, true, R"(
 Allow missing columns while reading Arrow input formats
 )", 0) \

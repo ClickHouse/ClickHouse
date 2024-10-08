@@ -218,6 +218,7 @@ private:
 
         size_t total_rows = 0;
         size_t total_bytes_compressed = 0;
+        std::vector<size_t> row_group_sizes;
 
         size_t adaptive_chunk_size = 0;
 
@@ -278,19 +279,20 @@ private:
     {
     public:
         RowGroupPrefetchIterator(
-            parquet::ParquetFileReader* file_reader_, RowGroupBatchState & row_group_batch_, const std::vector<int> & column_indices_)
-            : file_reader(file_reader_), row_group_batch(row_group_batch_), column_indices(column_indices_)
+            parquet::ParquetFileReader* file_reader_, RowGroupBatchState & row_group_batch_, const std::vector<int> & column_indices_, size_t min_bytes_for_seek_)
+            : file_reader(file_reader_), row_group_batch(row_group_batch_), column_indices(column_indices_), min_bytes_for_seek(min_bytes_for_seek_)
         {
-            prefetchNextRowGroupReader();
+            prefetchNextRowGroups();
         }
         std::shared_ptr<arrow::RecordBatchReader> nextRowGroupReader();
     private:
-        void prefetchNextRowGroupReader();
-
-        size_t next_row_group_idx = 0;
+        void prefetchNextRowGroups();
+        size_t next_row_group_idx= 0;
+        std::vector<int> prefetched_row_groups;
         parquet::ParquetFileReader * file_reader;
         RowGroupBatchState& row_group_batch;
         const std::vector<int>& column_indices;
+        const size_t min_bytes_for_seek;
     };
 
     const FormatSettings format_settings;

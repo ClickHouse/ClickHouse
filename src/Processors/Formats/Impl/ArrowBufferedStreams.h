@@ -105,10 +105,10 @@ private:
     void asyncThreadFunction(arrow::Future<std::shared_ptr<arrow::Buffer>> future, int64_t position, int64_t nbytes);
 
     SeekableReadBuffer & in;
-    ThreadPoolCallbackRunnerUnsafe<void> async_runner;
     size_t file_size;
     bool is_open = true;
     std::shared_ptr<ThreadPool> io_pool;
+    ThreadPoolCallbackRunnerUnsafe<void> async_runner;
 
     ARROW_DISALLOW_COPY_AND_ASSIGN(RandomAccessFileFromRandomAccessReadBuffer);
 };

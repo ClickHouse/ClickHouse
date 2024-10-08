@@ -27,6 +27,11 @@
 #include <Processors/Formats/Impl/Parquet/ParquetRecordReader.h>
 #include <Interpreters/convertFieldToType.h>
 
+namespace ProfileEvents
+{
+    extern const Event ParquetFetchWaitTimeMicroseconds;
+}
+
 namespace CurrentMetrics
 {
     extern const Metric ParquetDecoderThreads;
@@ -477,7 +482,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         return;
 
     metadata = parquet::ReadMetaData(arrow_file);
-    bool prefetch_group = supportPrefetch();
+    const bool prefetch_group = supportPrefetch();
 
     std::shared_ptr<arrow::Schema> schema;
     THROW_ARROW_NOT_OK(parquet::arrow::FromParquetSchema(metadata->schema(), &schema));
@@ -527,7 +532,9 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
         row_group_batches.back().row_groups_idxs.push_back(row_group);
         row_group_batches.back().total_rows += metadata->RowGroup(row_group)->num_rows();
-        row_group_batches.back().total_bytes_compressed += metadata->RowGroup(row_group)->total_compressed_size();
+        auto row_group_size = metadata->RowGroup(row_group)->total_compressed_size();
+        row_group_batches.back().row_group_sizes.push_back(row_group_size);
+        row_group_batches.back().total_bytes_compressed += row_group_size;
         auto rows = adaptive_chunk_size(row_group);
         row_group_batches.back().adaptive_chunk_size = rows ? rows : format_settings.parquet.max_block_size;
     }
@@ -535,7 +542,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
 void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_batch_idx)
 {
-    bool row_group_prefetch = supportPrefetch();
+    const bool row_group_prefetch = supportPrefetch();
     auto & row_group_batch = row_group_batches[row_group_batch_idx];
 
     parquet::ArrowReaderProperties arrow_properties;
@@ -618,13 +625,15 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
         THROW_ARROW_NOT_OK(builder.Build(&row_group_batch.file_reader));
         if (row_group_prefetch)
         {
-            row_group_batch.prefetch_iterator = std::make_unique<RowGroupPrefetchIterator>(parquet_file_reader, row_group_batch, column_indices);
+            row_group_batch.prefetch_iterator = std::make_unique<RowGroupPrefetchIterator>(parquet_file_reader, row_group_batch, column_indices, min_bytes_for_seek);
             row_group_batch.record_batch_reader = row_group_batch.prefetch_iterator->nextRowGroupReader();
         }
         else
         {
+            Stopwatch fetch_wait_time;
             THROW_ARROW_NOT_OK(
                 row_group_batch.file_reader->GetRecordBatchReader(row_group_batch.row_groups_idxs, column_indices, &row_group_batch.record_batch_reader));
+            increment(ProfileEvents::ParquetFetchWaitTimeMicroseconds, fetch_wait_time.elapsedMicroseconds());
         }
         row_group_batch.arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
             getPort().getHeader(),
@@ -695,19 +704,33 @@ bool ParquetBlockInputFormat::supportPrefetch() const
 
 std::shared_ptr<arrow::RecordBatchReader> ParquetBlockInputFormat::RowGroupPrefetchIterator::nextRowGroupReader()
 {
-    if (next_row_group_idx >= row_group_batch.row_groups_idxs.size()) return nullptr;
+    if (prefetched_row_groups.empty()) return nullptr;
     std::shared_ptr<arrow::RecordBatchReader> reader;
-    THROW_ARROW_NOT_OK(row_group_batch.file_reader->GetRecordBatchReader({row_group_batch.row_groups_idxs[next_row_group_idx]}, column_indices, &reader));
-    prefetchNextRowGroupReader();
-    ++next_row_group_idx;
+    Stopwatch fetch_wait_time;
+    // GetRecordBatchReader will block until the data is ready.
+    // Only the corresponding objects will be created, and no data parsing will be performed.
+    THROW_ARROW_NOT_OK(row_group_batch.file_reader->GetRecordBatchReader(prefetched_row_groups, column_indices, &reader));
+    prefetched_row_groups.clear();
+    // Start to prefetch next row groups
+    prefetchNextRowGroups();
+    increment(ProfileEvents::ParquetFetchWaitTimeMicroseconds, fetch_wait_time.elapsedMicroseconds());
     return reader;
 }
 
-void ParquetBlockInputFormat::RowGroupPrefetchIterator::prefetchNextRowGroupReader()
+void ParquetBlockInputFormat::RowGroupPrefetchIterator::prefetchNextRowGroups()
 {
     if (next_row_group_idx < row_group_batch.row_groups_idxs.size())
     {
-        file_reader->PreBuffer({row_group_batch.row_groups_idxs[next_row_group_idx]}, column_indices,
+        size_t total_bytes_compressed = 0;
+        // Merge small row groups
+        while (next_row_group_idx < row_group_batch.row_groups_idxs.size() &&
+               total_bytes_compressed < min_bytes_for_seek)
+        {
+            total_bytes_compressed += row_group_batch.row_group_sizes[next_row_group_idx];
+            prefetched_row_groups.emplace_back(row_group_batch.row_groups_idxs[next_row_group_idx]);
+            ++next_row_group_idx;
+        }
+        file_reader->PreBuffer(prefetched_row_groups, column_indices,
             row_group_batch.file_reader->properties().io_context(), row_group_batch.file_reader->properties().cache_options());
     }
 }

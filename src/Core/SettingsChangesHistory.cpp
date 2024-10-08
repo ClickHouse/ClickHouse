@@ -75,7 +75,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"restore_replace_external_dictionary_source_to_null", false, false, "New setting."},
             {"show_create_query_identifier_quoting_rule", "when_necessary", "when_necessary", "New setting."},
             {"show_create_query_identifier_quoting_style", "Backticks", "Backticks", "New setting."},
-            {"input_format_parquet_enable_row_group_prefetch", false, true, "Enable row group prefetching during parquet parsing. Currently, only single-threaded parsing can prefetch."},
             {"enable_secure_identifiers", false, false, "New setting."},
             {"min_free_disk_bytes_to_perform_insert", 0, 0, "New setting."},
             {"min_free_disk_ratio_to_perform_insert", 0.0, 0.0, "New setting."},
@@ -95,6 +94,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"distributed_cache_read_alignment", 0, 0, "A setting for ClickHouse Cloud"},
             {"distributed_cache_max_unacked_inflight_packets", 10, 10, "A setting for ClickHouse Cloud"},
             {"distributed_cache_data_packet_ack_window", 5, 5, "A setting for ClickHouse Cloud"},
+            {"input_format_parquet_enable_row_group_prefetch", false, true, "Enable row group prefetching during parquet parsing. Currently, only single-threaded parsing can prefetch."},
         }
     },
     {"24.9",
