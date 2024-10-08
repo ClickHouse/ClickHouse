@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Defines.h>
-#include <Core/ServerSettings.h>
 #include <Interpreters/Context_fwd.h>
 
 #include <Poco/Net/HTTPClientSession.h>
@@ -10,6 +9,7 @@
 namespace DB
 {
 
+struct ServerSettings;
 struct Settings;
 
 #define APPLY_FOR_ALL_CONNECTION_TIMEOUT_MEMBERS(M) \

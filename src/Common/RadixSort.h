@@ -385,7 +385,7 @@ private:
      * PASS is counted from least significant (0), so the first pass is NUM_PASSES - 1.
      */
     template <size_t PASS>
-    static inline void radixSortMSDInternal(Element * arr, size_t size, size_t limit)
+    static void radixSortMSDInternal(Element * arr, size_t size, size_t limit)
     {
         /// The beginning of every i-1-th bucket. 0th element will be equal to 1st.
         /// Last element will point to array end.
@@ -528,7 +528,7 @@ private:
 
     // A helper to choose sorting algorithm based on array length
     template <size_t PASS>
-    static inline void radixSortMSDInternalHelper(Element * arr, size_t size, size_t limit)
+    static void radixSortMSDInternalHelper(Element * arr, size_t size, size_t limit)
     {
         if (size <= INSERTION_SORT_THRESHOLD)
             insertionSortInternal(arr, size);
@@ -599,16 +599,12 @@ public:
 
             if (destination)
                 return executeLSDWithTrySortInternal<true>(arr, size, reverse, GreaterComparator(), destination);
-            else
-                return executeLSDWithTrySortInternal<false>(arr, size, reverse, GreaterComparator(), destination);
+            return executeLSDWithTrySortInternal<false>(arr, size, reverse, GreaterComparator(), destination);
         }
-        else
-        {
-            if (destination)
-                return executeLSDWithTrySortInternal<true>(arr, size, reverse, LessComparator(), destination);
-            else
-                return executeLSDWithTrySortInternal<false>(arr, size, reverse, LessComparator(), destination);
-        }
+
+        if (destination)
+            return executeLSDWithTrySortInternal<true>(arr, size, reverse, LessComparator(), destination);
+        return executeLSDWithTrySortInternal<false>(arr, size, reverse, LessComparator(), destination);
     }
 
     /* Most significant digit radix sort

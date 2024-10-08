@@ -193,12 +193,9 @@ private:
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
-    template <typename AttributeType,typename ValueSetter>
-    size_t getItemsShortCircuitImpl(
-        const Attribute & attribute,
-        const Columns & key_columns,
-        ValueSetter && set_value,
-        IColumn::Filter & default_mask) const;
+    template <typename AttributeType, typename ValueSetter>
+    void getItemsShortCircuitImpl(
+        const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, IColumn::Filter & default_mask) const;
 
     template <typename T>
     void setAttributeValueImpl(Attribute & attribute, const T value); /// NOLINT

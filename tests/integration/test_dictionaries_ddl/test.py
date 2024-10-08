@@ -1,10 +1,11 @@
+import logging
 import os
-import warnings
 import time
+import warnings
 
 import pymysql
 import pytest
-import logging
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 

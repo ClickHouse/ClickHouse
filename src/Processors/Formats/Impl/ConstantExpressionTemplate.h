@@ -3,7 +3,7 @@
 #include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <Parsers/TokenIterator.h>
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 #include <Interpreters/Context_fwd.h>
 
 namespace DB

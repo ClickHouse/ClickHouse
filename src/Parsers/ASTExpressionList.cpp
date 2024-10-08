@@ -42,15 +42,14 @@ void ASTExpressionList::formatImpl(const FormatSettings & settings, FormatState 
 
 void ASTExpressionList::formatImplMultiline(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    std::string indent_str = "\n" + std::string(4 * (frame.indent + 1), ' ');
+    ++frame.indent;
+    std::string indent_str = "\n" + std::string(4 * frame.indent, ' ');
 
     if (frame.expression_list_prepend_whitespace)
     {
         if (!(children.size() > 1 || frame.expression_list_always_start_on_new_line))
             settings.ostr << ' ';
     }
-
-    ++frame.indent;
 
     for (size_t i = 0, size = children.size(); i < size; ++i)
     {

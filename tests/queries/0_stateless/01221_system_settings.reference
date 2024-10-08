@@ -1,4 +1,4 @@
-send_timeout	300	0	Timeout for sending data to network, in seconds. If client needs to sent some data, but it did not able to send any bytes in this interval, exception is thrown. If you set this setting on client, the \'receive_timeout\' for the socket will be also set on the corresponding connection end on the server.	\N	\N	0	Seconds	300		0
+send_timeout	300	0	Timeout for sending data to the network, in seconds. If a client needs to send some data but is not able to send any bytes in this interval, the exception is thrown. If you set this setting on the client, the \'receive_timeout\' for the socket will also be set on the corresponding connection end on the server.	\N	\N	0	Seconds	300		0
 storage_policy	default	0	Name of storage disk policy	\N	\N	0	String	0
 1
 1

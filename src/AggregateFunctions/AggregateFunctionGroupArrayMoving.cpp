@@ -65,8 +65,7 @@ struct MovingSumData : public MovingData<T>
     {
         if (idx < window_size)
             return this->value[idx];
-        else
-            return this->value[idx] - this->value[idx - window_size];
+        return this->value[idx] - this->value[idx - window_size];
     }
 };
 
@@ -79,8 +78,7 @@ struct MovingAvgData : public MovingData<T>
     {
         if (idx < window_size)
             return this->value[idx] / T(window_size);
-        else
-            return (this->value[idx] - this->value[idx - window_size]) / T(window_size);
+        return (this->value[idx] - this->value[idx - window_size]) / T(window_size);
     }
 };
 
@@ -269,12 +267,12 @@ AggregateFunctionPtr createAggregateFunctionMoving(
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive integer", name);
 
-        if ((type == Field::Types::Int64 && parameters[0].get<Int64>() <= 0) ||
-            (type == Field::Types::UInt64 && parameters[0].get<UInt64>() == 0))
+        if ((type == Field::Types::Int64 && parameters[0].safeGet<Int64>() <= 0) ||
+            (type == Field::Types::UInt64 && parameters[0].safeGet<UInt64>() == 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive integer", name);
 
         limit_size = true;
-        max_elems = parameters[0].get<UInt64>();
+        max_elems = parameters[0].safeGet<UInt64>();
     }
     else
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -285,16 +283,12 @@ AggregateFunctionPtr createAggregateFunctionMoving(
     {
         if (isDecimal(argument_type))
             return createAggregateFunctionMovingImpl<Function, std::false_type, std::true_type>(name, argument_type);
-        else
-            return createAggregateFunctionMovingImpl<Function, std::false_type, std::false_type>(name, argument_type);
+        return createAggregateFunctionMovingImpl<Function, std::false_type, std::false_type>(name, argument_type);
     }
-    else
-    {
-        if (isDecimal(argument_type))
-            return createAggregateFunctionMovingImpl<Function, std::true_type, std::true_type>(name, argument_type, max_elems);
-        else
-            return createAggregateFunctionMovingImpl<Function, std::true_type, std::false_type>(name, argument_type, max_elems);
-    }
+
+    if (isDecimal(argument_type))
+        return createAggregateFunctionMovingImpl<Function, std::true_type, std::true_type>(name, argument_type, max_elems);
+    return createAggregateFunctionMovingImpl<Function, std::true_type, std::false_type>(name, argument_type, max_elems);
 }
 
 }

@@ -1,0 +1,229 @@
+name: CreateRelease
+
+concurrency:
+  group: release
+
+env:
+  PYTHONUNBUFFERED: 1
+
+'on':
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git reference (branch or commit sha) from which to create the release'
+        required: true
+        type: string
+      type:
+        description: 'The type of release: "new" for a new release or "patch" for a patch release'
+        required: true
+        type: choice
+        options:
+          - patch
+          - new
+      only-repo:
+        description: 'Run only repos updates including docker (repo-recovery, tests)'
+        required: false
+        default: false
+        type: boolean
+      dry-run:
+        description: 'Dry run'
+        required: false
+        default: false
+        type: boolean
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Git reference (branch or commit sha) from which to create the release'
+        required: true
+        type: string
+      type:
+        description: 'The type of release: "new" for a new release or "patch" for a patch release'
+        required: true
+        type: string
+      only-repo:
+        description: 'Run only repos updates including docker (repo-recovery, tests)'
+        required: false
+        default: false
+        type: boolean
+      dry-run:
+        description: 'Dry run'
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      ROBOT_CLICKHOUSE_COMMIT_TOKEN:
+
+jobs:
+  CreateRelease:
+    env:
+      GH_TOKEN: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
+    runs-on: [self-hosted, release-maker]
+    steps:
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          token: ${{secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN}}
+          fetch-depth: 0
+      - name: Debug Info
+        uses: ./.github/actions/debug
+      - name: Prepare Release Info
+        shell: bash
+        run: |
+          if [ ${{ inputs.only-repo }} == "true" ]; then
+              git tag -l ${{ inputs.ref }} || { echo "With only-repo option ref must be a valid release tag"; exit 1; }
+          fi
+          python3 ./tests/ci/create_release.py --prepare-release-info \
+            --ref ${{ inputs.ref }} --release-type ${{ inputs.type }} \
+            ${{ inputs.dry-run == true && '--dry-run' || '' }} \
+            ${{ inputs.only-repo == true && '--skip-tag-check' || '' }}
+          echo "::group::Release Info"
+          python3 -m json.tool /tmp/release_info.json
+          echo "::endgroup::"
+          release_tag=$(jq -r '.release_tag' /tmp/release_info.json)
+          commit_sha=$(jq -r '.commit_sha' /tmp/release_info.json)
+          is_latest=$(jq -r '.latest' /tmp/release_info.json)
+          echo "Release Tag: $release_tag"
+          echo "RELEASE_TAG=$release_tag" >> "$GITHUB_ENV"
+          echo "COMMIT_SHA=$commit_sha" >> "$GITHUB_ENV"
+          if [ "$is_latest" == "true" ]; then
+            echo "DOCKER_TAG_TYPE=release-latest" >> "$GITHUB_ENV"
+          else
+            echo "DOCKER_TAG_TYPE=release" >> "$GITHUB_ENV"
+          fi
+      - name: Download All Release Artifacts
+        if: ${{ inputs.type == 'patch' }}
+        shell: bash
+        run: |
+          python3 ./tests/ci/create_release.py --download-packages ${{ inputs.dry-run == true && '--dry-run' || '' }}
+      - name: Push Git Tag for the Release
+        if: ${{ ! inputs.only-repo }}
+        shell: bash
+        run: |
+          python3 ./tests/ci/create_release.py --push-release-tag ${{ inputs.dry-run == true && '--dry-run' || '' }}
+      - name: Push New Release Branch
+        if: ${{ inputs.type == 'new' && ! inputs.only-repo }}
+        shell: bash
+        run: |
+          python3 ./tests/ci/create_release.py --push-new-release-branch ${{ inputs.dry-run == true && '--dry-run' || '' }}
+      - name: Bump CH Version and Update Contributors' List
+        if: ${{ ! inputs.only-repo }}
+        shell: bash
+        run: |
+          python3 ./tests/ci/create_release.py --create-bump-version-pr ${{ inputs.dry-run == true && '--dry-run' || '' }}
+      - name: Bump Docker versions, Changelog, Security
+        if: ${{ inputs.type == 'patch' && ! inputs.only-repo }}
+        shell: bash
+        run: |
+          python3 ./tests/ci/create_release.py --set-progress-started --progress "update changelog, docker version, security"
+
+          git checkout master  # in case WF started from feature branch
+          echo "List versions"
+          ./utils/list-versions/list-versions.sh > ./utils/list-versions/version_date.tsv
+          echo "Update docker version"
+          ./utils/list-versions/update-docker-version.sh
+          echo "Generate ChangeLog"
+          export CI=1
+          docker run -u "${UID}:${GID}" -e PYTHONUNBUFFERED=1 -e CI=1 --network=host \
+            --volume=".:/wd" --workdir="/wd" \
+            clickhouse/style-test \
+            ./tests/ci/changelog.py -v --debug-helpers \
+            --gh-user-or-token ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }} \
+            --jobs=5 \
+            --output="./docs/changelogs/${{ env.RELEASE_TAG }}.md" ${{ env.RELEASE_TAG }}
+          git add ./docs/changelogs/${{ env.RELEASE_TAG }}.md
+          echo "Generate Security"
+          python3 ./utils/security-generator/generate_security.py > SECURITY.md
+          git diff HEAD
+      - name: Create ChangeLog PR
+        if: ${{ inputs.type == 'patch' && ! inputs.dry-run && ! inputs.only-repo }}
+        uses: peter-evans/create-pull-request@v6
+        with:
+          author: "robot-clickhouse <robot-clickhouse@users.noreply.github.com>"
+          token: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
+          committer: "robot-clickhouse <robot-clickhouse@users.noreply.github.com>"
+          commit-message: Update version_date.tsv and changelogs after ${{ env.RELEASE_TAG }}
+          branch: auto/${{ env.RELEASE_TAG }}
+          base: master
+          assignees: ${{ github.event.sender.login }}  # assign the PR to the tag pusher
+          delete-branch: true
+          title: Update version_date.tsv and changelog after ${{ env.RELEASE_TAG }}
+          labels: do not test
+          body: |
+            Update version_date.tsv and changelogs after ${{ env.RELEASE_TAG }}
+            ### Changelog category (leave one):
+            - Not for changelog (changelog entry is not required)
+      - name: Complete previous steps and Restore git state
+        if: ${{ inputs.type == 'patch' && ! inputs.only-repo }}
+        shell: bash
+        run: |
+          git reset --hard HEAD
+          git checkout "$GITHUB_REF_NAME"
+          python3 ./tests/ci/create_release.py --set-progress-completed
+      - name: Create GH Release
+        if: ${{ inputs.type == 'patch' && ! inputs.only-repo }}
+        shell: bash
+        run: |
+          python3 ./tests/ci/create_release.py --create-gh-release ${{ inputs.dry-run == true && '--dry-run' || '' }}
+      - name: Export TGZ Packages
+        if: ${{ inputs.type == 'patch' }}
+        shell: bash
+        run: |
+          python3 ./tests/ci/artifactory.py --export-tgz ${{ inputs.dry-run == true && '--dry-run' || '' }}
+      - name: Test TGZ Packages
+        if: ${{ inputs.type == 'patch' }}
+        shell: bash
+        run: |
+          python3 ./tests/ci/artifactory.py --test-tgz ${{ inputs.dry-run == true && '--dry-run' || '' }}
+      - name: Export RPM Packages
+        if: ${{ inputs.type == 'patch' }}
+        shell: bash
+        run: |
+          python3 ./tests/ci/artifactory.py --export-rpm ${{ inputs.dry-run == true && '--dry-run' || '' }}
+      - name: Test RPM Packages
+        if: ${{ inputs.type == 'patch' }}
+        shell: bash
+        run: |
+          python3 ./tests/ci/artifactory.py --test-rpm ${{ inputs.dry-run == true && '--dry-run' || '' }}
+      - name: Export Debian Packages
+        if: ${{ inputs.type == 'patch' }}
+        shell: bash
+        run: |
+          python3 ./tests/ci/artifactory.py --export-debian ${{ inputs.dry-run == true && '--dry-run' || '' }}
+      - name: Test Debian Packages
+        if: ${{ inputs.type == 'patch' }}
+        shell: bash
+        run: |
+          python3 ./tests/ci/artifactory.py --test-debian ${{ inputs.dry-run == true && '--dry-run' || '' }}
+      - name: Docker clickhouse/clickhouse-server building
+        if: ${{ inputs.type == 'patch' }}
+        shell: bash
+        run: |
+          cd "./tests/ci"
+          python3 ./create_release.py --set-progress-started --progress "docker server release"
+          export CHECK_NAME="Docker server image"
+          python3 docker_server.py --tag-type ${{ env.DOCKER_TAG_TYPE }} --version ${{ env.RELEASE_TAG }} --check-name "$CHECK_NAME" --sha ${{ env.COMMIT_SHA }} ${{ ! inputs.dry-run && '--push' || '' }}
+          python3 ./create_release.py --set-progress-completed
+      - name: Docker clickhouse/clickhouse-keeper building
+        if: ${{ inputs.type == 'patch' }}
+        shell: bash
+        run: |
+          cd "./tests/ci"
+          python3 ./create_release.py --set-progress-started --progress "docker keeper release"
+          export CHECK_NAME="Docker keeper image"
+          python3 docker_server.py --tag-type ${{ env.DOCKER_TAG_TYPE }} --version ${{ env.RELEASE_TAG }} --check-name "$CHECK_NAME" --sha ${{ env.COMMIT_SHA }} ${{ ! inputs.dry-run && '--push'  || '' }}
+          python3 ./create_release.py --set-progress-completed
+      - name: Update release info. Merge created PRs
+        shell: bash
+        run: |
+          python3 ./tests/ci/create_release.py --merge-prs ${{ inputs.dry-run == true && '--dry-run' || '' }}
+      - name: Set current Release progress to Completed with OK
+        shell: bash
+        run: |
+          # dummy stage to finalize release info with "progress: completed; status: OK"
+          python3 ./tests/ci/create_release.py --set-progress-started --progress "completed"
+          python3 ./tests/ci/create_release.py --set-progress-completed
+      - name: Post Slack Message
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          python3 ./tests/ci/create_release.py --post-status ${{ inputs.dry-run == true && '--dry-run' || '' }}

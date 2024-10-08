@@ -1,5 +1,5 @@
 #include "ICommand.h"
-#include <iostream>
+#include "DisksClient.h"
 
 
 namespace DB
@@ -10,43 +10,38 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void ICommand::printHelpMessage() const
+CommandLineOptions ICommand::processCommandLineArguments(const Strings & commands)
 {
-    std::cout << "Command: " << command_name << '\n';
-    std::cout << "Description: " << description << '\n';
-    std::cout << "Usage: " << usage << '\n';
+    CommandLineOptions options;
+    auto parser = po::command_line_parser(commands);
+    parser.options(options_description).positional(positional_options_description);
 
-    if (command_option_description)
+    po::parsed_options parsed = parser.run();
+    po::store(parsed, options);
+
+    return options;
+}
+
+void ICommand::execute(const Strings & commands, DisksClient & client)
+{
+    try
     {
-        auto options = *command_option_description;
-        if (!options.options().empty())
-            std::cout << options << '\n';
+        processCommandLineArguments(commands);
     }
+    catch (std::exception & exc)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", exc.what());
+    }
+    executeImpl(processCommandLineArguments(commands), client);
 }
 
-void ICommand::addOptions(ProgramOptionsDescription & options_description)
+DiskWithPath & ICommand::getDiskWithPath(DisksClient & client, const CommandLineOptions & options, const String & name)
 {
-    if (!command_option_description || command_option_description->options().empty())
-        return;
+    auto disk_name = getValueFromCommandLineOptionsWithOptional<String>(options, name);
+    if (disk_name.has_value())
+        return client.getDiskWithPath(disk_name.value());
 
-    options_description.add(*command_option_description);
-}
-
-String ICommand::validatePathAndGetAsRelative(const String & path)
-{
-    /// If path contain non-normalized symbols like . we will normalized them. If the resulting normalized path
-    /// still contain '..' it can be dangerous, disallow such paths. Also since clickhouse-disks
-    /// is not an interactive program (don't track you current path) it's OK to disallow .. paths.
-    String lexically_normal_path = fs::path(path).lexically_normal();
-    if (lexically_normal_path.find("..") != std::string::npos)
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Path {} is not normalized", path);
-
-    /// If path is absolute we should keep it as relative inside disk, so disk will look like
-    /// an ordinary filesystem with root.
-    if (fs::path(lexically_normal_path).is_absolute())
-        return lexically_normal_path.substr(1);
-
-    return lexically_normal_path;
+    return client.getCurrentDiskWithPath();
 }
 
 }

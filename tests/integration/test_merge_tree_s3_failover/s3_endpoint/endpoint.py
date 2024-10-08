@@ -1,6 +1,6 @@
-from bottle import request, route, run, response
 from threading import Lock
 
+from bottle import request, response, route, run
 
 # Endpoint can be configured to throw 500 error on N-th request attempt.
 # In usual situation just redirects to original Minio server.

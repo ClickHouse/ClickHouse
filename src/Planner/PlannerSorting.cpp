@@ -1,5 +1,7 @@
 #include <Planner/PlannerSorting.h>
 
+#include <Core/Settings.h>
+
 #include <Common/FieldVisitorsAccurateComparison.h>
 
 #include <DataTypes/DataTypeInterval.h>
@@ -13,6 +15,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool compile_sort_description;
+    extern const SettingsUInt64 min_count_to_compile_sort_description;
+}
 
 namespace ErrorCodes
 {
@@ -148,8 +155,8 @@ SortDescription extractSortDescription(const QueryTreeNodePtr & order_by_node, c
     }
 
     const auto & settings = planner_context.getQueryContext()->getSettingsRef();
-    sort_column_description.compile_sort_description = settings.compile_sort_description;
-    sort_column_description.min_count_to_compile_sort_description = settings.min_count_to_compile_sort_description;
+    sort_column_description.compile_sort_description = settings[Setting::compile_sort_description];
+    sort_column_description.min_count_to_compile_sort_description = settings[Setting::min_count_to_compile_sort_description];
 
     return sort_column_description;
 }

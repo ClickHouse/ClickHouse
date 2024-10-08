@@ -63,7 +63,7 @@ public:
 
     const auto & getFormatName() const { return format_name; }
 
-    enum class FileStatus
+    enum class FileStatus : uint8_t
     {
         OPEN, /// First time open file after table start up.
         NO_CHANGE,
@@ -120,8 +120,7 @@ public:
     {
         if (auto it = map.find(key); it != map.end())
             return it->second;
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The key {} doesn't exist.", key);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The key {} doesn't exist.", key);
     }
 
     void increaseStreams();

@@ -43,7 +43,7 @@ public:
     {
         if (!ISchedulerNode::equals(other))
             return false;
-        if (auto * o = dynamic_cast<PriorityPolicy *>(other))
+        if (auto * _ = dynamic_cast<PriorityPolicy *>(other))
             return true;
         return false;
     }
@@ -96,8 +96,7 @@ public:
     {
         if (auto iter = children.find(child_name); iter != children.end())
             return iter->second.get();
-        else
-            return nullptr;
+        return nullptr;
     }
 
     std::pair<ResourceRequest *, bool> dequeueRequest() override
@@ -122,8 +121,7 @@ public:
 
             if (request)
             {
-                dequeued_requests++;
-                dequeued_cost += request->cost;
+                incrementDequeued(request->cost);
                 return {request, !items.empty()};
             }
         }

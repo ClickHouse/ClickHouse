@@ -21,11 +21,21 @@ SELECT
 FROM numbers(130000)
 SETTINGS max_insert_block_size = 200000;
 
+SET max_block_size = 1048576, max_threads = 1, enable_parallel_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', max_parallel_replicas = 3, parallel_replicas_min_number_of_rows_per_replica=10000;
+
 EXPLAIN ESTIMATE
 SELECT count()
 FROM url_na_log
 PREWHERE (DateVisit >= toFixedString('2022-08-10', 10)) AND (DateVisit <= '2022-08-20')
-SETTINGS max_block_size = 1048576, max_threads = 1, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', max_parallel_replicas = 3, parallel_replicas_min_number_of_rows_per_replica=10000;
+SETTINGS parallel_replicas_local_plan=0;
+
+-- here parallel replicas uses local snapshot as working set
+-- so, the estimation can be done
+EXPLAIN ESTIMATE
+SELECT count()
+FROM url_na_log
+PREWHERE (DateVisit >= toFixedString('2022-08-10', 10)) AND (DateVisit <= '2022-08-20')
+SETTINGS allow_experimental_analyzer=1, parallel_replicas_local_plan=1;
 
 DROP POLICY url_na_log_policy0 ON url_na_log;
 DROP TABLE url_na_log;

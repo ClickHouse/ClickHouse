@@ -333,7 +333,7 @@ def test_receive_timeout2(started_cluster):
     # in packet receiving but there are replicas in process of
     # connection establishing.
     update_configs(
-        node_1_sleep_in_send_data=4000,
+        node_1_sleep_in_send_data=5000,
         node_2_sleep_in_send_tables_status=2000,
         node_3_sleep_in_send_tables_status=2000,
     )

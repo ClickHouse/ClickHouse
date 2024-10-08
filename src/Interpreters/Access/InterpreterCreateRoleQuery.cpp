@@ -74,7 +74,7 @@ BlockIO InterpreterCreateRoleQuery::execute()
 
     if (query.alter)
     {
-        auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
+        auto update_func = [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
         {
             auto updated_role = typeid_cast<std::shared_ptr<Role>>(entity->clone());
             updateRoleFromQueryImpl(*updated_role, query, {}, settings_from_query);

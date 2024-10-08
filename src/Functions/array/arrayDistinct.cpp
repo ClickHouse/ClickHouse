@@ -89,20 +89,20 @@ private:
 ColumnPtr FunctionArrayDistinct::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const
 {
     ColumnPtr array_ptr = arguments[0].column;
-    const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
+    const ColumnArray & array = checkAndGetColumn<ColumnArray>(*array_ptr);
 
     const auto & return_type = result_type;
 
     auto res_ptr = return_type->createColumn();
     ColumnArray & res = assert_cast<ColumnArray &>(*res_ptr);
 
-    const IColumn & src_data = array->getData();
-    const ColumnArray::Offsets & offsets = array->getOffsets();
+    const IColumn & src_data = array.getData();
+    const ColumnArray::Offsets & offsets = array.getOffsets();
 
     IColumn & res_data = res.getData();
     ColumnArray::Offsets & res_offsets = res.getOffsets();
 
-    const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(src_data);
+    const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(&src_data);
 
     const IColumn * inner_col;
 

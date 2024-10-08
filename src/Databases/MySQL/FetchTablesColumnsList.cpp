@@ -2,6 +2,7 @@
 
 #if USE_MYSQL
 #include <Core/Block.h>
+#include <Core/Settings.h>
 #include <Databases/MySQL/FetchTablesColumnsList.h>
 #include <DataTypes/convertMySQLDataType.h>
 #include <DataTypes/DataTypeString.h>
@@ -39,6 +40,10 @@ String toQueryStringWithQuote(const std::vector<String> & quote_list)
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool external_table_functions_use_nulls;
+}
 
 std::map<String, ColumnsDescription> fetchTablesColumnsList(
         mysqlxx::PoolWithFailover & pool,
@@ -107,16 +112,15 @@ std::map<String, ColumnsDescription> fetchTablesColumnsList(
         {
             String table_name = table_name_col[i].safeGet<String>();
             ColumnDescription column_description(
-                        column_name_col[i].safeGet<String>(),
-                        convertMySQLDataType(
-                                type_support,
-                                column_type_col[i].safeGet<String>(),
-                                settings.external_table_functions_use_nulls && is_nullable_col[i].safeGet<UInt64>(),
-                                is_unsigned_col[i].safeGet<UInt64>(),
-                                char_max_length_col[i].safeGet<UInt64>(),
-                                precision_col[i].safeGet<UInt64>(),
-                                scale_col[i].safeGet<UInt64>())
-            );
+                column_name_col[i].safeGet<String>(),
+                convertMySQLDataType(
+                    type_support,
+                    column_type_col[i].safeGet<String>(),
+                    settings[Setting::external_table_functions_use_nulls] && is_nullable_col[i].safeGet<UInt64>(),
+                    is_unsigned_col[i].safeGet<UInt64>(),
+                    char_max_length_col[i].safeGet<UInt64>(),
+                    precision_col[i].safeGet<UInt64>(),
+                    scale_col[i].safeGet<UInt64>()));
             column_description.comment = column_comment_col[i].safeGet<String>();
 
             tables_and_columns[table_name].add(column_description);

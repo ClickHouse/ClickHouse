@@ -85,8 +85,7 @@ void BackupWriterDefault::copyFileFromDisk(const String & path_in_backup, DiskPt
     {
         if (copy_encrypted)
             return src_disk->readEncryptedFile(src_path, settings);
-        else
-            return src_disk->readFile(src_path, settings);
+        return src_disk->readFile(src_path, settings);
     };
 
     copyDataToFile(path_in_backup, create_read_buffer, start_pos, length);

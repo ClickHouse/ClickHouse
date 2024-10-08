@@ -83,7 +83,8 @@ MergeTreeReadTask::createRangeReaders(const Readers & task_readers, const Prewhe
     {
         last_reader = task_readers.main->getColumns().empty() && (i + 1 == prewhere_actions.steps.size());
 
-        MergeTreeRangeReader current_reader(task_readers.prewhere[i].get(), prev_reader, prewhere_actions.steps[i].get(), last_reader);
+        MergeTreeRangeReader current_reader(
+            task_readers.prewhere[i].get(), prev_reader, prewhere_actions.steps[i].get(), last_reader, /*main_reader_=*/false);
 
         new_range_readers.prewhere.push_back(std::move(current_reader));
         prev_reader = &new_range_readers.prewhere.back();
@@ -91,7 +92,7 @@ MergeTreeReadTask::createRangeReaders(const Readers & task_readers, const Prewhe
 
     if (!last_reader)
     {
-        new_range_readers.main = MergeTreeRangeReader(task_readers.main.get(), prev_reader, nullptr, true);
+        new_range_readers.main = MergeTreeRangeReader(task_readers.main.get(), prev_reader, nullptr, true, /*main_reader_=*/true);
     }
     else
     {
@@ -147,7 +148,7 @@ UInt64 MergeTreeReadTask::estimateNumRows(const BlockSizeParams & params) const
         return rows_to_read;
 
     const auto & index_granularity = info->data_part->index_granularity;
-    return index_granularity.countMarksForRows(range_readers.main.currentMark(), rows_to_read, range_readers.main.numReadRowsInCurrentGranule(), params.min_marks_to_read);
+    return index_granularity.countRowsForRows(range_readers.main.currentMark(), rows_to_read, range_readers.main.numReadRowsInCurrentGranule(), params.min_marks_to_read);
 }
 
 MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read(const BlockSizeParams & params)

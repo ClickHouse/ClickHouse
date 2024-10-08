@@ -7,4 +7,4 @@ with toDate('2023-01-09') as date_mon, date_mon - 1 as date_sun select toDayOfWe
 with toDate('2023-01-09') as date_mon, date_mon - 1 as date_sun select toDayOfWeek(date_mon, 4), toDayOfWeek(date_sun, 4);
 with toDate('2023-01-09') as date_mon, date_mon - 1 as date_sun select toDayOfWeek(date_mon, 5), toDayOfWeek(date_sun, 5);
 
-select toDayOfWeek(today(), -1); -- { serverError 43 }
+select toDayOfWeek(today(), -1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

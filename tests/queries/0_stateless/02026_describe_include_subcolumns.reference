@@ -26,7 +26,7 @@
 10. │ t.s        │ String                                                                    │              │                    │                         │ ZSTD(1)          │                      │            1 │
 11. │ t.a        │ Array(Tuple(
     a UInt32,
-    b UInt32))                                   │              │                    │                         │                  │                      │            1 │
+    b UInt32))                                   │              │                    │                         │ ZSTD(1)          │                      │            1 │
 12. │ t.a.size0  │ UInt64                                                                    │              │                    │                         │                  │                      │            1 │
 13. │ t.a.a      │ Array(UInt32)                                                             │              │                    │                         │ ZSTD(1)          │                      │            1 │
 14. │ t.a.b      │ Array(UInt32)                                                             │              │                    │                         │ ZSTD(1)          │                      │            1 │

@@ -1,2 +1,2 @@
 clickhouse_add_executable (mysqlxx_pool_test mysqlxx_pool_test.cpp)
-target_link_libraries (mysqlxx_pool_test PRIVATE mysqlxx)
+target_link_libraries (mysqlxx_pool_test PRIVATE mysqlxx dbms clickhouse_common_config loggers_no_text_log)

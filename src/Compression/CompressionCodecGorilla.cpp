@@ -346,9 +346,10 @@ UInt8 getDataBytesSize(const IDataType * column_type)
     size_t max_size = column_type->getSizeOfValueInMemory();
     if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
         return static_cast<UInt8>(max_size);
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Gorilla is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
-            column_type->getName());
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Codec Gorilla is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
+        column_type->getName());
 }
 
 }

@@ -173,6 +173,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         case Type::START_PULLING_REPLICATION_LOG:
         case Type::STOP_CLEANUP:
         case Type::START_CLEANUP:
+        case Type::UNLOAD_PRIMARY_KEY:
         {
             if (table)
             {
@@ -195,6 +196,29 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
             {
                 settings.ostr << ' ';
                 print_database_table();
+            }
+
+            if (sync_replica_mode != SyncReplicaMode::DEFAULT)
+            {
+                settings.ostr << ' ';
+                print_keyword(magic_enum::enum_name(sync_replica_mode));
+
+                // If the mode is LIGHTWEIGHT and specific source replicas are specified
+                if (sync_replica_mode == SyncReplicaMode::LIGHTWEIGHT && !src_replicas.empty())
+                {
+                    settings.ostr << ' ';
+                    print_keyword("FROM");
+                    settings.ostr << ' ';
+
+                    bool first = true;
+                    for (const auto & src : src_replicas)
+                    {
+                        if (!first)
+                            settings.ostr << ", ";
+                        first = false;
+                        settings.ostr << quoteString(src);
+                    }
+                }
             }
 
             if (query_settings)
@@ -232,28 +256,6 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
                 print_identifier(disk);
             }
 
-            if (sync_replica_mode != SyncReplicaMode::DEFAULT)
-            {
-                settings.ostr << ' ';
-                print_keyword(magic_enum::enum_name(sync_replica_mode));
-
-                // If the mode is LIGHTWEIGHT and specific source replicas are specified
-                if (sync_replica_mode == SyncReplicaMode::LIGHTWEIGHT && !src_replicas.empty())
-                {
-                    settings.ostr << ' ';
-                    print_keyword("FROM");
-                    settings.ostr << ' ';
-
-                    bool first = true;
-                    for (const auto & src : src_replicas)
-                    {
-                        if (!first)
-                            settings.ostr << ", ";
-                        first = false;
-                        settings.ostr << quoteString(src);
-                    }
-                }
-            }
             break;
         }
         case Type::SYNC_DATABASE_REPLICA:
@@ -374,6 +376,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         case Type::START_VIEW:
         case Type::STOP_VIEW:
         case Type::CANCEL_VIEW:
+        case Type::WAIT_VIEW:
         {
             settings.ostr << ' ';
             print_database_table();

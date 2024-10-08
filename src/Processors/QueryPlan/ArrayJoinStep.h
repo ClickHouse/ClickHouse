@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Interpreters/ArrayJoin.h>
 
 namespace DB
 {
@@ -10,7 +11,7 @@ using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 class ArrayJoinStep : public ITransformingStep
 {
 public:
-    explicit ArrayJoinStep(const DataStream & input_stream_, ArrayJoinActionPtr array_join_);
+    ArrayJoinStep(const DataStream & input_stream_, ArrayJoin array_join_, bool is_unaligned_, size_t max_block_size_);
     String getName() const override { return "ArrayJoin"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
@@ -18,12 +19,15 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    const ArrayJoinActionPtr & arrayJoin() const { return array_join; }
+    const Names & getColumns() const { return array_join.columns; }
+    bool isLeft() const { return array_join.is_left; }
 
 private:
     void updateOutputStream() override;
 
-    ArrayJoinActionPtr array_join;
+    ArrayJoin array_join;
+    bool is_unaligned = false;
+    size_t max_block_size = DEFAULT_BLOCK_SIZE;
 };
 
 }

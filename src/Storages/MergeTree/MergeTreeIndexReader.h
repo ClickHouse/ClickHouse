@@ -19,7 +19,6 @@ public:
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
         MergeTreeReaderSettings settings);
-    ~MergeTreeIndexReader();
 
     void seek(size_t mark);
 

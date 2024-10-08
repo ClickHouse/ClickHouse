@@ -1,6 +1,6 @@
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/libarchive")
 
-set(SRCS 
+set(SRCS
     "${LIBRARY_DIR}/libarchive/archive_acl.c"
     "${LIBRARY_DIR}/libarchive/archive_blake2sp_ref.c"
     "${LIBRARY_DIR}/libarchive/archive_blake2s_ref.c"
@@ -135,7 +135,7 @@ set(SRCS
 )
 
 add_library(_libarchive ${SRCS})
-target_include_directories(_libarchive PUBLIC 
+target_include_directories(_libarchive PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     "${LIBRARY_DIR}/libarchive"
 )
@@ -157,7 +157,7 @@ if (TARGET ch_contrib::zlib)
 endif()
 
 if (TARGET ch_contrib::zstd)
-    target_compile_definitions(_libarchive PUBLIC HAVE_ZSTD_H=1 HAVE_LIBZSTD=1 HAVE_LIBZSTD_COMPRESSOR=1)
+    target_compile_definitions(_libarchive PUBLIC HAVE_ZSTD_H=1 HAVE_LIBZSTD=1 HAVE_ZSTD_compressStream=1)
     target_link_libraries(_libarchive PRIVATE ch_contrib::zstd)
 endif()
 

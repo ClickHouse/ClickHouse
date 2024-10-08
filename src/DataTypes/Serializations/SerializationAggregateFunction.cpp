@@ -16,14 +16,14 @@ namespace DB
 
 void SerializationAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
-    const AggregateFunctionStateData & state = field.get<const AggregateFunctionStateData &>();
+    const AggregateFunctionStateData & state = field.safeGet<const AggregateFunctionStateData &>();
     writeBinary(state.data, ostr);
 }
 
 void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
     field = AggregateFunctionStateData();
-    AggregateFunctionStateData & s = field.get<AggregateFunctionStateData &>();
+    AggregateFunctionStateData & s = field.safeGet<AggregateFunctionStateData &>();
     readBinary(s.data, istr);
     s.name = type_name;
 }
@@ -63,9 +63,7 @@ void SerializationAggregateFunction::serializeBinaryBulk(const IColumn & column,
     ColumnAggregateFunction::Container::const_iterator it = vec.begin() + offset;
     ColumnAggregateFunction::Container::const_iterator end = limit ? it + limit : vec.end();
 
-    if (end > vec.end())
-        end = vec.end();
-
+    end = std::min(end, vec.end());
     for (; it != end; ++it)
         function->serialize(*it, ostr, version);
 }
@@ -148,10 +146,10 @@ void SerializationAggregateFunction::serializeTextEscaped(const IColumn & column
 }
 
 
-void SerializationAggregateFunction::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationAggregateFunction::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String s;
-    readEscapedString(s, istr);
+    settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(s, istr) : readEscapedString(s, istr);
     deserializeFromString(function, column, s, version);
 }
 

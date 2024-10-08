@@ -1,6 +1,6 @@
 import pytest
-from helpers.cluster import ClickHouseCluster
 
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(

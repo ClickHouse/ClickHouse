@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/WriteHelpers.h>
@@ -31,6 +32,12 @@ extern const Event ScalarSubqueriesCacheMiss;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool enable_scalar_subquery_optimization;
+    extern const SettingsBool extremes;
+    extern const SettingsUInt64 max_result_rows;
+}
 
 namespace ErrorCodes
 {
@@ -73,9 +80,9 @@ void ExecuteScalarSubqueriesMatcher::visit(ASTPtr & ast, Data & data)
 static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqueriesMatcher::Data & data)
 {
     auto subquery_context = Context::createCopy(data.getContext());
-    Settings subquery_settings = data.getContext()->getSettings();
-    subquery_settings.max_result_rows = 1;
-    subquery_settings.extremes = false;
+    Settings subquery_settings = data.getContext()->getSettingsCopy();
+    subquery_settings[Setting::max_result_rows] = 1;
+    subquery_settings[Setting::extremes] = false;
     subquery_context->setSettings(subquery_settings);
 
     if (subquery_context->hasQueryContext())
@@ -267,9 +274,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     const Settings & settings = data.getContext()->getSettingsRef();
 
     // Always convert to literals when there is no query context.
-    if (data.only_analyze
-        || !settings.enable_scalar_subquery_optimization
-        || worthConvertingScalarToLiteral(scalar, data.max_literal_size)
+    if (data.only_analyze || !settings[Setting::enable_scalar_subquery_optimization] || worthConvertingScalarToLiteral(scalar, data.max_literal_size)
         || !data.getContext()->hasQueryContext())
     {
         auto lit = std::make_unique<ASTLiteral>((*scalar.safeGetByPosition(0).column)[0]);

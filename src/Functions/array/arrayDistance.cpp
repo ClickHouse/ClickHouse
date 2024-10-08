@@ -450,7 +450,7 @@ private:
         {
             return executeWithLeftArgConst<ResultType, LeftType, RightType>(col_x, col_y, input_rows_count, arguments);
         }
-        else if (typeid_cast<const ColumnConst *>(col_y.get()))
+        if (typeid_cast<const ColumnConst *>(col_y.get()))
         {
             return executeWithLeftArgConst<ResultType, RightType, LeftType>(col_y, col_x, input_rows_count, arguments);
         }

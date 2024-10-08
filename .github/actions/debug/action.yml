@@ -1,0 +1,34 @@
+name: DebugInfo
+description: Prints workflow debug info
+
+runs:
+  using: "composite"
+  steps:
+    - name: Envs, event.json and contexts
+      shell: bash
+      run: |
+          echo '::group::Environment variables'
+          env | sort
+          echo '::endgroup::'
+
+          echo '::group::event.json'
+          python3 -m json.tool "$GITHUB_EVENT_PATH"
+          echo '::endgroup::'
+
+          cat << 'EOF'
+          ::group::github context
+          ${{ toJSON(github) }}
+          ::endgroup::
+
+          ::group::env context
+          ${{ toJSON(env) }}
+          ::endgroup::
+
+          ::group::runner context
+          ${{ toJSON(runner) }}
+          ::endgroup::
+
+          ::group::job context
+          ${{ toJSON(job) }}
+          ::endgroup::
+          EOF

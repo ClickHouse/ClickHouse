@@ -13,7 +13,7 @@ namespace DB
 template <typename T>
 void SerializationDecimalBase<T>::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
-    FieldType x = field.get<DecimalField<T>>();
+    FieldType x = field.safeGet<DecimalField<T>>();
     writeBinaryLittleEndian(x, ostr);
 }
 

@@ -11,7 +11,7 @@ N.B. `SHOW CREATE (TABLE|DATABASE|USER)` hides secrets unless
 is turned on,
 [`format_display_secrets_in_show_and_select` format setting](../../operations/settings/formats#format_display_secrets_in_show_and_select)
 is turned on and user has
-[`displaySecretsInShowAndSelect`](grant.md#grant-display-secrets) privilege.
+[`displaySecretsInShowAndSelect`](grant.md#display-secrets) privilege.
 
 ## SHOW CREATE TABLE | DICTIONARY | VIEW | DATABASE
 
@@ -351,10 +351,14 @@ Shows privileges for a user.
 **Syntax**
 
 ``` sql
-SHOW GRANTS [FOR user1 [, user2 ...]]
+SHOW GRANTS [FOR user1 [, user2 ...]] [WITH IMPLICIT] [FINAL]
 ```
 
 If user is not specified, the query returns privileges for the current user.
+
+The `WITH IMPLICIT` modifier allows to show the implicit grants (e.g., `GRANT SELECT ON system.one`)
+
+The `FINAL` modifier merges all grants from the user and its granted roles (with inheritance)
 
 ## SHOW CREATE USER
 
@@ -466,7 +470,7 @@ SHOW [CURRENT] QUOTA
 ```
 ## SHOW ACCESS
 
-Shows all [users](../../guides/sre/user-management/index.md#user-account-management), [roles](../../guides/sre/user-management/index.md#role-management), [profiles](../../guides/sre/user-management/index.md#settings-profiles-management), etc. and all their [grants](../../sql-reference/statements/grant.md#grant-privileges).
+Shows all [users](../../guides/sre/user-management/index.md#user-account-management), [roles](../../guides/sre/user-management/index.md#role-management), [profiles](../../guides/sre/user-management/index.md#settings-profiles-management), etc. and all their [grants](../../sql-reference/statements/grant.md#privileges).
 
 **Syntax**
 

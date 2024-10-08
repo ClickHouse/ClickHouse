@@ -148,9 +148,8 @@ AggregateFunctionPtr createAggregateFunctionDeltaSum(
     if (isInteger(data_type) || isFloat(data_type))
         return AggregateFunctionPtr(createWithNumericType<AggregationFunctionDeltaSum>(
             *data_type, arguments, params));
-    else
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
-            arguments[0]->getName(), name);
+    throw Exception(
+        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}", arguments[0]->getName(), name);
 }
 }
 

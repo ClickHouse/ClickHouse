@@ -1,6 +1,7 @@
 #include "ProgressIndication.h"
 #include <algorithm>
 #include <cstddef>
+#include <iostream>
 #include <numeric>
 #include <filesystem>
 #include <cmath>
@@ -33,13 +34,16 @@ bool ProgressIndication::updateProgress(const Progress & value)
 
 void ProgressIndication::resetProgress()
 {
-    watch.restart();
-    progress.reset();
-    show_progress_bar = false;
-    written_progress_chars = 0;
-    write_progress_on_update = false;
+    {
+        std::lock_guard lock(progress_mutex);
+        progress.reset();
+        show_progress_bar = false;
+        written_progress_chars = 0;
+        write_progress_on_update = false;
+    }
     {
         std::lock_guard lock(profile_events_mutex);
+        watch.restart();
         cpu_usage_meter.reset(getElapsedNanoseconds());
         hosts_data.clear();
     }
@@ -89,22 +93,24 @@ ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const
 
 void ProgressIndication::writeFinalProgress()
 {
+    std::lock_guard lock(progress_mutex);
+
     if (progress.read_rows < 1000)
         return;
 
-    std::cout << "Processed " << formatReadableQuantity(progress.read_rows) << " rows, "
+    output_stream << "Processed " << formatReadableQuantity(progress.read_rows) << " rows, "
                 << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
 
     UInt64 elapsed_ns = getElapsedNanoseconds();
     if (elapsed_ns)
-        std::cout << " (" << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
+        output_stream << " (" << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
                     << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.)";
     else
-        std::cout << ". ";
+        output_stream << ". ";
 
     auto peak_memory_usage = getMemoryUsage().peak;
     if (peak_memory_usage >= 0)
-        std::cout << "\nPeak memory usage: " << formatReadableSizeWithBinarySuffix(peak_memory_usage) << ".";
+        output_stream << "\nPeak memory usage: " << formatReadableSizeWithBinarySuffix(peak_memory_usage) << ".";
 }
 
 void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
@@ -125,7 +131,7 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
 
     const char * indicator = indicators[increment % 8];
 
-    size_t terminal_width = getTerminalWidth();
+    size_t terminal_width = getTerminalWidth(in_fd, err_fd);
 
     if (!written_progress_chars)
     {
@@ -163,8 +169,7 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
         WriteBufferFromOwnString profiling_msg_builder;
 
         /// We don't want -0. that can appear due to rounding errors.
-        if (cpu_usage <= 0)
-            cpu_usage = 0;
+        cpu_usage = std::max(cpu_usage, 0.);
 
         profiling_msg_builder << "(" << fmt::format("{:.1f}", cpu_usage) << " CPU";
 
@@ -271,6 +276,8 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
 
 void ProgressIndication::clearProgressOutput(WriteBufferFromFileDescriptor & message)
 {
+    std::lock_guard lock(progress_mutex);
+
     if (written_progress_chars)
     {
         written_progress_chars = 0;

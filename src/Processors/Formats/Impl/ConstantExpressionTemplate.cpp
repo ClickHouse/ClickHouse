@@ -2,6 +2,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -31,6 +32,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 namespace ErrorCodes
 {
@@ -207,27 +213,32 @@ private:
             /// Do not replace empty array and array of NULLs
             if (literal->value.getType() == Field::Types::Array)
             {
-                const Array & array = literal->value.get<Array>();
+                const Array & array = literal->value.safeGet<Array>();
                 auto not_null = std::find_if_not(array.begin(), array.end(), [](const auto & elem) { return elem.isNull(); });
                 if (not_null == array.end())
                     return true;
             }
             else if (literal->value.getType() == Field::Types::Map)
             {
-                const Map & map = literal->value.get<Map>();
+                const Map & map = literal->value.safeGet<Map>();
                 if (map.size() % 2)
                     return false;
             }
             else if (literal->value.getType() == Field::Types::Tuple)
             {
-                const Tuple & tuple = literal->value.get<Tuple>();
+                const Tuple & tuple = literal->value.safeGet<Tuple>();
 
                 for (const auto & value : tuple)
                     if (value.isNull())
                         return true;
             }
 
-            String column_name = "_dummy_" + std::to_string(replaced_literals.size());
+            /// When generating placeholder names, ensure that we use names
+            /// requiring quotes to be valid identifiers. This prevents the
+            /// tuple() function from generating named tuples. Otherwise,
+            /// inserting named tuples with different names into another named
+            /// tuple will result in only default values being inserted.
+            String column_name = "-dummy-" + std::to_string(replaced_literals.size());
             replaced_literals.emplace_back(literal, column_name, force_nullable);
             setDataType(replaced_literals.back());
             ast = std::make_shared<ASTIdentifier>(column_name);
@@ -320,9 +331,6 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
     for (size_t i = 0; i < replaced_literals.size(); ++i)
     {
         const LiteralInfo & info = replaced_literals[i];
-        if (info.literal->begin.value() < prev_end)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot replace literals");
-
         while (prev_end < info.literal->begin.value())
         {
             tokens.emplace_back(prev_end->begin, prev_end->size());
@@ -537,7 +545,8 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
         ParserArrayOfLiterals parser_array;
         ParserTupleOfLiterals parser_tuple;
 
-        IParser::Pos iterator(token_iterator, static_cast<unsigned>(settings.max_parser_depth), static_cast<unsigned>(settings.max_parser_backtracks));
+        IParser::Pos iterator(
+            token_iterator, static_cast<unsigned>(settings[Setting::max_parser_depth]), static_cast<unsigned>(settings[Setting::max_parser_backtracks]));
         while (iterator->begin < istr.position())
             ++iterator;
         Expected expected;
@@ -579,64 +588,62 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
         columns[column_idx]->insert(array_same_types);
         return true;
     }
+
+    Field number;
+    if (type_info.is_nullable && 4 <= istr.available() && 0 == strncasecmp(istr.position(), "NULL", 4))
+    {
+        istr.position() += 4;
+    }
     else
     {
-        Field number;
-        if (type_info.is_nullable && 4 <= istr.available() && 0 == strncasecmp(istr.position(), "NULL", 4))
+        /// ParserNumber::parse(...) is about 20x slower than strtod(...)
+        /// because of using ASTPtr, Expected and Tokens, which are not needed here.
+        /// Parse numeric literal in the same way, as ParserNumber does, but use strtod and strtoull directly.
+        bool negative = *istr.position() == '-';
+        if (negative || *istr.position() == '+')
+            ++istr.position();
+
+        static constexpr size_t MAX_LENGTH_OF_NUMBER = 319;
+        char buf[MAX_LENGTH_OF_NUMBER + 1];
+        size_t bytes_to_copy = std::min(istr.available(), MAX_LENGTH_OF_NUMBER);
+        memcpy(buf, istr.position(), bytes_to_copy);
+        buf[bytes_to_copy] = 0;
+
+        const bool hex_like = bytes_to_copy >= 2 && buf[0] == '0' && (buf[1] == 'x' || buf[1] == 'X');
+
+        char * pos_double = buf;
+        errno = 0;
+        Float64 float_value = std::strtod(buf, &pos_double);
+        if (pos_double == buf || errno == ERANGE || float_value < 0)
+            return false;
+
+        if (negative)
+            float_value = -float_value;
+
+        char * pos_integer = buf;
+        errno = 0;
+        UInt64 uint_value = std::strtoull(buf, &pos_integer, hex_like ? 16 : 10);
+        if (pos_integer == pos_double && errno != ERANGE && (!negative || uint_value <= (1ULL << 63)))
         {
-            istr.position() += 4;
-        }
-        else
-        {
-            /// ParserNumber::parse(...) is about 20x slower than strtod(...)
-            /// because of using ASTPtr, Expected and Tokens, which are not needed here.
-            /// Parse numeric literal in the same way, as ParserNumber does, but use strtod and strtoull directly.
-            bool negative = *istr.position() == '-';
-            if (negative || *istr.position() == '+')
-                ++istr.position();
-
-            static constexpr size_t MAX_LENGTH_OF_NUMBER = 319;
-            char buf[MAX_LENGTH_OF_NUMBER + 1];
-            size_t bytes_to_copy = std::min(istr.available(), MAX_LENGTH_OF_NUMBER);
-            memcpy(buf, istr.position(), bytes_to_copy);
-            buf[bytes_to_copy] = 0;
-
-            const bool hex_like = bytes_to_copy >= 2 && buf[0] == '0' && (buf[1] == 'x' || buf[1] == 'X');
-
-            char * pos_double = buf;
-            errno = 0;
-            Float64 float_value = std::strtod(buf, &pos_double);
-            if (pos_double == buf || errno == ERANGE || float_value < 0)
-                return false;
-
-            if (negative)
-                float_value = -float_value;
-
-            char * pos_integer = buf;
-            errno = 0;
-            UInt64 uint_value = std::strtoull(buf, &pos_integer, hex_like ? 16 : 10);
-            if (pos_integer == pos_double && errno != ERANGE && (!negative || uint_value <= (1ULL << 63)))
-            {
-                istr.position() += pos_integer - buf;
-                if (negative && type_info.main_type == Type::Int64)
-                    number = static_cast<Int64>(-uint_value);
-                else if (type_info.main_type == Type::UInt64 && (!negative || uint_value == 0))
-                    number = uint_value;
-                else
-                    return false;
-            }
-            else if (type_info.main_type == Type::Float64)
-            {
-                istr.position() += pos_double - buf;
-                number = float_value;
-            }
+            istr.position() += pos_integer - buf;
+            if (negative && type_info.main_type == Type::Int64)
+                number = static_cast<Int64>(-uint_value);
+            else if (type_info.main_type == Type::UInt64 && (!negative || uint_value == 0))
+                number = uint_value;
             else
                 return false;
         }
-
-        columns[column_idx]->insert(number);
-        return true;
+        else if (type_info.main_type == Type::Float64)
+        {
+            istr.position() += pos_double - buf;
+            number = float_value;
+        }
+        else
+            return false;
     }
+
+    columns[column_idx]->insert(number);
+    return true;
 }
 
 ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, size_t column_idx, const DataTypePtr & expected_type, size_t offset)

@@ -12,7 +12,7 @@ struct AbsImpl
     using ResultType = std::conditional_t<is_decimal<A>, A, typename NumberTraits::ResultOfAbs<A>::Type>;
     static constexpr bool allow_string_or_fixed_string = false;
 
-    static inline NO_SANITIZE_UNDEFINED ResultType apply(A a)
+    static NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {
         if constexpr (is_decimal<A>)
             return a < A(0) ? A(-a) : a;
@@ -45,13 +45,13 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameAbs>
         if ((left_float < 0 && right_float > 0) || (left_float > 0 && right_float < 0))
             return {};
 
-        return { .is_monotonic = true, .is_positive = left_float > 0, .is_strict = true, };
+        return { .is_monotonic = true, .is_positive = std::min(left_float, right_float) >= 0, .is_strict = true, };
     }
 };
 
 REGISTER_FUNCTION(Abs)
 {
-    factory.registerFunction<FunctionAbs>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionAbs>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

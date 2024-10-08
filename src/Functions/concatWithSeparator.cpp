@@ -60,6 +60,11 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         assert(!arguments.empty());
@@ -193,7 +198,7 @@ The function is named “injective” if it always returns different result for 
         .categories{"String"}});
 
     /// Compatibility with Spark and MySQL:
-    factory.registerAlias("concat_ws", "concatWithSeparator", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("concat_ws", "concatWithSeparator", FunctionFactory::Case::Insensitive);
 }
 
 }

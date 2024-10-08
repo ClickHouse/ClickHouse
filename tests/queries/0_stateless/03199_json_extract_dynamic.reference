@@ -1,0 +1,30 @@
+true	Bool
+42	Int64
+-42	Int64
+18446744073709551615	UInt64
+42.42	Float64
+42	Int64
+-42	Int64
+18446744073709551615	UInt64
+Hello	String
+2020-01-01	Date
+2020-01-01 00:00:00.000000000	DateTime64(9)
+[1,2,3]	Array(Nullable(Int64))
+['str1','str2','str3']	Array(Nullable(String))
+[[[1],[2,3,4]],[[5,6],[7]]]	Array(Array(Array(Nullable(Int64))))
+['2020-01-01 00:00:00','2020-01-01 00:00:00']	Array(Nullable(DateTime))
+['2020-01-01','2020-01-01 date']	Array(Nullable(String))
+['2020-01-01','2020-01-01 00:00:00','str']	Array(Nullable(String))
+['2020-01-01','2020-01-01 00:00:00','42']	Array(Nullable(String))
+['str','42']	Array(Nullable(String))
+[42,42.42]	Array(Nullable(Float64))
+[42,18446744073709552000,42.42]	Array(Nullable(Float64))
+[42,42.42]	Array(Nullable(Float64))
+[NULL,NULL]	Array(Nullable(String))
+[NULL,42]	Array(Nullable(Int64))
+[[NULL],[],[42]]	Array(Array(Nullable(Int64)))
+[[],[NULL,NULL],[1,NULL,3],[NULL,2,NULL]]	Array(Array(Nullable(Int64)))
+[[],[NULL,NULL],['1',NULL,'3'],[NULL,'2',NULL],['2020-01-01']]	Array(Array(Nullable(String)))
+('str',42,[42])	Tuple(Nullable(String), Nullable(Int64), Array(Nullable(Int64)))
+[42,18446744073709551615]	Array(Nullable(UInt64))
+(-42,18446744073709551615)	Tuple(Nullable(Int64), Nullable(UInt64))

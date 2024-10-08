@@ -9,7 +9,6 @@ RUN apt-get update \
             curl \
             dmidecode \
             g++ \
-            gdb \
             git \
             gnuplot \
             imagemagick \
@@ -23,7 +22,6 @@ RUN apt-get update \
             python3 \
             python3-dev \
             python3-pip \
-            python3-setuptools \
             rsync \
             tree \
             tzdata \
@@ -33,13 +31,18 @@ RUN apt-get update \
             cargo \
             ripgrep \
             zstd \
-    && pip3 --no-cache-dir install 'clickhouse-driver==0.2.1' scipy \
     && apt-get purge --yes python3-dev g++ \
     && apt-get autoremove --yes \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
+COPY requirements.txt /
+RUN pip3 --no-cache-dir install -r requirements.txt
+
 COPY run.sh /
+
+COPY --from=clickhouse/cctools:0d6b90a7a490 /opt/gdb /opt/gdb
+ENV PATH="/opt/gdb/bin:${PATH}"
 
 CMD ["bash", "/run.sh"]
 

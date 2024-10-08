@@ -13,7 +13,7 @@ struct MinusImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static inline NO_SANITIZE_UNDEFINED Result apply(A a, B b)
+    static NO_SANITIZE_UNDEFINED Result apply(A a, B b)
     {
         if constexpr (is_big_int_v<A> || is_big_int_v<B>)
         {
@@ -28,7 +28,7 @@ struct MinusImpl
 
     /// Apply operation and check overflow. It's used for Deciamal operations. @returns true if overflowed, false otherwise.
     template <typename Result = ResultType>
-    static inline bool apply(A a, B b, Result & c)
+    static bool apply(A a, B b, Result & c)
     {
         return common::subOverflow(static_cast<Result>(a), b, c);
     }
@@ -36,7 +36,7 @@ struct MinusImpl
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = true;
 
-    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
     {
         return left->getType()->isIntegerTy() ? b.CreateSub(left, right) : b.CreateFSub(left, right);
     }

@@ -1,6 +1,6 @@
 import difflib
-import time
 import logging
+import time
 from io import IOBase
 
 
@@ -139,12 +139,18 @@ def assert_logs_contain_with_retry(instance, substring, retry_count=20, sleep_ti
 
 
 def exec_query_with_retry(
-    instance, query, retry_count=40, sleep_time=0.5, silent=False, settings={}
+    instance,
+    query,
+    retry_count=40,
+    sleep_time=0.5,
+    silent=False,
+    settings={},
+    timeout=30,
 ):
     exception = None
     for cnt in range(retry_count):
         try:
-            res = instance.query(query, timeout=30, settings=settings)
+            res = instance.query(query, timeout=timeout, settings=settings)
             if not silent:
                 logging.debug(f"Result of {query} on {cnt} try is {res}")
             break

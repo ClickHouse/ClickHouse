@@ -1,3 +1,4 @@
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAttachThread.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -10,10 +11,16 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsSeconds initialization_retry_period;
+}
+
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
     extern const int REPLICA_STATUS_CHANGED;
+    extern const int LOGICAL_ERROR;
 }
 
 ReplicatedMergeTreeAttachThread::ReplicatedMergeTreeAttachThread(StorageReplicatedMergeTree & storage_)
@@ -23,7 +30,7 @@ ReplicatedMergeTreeAttachThread::ReplicatedMergeTreeAttachThread(StorageReplicat
 {
     task = storage.getContext()->getSchedulePool().createTask(log_name, [this] { run(); });
     const auto storage_settings = storage.getSettings();
-    retry_period = storage_settings->initialization_retry_period.totalSeconds();
+    retry_period = (*storage_settings)[MergeTreeSetting::initialization_retry_period].totalSeconds();
 }
 
 ReplicatedMergeTreeAttachThread::~ReplicatedMergeTreeAttachThread()
@@ -116,6 +123,67 @@ void ReplicatedMergeTreeAttachThread::checkHasReplicaMetadataInZooKeeper(const z
     }
 }
 
+Int32 ReplicatedMergeTreeAttachThread::fixReplicaMetadataVersionIfNeeded(zkutil::ZooKeeperPtr zookeeper)
+{
+    const String & zookeeper_path = storage.zookeeper_path;
+    const String & replica_path = storage.replica_path;
+    const bool replica_readonly = storage.is_readonly;
+
+    for (size_t i = 0; i != 2; ++i)
+    {
+        String replica_metadata_version_str;
+        const bool replica_metadata_version_exists = zookeeper->tryGet(replica_path + "/metadata_version", replica_metadata_version_str);
+        if (!replica_metadata_version_exists)
+            return -1;
+
+        const Int32 metadata_version = parse<Int32>(replica_metadata_version_str);
+
+        if (metadata_version != 0 || replica_readonly)
+        {
+            /// No need to fix anything
+            return metadata_version;
+        }
+
+        Coordination::Stat stat;
+        zookeeper->get(fs::path(zookeeper_path) / "metadata", &stat);
+        if (stat.version == 0)
+        {
+            /// No need to fix anything
+            return metadata_version;
+        }
+
+        ReplicatedMergeTreeQueue & queue = storage.queue;
+        queue.pullLogsToQueue(zookeeper);
+        if (queue.getStatus().metadata_alters_in_queue != 0)
+        {
+            LOG_DEBUG(log, "No need to update metadata_version as there are ALTER_METADATA entries in the queue");
+            return metadata_version;
+        }
+
+        const Coordination::Requests ops = {
+            zkutil::makeSetRequest(fs::path(replica_path) / "metadata_version", std::to_string(stat.version), 0),
+            zkutil::makeCheckRequest(fs::path(zookeeper_path) / "metadata", stat.version),
+        };
+        Coordination::Responses ops_responses;
+        const auto code = zookeeper->tryMulti(ops, ops_responses);
+        if (code == Coordination::Error::ZOK)
+        {
+            LOG_DEBUG(log, "Successfully set metadata_version to {}", stat.version);
+            return stat.version;
+        }
+        if (code != Coordination::Error::ZBADVERSION)
+        {
+            throw zkutil::KeeperException(code);
+        }
+    }
+
+    /// Second attempt is only possible if metadata_version != 0 or metadata.version changed during the first attempt.
+    /// If metadata_version != 0, on second attempt we will return the new metadata_version.
+    /// If metadata.version changed, on second attempt we will either get metadata_version != 0 and return the new metadata_version or we will get metadata_alters_in_queue != 0 and return 0.
+    /// Either way, on second attempt this method should return.
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to fix replica metadata_version in ZooKeeper after two attempts");
+}
+
 void ReplicatedMergeTreeAttachThread::runImpl()
 {
     storage.setZooKeeper();
@@ -159,11 +227,11 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     /// Just in case it was not removed earlier due to connection loss
     zookeeper->tryRemove(replica_path + "/flags/force_restore_data");
 
-    String replica_metadata_version;
-    const bool replica_metadata_version_exists = zookeeper->tryGet(replica_path + "/metadata_version", replica_metadata_version);
+    const Int32 replica_metadata_version = fixReplicaMetadataVersionIfNeeded(zookeeper);
+    const bool replica_metadata_version_exists = replica_metadata_version != -1;
     if (replica_metadata_version_exists)
     {
-        storage.setInMemoryMetadata(metadata_snapshot->withMetadataVersion(parse<int>(replica_metadata_version)));
+        storage.setInMemoryMetadata(metadata_snapshot->withMetadataVersion(replica_metadata_version));
     }
     else
     {

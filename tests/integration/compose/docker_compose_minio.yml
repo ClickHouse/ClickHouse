@@ -1,8 +1,6 @@
-version: '2.3'
-
 services:
   minio1:
-    image: minio/minio:RELEASE.2023-09-30T07-02-29Z
+    image: minio/minio:RELEASE.2024-07-31T05-46-26Z
     volumes:
       - data1-1:/data1
       - ${MINIO_CERTS_DIR:-}:/certs

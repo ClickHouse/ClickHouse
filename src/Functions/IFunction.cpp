@@ -1,4 +1,5 @@
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/FunctionDynamicAdaptor.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
@@ -94,8 +95,8 @@ ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
     {
         if (const auto * column_const = checkAndGetColumn<ColumnConst>(column.column.get()))
         {
-            column.column = column_const->removeLowCardinality()->cloneResized(num_rows);
-            column.type = removeLowCardinality(column.type);
+            column.column = ColumnConst::create(recursiveRemoveLowCardinality(column_const->getDataColumnPtr()), num_rows);
+            column.type = recursiveRemoveLowCardinality(column.type);
         }
     }
 
@@ -110,7 +111,6 @@ void convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args)
         column.type = recursiveRemoveLowCardinality(column.type);
     }
 }
-
 }
 
 ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
@@ -277,6 +277,7 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(const ColumnsWithType
             size_t new_input_rows_count = columns_without_low_cardinality.empty()
                                         ? input_rows_count
                                         : columns_without_low_cardinality.front().column->size();
+            checkFunctionArgumentSizes(columns_without_low_cardinality, new_input_rows_count);
 
             auto res = executeWithoutLowCardinalityColumns(columns_without_low_cardinality, dictionary_type, new_input_rows_count, dry_run);
             bool res_is_constant = isColumnConst(*res);
@@ -311,6 +312,8 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(const ColumnsWithType
 
 ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
+    checkFunctionArgumentSizes(arguments, input_rows_count);
+
     bool use_default_implementation_for_sparse_columns = useDefaultImplementationForSparseColumns();
     /// DataTypeFunction does not support obtaining default (isDefaultAt())
     /// ColumnFunction does not support getting specific values.
@@ -377,14 +380,13 @@ ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments,
         convertSparseColumnsToFull(columns_without_sparse);
         return executeWithoutSparseColumns(columns_without_sparse, result_type, input_rows_count, dry_run);
     }
-    else if (use_default_implementation_for_sparse_columns)
+    if (use_default_implementation_for_sparse_columns)
     {
         auto columns_without_sparse = arguments;
         convertSparseColumnsToFull(columns_without_sparse);
         return executeWithoutSparseColumns(columns_without_sparse, result_type, input_rows_count, dry_run);
     }
-    else
-        return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
+    return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
 }
 
 void IFunctionOverloadResolver::checkNumberOfArguments(size_t number_of_arguments) const
@@ -438,8 +440,7 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
             && num_full_low_cardinality_columns <= 1 && num_full_ordinary_columns == 0
             && type_without_low_cardinality->canBeInsideLowCardinality())
             return std::make_shared<DataTypeLowCardinality>(type_without_low_cardinality);
-        else
-            return type_without_low_cardinality;
+        return type_without_low_cardinality;
     }
 
     return getReturnTypeWithoutLowCardinality(arguments);
@@ -447,6 +448,21 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
 
 FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & arguments) const
 {
+    /// Use FunctionBaseDynamicAdaptor if default implementation for Dynamic is enabled and we have Dynamic type in arguments.
+    if (useDefaultImplementationForDynamic())
+    {
+        for (const auto & arg : arguments)
+        {
+            if (isDynamic(arg.type))
+            {
+                DataTypes data_types(arguments.size());
+                for (size_t i = 0; i < arguments.size(); ++i)
+                    data_types[i] = arguments[i].type;
+                return std::make_shared<FunctionBaseDynamicAdaptor>(shared_from_this(), std::move(data_types));
+            }
+        }
+    }
+
     auto return_type = getReturnType(arguments);
     return buildImpl(arguments, return_type);
 }
@@ -454,7 +470,7 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
 void IFunctionOverloadResolver::getLambdaArgumentTypes(DataTypes & arguments [[maybe_unused]]) const
 {
     checkNumberOfArguments(arguments.size());
-    return getLambdaArgumentTypesImpl(arguments);
+    getLambdaArgumentTypesImpl(arguments);
 }
 
 DataTypePtr IFunctionOverloadResolver::getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const

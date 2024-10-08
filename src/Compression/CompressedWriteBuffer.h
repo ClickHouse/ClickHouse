@@ -19,7 +19,9 @@ public:
     explicit CompressedWriteBuffer(
         WriteBuffer & out_,
         CompressionCodecPtr codec_ = CompressionCodecFactory::instance().getDefaultCodec(),
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        bool use_adaptive_buffer_size_ = false,
+        size_t adaptive_buffer_initial_size = DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE);
 
     ~CompressedWriteBuffer() override;
 
@@ -45,9 +47,16 @@ public:
 
 private:
     void nextImpl() override;
+    void finalizeImpl() override;
 
     WriteBuffer & out;
     CompressionCodecPtr codec;
+
+    /// If true, the size of internal buffer will be exponentially increased up to
+    /// adaptive_buffer_max_size after each nextImpl call. It can be used to avoid
+    /// large buffer allocation when actual size of written data is small.
+    bool use_adaptive_buffer_size;
+    size_t adaptive_buffer_max_size;
 
     PODArray<char> compressed_buffer;
 };

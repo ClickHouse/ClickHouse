@@ -5,6 +5,7 @@
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
+#include <DataTypes/DataTypeDateTime64.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -162,6 +163,7 @@ QueryTreeNodePtr ConstantNode::cloneImpl() const
 ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     const auto & constant_value_literal = constant_value->getValue();
+    const auto & constant_value_type = constant_value->getType();
     auto constant_value_ast = std::make_shared<ASTLiteral>(constant_value_literal);
 
     if (!options.add_cast_for_constants)
@@ -169,7 +171,26 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 
     if (requiresCastCall())
     {
-        auto constant_type_name_ast = std::make_shared<ASTLiteral>(constant_value->getType()->getName());
+        /** Value for DateTime64 is Decimal64, which is serialized as a string literal.
+          * If we serialize it as is, DateTime64 would be parsed from that string literal, which can be incorrect.
+          * For example, DateTime64 cannot be parsed from the short value, like '1', while it's a valid Decimal64 value.
+          * It could also lead to ambiguous parsing because we don't know if the string literal represents a date or a Decimal64 literal.
+          * For this reason, we use a string literal representing a date instead of a Decimal64 literal.
+          */
+        const auto & constant_value_end_type = removeNullable(constant_value_type); /// if Nullable
+        if (WhichDataType(constant_value_end_type->getTypeId()).isDateTime64())
+        {
+            const auto * date_time_type = typeid_cast<const DataTypeDateTime64 *>(constant_value_end_type.get());
+            DecimalField<Decimal64> decimal_value;
+            if (constant_value_literal.tryGet<DecimalField<Decimal64>>(decimal_value))
+            {
+                WriteBufferFromOwnString ostr;
+                writeDateTimeText(decimal_value.getValue(), date_time_type->getScale(), ostr, date_time_type->getTimeZone());
+                constant_value_ast = std::make_shared<ASTLiteral>(ostr.str());
+            }
+        }
+
+        auto constant_type_name_ast = std::make_shared<ASTLiteral>(constant_value_type->getName());
         return makeASTFunction("_CAST", std::move(constant_value_ast), std::move(constant_type_name_ast));
     }
 

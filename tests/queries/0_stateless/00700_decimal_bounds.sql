@@ -1,8 +1,8 @@
 DROP TABLE IF EXISTS decimal;
 
-CREATE TABLE IF NOT EXISTS decimal (x DECIMAL(10, -2)) ENGINE = Memory; -- { serverError 69 }
-CREATE TABLE IF NOT EXISTS decimal (x DECIMAL(10, 15)) ENGINE = Memory; -- { serverError 69 }
-CREATE TABLE IF NOT EXISTS decimal (x DECIMAL(0, 0)) ENGINE = Memory; -- { serverError 69 }
+CREATE TABLE IF NOT EXISTS decimal (x DECIMAL(10, -2)) ENGINE = Memory; -- { serverError ARGUMENT_OUT_OF_BOUND }
+CREATE TABLE IF NOT EXISTS decimal (x DECIMAL(10, 15)) ENGINE = Memory; -- { serverError ARGUMENT_OUT_OF_BOUND }
+CREATE TABLE IF NOT EXISTS decimal (x DECIMAL(0, 0)) ENGINE = Memory; -- { serverError ARGUMENT_OUT_OF_BOUND }
 
 CREATE TABLE IF NOT EXISTS decimal
 (
@@ -18,26 +18,26 @@ CREATE TABLE IF NOT EXISTS decimal
     j DECIMAL(1,0)
 ) ENGINE = Memory;
 
-INSERT INTO decimal (a) VALUES (1000000000); -- { clientError 69 }
-INSERT INTO decimal (a) VALUES (-1000000000); -- { clientError 69 }
-INSERT INTO decimal (b) VALUES (1000000000000000000); -- { clientError 69 }
-INSERT INTO decimal (b) VALUES (-1000000000000000000); -- { clientError 69 }
-INSERT INTO decimal (c) VALUES (100000000000000000000000000000000000000); -- { clientError 69 }
-INSERT INTO decimal (c) VALUES (-100000000000000000000000000000000000000); -- { clientError 69 }
-INSERT INTO decimal (d) VALUES (1); -- { clientError 69 }
-INSERT INTO decimal (d) VALUES (-1); -- { clientError 69 }
-INSERT INTO decimal (e) VALUES (1000000000000000000); -- { clientError 69 }
-INSERT INTO decimal (e) VALUES (-1000000000000000000); -- { clientError 69 }
-INSERT INTO decimal (f) VALUES (1); -- { clientError 69 }
-INSERT INTO decimal (f) VALUES (-1); -- { clientError 69 }
-INSERT INTO decimal (g) VALUES (10000); -- { clientError 69 }
-INSERT INTO decimal (g) VALUES (-10000); -- { clientError 69 }
-INSERT INTO decimal (h) VALUES (1000000000); -- { clientError 69 }
-INSERT INTO decimal (h) VALUES (-1000000000); -- { clientError 69 }
-INSERT INTO decimal (i) VALUES (100000000000000000000); -- { clientError 69 }
-INSERT INTO decimal (i) VALUES (-100000000000000000000); -- { clientError 69 }
-INSERT INTO decimal (j) VALUES (10); -- { clientError 69 }
-INSERT INTO decimal (j) VALUES (-10); -- { clientError 69 }
+INSERT INTO decimal (a) VALUES (1000000000); -- { clientError ARGUMENT_OUT_OF_BOUND }
+INSERT INTO decimal (a) VALUES (-1000000000); -- { clientError ARGUMENT_OUT_OF_BOUND }
+INSERT INTO decimal (b) VALUES (1000000000000000000); -- { clientError ARGUMENT_OUT_OF_BOUND }
+INSERT INTO decimal (b) VALUES (-1000000000000000000); -- { clientError ARGUMENT_OUT_OF_BOUND }
+INSERT INTO decimal (c) VALUES (100000000000000000000000000000000000000); -- { clientError ARGUMENT_OUT_OF_BOUND }
+INSERT INTO decimal (c) VALUES (-100000000000000000000000000000000000000); -- { clientError ARGUMENT_OUT_OF_BOUND }
+INSERT INTO decimal (d) VALUES (1); -- { clientError ARGUMENT_OUT_OF_BOUND }
+INSERT INTO decimal (d) VALUES (-1); -- { clientError ARGUMENT_OUT_OF_BOUND }
+INSERT INTO decimal (e) VALUES (1000000000000000000); -- { clientError ARGUMENT_OUT_OF_BOUND }
+INSERT INTO decimal (e) VALUES (-1000000000000000000); -- { clientError ARGUMENT_OUT_OF_BOUND }
+INSERT INTO decimal (f) VALUES (1); -- { clientError ARGUMENT_OUT_OF_BOUND }
+INSERT INTO decimal (f) VALUES (-1); -- { clientError ARGUMENT_OUT_OF_BOUND }
+INSERT INTO decimal (g) VALUES (10000); -- { clientError ARGUMENT_OUT_OF_BOUND }
+INSERT INTO decimal (g) VALUES (-10000); -- { clientError ARGUMENT_OUT_OF_BOUND }
+INSERT INTO decimal (h) VALUES (1000000000); -- { clientError ARGUMENT_OUT_OF_BOUND }
+INSERT INTO decimal (h) VALUES (-1000000000); -- { clientError ARGUMENT_OUT_OF_BOUND }
+INSERT INTO decimal (i) VALUES (100000000000000000000); -- { clientError ARGUMENT_OUT_OF_BOUND }
+INSERT INTO decimal (i) VALUES (-100000000000000000000); -- { clientError ARGUMENT_OUT_OF_BOUND }
+INSERT INTO decimal (j) VALUES (10); -- { clientError ARGUMENT_OUT_OF_BOUND }
+INSERT INTO decimal (j) VALUES (-10); -- { clientError ARGUMENT_OUT_OF_BOUND }
 
 INSERT INTO decimal (a) VALUES (0.1);
 INSERT INTO decimal (a) VALUES (-0.1);
@@ -84,14 +84,14 @@ INSERT INTO decimal (a, b, c, d, e, f, g, h, i, j) VALUES (0.0, 0.0, 0.0, 0.0, 0
 INSERT INTO decimal (a, b, c, d, e, f, g, h, i, j) VALUES (-0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0);
 
 INSERT INTO decimal (a, b, g) VALUES ('42.00000', 42.0000000000000000000000000000000, '0.999990');
-INSERT INTO decimal (a) VALUES ('-9x'); -- { clientError 6 }
-INSERT INTO decimal (a) VALUES ('0x1'); -- { clientError 6 }
+INSERT INTO decimal (a) VALUES ('-9x'); -- { clientError CANNOT_PARSE_TEXT }
+INSERT INTO decimal (a) VALUES ('0x1'); -- { clientError CANNOT_PARSE_TEXT }
 
 INSERT INTO decimal (a, b, c, d, e, f) VALUES ('0.9e9', '0.9e18', '0.9e38', '9e-9', '9e-18', '9e-38');
 INSERT INTO decimal (a, b, c, d, e, f) VALUES ('-0.9e9', '-0.9e18', '-0.9e38', '-9e-9', '-9e-18', '-9e-38');
 
-INSERT INTO decimal (a, b, c, d, e, f) VALUES ('1e9', '1e18', '1e38', '1e-10', '1e-19', '1e-39'); -- { clientError 69 }
-INSERT INTO decimal (a, b, c, d, e, f) VALUES ('-1e9', '-1e18', '-1e38', '-1e-10', '-1e-19', '-1e-39'); -- { clientError 69 }
+INSERT INTO decimal (a, b, c, d, e, f) VALUES ('1e9', '1e18', '1e38', '1e-10', '1e-19', '1e-39'); -- { clientError ARGUMENT_OUT_OF_BOUND }
+INSERT INTO decimal (a, b, c, d, e, f) VALUES ('-1e9', '-1e18', '-1e38', '-1e-10', '-1e-19', '-1e-39'); -- { clientError ARGUMENT_OUT_OF_BOUND }
 
 SELECT * FROM decimal ORDER BY a, b, c, d, e, f, g, h, i, j;
 DROP TABLE IF EXISTS decimal;

@@ -10,6 +10,7 @@
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;
+    extern const int OK;
 }
 
 namespace DB
@@ -62,9 +63,27 @@ bool TestHint::hasExpectedServerError(int error)
     return std::find(server_errors.begin(), server_errors.end(), error) != server_errors.end();
 }
 
+bool TestHint::needRetry(const std::unique_ptr<Exception> & server_exception, size_t * retries_counter)
+{
+    chassert(retries_counter);
+    if (max_retries <= *retries_counter)
+        return false;
+
+    ++*retries_counter;
+
+    int error = ErrorCodes::OK;
+    if (server_exception)
+        error = server_exception->code();
+
+
+    if (retry_until)
+        return !hasExpectedServerError(error);  /// retry until we get the expected error
+    return hasExpectedServerError(error); /// retry while we have the expected error
+}
+
 void TestHint::parse(Lexer & comment_lexer, bool is_leading_hint)
 {
-    std::unordered_set<std::string_view> commands{"echo", "echoOn", "echoOff"};
+    std::unordered_set<std::string_view> commands{"echo", "echoOn", "echoOff", "retry"};
 
     std::unordered_set<std::string_view> command_errors{
         "serverError",
@@ -73,6 +92,9 @@ void TestHint::parse(Lexer & comment_lexer, bool is_leading_hint)
 
     for (Token token = comment_lexer.nextToken(); !token.isEnd(); token = comment_lexer.nextToken())
     {
+        if (token.type == TokenType::Whitespace)
+            continue;
+
         String item = String(token.begin, token.end);
         if (token.type == TokenType::BareWord && commands.contains(item))
         {
@@ -82,6 +104,30 @@ void TestHint::parse(Lexer & comment_lexer, bool is_leading_hint)
                 echo.emplace(true);
             if (item == "echoOff")
                 echo.emplace(false);
+
+            if (item == "retry")
+            {
+                token = comment_lexer.nextToken();
+                while (token.type == TokenType::Whitespace)
+                    token = comment_lexer.nextToken();
+
+                if (token.type != TokenType::Number)
+                    throw DB::Exception(DB::ErrorCodes::CANNOT_PARSE_TEXT, "Could not parse the number of retries: {}",
+                                        std::string_view(token.begin, token.end));
+
+                max_retries = std::stoul(std::string(token.begin, token.end));
+
+                token = comment_lexer.nextToken();
+                while (token.type == TokenType::Whitespace)
+                    token = comment_lexer.nextToken();
+
+                if (token.type != TokenType::BareWord ||
+                    (std::string_view(token.begin, token.end) != "until" &&
+                    std::string_view(token.begin, token.end) != "while"))
+                    throw DB::Exception(DB::ErrorCodes::CANNOT_PARSE_TEXT, "Expected 'until' or 'while' after the number of retries, got: {}",
+                                        std::string_view(token.begin, token.end));
+                retry_until = std::string_view(token.begin, token.end) == "until";
+            }
         }
         else if (!is_leading_hint && token.type == TokenType::BareWord && command_errors.contains(item))
         {
@@ -133,6 +179,9 @@ void TestHint::parse(Lexer & comment_lexer, bool is_leading_hint)
             break;
         }
     }
+
+    if (max_retries && server_errors.size() != 1)
+        throw DB::Exception(DB::ErrorCodes::CANNOT_PARSE_TEXT, "Expected one serverError after the 'retry N while|until' command");
 }
 
 }

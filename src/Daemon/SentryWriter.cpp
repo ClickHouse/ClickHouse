@@ -12,14 +12,14 @@
 #include <Common/ErrorCodes.h>
 #include <Common/SymbolIndex.h>
 #include <Common/StackTrace.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Core/ServerUUID.h>
 #include <IO/WriteHelpers.h>
 
 #include "config.h"
 #include <Common/config_version.h>
 
-#if USE_SENTRY && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_SENTRY
 
 #    include <sentry.h>
 #    include <cstdio>
@@ -54,7 +54,7 @@ void setExtras(bool anonymize, const std::string & server_data_path)
 
     /// Sentry does not support 64-bit integers.
     sentry_set_extra("total_ram", sentry_value_new_string(formatReadableSizeWithBinarySuffix(getMemoryAmountOrZero()).c_str()));
-    sentry_set_extra("physical_cpu_cores", sentry_value_new_int32(getNumberOfPhysicalCPUCores()));
+    sentry_set_extra("cpu_cores", sentry_value_new_int32(getNumberOfCPUCoresToUse()));
 
     if (!server_data_path.empty())
         sentry_set_extra("disk_free_space", sentry_value_new_string(formatReadableSizeWithBinarySuffix(fs::space(server_data_path).free).c_str()));
@@ -71,6 +71,10 @@ void SentryWriter::initializeInstance(Poco::Util::LayeredConfiguration & config)
 SentryWriter * SentryWriter::getInstance()
 {
     return SentryWriter::instance.get();
+}
+void SentryWriter::resetInstance()
+{
+    SentryWriter::instance.reset();
 }
 
 SentryWriter::SentryWriter(Poco::Util::LayeredConfiguration & config)
@@ -254,6 +258,7 @@ void SentryWriter::sendError(Type type, int sig_or_error, const std::string & er
 
 void SentryWriter::initializeInstance(Poco::Util::LayeredConfiguration &) {}
 SentryWriter * SentryWriter::getInstance() { return nullptr; }
+void SentryWriter::resetInstance() {}
 
 SentryWriter::SentryWriter(Poco::Util::LayeredConfiguration &) {}
 SentryWriter::~SentryWriter() = default;

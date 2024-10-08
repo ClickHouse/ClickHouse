@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 
-${CLICKHOUSE_CLIENT} --allow_suspicious_low_cardinality_types=1 --multiquery --multiline --query="""
+${CLICKHOUSE_CLIENT} --allow_suspicious_low_cardinality_types=1 --multiline --query="""
 
 DROP TABLE IF EXISTS t_01411;
 DROP TABLE IF EXISTS t_01411_num;
@@ -28,14 +28,14 @@ ORDER BY tuple();
 
 INSERT INTO t_01411_num (num) SELECT number % 1000 FROM numbers(100000);
 
-create table lc_dict_reading (val UInt64, str StringWithDictionary, pat String) engine = MergeTree order by val;
+create table lc_dict_reading (val UInt64, str LowCardinality(String), pat String) engine = MergeTree order by val;
 insert into lc_dict_reading select number, if(number < 8192 * 4, number % 100, number) as s, s from system.numbers limit 100000;
 """
 
 function go()
 {
 
-${CLICKHOUSE_CLIENT} --multiquery --multiline --query="""
+${CLICKHOUSE_CLIENT} --multiline --query="""
 
 select sum(toUInt64(str)), sum(toUInt64(pat)) from lc_dict_reading where val < 8129 or val > 8192 * 4;
 
@@ -67,7 +67,7 @@ for _ in `seq 1 32`; do go | grep -q "Exception" && echo 'FAIL' || echo 'OK' ||:
 
 wait
 
-${CLICKHOUSE_CLIENT} --multiquery --multiline --query="""
+${CLICKHOUSE_CLIENT} --multiline --query="""
 DROP TABLE IF EXISTS t_01411;
 DROP TABLE IF EXISTS t_01411_num;
 """

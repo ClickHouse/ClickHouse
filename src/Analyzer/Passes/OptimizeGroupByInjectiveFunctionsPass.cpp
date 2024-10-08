@@ -3,11 +3,17 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/IQueryTreeNode.h>
+#include <Core/Settings.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool group_by_use_nulls;
+    extern const SettingsBool optimize_injective_functions_in_group_by;
+}
 
 namespace
 {
@@ -22,14 +28,14 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_injective_functions_in_group_by)
+        if (!getSettings()[Setting::optimize_injective_functions_in_group_by])
             return;
 
         /// Don't optimize injective functions when group_by_use_nulls=true,
         /// because in this case we make initial group by keys Nullable
         /// and eliminating some functions can cause issues with arguments Nullability
         /// during their execution. See examples in https://github.com/ClickHouse/ClickHouse/pull/61567#issuecomment-2008181143
-        if (getSettings().group_by_use_nulls)
+        if (getSettings()[Setting::group_by_use_nulls])
             return;
 
         auto * query = node->as<QueryNode>();

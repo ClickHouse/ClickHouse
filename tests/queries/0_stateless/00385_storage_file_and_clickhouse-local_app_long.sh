@@ -48,13 +48,13 @@ pack_unpack_compare "SELECT name, is_aggregate FROM system.functions" "name Stri
 echo
 # Check settings are passed correctly
 ${CLICKHOUSE_LOCAL} --max_rows_in_distinct=33 -q "SELECT name, value FROM system.settings WHERE name = 'max_rows_in_distinct'"
-${CLICKHOUSE_LOCAL} -n -q "SET max_rows_in_distinct=33; SELECT name, value FROM system.settings WHERE name = 'max_rows_in_distinct'"
+${CLICKHOUSE_LOCAL} -q "SET max_rows_in_distinct=33; SELECT name, value FROM system.settings WHERE name = 'max_rows_in_distinct'"
 ${CLICKHOUSE_LOCAL} --max_bytes_before_external_group_by=1 --max_block_size=10 -q "SELECT sum(ignore(*)) FROM (SELECT number, count() FROM numbers(1000) GROUP BY number)"
 echo
 # Check exta options, we expect zero exit code and no stderr output
-(${CLICKHOUSE_LOCAL} --ignore-error -n --echo -q "SELECT nothing_to_do();SELECT 42;" 2>/dev/null || echo "Wrong RC")
+(${CLICKHOUSE_LOCAL} --ignore-error --echo -q "SELECT nothing_to_do();SELECT 42;" 2>/dev/null || echo "Wrong RC")
 echo
-${CLICKHOUSE_LOCAL} -n -q "CREATE TABLE sophisticated_default
+${CLICKHOUSE_LOCAL} -q "CREATE TABLE sophisticated_default
 (
     a UInt8 DEFAULT 3,
     b UInt8 ALIAS a + 5,

@@ -1,5 +1,6 @@
 import os
 import time
+
 import pytest
 
 import helpers.cluster
@@ -60,6 +61,13 @@ def test_pkill(started_node):
 
 
 def test_pkill_query_log(started_node):
+    if (
+        started_node.is_built_with_thread_sanitizer()
+        or started_node.is_built_with_address_sanitizer()
+        or started_node.is_built_with_memory_sanitizer()
+    ):
+        pytest.skip("doesn't fit in timeouts for stacktrace generation")
+
     for signal in ["SEGV", "4"]:
         # force create query_log if it was not created
         started_node.query("SYSTEM FLUSH LOGS")

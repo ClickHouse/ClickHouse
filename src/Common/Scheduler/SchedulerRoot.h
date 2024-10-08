@@ -99,7 +99,7 @@ public:
     {
         if (!ISchedulerNode::equals(other))
             return false;
-        if (auto * o = dynamic_cast<SchedulerRoot *>(other))
+        if (auto * _ = dynamic_cast<SchedulerRoot *>(other))
             return true;
         return false;
     }
@@ -162,8 +162,7 @@ public:
             if (request == nullptr) // Possible in case of request cancel, just retry
                 continue;
 
-            dequeued_requests++;
-            dequeued_cost += request->cost;
+            incrementDequeued(request->cost);
             return {request, current != nullptr};
         }
     }
@@ -222,8 +221,8 @@ private:
                 busy_periods++;
                 return;
             }
-            else // Just move current to next to avoid invalidation
-                current = current->next;
+            // Just move current to next to avoid invalidation
+            current = current->next;
         }
         value->prev->next = value->next;
         value->next->prev = value->prev;

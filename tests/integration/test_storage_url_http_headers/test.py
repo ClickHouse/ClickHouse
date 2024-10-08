@@ -1,9 +1,10 @@
-import pytest
 import os
-from . import http_headers_echo_server
-from . import redirect_server
+
+import pytest
 
 from helpers.cluster import ClickHouseCluster
+
+from . import http_headers_echo_server, redirect_server
 
 cluster = ClickHouseCluster(__file__)
 server = cluster.add_instance("node")

@@ -19,6 +19,7 @@ void registerAggregateFunctionGroupArraySorted(AggregateFunctionFactory & factor
 void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArrayIntersect(AggregateFunctionFactory &);
+void registerAggregateFunctionGroupConcat(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantile(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileDeterministic(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileExact(AggregateFunctionFactory &);
@@ -88,6 +89,8 @@ void registerAggregateFunctionAnalysisOfVariance(AggregateFunctionFactory &);
 void registerAggregateFunctionFlameGraph(AggregateFunctionFactory &);
 void registerAggregateFunctionKolmogorovSmirnovTest(AggregateFunctionFactory & factory);
 void registerAggregateFunctionLargestTriangleThreeBuckets(AggregateFunctionFactory & factory);
+void registerAggregateFunctionDistinctDynamicTypes(AggregateFunctionFactory & factory);
+void registerAggregateFunctionDistinctJSONPathsAndTypes(AggregateFunctionFactory & factory);
 
 class AggregateFunctionCombinatorFactory;
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
@@ -120,6 +123,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionGroupUniqArray(factory);
         registerAggregateFunctionGroupArrayInsertAt(factory);
         registerAggregateFunctionGroupArrayIntersect(factory);
+        registerAggregateFunctionGroupConcat(factory);
         registerAggregateFunctionsQuantile(factory);
         registerAggregateFunctionsQuantileDeterministic(factory);
         registerAggregateFunctionsQuantileExact(factory);
@@ -189,6 +193,8 @@ void registerAggregateFunctions()
         registerAggregateFunctionFlameGraph(factory);
         registerAggregateFunctionKolmogorovSmirnovTest(factory);
         registerAggregateFunctionLargestTriangleThreeBuckets(factory);
+        registerAggregateFunctionDistinctDynamicTypes(factory);
+        registerAggregateFunctionDistinctJSONPathsAndTypes(factory);
 
         registerWindowFunctions(factory);
     }

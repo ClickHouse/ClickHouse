@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 select s.a as a, s.a + 1 as b from (select 10 as a) s;
 select s.a + 1 as a, s.a as b from (select 10 as a) s;
@@ -12,10 +12,10 @@ select s.a + 2 as b, b - 1 as a from (select 10 as a) s;
 select s.a as a, s.a + 2 as b from (select 10 as a) s;
 select s.a + 1 as a, s.a + 2 as b from (select 10 as a) s;
 select a + 1 as a, a + 1 as b from (select 10 as a);
-select a + 1 as b, b + 1 as a from (select 10 as a); -- { serverError 174 }
-select 10 as a, a + 1 as a; -- { serverError 47 }
-with 10 as a select a as a; -- { serverError 47 }
-with 10 as a select a + 1 as a; -- { serverError 47 }
+select a + 1 as b, b + 1 as a from (select 10 as a); -- { serverError CYCLIC_ALIASES }
+select 10 as a, a + 1 as a; -- { serverError UNKNOWN_IDENTIFIER }
+with 10 as a select a as a; -- { serverError UNKNOWN_IDENTIFIER }
+with 10 as a select a + 1 as a; -- { serverError UNKNOWN_IDENTIFIER }
 
 SELECT 0 as t FROM (SELECT 1 as t) as inn WHERE inn.t = 1;
 SELECT sum(value) as value FROM (SELECT 1 as value) as data WHERE data.value > 0;

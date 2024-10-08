@@ -22,8 +22,7 @@ size_t MergeTreeIndexGranularity::getMarkRows(size_t mark_index) const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get non existing mark {}, while size is {}", mark_index, getMarksCount());
     if (mark_index == 0)
         return marks_rows_partial_sums[0];
-    else
-        return marks_rows_partial_sums[mark_index] - marks_rows_partial_sums[mark_index - 1];
+    return marks_rows_partial_sums[mark_index] - marks_rows_partial_sums[mark_index - 1];
 }
 
 size_t MergeTreeIndexGranularity::getMarkStartingRow(size_t mark_index) const
@@ -85,26 +84,40 @@ size_t MergeTreeIndexGranularity::getRowsCountInRanges(const MarkRanges & ranges
     size_t total = 0;
     for (const auto & range : ranges)
         total += getRowsCountInRange(range);
-
     return total;
 }
 
+size_t MergeTreeIndexGranularity::countMarksForRows(size_t from_mark, size_t number_of_rows) const
+{
+    size_t rows_before_mark = getMarkStartingRow(from_mark);
+    size_t last_row_pos = rows_before_mark + number_of_rows;
+    auto it = std::upper_bound(marks_rows_partial_sums.begin(), marks_rows_partial_sums.end(), last_row_pos);
+    size_t to_mark = it - marks_rows_partial_sums.begin();
+    return to_mark - from_mark;
+}
 
-size_t MergeTreeIndexGranularity::countMarksForRows(size_t from_mark, size_t number_of_rows, size_t offset_in_rows, size_t min_marks_to_read) const
+size_t MergeTreeIndexGranularity::countRowsForRows(size_t from_mark, size_t number_of_rows, size_t offset_in_rows, size_t min_marks_to_read) const
 {
     size_t rows_before_mark = getMarkStartingRow(from_mark);
     size_t last_row_pos = rows_before_mark + offset_in_rows + number_of_rows;
-    auto position = std::upper_bound(marks_rows_partial_sums.begin(), marks_rows_partial_sums.end(), last_row_pos);
-    size_t to_mark;
-    if (position == marks_rows_partial_sums.end())
-        to_mark = marks_rows_partial_sums.size();
-    else
-        to_mark = position - marks_rows_partial_sums.begin();
+    auto it = std::upper_bound(marks_rows_partial_sums.begin(), marks_rows_partial_sums.end(), last_row_pos);
+    size_t to_mark = it - marks_rows_partial_sums.begin();
 
     /// This is a heuristic to respect min_marks_to_read which is ignored by MergeTreeReadPool in case of remote disk.
     /// See comment in IMergeTreeSelectAlgorithm.
-    if (min_marks_to_read && from_mark + 2 * min_marks_to_read <= to_mark)
-        to_mark = from_mark + min_marks_to_read;
+    if (min_marks_to_read)
+    {
+        // check overflow
+        size_t min_marks_to_read_2 = 0;
+        bool overflow = common::mulOverflow(min_marks_to_read, 2, min_marks_to_read_2);
+
+        size_t to_mark_overwrite = 0;
+        if (!overflow)
+            overflow = common::addOverflow(from_mark, min_marks_to_read_2, to_mark_overwrite);
+
+        if (!overflow && to_mark_overwrite < to_mark)
+            to_mark = to_mark_overwrite;
+    }
 
     return getRowsCountInRange(from_mark, std::max(1UL, to_mark)) - offset_in_rows;
 }

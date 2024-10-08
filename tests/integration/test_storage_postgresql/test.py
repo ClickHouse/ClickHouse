@@ -1,6 +1,7 @@
 import logging
-import pytest
 from multiprocessing.dummy import Pool
+
+import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.postgres_utility import get_postgres_conn
@@ -526,6 +527,7 @@ def test_postgres_distributed(started_cluster):
     result = node2.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
     started_cluster.unpause_container("postgres1")
     assert result == "host2\nhost4\n" or result == "host3\nhost4\n"
+    node2.query("DROP TABLE test_shards2")
     node2.query("DROP TABLE test_shards")
     node2.query("DROP TABLE test_replicas")
 
@@ -817,6 +819,9 @@ def test_auto_close_connection(started_cluster):
     # Connection from python + pg_stat table also has a connection at the moment of current query
     assert count == 2
 
+    node2.query("DROP TABLE test.stat")
+    node2.query("DROP TABLE test.test_table")
+
 
 def test_literal_escaping(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
@@ -832,6 +837,83 @@ def test_literal_escaping(started_cluster):
     node1.query("SELECT * FROM escaping WHERE text like '%a''a%'")  # %a'a% -> %a''a%
     node1.query("SELECT * FROM escaping WHERE text like '%a\\'a%'")  # %a'a% -> %a''a%
     cursor.execute(f"DROP TABLE escaping")
+    node1.query("DROP TABLE default.escaping")
+
+
+def test_filter_pushdown(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("CREATE SCHEMA test_filter_pushdown")
+    cursor.execute(
+        "CREATE TABLE test_filter_pushdown.test_table (id integer, value integer)"
+    )
+    cursor.execute(
+        "INSERT INTO test_filter_pushdown.test_table VALUES (1, 10), (1, 110), (2, 0), (3, 33), (4, 0)"
+    )
+
+    node1.query(
+        """
+        CREATE TABLE test_filter_pushdown_pg_table (id UInt32, value UInt32)
+        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_table', 'postgres', 'mysecretpassword', 'test_filter_pushdown');
+    """
+    )
+
+    node1.query(
+        """
+        CREATE TABLE test_filter_pushdown_local_table (id UInt32, value UInt32) ENGINE Memory AS SELECT * FROM test_filter_pushdown_pg_table
+    """
+    )
+
+    node1.query(
+        "CREATE TABLE ch_table (id UInt32, pg_id UInt32) ENGINE MergeTree ORDER BY id"
+    )
+    node1.query("INSERT INTO ch_table VALUES (1, 1), (2, 2), (3, 1), (4, 2), (5, 999)")
+
+    def compare_results(query, **kwargs):
+        result1 = node1.query(
+            query.format(pg_table="test_filter_pushdown_pg_table", **kwargs)
+        )
+        result2 = node1.query(
+            query.format(pg_table="test_filter_pushdown_local_table", **kwargs)
+        )
+        assert result1 == result2
+
+    for kind in ["INNER", "LEFT", "RIGHT", "FULL", "ANY LEFT", "SEMI RIGHT"]:
+        for value in [0, 10]:
+            compare_results(
+                "SELECT * FROM ch_table {kind} JOIN {pg_table} as p ON ch_table.pg_id = p.id WHERE value = {value} ORDER BY ALL",
+                kind=kind,
+                value=value,
+            )
+
+            compare_results(
+                "SELECT * FROM {pg_table} as p {kind} JOIN ch_table ON ch_table.pg_id = p.id WHERE value = {value} ORDER BY ALL",
+                kind=kind,
+                value=value,
+            )
+
+    cursor.execute("DROP SCHEMA test_filter_pushdown CASCADE")
+    node1.query("DROP TABLE test_filter_pushdown_local_table")
+    node1.query("DROP TABLE test_filter_pushdown_pg_table")
+
+
+def test_fixed_string_type(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_fixed_string")
+    cursor.execute(
+        "CREATE TABLE test_fixed_string (contact_id numeric NULL, email varchar NULL)"
+    )
+    cursor.execute("INSERT INTO test_fixed_string values (1, 'abc')")
+
+    node1.query("DROP TABLE IF EXISTS test_fixed_string")
+    node1.query(
+        "CREATE TABLE test_fixed_string(contact_id Int64, email Nullable(FixedString(3))) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_fixed_string', 'postgres', 'mysecretpassword')"
+    )
+
+    result = node1.query("SELECT * FROM test_fixed_string format TSV")
+
+    assert result.strip() == "1\tabc"
+
+    node1.query("DROP TABLE test_fixed_string")
 
 
 if __name__ == "__main__":

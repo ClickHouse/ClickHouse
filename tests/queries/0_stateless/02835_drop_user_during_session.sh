@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-debug
+# Tags: no-debug, no-random-settings, no-random-merge-tree-settings, no-fasttest
+# no-fasttest: Busy slow wait
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -24,7 +25,7 @@ function http_session()
     ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user}&password=pass" -d "SELECT COUNT(*) FROM system.numbers"
 }
 
-function http_with_session_id_session() 
+function http_with_session_id_session()
 {
     local user=$1
     ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user}&password=pass" -d "SELECT COUNT(*) FROM system.numbers"
@@ -104,11 +105,27 @@ wait
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
 
-echo "port_0_sessions:" 
+echo "port_0_sessions:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count(*) FROM system.session_log WHERE user = '${TEST_USER}' AND client_port = 0"
 echo "address_0_sessions:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count(*) FROM system.session_log WHERE user = '${TEST_USER}' AND client_address = toIPv6('::')"
-echo "Corresponding LoginSuccess/Logout" 
-${CLICKHOUSE_CLIENT} -q "SELECT COUNT(*) FROM (SELECT ${SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = '${TEST_USER}' AND type = 'LoginSuccess' INTERSECT SELECT ${SESSION_LOG_MATCHING_FIELDS}, FROM system.session_log WHERE user = '${TEST_USER}' AND type = 'Logout')"
+echo "Corresponding LoginSuccess/Logout"
+
+# The client can exit sooner than the server records its disconnection and closes the session.
+# When the client disconnects, two processes happen at the same time and are in the race condition:
+# - the client application exits and returns control to the shell;
+# - the server closes the session and records the logout event to the session log.
+# We cannot expect that after the control is returned to the shell, the server records the logout event.
+while true
+do
+    [[ 9 -eq $(${CLICKHOUSE_CLIENT} -q "
+        SELECT COUNT(*) FROM (
+            SELECT ${SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = '${TEST_USER}' AND type = 'LoginSuccess'
+            INTERSECT
+            SELECT ${SESSION_LOG_MATCHING_FIELDS}, FROM system.session_log WHERE user = '${TEST_USER}' AND type = 'Logout'
+        )") ]] && echo 9 && break;
+    sleep 0.1
+done
+
 echo "LoginFailure"
-${CLICKHOUSE_CLIENT} -q "SELECT COUNT(*) FROM system.session_log WHERE user = '${TEST_USER}' AND type = 'LoginFailure'" 
+${CLICKHOUSE_CLIENT} -q "SELECT COUNT(*) FROM system.session_log WHERE user = '${TEST_USER}' AND type = 'LoginFailure'"

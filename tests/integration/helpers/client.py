@@ -1,7 +1,7 @@
+import logging
 import os
 import subprocess as sp
 import tempfile
-import logging
 from threading import Timer
 
 DEFAULT_QUERY_TIMEOUT = 600
@@ -89,7 +89,6 @@ class Client:
         command = self.command[:]
 
         if stdin is None:
-            command += ["--multiquery"]
             stdin = sql
         else:
             command += ["--query", sql]

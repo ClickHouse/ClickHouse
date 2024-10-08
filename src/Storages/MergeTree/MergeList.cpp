@@ -6,9 +6,17 @@
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
 
+#include <Common/logger_useful.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+const MergeTreePartInfo MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION = {"all", 0, 0, 0};
 
 MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMutatedPartPtr future_part, const ContextPtr & context)
     : table_id{table_id_}
@@ -21,8 +29,23 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
     , merge_type{future_part->merge_type}
     , merge_algorithm{MergeAlgorithm::Undecided}
 {
+    auto format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    if (result_part_name != result_part_info.getPartNameV1())
+        format_version = MERGE_TREE_DATA_OLD_FORMAT_VERSION;
+
+    /// FIXME why do we need a merge list element for projection parts at all?
+    bool is_fake_projection_part = future_part->part_info == FAKE_RESULT_PART_FOR_PROJECTION;
+
+    size_t normal_parts_count = 0;
     for (const auto & source_part : future_part->parts)
     {
+        if (!is_fake_projection_part && !source_part->getParentPart())
+        {
+            ++normal_parts_count;
+            if (!result_part_info.contains(MergeTreePartInfo::fromPartName(source_part->name, format_version)))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Source part {} is not covered by result part {}", source_part->name, result_part_info.getPartNameV1());
+        }
+
         source_part_names.emplace_back(source_part->name);
         source_part_paths.emplace_back(source_part->getDataPartStorage().getFullPath());
 
@@ -35,12 +58,16 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
     if (!future_part->parts.empty())
     {
         source_data_version = future_part->parts[0]->info.getDataVersion();
-        is_mutation = (result_part_info.getDataVersion() != source_data_version);
+        is_mutation = (result_part_info.level == future_part->parts[0]->info.level) && !is_fake_projection_part;
 
         WriteBufferFromString out(partition);
         const auto & part = future_part->parts[0];
         part->partition.serializeText(part->storage, out, {});
     }
+
+    if (!is_fake_projection_part && is_mutation && normal_parts_count != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} source parts for mutation {}: {}", future_part->parts.size(),
+                        result_part_info.getPartNameV1(), fmt::join(source_part_names, ", "));
 
     thread_group = ThreadGroup::createForBackgroundProcess(context);
 }

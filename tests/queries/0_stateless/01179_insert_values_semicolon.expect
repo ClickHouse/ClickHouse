@@ -20,7 +20,7 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --history_file=$history_file"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
 expect ":) "
 
 send -- "DROP TABLE IF EXISTS test_01179\r"
@@ -37,10 +37,10 @@ send -- "INSERT INTO test_01179 values ('foo'); \r"
 expect "Ok."
 
 send -- "INSERT INTO test_01179 values ('foo'); ('bar') \r"
-expect "Cannot read data after semicolon"
+expect "Syntax error"
 
 send -- "SELECT val, count() FROM test_01179 GROUP BY val FORMAT TSV\r"
-expect "foo\t2"
+expect "foo\t3"
 
 send -- "DROP TABLE test_01179\r"
 expect "Ok."

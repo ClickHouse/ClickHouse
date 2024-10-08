@@ -1,6 +1,6 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/23194
 -- This test add query-templates for fuzzer
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE:Identifier};

@@ -50,8 +50,7 @@ Aws::Utils::Logging::LogLevel AWSLogger::GetLogLevel() const
 {
     if (enable_s3_requests_logging)
         return Aws::Utils::Logging::LogLevel::Trace;
-    else
-        return Aws::Utils::Logging::LogLevel::Info;
+    return Aws::Utils::Logging::LogLevel::Info;
 }
 
 void AWSLogger::Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, ...) // NOLINT

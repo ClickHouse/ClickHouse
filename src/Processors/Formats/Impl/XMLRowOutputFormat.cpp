@@ -191,6 +191,7 @@ void XMLRowOutputFormat::finalizeImpl()
 
 
     writeRowsBeforeLimitAtLeast();
+    writeRowsBeforeAggregationAtLeast();
 
     if (!exception_message.empty())
         writeException();
@@ -216,6 +217,16 @@ void XMLRowOutputFormat::writeRowsBeforeLimitAtLeast()
         writeCString("\t<rows_before_limit_at_least>", *ostr);
         writeIntText(statistics.rows_before_limit, *ostr);
         writeCString("</rows_before_limit_at_least>\n", *ostr);
+    }
+}
+
+void XMLRowOutputFormat::writeRowsBeforeAggregationAtLeast()
+{
+    if (statistics.applied_aggregation)
+    {
+        writeCString("\t<rows_before_aggregation>", *ostr);
+        writeIntText(statistics.rows_before_aggregation, *ostr);
+        writeCString("</rows_before_aggregation>\n", *ostr);
     }
 }
 

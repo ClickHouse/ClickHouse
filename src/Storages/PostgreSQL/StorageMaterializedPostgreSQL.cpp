@@ -10,7 +10,6 @@
 #include <Core/Settings.h>
 #include <Core/PostgreSQL/Connection.h>
 
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -21,8 +20,8 @@
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/Transforms/FilterTransform.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -40,6 +39,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_materialized_postgresql_table;
+    extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsUInt64 postgresql_connection_attempt_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -284,7 +289,7 @@ void StorageMaterializedPostgreSQL::read(
     readFinalFromNestedStorage(query_plan, nested_table, column_names,
             query_info, context_, processed_stage, max_block_size, num_streams);
 
-    auto lock = lockForShare(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
+    auto lock = lockForShare(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
     query_plan.addTableLock(lock);
     query_plan.addStorageHolder(shared_from_this());
 }
@@ -296,7 +301,7 @@ std::shared_ptr<ASTColumnDeclaration> StorageMaterializedPostgreSQL::getMaterial
     auto column_declaration = std::make_shared<ASTColumnDeclaration>();
 
     column_declaration->name = std::move(name);
-    column_declaration->type = makeASTFunction(type);
+    column_declaration->type = makeASTDataType(type);
 
     column_declaration->default_specifier = "MATERIALIZED";
     column_declaration->default_expression = std::make_shared<ASTLiteral>(default_value);
@@ -313,17 +318,17 @@ ASTPtr StorageMaterializedPostgreSQL::getColumnDeclaration(const DataTypePtr & d
     WhichDataType which(data_type);
 
     if (which.isNullable())
-        return makeASTFunction("Nullable", getColumnDeclaration(typeid_cast<const DataTypeNullable *>(data_type.get())->getNestedType()));
+        return makeASTDataType("Nullable", getColumnDeclaration(typeid_cast<const DataTypeNullable *>(data_type.get())->getNestedType()));
 
     if (which.isArray())
-        return makeASTFunction("Array", getColumnDeclaration(typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType()));
+        return makeASTDataType("Array", getColumnDeclaration(typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType()));
 
     /// getName() for decimal returns 'Decimal(precision, scale)', will get an error with it
     if (which.isDecimal())
     {
         auto make_decimal_expression = [&](std::string type_name)
         {
-            auto ast_expression = std::make_shared<ASTFunction>();
+            auto ast_expression = std::make_shared<ASTDataType>();
 
             ast_expression->name = type_name;
             ast_expression->arguments = std::make_shared<ASTExpressionList>();
@@ -347,7 +352,7 @@ ASTPtr StorageMaterializedPostgreSQL::getColumnDeclaration(const DataTypePtr & d
 
     if (which.isDateTime64())
     {
-        auto ast_expression = std::make_shared<ASTFunction>();
+        auto ast_expression = std::make_shared<ASTDataType>();
 
         ast_expression->name = "DateTime64";
         ast_expression->arguments = std::make_shared<ASTExpressionList>();
@@ -355,7 +360,7 @@ ASTPtr StorageMaterializedPostgreSQL::getColumnDeclaration(const DataTypePtr & d
         return ast_expression;
     }
 
-    return std::make_shared<ASTIdentifier>(data_type->getName());
+    return makeASTDataType(data_type->getName());
 }
 
 
@@ -572,9 +577,10 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         StorageInMemoryMetadata metadata;
         metadata.setColumns(args.columns);
         metadata.setConstraints(args.constraints);
+        metadata.setComment(args.comment);
 
         if (args.mode <= LoadingStrictnessLevel::CREATE
-            && !args.getLocalContext()->getSettingsRef().allow_experimental_materialized_postgresql_table)
+            && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_materialized_postgresql_table])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "MaterializedPostgreSQL is an experimental table engine."
                                 " You can enable it with the `allow_experimental_materialized_postgresql_table` setting");
 
@@ -591,8 +597,12 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
 
         auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getContext());
         auto connection_info = postgres::formatConnectionString(
-            configuration.database, configuration.host, configuration.port,
-            configuration.username, configuration.password);
+            configuration.database,
+            configuration.host,
+            configuration.port,
+            configuration.username,
+            configuration.password,
+            args.getContext()->getSettingsRef()[Setting::postgresql_connection_attempt_timeout]);
 
         bool has_settings = args.storage_def->settings;
         auto postgresql_replication_settings = std::make_unique<MaterializedPostgreSQLSettings>();

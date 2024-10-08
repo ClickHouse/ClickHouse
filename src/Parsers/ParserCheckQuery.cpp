@@ -55,7 +55,7 @@ bool ParserCheckQuery::parseCheckTable(Pos & pos, ASTPtr & node, Expected & expe
         const auto * ast_literal = ast_part_name->as<ASTLiteral>();
         if (!ast_literal || ast_literal->value.getType() != Field::Types::String)
             return false;
-        query->part_name = ast_literal->value.get<const String &>();
+        query->part_name = ast_literal->value.safeGet<const String &>();
     }
 
     if (query->database)

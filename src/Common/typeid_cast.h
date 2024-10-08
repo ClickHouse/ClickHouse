@@ -41,8 +41,7 @@ To typeid_cast(From * from) noexcept
 {
     if ((typeid(From) == typeid(std::remove_pointer_t<To>)) || (from && typeid(*from) == typeid(std::remove_pointer_t<To>)))
         return static_cast<To>(from);
-    else
-        return nullptr;
+    return nullptr;
 }
 
 namespace detail
@@ -69,6 +68,5 @@ To typeid_cast(const std::shared_ptr<From> & from) noexcept
 {
     if ((typeid(From) == typeid(typename To::element_type)) || (from && typeid(*from) == typeid(typename To::element_type)))
         return std::static_pointer_cast<typename To::element_type>(from);
-    else
-        return nullptr;
+    return nullptr;
 }

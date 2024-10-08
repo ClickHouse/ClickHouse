@@ -1,27 +1,33 @@
-#include <Planner/findQueryForParallelReplicas.h>
-#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Processors/QueryPlan/JoinStep.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Storages/buildQueryTreeForShard.h>
-#include <Interpreters/ClusterProxy/executeQuery.h>
-#include <Planner/PlannerJoinTree.h>
-#include <Planner/Utils.h>
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Core/Settings.h>
+#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/queryToString.h>
+#include <Planner/PlannerJoinTree.h>
+#include <Planner/Utils.h>
+#include <Planner/findQueryForParallelReplicas.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Storages/buildQueryTreeForShard.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool parallel_replicas_allow_in_with_subquery;
+}
 
 namespace ErrorCodes
 {
@@ -50,7 +56,13 @@ std::stack<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTre
                 const auto & storage = table_node.getStorage();
                 /// Here we check StorageDummy as well, to support a query tree with replaced storages.
                 if (std::dynamic_pointer_cast<MergeTreeData>(storage) || typeid_cast<const StorageDummy *>(storage.get()))
+                {
+                    /// parallel replicas is not supported with FINAL
+                    if (table_node.getTableExpressionModifiers() && table_node.getTableExpressionModifiers()->hasFinal())
+                        return {};
+
                     return res;
+                }
 
                 return {};
             }
@@ -111,13 +123,13 @@ std::stack<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTre
     return res;
 }
 
-class ReplaceTableNodeToDummyVisitor : public InDepthQueryTreeVisitor<ReplaceTableNodeToDummyVisitor, true>
+class ReplaceTableNodeToDummyVisitor : public InDepthQueryTreeVisitorWithContext<ReplaceTableNodeToDummyVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitor<ReplaceTableNodeToDummyVisitor, true>;
+    using Base = InDepthQueryTreeVisitorWithContext<ReplaceTableNodeToDummyVisitor>;
     using Base::Base;
 
-    void visitImpl(const QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         auto * table_node = node->as<TableNode>();
         auto * table_function_node = node->as<TableFunctionNode>();
@@ -132,21 +144,19 @@ public:
                 ColumnsDescription(storage_snapshot->getColumns(get_column_options)),
                 storage_snapshot);
 
-            auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), context);
+            auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), getContext());
 
             dummy_table_node->setAlias(node->getAlias());
             replacement_map.emplace(node.get(), std::move(dummy_table_node));
         }
     }
 
-    ContextPtr context;
     std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
 };
 
-QueryTreeNodePtr replaceTablesWithDummyTables(const QueryTreeNodePtr & query, const ContextPtr & context)
+QueryTreeNodePtr replaceTablesWithDummyTables(QueryTreeNodePtr query, const ContextPtr & context)
 {
-    ReplaceTableNodeToDummyVisitor visitor;
-    visitor.context = context;
+    ReplaceTableNodeToDummyVisitor visitor(context);
     visitor.visit(query);
 
     return query->cloneAndReplace(visitor.replacement_map);
@@ -196,7 +206,7 @@ const QueryNode * findQueryForParallelReplicas(
                 const auto * filter = typeid_cast<FilterStep *>(step);
 
                 const auto * creating_sets = typeid_cast<DelayedCreatingSetsStep *>(step);
-                bool allowed_creating_sets = settings.parallel_replicas_allow_in_with_subquery && creating_sets;
+                bool allowed_creating_sets = settings[Setting::parallel_replicas_allow_in_with_subquery] && creating_sets;
 
                 if (!expression && !filter && !allowed_creating_sets)
                     can_distribute_full_node = false;
@@ -316,7 +326,8 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
             case QueryTreeNodeType::TABLE:
             {
                 const auto & table_node = query_tree_node->as<TableNode &>();
-                const auto & storage = table_node.getStorage();
+                const auto * as_mat_view = typeid_cast<const StorageMaterializedView *>(table_node.getStorage().get());
+                const auto & storage = as_mat_view ? as_mat_view->getTargetTable() : table_node.getStorage();
                 if (std::dynamic_pointer_cast<MergeTreeData>(storage) || typeid_cast<const StorageDummy *>(storage.get()))
                     return &table_node;
 
@@ -412,17 +423,16 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     Block header = InterpreterSelectQueryAnalyzer::getSampleBlock(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
 
-    ClusterProxy::SelectStreamFactory select_stream_factory =
-        ClusterProxy::SelectStreamFactory(
-            header,
-            {},
-            {},
-            processed_stage);
+    const TableNode * table_node = findTableForParallelReplicas(modified_query_tree.get());
+    if (!table_node)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't determine table for parallel replicas");
 
     QueryPlan query_plan;
     ClusterProxy::executeQueryWithParallelReplicas(
         query_plan,
-        select_stream_factory,
+        table_node->getStorageID(),
+        header,
+        processed_stage,
         modified_query_ast,
         context,
         storage_limits);

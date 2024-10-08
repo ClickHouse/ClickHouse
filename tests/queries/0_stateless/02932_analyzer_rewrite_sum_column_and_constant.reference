@@ -1635,21 +1635,21 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 10, alias: __table1, table_name: default.test_table
 SELECT sum(float64 + 2) From test_table;
-26.5
+26.875
 SELECT sum(2 + float64) From test_table;
-26.5
+26.875
 SELECT sum(float64 - 2) From test_table;
-6.5
+6.875
 SELECT sum(2 - float64) From test_table;
--6.5
+-6.875
 SELECT sum(float64) + 2 * count(float64) From test_table;
-26.5
+26.875
 SELECT 2 * count(float64) + sum(float64) From test_table;
-26.5
+26.875
 SELECT sum(float64) - 2 * count(float64) From test_table;
-6.5
+6.875
 SELECT 2 * count(float64) - sum(float64) From test_table;
--6.5
+-6.875
 EXPLAIN QUERY TREE (SELECT sum(float64 + 2) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
@@ -2463,25 +2463,25 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 12, alias: __table1, table_name: default.test_table
 SELECT sum(float64 + 2) + sum(float64 + 3) From test_table;
-58
+58.75
 SELECT sum(float64 + 2) - sum(float64 + 3) From test_table;
 -5
 SELECT sum(float64 - 2) + sum(float64 - 3) From test_table;
-8
+8.75
 SELECT sum(float64 - 2) - sum(float64 - 3) From test_table;
 5
 SELECT sum(2 - float64) - sum(3 - float64) From test_table;
 -5
 SELECT (sum(float64) + 2 * count(float64)) + (sum(float64) + 3 * count(float64)) From test_table;
-58
+58.75
 SELECT (sum(float64) + 2 * count(float64)) - (sum(float64) + 3 * count(float64)) From test_table;
 -5
 SELECT (sum(float64) - 2 * count(float64)) + (sum(float64) - 3 * count(float64)) From test_table;
-8
+8.75
 SELECT (sum(float64) - 2 * count(float64)) - (sum(float64) - 3 * count(float64)) From test_table;
 5
 SELECT (2 * count(float64) - sum(float64)) + (3 * count(float64) - sum(float64)) From test_table;
--8
+-8.75
 EXPLAIN QUERY TREE (SELECT sum(float64 + 2) + sum(float64 + 3) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS

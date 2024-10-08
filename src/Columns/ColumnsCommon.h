@@ -117,15 +117,14 @@ ColumnPtr selectIndexImpl(const Column & column, const IColumn & indexes, size_t
 
     if (const auto * data_uint8 = detail::getIndexesData<UInt8>(indexes))
         return column.template indexImpl<UInt8>(*data_uint8, limit);
-    else if (const auto * data_uint16 = detail::getIndexesData<UInt16>(indexes))
+    if (const auto * data_uint16 = detail::getIndexesData<UInt16>(indexes))
         return column.template indexImpl<UInt16>(*data_uint16, limit);
-    else if (const auto * data_uint32 = detail::getIndexesData<UInt32>(indexes))
+    if (const auto * data_uint32 = detail::getIndexesData<UInt32>(indexes))
         return column.template indexImpl<UInt32>(*data_uint32, limit);
-    else if (const auto * data_uint64 = detail::getIndexesData<UInt64>(indexes))
+    if (const auto * data_uint64 = detail::getIndexesData<UInt64>(indexes))
         return column.template indexImpl<UInt64>(*data_uint64, limit);
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for IColumn::select must be ColumnUInt, got {}",
-                        indexes.getName());
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for IColumn::select must be ColumnUInt, got {}", indexes.getName());
 }
 
 size_t getLimitForPermutation(size_t column_size, size_t perm_size, size_t limit);

@@ -26,11 +26,11 @@ REGISTER_FUNCTION(HasTokenCaseInsensitive)
 {
     factory.registerFunction<FunctionHasTokenCaseInsensitive>(
         FunctionDocumentation{.description="Performs case insensitive lookup of needle in haystack using tokenbf_v1 index."},
-        DB::FunctionFactory::CaseInsensitive);
+        DB::FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<FunctionHasTokenCaseInsensitiveOrNull>(
         FunctionDocumentation{.description="Performs case insensitive lookup of needle in haystack using tokenbf_v1 index. Returns null if needle is ill-formed."},
-        DB::FunctionFactory::CaseInsensitive);
+        DB::FunctionFactory::Case::Insensitive);
 }
 
 }

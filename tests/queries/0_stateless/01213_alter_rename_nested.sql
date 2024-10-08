@@ -25,10 +25,10 @@ SHOW CREATE TABLE table_for_rename_nested;
 SELECT key, n.renamed_x FROM table_for_rename_nested WHERE key = 7;
 SELECT key, n.renamed_y FROM table_for_rename_nested WHERE key = 7;
 
-ALTER TABLE table_for_rename_nested RENAME COLUMN n.renamed_x TO not_nested_x; --{serverError 36}
+ALTER TABLE table_for_rename_nested RENAME COLUMN n.renamed_x TO not_nested_x; --{serverError BAD_ARGUMENTS}
 
 -- Currently not implemented
-ALTER TABLE table_for_rename_nested RENAME COLUMN n TO renamed_n; --{serverError 48}
+ALTER TABLE table_for_rename_nested RENAME COLUMN n TO renamed_n; --{serverError NOT_IMPLEMENTED}
 
 ALTER TABLE table_for_rename_nested RENAME COLUMN value1 TO renamed_value1;
 

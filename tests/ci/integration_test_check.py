@@ -9,7 +9,10 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+import integration_tests_runner as runner
 from build_download_helper import download_all_deb_packages
+from ci_config import CI
+from ci_utils import Utils
 from docker_images_helper import DockerImage, get_docker_image
 from download_release_packages import download_last_release
 from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
@@ -17,16 +20,15 @@ from integration_test_images import IMAGES
 from pr_info import PRInfo
 from report import (
     ERROR,
+    FAILURE,
     SUCCESS,
-    StatusType,
     JobReport,
+    StatusType,
     TestResult,
     TestResults,
     read_test_results,
 )
 from stopwatch import Stopwatch
-
-import integration_tests_runner as runner
 
 
 def get_json_params_dict(
@@ -185,7 +187,7 @@ def main():
     build_path.mkdir(parents=True, exist_ok=True)
 
     if validate_bugfix_check:
-        download_last_release(build_path)
+        download_last_release(build_path, debug=True)
     else:
         download_all_deb_packages(check_name, reports_path, build_path)
 
@@ -233,7 +235,23 @@ def main():
         additional_files=additional_logs,
     ).dump(to_file=args.report_to_file if args.report_to_file else None)
 
+    should_block_ci = False
     if state != SUCCESS:
+        should_block_ci = True
+
+    if state == FAILURE and CI.is_required(check_name):
+        failed_cnt = Utils.get_failed_tests_number(description)
+        print(
+            f"Job status is [{state}] with [{failed_cnt}] failed test cases. status description [{description}]"
+        )
+        if (
+            failed_cnt
+            and failed_cnt <= CI.MAX_TOTAL_FAILURES_PER_JOB_BEFORE_BLOCKING_CI
+        ):
+            print("Won't block the CI workflow")
+            should_block_ci = False
+
+    if should_block_ci:
         sys.exit(1)
 
 

@@ -88,7 +88,7 @@ bool isChineseNewYearMode(const String & local_tz)
         /// Let's celebrate until Lantern Festival
         if (d <= days && d + 25 >= days)
             return true;
-        else if (d > days)
+        if (d > days)
             return false;
     }
     return false;
@@ -125,7 +125,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
     const char * begin = query.data();
     const char * end = begin + query.size();
-    Tokens tokens(begin, end, 1000, true);
+    Tokens tokens(begin, end, 10000, true);
     IParser::Pos token_iterator(tokens, static_cast<uint32_t>(1000), static_cast<uint32_t>(10000));
     Expected expected;
     expected.enable_highlighting = true;

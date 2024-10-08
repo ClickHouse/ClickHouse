@@ -31,8 +31,7 @@ String ASTSampleRatio::toString(Rational ratio)
 {
     if (ratio.denominator == 1)
         return toString(ratio.numerator);
-    else
-        return toString(ratio.numerator) + " / " + toString(ratio.denominator);
+    return toString(ratio.numerator) + " / " + toString(ratio.denominator);
 }
 
 void ASTSampleRatio::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const

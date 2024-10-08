@@ -18,7 +18,7 @@ SOURCE(CLICKHOUSE(TABLE 'polygons_test_table'))
 LAYOUT(POLYGON())
 LIFETIME(0);
 
-SELECT * FROM polygons_test_dictionary_no_option; -- {serverError 1}
+SELECT * FROM polygons_test_dictionary_no_option; -- {serverError UNSUPPORTED_METHOD}
 
 DROP DICTIONARY IF EXISTS polygons_test_dictionary;
 CREATE DICTIONARY polygons_test_dictionary

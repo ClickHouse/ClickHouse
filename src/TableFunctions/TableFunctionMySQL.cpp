@@ -3,6 +3,8 @@
 #if USE_MYSQL
 
 #include <Storages/StorageMySQL.h>
+
+#include <Core/Settings.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
@@ -21,6 +23,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 external_storage_connect_timeout_sec;
+    extern const SettingsUInt64 external_storage_rw_timeout_sec;
+}
 
 namespace ErrorCodes
 {
@@ -65,8 +72,8 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
     MySQLSettings mysql_settings;
 
     const auto & settings = context->getSettingsRef();
-    mysql_settings.connect_timeout = settings.external_storage_connect_timeout_sec;
-    mysql_settings.read_write_timeout = settings.external_storage_rw_timeout_sec;
+    mysql_settings.connect_timeout = settings[Setting::external_storage_connect_timeout_sec];
+    mysql_settings.read_write_timeout = settings[Setting::external_storage_rw_timeout_sec];
 
     for (auto * it = args.begin(); it != args.end(); ++it)
     {

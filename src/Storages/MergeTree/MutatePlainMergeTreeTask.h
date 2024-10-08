@@ -49,7 +49,7 @@ private:
 
     void prepare();
 
-    enum class State
+    enum class State : uint8_t
     {
         NEED_PREPARE,
         NEED_EXECUTE,

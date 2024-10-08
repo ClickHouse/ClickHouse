@@ -1,5 +1,9 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Common/quoteString.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <Parsers/IAST.h>
+
 #include <boost/range/algorithm_ext/erase.hpp>
 
 
@@ -7,48 +11,6 @@ namespace DB
 {
 namespace
 {
-    void formatColumnNames(const Strings & columns, String & result)
-    {
-        result += "(";
-        bool need_comma = false;
-        for (const auto & column : columns)
-        {
-            if (need_comma)
-                result += ", ";
-            need_comma = true;
-            result += backQuoteIfNeed(column);
-        }
-        result += ")";
-    }
-
-    void formatONClause(const AccessRightsElement & element, String & result)
-    {
-        result += "ON ";
-        if (element.isGlobalWithParameter())
-        {
-            if (element.any_parameter)
-                result += "*";
-            else
-                result += backQuoteIfNeed(element.parameter);
-        }
-        else if (element.any_database)
-        {
-            result += "*.*";
-        }
-        else
-        {
-            if (!element.database.empty())
-            {
-                result += backQuoteIfNeed(element.database);
-                result += ".";
-            }
-            if (element.any_table)
-                result += "*";
-            else
-                result += backQuoteIfNeed(element.table);
-        }
-    }
-
     void formatOptions(bool grant_option, bool is_partial_revoke, String & result)
     {
         if (is_partial_revoke)
@@ -67,20 +29,16 @@ namespace
         }
     }
 
-    void formatAccessFlagsWithColumns(const AccessFlags & access_flags, const Strings & columns, bool any_column, String & result)
+    void formatAccessFlagsWithColumns(const AccessRightsElement & element, String & result)
     {
         String columns_as_str;
-        if (!any_column)
+        if (!element.anyColumn())
         {
-            if (columns.empty())
-            {
-                result += "USAGE";
-                return;
-            }
-            formatColumnNames(columns, columns_as_str);
+            WriteBufferFromString buffer(columns_as_str);
+            element.formatColumnNames(buffer);
         }
 
-        auto keywords = access_flags.toKeywords();
+        auto keywords = element.access_flags.toKeywords();
         if (keywords.empty())
         {
             result += "USAGE";
@@ -101,9 +59,13 @@ namespace
     String toStringImpl(const AccessRightsElement & element, bool with_options)
     {
         String result;
-        formatAccessFlagsWithColumns(element.access_flags, element.columns, element.any_column, result);
+        formatAccessFlagsWithColumns(element, result);
         result += " ";
-        formatONClause(element, result);
+
+        WriteBufferFromOwnString buffer;
+        element.formatONClause(buffer);
+        result += buffer.str();
+
         if (with_options)
             formatOptions(element.grant_option, element.is_partial_revoke, result);
         return result;
@@ -123,7 +85,7 @@ namespace
 
             if (!part.empty())
                 part += ", ";
-            formatAccessFlagsWithColumns(element.access_flags, element.columns, element.any_column, part);
+            formatAccessFlagsWithColumns(element, part);
 
             bool next_element_uses_same_table_and_options = false;
             if (i != elements.size() - 1)
@@ -138,7 +100,10 @@ namespace
             if (!next_element_uses_same_table_and_options)
             {
                 part += " ";
-                formatONClause(element, part);
+                WriteBufferFromOwnString buffer;
+                element.formatONClause(buffer);
+                part += buffer.str();
+
                 if (with_options)
                     formatOptions(element.grant_option, element.is_partial_revoke, part);
                 if (result.empty())
@@ -153,14 +118,66 @@ namespace
     }
 }
 
+void AccessRightsElement::formatColumnNames(WriteBuffer & buffer) const
+{
+    buffer << "(";
+    bool need_comma = false;
+    for (const auto & column : columns)
+    {
+        if (std::exchange(need_comma, true))
+            buffer << ", ";
+        buffer << backQuoteIfNeed(column);
+        if (wildcard)
+            buffer << "*";
+    }
+    buffer << ")";
+}
+
+void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool hilite) const
+{
+    buffer << (hilite ? IAST::hilite_keyword : "") << "ON " << (hilite ? IAST::hilite_none : "");
+    if (isGlobalWithParameter())
+    {
+        if (anyParameter())
+            buffer << "*";
+        else
+        {
+            buffer << backQuoteIfNeed(parameter);
+            if (wildcard)
+                buffer << "*";
+        }
+    }
+    else if (anyDatabase())
+        buffer << "*.*";
+    else if (!table.empty())
+    {
+        if (!database.empty())
+            buffer << backQuoteIfNeed(database) << ".";
+
+        buffer << backQuoteIfNeed(table);
+
+        if (columns.empty() && wildcard)
+            buffer << "*";
+    }
+    else
+    {
+        buffer << backQuoteIfNeed(database);
+
+        if (wildcard)
+            buffer << "*";
+
+        buffer << ".*";
+    }
+}
+
 
 AccessRightsElement::AccessRightsElement(AccessFlags access_flags_, std::string_view database_)
-    : access_flags(access_flags_), database(database_), parameter(database_), any_database(false), any_parameter(false)
+    : access_flags(access_flags_), database(database_), parameter(database_)
 {
 }
 
 AccessRightsElement::AccessRightsElement(AccessFlags access_flags_, std::string_view database_, std::string_view table_)
-    : access_flags(access_flags_), database(database_), table(table_), any_database(false), any_table(false)
+    : access_flags(access_flags_), database(database_), table(table_)
 {
 }
 
@@ -170,10 +187,6 @@ AccessRightsElement::AccessRightsElement(
     , database(database_)
     , table(table_)
     , columns({String{column_}})
-    , any_database(false)
-    , any_table(false)
-    , any_column(false)
-    , any_parameter(false)
 {
 }
 
@@ -182,7 +195,7 @@ AccessRightsElement::AccessRightsElement(
     std::string_view database_,
     std::string_view table_,
     const std::vector<std::string_view> & columns_)
-    : access_flags(access_flags_), database(database_), table(table_), any_database(false), any_table(false), any_column(false)
+    : access_flags(access_flags_), database(database_), table(table_)
 {
     columns.resize(columns_.size());
     for (size_t i = 0; i != columns_.size(); ++i)
@@ -195,22 +208,18 @@ AccessRightsElement::AccessRightsElement(
     , database(database_)
     , table(table_)
     , columns(columns_)
-    , any_database(false)
-    , any_table(false)
-    , any_column(false)
-    , any_parameter(false)
 {
 }
 
 void AccessRightsElement::eraseNonGrantable()
 {
-    if (isGlobalWithParameter() && !any_parameter)
+    if (isGlobalWithParameter() && !anyParameter())
         access_flags &= AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel();
-    else if (!any_column)
+    else if (!anyColumn())
         access_flags &= AccessFlags::allFlagsGrantableOnColumnLevel();
-    else if (!any_table)
+    else if (!anyTable())
         access_flags &= AccessFlags::allFlagsGrantableOnTableLevel();
-    else if (!any_database)
+    else if (!anyDatabase())
         access_flags &= AccessFlags::allFlagsGrantableOnDatabaseLevel();
     else
         access_flags &= AccessFlags::allFlagsGrantableOnGlobalLevel();
@@ -224,7 +233,6 @@ void AccessRightsElement::replaceEmptyDatabase(const String & current_database)
 
 String AccessRightsElement::toString() const { return toStringImpl(*this, true); }
 String AccessRightsElement::toStringWithoutOptions() const { return toStringImpl(*this, false); }
-
 
 bool AccessRightsElements::empty() const { return std::all_of(begin(), end(), [](const AccessRightsElement & e) { return e.empty(); }); }
 
@@ -245,7 +253,7 @@ bool AccessRightsElements::sameOptions() const
 
 void AccessRightsElements::eraseNonGrantable()
 {
-    boost::range::remove_erase_if(*this, [](AccessRightsElement & element)
+    std::erase_if(*this, [](AccessRightsElement & element)
     {
         element.eraseNonGrantable();
         return element.empty();

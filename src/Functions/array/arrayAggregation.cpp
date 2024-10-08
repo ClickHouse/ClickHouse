@@ -1,5 +1,7 @@
 #include <base/defines.h>
 
+#include <Columns/IColumn.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnsNumber.h>
@@ -28,7 +30,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-enum class AggregateOperation
+enum class AggregateOperation : uint8_t
 {
     min,
     max,
@@ -102,6 +104,11 @@ struct ArrayAggregateImpl
 
     static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
     {
+        if constexpr (aggregate_operation == AggregateOperation::max || aggregate_operation == AggregateOperation::min)
+        {
+            return expression_return;
+        }
+
         DataTypePtr result;
 
         auto call = [&](const auto & types)
@@ -133,31 +140,6 @@ struct ArrayAggregateImpl
                     return true;
                 }
             }
-            else if constexpr (aggregate_operation == AggregateOperation::max || aggregate_operation == AggregateOperation::min)
-            {
-                if constexpr (IsDataTypeDate<DataType>)
-                {
-                    result = std::make_shared<DataType>();
-
-                    return true;
-                }
-                else if constexpr (!IsDataTypeDecimal<DataType>)
-                {
-                    std::string timezone = getDateTimeTimezone(*expression_return);
-                    result = std::make_shared<DataTypeDateTime>(timezone);
-
-                    return true;
-                }
-                else
-                {
-                    std::string timezone = getDateTimeTimezone(*expression_return);
-                    UInt32 scale = getDecimalScale(*expression_return);
-                    result = std::make_shared<DataTypeDateTime64>(scale, timezone);
-
-                    return true;
-                }
-            }
-
             return false;
         };
 
@@ -170,9 +152,62 @@ struct ArrayAggregateImpl
         return result;
     }
 
+    template <AggregateOperation op = aggregate_operation>
+    requires(op == AggregateOperation::min || op == AggregateOperation::max)
+    static void executeMinOrMax(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
+    {
+        const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(&*mapped);
+        if (const_column)
+        {
+            MutableColumnPtr res_column = const_column->getDataColumn().cloneEmpty();
+            res_column->insertMany(const_column->getField(), offsets.size());
+            res_ptr = std::move(res_column);
+            return;
+        }
+
+        MutableColumnPtr res_column = mapped->cloneEmpty();
+        static constexpr int nan_null_direction_hint = aggregate_operation == AggregateOperation::min ? 1 : -1;
+
+        /// TODO: Introduce row_begin and row_end to getPermutation or an equivalent function to use that instead
+        /// (same use case as SingleValueDataBase::getSmallestIndex)
+        UInt64 start_of_array = 0;
+        for (auto end_of_array : offsets)
+        {
+            /// Array is empty
+            if (start_of_array == end_of_array)
+            {
+                res_column->insertDefault();
+                continue;
+            }
+
+            UInt64 index = start_of_array;
+            for (UInt64 i = index + 1; i < end_of_array; i++)
+            {
+                if constexpr (aggregate_operation == AggregateOperation::min)
+                {
+                    if ((mapped->compareAt(i, index, *mapped, nan_null_direction_hint) < 0))
+                        index = i;
+                }
+                else
+                {
+                    if ((mapped->compareAt(i, index, *mapped, nan_null_direction_hint) > 0))
+                        index = i;
+                }
+            }
+
+            res_column->insertFrom(*mapped, index);
+            start_of_array = end_of_array;
+        }
+
+        chassert(res_column->size() == offsets.size());
+        res_ptr = std::move(res_column);
+    }
+
     template <typename Element>
     static NO_SANITIZE_UNDEFINED bool executeType(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
     {
+        /// Min and Max are implemented in a different function
+        static_assert(aggregate_operation != AggregateOperation::min && aggregate_operation != AggregateOperation::max);
         using ResultType = ArrayAggregateResult<Element, aggregate_operation>;
         using ColVecType = ColumnVectorOrDecimal<Element>;
         using ColVecResultType = ColumnVectorOrDecimal<ResultType>;
@@ -214,11 +249,6 @@ struct ArrayAggregateImpl
                     size_t array_size = offsets[i] - pos;
                     /// Just multiply the value by array size.
                     res[i] = x * static_cast<ResultType>(array_size);
-                }
-                else if constexpr (aggregate_operation == AggregateOperation::min ||
-                                aggregate_operation == AggregateOperation::max)
-                {
-                    res[i] = x;
                 }
                 else if constexpr (aggregate_operation == AggregateOperation::average)
                 {
@@ -310,20 +340,6 @@ struct ArrayAggregateImpl
                 {
                     aggregate_value += element;
                 }
-                else if constexpr (aggregate_operation == AggregateOperation::min)
-                {
-                    if (element < aggregate_value)
-                    {
-                        aggregate_value = element;
-                    }
-                }
-                else if constexpr (aggregate_operation == AggregateOperation::max)
-                {
-                    if (element > aggregate_value)
-                    {
-                        aggregate_value = element;
-                    }
-                }
                 else if constexpr (aggregate_operation == AggregateOperation::product)
                 {
                     if constexpr (is_decimal<Element>)
@@ -381,30 +397,38 @@ struct ArrayAggregateImpl
         const IColumn::Offsets & offsets = array.getOffsets();
         ColumnPtr res;
 
-        if (executeType<UInt8>(mapped, offsets, res) ||
-            executeType<UInt16>(mapped, offsets, res) ||
-            executeType<UInt32>(mapped, offsets, res) ||
-            executeType<UInt64>(mapped, offsets, res) ||
-            executeType<UInt128>(mapped, offsets, res) ||
-            executeType<UInt256>(mapped, offsets, res) ||
-            executeType<Int8>(mapped, offsets, res) ||
-            executeType<Int16>(mapped, offsets, res) ||
-            executeType<Int32>(mapped, offsets, res) ||
-            executeType<Int64>(mapped, offsets, res) ||
-            executeType<Int128>(mapped, offsets, res) ||
-            executeType<Int256>(mapped, offsets, res) ||
-            executeType<Float32>(mapped, offsets, res) ||
-            executeType<Float64>(mapped, offsets, res) ||
-            executeType<Decimal32>(mapped, offsets, res) ||
-            executeType<Decimal64>(mapped, offsets, res) ||
-            executeType<Decimal128>(mapped, offsets, res) ||
-            executeType<Decimal256>(mapped, offsets, res) ||
-            executeType<DateTime64>(mapped, offsets, res))
+        if constexpr (aggregate_operation == AggregateOperation::min || aggregate_operation == AggregateOperation::max)
         {
+            executeMinOrMax(mapped, offsets, res);
             return res;
         }
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arraySum: {}", mapped->getName());
+        {
+            if (executeType<UInt8>(mapped, offsets, res) ||
+                executeType<UInt16>(mapped, offsets, res) ||
+                executeType<UInt32>(mapped, offsets, res) ||
+                executeType<UInt64>(mapped, offsets, res) ||
+                executeType<UInt128>(mapped, offsets, res) ||
+                executeType<UInt256>(mapped, offsets, res) ||
+                executeType<Int8>(mapped, offsets, res) ||
+                executeType<Int16>(mapped, offsets, res) ||
+                executeType<Int32>(mapped, offsets, res) ||
+                executeType<Int64>(mapped, offsets, res) ||
+                executeType<Int128>(mapped, offsets, res) ||
+                executeType<Int256>(mapped, offsets, res) ||
+                executeType<Float32>(mapped, offsets, res) ||
+                executeType<Float64>(mapped, offsets, res) ||
+                executeType<Decimal32>(mapped, offsets, res) ||
+                executeType<Decimal64>(mapped, offsets, res) ||
+                executeType<Decimal128>(mapped, offsets, res) ||
+                executeType<Decimal256>(mapped, offsets, res) ||
+                executeType<DateTime64>(mapped, offsets, res))
+            {
+                return res;
+            }
+        }
+
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arraySum: {}", mapped->getName());
     }
 };
 

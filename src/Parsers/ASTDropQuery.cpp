@@ -18,12 +18,11 @@ String ASTDropQuery::getID(char delim) const
 {
     if (kind == ASTDropQuery::Kind::Drop)
         return "DropQuery" + (delim + getDatabase()) + delim + getTable();
-    else if (kind == ASTDropQuery::Kind::Detach)
+    if (kind == ASTDropQuery::Kind::Detach)
         return "DetachQuery" + (delim + getDatabase()) + delim + getTable();
-    else if (kind == ASTDropQuery::Kind::Truncate)
+    if (kind == ASTDropQuery::Kind::Truncate)
         return "TruncateQuery" + (delim + getDatabase()) + delim + getTable();
-    else
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Not supported kind of drop query.");
+    throw Exception(ErrorCodes::SYNTAX_ERROR, "Not supported kind of drop query.");
 }
 
 ASTPtr ASTDropQuery::clone() const
@@ -50,7 +49,7 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
         settings.ostr << "TEMPORARY ";
 
     if (has_all_tables)
-        settings.ostr << "ALL TABLES ";
+        settings.ostr << "ALL TABLES FROM ";
     else if (!table && !database_and_tables && database)
         settings.ostr << "DATABASE ";
     else if (is_dictionary)

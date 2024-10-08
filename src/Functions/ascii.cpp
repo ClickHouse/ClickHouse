@@ -23,49 +23,43 @@ struct AsciiImpl
     using ReturnType = Int32;
 
 
-    static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets, PaddedPODArray<ReturnType> & res)
+    static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets, PaddedPODArray<ReturnType> & res, size_t input_rows_count)
     {
-        size_t size = offsets.size();
-
         ColumnString::Offset prev_offset = 0;
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             res[i] = doAscii(data, prev_offset, offsets[i] - prev_offset - 1);
             prev_offset = offsets[i];
         }
     }
 
-    [[noreturn]] static void vectorFixedToConstant(const ColumnString::Chars &  /*data*/, size_t  /*n*/, Int32 &  /*res*/)
+    [[noreturn]] static void vectorFixedToConstant(const ColumnString::Chars &, size_t, Int32 &, size_t)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "vectorFixedToConstant not implemented for function {}", AsciiName::name);
     }
 
-    static void vectorFixedToVector(const ColumnString::Chars & data, size_t n, PaddedPODArray<ReturnType> & res)
+    static void vectorFixedToVector(const ColumnString::Chars & data, size_t n, PaddedPODArray<ReturnType> & res, size_t input_rows_count)
     {
-        size_t size = data.size() / n;
-
-        for (size_t i = 0; i < size; ++i)
-        {
+        for (size_t i = 0; i < input_rows_count; ++i)
             res[i] = doAscii(data, i * n, n);
-        }
     }
 
-    [[noreturn]] static void array(const ColumnString::Offsets & /*offsets*/, PaddedPODArray<ReturnType> & /*res*/)
+    [[noreturn]] static void array(const ColumnString::Offsets &, PaddedPODArray<ReturnType> &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to Array argument", AsciiName::name);
     }
 
-    [[noreturn]] static void uuid(const ColumnUUID::Container & /*offsets*/, size_t /*n*/, PaddedPODArray<ReturnType> & /*res*/)
+    [[noreturn]] static void uuid(const ColumnUUID::Container &, size_t, PaddedPODArray<ReturnType> &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to UUID argument", AsciiName::name);
     }
 
-    [[noreturn]] static void ipv6(const ColumnIPv6::Container & /*offsets*/, size_t /*n*/, PaddedPODArray<ReturnType> & /*res*/)
+    [[noreturn]] static void ipv6(const ColumnIPv6::Container &, size_t, PaddedPODArray<ReturnType> &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to IPv6 argument", AsciiName::name);
     }
 
-    [[noreturn]] static void ipv4(const ColumnIPv4::Container & /*offsets*/, size_t /*n*/, PaddedPODArray<ReturnType> & /*res*/)
+    [[noreturn]] static void ipv4(const ColumnIPv4::Container &, size_t, PaddedPODArray<ReturnType> &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to IPv4 argument", AsciiName::name);
     }
@@ -90,7 +84,7 @@ If s is empty, the result is 0. If the first character is not an ASCII character
         )",
         .examples{{"ascii", "SELECT ascii('234')", ""}},
         .categories{"String"}
-        }, FunctionFactory::CaseInsensitive);
+        }, FunctionFactory::Case::Insensitive);
 }
 
 }

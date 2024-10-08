@@ -19,16 +19,16 @@ public:
 
     explicit FunctionInitialQueryID(const String & initial_query_id_) : initial_query_id(initial_query_id_) {}
 
-    inline String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    inline size_t getNumberOfArguments() const override { return 0; }
+    size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    inline bool isDeterministic() const override { return false; }
+    bool isDeterministic() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -41,6 +41,6 @@ public:
 REGISTER_FUNCTION(InitialQueryID)
 {
     factory.registerFunction<FunctionInitialQueryID>();
-    factory.registerAlias("initial_query_id", FunctionInitialQueryID::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("initial_query_id", FunctionInitialQueryID::name, FunctionFactory::Case::Insensitive);
 }
 }

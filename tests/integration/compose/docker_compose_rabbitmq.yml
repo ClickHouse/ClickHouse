@@ -1,9 +1,9 @@
-version: '2.3'
-
 services:
     rabbitmq1:
-        image: rabbitmq:3.12.6-management-alpine
+        image: rabbitmq:4.0.2-alpine
         hostname: rabbitmq1
+        environment:
+            RABBITMQ_FEATURE_FLAGS: feature_flags_v2,message_containers
         expose:
             - ${RABBITMQ_PORT:-5672}
             - ${RABBITMQ_SECURE_PORT:-5671}
@@ -16,3 +16,4 @@ services:
             - /misc/rabbitmq/ca-cert.pem:/etc/rabbitmq/ca-cert.pem
             - /misc/rabbitmq/server-cert.pem:/etc/rabbitmq/server-cert.pem
             - /misc/rabbitmq/server-key.pem:/etc/rabbitmq/server-key.pem
+            - /misc/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins

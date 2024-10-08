@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/quantileddsketch
-sidebar_position: 211
+sidebar_position: 171
 title: quantileDD
 ---
 
@@ -9,7 +9,7 @@ Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a 
 **Syntax**
 
 ``` sql
-quantileDDsketch[relative_accuracy, (level)](expr)
+quantileDD(relative_accuracy, [level])(expr)
 ```
 
 **Arguments**

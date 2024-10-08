@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 
@@ -8,6 +9,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/WindowDescription.h>
 
 namespace DB
 {
@@ -37,7 +39,7 @@ public:
       * Necessary actions are not added in actions dag output.
       * Returns query tree expression node actions dag nodes.
       */
-    ActionsDAG::NodeRawConstPtrs visit(ActionsDAGPtr actions_dag, QueryTreeNodePtr expression_node);
+    ActionsDAG::NodeRawConstPtrs visit(ActionsDAG & actions_dag, QueryTreeNodePtr expression_node);
 
 private:
     const PlannerContextPtr planner_context;
@@ -73,16 +75,8 @@ String calculateConstantActionNodeName(const Field & constant_literal);
   * Window node action name can only be part of window function action name.
   * For column node column node identifier from planner context is used, if use_column_identifier_as_action_node_name = true.
   */
-String calculateWindowNodeActionName(const QueryTreeNodePtr & node,
-    const PlannerContext & planner_context,
-    QueryTreeNodeToName & node_to_name,
-    bool use_column_identifier_as_action_node_name = true);
-
-/** Calculate action node name for window node.
-  * Window node action name can only be part of window function action name.
-  * For column node column node identifier from planner context is used, if use_column_identifier_as_action_node_name = true.
-  */
-String calculateWindowNodeActionName(const QueryTreeNodePtr & node,
+String calculateWindowNodeActionName(const QueryTreeNodePtr & function_node,
+    const QueryTreeNodePtr & window_node,
     const PlannerContext & planner_context,
     bool use_column_identifier_as_action_node_name = true);
 

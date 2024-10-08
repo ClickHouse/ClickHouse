@@ -1,0 +1,36 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_s3_plain_rewritable>
+                <type>s3_plain_rewritable</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <endpoint_subpath from_env="ENDPOINT_SUBPATH"></endpoint_subpath>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+            </disk_s3_plain_rewritable>
+            <disk_cache_s3_plain_rewritable>
+                <type>cache</type>
+                <disk>disk_s3_plain_rewritable</disk>
+                <path>/var/lib/clickhouse/disks/s3_plain_rewritable_cache/</path>
+                <max_size>1000000000</max_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+            </disk_cache_s3_plain_rewritable>
+        </disks>
+        <policies>
+            <s3_plain_rewritable>
+                <volumes>
+                    <main>
+                        <disk>disk_s3_plain_rewritable</disk>
+                    </main>
+                </volumes>
+            </s3_plain_rewritable>
+            <cache_s3_plain_rewritable>
+                <volumes>
+                    <main>
+                        <disk>disk_cache_s3_plain_rewritable</disk>
+                    </main>
+                </volumes>
+            </cache_s3_plain_rewritable>
+        </policies>
+    </storage_configuration>
+</clickhouse>

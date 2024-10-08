@@ -40,4 +40,23 @@ struct MatchedTrees
 };
 
 MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag, const ActionsDAG & outer_dag, bool check_monotonicity = true);
+
+/// Update SortDescription (inplace) by applying ActionsDAG.
+///
+/// Assuming that sorting properties are fulfilled for inputs, calculate sorting properties for the outputs.
+/// If SortColumnDescription does not match any input, we keep it unchanged (the column was not affected by DAG).
+///
+/// Monotonic functions are supported.
+/// There could be many possible results, e.g. for a DAG
+/// (ts, value) -> (ts AS timestamp, -identity(ts), toStartOfHour(ts), -value)
+/// with SortDescription (ts, value) possible results are
+/// * (timestamp, -value DESC)           : the best one, cause no monotonic function is applied to 'ts'
+/// * (-identity(ts) DESC, -value DESC)  : second, cause strict monotonic chain is applied to 'ts'
+/// * (toStartOfHour(ts))                : third, cause non-strict monotonic function is applied to 'ts'
+/// Only one "best" result is returned for now.
+void applyActionsToSortDescription(
+    SortDescription & description,
+    const ActionsDAG & dag,
+    /// Ignore this one output of DAG. Used for FilterStep where filter column is removed.
+    const ActionsDAG::Node * output_to_skip = nullptr);
 }

@@ -26,8 +26,7 @@ public:
     {
         if (iter->filename().empty())
             return iter->parent_path().filename();
-        else
-            return iter->filename();
+        return iter->filename();
     }
 
 private:

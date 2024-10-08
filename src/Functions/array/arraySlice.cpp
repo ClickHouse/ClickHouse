@@ -105,7 +105,7 @@ public:
             {
                 return arguments[0].column;
             }
-            else if (isColumnConst(*length_column))
+            if (isColumnConst(*length_column))
                 sink = GatherUtils::sliceFromLeftConstantOffsetBounded(*source, 0, length_column->getInt(0));
             else
             {

@@ -5,12 +5,18 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool optimize_time_filter_with_preimage;
+}
 
 namespace ErrorCodes
 {
@@ -56,7 +62,7 @@ public:
             {"greaterOrEquals", "lessOrEquals"},
         };
 
-        if (!getSettings().optimize_time_filter_with_preimage)
+        if (!getSettings()[Setting::optimize_time_filter_with_preimage])
             return;
 
         const auto * function = node->as<FunctionNode>();
@@ -71,7 +77,7 @@ public:
 
         for (size_t i = 0; i < function->getArguments().getNodes().size(); i++)
         {
-            if (const auto * func = function->getArguments().getNodes()[i]->as<FunctionNode>())
+            if (const auto * /*func*/ _ = function->getArguments().getNodes()[i]->as<FunctionNode>())
             {
                 func_id = i;
                 break;
@@ -141,13 +147,13 @@ private:
         const auto & column_type = column_node_typed.getColumnType().get();
         if (isDateOrDate32(column_type))
         {
-            start_date_or_date_time = date_lut.dateToString(range.first.get<DateLUTImpl::Time>());
-            end_date_or_date_time = date_lut.dateToString(range.second.get<DateLUTImpl::Time>());
+            start_date_or_date_time = date_lut.dateToString(range.first.safeGet<DateLUTImpl::Time>());
+            end_date_or_date_time = date_lut.dateToString(range.second.safeGet<DateLUTImpl::Time>());
         }
         else if (isDateTime(column_type) || isDateTime64(column_type))
         {
-            start_date_or_date_time = date_lut.timeToString(range.first.get<DateLUTImpl::Time>());
-            end_date_or_date_time = date_lut.timeToString(range.second.get<DateLUTImpl::Time>());
+            start_date_or_date_time = date_lut.timeToString(range.first.safeGet<DateLUTImpl::Time>());
+            end_date_or_date_time = date_lut.timeToString(range.second.safeGet<DateLUTImpl::Time>());
         }
         else [[unlikely]]
             return {};
@@ -159,27 +165,26 @@ private:
                 createFunctionNode("greaterOrEquals", column_node, std::make_shared<ConstantNode>(start_date_or_date_time)),
                 createFunctionNode("less", column_node, std::make_shared<ConstantNode>(end_date_or_date_time)));
         }
-        else if (comparator == "notEquals")
+        if (comparator == "notEquals")
         {
             return createFunctionNode(
                 "or",
                 createFunctionNode("less", column_node, std::make_shared<ConstantNode>(start_date_or_date_time)),
                 createFunctionNode("greaterOrEquals", column_node, std::make_shared<ConstantNode>(end_date_or_date_time)));
         }
-        else if (comparator == "greater")
+        if (comparator == "greater")
         {
             return createFunctionNode("greaterOrEquals", column_node, std::make_shared<ConstantNode>(end_date_or_date_time));
         }
-        else if (comparator == "lessOrEquals")
+        if (comparator == "lessOrEquals")
         {
             return createFunctionNode("less", column_node, std::make_shared<ConstantNode>(end_date_or_date_time));
         }
-        else if (comparator == "less" || comparator == "greaterOrEquals")
+        if (comparator == "less" || comparator == "greaterOrEquals")
         {
             return createFunctionNode(comparator, column_node, std::make_shared<ConstantNode>(start_date_or_date_time));
         }
-        else [[unlikely]]
-        {
+        [[unlikely]] {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Expected equals, notEquals, less, lessOrEquals, greater, greaterOrEquals. Actual {}",

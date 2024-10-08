@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 for i in $(seq 0 1)
 do
-    CH_CLIENT="$CLICKHOUSE_CLIENT --optimize_move_to_prewhere=1 --convert_query_to_cnf=0 --optimize_read_in_order=1 --allow_experimental_analyzer=$i"
+    CH_CLIENT="$CLICKHOUSE_CLIENT --optimize_move_to_prewhere=1 --convert_query_to_cnf=0 --optimize_read_in_order=1 --enable_analyzer=$i"
 
     $CH_CLIENT -q "drop table if exists test_index"
     $CH_CLIENT -q "drop table if exists idx"

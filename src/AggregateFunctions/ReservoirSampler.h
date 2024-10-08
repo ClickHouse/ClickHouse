@@ -260,8 +260,7 @@ private:
         /// With a large number of values, we will generate random numbers several times slower.
         if (limit <= static_cast<UInt64>(pcg32_fast::max()))
             return rng() % limit;
-        else
-            return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(pcg32_fast::max()) + 1ULL) + static_cast<UInt64>(rng())) % limit;
+        return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(pcg32_fast::max()) + 1ULL) + static_cast<UInt64>(rng())) % limit;
     }
 
     void sortIfNeeded()
@@ -277,7 +276,6 @@ private:
     {
         if (OnEmpty == ReservoirSamplerOnEmpty::THROW)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Quantile of empty ReservoirSampler");
-        else
-            return NanLikeValueConstructor<ResultType, std::is_floating_point_v<ResultType>>::getValue();
+        return NanLikeValueConstructor<ResultType, std::is_floating_point_v<ResultType>>::getValue();
     }
 };

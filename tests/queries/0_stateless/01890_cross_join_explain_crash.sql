@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 SET joined_subquery_requires_alias = 0;
 
 select * FROM (SELECT 1), (SELECT 1), (SELECT 1);

@@ -16,6 +16,10 @@ bool less(const Field & lhs, const Field & rhs, int direction)
 
 bool equals(const Field & lhs, const Field & rhs)
 {
+    /// This will treat NaNs as equal
+    if (lhs.getType() == rhs.getType())
+        return lhs == rhs;
+
     return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs);
 }
 

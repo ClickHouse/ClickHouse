@@ -151,7 +151,7 @@ Check:
 
 - Endpoint settings.
 
-    Check [listen_host](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) and [tcp_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) settings.
+    Check [listen_host](../operations/server-configuration-parameters/settings.md#listen_host) and [tcp_port](../operations/server-configuration-parameters/settings.md#tcp_port) settings.
 
     ClickHouse server accepts localhost connections only by default.
 
@@ -163,8 +163,8 @@ Check:
 
     Check:
 
-    - The [tcp_port_secure](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) setting.
-    - Settings for [SSL certificates](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
+    - The [tcp_port_secure](../operations/server-configuration-parameters/settings.md#tcp_port_secure) setting.
+    - Settings for [SSL certificates](../operations/server-configuration-parameters/settings.md#openssl).
 
     Use proper parameters while connecting. For example, use the `port_secure` parameter with `clickhouse_client`.
 

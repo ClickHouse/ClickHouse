@@ -15,6 +15,7 @@ class Context;
 class ITableFunctionFileLike : public ITableFunction
 {
 public:
+    static constexpr auto max_number_of_arguments = 4;
     static constexpr auto signature = " - filename\n"
                                       " - filename, format\n"
                                       " - filename, format, structure\n"
@@ -32,7 +33,7 @@ public:
 
     NameSet getVirtualsToCheckBeforeUsingStructureHint() const override;
 
-    static size_t getMaxNumberOfArguments() { return 4; }
+    static size_t getMaxNumberOfArguments() { return max_number_of_arguments; }
 
     static void updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure, const String & format, const ContextPtr &);
 

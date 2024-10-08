@@ -2,7 +2,6 @@
 
 #include <Core/NamesAndAliases.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -15,7 +14,7 @@ namespace DB
 
 struct FilesystemCacheLogElement
 {
-    enum class CacheType
+    enum class CacheType : uint8_t
     {
         READ_FROM_CACHE,
         READ_FROM_FS_AND_DOWNLOADED_TO_CACHE,

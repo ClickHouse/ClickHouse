@@ -555,7 +555,7 @@ if args.report == "main":
             "Total client time for measured query runs,&nbsp;s",  # 2
             "Queries",  # 3
             "Longest query, total for measured runs,&nbsp;s",  # 4
-            "Wall clock time per query,&nbsp;s",  # 5
+            "Average query wall clock time,&nbsp;s",  # 5
             "Shortest query, total for measured runs,&nbsp;s",  # 6
             "",  # Runs                                               #7
         ]

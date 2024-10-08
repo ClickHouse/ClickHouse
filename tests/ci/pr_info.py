@@ -9,14 +9,17 @@ from urllib.parse import quote
 from unidiff import PatchSet  # type: ignore
 
 from build_download_helper import get_gh_api
+from ci_config import Labels
 from env_helper import (
     GITHUB_EVENT_PATH,
     GITHUB_REPOSITORY,
     GITHUB_RUN_URL,
     GITHUB_SERVER_URL,
+    GITHUB_UPSTREAM_REPOSITORY,
 )
+from get_robot_token import get_best_robot_token
+from github_helper import GitHub
 
-SKIP_MERGEABLE_CHECK_LABEL = "skip mergeable check"
 NeedsDataType = Dict[str, Dict[str, Union[str, Dict[str, str]]]]
 
 DIFF_IN_DOCUMENTATION_EXT = [
@@ -60,7 +63,7 @@ def get_pr_for_commit(sha, ref):
         data = response.json()
         our_prs = []  # type: List[Dict]
         if len(data) > 1:
-            print("Got more than one pr for commit", sha)
+            logging.warning("Got more than one pr for commit %s", sha)
         for pr in data:
             # We need to check if the PR is created in our repo, because
             # https://github.com/kaynewu/ClickHouse/pull/2
@@ -72,13 +75,20 @@ def get_pr_for_commit(sha, ref):
             if pr["head"]["ref"] in ref:
                 return pr
             our_prs.append(pr)
-        print(
-            f"Cannot find PR with required ref {ref}, sha {sha} - returning first one"
+        logging.warning(
+            "Cannot find PR with required ref %s, sha %s - returning first one",
+            ref,
+            sha,
         )
         first_pr = our_prs[0]
         return first_pr
     except Exception as ex:
-        print(f"Cannot fetch PR info from commit {ref}, {sha}", ex)
+        logging.error(
+            "Cannot fetch PR info from commit ref %s, sha %s, exception: %s",
+            ref,
+            sha,
+            ex,
+        )
     return None
 
 
@@ -158,7 +168,7 @@ class PRInfo:
             else:
                 self.sha = github_event["pull_request"]["head"]["sha"]
 
-            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
+            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
             self.pr_html_url = f"{repo_prefix}/pull/{self.number}"
 
             # master or backport/xx.x/xxxxx - where the PR will be merged
@@ -213,7 +223,7 @@ class PRInfo:
                 .replace("{base}", base_sha)
                 .replace("{head}", self.sha)
             )
-            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
+            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
 
         elif "commits" in github_event:
             self.event_type = EventType.PUSH
@@ -227,7 +237,7 @@ class PRInfo:
                     logging.error("Failed to convert %s to integer", merged_pr)
             self.sha = github_event["after"]
             pull_request = get_pr_for_commit(self.sha, github_event["ref"])
-            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
+            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
 
             if pull_request is None or pull_request["state"] == "closed":
                 # it's merged PR to master
@@ -252,7 +262,7 @@ class PRInfo:
                 self.head_ref = pull_request["head"]["ref"]
                 self.head_name = pull_request["head"]["repo"]["full_name"]
                 self.pr_html_url = pull_request["html_url"]
-                if "pr-backport" in self.labels:
+                if Labels.PR_BACKPORT in self.labels:
                     # head1...head2 gives changes in head2 since merge base
                     # Thag's why we need {self.head_ref}...master to get
                     # files changed in upstream AND master...{self.head_ref}
@@ -260,12 +270,12 @@ class PRInfo:
                     self.diff_urls.append(
                         self.compare_url(
                             pull_request["base"]["repo"]["default_branch"],
-                            pull_request["head"]["label"],
+                            pull_request["head"]["sha"],
                         )
                     )
                     self.diff_urls.append(
                         self.compare_url(
-                            pull_request["head"]["label"],
+                            pull_request["head"]["sha"],
                             pull_request["base"]["repo"]["default_branch"],
                         )
                     )
@@ -275,28 +285,33 @@ class PRInfo:
                     ]
                 else:
                     self.diff_urls.append(self.compare_pr_url(pull_request))
-                if "release" in self.labels:
+                if Labels.RELEASE in self.labels:
                     # For release PRs we must get not only files changed in the PR
                     # itself, but as well files changed since we branched out
                     self.diff_urls.append(
                         self.compare_url(
-                            pull_request["head"]["label"],
+                            pull_request["head"]["sha"],
                             pull_request["base"]["repo"]["default_branch"],
                         )
                     )
         else:
             if "schedule" in github_event:
                 self.event_type = EventType.SCHEDULE
-            else:
+            elif "inputs" in github_event:
                 # assume this is a dispatch
                 self.event_type = EventType.DISPATCH
-            print("event.json does not match pull_request or push:")
-            print(json.dumps(github_event, sort_keys=True, indent=4))
+                print("PR Info:")
+                print(self)
+            else:
+                logging.warning(
+                    "event.json does not match pull_request or push:\n%s",
+                    json.dumps(github_event, sort_keys=True, indent=4),
+                )
             self.sha = os.getenv(
                 "GITHUB_SHA", "0000000000000000000000000000000000000000"
             )
             self.number = 0
-            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
+            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
             self.pr_html_url = f"{repo_prefix}/commits/{ref}"
             self.base_ref = ref
             self.base_name = self.repo_full_name
@@ -308,21 +323,30 @@ class PRInfo:
 
     @property
     def is_master(self) -> bool:
-        return self.number == 0 and self.head_ref == "master"
-
-    @property
-    def is_release(self) -> bool:
-        return self.number == 0 and bool(
-            re.match(r"^2[1-9]\.[1-9][0-9]*$", self.head_ref)
+        return (
+            self.number == 0 and self.head_ref == "master" and not self.is_merge_queue
         )
 
     @property
-    def is_release_branch(self) -> bool:
-        return self.number == 0
+    def is_release(self) -> bool:
+        return self.is_master or (
+            self.is_push_event
+            and (
+                bool(re.match(r"^2[1-9]\.[1-9][0-9]*$", self.head_ref))
+                or bool(re.match(r"^release/2[1-9]\.[1-9][0-9]*$", self.head_ref))
+            )
+        )
 
     @property
     def is_pr(self):
-        return self.event_type == EventType.PULL_REQUEST
+        if self.event_type == EventType.PULL_REQUEST:
+            assert self.number
+            return True
+        return False
+
+    @property
+    def is_push_event(self) -> bool:
+        return self.event_type == EventType.PUSH
 
     @property
     def is_scheduled(self) -> bool:
@@ -337,7 +361,7 @@ class PRInfo:
         return self.event_type == EventType.DISPATCH
 
     def compare_pr_url(self, pr_object: dict) -> str:
-        return self.compare_url(pr_object["base"]["label"], pr_object["head"]["label"])
+        return self.compare_url(pr_object["base"]["sha"], pr_object["head"]["sha"])
 
     @staticmethod
     def compare_url(first: str, second: str) -> str:
@@ -351,9 +375,6 @@ class PRInfo:
         if self.changed_files_requested:
             return
 
-        if not getattr(self, "diff_urls", False):
-            raise TypeError("The event does not have diff URLs")
-
         for diff_url in self.diff_urls:
             response = get_gh_api(
                 diff_url,
@@ -364,7 +385,7 @@ class PRInfo:
             diff_object = PatchSet(response.text)
             self.changed_files.update({f.path for f in diff_object})
         self.changed_files_requested = True
-        print(f"Fetched info about {len(self.changed_files)} changed files")
+        logging.info("Fetched info about %s changed files", len(self.changed_files))
 
     def get_dict(self):
         return {
@@ -427,6 +448,36 @@ class PRInfo:
             if "contrib/" in f:
                 return True
         return False
+
+    def get_latest_sync_commit(self):
+        gh = GitHub(get_best_robot_token(), per_page=100)
+        assert self.head_ref.startswith("sync-upstream/pr/")
+        assert self.repo_full_name != GITHUB_UPSTREAM_REPOSITORY
+        upstream_repo = gh.get_repo(GITHUB_UPSTREAM_REPOSITORY)
+        upstream_pr_number = int(self.head_ref.split("/pr/", maxsplit=1)[1])
+        upstream_pr = upstream_repo.get_pull(upstream_pr_number)
+        sync_repo = gh.get_repo(GITHUB_REPOSITORY)
+        sync_pr = sync_repo.get_pull(self.number)
+        # Find the commit that is in both repos, upstream and cloud
+        # Do not ever use `reversed` here, otherwise the list of commits is not full
+        sync_commits = list(sync_pr.get_commits())
+        upstream_commits = list(upstream_pr.get_commits())
+        # Github objects are compared by _url attribute. We can't compare them directly and
+        # should compare commits by SHA1
+        upstream_shas = [c.sha for c in upstream_commits]
+        logging.info("Commits in upstream PR:\n %s", ", ".join(upstream_shas))
+        sync_shas = [c.sha for c in sync_commits]
+        logging.info("Commits in sync PR:\n %s", ", ".join(sync_shas))
+
+        # find latest synced commit, search from the latest
+        upstream_commits.reverse()
+        last_synced_upstream_commit = None
+        for commit in upstream_commits:
+            if commit.sha in sync_shas:
+                last_synced_upstream_commit = commit
+                break
+        assert last_synced_upstream_commit
+        return last_synced_upstream_commit
 
 
 class FakePRInfo:

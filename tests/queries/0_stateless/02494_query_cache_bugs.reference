@@ -22,3 +22,4 @@ Row 1:
 ──────
 x: 1
 2
+-- Bug 67476: Queries with overflow mode != throw must not be cached by the query cache

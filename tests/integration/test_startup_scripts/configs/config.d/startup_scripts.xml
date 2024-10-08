@@ -1,0 +1,25 @@
+<clickhouse>
+    <startup_scripts>
+        <scripts>
+            <query>CREATE ROLE OR REPLACE testrole</query>
+        </scripts>
+        <scripts>
+            <query>GRANT CREATE USER, ALTER USER, DROP USER, SHOW USERS, SHOW CREATE USER ON *.* TO 'testrole' WITH GRANT OPTION;</query>
+        </scripts>
+        <scripts>
+            <query>CREATE TABLE TestTable (id UInt64) ENGINE=TinyLog</query>
+            <condition>SELECT 1;</condition>
+        </scripts>
+        <scripts>
+            <query>SELECT * FROM system.query_log LIMIT 1</query>
+        </scripts>
+        <scripts>
+            <query>SELECT 1 SETTINGS skip_unavailable_shards = 1</query>
+            <condition>SELECT 1;</condition>
+        </scripts>
+        <scripts>
+            <query>SELECT 1 SETTINGS skip_unavailable_shards = 1</query>
+            <condition>SELECT 1;</condition>
+        </scripts>
+    </startup_scripts>
+</clickhouse>

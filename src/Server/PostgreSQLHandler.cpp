@@ -10,10 +10,10 @@
 #include <base/scope_guard.h>
 #include <pcg_random.hpp>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
+#include <Core/Settings.h>
 
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>
@@ -22,6 +22,13 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+}
 
 namespace ErrorCodes
 {
@@ -59,7 +66,6 @@ void PostgreSQLHandler::changeIO(Poco::Net::StreamSocket & socket)
 void PostgreSQLHandler::run()
 {
     setThreadName("PostgresHandler");
-    ThreadStatus thread_status;
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::POSTGRESQL);
     SCOPE_EXIT({ session.reset(); });
@@ -283,11 +289,13 @@ void PostgreSQLHandler::processQuery()
 
         const auto & settings = session->sessionContext()->getSettingsRef();
         std::vector<String> queries;
-        auto parse_res = splitMultipartQuery(query->query, queries,
-            settings.max_query_size,
-            settings.max_parser_depth,
-            settings.max_parser_backtracks,
-            settings.allow_settings_after_format_in_insert);
+        auto parse_res = splitMultipartQuery(
+            query->query,
+            queries,
+            settings[Setting::max_query_size],
+            settings[Setting::max_parser_depth],
+            settings[Setting::max_parser_backtracks],
+            settings[Setting::allow_settings_after_format_in_insert]);
         if (!parse_res.second)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse and execute the following part of query: {}", String(parse_res.first));
 

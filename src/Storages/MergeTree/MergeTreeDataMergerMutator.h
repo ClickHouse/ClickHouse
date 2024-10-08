@@ -20,14 +20,14 @@ namespace DB
 
 class MergeProgressCallback;
 
-enum class SelectPartsDecision
+enum class SelectPartsDecision : uint8_t
 {
     SELECTED = 0,
     CANNOT_SELECT = 1,
     NOTHING_TO_MERGE = 2,
 };
 
-enum class ExecuteTTLType
+enum class ExecuteTTLType : uint8_t
 {
     NONE = 0,
     NORMAL = 1,
@@ -159,7 +159,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         MergeListEntry * merge_entry,
         std::unique_ptr<MergeListElement> projection_merge_list_element,
-        TableLockHolder table_lock_holder,
+        TableLockHolder & table_lock_holder,
         time_t time_of_merge,
         ContextPtr context,
         ReservationSharedPtr space_reservation,
@@ -207,7 +207,7 @@ public :
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.
       * All new attempts to start a merge or mutation will throw an exception until all 'LockHolder' objects will be destroyed.
       */
-    ActionBlocker merges_blocker;
+    PartitionActionBlocker merges_blocker;
     ActionBlocker ttl_merges_blocker;
 
 private:

@@ -1,5 +1,6 @@
 #include <Storages/ReadInOrderOptimizer.h>
 
+#include <Core/Settings.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -14,6 +15,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool optimize_respect_aliases;
+}
 
 namespace ErrorCodes
 {
@@ -263,7 +268,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(
     /// Currently we only support alias column without any function wrapper,
     /// i.e.: `order by aliased_column` can have this optimization, but `order by function(aliased_column)` can not.
     /// This suits most cases.
-    if (context->getSettingsRef().optimize_respect_aliases && !aliased_columns.empty())
+    if (context->getSettingsRef()[Setting::optimize_respect_aliases] && !aliased_columns.empty())
     {
         SortDescription aliases_sort_description = required_sort_description;
         ManyExpressionActions aliases_actions = elements_actions;

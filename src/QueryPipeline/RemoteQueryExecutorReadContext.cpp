@@ -141,12 +141,12 @@ RemoteQueryExecutorReadContext::~RemoteQueryExecutorReadContext()
     /// connection_fd is closed by Poco::Net::Socket or Epoll
     if (pipe_fd[0] != -1)
     {
-        int err = close(pipe_fd[0]);
+        [[maybe_unused]] int err = close(pipe_fd[0]);
         chassert(!err || errno == EINTR);
     }
     if (pipe_fd[1] != -1)
     {
-        int err = close(pipe_fd[1]);
+        [[maybe_unused]] int err = close(pipe_fd[1]);
         chassert(!err || errno == EINTR);
     }
 }

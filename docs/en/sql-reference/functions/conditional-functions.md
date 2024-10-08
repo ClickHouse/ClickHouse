@@ -49,7 +49,7 @@ Result:
 
 ## multiIf
 
-Allows to write the [CASE](../../sql-reference/operators/index.md#operator_case) operator more compactly in the query.
+Allows to write the [CASE](../../sql-reference/operators/index.md#conditional-expression) operator more compactly in the query.
 
 **Syntax**
 
@@ -234,3 +234,34 @@ SELECT least(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3))
 :::note
 The type returned is a DateTime64 as the DataTime32 must be promoted to 64 bit for the comparison.
 :::
+
+## clamp
+
+Constrain the return value between A and B.
+
+**Syntax**
+
+``` sql
+clamp(value, min, max)
+```
+
+**Arguments**
+
+- `value` – Input value.
+- `min` – Limit the lower bound.
+- `max` – Limit the upper bound.
+
+**Returned values**
+
+If the value is less than the minimum value, return the minimum value; if it is greater than the maximum value, return the maximum value; otherwise, return the current value.
+
+Examples:
+
+```sql
+SELECT clamp(1, 2, 3) result,  toTypeName(result) type;
+```
+```response
+┌─result─┬─type────┐
+│      2 │ Float64 │
+└────────┴─────────┘
+```

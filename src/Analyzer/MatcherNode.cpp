@@ -173,9 +173,9 @@ bool MatcherNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 
     if (!columns_matcher && !rhs_columns_matcher)
         return true;
-    else if (columns_matcher && !rhs_columns_matcher)
+    if (columns_matcher && !rhs_columns_matcher)
         return false;
-    else if (!columns_matcher && rhs_columns_matcher)
+    if (!columns_matcher && rhs_columns_matcher)
         return false;
 
     return columns_matcher->pattern() == rhs_columns_matcher->pattern();

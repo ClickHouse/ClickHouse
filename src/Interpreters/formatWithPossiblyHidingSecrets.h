@@ -1,9 +1,11 @@
 #pragma once
-#include "Access/ContextAccess.h"
-#include "Interpreters/Context.h"
+
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
+class IAST;
+
 struct SecretHidingFormatSettings
 {
     // We can't store const Context& as there's a dangerous usage {.ctx = *getContext()}
@@ -14,12 +16,5 @@ struct SecretHidingFormatSettings
     bool one_line = true;
 };
 
-inline String format(const SecretHidingFormatSettings & settings)
-{
-    const bool show_secrets = settings.ctx->displaySecretsInShowAndSelect()
-        && settings.ctx->getSettingsRef().format_display_secrets_in_show_and_select
-        && settings.ctx->getAccess()->isGranted(AccessType::displaySecretsInShowAndSelect);
-
-    return settings.query.formatWithPossiblyHidingSensitiveData(settings.max_length, settings.one_line, show_secrets);
-}
+String format(const SecretHidingFormatSettings & settings);
 }

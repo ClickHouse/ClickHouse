@@ -109,7 +109,7 @@ private:
     {
         if (shift.left())
             return apply<true, false>(a, b, shift.a);
-        else if (shift.right())
+        if (shift.right())
             return apply<false, true>(a, b, shift.b);
         return apply<false, false>(a, b, 1);
     }
@@ -170,11 +170,11 @@ private:
 
             if (c0_is_const && c1_is_const)
             {
-                const ColumnConst * c0_const = checkAndGetColumnConst<ColVecA>(c0.get());
-                const ColumnConst * c1_const = checkAndGetColumnConst<ColVecB>(c1.get());
+                const ColumnConst & c0_const = checkAndGetColumnConst<ColVecA>(*c0);
+                const ColumnConst & c1_const = checkAndGetColumnConst<ColVecB>(*c1);
 
-                A a = c0_const->template getValue<A>();
-                B b = c1_const->template getValue<B>();
+                A a = c0_const.template getValue<A>();
+                B b = c1_const.template getValue<B>();
                 UInt8 res = apply<scale_left, scale_right>(a, b, scale);
                 return DataTypeUInt8().createColumnConst(c0->size(), toField(res));
             }
@@ -184,8 +184,8 @@ private:
 
             if (c0_is_const)
             {
-                const ColumnConst * c0_const = checkAndGetColumnConst<ColVecA>(c0.get());
-                A a = c0_const->template getValue<A>();
+                const ColumnConst & c0_const = checkAndGetColumnConst<ColVecA>(*c0);
+                A a = c0_const.template getValue<A>();
                 if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
                     constantVector<scale_left, scale_right>(a, c1_vec->getData(), vec_res, scale);
                 else
@@ -193,8 +193,8 @@ private:
             }
             else if (c1_is_const)
             {
-                const ColumnConst * c1_const = checkAndGetColumnConst<ColVecB>(c1.get());
-                B b = c1_const->template getValue<B>();
+                const ColumnConst & c1_const = checkAndGetColumnConst<ColVecB>(*c1);
+                B b = c1_const.template getValue<B>();
                 if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
                     vectorConstant<scale_left, scale_right>(c0_vec->getData(), b, vec_res, scale);
                 else

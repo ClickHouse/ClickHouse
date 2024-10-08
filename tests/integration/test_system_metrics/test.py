@@ -1,11 +1,11 @@
 import time
 
 import pytest
-from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
-from helpers.network import PartitionManager
-
 from kazoo.client import KazooClient
+
+from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
+from helpers.test_tools import assert_eq_with_retry
 
 
 def fill_nodes(nodes, shard):

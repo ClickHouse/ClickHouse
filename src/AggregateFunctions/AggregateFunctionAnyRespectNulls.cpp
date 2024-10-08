@@ -157,13 +157,13 @@ public:
         d.status = static_cast<Data::Status>(k);
         if (d.status == Data::Status::NotSet)
             return;
-        else if (d.status == Data::Status::SetNull)
+        if (d.status == Data::Status::SetNull)
         {
             if (!returns_nullable_type)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect type (NULL) in non-nullable {}State", getName());
             return;
         }
-        else if (d.status == Data::Status::SetOther)
+        if (d.status == Data::Status::SetOther)
         {
             serialization->deserializeBinary(d.value, buf, {});
             return;
@@ -221,11 +221,11 @@ void registerAggregateFunctionsAnyRespectNulls(AggregateFunctionFactory & factor
         = {.returns_default_when_only_null = false, .is_order_dependent = true, .is_window_function = true};
 
     factory.registerFunction("any_respect_nulls", {createAggregateFunctionAnyRespectNulls, default_properties_for_respect_nulls});
-    factory.registerAlias("any_value_respect_nulls", "any_respect_nulls", AggregateFunctionFactory::CaseInsensitive);
-    factory.registerAlias("first_value_respect_nulls", "any_respect_nulls", AggregateFunctionFactory::CaseInsensitive);
+    factory.registerAlias("any_value_respect_nulls", "any_respect_nulls", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("first_value_respect_nulls", "any_respect_nulls", AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("anyLast_respect_nulls", {createAggregateFunctionAnyLastRespectNulls, default_properties_for_respect_nulls});
-    factory.registerAlias("last_value_respect_nulls", "anyLast_respect_nulls", AggregateFunctionFactory::CaseInsensitive);
+    factory.registerAlias("last_value_respect_nulls", "anyLast_respect_nulls", AggregateFunctionFactory::Case::Insensitive);
 
     /// Must happen after registering any and anyLast
     factory.registerNullsActionTransformation("any", "any_respect_nulls");

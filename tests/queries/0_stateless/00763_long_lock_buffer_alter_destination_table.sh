@@ -16,18 +16,39 @@ ${CLICKHOUSE_CLIENT} --query="CREATE TABLE buffer_00763_1 (s String) ENGINE = Bu
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE mt_00763_1 (x UInt32, s String) ENGINE = MergeTree ORDER BY x"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO mt_00763_1 VALUES (1, '1'), (2, '2'), (3, '3')"
 
-function thread1()
+function thread_alter()
 {
-    seq 1 300 | sed -r -e 's/.+/ALTER TABLE mt_00763_1 MODIFY column s UInt32; ALTER TABLE mt_00763_1 MODIFY column s String;/' | ${CLICKHOUSE_CLIENT} --multiquery --ignore-error ||:
+    local TIMELIMIT=$((SECONDS+$1))
+    local it=0
+    while [ $SECONDS -lt "$TIMELIMIT" ] && [ $it -lt 300 ];
+    do
+        it=$((it+1))
+        $CLICKHOUSE_CLIENT --ignore-error -q "
+            ALTER TABLE mt_00763_1 MODIFY column s UInt32;
+            ALTER TABLE mt_00763_1 MODIFY column s String;
+        " ||:
+    done
 }
 
-function thread2()
+function thread_query()
 {
-    seq 1 2000 | sed -r -e 's/.+/SELECT sum(length(s)) FROM buffer_00763_1;/' | ${CLICKHOUSE_CLIENT} --multiquery --ignore-error 2>&1 | grep -vP '(^3$|^Received exception from server|^Code: 473)'
+    local TIMELIMIT=$((SECONDS+$1))
+    local it=0
+    while [ $SECONDS -lt "$TIMELIMIT" ] && [ $it -lt 2000 ];
+    do
+        it=$((it+1))
+        $CLICKHOUSE_CLIENT --ignore-error -q "
+            SELECT sum(length(s)) FROM buffer_00763_1;
+        " 2>&1 | grep -vP '(^3$|^Received exception from server|^Code: 473)'
+    done
 }
 
-thread1 &
-thread2 &
+export -f thread_alter
+export -f thread_query
+
+TIMEOUT=30
+thread_alter $TIMEOUT &
+thread_query $TIMEOUT &
 
 wait
 

@@ -18,9 +18,10 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
 namespace
@@ -64,19 +65,19 @@ public:
     {
         size_t arguments_size = arguments.size();
         if (arguments_size < 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
                 "Number of arguments for function {} doesn't match: passed {}, should be at least 2",
                 getName(),
                 arguments_size);
 
         Names nested_names = extractNestedNames(arguments[0].column);
         if (nested_names.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "First argument for function {} must be constant column with array of strings",
                 getName());
 
         if (nested_names.size() != arguments_size - 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Size of nested names array for function {} does not match arrays arguments size. Actual {}. Expected {}",
                 getName(),
                 nested_names.size(),
@@ -144,7 +145,7 @@ private:
         if (nested_names_field.getType() != Field::Types::Array)
             return {};
 
-        const auto & nested_names_array = nested_names_field.get<const Array &>();
+        const auto & nested_names_array = nested_names_field.safeGet<const Array &>();
 
         Names nested_names;
         nested_names.reserve(nested_names_array.size());
@@ -154,7 +155,7 @@ private:
             if (nested_name_field.getType() != Field::Types::String)
                 return {};
 
-            nested_names.push_back(nested_name_field.get<const String &>());
+            nested_names.push_back(nested_name_field.safeGet<const String &>());
         }
 
         return nested_names;

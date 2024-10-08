@@ -105,8 +105,7 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
         return OvercommitResult::TIMEOUTED;
     if (still_need)
         return OvercommitResult::NOT_ENOUGH_FREED;
-    else
-        return OvercommitResult::MEMORY_FREED;
+    return OvercommitResult::MEMORY_FREED;
 }
 
 void OvercommitTracker::tryContinueQueryExecutionAfterFree(Int64 amount)

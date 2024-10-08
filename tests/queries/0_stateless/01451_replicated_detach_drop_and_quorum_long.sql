@@ -30,7 +30,7 @@ INSERT INTO replica2 SETTINGS insert_keeper_fault_injection_probability=0 VALUES
 
 SYSTEM SYNC REPLICA replica2;
 
-ALTER TABLE replica1 DETACH PART 'all_2_2_0'; --{serverError 48}
+ALTER TABLE replica1 DETACH PART 'all_2_2_0'; --{serverError NOT_IMPLEMENTED}
 
 SELECT name FROM system.parts WHERE table = 'replica1' and database = currentDatabase() and active = 1 ORDER BY name;
 

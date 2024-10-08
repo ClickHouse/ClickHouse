@@ -41,7 +41,7 @@ enum class WeekModeFlag : UInt8
 using YearWeek = std::pair<UInt16, UInt8>;
 
 /// Modes for toDayOfWeek() function.
-enum class WeekDayMode
+enum class WeekDayMode : uint8_t
 {
     WeekStartsMonday1 = 0,
     WeekStartsMonday0 = 1,
@@ -883,14 +883,12 @@ public:
         {
             return toFirstDayNumOfWeek(v);
         }
+
+        const auto day_of_week = toDayOfWeek(v);
+        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+            return (day_of_week != 7) ? DayNum(saturateMinus(v, day_of_week)) : toDayNum(v);
         else
-        {
-            const auto day_of_week = toDayOfWeek(v);
-            if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-                return (day_of_week != 7) ? DayNum(saturateMinus(v, day_of_week)) : toDayNum(v);
-            else
-                return (day_of_week != 7) ? ExtendedDayNum(v - day_of_week) : toDayNum(v);
-        }
+            return (day_of_week != 7) ? ExtendedDayNum(v - day_of_week) : toDayNum(v);
     }
 
     /// Get last day of week with week_mode, return Saturday or Sunday
@@ -902,15 +900,13 @@ public:
         {
             return toLastDayNumOfWeek(v);
         }
+
+        const auto day_of_week = toDayOfWeek(v);
+        v += 6;
+        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+            return (day_of_week != 7) ? DayNum(saturateMinus(v, day_of_week)) : toDayNum(v);
         else
-        {
-            const auto day_of_week = toDayOfWeek(v);
-            v += 6;
-            if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-                return (day_of_week != 7) ? DayNum(saturateMinus(v, day_of_week)) : toDayNum(v);
-            else
-                return (day_of_week != 7) ? ExtendedDayNum(v - day_of_week) : toDayNum(v);
-        }
+            return (day_of_week != 7) ? ExtendedDayNum(v - day_of_week) : toDayNum(v);
     }
 
     /// Check and change mode to effective.
@@ -937,8 +933,7 @@ public:
         const LUTIndex i = toLUTIndex(v);
         if (!sunday_first_day_of_week)
             return toDayOfWeek(i) - 1;
-        else
-            return toDayOfWeek(i + 1) - 1;
+        return toDayOfWeek(i + 1) - 1;
     }
 
     /// Calculate days in one year.
@@ -1048,20 +1043,16 @@ public:
 
     template <typename Date>
     requires std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>
-    auto toStartOfWeekInterval(Date d, UInt64 weeks, UInt8 week_mode) const
+    auto toStartOfWeekInterval(Date d, UInt64 weeks) const
     {
         if (weeks == 1)
-            return toFirstDayNumOfWeek(d, week_mode);
-
-        bool monday_first_mode = week_mode & static_cast<UInt8>(WeekModeFlag::MONDAY_FIRST);
-        // January 1st 1970 was Thursday so we need this 4-days offset to make weeks start on Monday, or
-        // 3 days to start on Sunday.
-        auto offset = monday_first_mode ? 4 : 3;
+            return toFirstDayNumOfWeek(d);
         UInt64 days = weeks * 7;
+        // January 1st 1970 was Thursday so we need this 4-days offset to make weeks start on Monday.
         if constexpr (std::is_same_v<Date, DayNum>)
-            return DayNum(offset + (d - offset) / days * days);
+            return DayNum(4 + (d - 4) / days * days);
         else
-            return ExtendedDayNum(static_cast<Int32>(offset + (d - offset) / days * days));
+            return ExtendedDayNum(static_cast<Int32>(4 + (d - 4) / days * days));
     }
 
     template <typename Date>
@@ -1108,8 +1099,7 @@ public:
                 time -= values.amount_of_offset_change();
 
                 /// With cutoff at the time of the shift. Otherwise we may end up with something like 23:00 previous day.
-                if (time < values.time_at_offset_change())
-                    time = values.time_at_offset_change();
+                time = std::max<Time>(time, values.time_at_offset_change());
             }
         }
         else
@@ -1254,7 +1244,7 @@ public:
     DateComponents toDateComponents(Time t) const
     {
         const Values & values = getValues(t);
-        return { values.year, values.month, values.day_of_month };
+        return { .year = values.year, .month = values.month, .day = values.day_of_month };
     }
 
     DateTimeComponents toDateTimeComponents(Time t) const
@@ -1354,10 +1344,7 @@ public:
 
         UInt8 days_in_month = daysInMonth(year, month);
 
-        if (day_of_month > days_in_month)
-            day_of_month = days_in_month;
-
-        return day_of_month;
+        return std::min(day_of_month, days_in_month);
     }
 
     template <typename DateOrTime>
@@ -1375,14 +1362,12 @@ public:
 
             return makeLUTIndex(year, month, day_of_month);
         }
-        else
-        {
-            auto year = values.year - (12 - month) / 12;
-            month = 12 - (-month % 12);
-            auto day_of_month = saturateDayOfMonth(year, month, values.day_of_month);
 
-            return makeLUTIndex(year, month, day_of_month);
-        }
+        auto year = values.year - (12 - month) / 12;
+        month = 12 - (-month % 12);
+        auto day_of_month = saturateDayOfMonth(year, month, values.day_of_month);
+
+        return makeLUTIndex(year, month, day_of_month);
     }
 
     /// If resulting month has less days than source month, then saturation can happen.

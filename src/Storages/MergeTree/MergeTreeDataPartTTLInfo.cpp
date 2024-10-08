@@ -3,6 +3,8 @@
 #include <IO/WriteHelpers.h>
 #include <Common/quoteString.h>
 #include <algorithm>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
 
 #include <base/JSON.h>
 
@@ -272,6 +274,29 @@ bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedTTLs() const
     return false;
 }
 
+namespace
+{
+    /// We had backward incompatibility in representation of serialized expressions, example:
+    ///
+    /// `expired + toIntervalSecond(20)` vs `plus(expired, toIntervalSecond(20))`
+    /// Since they are stored as strings we cannot compare them directly as strings
+    /// To avoid backward incompatibility we parse them and check AST hashes.
+    /// This O(N^2), but amount of TTLs should be small, so it should be Ok.
+    auto tryToFindTTLExpressionInMapByASTMatching(const TTLInfoMap & ttl_info_map, const std::string & result_column)
+    {
+        ParserExpression parser;
+        auto ast_needle = parseQuery(parser, result_column.data(), result_column.data() + result_column.size(), "", 0, 0, 0);
+        for (auto it = ttl_info_map.begin(); it != ttl_info_map.end(); ++it)
+        {
+            const std::string & stored_expression = it->first;
+            auto ast_candidate = parseQuery(parser, stored_expression.data(), stored_expression.data() + stored_expression.size(), "", 0, 0, 0);
+            if (ast_candidate->getTreeHash(false) == ast_needle->getTreeHash(false))
+                return it;
+        }
+        return ttl_info_map.end();
+    }
+}
+
 std::optional<TTLDescription> selectTTLDescriptionForTTLInfos(const TTLDescriptions & descriptions, const TTLInfoMap & ttl_info_map, time_t current_time, bool use_max)
 {
     time_t best_ttl_time = 0;
@@ -281,7 +306,11 @@ std::optional<TTLDescription> selectTTLDescriptionForTTLInfos(const TTLDescripti
         auto ttl_info_it = ttl_info_map.find(ttl_entry_it->result_column);
 
         if (ttl_info_it == ttl_info_map.end())
-            continue;
+        {
+            ttl_info_it = tryToFindTTLExpressionInMapByASTMatching(ttl_info_map, ttl_entry_it->result_column);
+            if (ttl_info_it == ttl_info_map.end())
+                continue;
+        }
 
         time_t ttl_time;
 

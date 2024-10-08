@@ -13,7 +13,7 @@ ${CLICKHOUSE_CLIENT} -q "create table m (dummy UInt8) ENGINE = Distributed('test
 query_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
 ${CLICKHOUSE_CLIENT} -q "select * from m format Null" "--query_id=$query_id"
 
-${CLICKHOUSE_CLIENT} -n -q "
+${CLICKHOUSE_CLIENT} -q "
 system flush logs;
 select
     anyIf(initial_query_start_time, is_initial_query) = anyIf(initial_query_start_time, not is_initial_query),

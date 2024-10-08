@@ -1,4 +1,3 @@
-version: '2.3'
 services:
     mysql80:
         image: mysql:8.0

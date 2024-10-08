@@ -57,14 +57,14 @@ public:
 
     void resetParser() override;
 
-    const BlockMissingValues & getMissingValues() const override;
+    const BlockMissingValues * getMissingValues() const override;
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
 protected:
     Chunk read() override;
 
-    void onCancel() override { is_stopped = 1; }
+    void onCancel() noexcept override { is_stopped = 1; }
 
 private:
     void prepareFileReader();

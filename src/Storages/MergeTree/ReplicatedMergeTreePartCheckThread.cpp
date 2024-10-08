@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ThreadFuzzer.h>
@@ -15,6 +16,12 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
+    extern const MergeTreeSettingsSeconds old_parts_lifetime;
+}
 
 namespace ErrorCodes
 {
@@ -291,7 +298,7 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
             /// We cannot rely on exists_in_zookeeper, because the cleanup thread is probably going to remove it from ZooKeeper
             /// Also, it will avoid "Cannot commit empty part: Part ... (state Outdated) already exists, but it will be deleted soon"
             time_t lifetime = time(nullptr) - outdated->remove_time;
-            time_t max_lifetime = storage.getSettings()->old_parts_lifetime.totalSeconds();
+            time_t max_lifetime = (*storage.getSettings())[MergeTreeSetting::old_parts_lifetime].totalSeconds();
             time_t delay = lifetime >= max_lifetime ? 0 : max_lifetime - lifetime;
             result.recheck_after_seconds = delay + 30;
 
@@ -326,7 +333,7 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
 
     time_t current_time = time(nullptr);
     auto zookeeper = storage.getZooKeeper();
-    auto table_lock = storage.lockForShare(RWLockImpl::NO_QUERY, storage.getSettings()->lock_acquire_timeout_for_background_operations);
+    auto table_lock = storage.lockForShare(RWLockImpl::NO_QUERY, (*storage.getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
 
     auto local_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
         part->getColumns(), part->checksums);
@@ -390,7 +397,7 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
             {
                 WriteBufferFromOwnString wb;
                 message = PreformattedMessage::create(
-                    "Part {} has a broken projections. It will be ignored. Broken projections info: {}",
+                    "Part `{}` has broken projections. It will be ignored. Broken projections info: {}",
                     part_name, getCurrentExceptionMessage(true));
                 LOG_DEBUG(log, message);
                 result.action = ReplicatedCheckResult::DoNothing;
@@ -606,7 +613,7 @@ void ReplicatedMergeTreePartCheckThread::run()
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Someone erased checking part from parts_queue. This is a bug.");
             }
-            else if (recheck_after.has_value())
+            if (recheck_after.has_value())
             {
                 LOG_TRACE(log, "Will recheck part {} after after {}s", selected->name, *recheck_after);
                 selected->time = std::chrono::steady_clock::now() + std::chrono::seconds(*recheck_after);

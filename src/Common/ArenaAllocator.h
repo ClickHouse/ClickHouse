@@ -26,10 +26,8 @@ public:
             arena->allocContinue(new_size - old_size, data);
             return reinterpret_cast<void *>(const_cast<char *>(data));
         }
-        else
-        {
-            return arena->realloc(data, old_size, new_size);
-        }
+
+        return arena->realloc(data, old_size, new_size);
     }
 
     static void free(void * /*buf*/, size_t /*size*/)
@@ -64,10 +62,8 @@ public:
             arena->allocContinue(new_size - old_size, data, alignment);
             return reinterpret_cast<void *>(const_cast<char *>(data));
         }
-        else
-        {
-            return arena->alignedRealloc(data, old_size, new_size, alignment);
-        }
+
+        return arena->alignedRealloc(data, old_size, new_size, alignment);
     }
 
     static void free(void * /*buf*/, size_t /*size*/)

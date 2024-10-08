@@ -6,21 +6,21 @@
 
 #    include <mutex>
 #    include <Core/MySQL/MySQLClient.h>
-#    include <QueryPipeline/BlockIO.h>
 #    include <DataTypes/DataTypeString.h>
 #    include <DataTypes/DataTypesNumber.h>
 #    include <Databases/DatabaseOrdinary.h>
 #    include <Databases/IDatabase.h>
-#    include <Databases/MySQL/MySQLBinlogClient.h>
-#    include <Databases/MySQL/MaterializeMetadata.h>
 #    include <Databases/MySQL/MaterializedMySQLSettings.h>
+#    include <Databases/MySQL/MySQLBinlogClient.h>
 #    include <Parsers/ASTCreateQuery.h>
+#    include <QueryPipeline/BlockIO.h>
 #    include <mysqlxx/Pool.h>
 #    include <mysqlxx/PoolWithFailover.h>
 
 
 namespace DB
 {
+struct MaterializeMetadata;
 
 /** MySQL table structure and data synchronization thread
  *

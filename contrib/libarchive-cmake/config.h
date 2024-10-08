@@ -334,13 +334,16 @@ typedef uint64_t uintmax_t;
 /* #undef ARCHIVE_XATTR_LINUX */
 
 /* Version number of bsdcpio */
-#define BSDCPIO_VERSION_STRING "3.7.0"
+#define BSDCPIO_VERSION_STRING "3.7.4"
 
 /* Version number of bsdtar */
-#define BSDTAR_VERSION_STRING "3.7.0"
+#define BSDTAR_VERSION_STRING "3.7.4"
 
 /* Version number of bsdcat */
-#define BSDCAT_VERSION_STRING "3.7.0"
+#define BSDCAT_VERSION_STRING "3.7.4"
+
+/* Version number of bsdunzip */
+#define BSDUNZIP_VERSION_STRING "3.7.4"
 
 /* Define to 1 if you have the `acl_create_entry' function. */
 /* #undef HAVE_ACL_CREATE_ENTRY */
@@ -642,8 +645,8 @@ typedef uint64_t uintmax_t;
 /* Define to 1 if you have the `getgrnam_r' function. */
 #define HAVE_GETGRNAM_R 1
 
-/* Define to 1 if platform uses `optreset` to reset `getopt` */
-#define HAVE_GETOPT_OPTRESET 1
+/* Define to 1 if you have the `getline' function. */
+#define HAVE_GETLINE 1
 
 /* Define to 1 if you have the `getpid' function. */
 #define HAVE_GETPID 1
@@ -750,6 +753,12 @@ typedef uint64_t uintmax_t;
 /* Define to 1 if you have the `pcreposix' library (-lpcreposix). */
 /* #undef HAVE_LIBPCREPOSIX */
 
+/* Define to 1 if you have the `pcre2-8' library (-lpcre2-8). */
+/* #undef HAVE_LIBPCRE2 */
+
+/* Define to 1 if you have the `pcreposix' library (-lpcre2posix). */
+/* #undef HAVE_LIBPCRE2POSIX */
+
 /* Define to 1 if you have the `xml2' library (-lxml2). */
 #define HAVE_LIBXML2 1
 
@@ -765,9 +774,8 @@ typedef uint64_t uintmax_t;
 /* Define to 1 if you have the `zstd' library (-lzstd). */
 /* #undef HAVE_LIBZSTD */
 
-/* Define to 1 if you have the `zstd' library (-lzstd) with compression
-   support. */
-/* #undef HAVE_LIBZSTD_COMPRESSOR */
+/* Define to 1 if you have the ZSTD_compressStream function. */
+/* #undef HAVE_ZSTD_compressStream */
 
 /* Define to 1 if you have the <limits.h> header file. */
 #define HAVE_LIMITS_H 1
@@ -923,6 +931,9 @@ typedef uint64_t uintmax_t;
 /* Define to 1 if you have the <pcreposix.h> header file. */
 /* #undef HAVE_PCREPOSIX_H */
 
+/* Define to 1 if you have the <pcre2posix.h> header file. */
+/* #undef HAVE_PCRE2POSIX_H */
+
 /* Define to 1 if you have the `pipe' function. */
 #define HAVE_PIPE 1
 
@@ -1029,6 +1040,12 @@ typedef uint64_t uintmax_t;
 /* Define to 1 if you have the `strrchr' function. */
 #define HAVE_STRRCHR 1
 
+/* Define to 1 if the system has the type `struct statfs'. */
+/* #undef HAVE_STRUCT_STATFS */
+
+/* Define to 1 if `f_iosize' is a member of `struct statfs'. */
+/* #undef HAVE_STRUCT_STATFS_F_IOSIZE */
+
 /* Define to 1 if `f_namemax' is a member of `struct statfs'. */
 /* #undef HAVE_STRUCT_STATFS_F_NAMEMAX */
 
@@ -1076,6 +1093,9 @@ typedef uint64_t uintmax_t;
 
 /* Define to 1 if you have the `symlink' function. */
 #define HAVE_SYMLINK 1
+
+/* Define to 1 if you have the `sysconf' function. */
+#define HAVE_SYSCONF 1
 
 /* Define to 1 if you have the <sys/acl.h> header file. */
 /* #undef HAVE_SYS_ACL_H */
@@ -1273,13 +1293,13 @@ typedef uint64_t uintmax_t;
 /* #undef HAVE__MKGMTIME */
 
 /* Define as const if the declaration of iconv() needs const. */
-#define ICONV_CONST 
+#define ICONV_CONST
 
 /* Version number of libarchive as a single integer */
-#define LIBARCHIVE_VERSION_NUMBER "3007000"
+#define LIBARCHIVE_VERSION_NUMBER "3007004"
 
 /* Version number of libarchive */
-#define LIBARCHIVE_VERSION_STRING "3.7.0"
+#define LIBARCHIVE_VERSION_STRING "3.7.4"
 
 /* Define to 1 if `lstat' dereferences a symlink specified with a trailing
    slash. */
@@ -1333,7 +1353,7 @@ typedef uint64_t uintmax_t;
 #endif /* SAFE_TO_DEFINE_EXTENSIONS */
 
 /* Version number of package */
-#define VERSION "3.7.0"
+#define VERSION "3.7.4"
 
 /* Number of bits in a file offset, on hosts where this is settable. */
 /* #undef _FILE_OFFSET_BITS */

@@ -14,7 +14,7 @@ sidebar_label: "Функции для работы с URL"
 
 ### protocol {#protocol}
 
-Возвращает протокол. Примеры: http, ftp, mailto, magnet…
+Возвращает протокол. Примеры: http, ftp, mailto, magnet...
 
 ### domain {#domain}
 

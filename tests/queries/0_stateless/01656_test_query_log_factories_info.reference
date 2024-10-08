@@ -17,7 +17,7 @@ used_functions
 ['repeat']
 
 arraySort(used_data_type_families)
-['Array','Int32','Nullable','String']
+['Int32','Nullable','String']
 
 used_database_engines
 ['Atomic']

@@ -107,6 +107,9 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!columns_p.parse(pos, columns, expected))
             return false;
 
+        /// Optional trailing comma
+        ParserToken(TokenType::Comma).ignore(pos);
+
         if (!s_rparen.ignore(pos, expected))
             return false;
     }

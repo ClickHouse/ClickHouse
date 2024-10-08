@@ -1,11 +1,13 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionActions.h>
+
+
 namespace DB
 {
 
-Block ExpressionTransform::transformHeader(Block header, const ActionsDAG & expression)
+Block ExpressionTransform::transformHeader(const Block & header, const ActionsDAG & expression)
 {
-    return expression.updateHeader(std::move(header));
+    return expression.updateHeader(header);
 }
 
 

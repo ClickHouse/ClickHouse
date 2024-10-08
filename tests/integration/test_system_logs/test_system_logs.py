@@ -3,6 +3,7 @@
 # pylint: disable=redefined-outer-name
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -31,6 +32,18 @@ node3 = cluster.add_instance(
         "configs/config.d/system_logs_settings.xml",
         "configs/config.d/disks.xml",
     ],
+    stay_alive=True,
+)
+
+
+node4 = cluster.add_instance(
+    "node4",
+    base_config_dir="configs",
+    main_configs=[
+        "configs/config.d/system_logs_engine_s3_plain_rewritable_policy.xml",
+        "configs/config.d/disks.xml",
+    ],
+    with_minio=True,
     stay_alive=True,
 )
 
@@ -74,6 +87,22 @@ def test_system_logs_engine_expr(start_cluster):
     # Check 'engine_full' of system.query_log.
     expected = "MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + toIntervalDay(30) SETTINGS storage_policy = \\'policy2\\', ttl_only_drop_parts = 1"
     assert expected in node2.query(
+        "SELECT engine_full FROM system.tables WHERE database='system' and name='query_log'"
+    )
+
+
+def test_system_logs_engine_s3_plain_rw_expr(start_cluster):
+    node4.query("SET log_query_threads = 1")
+    node4.query("SELECT count() FROM system.tables")
+    node4.query("SYSTEM FLUSH LOGS")
+
+    # Check 'engine_full' of system.query_log.
+    expected = "MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + toIntervalDay(30) SETTINGS storage_policy = \\'s3_plain_rewritable\\', ttl_only_drop_parts = 1"
+    assert expected in node4.query(
+        "SELECT engine_full FROM system.tables WHERE database='system' and name='query_log'"
+    )
+    node4.restart_clickhouse()
+    assert expected in node4.query(
         "SELECT engine_full FROM system.tables WHERE database='system' and name='query_log'"
     )
 
