@@ -33,13 +33,6 @@ NATSConsumer::NATSConsumer(
     , received(queue_size_)
 {
 }
-NATSConsumer::~NATSConsumer()
-{
-    for (const auto & subscription : subscriptions)
-        natsSubscription_Unsubscribe(subscription.get());
-
-    LOG_DEBUG(log, "Destroy consumer");
-}
 
 void NATSConsumer::subscribe()
 {
