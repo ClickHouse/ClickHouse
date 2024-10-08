@@ -312,13 +312,13 @@ const std::string & commandIdentifier(const std::string & command)
 {
     // Names of identifiers for commands that send bulk documents in the request
     // The identifier is set in the section type 1.
-    static std::map<std::string, std::string> identifiers {
+    const auto identifiers = std::map<std::string, std::string>(
         {{OpMsgMessage::CMD_INSERT, "documents"},
          {OpMsgMessage::CMD_DELETE, "deletes"},
          {OpMsgMessage::CMD_UPDATE, "updates"},
 
          // Not sure if create index can send document section
-         {OpMsgMessage::CMD_CREATE_INDEXES, "indexes"}}};
+         {OpMsgMessage::CMD_CREATE_INDEXES, "indexes"}});
 
     const auto i = identifiers.find(command);
     if (i != identifiers.end())

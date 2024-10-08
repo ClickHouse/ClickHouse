@@ -42,9 +42,9 @@ Binary::~Binary()
 
 std::string Binary::toString() const
 {
-    size_t encoded_size_ = encoded_size(buffer.size());
-    std::string result(encoded_size);
-    assert(encode(result.data(), reinterpret_cast<const char *>(buffer.begin()), buffer.size()) == encoded_size_);
+    size_t encoded_size = boost::beast::detail::base64::encoded_size(buffer.size());
+    std::string result = std::string(encoded_size, 'a');
+    assert(boost::beast::detail::base64::encode(result.data(), reinterpret_cast<const char *>(buffer.begin()), buffer.size()) == encoded_size);
     return result;
 }
 
