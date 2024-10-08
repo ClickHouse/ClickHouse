@@ -379,14 +379,13 @@ ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments,
         convertSparseColumnsToFull(columns_without_sparse);
         return executeWithoutSparseColumns(columns_without_sparse, result_type, input_rows_count, dry_run);
     }
-    else if (use_default_implementation_for_sparse_columns)
+    if (use_default_implementation_for_sparse_columns)
     {
         auto columns_without_sparse = arguments;
         convertSparseColumnsToFull(columns_without_sparse);
         return executeWithoutSparseColumns(columns_without_sparse, result_type, input_rows_count, dry_run);
     }
-    else
-        return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
+    return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
 }
 
 void IFunctionOverloadResolver::checkNumberOfArguments(size_t number_of_arguments) const
@@ -440,8 +439,7 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
             && num_full_low_cardinality_columns <= 1 && num_full_ordinary_columns == 0
             && type_without_low_cardinality->canBeInsideLowCardinality())
             return std::make_shared<DataTypeLowCardinality>(type_without_low_cardinality);
-        else
-            return type_without_low_cardinality;
+        return type_without_low_cardinality;
     }
 
     return getReturnTypeWithoutLowCardinality(arguments);

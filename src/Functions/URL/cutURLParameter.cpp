@@ -74,10 +74,8 @@ public:
             vector(col->getChars(), col->getOffsets(), col_needle, col_needle_const_array, vec_res, offsets_res, input_rows_count);
             return col_res;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of argument of function {}",
-                arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 
     static void cutURL(ColumnString::Chars & data, String pattern, size_t prev_offset, size_t & cur_offset)
