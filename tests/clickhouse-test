@@ -2352,6 +2352,7 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool
                 # This is the upper level timeout
                 # It helps with completely frozen processes, like in case of gdb errors
                 def timeout_handler(signum, frame):
+                    stop_tests()
                     raise TimeoutError("Test execution timed out")
 
                 signal.signal(signal.SIGALRM, timeout_handler)
