@@ -4137,6 +4137,12 @@ Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
 :::
 
+:::warning
+Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
+For example: `toDecimal32(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
+You can use a String input so the operations use the underlying integer type: `toDecimal32('1.15', 2) = 1.15`
+:::
+
 **Returned value**
 
 - Value of type `Decimal(9, S)`. [Decimal32(S)](../data-types/int-uint.md).
@@ -4328,6 +4334,12 @@ Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an error.
 :::
 
+:::warning
+Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
+For example: `toDecimal32OrDefault(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
+You can use a String input so the operations use the underlying integer type: `toDecimal32OrDefault('1.15', 2) = 1.15`
+:::
+
 **Returned value**
 
 - Value of type `Decimal(9, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal32(S)](../data-types/decimal.md).
@@ -4389,6 +4401,12 @@ Unsupported arguments:
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal64`: `( -1 * 10^(18 - S), 1 * 10^(18 - S) )`.
 Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
+:::
+
+:::warning
+Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
+For example: `toDecimal64(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
+You can use a String input so the operations use the underlying integer type: `toDecimal64('1.15', 2) = 1.15`
 :::
 
 **Returned value**
@@ -4582,6 +4600,12 @@ Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an error.
 :::
 
+:::warning
+Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
+For example: `toDecimal64OrDefault(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
+You can use a String input so the operations use the underlying integer type: `toDecimal64OrDefault('1.15', 2) = 1.15`
+:::
+
 **Returned value**
 
 - Value of type `Decimal(18, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal64(S)](../data-types/decimal.md).
@@ -4643,6 +4667,12 @@ Unsupported arguments:
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal128`: `( -1 * 10^(38 - S), 1 * 10^(38 - S) )`.
 Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
+:::
+
+:::warning
+Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
+For example: `toDecimal128(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
+You can use a String input so the operations use the underlying integer type: `toDecimal128('1.15', 2) = 1.15`
 :::
 
 **Returned value**
@@ -4836,6 +4866,12 @@ Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an error.
 :::
 
+:::warning
+Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
+For example: `toDecimal128OrDefault(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
+You can use a String input so the operations use the underlying integer type: `toDecimal128OrDefault('1.15', 2) = 1.15`
+:::
+
 **Returned value**
 
 - Value of type `Decimal(38, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal128(S)](../data-types/decimal.md).
@@ -4897,6 +4933,12 @@ Unsupported arguments:
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal256`: `( -1 * 10^(76 - S), 1 * 10^(76 - S) )`.
 Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
+:::
+
+:::warning
+Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
+For example: `toDecimal256(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
+You can use a String input so the operations use the underlying integer type: `toDecimal256('1.15', 2) = 1.15`
 :::
 
 **Returned value**
@@ -5088,6 +5130,12 @@ Unsupported arguments:
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal256`: `( -1 * 10^(76 - S), 1 * 10^(76 - S) )`.
 Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an error.
+:::
+
+:::warning
+Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
+For example: `toDecimal256OrDefault(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
+You can use a String input so the operations use the underlying integer type: `toDecimal256OrDefault('1.15', 2) = 1.15`
 :::
 
 **Returned value**

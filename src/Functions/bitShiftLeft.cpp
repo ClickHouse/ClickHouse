@@ -53,7 +53,7 @@ struct BitShiftLeftImpl
             const UInt128 bit_limit = static_cast<UInt128>(word_size) * n;
             if (b < 0 || static_cast<decltype(bit_limit)>(b) > bit_limit)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value and less or equal to the bit width of the value to shift");
-            else if (b == bit_limit)
+            if (b == bit_limit)
             {
                 // insert default value
                 out_vec.push_back(0);
@@ -121,7 +121,7 @@ struct BitShiftLeftImpl
             const UInt128 bit_limit = static_cast<UInt128>(word_size) * n;
             if (b < 0 || static_cast<decltype(bit_limit)>(b) > bit_limit)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value and less or equal to the bit width of the value to shift");
-            else if (b == bit_limit)
+            if (b == bit_limit)
             {
                 // insert default value
                 out_vec.resize_fill(out_vec.size() + n);

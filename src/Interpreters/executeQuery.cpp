@@ -90,7 +90,6 @@ namespace ProfileEvents
     extern const Event SelectQueryTimeMicroseconds;
     extern const Event InsertQueryTimeMicroseconds;
     extern const Event OtherQueryTimeMicroseconds;
-    extern const Event RealTimeMicroseconds;
 }
 
 namespace DB
@@ -155,6 +154,7 @@ namespace Setting
     extern const SettingsBool use_query_cache;
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
+    extern const SettingsBool enable_secure_identifiers;
 }
 
 namespace ErrorCodes
@@ -458,14 +458,9 @@ void logQueryFinish(
         /// Update performance counters before logging to query_log
         CurrentThread::finalizePerformanceCounters();
 
-        std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
-        QueryStatusInfo info = process_list_elem->getInfo(true, true);
-        if (settings[Setting::log_profile_events])
-            profile_counters = info.profile_counters;
-        else
-            profile_counters.swap(info.profile_counters);
-
+        QueryStatusInfo info = process_list_elem->getInfo(true, settings[Setting::log_profile_events]);
         elem.type = QueryLogElementType::QUERY_FINISH;
+
         addStatusInfoToQueryLogElement(elem, info, query_ast, context);
 
         if (pulling_pipeline)
@@ -484,7 +479,6 @@ void logQueryFinish(
         {
             Progress p;
             p.incrementPiecewiseAtomically(Progress{ResultProgress{elem.result_rows, elem.result_bytes}});
-            p.incrementRealTimeMicroseconds((*profile_counters)[ProfileEvents::RealTimeMicroseconds]);
             progress_callback(p);
         }
 
@@ -854,7 +848,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// Verify that AST formatting is consistent:
             /// If you format AST, parse it back, and format it again, you get the same string.
 
-            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(0, true, true, false, false, IdentifierQuotingStyle::Backticks);
+            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(
+                /*max_length=*/0,
+                /*one_line=*/true,
+                /*show_secrets=*/true,
+                /*print_pretty_type_names=*/false,
+                /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+                /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
 
             /// The query can become more verbose after formatting, so:
             size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
@@ -877,13 +877,19 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}",
                         formatted1, std::string_view(begin, end-begin));
-                else
-                    throw;
+
+                throw;
             }
 
             chassert(ast2);
 
-            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(0, true, true, false, false, IdentifierQuotingStyle::Backticks);
+            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(
+                /*max_length=*/0,
+                /*one_line=*/true,
+                /*show_secrets=*/true,
+                /*print_pretty_type_names=*/false,
+                /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+                /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
 
             if (formatted1 != formatted2)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -991,6 +997,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// to allow settings to take effect.
         InterpreterSetQuery::applySettingsFromQuery(ast, context);
         validateAnalyzerSettings(ast, settings[Setting::allow_experimental_analyzer]);
+
+        if (settings[Setting::enable_secure_identifiers])
+        {
+            WriteBufferFromOwnString buf;
+            IAST::FormatSettings enable_secure_identifiers_settings(buf, true);
+            enable_secure_identifiers_settings.enable_secure_identifiers = true;
+            ast->format(enable_secure_identifiers_settings);
+        }
 
         if (auto * insert_query = ast->as<ASTInsertQuery>())
             insert_query->tail = istr;
@@ -1254,7 +1268,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     if (!interpreter->supportsTransactions())
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", ast->getID());
-
                 }
 
                 // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.

@@ -1,0 +1,14 @@
+GRANT SELECT, INSERT ON team*.* TO user_03141
+GRANT SELECT ON test*.* TO user_03141
+---
+GRANT SELECT, INSERT ON team*.* TO user_03141
+GRANT SELECT ON test*.* TO user_03141
+GRANT INSERT ON default.foo* TO user_03141
+GRANT INSERT ON default.foobar* TO user_03141 WITH GRANT OPTION
+---
+GRANT INSERT ON team*.* TO user_03141
+GRANT SELECT ON test*.* TO user_03141
+REVOKE SELECT ON test.* FROM user_03141
+GRANT INSERT ON default.foo* TO user_03141
+GRANT INSERT ON default.foobar* TO user_03141 WITH GRANT OPTION
+---
