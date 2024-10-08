@@ -482,7 +482,7 @@ void SerializationDynamic::serializeBinary(const IColumn & column, size_t row_nu
     }
     /// Check if this value is in shared variant. In this case it's already
     /// in desired binary format.
-    else if (global_discr == dynamic_column.getSharedVariantDiscriminator())
+    if (global_discr == dynamic_column.getSharedVariantDiscriminator())
     {
         auto value = dynamic_column.getSharedVariant().getDataAt(variant_column.offsetAt(row_num));
         ostr.write(value.data, value.size);

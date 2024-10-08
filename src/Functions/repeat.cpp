@@ -234,16 +234,19 @@ public:
 
                 return col_res;
             }
-            else if (castType(arguments[1].type.get(), [&](const auto & type)
-                {
-                    using DataType = std::decay_t<decltype(type)>;
-                    using T = typename DataType::FieldType;
-                    const ColumnVector<T> & column = checkAndGetColumn<ColumnVector<T>>(*col_num);
-                    auto col_res = ColumnString::create();
-                    RepeatImpl::vectorStrVectorRepeat(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), column.getData());
-                    res = std::move(col_res);
-                    return true;
-                }))
+            if (castType(
+                    arguments[1].type.get(),
+                    [&](const auto & type)
+                    {
+                        using DataType = std::decay_t<decltype(type)>;
+                        using T = typename DataType::FieldType;
+                        const ColumnVector<T> & column = checkAndGetColumn<ColumnVector<T>>(*col_num);
+                        auto col_res = ColumnString::create();
+                        RepeatImpl::vectorStrVectorRepeat(
+                            col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), column.getData());
+                        res = std::move(col_res);
+                        return true;
+                    }))
             {
                 return res;
             }

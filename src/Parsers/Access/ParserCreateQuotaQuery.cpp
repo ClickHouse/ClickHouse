@@ -115,8 +115,7 @@ namespace
     {
         if (f.getType() == Field::Types::String)
             return parseWithSizeSuffix<QuotaValue>(boost::algorithm::trim_copy(f.safeGet<std::string>()));
-        else
-            return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
+        return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
     }
 
     bool parseMaxValue(IParserBase::Pos & pos, Expected & expected, QuotaType quota_type, QuotaValue & max_value)

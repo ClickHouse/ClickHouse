@@ -359,10 +359,8 @@ IColumnHelper<Derived, Parent>::serializeValueIntoArenaWithNull(size_t n, Arena 
         self.serializeValueIntoMemory(n, memory + 1);
         return {memory, sz};
     }
-    else
-    {
-        return self.serializeValueIntoArena(n, arena, begin);
-    }
+
+    return self.serializeValueIntoArena(n, arena, begin);
 }
 
 template <typename Derived, typename Parent>

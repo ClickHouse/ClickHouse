@@ -223,10 +223,8 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 .num_read_bytes = res.num_read_bytes,
                 .is_finished = false};
         }
-        else
-        {
-            return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
-        }
+
+        return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
     }
 
     return {Chunk(), 0, 0, true};
