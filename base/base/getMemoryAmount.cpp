@@ -2,13 +2,14 @@
 
 #include <base/cgroupsv2.h>
 #include <base/getPageSize.h>
-#include <base/Numa.h>
 
 #include <fstream>
+#include <stdexcept>
 
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/param.h>
+
 
 namespace
 {
@@ -17,6 +18,9 @@ std::optional<uint64_t> getCgroupsV2MemoryLimit()
 {
 #if defined(OS_LINUX)
     if (!cgroupsV2Enabled())
+        return {};
+
+    if (!cgroupsV2MemoryControllerEnabled())
         return {};
 
     std::filesystem::path current_cgroup = cgroupV2PathOfProcess();
@@ -59,9 +63,6 @@ uint64_t getMemoryAmountOrZero()
 
     uint64_t memory_amount = num_pages * page_size;
 
-    if (auto total_numa_memory = DB::getNumaNodesTotalMemory(); total_numa_memory.has_value())
-        memory_amount = *total_numa_memory;
-
     /// Respect the memory limit set by cgroups v2.
     auto limit_v2 = getCgroupsV2MemoryLimit();
     if (limit_v2.has_value() && *limit_v2 < memory_amount)
@@ -77,7 +78,8 @@ uint64_t getMemoryAmountOrZero()
         {
             uint64_t limit_v1;
             if (limit_file_v1 >> limit_v1)
-                memory_amount = std::min(memory_amount, limit_v1);
+                if (limit_v1 < memory_amount)
+                    memory_amount = limit_v1;
         }
     }
 

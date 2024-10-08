@@ -40,7 +40,8 @@ size_t shortest_literal_length(const Literals & literals)
     if (literals.empty()) return 0;
     size_t shortest = std::numeric_limits<size_t>::max();
     for (const auto & lit : literals)
-        shortest = std::min(shortest, lit.literal.size());
+        if (shortest > lit.literal.size())
+            shortest = lit.literal.size();
     return shortest;
 }
 
@@ -244,43 +245,33 @@ const char * analyzeImpl(
                 is_trivial = false;
                 if (!in_square_braces)
                 {
-                    /// it means flag negation
-                    /// there are various possible flags
-                    /// actually only imsU are supported by re2
-                    auto is_flag_char = [](char x)
-                    {
-                        return x == '-' || x == 'i' || x == 'm' || x == 's' || x == 'U' || x == 'u';
-                    };
                     /// Check for case-insensitive flag.
-                    if (pos + 2 < end && pos[1] == '?' && is_flag_char(pos[2]))
+                    if (pos + 1 < end && pos[1] == '?')
                     {
-                        size_t offset = 2;
-                        for (; pos + offset < end; ++offset)
+                        for (size_t offset = 2; pos + offset < end; ++offset)
                         {
-                            if (pos[offset] == 'i')
+                            if (pos[offset] == '-'  /// it means flag negation
+                                /// various possible flags, actually only imsU are supported by re2
+                                || (pos[offset] >= 'a' && pos[offset] <= 'z')
+                                || (pos[offset] >= 'A' && pos[offset] <= 'Z'))
                             {
-                                /// Actually it can be negated case-insensitive flag. But we don't care.
-                                has_case_insensitive_flag = true;
+                                if (pos[offset] == 'i')
+                                {
+                                    /// Actually it can be negated case-insensitive flag. But we don't care.
+                                    has_case_insensitive_flag = true;
+                                    break;
+                                }
                             }
-                            else if (!is_flag_char(pos[offset]))
+                            else
                                 break;
-                        }
-                        pos += offset;
-                        if (pos == end)
-                            return pos;
-                        /// if this group only contains flags, we have nothing to do.
-                        if (*pos == ')')
-                        {
-                            ++pos;
-                            break;
                         }
                     }
                     /// (?:regex) means non-capturing parentheses group
-                    else if (pos + 2 < end && pos[1] == '?' && pos[2] == ':')
+                    if (pos + 2 < end && pos[1] == '?' && pos[2] == ':')
                     {
                         pos += 2;
                     }
-                    else if (pos + 3 < end && pos[1] == '?' && (pos[2] == '<' || pos[2] == '\'' || (pos[2] == 'P' && pos[3] == '<')))
+                    if (pos + 3 < end && pos[1] == '?' && (pos[2] == '<' || pos[2] == '\'' || (pos[2] == 'P' && pos[3] == '<')))
                     {
                         pos = skipNameCapturingGroup(pos, pos[2] == 'P' ? 3: 2, end);
                     }
@@ -460,7 +451,7 @@ try
 {
     Literals alternative_literals;
     Literal required_literal;
-    analyzeImpl(regexp_, regexp_.data(), required_literal, is_trivial, alternative_literals); // NOLINT
+    analyzeImpl(regexp_, regexp_.data(), required_literal, is_trivial, alternative_literals);
     required_substring = std::move(required_literal.literal);
     required_substring_is_prefix = required_literal.prefix;
     for (auto & lit : alternative_literals)
@@ -658,7 +649,8 @@ unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_
     if (limit == 0)
         return 0;
 
-    limit = std::min(limit, number_of_subpatterns + 1);
+    if (limit > number_of_subpatterns + 1)
+        limit = number_of_subpatterns + 1;
 
     if (is_trivial)
     {

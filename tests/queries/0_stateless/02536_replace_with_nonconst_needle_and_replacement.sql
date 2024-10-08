@@ -7,7 +7,7 @@ CREATE TABLE test_tab
   engine = MergeTree()
   ORDER BY id;
 
-INSERT INTO test_tab VALUES (1, 'Hello World', 'l', 'xx') (2, 'Hello World', 'll', 'x') (3, 'Hello World', 'not_found', 'x') (4, 'Hello World', '[eo]', 'x') (5, 'Hello World', '.', 'x');
+INSERT INTO test_tab VALUES (1, 'Hello World', 'l', 'xx') (2, 'Hello World', 'll', 'x') (3, 'Hello World', 'not_found', 'x') (4, 'Hello World', '[eo]', 'x') (5, 'Hello World', '.', 'x')
 
 
 SELECT '** replaceAll() **';
@@ -77,7 +77,7 @@ CREATE TABLE test_tab
   engine = MergeTree()
   ORDER BY id;
 
-INSERT INTO test_tab VALUES (1, 'Hello World', 'l', 'x') (2, 'Hello World', '', 'y');
+INSERT INTO test_tab VALUES (1, 'Hello World', 'l', 'x') (2, 'Hello World', '', 'y')
 
 -- needle: non-const, replacement: const
 SELECT replaceAll(haystack, needle, 'x') FROM test_tab;  -- { serverError ARGUMENT_OUT_OF_BOUND }

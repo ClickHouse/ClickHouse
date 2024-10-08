@@ -187,7 +187,7 @@ def check_convert_all_dbs_to_atomic():
 
     # 6 tables, MVs contain 2 rows (inner tables does not match regexp)
     assert "8\t{}\n".format(8 * len("atomic")) == node.query(
-        "SELECT count(), sum(n) FROM atomic.merge"
+        "SELECT count(), sum(n) FROM atomic.merge".format(db)
     )
 
     node.query("DETACH TABLE ordinary.detached PERMANENTLY")

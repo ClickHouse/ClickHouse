@@ -23,7 +23,7 @@ struct MergeTreeDataSelectSamplingData
     bool read_nothing = false;
     Float64 used_sample_factor = 1.0;
     std::shared_ptr<ASTFunction> filter_function;
-    std::shared_ptr<const ActionsDAG> filter_expression;
+    ActionsDAGPtr filter_expression;
 };
 
 struct UsefulSkipIndexes
@@ -60,7 +60,8 @@ struct UsefulSkipIndexes
 class ReadFromMergeTree final : public SourceStepWithFilter
 {
 public:
-    enum class IndexType : uint8_t
+
+    enum class IndexType
     {
         None,
         MinMax,
@@ -100,9 +101,7 @@ public:
         UInt64 selected_marks_pk = 0;
         UInt64 total_marks_pk = 0;
         UInt64 selected_rows = 0;
-        bool has_exact_ranges = false;
 
-        bool readFromProjection() const { return !parts_with_ranges.empty() && parts_with_ranges.front().data_part->isProjectionPart(); }
         void checkLimits(const Settings & settings, const SelectQueryInfo & query_info_) const;
     };
 
@@ -110,7 +109,7 @@ public:
 
     ReadFromMergeTree(
         MergeTreeData::DataPartsVector parts_,
-        MergeTreeData::MutationsSnapshotPtr mutations_snapshot_,
+        std::vector<AlterConversionsPtr> alter_conversions_,
         Names all_column_names_,
         const MergeTreeData & data_,
         const SelectQueryInfo & query_info_,
@@ -121,16 +120,7 @@ public:
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
         LoggerPtr log_,
         AnalysisResultPtr analyzed_result_ptr_,
-        bool enable_parallel_reading_,
-        std::optional<MergeTreeAllRangesCallback> all_ranges_callback_ = std::nullopt,
-        std::optional<MergeTreeReadTaskCallback> read_task_callback_ = std::nullopt,
-        std::optional<size_t> number_of_current_replica_ = std::nullopt);
-
-    std::unique_ptr<ReadFromMergeTree> createLocalParallelReplicasReadingStep(
-        AnalysisResultPtr analyzed_result_ptr_,
-        MergeTreeAllRangesCallback all_ranges_callback_,
-        MergeTreeReadTaskCallback read_task_callback_,
-        size_t replica_number);
+        bool enable_parallel_reading);
 
     static constexpr auto name = "ReadFromMergeTree";
     String getName() const override { return name; }
@@ -152,11 +142,6 @@ public:
 
     struct Indexes
     {
-        explicit Indexes(KeyCondition key_condition_)
-            : key_condition(std::move(key_condition_))
-            , use_skip_indexes(false)
-        {}
-
         KeyCondition key_condition;
         std::optional<PartitionPruner> partition_pruner;
         std::optional<KeyCondition> minmax_idx_condition;
@@ -168,7 +153,7 @@ public:
 
     static AnalysisResultPtr selectRangesToRead(
         MergeTreeData::DataPartsVector parts,
-        MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
+        std::vector<AlterConversionsPtr> alter_conversions,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
@@ -177,14 +162,13 @@ public:
         const MergeTreeData & data,
         const Names & all_column_names,
         LoggerPtr log,
-        std::optional<Indexes> & indexes,
-        bool find_exact_ranges);
+        std::optional<Indexes> & indexes);
 
-    AnalysisResultPtr selectRangesToRead(MergeTreeData::DataPartsVector parts, bool find_exact_ranges = false) const;
+    AnalysisResultPtr selectRangesToRead(
+        MergeTreeData::DataPartsVector parts,
+        std::vector<AlterConversionsPtr> alter_conversions) const;
 
-    AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
-
-    StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
+    StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
@@ -197,11 +181,11 @@ public:
     bool requestOutputEachPartitionThroughSeparatePort();
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
 
-    AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
+    bool hasAnalyzedResult() const { return analyzed_result_ptr != nullptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
     const MergeTreeData::DataPartsVector & getParts() const { return prepared_parts; }
-    MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot() const { return mutations_snapshot; }
+    const std::vector<AlterConversionsPtr> & getAlterConvertionsForParts() const { return alter_conversions_for_parts; }
 
     const MergeTreeData & getMergeTreeData() const { return data; }
     size_t getMaxBlockSize() const { return block_size.max_block_size_rows; }
@@ -211,6 +195,19 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
 private:
+    static AnalysisResultPtr selectRangesToReadImpl(
+        MergeTreeData::DataPartsVector parts,
+        std::vector<AlterConversionsPtr> alter_conversions,
+        const StorageMetadataPtr & metadata_snapshot,
+        const SelectQueryInfo & query_info,
+        ContextPtr context,
+        size_t num_streams,
+        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
+        const MergeTreeData & data,
+        const Names & all_column_names,
+        LoggerPtr log,
+        std::optional<Indexes> & indexes);
+
     int getSortDirection() const
     {
         if (query_info.input_order_info)
@@ -222,12 +219,14 @@ private:
     MergeTreeReaderSettings reader_settings;
 
     MergeTreeData::DataPartsVector prepared_parts;
-    MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
+    std::vector<AlterConversionsPtr> alter_conversions_for_parts;
 
     Names all_column_names;
 
     const MergeTreeData & data;
     ExpressionActionsSettings actions_settings;
+
+    StorageMetadataPtr metadata_for_reading;
 
     const MergeTreeReadTask::BlockSizeParams block_size;
 
@@ -254,9 +253,9 @@ private:
     Pipe readFromPoolParallelReplicas(RangesInDataParts parts_with_range, Names required_columns, PoolSettings pool_settings);
     Pipe readInOrder(RangesInDataParts parts_with_ranges, Names required_columns, PoolSettings pool_settings, ReadType read_type, UInt64 limit);
 
-    Pipe spreadMarkRanges(RangesInDataParts && parts_with_ranges, size_t num_streams, AnalysisResult & result, std::optional<ActionsDAG> & result_projection);
+    Pipe spreadMarkRanges(RangesInDataParts && parts_with_ranges, size_t num_streams, AnalysisResult & result, ActionsDAGPtr & result_projection);
 
-    Pipe groupStreamsByPartition(AnalysisResult & result, std::optional<ActionsDAG> & result_projection);
+    Pipe groupStreamsByPartition(AnalysisResult & result, ActionsDAGPtr & result_projection);
 
     Pipe spreadMarkRangesAmongStreams(RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & column_names);
 
@@ -264,25 +263,23 @@ private:
         RangesInDataParts && parts_with_ranges,
         size_t num_streams,
         const Names & column_names,
-        std::optional<ActionsDAG> & out_projection,
+        ActionsDAGPtr & out_projection,
         const InputOrderInfoPtr & input_order_info);
 
     bool doNotMergePartsAcrossPartitionsFinal() const;
 
     Pipe spreadMarkRangesAmongStreamsFinal(
-        RangesInDataParts && parts, size_t num_streams, const Names & origin_column_names, const Names & column_names, std::optional<ActionsDAG> & out_projection);
+        RangesInDataParts && parts, size_t num_streams, const Names & origin_column_names, const Names & column_names, ActionsDAGPtr & out_projection);
 
     ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
 
-    mutable AnalysisResultPtr analyzed_result_ptr;
+    AnalysisResultPtr analyzed_result_ptr;
     VirtualFields shared_virtual_fields;
 
     bool is_parallel_reading_from_replicas;
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
-    bool enable_remove_parts_from_snapshot_optimization = true;
-    std::optional<size_t> number_of_current_replica;
 };
 
 }

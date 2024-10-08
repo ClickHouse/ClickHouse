@@ -5,7 +5,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -17,11 +16,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool function_locate_has_mysql_compatible_argument_order;
-}
-
 /** Search and replace functions in strings:
   * position(haystack, needle)     - the normal search for a substring in a string, returns the position (in bytes) of the found substring starting with 1, or 0 if no substring is found.
   * positionUTF8(haystack, needle) - the same, but the position is calculated at code points, provided that the string is encoded in UTF-8.
@@ -69,13 +63,13 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-enum class ExecutionErrorPolicy : uint8_t
+enum class ExecutionErrorPolicy
 {
     Null,
     Throw
 };
 
-enum class HaystackNeedleOrderIsConfigurable : uint8_t
+enum class HaystackNeedleOrderIsConfigurable
 {
     No,     /// function arguments are always: (haystack, needle[, position])
     Yes     /// depending on a setting, the function arguments are (haystack, needle[, position]) or (needle, haystack[, position])
@@ -87,7 +81,7 @@ template <typename Impl,
 class FunctionsStringSearch : public IFunction
 {
 private:
-    enum class ArgumentOrder : uint8_t
+    enum class ArgumentOrder
     {
         HaystackNeedle,
         NeedleHaystack
@@ -104,7 +98,7 @@ public:
     {
         if constexpr (haystack_needle_order_is_configurable == HaystackNeedleOrderIsConfigurable::Yes)
         {
-            if (context->getSettingsRef()[Setting::function_locate_has_mysql_compatible_argument_order])
+            if (context->getSettingsRef().function_locate_has_mysql_compatible_argument_order)
                 argument_order = ArgumentOrder::NeedleHaystack;
         }
     }
@@ -168,7 +162,7 @@ public:
         return return_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         const ColumnPtr & column_haystack = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[0].column : arguments[1].column;
         const ColumnPtr & column_needle = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[1].column : arguments[0].column;
@@ -241,8 +235,7 @@ public:
                 col_needle_vector->getOffsets(),
                 column_start_pos,
                 vec_res,
-                null_map.get(),
-                input_rows_count);
+                null_map.get());
         else if (col_haystack_vector && col_needle_const)
             Impl::vectorConstant(
                 col_haystack_vector->getChars(),
@@ -250,8 +243,7 @@ public:
                 col_needle_const->getValue<String>(),
                 column_start_pos,
                 vec_res,
-                null_map.get(),
-                input_rows_count);
+                null_map.get());
         else if (col_haystack_vector_fixed && col_needle_vector)
             Impl::vectorFixedVector(
                 col_haystack_vector_fixed->getChars(),
@@ -260,16 +252,14 @@ public:
                 col_needle_vector->getOffsets(),
                 column_start_pos,
                 vec_res,
-                null_map.get(),
-                input_rows_count);
+                null_map.get());
         else if (col_haystack_vector_fixed && col_needle_const)
             Impl::vectorFixedConstant(
                 col_haystack_vector_fixed->getChars(),
                 col_haystack_vector_fixed->getN(),
                 col_needle_const->getValue<String>(),
                 vec_res,
-                null_map.get(),
-                input_rows_count);
+                null_map.get());
         else if (col_haystack_const && col_needle_vector)
             Impl::constantVector(
                 col_haystack_const->getValue<String>(),
@@ -277,8 +267,7 @@ public:
                 col_needle_vector->getOffsets(),
                 column_start_pos,
                 vec_res,
-                null_map.get(),
-                input_rows_count);
+                null_map.get());
         else
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,

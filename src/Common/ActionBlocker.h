@@ -19,7 +19,7 @@ public:
 
     /// Temporarily blocks corresponding actions (while the returned object is alive)
     friend class ActionLock;
-    [[nodiscard]] ActionLock cancel() { return ActionLock(*this); }
+    ActionLock cancel() { return ActionLock(*this); }
 
     /// Cancel the actions forever.
     void cancelForever() { ++(*counter); }

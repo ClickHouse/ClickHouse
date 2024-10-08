@@ -17,7 +17,11 @@
 #    include <openssl/md4.h>
 #    include <openssl/md5.h>
 #    include <openssl/sha.h>
-#    include <openssl/evp.h>
+#    if USE_BORINGSSL
+#        include <openssl/digest.h>
+#    else
+#        include <openssl/evp.h>
+#    endif
 #endif
 
 /// Instatiating only the functions that require FunctionStringHashFixedString in a separate file
@@ -224,7 +228,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(arguments[0].column.get()))
         {
@@ -233,10 +237,11 @@ public:
             const typename ColumnString::Chars & data = col_from->getChars();
             const typename ColumnString::Offsets & offsets = col_from->getOffsets();
             auto & chars_to = col_to->getChars();
-            chars_to.resize(input_rows_count * Impl::length);
+            const auto size = offsets.size();
+            chars_to.resize(size * Impl::length);
 
             ColumnString::Offset current_offset = 0;
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < size; ++i)
             {
                 Impl::apply(
                     reinterpret_cast<const char *>(&data[current_offset]),
@@ -252,10 +257,11 @@ public:
         {
             auto col_to = ColumnFixedString::create(Impl::length);
             const typename ColumnFixedString::Chars & data = col_from_fix->getChars();
+            const auto size = col_from_fix->size();
             auto & chars_to = col_to->getChars();
             const auto length = col_from_fix->getN();
-            chars_to.resize(input_rows_count * Impl::length);
-            for (size_t i = 0; i < input_rows_count; ++i)
+            chars_to.resize(size * Impl::length);
+            for (size_t i = 0; i < size; ++i)
             {
                 Impl::apply(
                     reinterpret_cast<const char *>(&data[i * length]), length, reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
@@ -266,10 +272,11 @@ public:
         {
             auto col_to = ColumnFixedString::create(Impl::length);
             const typename ColumnIPv6::Container & data = col_from_ip->getData();
+            const auto size = col_from_ip->size();
             auto & chars_to = col_to->getChars();
             const auto length = sizeof(IPv6::UnderlyingType);
-            chars_to.resize(input_rows_count * Impl::length);
-            for (size_t i = 0; i < input_rows_count; ++i)
+            chars_to.resize(size * Impl::length);
+            for (size_t i = 0; i < size; ++i)
             {
                 Impl::apply(
                     reinterpret_cast<const char *>(&data[i]), length, reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
@@ -425,7 +432,8 @@ REGISTER_FUNCTION(HashFixedStrings)
     It returns a BLAKE3 hash as a byte array with type FixedString(32).
     )",
             .examples{{"hash", "SELECT hex(BLAKE3('ABC'))", ""}},
-            .categories{"Hash"}});
+            .categories{"Hash"}},
+        FunctionFactory::CaseSensitive);
 #    endif
 }
 #endif

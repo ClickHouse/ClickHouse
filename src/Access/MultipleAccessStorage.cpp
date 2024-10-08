@@ -260,7 +260,7 @@ void MultipleAccessStorage::moveAccessEntities(const std::vector<UUID> & ids, co
 
     try
     {
-        source_storage->remove(ids); // NOLINT
+        source_storage->remove(ids);
         need_rollback = true;
         destination_storage->insert(to_move, ids);
     }
@@ -353,7 +353,7 @@ void MultipleAccessStorage::reload(ReloadMode reload_mode)
 }
 
 
-bool MultipleAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
+bool MultipleAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
 {
     std::shared_ptr<IAccessStorage> storage_for_insertion;
 
@@ -376,7 +376,7 @@ bool MultipleAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & 
             getStorageName());
     }
 
-    if (storage_for_insertion->insert(id, entity, replace_if_exists, throw_if_exists, conflicting_id))
+    if (storage_for_insertion->insert(id, entity, replace_if_exists, throw_if_exists))
     {
         std::lock_guard lock{mutex};
         ids_cache.set(id, storage_for_insertion);

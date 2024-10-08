@@ -3,6 +3,7 @@
 #include <base/DayNum.h>
 #include <base/defines.h>
 #include <base/types.h>
+#include <Core/DecimalFunctions.h>
 
 #include <ctime>
 #include <cassert>
@@ -41,18 +42,13 @@ enum class WeekModeFlag : UInt8
 using YearWeek = std::pair<UInt16, UInt8>;
 
 /// Modes for toDayOfWeek() function.
-enum class WeekDayMode : uint8_t
+enum class WeekDayMode
 {
     WeekStartsMonday1 = 0,
     WeekStartsMonday0 = 1,
     WeekStartsSunday0 = 2,
     WeekStartsSunday1 = 3
 };
-
-namespace DB
-{
-class DateTime64;
-}
 
 /** Lookup table to conversion of time to date, and to month / year / day of week / day of month and so on.
   * First time was implemented for OLAPServer, that needed to do billions of such transformations.
@@ -597,7 +593,29 @@ public:
         return time % 60;
     }
 
-    unsigned toMillisecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const;
+    template <typename DateOrTime>
+    unsigned toMillisecond(const DateOrTime & datetime, Int64 scale_multiplier) const
+    {
+        constexpr Int64 millisecond_multiplier = 1'000;
+        constexpr Int64 microsecond_multiplier = 1'000 * millisecond_multiplier;
+        constexpr Int64 divider = microsecond_multiplier / millisecond_multiplier;
+
+        auto components = DB::DecimalUtils::splitWithScaleMultiplier(datetime, scale_multiplier);
+
+        if (datetime.value < 0 && components.fractional)
+        {
+            components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
+            --components.whole;
+        }
+        Int64 fractional = components.fractional;
+        if (scale_multiplier > microsecond_multiplier)
+            fractional = fractional / (scale_multiplier / microsecond_multiplier);
+        else if (scale_multiplier < microsecond_multiplier)
+            fractional = fractional * (microsecond_multiplier / scale_multiplier);
+
+        UInt16 millisecond = static_cast<UInt16>(fractional / divider);
+        return millisecond;
+    }
 
     unsigned toMinute(Time t) const
     {
@@ -1104,7 +1122,8 @@ public:
                 time -= values.amount_of_offset_change();
 
                 /// With cutoff at the time of the shift. Otherwise we may end up with something like 23:00 previous day.
-                time = std::max<Time>(time, values.time_at_offset_change());
+                if (time < values.time_at_offset_change())
+                    time = values.time_at_offset_change();
             }
         }
         else
@@ -1249,7 +1268,7 @@ public:
     DateComponents toDateComponents(Time t) const
     {
         const Values & values = getValues(t);
-        return { .year = values.year, .month = values.month, .day = values.day_of_month };
+        return { values.year, values.month, values.day_of_month };
     }
 
     DateTimeComponents toDateTimeComponents(Time t) const
@@ -1349,7 +1368,10 @@ public:
 
         UInt8 days_in_month = daysInMonth(year, month);
 
-        return std::min(day_of_month, days_in_month);
+        if (day_of_month > days_in_month)
+            day_of_month = days_in_month;
+
+        return day_of_month;
     }
 
     template <typename DateOrTime>

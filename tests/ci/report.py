@@ -20,16 +20,10 @@ from typing import (
     Union,
 )
 
-from build_download_helper import APIException, get_gh_api
-from ci_config import CI
-from env_helper import (
-    GITHUB_JOB,
-    GITHUB_REPOSITORY,
-    GITHUB_RUN_ID,
-    GITHUB_RUN_URL,
-    GITHUB_WORKSPACE,
-    REPORT_PATH,
-)
+from build_download_helper import get_gh_api
+from ci_config import CI_CONFIG, BuildConfig
+from ci_utils import normalize_string
+from env_helper import REPORT_PATH, TEMP_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -45,105 +39,6 @@ SKIPPED: Final = "SKIPPED"
 StatusType = Literal["error", "failure", "pending", "success"]
 STATUSES = [ERROR, FAILURE, PENDING, SUCCESS]  # type: List[StatusType]
 
-# These parameters are set only on demand, and only once
-_GITHUB_JOB_ID = ""
-_GITHUB_JOB_URL = ""
-_GITHUB_JOB_API_URL = ""
-
-
-def GITHUB_JOB_ID(safe: bool = True) -> str:
-    global _GITHUB_JOB_ID
-    global _GITHUB_JOB_URL
-    global _GITHUB_JOB_API_URL
-    if _GITHUB_JOB_ID:
-        return _GITHUB_JOB_ID
-    try:
-        _GITHUB_JOB_ID, _GITHUB_JOB_URL, _GITHUB_JOB_API_URL = get_job_id_url(
-            GITHUB_JOB
-        )
-    except APIException as e:
-        logging.warning("Unable to retrieve the job info from GH API: %s", e)
-        if not safe:
-            raise e
-    return _GITHUB_JOB_ID
-
-
-def GITHUB_JOB_URL(safe: bool = True) -> str:
-    try:
-        GITHUB_JOB_ID()
-    except APIException:
-        if safe:
-            logging.warning("Using run URL as a fallback to not fail the job")
-            return GITHUB_RUN_URL
-        raise
-
-    return _GITHUB_JOB_URL
-
-
-def GITHUB_JOB_API_URL(safe: bool = True) -> str:
-    GITHUB_JOB_ID(safe)
-    return _GITHUB_JOB_API_URL
-
-
-def get_job_id_url(job_name: str) -> Tuple[str, str, str]:
-    job_id = ""
-    job_url = ""
-    job_api_url = ""
-    if GITHUB_RUN_ID == "0":
-        job_id = "0"
-    if job_id:
-        return job_id, job_url, job_api_url
-    jobs = []
-    page = 1
-    while not job_id:
-        response = get_gh_api(
-            f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
-            f"actions/runs/{GITHUB_RUN_ID}/jobs?per_page=100&page={page}"
-        )
-        page += 1
-        data = response.json()
-        jobs.extend(data["jobs"])
-        for job in data["jobs"]:
-            if job["name"] != job_name:
-                continue
-            job_id = job["id"]
-            job_url = job["html_url"]
-            job_api_url = job["url"]
-            return job_id, job_url, job_api_url
-        if (
-            len(jobs) >= data["total_count"]  # just in case of inconsistency
-            or len(data["jobs"]) == 0  # if we excided pages
-        ):
-            job_id = "0"
-
-    if not job_url:
-        # This is a terrible workaround for the case of another broken part of
-        # GitHub actions. For nested workflows it doesn't provide a proper job_name
-        # value, but only the final one. So, for `OriginalJob / NestedJob / FinalJob`
-        # full name, job_name contains only FinalJob
-        matched_jobs = []
-        for job in jobs:
-            nested_parts = job["name"].split(" / ")
-            if len(nested_parts) <= 1:
-                continue
-            if nested_parts[-1] == job_name:
-                matched_jobs.append(job)
-        if len(matched_jobs) == 1:
-            # The best case scenario
-            job_id = matched_jobs[0]["id"]
-            job_url = matched_jobs[0]["html_url"]
-            job_api_url = matched_jobs[0]["url"]
-            return job_id, job_url, job_api_url
-        if matched_jobs:
-            logging.error(
-                "We could not get the ID and URL for the current job name %s, there "
-                "are more than one jobs match it for the nested workflows. Please, "
-                "refer to https://github.com/actions/runner/issues/2577",
-                job_name,
-            )
-
-    return job_id, job_url, job_api_url
-
 
 # The order of statuses from the worst to the best
 def _state_rank(status: str) -> int:
@@ -152,15 +47,6 @@ def _state_rank(status: str) -> int:
         return STATUSES.index(status)  # type: ignore
     except ValueError:
         return 3
-
-
-def get_status(status: str) -> StatusType:
-    "function to get the StatusType for a status or ERROR"
-    try:
-        ind = STATUSES.index(status)  # type: ignore
-        return STATUSES[ind]
-    except ValueError:
-        return ERROR
 
 
 def get_worst_status(statuses: Iterable[str]) -> StatusType:
@@ -230,7 +116,7 @@ html {{ min-height: 100%; font-family: "DejaVu Sans", "Noto Sans", Arial, sans-s
 h1 {{ margin-left: 10px; }}
 th, td {{ padding: 5px 10px 5px 10px; text-align: left; vertical-align: top; line-height: 1.5; border: 1px solid var(--table-border-color); }}
 td {{ background: var(--td-background); }}
-th {{ background: var(--th-background); white-space: nowrap; }}
+th {{ background: var(--th-background); }}
 a {{ color: var(--link-color); text-decoration: none; }}
 a:hover, a:active {{ color: var(--link-hover-color); text-decoration: none; }}
 table {{ box-shadow: 0 8px 25px -5px rgba(0, 0, 0, var(--shadow-intensity)); border-collapse: collapse; border-spacing: 0; }}
@@ -240,7 +126,6 @@ th {{ cursor: pointer; }}
 tr:hover {{ filter: var(--tr-hover-filter); }}
 .expandable {{ cursor: pointer; }}
 .expandable-content {{ display: none; }}
-pre {{ white-space: pre-wrap; }}
 #fish {{ display: none; float: right; position: relative; top: -20em; right: 2vw; margin-bottom: -20em; width: 30vw; filter: brightness(7%); z-index: -1; }}
 
 .themes {{
@@ -350,12 +235,7 @@ HTML_TEST_PART = """
 """
 
 BASE_HEADERS = ["Test name", "Test status"]
-# should not be in TEMP directory or any directory that may be cleaned during the job execution
-JOB_REPORT_FILE = Path(GITHUB_WORKSPACE) / "job_report.json"
-
-JOB_STARTED_TEST_NAME = "STARTED"
-JOB_FINISHED_TEST_NAME = "COMPLETED"
-JOB_TIMEOUT_TEST_NAME = "Job Timeout Expired"
+JOB_REPORT_FILE = Path(TEMP_PATH) / "job_report.json"
 
 
 @dataclass
@@ -384,8 +264,8 @@ class TestResult:
             self.log_files.append(log_path)
 
     @staticmethod
-    def create_check_timeout_expired(duration: Optional[float] = None) -> "TestResult":
-        return TestResult(JOB_TIMEOUT_TEST_NAME, "FAIL", time=duration)
+    def create_check_timeout_expired(timeout: float) -> "TestResult":
+        return TestResult("Check timeout expired", "FAIL", timeout)
 
 
 TestResults = List[TestResult]
@@ -399,46 +279,14 @@ class JobReport:
     start_time: str
     duration: float
     additional_files: Union[Sequence[str], Sequence[Path]]
-    # ClickHouse version, build job only
+    # clcikhouse version, build job only
     version: str = ""
-    # check_name to be set in commit status, set it if it differs from the job name
+    # checkname to set in commit status, set if differs from jjob name
     check_name: str = ""
     # directory with artifacts to upload on s3
     build_dir_for_upload: Union[Path, str] = ""
     # if False no GH commit status will be created by CI
     need_commit_status: bool = True
-    # indicates that this is not real job report but report for the job that was skipped by rerun check
-    job_skipped: bool = False
-    # indicates that report generated by CI script in order to check later if job was killed before real report is generated
-    dummy: bool = False
-    exit_code: int = -1
-
-    @staticmethod
-    def get_start_time_from_current():
-        return datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-
-    @classmethod
-    def create_dummy(cls, status: str, job_skipped: bool) -> "JobReport":
-        return JobReport(
-            status=status,
-            description="",
-            test_results=[],
-            start_time=cls.get_start_time_from_current(),
-            duration=0.0,
-            additional_files=[],
-            job_skipped=job_skipped,
-            dummy=True,
-        )
-
-    def update_duration(self):
-        if not self.start_time:
-            self.duration = 0.0
-        else:
-            start_time = datetime.datetime.strptime(
-                self.start_time, "%Y-%m-%d %H:%M:%S"
-            )
-            current_time = datetime.datetime.utcnow()
-            self.duration = (current_time - start_time).total_seconds()
 
     def __post_init__(self):
         assert self.status in (SUCCESS, ERROR, FAILURE, PENDING)
@@ -544,41 +392,30 @@ class BuildResult:
     @classmethod
     def load_any(cls, build_name: str, pr_number: int, head_ref: str):  # type: ignore
         """
-        loads build report from one of all available report files (matching the job digest)
-        with the following priority:
-            1. report for the current PR @pr_number (might happen in PR' wf with or without job reuse)
-            2. report for the current branch @head_ref (might happen in release/master' wf with or without job reuse)
-            3. report for master branch (might happen in any workflow in case of job reuse)
-            4. any other report (job reuse from another PR, if master report is not available yet)
+        loads report from suitable report file with the following priority:
+            1. report from PR with the same @pr_number
+            2. report from branch with the same @head_ref
+            3. report from the master
+            4. any other report
         """
-        pr_report = None
-        ref_report = None
-        master_report = None
-        any_report = None
-        Path(REPORT_PATH).mkdir(parents=True, exist_ok=True)
+        reports = []
         for file in Path(REPORT_PATH).iterdir():
             if f"{build_name}.json" in file.name:
-                any_report = file
-                if "_master_" in file.name:
-                    master_report = file
-                elif f"_{head_ref}_" in file.name:
-                    ref_report = file
-                elif pr_number and f"_{pr_number}_" in file.name:
-                    pr_report = file
-
-        if not any_report:
+                reports.append(file)
+        if not reports:
             return None
-
-        if pr_report:
-            file_path = pr_report
-        elif ref_report:
-            file_path = ref_report
-        elif master_report:
-            file_path = master_report
-        else:
-            file_path = any_report
-
-        return cls.load_from_file(file_path)
+        file_path = None
+        for file in reports:
+            if pr_number and f"_{pr_number}_" in file.name:
+                file_path = file
+                break
+            if f"_{head_ref}_" in file.name:
+                file_path = file
+                break
+            if "_master_" in file.name:
+                file_path = file
+                break
+        return cls.load_from_file(file_path or reports[-1])
 
     @classmethod
     def load_from_file(cls, file: Union[Path, str]):  # type: ignore
@@ -592,10 +429,8 @@ class BuildResult:
         return json.dumps(asdict(self), indent=2)
 
     @property
-    def build_config(self) -> Optional[CI.BuildConfig]:
-        if self.build_name not in CI.JOB_CONFIGS:
-            return None
-        return CI.JOB_CONFIGS[self.build_name].build_config
+    def build_config(self) -> Optional[BuildConfig]:
+        return CI_CONFIG.build_config.get(self.build_name, None)
 
     @property
     def comment(self) -> str:
@@ -728,7 +563,7 @@ class BuildResult:
 
     def write_json(self, directory: Union[Path, str] = REPORT_PATH) -> Path:
         path = Path(directory) / self.get_report_name(
-            self.build_name, self.pr_number or CI.Utils.normalize_string(self.head_ref)
+            self.build_name, self.pr_number or normalize_string(self.head_ref)
         )
         path.write_text(
             json.dumps(
@@ -773,7 +608,11 @@ ColorTheme = Tuple[str, str, str]
 def _format_header(
     header: str, branch_name: str, branch_url: Optional[str] = None
 ) -> str:
-    result = header
+    # Following line does not lower CI->Ci and SQLancer->Sqlancer. It only
+    # capitalizes the first letter and doesn't touch the rest of the word
+    result = " ".join([w[0].upper() + w[1:] for w in header.split(" ") if w])
+    result = result.replace("Clickhouse", "ClickHouse")
+    result = result.replace("clickhouse", "ClickHouse")
     if "ClickHouse" not in result:
         result = f"ClickHouse {result}"
     if branch_url:
@@ -845,24 +684,13 @@ def create_test_html_report(
     if test_results:
         rows_part = []
         num_fails = 0
-        has_test_time = any(tr.time is not None for tr in test_results)
+        has_test_time = False
         has_log_urls = False
 
-        def sort_key(status):
-            if "fail" in status.lower():
-                return 0
-            elif "error" in status.lower():
-                return 1
-            elif "not" in status.lower():
-                return 2
-            elif "ok" in status.lower():
-                return 10
-            elif "success" in status.lower():
-                return 9
-            else:
-                return 5
-
-        test_results.sort(key=lambda result: sort_key(result.status))
+        # Display entires with logs at the top (they correspond to failed tests)
+        test_results.sort(
+            key=lambda result: result.raw_logs is None and result.log_files is None
+        )
 
         for test_result in test_results:
             colspan = 0
@@ -888,11 +716,9 @@ def create_test_html_report(
             row.append(f'<td {fail_id}style="{style}">{test_result.status}</td>')
             colspan += 1
 
-            if has_test_time:
-                if test_result.time is not None:
-                    row.append(f"<td>{test_result.time}</td>")
-                else:
-                    row.append("<td></td>")
+            if test_result.time is not None:
+                has_test_time = True
+                row.append(f"<td>{test_result.time}</td>")
                 colspan += 1
 
             if test_result.log_urls is not None:

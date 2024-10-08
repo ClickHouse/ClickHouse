@@ -60,7 +60,6 @@ private:
     void syncReplica(ASTSystemQuery & query);
     void setReplicaReadiness(bool ready);
     void waitLoadingParts();
-    void unloadPrimaryKeys();
 
     void syncReplicatedDatabase(ASTSystemQuery & query);
 
@@ -74,7 +73,7 @@ private:
     void flushDistributed(ASTSystemQuery & query);
     [[noreturn]] void restartDisk(String & name);
 
-    RefreshTaskList getRefreshTasks();
+    RefreshTaskHolder getRefreshTask();
 
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     void startStopAction(StorageActionBlockType action_type, bool start);

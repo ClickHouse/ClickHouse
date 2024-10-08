@@ -11,7 +11,7 @@ namespace DB
 struct MergeTreeSource::AsyncReadingState
 {
     /// NotStarted -> InProgress -> IsFinished -> NotStarted ...
-    enum class Stage : uint8_t
+    enum class Stage
     {
         NotStarted,
         InProgress,
@@ -105,7 +105,7 @@ struct MergeTreeSource::AsyncReadingState
     AsyncReadingState()
     {
         control = std::make_shared<Control>();
-        callback_runner = threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "MergeTreeRead");
+        callback_runner = threadPoolCallbackRunner<void>(getIOThreadPool().get(), "MergeTreeRead");
     }
 
     ~AsyncReadingState()
@@ -128,13 +128,14 @@ struct MergeTreeSource::AsyncReadingState
     }
 
 private:
-    ThreadPoolCallbackRunnerUnsafe<void> callback_runner;
+    ThreadPoolCallbackRunner<void> callback_runner;
     std::shared_ptr<Control> control;
 };
 #endif
 
-MergeTreeSource::MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const std::string & log_name_)
-    : ISource(processor_->getHeader()), processor(std::move(processor_)), log_name(log_name_)
+MergeTreeSource::MergeTreeSource(MergeTreeSelectProcessorPtr processor_)
+    : ISource(processor_->getHeader())
+    , processor(std::move(processor_))
 {
 #if defined(OS_LINUX)
     if (processor->getSettings().use_asynchronous_read_from_pool)
@@ -149,7 +150,7 @@ std::string MergeTreeSource::getName() const
     return processor->getName();
 }
 
-void MergeTreeSource::onCancel() noexcept
+void MergeTreeSource::onCancel()
 {
     processor->cancel();
 }
@@ -206,7 +207,7 @@ std::optional<Chunk> MergeTreeSource::tryGenerate()
 
             try
             {
-                OpenTelemetry::SpanHolder span{fmt::format("MergeTreeSource({})::tryGenerate", log_name)};
+                OpenTelemetry::SpanHolder span{"MergeTreeSource::tryGenerate()"};
                 holder->setResult(processor->read());
             }
             catch (...)
@@ -221,7 +222,7 @@ std::optional<Chunk> MergeTreeSource::tryGenerate()
     }
 #endif
 
-    OpenTelemetry::SpanHolder span{fmt::format("MergeTreeSource({})::tryGenerate", log_name)};
+    OpenTelemetry::SpanHolder span{"MergeTreeSource::tryGenerate()"};
     return processReadResult(processor->read());
 }
 

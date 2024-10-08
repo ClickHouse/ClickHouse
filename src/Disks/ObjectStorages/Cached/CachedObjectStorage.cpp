@@ -34,16 +34,9 @@ FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
     return cache->createKeyForPath(path);
 }
 
-ObjectStorageKey
-CachedObjectStorage::generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const
+ObjectStorageKey CachedObjectStorage::generateObjectKeyForPath(const std::string & path) const
 {
-    return object_storage->generateObjectKeyForPath(path, key_prefix);
-}
-
-ObjectStorageKey
-CachedObjectStorage::generateObjectKeyPrefixForDirectoryPath(const std::string & path, const std::optional<std::string> & key_prefix) const
-{
-    return object_storage->generateObjectKeyPrefixForDirectoryPath(path, key_prefix);
+    return object_storage->generateObjectKeyForPath(path);
 }
 
 ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settings) const
@@ -99,7 +92,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     /// Need to remove even if cache_on_write == false.
     removeCacheIfExists(object.remote_path);
 
-    if (cache_on_write && cache->isInitialized())
+    if (cache_on_write)
     {
         auto key = getCacheKey(object.remote_path);
         return std::make_unique<CachedOnDiskWriteBufferFromFile>(
@@ -122,8 +115,7 @@ void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_c
         return;
 
     /// Add try catch?
-    if (cache->isInitialized())
-        cache->removeKeyIfExists(getCacheKey(path_key_for_cache), FileCache::getCommonUser().user_id);
+    cache->removeKeyIfExists(getCacheKey(path_key_for_cache), FileCache::getCommonUser().user_id);
 }
 
 void CachedObjectStorage::removeObject(const StoredObject & object)
@@ -184,7 +176,7 @@ std::unique_ptr<IObjectStorage> CachedObjectStorage::cloneObjectStorage(
     return object_storage->cloneObjectStorage(new_namespace, config, config_prefix, context);
 }
 
-void CachedObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
+void CachedObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const
 {
     object_storage->listObjects(path, children, max_keys);
 }
@@ -200,10 +192,9 @@ void CachedObjectStorage::shutdown()
 }
 
 void CachedObjectStorage::applyNewSettings(
-    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
-    ContextPtr context, const ApplyNewSettingsOptions & options)
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
 {
-    object_storage->applyNewSettings(config, config_prefix, context, options);
+    object_storage->applyNewSettings(config, config_prefix, context);
 }
 
 String CachedObjectStorage::getObjectsNamespace() const

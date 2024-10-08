@@ -1,6 +1,5 @@
 #include <Storages/System/StorageSystemDetachedParts.h>
 
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -163,9 +162,19 @@ private:
             worker_state.tasks.push_back({part.disk, relative_path, &parts_sizes.at(p_id - begin)});
         }
 
-        auto max_thread_to_run = std::max(size_t(1), std::min(support_threads, worker_state.tasks.size() / 10));
+        std::vector<std::future<void>> futures;
+        SCOPE_EXIT_SAFE({
+            /// Cancel all workers
+            worker_state.next_task.store(worker_state.tasks.size());
+            /// Exceptions are not propagated
+            for (auto & future : futures)
+                if (future.valid())
+                    future.wait();
+            futures.clear();
+        });
 
-        ThreadPoolCallbackRunnerLocal<void> runner(getIOThreadPool().get(), "DP_BytesOnDisk");
+        auto max_thread_to_run = std::max(size_t(1), std::min(support_threads, worker_state.tasks.size() / 10));
+        futures.reserve(max_thread_to_run);
 
         for (size_t i = 0; i < max_thread_to_run; ++i)
         {
@@ -182,10 +191,16 @@ private:
                 }
             };
 
-            runner(std::move(worker));
+            futures.push_back(
+                        scheduleFromThreadPool<void>(
+                            std::move(worker),
+                            getIOThreadPool().get(),
+                            "DP_BytesOnDisk"));
         }
 
-        runner.waitForAllToFinishAndRethrowFirstError();
+        /// Exceptions are propagated
+        for (auto & future : futures)
+            future.get();
     }
 
     void generateRows(MutableColumns & new_columns, size_t max_rows)
@@ -307,15 +322,14 @@ protected:
     std::shared_ptr<StorageSystemDetachedParts> storage;
     std::vector<UInt8> columns_mask;
 
-    std::optional<ActionsDAG> filter;
+    ActionsDAGPtr filter;
     const size_t max_block_size;
     const size_t num_streams;
 };
 
 void ReadFromSystemDetachedParts::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     if (filter_actions_dag)
     {
         const auto * predicate = filter_actions_dag->getOutputs().at(0);
@@ -359,7 +373,7 @@ void StorageSystemDetachedParts::read(
 
 void ReadFromSystemDetachedParts::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto state = std::make_shared<SourceState>(StoragesInfoStream({}, std::move(filter), context));
+    auto state = std::make_shared<SourceState>(StoragesInfoStream(nullptr, filter, context));
 
     Pipe pipe;
 

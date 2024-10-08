@@ -21,14 +21,12 @@ limitations under the License. */
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/Transforms/DeduplicationTokenTransforms.h>
-#include <Processors/Transforms/SquashingTransform.h>
+#include <Processors/Transforms/SquashingChunksTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
-#include <Core/Settings.h>
 #include <base/hex.h>
 
 #include <Storages/LiveView/StorageLiveView.h>
@@ -54,17 +52,6 @@ limitations under the License. */
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_live_view;
-    extern const SettingsSeconds live_view_heartbeat_interval;
-    extern const SettingsUInt64 max_live_view_insert_blocks_before_refresh;
-    extern const SettingsUInt64 min_insert_block_size_bytes;
-    extern const SettingsUInt64 min_insert_block_size_rows;
-    extern const SettingsBool use_concurrency_control;
-}
 
 namespace ErrorCodes
 {
@@ -324,21 +311,13 @@ Pipe StorageLiveView::watch(
     if (query.is_watch_events)
         reader = Pipe(std::make_shared<LiveViewEventsSource>(
             std::static_pointer_cast<StorageLiveView>(shared_from_this()),
-            blocks_ptr,
-            blocks_metadata_ptr,
-            active_ptr,
-            has_limit,
-            limit,
-            local_context->getSettingsRef()[Setting::live_view_heartbeat_interval].totalSeconds()));
+            blocks_ptr, blocks_metadata_ptr, active_ptr, has_limit, limit,
+            local_context->getSettingsRef().live_view_heartbeat_interval.totalSeconds()));
     else
         reader = Pipe(std::make_shared<LiveViewSource>(
             std::static_pointer_cast<StorageLiveView>(shared_from_this()),
-            blocks_ptr,
-            blocks_metadata_ptr,
-            active_ptr,
-            has_limit,
-            limit,
-            local_context->getSettingsRef()[Setting::live_view_heartbeat_interval].totalSeconds()));
+            blocks_ptr, blocks_metadata_ptr, active_ptr, has_limit, limit,
+            local_context->getSettingsRef().live_view_heartbeat_interval.totalSeconds()));
 
     {
         std::lock_guard lock(mutex);
@@ -351,7 +330,7 @@ Pipe StorageLiveView::watch(
     return reader;
 }
 
-void StorageLiveView::writeBlock(StorageLiveView & live_view, Block && block, Chunk::ChunkInfoCollection && chunk_infos, ContextPtr local_context)
+void StorageLiveView::writeBlock(const Block & block, ContextPtr local_context)
 {
     auto output = std::make_shared<LiveViewSink>(*this);
 
@@ -373,9 +352,7 @@ void StorageLiveView::writeBlock(StorageLiveView & live_view, Block && block, Ch
 
     {
         std::lock_guard lock(mutex);
-        if (!mergeable_blocks
-            || mergeable_blocks->blocks->size()
-                >= local_context->getGlobalContext()->getSettingsRef()[Setting::max_live_view_insert_blocks_before_refresh])
+        if (!mergeable_blocks || mergeable_blocks->blocks->size() >= local_context->getGlobalContext()->getSettingsRef().max_live_view_insert_blocks_before_refresh)
         {
             mergeable_blocks = collectMergeableBlocks(local_context, lock);
             from = blocksToPipes(mergeable_blocks->blocks, mergeable_blocks->sample_block);
@@ -399,7 +376,7 @@ void StorageLiveView::writeBlock(StorageLiveView & live_view, Block && block, Ch
 
         QueryPipelineBuilder builder;
 
-        if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        if (local_context->getSettingsRef().allow_experimental_analyzer)
         {
             auto select_description = buildSelectQueryTreeDescription(select_query_description.inner_query, local_context);
             if (select_description.dependent_table_node)
@@ -432,21 +409,6 @@ void StorageLiveView::writeBlock(StorageLiveView & live_view, Block && block, Ch
 
         builder.addSimpleTransform([&](const Block & cur_header)
         {
-            return std::make_shared<RestoreChunkInfosTransform>(chunk_infos.clone(), cur_header);
-        });
-
-        String live_view_id = live_view.getStorageID().hasUUID() ? toString(live_view.getStorageID().uuid) : live_view.getStorageID().getFullNameNotQuoted();
-        builder.addSimpleTransform([&](const Block & stream_header)
-        {
-            return std::make_shared<DeduplicationToken::SetViewIDTransform>(live_view_id, stream_header);
-        });
-        builder.addSimpleTransform([&](const Block & stream_header)
-        {
-            return std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(stream_header);
-        });
-
-        builder.addSimpleTransform([&](const Block & cur_header)
-        {
             return std::make_shared<MaterializingTransform>(cur_header);
         });
 
@@ -475,7 +437,7 @@ void StorageLiveView::writeBlock(StorageLiveView & live_view, Block && block, Ch
     });
 
     auto executor = pipeline.execute();
-    executor->execute(pipeline.getNumThreads(), local_context->getSettingsRef()[Setting::use_concurrency_control]);
+    executor->execute(pipeline.getNumThreads(), local_context->getSettingsRef().use_concurrency_control);
 }
 
 void StorageLiveView::refresh()
@@ -496,7 +458,7 @@ Block StorageLiveView::getHeader() const
 
     if (!sample_block)
     {
-        if (live_view_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        if (live_view_context->getSettingsRef().allow_experimental_analyzer)
         {
             sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(select_query_description.select_query,
                 live_view_context,
@@ -540,7 +502,7 @@ ASTPtr StorageLiveView::getInnerBlocksQuery()
         auto & select_with_union_query = select_query_description.select_query->as<ASTSelectWithUnionQuery &>();
         auto blocks_query = select_with_union_query.list_of_selects->children.at(0)->clone();
 
-        if (!live_view_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        if (!live_view_context->getSettingsRef().allow_experimental_analyzer)
         {
             /// Rewrite inner query with right aliases for JOIN.
             /// It cannot be done in constructor or startup() because InterpreterSelectQuery may access table,
@@ -564,7 +526,7 @@ MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(ContextPtr local_cont
 
     QueryPipelineBuilder builder;
 
-    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (local_context->getSettingsRef().allow_experimental_analyzer)
     {
         InterpreterSelectQueryAnalyzer interpreter(select_query_description.inner_query,
             local_context,
@@ -620,7 +582,7 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
 
     QueryPipelineBuilder builder;
 
-    if (block_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (block_context->getSettingsRef().allow_experimental_analyzer)
     {
         auto select_description = buildSelectQueryTreeDescription(select_query_description.select_query, block_context);
 
@@ -662,14 +624,13 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
     /// Squashing is needed here because the view query can generate a lot of blocks
     /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
     /// and two-level aggregation is triggered).
-    builder.addSimpleTransform(
-        [&](const Block & cur_header)
-        {
-            return std::make_shared<SquashingTransform>(
-                cur_header,
-                getContext()->getSettingsRef()[Setting::min_insert_block_size_rows],
-                getContext()->getSettingsRef()[Setting::min_insert_block_size_bytes]);
-        });
+    builder.addSimpleTransform([&](const Block & cur_header)
+    {
+        return std::make_shared<SquashingChunksTransform>(
+            cur_header,
+            getContext()->getSettingsRef().min_insert_block_size_rows,
+            getContext()->getSettingsRef().min_insert_block_size_bytes);
+    });
 
     builder.addResources(std::move(resource_holder));
 
@@ -746,17 +707,14 @@ bool StorageLiveView::getNewBlocks(const std::lock_guard<std::mutex> & lock)
 
 void registerStorageLiveView(StorageFactory & factory)
 {
-    factory.registerStorage(
-        "LiveView",
-        [](const StorageFactory::Arguments & args)
-        {
-            if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_live_view])
-                throw Exception(
-                    ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')");
+    factory.registerStorage("LiveView", [](const StorageFactory::Arguments & args)
+    {
+        if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef().allow_experimental_live_view)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')");
 
-            return std::make_shared<StorageLiveView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.comment);
-        });
+        return std::make_shared<StorageLiveView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.comment);
+    });
 }
 
 }

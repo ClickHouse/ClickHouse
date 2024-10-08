@@ -325,7 +325,7 @@ def optimize_with_retry(node, table_name, retry=20):
                 settings={"optimize_throw_if_noop": "1"},
             )
             break
-        except:
+        except e:
             time.sleep(0.5)
 
 

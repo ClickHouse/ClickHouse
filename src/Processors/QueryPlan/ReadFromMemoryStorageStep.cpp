@@ -30,15 +30,12 @@ public:
         std::shared_ptr<std::atomic<size_t>> parallel_execution_index_,
         InitializerFunc initializer_func_ = {})
         : ISource(storage_snapshot->getSampleBlockForColumns(column_names_))
-        , requested_column_names_and_types(storage_snapshot->getColumnsByNames(
+        , column_names_and_types(storage_snapshot->getColumnsByNames(
               GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withExtendedObjects(), column_names_))
         , data(data_)
         , parallel_execution_index(parallel_execution_index_)
         , initializer_func(std::move(initializer_func_))
     {
-        auto all_column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withExtendedObjects());
-        for (const auto & [name, type] : all_column_names_and_types)
-            all_names_to_types[name] = type;
     }
 
     String getName() const override { return "Memory"; }
@@ -62,20 +59,17 @@ protected:
         const Block & src = (*data)[current_index];
 
         Columns columns;
-        size_t num_columns = requested_column_names_and_types.size();
+        size_t num_columns = column_names_and_types.size();
         columns.reserve(num_columns);
 
-        auto name_and_type = requested_column_names_and_types.begin();
+        auto name_and_type = column_names_and_types.begin();
         for (size_t i = 0; i < num_columns; ++i)
         {
-            if (name_and_type->isSubcolumn())
-                columns.emplace_back(tryGetSubcolumnFromBlock(src, all_names_to_types[name_and_type->getNameInStorage()], *name_and_type));
-            else
-                columns.emplace_back(tryGetColumnFromBlock(src, *name_and_type));
+            columns.emplace_back(tryGetColumnFromBlock(src, *name_and_type));
             ++name_and_type;
         }
 
-        fillMissingColumns(columns, src.rows(), requested_column_names_and_types, requested_column_names_and_types, {}, nullptr);
+        fillMissingColumns(columns, src.rows(), column_names_and_types, column_names_and_types, {}, nullptr);
         assert(std::all_of(columns.begin(), columns.end(), [](const auto & column) { return column != nullptr; }));
 
         return Chunk(std::move(columns), src.rows());
@@ -94,9 +88,7 @@ private:
         }
     }
 
-    const NamesAndTypesList requested_column_names_and_types;
-    /// Map (name -> type) for all columns from the storage header.
-    std::unordered_map<String, DataTypePtr> all_names_to_types;
+    const NamesAndTypesList column_names_and_types;
     size_t execution_index = 0;
     std::shared_ptr<const Blocks> data;
     std::shared_ptr<std::atomic<size_t>> parallel_execution_index;
@@ -166,17 +158,17 @@ Pipe ReadFromMemoryStorageStep::makePipe()
     }
 
     size_t size = current_data->size();
-    num_streams = std::min(num_streams, size);
+
+    if (num_streams > size)
+        num_streams = size;
+
     Pipes pipes;
 
     auto parallel_execution_index = std::make_shared<std::atomic<size_t>>(0);
 
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
-        auto source = std::make_shared<MemorySource>(columns_to_read, storage_snapshot, current_data, parallel_execution_index);
-        if (stream == 0)
-            source->addTotalRowsApprox(snapshot_data.rows_approx);
-        pipes.emplace_back(std::move(source));
+        pipes.emplace_back(std::make_shared<MemorySource>(columns_to_read, storage_snapshot, current_data, parallel_execution_index));
     }
     return Pipe::unitePipes(std::move(pipes));
 }

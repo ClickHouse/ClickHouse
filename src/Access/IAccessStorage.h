@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Access/IAccessEntity.h>
-#include <Access/AuthenticationData.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
 #include <Parsers/IParser.h>
@@ -25,7 +24,7 @@ namespace DB
 struct User;
 class Credentials;
 class ExternalAuthenticators;
-enum class AuthenticationType : uint8_t;
+enum class AuthenticationType;
 class BackupEntriesCollector;
 class RestorerFromBackup;
 
@@ -35,7 +34,6 @@ struct AuthResult
     UUID user_id;
     /// Session settings received from authentication server (if any)
     SettingsChanges settings{};
-    AuthenticationData authentication_data {};
 };
 
 /// Contains entities, i.e. instances of classes derived from IAccessEntity.
@@ -63,9 +61,6 @@ public:
 
     /// Returns true if this entity is readonly.
     virtual bool isReadOnly(const UUID &) const { return isReadOnly(); }
-
-    /// Returns true if this storage is replicated.
-    virtual bool isReplicated() const { return false; }
 
     /// Starts periodic reloading and updating of entities in this storage.
     virtual void startPeriodicReloading() {}
@@ -156,8 +151,8 @@ public:
     /// Inserts an entity to the storage. Returns ID of a new entry in the storage.
     /// Throws an exception if the specified name already exists.
     UUID insert(const AccessEntityPtr & entity);
-    std::optional<UUID> insert(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id = nullptr);
-    bool insert(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id = nullptr);
+    std::optional<UUID> insert(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
+    bool insert(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
     std::vector<UUID> insert(const std::vector<AccessEntityPtr> & multiple_entities, bool replace_if_exists = false, bool throw_if_exists = true);
     std::vector<UUID> insert(const std::vector<AccessEntityPtr> & multiple_entities, const std::vector<UUID> & ids, bool replace_if_exists = false, bool throw_if_exists = true);
 
@@ -221,7 +216,7 @@ protected:
     virtual std::vector<UUID> findAllImpl(AccessEntityType type) const = 0;
     virtual AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const = 0;
     virtual std::optional<std::pair<String, AccessEntityType>> readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const;
-    virtual bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id);
+    virtual bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
     virtual bool removeImpl(const UUID & id, bool throw_if_not_exists);
     virtual bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
     virtual std::optional<AuthResult> authenticateImpl(
@@ -232,9 +227,7 @@ protected:
         bool allow_no_password,
         bool allow_plaintext_password) const;
     virtual bool areCredentialsValid(
-        const std::string & user_name,
-        time_t valid_until,
-        const AuthenticationData & authentication_method,
+        const User & user,
         const Credentials & credentials,
         const ExternalAuthenticators & external_authenticators,
         SettingsChanges & settings) const;
@@ -243,7 +236,6 @@ protected:
     LoggerPtr getLogger() const;
     static String formatEntityTypeWithName(AccessEntityType type, const String & name) { return AccessEntityTypeInfo::get(type).formatEntityNameWithType(name); }
     static void clearConflictsInEntitiesList(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, LoggerPtr log_);
-    virtual bool acquireReplicatedRestore(RestorerFromBackup &) const { return false; }
     [[noreturn]] void throwNotFound(const UUID & id) const;
     [[noreturn]] void throwNotFound(AccessEntityType type, const String & name) const;
     [[noreturn]] static void throwBadCast(const UUID & id, AccessEntityType type, const String & name, AccessEntityType required_type);
@@ -256,6 +248,7 @@ protected:
     [[noreturn]] void throwReadonlyCannotRemove(AccessEntityType type, const String & name) const;
     [[noreturn]] static void throwAddressNotAllowed(const Poco::Net::IPAddress & address);
     [[noreturn]] static void throwInvalidCredentials();
+    [[noreturn]] static void throwAuthenticationTypeNotAllowed(AuthenticationType auth_type);
     [[noreturn]] void throwBackupNotAllowed() const;
     [[noreturn]] void throwRestoreNotAllowed() const;
 

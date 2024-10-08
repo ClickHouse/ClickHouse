@@ -43,8 +43,7 @@ public:
 
     void deserializeBinaryBulkStatePrefix(
         DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state,
-        SubstreamsDeserializeStatesCache * cache) const override;
+        DeserializeBinaryBulkStatePtr & state) const override;
 
     /// Allows to write ColumnSparse and other columns in sparse serialization.
     void serializeBinaryBulkWithMultipleStreams(

@@ -146,8 +146,8 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                  "Memory efficient merging of aggregated results is not supported for grouping sets.");
         auto num_merge_threads = memory_efficient_merge_threads
-                                 ? memory_efficient_merge_threads
-                                 : max_threads;
+                                 ? static_cast<size_t>(memory_efficient_merge_threads)
+                                 : static_cast<size_t>(max_threads);
 
         auto transform_params = std::make_shared<AggregatingTransformParams>(pipeline.getHeader(), std::move(params), final);
         pipeline.addMergingAggregatedMemoryEfficientTransform(transform_params, num_merge_threads);
@@ -158,7 +158,7 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
 
 void MergingAggregatedStep::describeActions(FormatSettings & settings) const
 {
-    params.explain(settings.out, settings.offset);
+    return params.explain(settings.out, settings.offset);
 }
 
 void MergingAggregatedStep::describeActions(JSONBuilder::JSONMap & map) const

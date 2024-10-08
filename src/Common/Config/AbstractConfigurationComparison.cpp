@@ -38,7 +38,7 @@ namespace
             std::erase_if(left_subkeys, [&](const String & key) { return ignore_keys->contains(key); });
             std::erase_if(right_subkeys, [&](const String & key) { return ignore_keys->contains(key); });
 
-#if defined(DEBUG_OR_SANITIZER_BUILD)
+#if defined(ABORT_ON_LOGICAL_ERROR)
             /// Compound `ignore_keys` are not yet implemented.
             for (const auto & ignore_key : *ignore_keys)
                 chassert(ignore_key.find('.') == std::string_view::npos);

@@ -29,7 +29,7 @@ void SerializationEnum<Type>::deserializeTextEscaped(IColumn & column, ReadBuffe
     {
         /// NOTE It would be nice to do without creating a temporary object - at least extract std::string out.
         std::string field_name;
-        settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(field_name, istr) : readEscapedString(field_name, istr);
+        readEscapedString(field_name, istr);
         assert_cast<ColumnType &>(column).getData().push_back(ref_enum_values.getValue(StringRef(field_name), true));
     }
 }
@@ -134,20 +134,20 @@ void SerializationEnum<Type>::serializeTextXML(const IColumn & column, size_t ro
 }
 
 template <typename Type>
-void SerializationEnum<Type>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationEnum<Type>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     if (!istr.eof() && *istr.position() != '"')
         assert_cast<ColumnType &>(column).getData().push_back(readValue(istr));
     else
     {
         std::string field_name;
-        readJSONString(field_name, istr, settings.json);
+        readJSONString(field_name, istr);
         assert_cast<ColumnType &>(column).getData().push_back(ref_enum_values.getValue(StringRef(field_name)));
     }
 }
 
 template <typename Type>
-bool SerializationEnum<Type>::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+bool SerializationEnum<Type>::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     FieldType x;
     if (!istr.eof() && *istr.position() != '"')
@@ -158,7 +158,7 @@ bool SerializationEnum<Type>::tryDeserializeTextJSON(IColumn & column, ReadBuffe
     else
     {
         std::string field_name;
-        readJSONString(field_name, istr, settings.json);
+        readJSONString(field_name, istr);
         if (!ref_enum_values.tryGetValue(x, StringRef(field_name)))
             return false;
     }

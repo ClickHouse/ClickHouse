@@ -3,7 +3,7 @@ slug: /en/operations/system-tables/part_log
 ---
 # part_log
 
-The `system.part_log` table is created only if the [part_log](../../operations/server-configuration-parameters/settings.md#part-log) server setting is specified.
+The `system.part_log` table is created only if the [part_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-part-log) server setting is specified.
 
 This table contains information about events that occurred with [data parts](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) in the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family tables, such as adding or merging data.
 
@@ -14,7 +14,7 @@ The `system.part_log` table contains the following columns:
 - `event_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Type of the event that occurred with the data part. Can have one of the following values:
     - `NewPart` — Inserting of a new data part.
     - `MergeParts` — Merging of data parts.
-    - `DownloadPart` — Downloading a data part.
+    - `DownloadParts` — Downloading a data part.
     - `RemovePart` — Removing or detaching a data part using [DETACH PARTITION](../../sql-reference/statements/alter/partition.md#alter_detach-partition).
     - `MutatePart` — Mutating of a data part.
     - `MovePart` — Moving the data part from the one disk to another one.

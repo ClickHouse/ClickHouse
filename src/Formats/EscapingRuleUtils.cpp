@@ -62,6 +62,7 @@ String escapingRuleToString(FormatSettings::EscapingRule escaping_rule)
         case FormatSettings::EscapingRule::Raw:
             return "Raw";
     }
+    UNREACHABLE();
 }
 
 void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings)
@@ -75,7 +76,7 @@ void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule esca
             /// Empty field, just skip spaces
             break;
         case FormatSettings::EscapingRule::Escaped:
-            readEscapedStringInto<NullOutput,false>(out, buf);
+            readEscapedStringInto(out, buf);
             break;
         case FormatSettings::EscapingRule::Quoted:
             readQuotedFieldInto(out, buf);
@@ -84,7 +85,7 @@ void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule esca
             readCSVStringInto(out, buf, format_settings.csv);
             break;
         case FormatSettings::EscapingRule::JSON:
-            skipJSONField(buf, StringRef(field_name, field_name_len), format_settings.json);
+            skipJSONField(buf, StringRef(field_name, field_name_len));
             break;
         case FormatSettings::EscapingRule::Raw:
             readStringInto(out, buf);
@@ -218,9 +219,9 @@ String readByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escapin
             break;
         case FormatSettings::EscapingRule::JSON:
             if constexpr (read_string)
-                readJSONString(result, buf, format_settings.json);
+                readJSONString(result, buf);
             else
-                readJSONField(result, buf, format_settings.json);
+                readJSONField(result, buf);
             break;
         case FormatSettings::EscapingRule::Raw:
             readString(result, buf);
@@ -302,12 +303,8 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
                 /// Try to determine the type of value inside quotes
                 auto type = tryInferDataTypeForSingleField(data, format_settings);
 
-                /// Return String type if one of the following conditions apply
-                ///  - we couldn't infer any type
-                ///  - it's a number and csv.try_infer_numbers_from_strings = 0
-                ///  - it's a tuple and try_infer_strings_from_quoted_tuples = 0
-                ///  - it's a Bool type (we don't allow reading bool values from strings)
-                if (!type || (format_settings.csv.try_infer_strings_from_quoted_tuples && isTuple(type)) || (!format_settings.csv.try_infer_numbers_from_strings && isNumber(type)) || isBool(type))
+                /// If we couldn't infer any type or it's a number and csv.try_infer_numbers_from_strings = 0, we determine it as a string.
+                if (!type || (format_settings.csv.try_infer_strings_from_quoted_tuples && isTuple(type)) || (!format_settings.csv.try_infer_numbers_from_strings && isNumber(type)))
                     return std::make_shared<DataTypeString>();
 
                 return type;
@@ -423,11 +420,10 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
     String result = getAdditionalFormatInfoForAllRowBasedFormats(settings);
     /// First, settings that are common for all text formats:
     result += fmt::format(
-        ", try_infer_integers={}, try_infer_dates={}, try_infer_datetimes={}, try_infer_datetimes_only_datetime64={}",
+        ", try_infer_integers={}, try_infer_dates={}, try_infer_datetimes={}",
         settings.try_infer_integers,
         settings.try_infer_dates,
-        settings.try_infer_datetimes,
-        settings.try_infer_datetimes_only_datetime64);
+        settings.try_infer_datetimes);
 
     /// Second, format-specific settings:
     switch (escaping_rule)
@@ -468,7 +464,7 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
                 settings.json.read_arrays_as_strings,
                 settings.json.try_infer_objects_as_tuples,
                 settings.json.infer_incomplete_types_as_strings,
-                settings.json.allow_deprecated_object_type,
+                settings.json.allow_object_type,
                 settings.json.use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects);
             break;
         default:

@@ -26,9 +26,6 @@
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/ThreadPool.h>
-#include <Core/Settings.h>
-
-#include <boost/range/adaptor/map.hpp>
 
 
 namespace CurrentMetrics
@@ -43,15 +40,6 @@ namespace CurrentMetrics
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 backup_restore_batch_size_for_keeper_multiread;
-    extern const SettingsUInt64 backup_restore_keeper_max_retries;
-    extern const SettingsUInt64 backup_restore_keeper_retry_initial_backoff_ms;
-    extern const SettingsUInt64 backup_restore_keeper_retry_max_backoff_ms;
-    extern const SettingsUInt64 backup_restore_keeper_fault_injection_seed;
-    extern const SettingsFloat backup_restore_keeper_fault_injection_probability;
-}
 
 namespace ErrorCodes
 {
@@ -107,12 +95,12 @@ namespace
 
             RestoreCoordinationRemote::RestoreKeeperSettings keeper_settings
             {
-                .keeper_max_retries = context->getSettingsRef()[Setting::backup_restore_keeper_max_retries],
-                .keeper_retry_initial_backoff_ms = context->getSettingsRef()[Setting::backup_restore_keeper_retry_initial_backoff_ms],
-                .keeper_retry_max_backoff_ms = context->getSettingsRef()[Setting::backup_restore_keeper_retry_max_backoff_ms],
-                .batch_size_for_keeper_multiread = context->getSettingsRef()[Setting::backup_restore_batch_size_for_keeper_multiread],
-                .keeper_fault_injection_probability = context->getSettingsRef()[Setting::backup_restore_keeper_fault_injection_probability],
-                .keeper_fault_injection_seed = context->getSettingsRef()[Setting::backup_restore_keeper_fault_injection_seed]
+                .keeper_max_retries = context->getSettingsRef().backup_restore_keeper_max_retries,
+                .keeper_retry_initial_backoff_ms = context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,
+                .keeper_retry_max_backoff_ms = context->getSettingsRef().backup_restore_keeper_retry_max_backoff_ms,
+                .batch_size_for_keeper_multiread = context->getSettingsRef().backup_restore_batch_size_for_keeper_multiread,
+                .keeper_fault_injection_probability = context->getSettingsRef().backup_restore_keeper_fault_injection_probability,
+                .keeper_fault_injection_seed = context->getSettingsRef().backup_restore_keeper_fault_injection_seed
             };
 
             auto all_hosts = BackupSettings::Util::filterHostIDs(
@@ -266,26 +254,26 @@ namespace
 /// 1) there should be separate thread pools for BACKUP and RESTORE;
 /// 2) a task from a thread pool can't wait another task from the same thread pool. (Because if it schedules and waits
 /// while the thread pool is still occupied with the waiting task then a scheduled task can be never executed).
-enum class BackupsWorker::ThreadPoolId : uint8_t
+enum class BackupsWorker::ThreadPoolId
 {
     /// "BACKUP ON CLUSTER ASYNC" waits in background while "BACKUP ASYNC" is finished on the nodes of the cluster, then finalizes the backup.
-    BACKUP_ASYNC_ON_CLUSTER = 0,
+    BACKUP_ASYNC_ON_CLUSTER,
 
     /// "BACKUP ASYNC" waits in background while all file infos are built and then it copies the backup's files.
-    BACKUP_ASYNC = 1,
+    BACKUP_ASYNC,
 
     /// Making a list of files to copy and copying of those files is always sequential, so those operations can share one thread pool.
-    BACKUP_MAKE_FILES_LIST = 2,
+    BACKUP_MAKE_FILES_LIST,
     BACKUP_COPY_FILES = BACKUP_MAKE_FILES_LIST,
 
     /// "RESTORE ON CLUSTER ASYNC" waits in background while "BACKUP ASYNC" is finished on the nodes of the cluster, then finalizes the backup.
-    RESTORE_ASYNC_ON_CLUSTER = 3,
+    RESTORE_ASYNC_ON_CLUSTER,
 
     /// "RESTORE ASYNC" waits in background while the data of all tables are restored.
-    RESTORE_ASYNC = 4,
+    RESTORE_ASYNC,
 
     /// Restores from backups.
-    RESTORE = 5,
+    RESTORE,
 };
 
 
@@ -393,7 +381,6 @@ BackupsWorker::BackupsWorker(ContextMutablePtr global_context, size_t num_backup
     , allow_concurrent_backups(global_context->getConfigRef().getBool("backups.allow_concurrent_backups", true))
     , allow_concurrent_restores(global_context->getConfigRef().getBool("backups.allow_concurrent_restores", true))
     , remove_backup_files_after_failure(global_context->getConfigRef().getBool("backups.remove_backup_files_after_failure", true))
-    , test_randomize_order(global_context->getConfigRef().getBool("backups.test_randomize_order", false))
     , test_inject_sleep(global_context->getConfigRef().getBool("backups.test_inject_sleep", false))
     , log(getLogger("BackupsWorker"))
     , backup_log(global_context->getBackupLog())
@@ -575,7 +562,7 @@ void BackupsWorker::doBackup(
 
     /// Checks access rights if this is not ON CLUSTER query.
     /// (If this is ON CLUSTER query executeDDLQueryOnCluster() will check access rights later.)
-    auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
+    auto required_access = getRequiredAccessToBackup(backup_query->elements);
     if (!on_cluster)
         context->checkAccess(required_access);
 
@@ -609,9 +596,7 @@ void BackupsWorker::doBackup(
     backup_create_params.backup_uuid = backup_settings.backup_uuid;
     backup_create_params.deduplicate_files = backup_settings.deduplicate_files;
     backup_create_params.allow_s3_native_copy = backup_settings.allow_s3_native_copy;
-    backup_create_params.allow_azure_native_copy = backup_settings.allow_azure_native_copy;
     backup_create_params.use_same_s3_credentials_for_base_backup = backup_settings.use_same_s3_credentials_for_base_backup;
-    backup_create_params.use_same_password_for_base_backup = backup_settings.use_same_password_for_base_backup;
     backup_create_params.azure_attempt_to_create_container = backup_settings.azure_attempt_to_create_container;
     backup_create_params.read_settings = getReadSettingsForBackup(context, backup_settings);
     backup_create_params.write_settings = getWriteSettingsForBackup(context);
@@ -718,38 +703,51 @@ void BackupsWorker::writeBackupEntries(
             backup_entries.size());
     }
 
-
-    std::atomic_bool failed = false;
+    size_t num_active_jobs = 0;
+    std::mutex mutex;
+    std::condition_variable event;
+    std::exception_ptr exception;
 
     bool always_single_threaded = !backup->supportsWritingInMultipleThreads();
     auto & thread_pool = getThreadPool(ThreadPoolId::BACKUP_COPY_FILES);
+    auto thread_group = CurrentThread::getGroup();
 
-    std::vector<size_t> writing_order;
-    if (test_randomize_order)
-    {
-        /// Randomize the order in which we write backup entries to the backup.
-        writing_order.resize(backup_entries.size());
-        std::iota(writing_order.begin(), writing_order.end(), 0);
-        std::shuffle(writing_order.begin(), writing_order.end(), thread_local_rng);
-    }
-
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "BackupWorker");
     for (size_t i = 0; i != backup_entries.size(); ++i)
     {
-        if (failed)
-            break;
+        auto & entry = backup_entries[i].second;
+        const auto & file_info = file_infos[i];
 
-        size_t index = !writing_order.empty() ? writing_order[i] : i;
-
-        auto & entry = backup_entries[index].second;
-        const auto & file_info = file_infos[index];
-
-        auto job = [&]()
         {
-            if (failed)
-                return;
+            std::unique_lock lock{mutex};
+            if (exception)
+                break;
+            ++num_active_jobs;
+        }
+
+        auto job = [&](bool async)
+        {
+            SCOPE_EXIT_SAFE(
+                std::lock_guard lock{mutex};
+                if (!--num_active_jobs)
+                    event.notify_all();
+                if (async)
+                    CurrentThread::detachFromGroupIfNotDetached();
+            );
+
             try
             {
+                if (async && thread_group)
+                    CurrentThread::attachToGroup(thread_group);
+
+                if (async)
+                    setThreadName("BackupWorker");
+
+                {
+                    std::lock_guard lock{mutex};
+                    if (exception)
+                        return;
+                }
+
                 if (process_list_element)
                     process_list_element->checkTimeLimit();
 
@@ -772,21 +770,27 @@ void BackupsWorker::writeBackupEntries(
             }
             catch (...)
             {
-                failed = true;
-                throw;
+                std::lock_guard lock{mutex};
+                if (!exception)
+                    exception = std::current_exception();
             }
         };
 
         if (always_single_threaded)
         {
-            job();
+            job(false);
             continue;
         }
 
-        runner(std::move(job));
+        thread_pool.scheduleOrThrowOnError([job] { job(true); });
     }
 
-    runner.waitForAllToFinishAndRethrowFirstError();
+    {
+        std::unique_lock lock{mutex};
+        event.wait(lock, [&] { return !num_active_jobs; });
+        if (exception)
+            std::rethrow_exception(exception);
+    }
 }
 
 
@@ -934,10 +938,8 @@ void BackupsWorker::doRestore(
     backup_open_params.password = restore_settings.password;
     backup_open_params.allow_s3_native_copy = restore_settings.allow_s3_native_copy;
     backup_open_params.use_same_s3_credentials_for_base_backup = restore_settings.use_same_s3_credentials_for_base_backup;
-    backup_open_params.use_same_password_for_base_backup = restore_settings.use_same_password_for_base_backup;
     backup_open_params.read_settings = getReadSettingsForRestore(context);
     backup_open_params.write_settings = getWriteSettingsForRestore(context);
-    backup_open_params.is_internal_backup = restore_settings.internal;
     BackupPtr backup = BackupFactory::instance().createBackup(backup_open_params);
 
     String current_database = context->getCurrentDatabase();

@@ -14,7 +14,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
@@ -86,8 +85,7 @@ private:
         const IColumn & scores,
         const IColumn & labels,
         ColumnArray::Offset current_offset,
-        ColumnArray::Offset next_offset,
-        bool scale)
+        ColumnArray::Offset next_offset)
     {
         struct ScoreLabel
         {
@@ -105,105 +103,71 @@ private:
             sorted_labels[i].label = label;
         }
 
-        /// Sorting scores in descending order to traverse the ROC curve from left to right
-        std::sort(sorted_labels.begin(), sorted_labels.end(), [](const auto & lhs, const auto & rhs) { return lhs.score > rhs.score; });
+        /// Stable sort is required for for labels to apply in same order if score is equal
+        std::stable_sort(sorted_labels.begin(), sorted_labels.end(), [](const auto & lhs, const auto & rhs) { return lhs.score > rhs.score; });
 
         /// We will first calculate non-normalized area.
 
-        Float64 area = 0.0;
-        Float64 prev_score = sorted_labels[0].score;
-        size_t prev_fp = 0, prev_tp = 0;
-        size_t curr_fp = 0, curr_tp = 0;
+        size_t area = 0;
+        size_t count_positive = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            /// Only increment the area when the score changes
-            if (sorted_labels[i].score != prev_score)
-            {
-                area += (curr_fp - prev_fp) * (curr_tp + prev_tp) / 2.0; /// Trapezoidal area under curve (might degenerate to zero or to a rectangle)
-                prev_fp = curr_fp;
-                prev_tp = curr_tp;
-                prev_score = sorted_labels[i].score;
-            }
-
             if (sorted_labels[i].label)
-                curr_tp += 1; /// The curve moves one step up.
+                ++count_positive; /// The curve moves one step up. No area increase.
             else
-                curr_fp += 1; /// The curve moves one step right.
+                area += count_positive; /// The curve moves one step right. Area is increased by 1 * height = count_positive.
         }
 
-        area += (curr_fp - prev_fp) * (curr_tp + prev_tp) / 2.0;
+        /// Then divide the area to the area of rectangle.
 
-        /// Then normalize it, if scale is true, dividing by the area to the area of rectangle.
+        if (count_positive == 0 || count_positive == size)
+            return std::numeric_limits<Float64>::quiet_NaN();
 
-        if (scale)
-        {
-            if (curr_tp == 0 || curr_tp == size)
-                return std::numeric_limits<Float64>::quiet_NaN();
-            return area / curr_tp / (size - curr_tp);
-        }
-        return area;
+        return static_cast<Float64>(area) / count_positive / (size - count_positive);
     }
 
     static void vector(
         const IColumn & scores,
         const IColumn & labels,
         const ColumnArray::Offsets & offsets,
-        PaddedPODArray<Float64> & result,
-        size_t input_rows_count,
-        bool scale)
+        PaddedPODArray<Float64> & result)
     {
-        result.resize(input_rows_count);
+        size_t size = offsets.size();
+        result.resize(size);
 
         ColumnArray::Offset current_offset = 0;
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < size; ++i)
         {
             auto next_offset = offsets[i];
-            result[i] = apply(scores, labels, current_offset, next_offset, scale);
+            result[i] = apply(scores, labels, current_offset, next_offset);
             current_offset = next_offset;
         }
     }
 
 public:
     String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        size_t number_of_arguments = arguments.size();
-
-        if (number_of_arguments < 2 || number_of_arguments > 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
-                            getName(), number_of_arguments);
-
-        for (size_t i = 0; i < 2; ++i)
+        for (size_t i = 0; i < getNumberOfArguments(); ++i)
         {
-            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].type.get());
+            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
             if (!array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The two first arguments for function {} must be of type Array.", getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "All arguments for function {} must be an array.", getName());
 
             const auto & nested_type = array_type->getNestedType();
             if (!isNativeNumber(nested_type) && !isEnum(nested_type))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} cannot process values of type {}", getName(), nested_type->getName());
-        }
-
-        if (number_of_arguments == 3)
-        {
-            if (!isBool(arguments[2].type) || arguments[2].column.get() == nullptr || !isColumnConst(*arguments[2].column))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Third argument (scale) for function {} must be of type const Bool.", getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} cannot process values of type {}",
+                                getName(), nested_type->getName());
         }
 
         return std::make_shared<DataTypeFloat64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
-        size_t number_of_arguments = arguments.size();
-
         ColumnPtr col1 = arguments[0].column->convertToFullColumnIfConst();
         ColumnPtr col2 = arguments[1].column->convertToFullColumnIfConst();
 
@@ -220,20 +184,13 @@ public:
         if (!col_array1->hasEqualOffsets(*col_array2))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Array arguments for function {} must have equal sizes", getName());
 
-        /// Handle third argument for scale (if passed, otherwise default to true)
-        bool scale = true;
-        if (number_of_arguments == 3 && input_rows_count > 0)
-            scale = arguments[2].column->getBool(0);
-
         auto col_res = ColumnVector<Float64>::create();
 
         vector(
             col_array1->getData(),
             col_array2->getData(),
             col_array1->getOffsets(),
-            col_res->getData(),
-            input_rows_count,
-            scale);
+            col_res->getData());
 
         return col_res;
     }

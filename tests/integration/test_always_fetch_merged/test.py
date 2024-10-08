@@ -80,6 +80,3 @@ def test_replica_always_download(started_cluster):
 
     assert int(node1_parts) < 10
     assert int(node2_parts) < 10
-
-    node1.query_with_retry("DROP TABLE test_table SYNC")
-    node2.query_with_retry("DROP TABLE test_table SYNC")

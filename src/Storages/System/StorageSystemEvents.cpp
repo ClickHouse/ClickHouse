@@ -1,5 +1,4 @@
 #include <Common/ProfileEvents.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -7,10 +6,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool system_events_show_zero_values;
-}
 
 ColumnsDescription StorageSystemEvents::getColumnsDescription()
 {
@@ -34,7 +29,7 @@ void StorageSystemEvents::fillData(MutableColumns & res_columns, ContextPtr cont
     {
         UInt64 value = ProfileEvents::global_counters[i];
 
-        if (0 != value || context->getSettingsRef()[Setting::system_events_show_zero_values])
+        if (0 != value || context->getSettingsRef().system_events_show_zero_values)
         {
             res_columns[0]->insert(ProfileEvents::getName(ProfileEvents::Event(i)));
             res_columns[1]->insert(value);

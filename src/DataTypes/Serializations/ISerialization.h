@@ -99,19 +99,6 @@ public:
 
     using SubcolumnCreatorPtr = std::shared_ptr<const ISubcolumnCreator>;
 
-    struct SerializeBinaryBulkState
-    {
-        virtual ~SerializeBinaryBulkState() = default;
-    };
-
-    struct DeserializeBinaryBulkState
-    {
-        virtual ~DeserializeBinaryBulkState() = default;
-    };
-
-    using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
-    using DeserializeBinaryBulkStatePtr = std::shared_ptr<DeserializeBinaryBulkState>;
-
     struct SubstreamData
     {
         SubstreamData() = default;
@@ -138,22 +125,10 @@ public:
             return *this;
         }
 
-        SubstreamData & withDeserializeState(DeserializeBinaryBulkStatePtr deserialize_state_)
-        {
-            deserialize_state = std::move(deserialize_state_);
-            return *this;
-        }
-
         SerializationPtr serialization;
         DataTypePtr type;
         ColumnPtr column;
         SerializationInfoPtr serialization_info;
-
-        /// For types with dynamic subcolumns deserialize state contains information
-        /// about current dynamic structure. And this information can be useful
-        /// when we call enumerateStreams after deserializeBinaryBulkStatePrefix
-        /// to enumerate dynamic streams.
-        DeserializeBinaryBulkStatePtr deserialize_state;
     };
 
     struct Substream
@@ -176,24 +151,14 @@ public:
             SparseElements,
             SparseOffsets,
 
-            DeprecatedObjectStructure,
-            DeprecatedObjectData,
+            ObjectStructure,
+            ObjectData,
 
             VariantDiscriminators,
             NamedVariantDiscriminators,
             VariantOffsets,
             VariantElements,
             VariantElement,
-            VariantElementNullMap,
-
-            DynamicData,
-            DynamicStructure,
-
-            ObjectData,
-            ObjectTypedPath,
-            ObjectDynamicPath,
-            ObjectSharedData,
-            ObjectStructure,
 
             Regular,
         };
@@ -201,16 +166,13 @@ public:
         /// Types of substreams that can have arbitrary name.
         static const std::set<Type> named_types;
 
-        Type type = Type::Regular;
+        Type type;
 
         /// The name of a variant element type.
         String variant_element_name;
 
         /// Name of substream for type from 'named_types'.
         String name_of_substream;
-
-        /// Path name for Object type elements.
-        String object_path_name;
 
         /// Data for current substream.
         SubstreamData data;
@@ -221,7 +183,6 @@ public:
         /// Flag, that may help to traverse substream paths.
         mutable bool visited = false;
 
-        Substream() = default;
         Substream(Type type_) : type(type_) {} /// NOLINT
         String toString() const;
     };
@@ -241,10 +202,6 @@ public:
     {
         SubstreamPath path;
         bool position_independent_encoding = true;
-        /// If set to false, don't enumerate dynamic subcolumns
-        /// (such as dynamic types in Dynamic column or dynamic paths in JSON column).
-        /// It may be needed when dynamic subcolumns are processed separately.
-        bool enumerate_dynamic_streams = true;
     };
 
     virtual void enumerateStreams(
@@ -261,6 +218,19 @@ public:
     using OutputStreamGetter = std::function<WriteBuffer*(const SubstreamPath &)>;
     using InputStreamGetter = std::function<ReadBuffer*(const SubstreamPath &)>;
 
+    struct SerializeBinaryBulkState
+    {
+        virtual ~SerializeBinaryBulkState() = default;
+    };
+
+    struct DeserializeBinaryBulkState
+    {
+        virtual ~DeserializeBinaryBulkState() = default;
+    };
+
+    using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
+    using DeserializeBinaryBulkStatePtr = std::shared_ptr<DeserializeBinaryBulkState>;
+
     struct SerializeBinaryBulkSettings
     {
         OutputStreamGetter getter;
@@ -270,19 +240,6 @@ public:
         bool low_cardinality_use_single_dictionary_for_part = true;
 
         bool position_independent_encoding = true;
-
-        /// True if data type names should be serialized in binary encoding.
-        bool data_types_binary_encoding = false;
-
-        bool use_compact_variant_discriminators_serialization = false;
-
-        enum class ObjectAndDynamicStatisticsMode
-        {
-            NONE,   /// Don't write statistics.
-            PREFIX, /// Write statistics in prefix.
-            SUFFIX, /// Write statistics in suffix.
-        };
-        ObjectAndDynamicStatisticsMode object_and_dynamic_write_statistics = ObjectAndDynamicStatisticsMode::NONE;
     };
 
     struct DeserializeBinaryBulkSettings
@@ -295,15 +252,10 @@ public:
 
         bool position_independent_encoding = true;
 
-        /// True if data type names should be deserialized in binary encoding.
-        bool data_types_binary_encoding = false;
-
         bool native_format = false;
 
         /// If not zero, may be used to avoid reallocations while reading column of String type.
         double avg_value_size_hint = 0;
-
-        bool object_and_dynamic_read_statistics = false;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
@@ -318,13 +270,10 @@ public:
         SerializeBinaryBulkSettings & /*settings*/,
         SerializeBinaryBulkStatePtr & /*state*/) const {}
 
-    using SubstreamsDeserializeStatesCache = std::unordered_map<String, DeserializeBinaryBulkStatePtr>;
-
     /// Call before before deserializeBinaryBulkWithMultipleStreams chain to get DeserializeBinaryBulkStatePtr.
     virtual void deserializeBinaryBulkStatePrefix(
         DeserializeBinaryBulkSettings & /*settings*/,
-        DeserializeBinaryBulkStatePtr & /*state*/,
-        SubstreamsDeserializeStatesCache * /*cache*/) const {}
+        DeserializeBinaryBulkStatePtr & /*state*/) const {}
 
     /** 'offset' and 'limit' are used to specify range.
       * limit = 0 - means no limit.
@@ -444,28 +393,15 @@ public:
     static void addToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column);
     static ColumnPtr getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
 
-    static void addToSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path, DeserializeBinaryBulkStatePtr state);
-    static DeserializeBinaryBulkStatePtr getFromSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path);
-
     static bool isSpecialCompressionAllowed(const SubstreamPath & path);
 
     static size_t getArrayLevel(const SubstreamPath & path);
     static bool hasSubcolumnForPath(const SubstreamPath & path, size_t prefix_len);
     static SubstreamData createFromPath(const SubstreamPath & path, size_t prefix_len);
 
-    /// Returns true if subcolumn doesn't actually stores any data in column and doesn't require a separate stream
-    /// for writing/reading data. For example, it's a null-map subcolumn of Variant type (it's always constructed from discriminators);.
-    static bool isEphemeralSubcolumn(const SubstreamPath & path, size_t prefix_len);
-
-    /// Returns true if stream with specified path corresponds to dynamic subcolumn.
-    static bool isDynamicSubcolumn(const SubstreamPath & path, size_t prefix_len);
-
 protected:
     template <typename State, typename StatePtr>
     State * checkAndGetState(const StatePtr & state) const;
-
-    template <typename State, typename StatePtr>
-    static State * checkAndGetState(const StatePtr & state, const ISerialization * serialization);
 
     [[noreturn]] void throwUnexpectedDataAfterParsedValue(IColumn & column, ReadBuffer & istr, const FormatSettings &, const String & type_name) const;
 };
@@ -478,15 +414,9 @@ using SubstreamType = ISerialization::Substream::Type;
 template <typename State, typename StatePtr>
 State * ISerialization::checkAndGetState(const StatePtr & state) const
 {
-    return checkAndGetState<State, StatePtr>(state, this);
-}
-
-template <typename State, typename StatePtr>
-State * ISerialization::checkAndGetState(const StatePtr & state, const ISerialization * serialization)
-{
     if (!state)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Got empty state for {}", demangle(typeid(*serialization).name()));
+            "Got empty state for {}", demangle(typeid(*this).name()));
 
     auto * state_concrete = typeid_cast<State *>(state.get());
     if (!state_concrete)
@@ -494,7 +424,7 @@ State * ISerialization::checkAndGetState(const StatePtr & state, const ISerializ
         auto & state_ref = *state;
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Invalid State for {}. Expected: {}, got {}",
-                demangle(typeid(*serialization).name()),
+                demangle(typeid(*this).name()),
                 demangle(typeid(State).name()),
                 demangle(typeid(state_ref).name()));
     }

@@ -4,7 +4,7 @@ DROP TABLE IF EXISTS numbers2;
 CREATE TABLE numbers1 ENGINE = Memory AS SELECT number FROM numbers(1000);
 CREATE TABLE numbers2 ENGINE = Memory AS SELECT number FROM numbers(1000);
 
-SELECT * FROM merge(currentDatabase(), '^numbers\\d+$') SAMPLE 0.1; -- { serverError SAMPLING_NOT_SUPPORTED }
+SELECT * FROM merge(currentDatabase(), '^numbers\\d+$') SAMPLE 0.1; -- { serverError 141 }
 
 DROP TABLE numbers1;
 DROP TABLE numbers2;

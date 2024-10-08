@@ -56,7 +56,7 @@ def test_credentials_from_metadata():
     )
 
     expected_logs = [
-        "Calling EC2MetadataService to get token failed, falling back to a less secure way",
+        "Calling EC2MetadataService to get token failed, falling back to less secure way",
         "Getting default credentials for ec2 instance from resolver:8080",
         "Calling EC2MetadataService resource, /latest/meta-data/iam/security-credentials returned credential string myrole",
         "Calling EC2MetadataService resource /latest/meta-data/iam/security-credentials/myrole",

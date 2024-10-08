@@ -12,6 +12,7 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/WriteMode.h>
 #include <Disks/DirectoryIterator.h>
+#include <Disks/IDiskTransaction.h>
 
 #include <memory>
 #include <utility>
@@ -53,6 +54,7 @@ using DisksMap = std::map<String, DiskPtr>;
 
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
+using Reservations = std::vector<ReservationPtr>;
 
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
@@ -322,6 +324,15 @@ public:
         {}
     };
 
+    virtual void getRemotePathsRecursive(
+        const String &, std::vector<LocalPathWithObjectStoragePaths> &, const std::function<bool(const String &)> & /* skip_predicate */)
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method `getRemotePathsRecursive() not implemented for disk: {}`",
+            getDataSourceDescription().toString());
+    }
+
     /// Batch request to remove multiple files.
     /// May be much faster for blob storage.
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3.
@@ -364,8 +375,6 @@ public:
     virtual bool isReadOnly() const { return false; }
 
     virtual bool isWriteOnce() const { return false; }
-
-    virtual bool supportsHardLinks() const { return true; }
 
     /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }
@@ -427,7 +436,7 @@ public:
     ///  Device: 10301h/66305d   Inode: 3109907     Links: 1
     /// Why we have always zero by default? Because normal filesystem
     /// manages hardlinks by itself. So you can always remove hardlink and all
-    /// other alive hardlinks will not be removed.
+    /// other alive harlinks will not be removed.
     virtual UInt32 getRefCount(const String &) const { return 0; }
 
     /// Revision is an incremental counter of disk operation.
@@ -464,9 +473,9 @@ public:
     virtual void chmod(const String & /*path*/, mode_t /*mode*/) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support chmod"); }
 
     /// Was disk created to be used without storage configuration?
-    bool isCustomDisk() const { return custom_disk_settings_hash != 0; }
-    UInt128 getCustomDiskSettings() const { return custom_disk_settings_hash; }
-    void markDiskAsCustom(UInt128 settings_hash) { custom_disk_settings_hash = settings_hash; }
+    bool isCustomDisk() const { return is_custom_disk; }
+
+    void markDiskAsCustom() { is_custom_disk = true; }
 
     virtual DiskPtr getDelegateDiskIfExists() const { return nullptr; }
 
@@ -478,8 +487,6 @@ public:
             "Method getS3StorageClient() is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
-
-    virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() const { return nullptr; }
 #endif
 
 
@@ -504,8 +511,7 @@ protected:
 
 private:
     ThreadPool copying_thread_pool;
-    // 0 means the disk is not custom, the disk is predefined in the config
-    UInt128 custom_disk_settings_hash = 0;
+    bool is_custom_disk = false;
 
     /// Check access to the disk.
     void checkAccess();
