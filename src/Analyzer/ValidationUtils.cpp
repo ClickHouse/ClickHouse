@@ -20,6 +20,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int ILLEGAL_PREWHERE;
     extern const int UNSUPPORTED_METHOD;
+    extern const int UNEXPECTED_EXPRESSION;
 }
 
 namespace
@@ -39,8 +40,8 @@ void validateFilter(const QueryTreeNodePtr & filter_node, std::string_view excep
     }
 
     if (!filter_node_result_type)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Unsupported expression '{}' in filter in {}. In query {}",
+        throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
+                        "Unexpected expression '{}' in filter in {}. In query {}",
                         filter_node->formatASTForErrorMessage(),
                         exception_place_message,
                         query_node->formatASTForErrorMessage());
