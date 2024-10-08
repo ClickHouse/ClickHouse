@@ -2010,6 +2010,38 @@ Result:
 
 Converts a date, or date with time, to a UInt8 number containing the ISO Week number.
 
+**Syntax**
+
+```sql
+toISOWeek(value)
+```
+
+**Arguments**
+
+- `value` — The value with date or date with time.
+
+**Returned value**
+
+- `value` converted to the current ISO week number. [UInt8](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+  toISOWeek(toDate('2024/10/02')) AS week1,
+  toISOWeek(toDateTime('2024/10/02 01:30:00')) AS week2
+```
+
+Response:
+
+```response
+┌─week1─┬─week2─┐
+│    40 │    40 │
+└───────┴───────┘
+```
+
 ## toWeek
 
 This function returns the week number for date or datetime. The two-argument form of `toWeek()` enables you to specify whether the week starts on Sunday or Monday and whether the return value should be in the range from 0 to 53 or from 1 to 53. If the mode argument is omitted, the default mode is 0.

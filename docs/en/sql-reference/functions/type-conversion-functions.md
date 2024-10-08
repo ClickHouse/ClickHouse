@@ -5230,14 +5230,51 @@ Result:
 
 Also see the `toUnixTimestamp` function.
 
-## toFixedString(s, N)
+## toFixedString
 
 Converts a [String](../data-types/string.md) type argument to a [FixedString(N)](../data-types/fixedstring.md) type (a string of fixed length N).
 If the string has fewer bytes than N, it is padded with null bytes to the right. If the string has more bytes than N, an exception is thrown.
 
-## toStringCutToZero(s)
+**Syntax**
+
+```sql
+toFixedString(s, N)
+```
+
+**Arguments**
+
+- `s` — A String to convert to a fixed string. [String](../data-types/string.md).
+- `N` — Length N. [UInt8]()
+
+**Returned value**
+
+- An N length fixed string of `s`. [FixedString](../data-types/fixedstring.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toFixedString('foo', 8) AS s;
+```
+
+Result:
+
+```response
+┌─s─────────────┬─s_cut─┐
+│ foo\0\0\0\0\0 │ foo   │
+└───────────────┴───────┘
+```
+
+## toStringCutToZero
 
 Accepts a String or FixedString argument. Returns the String with the content truncated at the first zero byte found.
+
+**Syntax**
+
+```sql
+toStringCutToZero(s)
+```
 
 **Example**
 
