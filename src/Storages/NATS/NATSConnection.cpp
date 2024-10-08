@@ -62,8 +62,6 @@ NATSConnection::~NATSConnection()
     {
         natsConnection_Close(connection.get());
     }
-
-    LOG_DEBUG(log, "Destroy connection {} to {}", static_cast<void*>(this), connectionInfoForLog());
 }
 
 

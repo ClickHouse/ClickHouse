@@ -112,10 +112,6 @@ StorageNATS::StorageNATS(
     reconnection_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSConnectionManagerTask", [this] { reconnectionFunc(); });
     reconnection_task->deactivate();
 }
-StorageNATS::~StorageNATS()
-{
-    LOG_DEBUG(log, "Destroy storage.");
-}
 
 VirtualColumnsDescription StorageNATS::createVirtuals(StreamingHandleErrorMode handle_error_mode)
 {
@@ -472,7 +468,6 @@ void StorageNATS::shutdown(bool /* is_drop */)
 void StorageNATS::pushConsumer(NATSConsumerPtr consumer)
 {
     std::lock_guard lock(consumers_mutex);
-    LOG_DEBUG(log, "Push consumer");
     consumers.push_back(consumer);
     semaphore.set();
 }
@@ -499,8 +494,6 @@ NATSConsumerPtr StorageNATS::popConsumer(std::chrono::milliseconds timeout)
     std::lock_guard lock(consumers_mutex);
     auto consumer = consumers.back();
     consumers.pop_back();
-
-    LOG_DEBUG(log, "Pop consumer");
 
     return consumer;
 }
