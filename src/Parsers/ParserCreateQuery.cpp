@@ -541,8 +541,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 storage_like = true;
                 continue;
             }
-            else
-                return false;
+            return false;
         }
 
         if (!primary_key && s_primary_key.ignore(pos, expected))
@@ -552,8 +551,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 storage_like = true;
                 continue;
             }
-            else
-                return false;
+            return false;
         }
 
         if (!order_by && s_order_by.ignore(pos, expected))
@@ -563,8 +561,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 storage_like = true;
                 continue;
             }
-            else
-                return false;
+            return false;
         }
 
         if (!sample_by && s_sample_by.ignore(pos, expected))
@@ -574,8 +571,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 storage_like = true;
                 continue;
             }
-            else
-                return false;
+            return false;
         }
 
         if (!ttl_table && s_ttl.ignore(pos, expected))
@@ -585,8 +581,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 storage_like = true;
                 continue;
             }
-            else
-                return false;
+            return false;
         }
 
         /// Do not allow SETTINGS clause without ENGINE,
@@ -1279,40 +1274,35 @@ bool ParserTableOverrideDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
         {
             if (expression_p.parse(pos, partition_by, expected))
                 continue;
-            else
-                return false;
+            return false;
         }
 
         if (!primary_key && s_primary_key.ignore(pos, expected))
         {
             if (expression_p.parse(pos, primary_key, expected))
                 continue;
-            else
-                return false;
+            return false;
         }
 
         if (!order_by && s_order_by.ignore(pos, expected))
         {
             if (expression_p.parse(pos, order_by, expected))
                 continue;
-            else
-                return false;
+            return false;
         }
 
         if (!sample_by && s_sample_by.ignore(pos, expected))
         {
             if (expression_p.parse(pos, sample_by, expected))
                 continue;
-            else
-                return false;
+            return false;
         }
 
         if (!ttl_table && s_ttl.ignore(pos, expected))
         {
             if (parser_ttl_list.parse(pos, ttl_table, expected))
                 continue;
-            else
-                return false;
+            return false;
         }
 
         break;

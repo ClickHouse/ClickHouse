@@ -86,6 +86,13 @@ namespace Setting
     extern const SettingsUInt64 skip_indexes_in_final_correctness_threshold;
 }
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsUInt64 max_concurrent_queries;
+    extern const MergeTreeSettingsInt64 max_partitions_to_read;
+    extern const MergeTreeSettingsUInt64 min_marks_to_honor_max_concurrent_queries;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -1011,7 +1018,7 @@ std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
     const auto & settings = context->getSettingsRef();
     const auto data_settings = data.getSettings();
     auto max_partitions_to_read
-        = settings[Setting::max_partitions_to_read].changed ? settings[Setting::max_partitions_to_read] : data_settings->max_partitions_to_read;
+        = settings[Setting::max_partitions_to_read].changed ? settings[Setting::max_partitions_to_read] : (*data_settings)[MergeTreeSetting::max_partitions_to_read];
     if (max_partitions_to_read > 0)
     {
         std::set<String> partitions;
@@ -1025,12 +1032,12 @@ std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
                 max_partitions_to_read);
     }
 
-    if (data_settings->max_concurrent_queries > 0 && data_settings->min_marks_to_honor_max_concurrent_queries > 0
-        && result.selected_marks >= data_settings->min_marks_to_honor_max_concurrent_queries)
+    if ((*data_settings)[MergeTreeSetting::max_concurrent_queries] > 0 && (*data_settings)[MergeTreeSetting::min_marks_to_honor_max_concurrent_queries] > 0
+        && result.selected_marks >= (*data_settings)[MergeTreeSetting::min_marks_to_honor_max_concurrent_queries])
     {
         auto query_id = context->getCurrentQueryId();
         if (!query_id.empty())
-            return data.getQueryIdHolder(query_id, data_settings->max_concurrent_queries);
+            return data.getQueryIdHolder(query_id, (*data_settings)[MergeTreeSetting::max_concurrent_queries]);
     }
     return nullptr;
 }
@@ -1117,8 +1124,7 @@ size_t MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
 
     if (bytes_granularity == 0)
         return res;
-    else
-        return std::max(res, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
+    return std::max(res, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
 }
 
 /// Same as roundRowsOrBytesToMarks() but do not return more then max_marks
@@ -1138,16 +1144,13 @@ size_t MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
 
     if (bytes_granularity == 0)
         return marks;
-    else
-    {
-        /// Overflow
-        if (bytes_setting + bytes_granularity <= bytes_setting) /// overflow
-            return max_marks;
-        if (bytes_setting)
-            return std::max(marks, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
-        else
-            return marks;
-    }
+
+    /// Overflow
+    if (bytes_setting + bytes_granularity <= bytes_setting) /// overflow
+        return max_marks;
+    if (bytes_setting)
+        return std::max(marks, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
+    return marks;
 }
 
 
@@ -1284,26 +1287,23 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 /// Empty mark (final mark)
                 return BoolMask(false, true);
             }
-            else
-            {
-                part_offset_left[0] = part->index_granularity.getMarkStartingRow(range.begin);
-                part_offset_right[0] = part->index_granularity.getMarkStartingRow(range.end) - 1;
-                part_offset_left[1] = part->name;
-                part_offset_right[1] = part->name;
 
-                return part_offset_condition->checkInRange(
-                    2, part_offset_left.data(), part_offset_right.data(), part_offset_types, initial_mask);
-            }
+            part_offset_left[0] = part->index_granularity.getMarkStartingRow(range.begin);
+            part_offset_right[0] = part->index_granularity.getMarkStartingRow(range.end) - 1;
+            part_offset_left[1] = part->name;
+            part_offset_right[1] = part->name;
+
+            return part_offset_condition->checkInRange(
+                2, part_offset_left.data(), part_offset_right.data(), part_offset_types, initial_mask);
         };
 
         if (key_condition_useful && part_offset_condition_useful)
             return check_key_condition() & check_part_offset_condition();
-        else if (key_condition_useful)
+        if (key_condition_useful)
             return check_key_condition();
-        else if (part_offset_condition_useful)
+        if (part_offset_condition_useful)
             return check_part_offset_condition();
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Condition is useless but check_in_range still gets called. It is a bug");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Condition is useless but check_in_range still gets called. It is a bug");
     };
 
     bool key_condition_exact_range = !key_condition_useful || key_condition.matchesExactContinuousRange();
@@ -1547,42 +1547,48 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 
             if (index_helper->isVectorSimilarityIndex())
             {
-                /// An array of indices of useful ranges.
-                auto result = condition->getUsefulRanges(granule);
+                auto rows = condition->calculateApproximateNearestNeighbors(granule);
 
-                for (auto range : result)
+                for (auto row : rows)
                 {
-                    /// The range for the corresponding index.
-                    MarkRange data_range(
-                        std::max(ranges[i].begin, index_mark * index_granularity + range),
-                        std::min(ranges[i].end, index_mark * index_granularity + range + 1));
+                    const MergeTreeIndexGranularity & merge_tree_index_granularity = part->index_granularity;
+                    size_t num_marks = merge_tree_index_granularity.countMarksForRows(index_mark * index_granularity, row);
 
-                    if (res.empty() || res.back().end - data_range.begin > min_marks_for_seek)
+                    MarkRange data_range(
+                        std::max(ranges[i].begin, (index_mark * index_granularity) + num_marks),
+                        std::min(ranges[i].end, (index_mark * index_granularity) + num_marks + 1));
+
+                    if (!res.empty() && data_range.end == res.back().end)
+                        /// Vector search may return >1 hit within the same granule/mark. Don't add to the result twice.
+                        continue;
+
+                    if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
                         res.push_back(data_range);
                     else
                         res.back().end = data_range.end;
                 }
-                continue;
             }
-
-            bool result = false;
-            const auto * gin_filter_condition = dynamic_cast<const MergeTreeConditionFullText *>(&*condition);
-            if (!gin_filter_condition)
-                result = condition->mayBeTrueOnGranule(granule);
             else
-                result = cache_in_store.store ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, cache_in_store) : true;
+            {
+                 bool result = false;
+                 const auto * gin_filter_condition = dynamic_cast<const MergeTreeConditionFullText *>(&*condition);
+                 if (!gin_filter_condition)
+                     result = condition->mayBeTrueOnGranule(granule);
+                 else
+                     result = cache_in_store.store ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, cache_in_store) : true;
 
-            if (!result)
-                continue;
+                if (!result)
+                    continue;
 
-            MarkRange data_range(
-                std::max(ranges[i].begin, index_mark * index_granularity),
-                std::min(ranges[i].end, (index_mark + 1) * index_granularity));
+                MarkRange data_range(
+                    std::max(ranges[i].begin, index_mark * index_granularity),
+                    std::min(ranges[i].end, (index_mark + 1) * index_granularity));
 
-            if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
-                res.push_back(data_range);
-            else
-                res.back().end = data_range.end;
+                if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
+                    res.push_back(data_range);
+                else
+                    res.back().end = data_range.end;
+            }
         }
 
         last_index_mark = index_range.end - 1;

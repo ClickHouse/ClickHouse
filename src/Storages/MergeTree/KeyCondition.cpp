@@ -1074,13 +1074,12 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
         {
             if (!func.hasInformationAboutMonotonicity())
                 return false;
-            else
-            {
-                /// Range is irrelevant in this case.
-                auto monotonicity = func.getMonotonicityForRange(type, Field(), Field());
-                if (!monotonicity.is_always_monotonic)
-                    return false;
-            }
+
+            /// Range is irrelevant in this case.
+            auto monotonicity = func.getMonotonicityForRange(type, Field(), Field());
+            if (!monotonicity.is_always_monotonic)
+                return false;
+
             return true;
         });
 
@@ -1443,15 +1442,14 @@ public:
                 new_arguments.push_back(arg);
             return func->prepare(new_arguments)->execute(new_arguments, result_type, input_rows_count, dry_run);
         }
-        else if (kind == Kind::RIGHT_CONST)
+        if (kind == Kind::RIGHT_CONST)
         {
             auto new_arguments = arguments;
             new_arguments.push_back(const_arg);
             new_arguments.back().column = new_arguments.back().column->cloneResized(input_rows_count);
             return func->prepare(new_arguments)->execute(new_arguments, result_type, input_rows_count, dry_run);
         }
-        else
-            return func->prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
+        return func->prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
     }
 
     bool isDeterministic() const override { return func->isDeterministic(); }
@@ -2134,8 +2132,8 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                 /// Case2 has holes in polygon, when checking skip index, the hole will be ignored.
                 return analyze_point_in_polygon();
             }
-            else
-                return false;
+
+            return false;
         }
 
         const auto atom_it = atom_map.find(func_name);
@@ -2146,7 +2144,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
         return atom_it->second(out, const_value);
     }
-    else if (node.tryGetConstant(const_value, const_type))
+    if (node.tryGetConstant(const_value, const_type))
     {
         /// For cases where it says, for example, `WHERE 0 AND something`
 
@@ -2155,12 +2153,12 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             out.function = const_value.safeGet<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
             return true;
         }
-        else if (const_value.getType() == Field::Types::Int64)
+        if (const_value.getType() == Field::Types::Int64)
         {
             out.function = const_value.safeGet<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
             return true;
         }
-        else if (const_value.getType() == Field::Types::Float64)
+        if (const_value.getType() == Field::Types::Float64)
         {
             out.function = const_value.safeGet<Float64>() != 0.0 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
             return true;
@@ -2220,7 +2218,7 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
             new_rpn.push_back(std::move(collapsed_elem));
             continue;
         }
-        else if (elem.function == RPNElement::FUNCTION_AND && new_rpn.size() >= 2)
+        if (elem.function == RPNElement::FUNCTION_AND && new_rpn.size() >= 2)
         {
             /// AND of two conditions
 
@@ -2229,18 +2227,16 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
 
             /// Related to the same column of the key, represented by a space-filling curve
 
-            if (cond1.key_column == cond2.key_column
-                && cond1.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE
+            if (cond1.key_column == cond2.key_column && cond1.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE
                 && cond2.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE)
             {
-                 /// Intersect these two conditions (applying AND)
+                /// Intersect these two conditions (applying AND)
 
                 RPNElement collapsed_elem;
                 collapsed_elem.function = RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE;
                 collapsed_elem.key_column = cond1.key_column;
-                collapsed_elem.space_filling_curve_args_hyperrectangle = intersect(
-                    cond1.space_filling_curve_args_hyperrectangle,
-                    cond2.space_filling_curve_args_hyperrectangle);
+                collapsed_elem.space_filling_curve_args_hyperrectangle
+                    = intersect(cond1.space_filling_curve_args_hyperrectangle, cond2.space_filling_curve_args_hyperrectangle);
 
                 /// Replace the AND operation with its arguments to the collapsed condition
 
@@ -3268,17 +3264,16 @@ String KeyCondition::RPNElement::toString() const
 {
     if (argument_num_of_space_filling_curve)
         return toString(fmt::format("argument {} of column {}", *argument_num_of_space_filling_curve, key_column), false);
-    else if (point_in_polygon_column_description)
-    {
+
+    if (point_in_polygon_column_description)
         return toString(
             fmt::format(
                 "column ({}, {})",
                 point_in_polygon_column_description->key_columns[0],
                 point_in_polygon_column_description->key_columns[1]),
             false);
-    }
-    else
-        return toString(fmt::format("column {}", key_column), true);
+
+    return toString(fmt::format("column {}", key_column), true);
 }
 
 String KeyCondition::RPNElement::toString(std::string_view column_name, bool print_constants) const

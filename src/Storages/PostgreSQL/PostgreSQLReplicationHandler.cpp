@@ -723,16 +723,21 @@ Strings PostgreSQLReplicationHandler::getTableAllowedColumns(const std::string &
     if (tables_list.empty())
         return result;
 
-    size_t table_pos = tables_list.find(table_name);
-    if (table_pos == std::string::npos)
+    size_t table_pos = 0;
+    while (true)
     {
-        return result;
+        table_pos = tables_list.find(table_name, table_pos + 1);
+        if (table_pos == std::string::npos)
+            return result;
+        if (table_pos + table_name.length() + 1 > tables_list.length())
+            return result;
+        if (tables_list[table_pos + table_name.length() + 1] == '(' ||
+            tables_list[table_pos + table_name.length() + 1] == ',' ||
+            tables_list[table_pos + table_name.length() + 1] == ' '
+        )
+            break;
     }
 
-    if (table_pos + table_name.length() + 1 > tables_list.length())
-    {
-        return result;
-    }
     String column_list = tables_list.substr(table_pos + table_name.length() + 1);
     column_list.erase(std::remove(column_list.begin(), column_list.end(), '"'), column_list.end());
     boost::trim(column_list);
