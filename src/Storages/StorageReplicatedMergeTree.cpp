@@ -1851,9 +1851,7 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
 
     /// detached all unexpected data parts after sanity check.
     for (auto & part_state : unexpected_data_parts)
-    {
-        part_state.part->renameToDetached("ignored");
-    }
+        part_state.part->renameToDetached("ignored", /* ignore_error= */ true);
     unexpected_data_parts.clear();
 
     return true;
