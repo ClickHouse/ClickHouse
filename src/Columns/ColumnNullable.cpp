@@ -118,32 +118,28 @@ Float64 ColumnNullable::getFloat64(size_t n) const
 {
     if (isNullAt(n))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of {} at {} is NULL while calling method getFloat64", getName(), n);
-    else
-        return getNestedColumn().getFloat64(n);
+    return getNestedColumn().getFloat64(n);
 }
 
 Float32 ColumnNullable::getFloat32(size_t n) const
 {
     if (isNullAt(n))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of {} at {} is NULL while calling method getFloat32", getName(), n);
-    else
-        return getNestedColumn().getFloat32(n);
+    return getNestedColumn().getFloat32(n);
 }
 
 UInt64 ColumnNullable::getUInt(size_t n) const
 {
     if (isNullAt(n))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of {} at {} is NULL while calling method getUInt", getName(), n);
-    else
-        return getNestedColumn().getUInt(n);
+    return getNestedColumn().getUInt(n);
 }
 
 Int64 ColumnNullable::getInt(size_t n) const
 {
     if (isNullAt(n))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of {} at {} is NULL while calling method getInt", getName(), n);
-    else
-        return getNestedColumn().getInt(n);
+    return getNestedColumn().getInt(n);
 }
 
 void ColumnNullable::insertData(const char * pos, size_t length)
@@ -399,8 +395,7 @@ int ColumnNullable::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int 
     {
         if (lval_is_null && rval_is_null)
             return 0;
-        else
-            return lval_is_null ? null_direction_hint : -null_direction_hint;
+        return lval_is_null ? null_direction_hint : -null_direction_hint;
     }
 
     const IColumn & nested_rhs = nullable_rhs.getNestedColumn();
