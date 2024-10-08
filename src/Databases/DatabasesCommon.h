@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Databases/IDatabase.h>
-#include <Parsers/IAST.h>
+#include <base/types.h>
+#include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <base/types.h>
 

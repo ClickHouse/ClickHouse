@@ -111,7 +111,12 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupPtr thread_grou
             /// Variable chunk is moved, but it is not really used in the next iteration.
             /// NOLINTNEXTLINE(bugprone-use-after-move, hicpp-invalid-access-moved)
             unit.chunk_ext.chunk.emplace_back(std::move(chunk));
-            unit.chunk_ext.block_missing_values.emplace_back(parser.getMissingValues());
+
+            if (const auto * block_missing_values = parser.getMissingValues())
+                unit.chunk_ext.block_missing_values.emplace_back(*block_missing_values);
+            else
+                unit.chunk_ext.block_missing_values.emplace_back(chunk.getNumColumns());
+
             size_t approx_chunk_size = input_format->getApproxBytesReadForChunk();
             /// We could decompress data during file segmentation.
             /// Correct chunk size using original segment size.

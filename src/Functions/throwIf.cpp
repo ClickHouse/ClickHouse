@@ -145,10 +145,10 @@ private:
                     throw Exception::createRuntime(
                         error_code.value_or(ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO),
                         *message);
-                else
-                    throw Exception(
-                        error_code.value_or(ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO),
-                        "Value passed to '{}' function is non-zero", getName());
+                throw Exception(
+                    error_code.value_or(ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO),
+                    "Value passed to '{}' function is non-zero",
+                    getName());
             }
 
             size_t result_size = in_untyped->size();
