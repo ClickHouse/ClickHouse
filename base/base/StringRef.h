@@ -151,19 +151,19 @@ inline bool memequalWide(const char * p1, const char * p2, size_t size)
             return unalignedLoad<uint64_t>(p1) == unalignedLoad<uint64_t>(p2)
                 && unalignedLoad<uint64_t>(p1 + size - 8) == unalignedLoad<uint64_t>(p2 + size - 8);
         }
-        else if (size >= 4)
+        if (size >= 4)
         {
             /// Chunks of 4..7 bytes.
             return unalignedLoad<uint32_t>(p1) == unalignedLoad<uint32_t>(p2)
                 && unalignedLoad<uint32_t>(p1 + size - 4) == unalignedLoad<uint32_t>(p2 + size - 4);
         }
-        else if (size >= 2)
+        if (size >= 2)
         {
             /// Chunks of 2..3 bytes.
             return unalignedLoad<uint16_t>(p1) == unalignedLoad<uint16_t>(p2)
                 && unalignedLoad<uint16_t>(p1 + size - 2) == unalignedLoad<uint16_t>(p2 + size - 2);
         }
-        else if (size >= 1)
+        if (size >= 1)
         {
             /// A single byte.
             return *p1 == *p2;

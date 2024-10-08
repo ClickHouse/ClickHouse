@@ -1,18 +1,17 @@
 #pragma once
 
-#include <Access/AccessRights.h>
-#include <Access/ContextAccessParams.h>
-#include <Access/EnabledRowPolicies.h>
-#include <Interpreters/ClientInfo.h>
-#include <Access/QuotaUsage.h>
-#include <Common/SettingsChanges.h>
-#include <Core/UUID.h>
-#include <base/scope_guard.h>
-#include <boost/container/flat_set.hpp>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
+#include <Access/AccessRights.h>
+#include <Access/ContextAccessParams.h>
+#include <Access/EnabledRowPolicies.h>
+#include <Access/QuotaUsage.h>
+#include <Core/UUID.h>
+#include <Interpreters/ClientInfo.h>
+#include <base/scope_guard.h>
+#include <Common/SettingsChanges.h>
 
 
 namespace Poco { class Logger; }
