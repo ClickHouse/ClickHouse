@@ -855,6 +855,10 @@ def test_nats_many_inserts(nats_cluster):
         logging.debug("Table test.nats_consume is not yet ready")
         time.sleep(0.5)
 
+    while not check_table_is_ready(instance, "test.nats_many"):
+        logging.debug("Table test.nats_many is not yet ready")
+        time.sleep(0.5)
+
     messages_num = 10000
     values = []
     for i in range(messages_num):
