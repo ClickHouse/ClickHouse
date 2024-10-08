@@ -13,4 +13,8 @@ namespace DB
 std::string escapeForFileName(const std::string & s);
 std::string unescapeForFileName(const std::string & s);
 
+/// Escape non-printable characters as \xCC and truncate string if it is too long.
+/// In case input string is already valid, it is returned as is, otherwise escaped and truncated copy is stored in buffer.
+const std::string & escapeForLogs(const std::string & in, size_t max_length, std::string & buffer);
+
 }
