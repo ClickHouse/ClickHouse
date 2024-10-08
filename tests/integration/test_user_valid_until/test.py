@@ -80,8 +80,8 @@ def test_basic(started_cluster):
     node.query("CREATE USER user_basic NOT IDENTIFIED VALID UNTIL '01/01/2010'")
 
     assert (
-            node.query("SHOW CREATE USER user_basic")
-            == "CREATE USER user_basic IDENTIFIED WITH no_password VALID UNTIL \\'2010-01-01 00:00:00\\'\n"
+        node.query("SHOW CREATE USER user_basic")
+        == "CREATE USER user_basic IDENTIFIED WITH no_password VALID UNTIL \\'2010-01-01 00:00:00\\'\n"
     )
 
     assert error in node.query_and_get_error("SELECT 1", user="user_basic")
