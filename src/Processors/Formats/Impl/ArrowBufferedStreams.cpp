@@ -1,10 +1,6 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
 #include "ArrowBufferedStreams.h"
-
-#include <Common/ThreadPool.h>
-#include <IO/SharedThreadPools.h>
-
 #if USE_ARROW || USE_ORC || USE_PARQUET
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
@@ -186,7 +182,7 @@ arrow::Status ArrowInputStreamFromReadBuffer::Close()
     return arrow::Status();
 }
 
-RandomAccessFileFromRandomAccessReadBuffer::RandomAccessFileFromRandomAccessReadBuffer(SeekableReadBuffer & in_, size_t file_size_, std::shared_ptr<ThreadPool> io_pool_) : in(in_), file_size(file_size_), io_pool(io_pool_)
+RandomAccessFileFromRandomAccessReadBuffer::RandomAccessFileFromRandomAccessReadBuffer(SeekableReadBuffer & in_, size_t file_size_, std::shared_ptr<ThreadPool> io_pool_) : in(in_), file_size(file_size_), io_pool(std::move(io_pool_))
 {
     if (io_pool)
         async_runner = threadPoolCallbackRunnerUnsafe<void>(*io_pool, "ArrowFile");
@@ -229,12 +225,11 @@ arrow::Future<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromRandomAccessRe
     if (io_pool)
     {
         async_runner([this, future, position, nbytes]() mutable { asyncThreadFunction(future, position, nbytes); }, {});
-        return future.Then([=]() {return future.result();});
+        return future.Then([=]() { return future.result(); });
     }
     asyncThreadFunction(future, position, nbytes);
     return future;
 }
-
 
 arrow::Status RandomAccessFileFromRandomAccessReadBuffer::Close()
 {
@@ -242,6 +237,7 @@ arrow::Status RandomAccessFileFromRandomAccessReadBuffer::Close()
     is_open = false;
     return arrow::Status::OK();
 }
+
 void RandomAccessFileFromRandomAccessReadBuffer::asyncThreadFunction(
     arrow::Future<std::shared_ptr<arrow::Buffer>> future, int64_t position, int64_t nbytes)
 {
