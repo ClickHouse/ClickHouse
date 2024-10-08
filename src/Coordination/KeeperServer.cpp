@@ -1019,7 +1019,7 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
         resp->get();
         return resp->get_accepted() ? Accepted : Declined;
     }
-    else if (const auto * remove = std::get_if<RemoveRaftServer>(&action))
+    if (const auto * remove = std::get_if<RemoveRaftServer>(&action))
     {
         // This corner case is the most problematic. Issue follows: if we agree on a number
         // of commands but don't commit them on leader, and then issue a leadership change via
@@ -1049,16 +1049,16 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
         resp->get();
         return resp->get_accepted() ? Accepted : Declined;
     }
-    else if (const auto * update = std::get_if<UpdateRaftServerPriority>(&action))
+    if (const auto * update = std::get_if<UpdateRaftServerPriority>(&action))
     {
-        if (auto ptr = raft_instance->get_srv_config(update->id); ptr == nullptr)
-            throw Exception(ErrorCodes::RAFT_ERROR,
-                "Attempt to apply {} but server is not present in Raft",
-                action);
-        else if (ptr->get_priority() == update->priority)
+        auto ptr = raft_instance->get_srv_config(update->id);
+
+        if (ptr == nullptr)
+            throw Exception(ErrorCodes::RAFT_ERROR, "Attempt to apply {} but server is not present in Raft", action);
+        if (ptr->get_priority() == update->priority)
             return Accepted;
 
-        raft_instance->set_priority(update->id, update->priority, /*broadcast on live leader*/true);
+        raft_instance->set_priority(update->id, update->priority, /*broadcast on live leader*/ true);
         return Accepted;
     }
     std::unreachable();

@@ -1480,17 +1480,17 @@ bool AccessRights::isGrantedImplHelper(const AccessRightsElement & element) cons
     {
         if (element.anyParameter())
             return isGrantedImpl<grant_option, wildcard>(element.access_flags);
-        else
-            return isGrantedImpl<grant_option, wildcard>(element.access_flags, element.parameter);
+
+        return isGrantedImpl<grant_option, wildcard>(element.access_flags, element.parameter);
     }
-    else if (element.anyDatabase())
+    if (element.anyDatabase())
         return isGrantedImpl<grant_option, wildcard>(element.access_flags);
-    else if (element.anyTable())
+    if (element.anyTable())
         return isGrantedImpl<grant_option, wildcard>(element.access_flags, element.database);
-    else if (element.anyColumn())
+    if (element.anyColumn())
         return isGrantedImpl<grant_option, wildcard>(element.access_flags, element.database, element.table);
-    else
-        return isGrantedImpl<grant_option, wildcard>(element.access_flags, element.database, element.table, element.columns);
+
+    return isGrantedImpl<grant_option, wildcard>(element.access_flags, element.database, element.table, element.columns);
 }
 
 template <bool grant_option, bool wildcard>
@@ -1500,16 +1500,14 @@ bool AccessRights::isGrantedImpl(const AccessRightsElement & element) const
     {
         if (element.grant_option)
             return isGrantedImplHelper<true, true>(element);
-        else
-            return isGrantedImplHelper<grant_option, true>(element);
+
+        return isGrantedImplHelper<grant_option, true>(element);
     }
-    else
-    {
-        if (element.grant_option)
-            return isGrantedImplHelper<true, wildcard>(element);
-        else
-            return isGrantedImplHelper<grant_option, wildcard>(element);
-    }
+
+    if (element.grant_option)
+        return isGrantedImplHelper<true, wildcard>(element);
+
+    return isGrantedImplHelper<grant_option, wildcard>(element);
 }
 
 template <bool grant_option, bool wildcard>
