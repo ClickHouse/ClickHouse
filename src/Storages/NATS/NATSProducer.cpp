@@ -102,6 +102,8 @@ void NATSProducer::startProducingTaskLoop()
     }
 
     LOG_DEBUG(log, "Producer on subject {} completed", subject);
+
+    nats_ReleaseThreadMemory();
 }
 
 }
