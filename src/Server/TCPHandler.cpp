@@ -386,6 +386,9 @@ void TCPHandler::runImpl()
                 query_context->getSettingsRef(),
                 query_context->getOpenTelemetrySpanLog());
             thread_trace_context->root_span.kind = OpenTelemetry::SERVER;
+            thread_trace_context->root_span.addAttribute("http.referer", query_context->getClientInfo().http_referer);
+            thread_trace_context->root_span.addAttribute("http.user.agent", query_context->getClientInfo().http_user_agent);
+            thread_trace_context->root_span.addAttribute("http.method", toString(query_context->getClientInfo().http_method));
 
             query_scope.emplace(query_context, /* fatal_error_callback */ [this]
             {

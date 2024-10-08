@@ -1060,6 +1060,9 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             context->getOpenTelemetrySpanLog());
         thread_trace_context->root_span.kind = OpenTelemetry::SERVER;
         thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
+        thread_trace_context->root_span.addAttribute("http.referer", session->getClientInfo().http_referer);
+        thread_trace_context->root_span.addAttribute("http.user.agent", session->getClientInfo().http_user_agent);
+        thread_trace_context->root_span.addAttribute("http.method", toString(session->getClientInfo().http_method));
 
         response.setContentType("text/plain; charset=UTF-8");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);

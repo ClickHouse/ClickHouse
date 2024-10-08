@@ -258,4 +258,19 @@ String toString(ClientInfo::Interface interface)
     return std::format("Unknown {}!\n", static_cast<int>(interface));
 }
 
+String toString(ClientInfo::HTTPMethod method)
+{
+    switch (method)
+    {
+        case ClientInfo::HTTPMethod::UNKNOWN:
+            return "UNKNOWN";
+        case ClientInfo::HTTPMethod::GET:
+            return "GET";
+        case ClientInfo::HTTPMethod::POST:
+            return "POST";
+        case ClientInfo::HTTPMethod::OPTIONS:
+            return "OPTIONS";
+    }
+}
+
 }
