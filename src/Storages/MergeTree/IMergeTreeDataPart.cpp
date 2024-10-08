@@ -2154,7 +2154,23 @@ void IMergeTreeDataPart::renameToDetached(const String & prefix, bool ignore_err
     {
         renameTo(path_to_detach.value(), true);
     }
-    catch (...)
+    /// This exceptions majority of cases:
+    /// - fsync
+    /// - mtime adjustment
+    catch (const ErrnoException &)
+    {
+        if (ignore_error)
+        {
+            // Don't throw when the destination is to the detached folder. It might be able to
+            // recover in some cases, such as fetching parts into multi-disks while some of the
+            // disks are broken.
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        else
+            throw;
+    }
+    /// - rename
+    catch (const fs::filesystem_error &)
     {
         if (ignore_error)
         {
