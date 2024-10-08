@@ -408,8 +408,14 @@ def kill_process_group(pgid):
 
 
 def cleanup_child_processes(pid):
-    pgid = os.getpgid(os.getpid())
     print(f"Child processes of {pid}:")
+    try:
+        pgid = os.getpgid(os.getpid())
+    except OSError as e:
+        if e.errno == ESRCH:
+            print(f"Process {pid} does not exist. Ignoring.")
+            return
+        raise
     print(
         subprocess.check_output(
             f"pgrep --parent {pid} -a", shell=True, stderr=subprocess.STDOUT
