@@ -348,17 +348,13 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
                     result_typed_columns[getSubPath(path, prefix)] = column;
             }
 
-            auto & result_dynamic_columns = result_object_column.getDynamicPaths();
-            auto & result_dynamic_columns_ptrs = result_object_column.getDynamicPathsPtrs();
+            std::vector<std::pair<String, ColumnPtr>> result_dynamic_paths;
             for (const auto & [path, column] :  object_column.getDynamicPaths())
             {
                 if (path.starts_with(prefix) && path.size() != prefix.size())
-                {
-                    auto sub_path = getSubPath(path, prefix);
-                    result_dynamic_columns[sub_path] = column;
-                    result_dynamic_columns_ptrs[sub_path] = assert_cast<ColumnDynamic *>(result_dynamic_columns[sub_path].get());
-                }
+                    result_dynamic_paths.emplace_back(getSubPath(path, prefix), column);
             }
+            result_object_column.setDynamicPaths(result_dynamic_paths);
 
             const auto & shared_data_offsets = object_column.getSharedDataOffsets();
             const auto [shared_data_paths, shared_data_values] = object_column.getSharedDataPathsAndValues();
