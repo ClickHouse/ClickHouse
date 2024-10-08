@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <Databases/IDatabase.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <base/types.h>
