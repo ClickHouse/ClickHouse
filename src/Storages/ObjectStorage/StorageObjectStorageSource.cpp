@@ -104,8 +104,7 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
 
     if (include_connection_info)
         return fs::path(configuration.getDataSourceDescription()) / path;
-    else
-        return fs::path(configuration.getNamespace()) / path;
+    return fs::path(configuration.getNamespace()) / path;
 }
 
 std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSource::createFileIterator(
@@ -573,7 +572,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression can not have wildcards inside namespace name");
     }
-    else if (configuration->isPathWithGlobs())
+    if (configuration->isPathWithGlobs())
     {
         const auto key_with_globs = configuration_->getPath();
         const auto key_prefix = configuration->getPathWithoutGlobs();
@@ -582,9 +581,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs));
         if (!matcher->ok())
         {
-            throw Exception(
-                ErrorCodes::CANNOT_COMPILE_REGEXP,
-                "Cannot compile regex from glob ({}): {}", key_with_globs, matcher->error());
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", key_with_globs, matcher->error());
         }
 
         recursive = key_with_globs == "/**";
@@ -596,9 +593,10 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Using glob iterator with path without globs is not allowed (used path: {})",
-                        configuration->getPath());
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Using glob iterator with path without globs is not allowed (used path: {})",
+            configuration->getPath());
     }
 }
 
@@ -893,8 +891,7 @@ StorageObjectStorageSource::ArchiveIterator::nextImpl(size_t processor)
             path_in_archive = file_enumerator->getFileName();
             if (!filter(path_in_archive))
                 continue;
-            else
-                current_file_info = file_enumerator->getFileInfo();
+            current_file_info = file_enumerator->getFileInfo();
         }
         else
         {
@@ -908,8 +905,7 @@ StorageObjectStorageSource::ArchiveIterator::nextImpl(size_t processor)
             archive_reader = createArchiveReader(archive_object);
             if (!archive_reader->fileExists(path_in_archive))
                 continue;
-            else
-                current_file_info = archive_reader->getFileInfo(path_in_archive);
+            current_file_info = archive_reader->getFileInfo(path_in_archive);
         }
         break;
     }

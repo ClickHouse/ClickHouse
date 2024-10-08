@@ -261,28 +261,26 @@ namespace
                 }
                 return {begin, static_cast<size_t>(pos - begin - delim.size())};
             }
-            else
+
+            Int64 total = 0;
+            while (pos < end && end != (pos = searcher->search(pos, end - pos)))
             {
-                Int64 total = 0;
-                while (pos < end && end != (pos = searcher->search(pos, end - pos)))
-                {
-                    pos += delim.size();
-                    ++total;
-                }
-
-                if (total + count < 0)
-                    return str_ref;
-
-                pos = begin;
-                Int64 i = 0;
-                Int64 count_from_left = total + 1 + count;
-                while (i < count_from_left && pos < end && end != (pos = searcher->search(pos, end - pos)))
-                {
-                    pos += delim.size();
-                    ++i;
-                }
-                return {pos, static_cast<size_t>(end - pos)};
+                pos += delim.size();
+                ++total;
             }
+
+            if (total + count < 0)
+                return str_ref;
+
+            pos = begin;
+            Int64 i = 0;
+            Int64 count_from_left = total + 1 + count;
+            while (i < count_from_left && pos < end && end != (pos = searcher->search(pos, end - pos)))
+            {
+                pos += delim.size();
+                ++i;
+            }
+            return {pos, static_cast<size_t>(end - pos)};
         }
 
         static StringRef substringIndex(const StringRef & str_ref, char delim, Int64 count)
