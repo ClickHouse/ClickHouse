@@ -147,10 +147,8 @@ std::unordered_set<String> reverseResolveImpl(const Poco::Net::IPAddress & addre
     if (address.family() == Poco::Net::IPAddress::Family::IPv4)
     {
         return ptr_resolver->resolve(address.toString());
-    } else
-    {
-        return ptr_resolver->resolve_v6(address.toString());
     }
+    return ptr_resolver->resolve_v6(address.toString());
 }
 
 std::unordered_set<String> reverseResolveWithCache(

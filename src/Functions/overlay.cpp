@@ -194,16 +194,12 @@ private:
         {
             if (static_cast<size_t>(offset) > input_size + 1)
                 return input_size;
-            else
-                return offset - 1;
+            return offset - 1;
         }
-        else
-        {
-            if (input_size < -static_cast<size_t>(offset))
-                return 0;
-            else
-                return input_size + offset;
-        }
+
+        if (input_size < -static_cast<size_t>(offset))
+            return 0;
+        return input_size + offset;
     }
 
     /// get character count of a slice [data, data+bytes)

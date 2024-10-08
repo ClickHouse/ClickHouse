@@ -71,7 +71,7 @@ namespace DB
                     loop_table_name = id_name;
                 }
             }
-            else if (const auto * func = args[0]->as<ASTFunction>())
+            else if (const auto * /*func*/ _ = args[0]->as<ASTFunction>())
             {
                 inner_table_function_ast = args[0];
             }

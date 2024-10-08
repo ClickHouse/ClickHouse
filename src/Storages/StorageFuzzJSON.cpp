@@ -63,20 +63,19 @@ JSONValue::Type JSONValue::getType(const JSONValue & v)
         assert(!v.object);
         return JSONValue::Type::Fixed;
     }
-    else if (v.array)
+    if (v.array)
     {
         assert(!v.fixed);
         assert(!v.object);
         return JSONValue::Type::Array;
     }
-    else if (v.object)
+    if (v.object)
     {
         assert(!v.fixed);
         assert(!v.array);
         return JSONValue::Type::Object;
     }
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to determine JSON node type.");
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to determine JSON node type.");
 }
 
 // A node represents either a JSON field (a key-value pair) or a JSON value.
