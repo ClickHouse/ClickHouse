@@ -1342,7 +1342,7 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
             if (!prev_info.isDisjoint(info))
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Part {} intersects previous part {}. It is a bug or a result of manual intervention in the server or ZooKeeper data",
+                    "Part {} intersects previous part {}. It is a bug or a result of manual intervention",
                     name, prev->second->name);
             }
         }
@@ -1359,7 +1359,7 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
             if (!next_info.isDisjoint(info))
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Part {} intersects next part {}.  It is a bug or a result of manual intervention in the server or ZooKeeper data",
+                    "Part {} intersects next part {}. It is a bug or a result of manual intervention",
                     name, it->second->name);
             }
         }
