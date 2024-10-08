@@ -247,9 +247,9 @@ ReadFromFormatInfo StorageObjectStorage::prepareReadingFromFormat(
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
     bool supports_subset_of_columns,
-    ContextPtr /* local_context */)
+    ContextPtr local_context)
 {
-    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, supports_subset_of_columns);
+    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns);
 }
 
 void StorageObjectStorage::read(
@@ -455,30 +455,25 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
                 DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
-    else if (storage_type_name == "hdfs")
+    if (storage_type_name == "hdfs")
     {
         static SchemaCache schema_cache(
-            context->getConfigRef().getUInt(
-                "schema_inference_cache_max_elements_for_hdfs",
-                DEFAULT_SCHEMA_CACHE_ELEMENTS));
+            context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_hdfs", DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
-    else if (storage_type_name == "azure")
+    if (storage_type_name == "azure")
     {
         static SchemaCache schema_cache(
-            context->getConfigRef().getUInt(
-                "schema_inference_cache_max_elements_for_azure",
-                DEFAULT_SCHEMA_CACHE_ELEMENTS));
+            context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_azure", DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
-    else if (storage_type_name == "local")
+    if (storage_type_name == "local")
     {
         static SchemaCache schema_cache(
             context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_local", DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
-    else
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_type_name);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_type_name);
 }
 
 void StorageObjectStorage::Configuration::initialize(
@@ -529,8 +524,7 @@ bool StorageObjectStorage::Configuration::withGlobsIgnorePartitionWildcard() con
 {
     if (!withPartitionWildcard())
         return withGlobs();
-    else
-        return PartitionedSink::replaceWildcards(getPath(), "").find_first_of("*?{") != std::string::npos;
+    return PartitionedSink::replaceWildcards(getPath(), "").find_first_of("*?{") != std::string::npos;
 }
 
 bool StorageObjectStorage::Configuration::isPathWithGlobs() const

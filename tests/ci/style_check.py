@@ -13,17 +13,17 @@ from typing import List, Tuple, Union
 import magic
 
 from docker_images_helper import get_docker_image, pull_image
-from env_helper import IS_CI, REPO_COPY, TEMP_PATH, GITHUB_EVENT_PATH
+from env_helper import GITHUB_EVENT_PATH, IS_CI, REPO_COPY, TEMP_PATH
 from git_helper import GIT_PREFIX, git_runner
 from pr_info import PRInfo
 from report import (
     ERROR,
+    FAIL,
     FAILURE,
     SUCCESS,
     JobReport,
     TestResults,
     read_test_results,
-    FAIL,
 )
 from ssh import SSHKey
 from stopwatch import Stopwatch
@@ -130,7 +130,11 @@ def _check_mime(file: Union[Path, str], mime: str) -> bool:
 
 def is_python(file: Union[Path, str]) -> bool:
     """returns if the changed file in the repository is python script"""
-    return _check_mime(file, "text/x-script.python") or str(file).endswith(".py")
+    return (
+        _check_mime(file, "text/x-script.python")
+        or str(file).endswith(".py")
+        or str(file) == "pyproject.toml"
+    )
 
 
 def is_shell(file: Union[Path, str]) -> bool:
@@ -210,13 +214,13 @@ def main():
     state, description, test_results, additional_files = process_result(temp_path)
 
     autofix_description = ""
-    fail_cnt = 0
+    push_fix = args.push
     for result in test_results:
-        if result.status in (FAILURE, FAIL):
-            # do not autofix if not only black failed
-            fail_cnt += 1
+        if result.status in (FAILURE, FAIL) and push_fix:
+            # do not autofix if something besides isort and black is failed
+            push_fix = any(result.name.endswith(check) for check in ("isort", "black"))
 
-    if args.push and fail_cnt == 1:
+    if push_fix:
         try:
             commit_push_staged(pr_info)
         except subprocess.SubprocessError:

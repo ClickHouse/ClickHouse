@@ -5,21 +5,21 @@ from dataclasses import asdict
 from hashlib import md5
 from logging import getLogger
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Union
 from sys import modules
+from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Union
 
-from docker_images_helper import get_images_info
-from git_helper import Runner
-from env_helper import ROOT_DIR
-from ci_utils import cd
 from ci_config import CI
+from ci_utils import cd
+from docker_images_helper import get_images_info
+from env_helper import ROOT_DIR
+from git_helper import Runner
 
 DOCKER_DIGEST_LEN = 12
 JOB_DIGEST_LEN = 10
 
 if TYPE_CHECKING:
-    from hashlib import (  # pylint:disable=no-name-in-module,ungrouped-imports
-        _Hash as HASH,
+    from hashlib import (
+        _Hash as HASH,  # pylint:disable=no-name-in-module,ungrouped-imports
     )
 else:
     HASH = "_Hash"

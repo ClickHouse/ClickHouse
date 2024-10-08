@@ -202,12 +202,36 @@ Result:
 
 Returns the type name of the passed argument.
 
-If `NULL` is passed, then the function returns type `Nullable(Nothing)`, which corresponds to ClickHouse's internal `NULL` representation.
+If `NULL` is passed, the function returns type `Nullable(Nothing)`, which corresponds to ClickHouse's internal `NULL` representation.
 
 **Syntax**
 
 ```sql
-toTypeName(x)
+toTypeName(value)
+```
+
+**Arguments**
+
+- `value` — A value of arbitrary type.
+
+**Returned value**
+
+- The data type name of the input value. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT toTypeName(123);
+```
+
+Result:
+
+```response
+┌─toTypeName(123)─┐
+│ UInt8           │
+└─────────────────┘
 ```
 
 ## blockSize {#blockSize}
@@ -498,6 +522,26 @@ Useful in table engine parameters of `CREATE TABLE` queries where you need to sp
 
 ```sql
 currentDatabase()
+```
+
+**Returned value**
+
+- Returns the current database name. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT currentDatabase()
+```
+
+Result:
+
+```response
+┌─currentDatabase()─┐
+│ default           │
+└───────────────────┘
 ```
 
 ## currentUser {#currentUser}
@@ -1773,7 +1817,7 @@ toColumnTypeName(value)
 
 **Example**
 
-Difference between `toTypeName ' and ' toColumnTypeName`:
+Difference between `toTypeName` and `toColumnTypeName`:
 
 ```sql
 SELECT toTypeName(CAST('2018-01-01 01:02:03' AS DateTime))
@@ -2783,6 +2827,45 @@ Result:
 
 ```
 123
+```
+
+**See Also**
+
+- [Custom Settings](../../operations/settings/index.md#custom_settings)
+
+## getSettingOrDefault
+
+Returns the current value of a [custom setting](../../operations/settings/index.md#custom_settings) or returns the default value specified in the 2nd argument if the custom setting is not set in the current profile.
+
+**Syntax**
+
+```sql
+getSettingOrDefault('custom_setting', default_value);
+```
+
+**Parameter**
+
+- `custom_setting` — The setting name. [String](../data-types/string.md).
+- `default_value` — Value to return if custom_setting is not set. Value may be of any data type or Null.
+
+**Returned value**
+
+- The setting's current value or default_value if setting is not set.
+
+**Example**
+
+```sql
+SELECT getSettingOrDefault('custom_undef1', 'my_value');
+SELECT getSettingOrDefault('custom_undef2', 100);
+SELECT getSettingOrDefault('custom_undef3', NULL);
+```
+
+Result:
+
+```
+my_value
+100
+NULL
 ```
 
 **See Also**
