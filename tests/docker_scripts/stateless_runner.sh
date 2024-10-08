@@ -62,6 +62,8 @@ source /repo/tests/docker_scripts/utils.lib
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
 if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then
+    sudo sed -i "/<use_xid_64>1<\/use_xid_64>/d" /etc/clickhouse-server/config.d/zookeeper.xml
+
     function remove_keeper_config()
     {
         sudo sed -i "/<$1>$2<\/$1>/d" /etc/clickhouse-server/config.d/keeper_port.xml
@@ -376,9 +378,9 @@ done
 # collect minio audit and server logs
 # wait for minio to flush its batch if it has any
 sleep 1
-clickhouse-client -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
-clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_audit_logs ORDER BY event_time INTO OUTFILE '/test_output/minio_audit_logs.jsonl.zst' FORMAT JSONEachRow"
-clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_server_logs ORDER BY event_time INTO OUTFILE '/test_output/minio_server_logs.jsonl.zst' FORMAT JSONEachRow"
+clickhouse-client -q "SYSTEM FLUSH ASYNC INSERT QUEUE" ||:
+clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_audit_logs ORDER BY event_time INTO OUTFILE '/test_output/minio_audit_logs.jsonl.zst' FORMAT JSONEachRow" ||:
+clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_server_logs ORDER BY event_time INTO OUTFILE '/test_output/minio_server_logs.jsonl.zst' FORMAT JSONEachRow" ||:
 
 # Stop server so we can safely read data with clickhouse-local.
 # Why do we read data with clickhouse-local?

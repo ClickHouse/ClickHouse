@@ -2,6 +2,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
+#include <Parsers/IAST.h>
 
 namespace DB
 {
