@@ -112,6 +112,7 @@ namespace Setting
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsOverflowMode join_overflow_mode;
     extern const SettingsString log_comment;
+    extern const SettingsUInt64 script_line_number;
     extern const SettingsBool log_formatted_queries;
     extern const SettingsBool log_processors_profiles;
     extern const SettingsBool log_profile_events;
@@ -200,7 +201,7 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
         const auto & current_query_id = client_info.current_query_id;
         const auto & initial_query_id = client_info.initial_query_id;
         const auto & current_user = client_info.current_user;
-
+        UInt64 script_line_number = context->getSettingsRef()[Setting::script_line_number];
         String comment = context->getSettingsRef()[Setting::log_comment];
         size_t max_query_size = context->getSettingsRef()[Setting::max_query_size];
 
@@ -214,12 +215,13 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
         if (auto txn = context->getCurrentTransaction())
             transaction_info = fmt::format(" (TID: {}, TIDH: {})", txn->tid, txn->tid.getHash());
 
-        LOG_DEBUG(getLogger("executeQuery"), "(from {}{}{}){}{} {} (stage: {})",
+        LOG_DEBUG(getLogger("executeQuery"), "(from {}{}{}){}{}{} {} (stage: {})",
             client_info.current_address.toString(),
             (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
             transaction_info,
             comment,
+            script_line_number != 0 ? ", line number: " + std::to_string(script_line_number) : std::string(),
             toOneLineQuery(query),
             QueryProcessingStage::toString(stage));
 
@@ -266,16 +268,18 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
     message.format_string_args = elem.exception_format_string_args;
 
     if (elem.stack_trace.empty() || !log_error)
-        message.text = fmt::format("{} (from {}){} (in query: {})", elem.exception,
+        message.text = fmt::format("{} (from {}){}{} (in query: {})", elem.exception,
                         context->getClientInfo().current_address.toString(),
                         comment,
+                        elem.script_line_number != 0 ? ", line number: " + std::to_string(elem.script_line_number) : std::string(),
                         toOneLineQuery(elem.query));
     else
         message.text = fmt::format(
-            "{} (from {}){} (in query: {}), Stack trace (when copying this message, always include the lines below):\n\n{}",
+            "{} (from {}){}{} (in query: {}), Stack trace (when copying this message, always include the lines below):\n\n{}",
             elem.exception,
             context->getClientInfo().current_address.toString(),
             comment,
+            elem.script_line_number != 0 ? ", line number: " + std::to_string(elem.script_line_number) : std::string(),
             toOneLineQuery(elem.query),
             elem.stack_trace);
 
@@ -428,6 +432,7 @@ QueryLogElement logQueryStart(
         elem.log_comment = settings[Setting::log_comment];
         if (elem.log_comment.size() > settings[Setting::max_query_size])
             elem.log_comment.resize(settings[Setting::max_query_size]);
+        elem.script_line_number = settings[Setting::script_line_number];
 
         if (elem.type >= settings[Setting::log_queries_min_type] && !settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
         {
@@ -689,6 +694,7 @@ void logExceptionBeforeStart(
     elem.log_comment = settings[Setting::log_comment];
     if (elem.log_comment.size() > settings[Setting::max_query_size])
         elem.log_comment.resize(settings[Setting::max_query_size]);
+    elem.script_line_number = settings[Setting::script_line_number];
 
     if (auto txn = context->getCurrentTransaction())
         elem.tid = txn->tid;
