@@ -1478,6 +1478,7 @@ curdate
 currentDatabase
 currentProfiles
 currentRoles
+currentSchemas
 currentUser
 customizable
 customizations
