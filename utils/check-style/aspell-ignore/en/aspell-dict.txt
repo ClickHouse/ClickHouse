@@ -1648,10 +1648,12 @@ exponentialmovingaverage
 expr
 exprN
 extendedVerification
+extract
 extractAll
 extractAllGroups
 extractAllGroupsHorizontal
 extractAllGroupsVertical
+extractGroups
 extractKeyValuePairs
 extractKeyValuePairsWithEscaping
 extractTextFromHTML
