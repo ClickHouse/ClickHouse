@@ -84,7 +84,9 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
         for node in nodes:
             # Wait twice to make sure we wait for a refresh that started after we adjusted the clock.
             # Otherwise another refresh may start right after (because clock moved far forward).
-            node.query(f"system wait view re.{name}; system refresh view re.{name}; system wait view re.{name};")
+            node.query(
+                f"system wait view re.{name}; system refresh view re.{name}; system wait view re.{name};"
+            )
         rows_before = int(nodes[randint(0, 1)].query(f"select count() from re.{name}"))
         # Advance the clocks.
         for node in nodes:
