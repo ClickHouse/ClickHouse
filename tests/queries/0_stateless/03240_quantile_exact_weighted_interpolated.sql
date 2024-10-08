@@ -24,4 +24,12 @@ SELECT quantilesExactWeightedInterpolated(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7
 SELECT quantilesExactWeightedInterpolated(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)(b, 2) FROM decimal;
 SELECT quantilesExactWeightedInterpolated(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)(c, 3) FROM decimal;
 
+SELECT 'quantileExactWeightedInterpolatedState';
+SELECT quantilesExactWeightedInterpolatedMerge(0.2, 0.4, 0.6, 0.8)(x)
+FROM
+(
+    SELECT quantilesExactWeightedInterpolatedState(0.2, 0.4, 0.6, 0.8)(number + 1, 1) AS x
+    FROM numbers(49999)
+);
+
 DROP TABLE IF EXISTS decimal;
