@@ -557,7 +557,7 @@ Result:
 
 ## currentSchemas
 
-Returns a single-element array with the name of the current database.
+Returns a single-element array with the name of the current database schema.
 
 **Syntax**
 
@@ -572,7 +572,7 @@ Alias: `current_schemas`.
 - `bool`: A boolean value. [Bool](../data-types/boolean.md).
 
 :::note
-The argument is actually ignored, but for compatibility's sake with the implementation of this function in other DB engines it is required.
+The boolean argument is ignored. It only exists for the sake of compatibility with the [implementation](https://www.postgresql.org/docs/7.3/functions-misc.html) of this function in PostgreSQL.
 :::
 
 **Returned values**
