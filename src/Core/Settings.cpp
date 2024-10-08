@@ -1347,6 +1347,17 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
+    M(UInt64, skip_indexes_in_final_correctness_threshold, 0, R"(
+Controls whether granules returned by a skipping index are expanded to return correct results when executing a query with the FINAL modifier.
+
+Using skip indexes may exclude rows (granules) containing the latest data which could lead to incorrect results. This setting can ensure that correct results are returned by scanning newer parts that have overlap with the ranges returned by the skip index. (Experimental)
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+>= 2 - Limit on the number of granules returned by the skip index, beyond which feature is disabled.
+)", 0) \
     M(Bool, materialize_skip_indexes_on_insert, true, R"(
 If true skip indexes are calculated on inserts, otherwise skip indexes will be calculated only during merges
 )", 0) \
