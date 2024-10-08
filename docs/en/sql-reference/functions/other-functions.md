@@ -3871,9 +3871,9 @@ Retrieves the connection ID of the client that submitted the current query and r
 
 ```sql
 connectionId()
-```
+``` 
 
-Alias: `connection_id`.
+Alias: `connection_id`. 
 
 **Parameters**
 
@@ -3881,7 +3881,7 @@ None.
 
 **Returned value**
 
-Returns an integer of type UInt64.
+Returns an integer of type UInt64. [UInt64](../data-types/int-uint.md).
 
 **Implementation details**
 
