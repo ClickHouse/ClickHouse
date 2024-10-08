@@ -53,10 +53,10 @@ select * from test order by tuple(d);
 select * from test order by array(d);
 select * from test order by map('str', d);
 
-select * from test group by d;
-select * from test group by tuple(d);
-select array(d) from test group by array(d);
-select map('str', d) from test group by map('str', d);
+select * from test group by d order by all;
+select * from test group by tuple(d) order by all;
+select array(d) from test group by array(d) order by all;
+select map('str', d) from test group by map('str', d) order by all;
 select * from test group by grouping sets ((d), ('str')) order by all;
 
 set allow_experimental_analyzer=0;
@@ -86,10 +86,10 @@ select * from test order by tuple(d);
 select * from test order by array(d);
 select * from test order by map('str', d);
 
-select * from test group by d;
-select * from test group by tuple(d);
-select array(d) from test group by array(d);
-select map('str', d) from test group by map('str', d);
+select * from test group by d order by all;
+select * from test group by tuple(d) order by all;
+select array(d) from test group by array(d) order by all;
+select map('str', d) from test group by map('str', d) order by all;
 select * from test group by grouping sets ((d), ('str')) order by all;
 
 drop table test;
@@ -124,10 +124,10 @@ select * from test order by tuple(d);
 select * from test order by array(d);
 select * from test order by map('str', d);
 
-select * from test group by d;
-select * from test group by tuple(d);
-select array(d) from test group by array(d);
-select map('str', d) from test group by map('str', d);
+select * from test group by d order by all;
+select * from test group by tuple(d) order by all;
+select array(d) from test group by array(d) order by all;
+select map('str', d) from test group by map('str', d) order by all;
 select * from test group by grouping sets ((d), ('str')) order by all;
 
 set allow_experimental_analyzer=0;
@@ -157,10 +157,10 @@ select * from test order by tuple(d);
 select * from test order by array(d);
 select * from test order by map('str', d);
 
-select * from test group by d;
-select * from test group by tuple(d);
-select array(d) from test group by array(d);
-select map('str', d) from test group by map('str', d);
+select * from test group by d order by all;
+select * from test group by tuple(d) order by all;
+select array(d) from test group by array(d) order by all;
+select map('str', d) from test group by map('str', d) order by all;
 select * from test group by grouping sets ((d), ('str')) order by all;
 
 drop table test;
