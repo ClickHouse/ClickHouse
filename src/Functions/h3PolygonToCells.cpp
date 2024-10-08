@@ -41,7 +41,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    // TODO: Is it suitable?
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
@@ -51,8 +50,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        // TODO: what is non-const in this context?
-        //       and why are h3 functions using non-const
         auto non_const_arguments = arguments;
         for (auto & argument : non_const_arguments)
             argument.column = argument.column->convertToFullColumnIfConst();
