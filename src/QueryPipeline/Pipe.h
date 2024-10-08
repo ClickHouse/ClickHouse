@@ -4,7 +4,7 @@
 #include <QueryPipeline/Chain.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/SizeLimits.h>
-#include "Core/Block.h"
+#include <Core/Block.h>
 
 
 namespace DB

@@ -1,7 +1,7 @@
 #pragma once
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
-#include "Core/Block.h"
+#include <Core/Block.h>
 
 namespace DB
 {

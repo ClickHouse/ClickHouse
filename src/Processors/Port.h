@@ -215,9 +215,9 @@ public:
     using Data = State::Data;
 
 
-    Port(ConstBlockPtr header_) : header(header_) { } /// NOLINT
-    Port(Block && header_) : header(std::make_shared<const Block>(std::move(header_))) { } /// NOLINT
-    Port(const Block & header_) : header(std::make_shared<const Block>(std::move(header_))) { } /// NOLINT
+    Port(ConstBlockPtr header_) : header(std::move(header_)) { } // NOLINT(google-explicit-constructor)
+    Port(Block && header_) : header(std::make_shared<const Block>(std::move(header_))) { } // NOLINT(google-explicit-constructor)
+    Port(const Block & header_) : header(std::make_shared<const Block>(header_)) { } // NOLINT(google-explicit-constructor)
     Port(Block header_, IProcessor * processor_) : header(std::make_shared<const Block>(std::move(header_))), processor(processor_) { }
 
     void setUpdateInfo(UpdateInfo * info) { update_info = info; }
