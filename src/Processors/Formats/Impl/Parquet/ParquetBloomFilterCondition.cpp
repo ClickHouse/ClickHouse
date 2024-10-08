@@ -61,13 +61,9 @@ bool isParquetIntegerTypeSupportedForBloomFilters(const std::shared_ptr<const pa
 template <typename T>
 uint64_t hashSpecialFLBATypes(const Field & field)
 {
-    const T value = field.safeGet<T>();
+    const T & value = field.safeGet<T>();
 
-    uint8_t buffer[sizeof(T)] = {0};
-
-    memcpy(buffer, &value, sizeof(T));
-
-    parquet::FLBA flba(buffer);
+    parquet::FLBA flba(reinterpret_cast<const uint8_t*>(&value));
 
     parquet::XxHasher hasher;
 
