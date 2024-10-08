@@ -232,8 +232,7 @@ bool MetadataStorageFromPlainRewritableObjectStorage::isDirectory(const std::str
         auto directory = std::filesystem::path(object_storage->generateObjectKeyForPath(path, getMetadataKeyPrefix()).serialize()) / "";
         return object_storage->existsOrHasAnyChild(directory);
     }
-    else
-        return MetadataStorageFromPlainObjectStorage::isDirectory(path);
+    return MetadataStorageFromPlainObjectStorage::isDirectory(path);
 }
 
 std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDirectory(const std::string & path) const
