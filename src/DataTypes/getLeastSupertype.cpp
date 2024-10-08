@@ -147,12 +147,13 @@ DataTypePtr getNumericType(const TypeIndexSet & types)
             size_t min_mantissa_bits = std::max(min_bit_width_of_integer, max_mantissa_bits_of_floating);
             if (min_mantissa_bits <= 24)
                 return std::make_shared<DataTypeFloat32>();
-            else if (min_mantissa_bits <= 53)
+            if (min_mantissa_bits <= 53)
                 return std::make_shared<DataTypeFloat64>();
-            else
-                return throwOrReturn<on_error>(types,
-                    " because some of them are integers and some are floating point,"
-                    " but there is no floating point type, that can exactly represent all required integers", ErrorCodes::NO_COMMON_TYPE);
+            return throwOrReturn<on_error>(
+                types,
+                " because some of them are integers and some are floating point,"
+                " but there is no floating point type, that can exactly represent all required integers",
+                ErrorCodes::NO_COMMON_TYPE);
         }
 
         /// If the result must be signed integer.
@@ -160,39 +161,41 @@ DataTypePtr getNumericType(const TypeIndexSet & types)
         {
             if (min_bit_width_of_integer <= 8)
                 return std::make_shared<DataTypeInt8>();
-            else if (min_bit_width_of_integer <= 16)
+            if (min_bit_width_of_integer <= 16)
                 return std::make_shared<DataTypeInt16>();
-            else if (min_bit_width_of_integer <= 32)
+            if (min_bit_width_of_integer <= 32)
                 return std::make_shared<DataTypeInt32>();
-            else if (min_bit_width_of_integer <= 64)
+            if (min_bit_width_of_integer <= 64)
                 return std::make_shared<DataTypeInt64>();
-            else if (min_bit_width_of_integer <= 128)
+            if (min_bit_width_of_integer <= 128)
                 return std::make_shared<DataTypeInt128>();
-            else if (min_bit_width_of_integer <= 256)
+            if (min_bit_width_of_integer <= 256)
                 return std::make_shared<DataTypeInt256>();
-            else
-                return throwOrReturn<on_error>(types,
-                    " because some of them are signed integers and some are unsigned integers,"
-                    " but there is no signed integer type, that can exactly represent all required unsigned integer values", ErrorCodes::NO_COMMON_TYPE);
+            return throwOrReturn<on_error>(
+                types,
+                " because some of them are signed integers and some are unsigned integers,"
+                " but there is no signed integer type, that can exactly represent all required unsigned integer values",
+                ErrorCodes::NO_COMMON_TYPE);
         }
 
         /// All unsigned.
         {
             if (min_bit_width_of_integer <= 8)
                 return std::make_shared<DataTypeUInt8>();
-            else if (min_bit_width_of_integer <= 16)
+            if (min_bit_width_of_integer <= 16)
                 return std::make_shared<DataTypeUInt16>();
-            else if (min_bit_width_of_integer <= 32)
+            if (min_bit_width_of_integer <= 32)
                 return std::make_shared<DataTypeUInt32>();
-            else if (min_bit_width_of_integer <= 64)
+            if (min_bit_width_of_integer <= 64)
                 return std::make_shared<DataTypeUInt64>();
-            else if (min_bit_width_of_integer <= 128)
+            if (min_bit_width_of_integer <= 128)
                 return std::make_shared<DataTypeUInt128>();
-            else if (min_bit_width_of_integer <= 256)
+            if (min_bit_width_of_integer <= 256)
                 return std::make_shared<DataTypeUInt256>();
-            else
-                return throwOrReturn<on_error>(types,
-                    " but as all data types are unsigned integers, we must have found maximum unsigned integer type", ErrorCodes::NO_COMMON_TYPE);
+            return throwOrReturn<on_error>(
+                types,
+                " but as all data types are unsigned integers, we must have found maximum unsigned integer type",
+                ErrorCodes::NO_COMMON_TYPE);
         }
     }
 
@@ -474,16 +477,14 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         {
             if (have_not_low_cardinality)
                 return getLeastSupertype<on_error>(nested_types);
-            else
-            {
-                auto nested_type = getLeastSupertype<on_error>(nested_types);
 
-                /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype,
-                /// nested_type will be nullptr, we should return nullptr in this case.
-                if (!nested_type)
-                    return nullptr;
-                return std::make_shared<DataTypeLowCardinality>(nested_type);
-            }
+            auto nested_type = getLeastSupertype<on_error>(nested_types);
+
+            /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype,
+            /// nested_type will be nullptr, we should return nullptr in this case.
+            if (!nested_type)
+                return nullptr;
+            return std::make_shared<DataTypeLowCardinality>(nested_type);
         }
     }
 

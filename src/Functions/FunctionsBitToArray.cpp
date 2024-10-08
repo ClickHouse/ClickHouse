@@ -188,10 +188,8 @@ public:
             out_column = ColumnArray::create(std::move(col_values), std::move(col_offsets));
             return true;
         }
-        else
-        {
-            return false;
-        }
+
+        return false;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
