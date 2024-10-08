@@ -124,40 +124,6 @@ SELECT hex(sipHash128('foo', '\x01', 3));
 └──────────────────────────────────┘
 ```
 
-## RIPEMD160
-
-Генерирует [RIPEMD-160](https://en.wikipedia.org/wiki/RIPEMD) хеш строки.
-
-**Синтаксис**
-
-```sql
-RIPEMD160(input)
-```
-
-**Аргументы**
-
-- `input`: Строка [String](../data-types/string.md)
-
-**Возвращаемое значение**
-
-- [UInt256](../data-types/int-uint.md), где 160-битный хеш RIPEMD-160 хранится в первых 20 байтах. Оставшиеся 12 байт заполняются нулями.
-
-**Пример**
-
-Используйте функцию [hex](../functions/encoding-functions.md#hex) для представления результата в виде строки с шестнадцатеричной кодировкой
-
-Запрос:
-
-```sql
-SELECT hex(RIPEMD160('The quick brown fox jumps over the lazy dog'));
-```
-Результат:
-```response
-┌─hex(RIPEMD160('The quick brown fox jumps over the lazy dog'))─┐
-│ 37F332F68DB77BD9D7EDD4969571AD671CF9DD3B                      │
-└───────────────────────────────────────────────────────────────┘
-```
-
 ## cityHash64 {#cityhash64}
 
 Генерирует 64-х битное значение [CityHash](https://github.com/google/cityhash).

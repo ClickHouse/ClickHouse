@@ -9,6 +9,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <Formats/FormatFactory.h>
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/Cache/SchemaCache.h>
@@ -99,8 +100,7 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
 
     if (include_connection_info)
         return fs::path(configuration.getDataSourceDescription()) / path;
-    else
-        return fs::path(configuration.getNamespace()) / path;
+    return fs::path(configuration.getNamespace()) / path;
 }
 
 std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSource::createFileIterator(
@@ -377,6 +377,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             compression_method,
             need_only_count);
 
+        input_format->setSerializationHints(read_from_format_info.serialization_hints);
+
         if (key_condition_)
             input_format->setKeyCondition(key_condition_);
 
@@ -424,37 +426,39 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
     const auto & object_size = object_info.metadata->size_bytes;
 
     auto read_settings = context_->getReadSettings().adjustBufferSize(object_size);
-    read_settings.enable_filesystem_cache = false;
     /// FIXME: Changing this setting to default value breaks something around parquet reading
     read_settings.remote_read_min_bytes_for_seek = read_settings.remote_fs_buffer_size;
+    /// User's object may change, don't cache it.
+    read_settings.enable_filesystem_cache = false;
+    read_settings.use_page_cache_for_disks_without_file_cache = false;
 
     const bool object_too_small = object_size <= 2 * context_->getSettingsRef()[Setting::max_download_buffer_size];
-    const bool use_prefetch = object_too_small && read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
-    read_settings.remote_fs_method = use_prefetch ? RemoteFSReadMethod::threadpool : RemoteFSReadMethod::read;
-    /// User's object may change, don't cache it.
-    read_settings.use_page_cache_for_disks_without_file_cache = false;
+    const bool use_prefetch = object_too_small
+        && read_settings.remote_fs_method == RemoteFSReadMethod::threadpool
+        && read_settings.remote_fs_prefetch;
+
+    if (use_prefetch)
+        read_settings.remote_read_buffer_use_external_buffer = true;
+
+    auto impl = object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), read_settings);
 
     // Create a read buffer that will prefetch the first ~1 MB of the file.
     // When reading lots of tiny files, this prefetching almost doubles the throughput.
     // For bigger files, parallel reading is more useful.
-    if (use_prefetch)
-    {
-        LOG_TRACE(log, "Downloading object of size {} with initial prefetch", object_size);
+    if (!use_prefetch)
+        return impl;
 
-        auto async_reader = object_storage->readObjects(
-            StoredObjects{StoredObject{object_info.getPath(), /* local_path */ "", object_size}}, read_settings);
+    LOG_TRACE(log, "Downloading object of size {} with initial prefetch", object_size);
 
-        async_reader->setReadUntilEnd();
-        if (read_settings.remote_fs_prefetch)
-            async_reader->prefetch(DEFAULT_PREFETCH_PRIORITY);
+    auto & reader = context_->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+    impl = std::make_unique<AsynchronousBoundedReadBuffer>(
+        std::move(impl), reader, read_settings,
+        context_->getAsyncReadCounters(),
+        context_->getFilesystemReadPrefetchesLog());
 
-        return async_reader;
-    }
-    else
-    {
-        /// FIXME: this is inconsistent that readObject always reads synchronously ignoring read_method setting.
-        return object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), read_settings);
-    }
+    impl->setReadUntilEnd();
+    impl->prefetch(DEFAULT_PREFETCH_PRIORITY);
+    return impl;
 }
 
 StorageObjectStorageSource::IIterator::IIterator(const std::string & logger_name_)
@@ -498,7 +502,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression can not have wildcards inside namespace name");
     }
-    else if (configuration->isPathWithGlobs())
+    if (configuration->isPathWithGlobs())
     {
         const auto key_with_globs = configuration_->getPath();
         const auto key_prefix = configuration->getPathWithoutGlobs();
@@ -507,9 +511,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs));
         if (!matcher->ok())
         {
-            throw Exception(
-                ErrorCodes::CANNOT_COMPILE_REGEXP,
-                "Cannot compile regex from glob ({}): {}", key_with_globs, matcher->error());
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", key_with_globs, matcher->error());
         }
 
         recursive = key_with_globs == "/**";
@@ -521,9 +523,10 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Using glob iterator with path without globs is not allowed (used path: {})",
-                        configuration->getPath());
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Using glob iterator with path without globs is not allowed (used path: {})",
+            configuration->getPath());
     }
 }
 
@@ -819,8 +822,7 @@ StorageObjectStorageSource::ArchiveIterator::nextImpl(size_t processor)
             path_in_archive = file_enumerator->getFileName();
             if (!filter(path_in_archive))
                 continue;
-            else
-                current_file_info = file_enumerator->getFileInfo();
+            current_file_info = file_enumerator->getFileInfo();
         }
         else
         {
@@ -834,8 +836,7 @@ StorageObjectStorageSource::ArchiveIterator::nextImpl(size_t processor)
             archive_reader = createArchiveReader(archive_object);
             if (!archive_reader->fileExists(path_in_archive))
                 continue;
-            else
-                current_file_info = archive_reader->getFileInfo(path_in_archive);
+            current_file_info = archive_reader->getFileInfo(path_in_archive);
         }
         break;
     }

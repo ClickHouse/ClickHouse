@@ -148,8 +148,7 @@ String StorageNATS::getTableBasedName(String name, const StorageID & table_id)
 {
     if (name.empty())
         return fmt::format("{}_{}", table_id.database_name, table_id.table_name);
-    else
-        return fmt::format("{}_{}_{}", name, table_id.database_name, table_id.table_name);
+    return fmt::format("{}_{}_{}", name, table_id.database_name, table_id.table_name);
 }
 
 
@@ -384,10 +383,8 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
                             "This NATS engine reads from multiple subjects. "
                             "You must specify `stream_like_engine_insert_queue` to choose the subject to write to");
         }
-        else
-        {
-            subject = subjects[0];
-        }
+
+        subject = subjects[0];
     }
 
     auto pos = subject.find('*');

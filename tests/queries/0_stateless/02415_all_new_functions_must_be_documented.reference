@@ -321,7 +321,6 @@ geohashesInBox
 getMacro
 getOSKernelVersion
 getServerPort
-getSetting
 getSizeOfEnumType
 getTypeSerializationStreams
 globalIn

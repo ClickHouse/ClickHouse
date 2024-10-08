@@ -85,7 +85,7 @@ ActionsDAG addMissingDefaults(
 
     /// Removes unused columns and reorders result.
     actions.removeUnusedActions(required_columns.getNames(), false);
-    actions.addMaterializingOutputActions();
+    actions.addMaterializingOutputActions(/*materialize_sparse=*/ false);
 
     return actions;
 }
