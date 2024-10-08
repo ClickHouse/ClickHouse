@@ -35,6 +35,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool cast_ipv4_ipv6_default_on_conversion_error;
+}
 
 namespace ErrorCodes
 {
@@ -267,7 +271,7 @@ public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionIPv6StringToNum>(context); }
 
     explicit FunctionIPv6StringToNum(ContextPtr context)
-        : cast_ipv4_ipv6_default_on_conversion_error(context->getSettingsRef().cast_ipv4_ipv6_default_on_conversion_error)
+        : cast_ipv4_ipv6_default_on_conversion_error(context->getSettingsRef()[Setting::cast_ipv4_ipv6_default_on_conversion_error])
     {
     }
 
@@ -371,9 +375,8 @@ private:
 
             return col_res;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                            arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 public:
     static constexpr auto name = Name::name;
@@ -434,7 +437,7 @@ public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionIPv4StringToNum>(context); }
 
     explicit FunctionIPv4StringToNum(ContextPtr context)
-        : cast_ipv4_ipv6_default_on_conversion_error(context->getSettingsRef().cast_ipv4_ipv6_default_on_conversion_error)
+        : cast_ipv4_ipv6_default_on_conversion_error(context->getSettingsRef()[Setting::cast_ipv4_ipv6_default_on_conversion_error])
     {
     }
 
@@ -657,9 +660,8 @@ public:
 
             return col_res;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                            arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 };
 
@@ -772,9 +774,8 @@ public:
 
             return col_res;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                            arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 };
 

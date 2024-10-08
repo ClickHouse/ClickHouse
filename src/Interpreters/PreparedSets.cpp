@@ -15,11 +15,22 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Core/Block.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <QueryPipeline/SizeLimits.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_bytes_in_set;
+    extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 max_rows_in_set;
+    extern const SettingsUInt64 max_rows_to_transfer;
+    extern const SettingsOverflowMode set_overflow_mode;
+    extern const SettingsOverflowMode transfer_overflow_mode;
+    extern const SettingsBool transform_null_in;
+    extern const SettingsBool use_index_for_in_with_subqueries;
+    extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
+}
 
 namespace ErrorCodes
 {
@@ -28,7 +39,7 @@ namespace ErrorCodes
 
 static SizeLimits getSizeLimitsForSet(const Settings & settings)
 {
-    return SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode);
+    return SizeLimits(settings[Setting::max_rows_in_set], settings[Setting::max_bytes_in_set], settings[Setting::set_overflow_mode]);
 }
 
 static bool equals(const DataTypes & lhs, const DataTypes & rhs)
@@ -60,7 +71,7 @@ SetPtr FutureSetFromStorage::buildOrderedSetInplace(const ContextPtr &)
 FutureSetFromTuple::FutureSetFromTuple(Block block, const Settings & settings)
 {
     auto size_limits = getSizeLimitsForSet(settings);
-    set = std::make_shared<Set>(size_limits, settings.use_index_for_in_with_subqueries_max_values, settings.transform_null_in);
+    set = std::make_shared<Set>(size_limits, settings[Setting::use_index_for_in_with_subqueries_max_values], settings[Setting::transform_null_in]);
     set->setHeader(block.cloneEmpty().getColumnsWithTypeAndName());
 
     Columns columns;
@@ -82,7 +93,7 @@ SetPtr FutureSetFromTuple::buildOrderedSetInplace(const ContextPtr & context)
         return set;
 
     const auto & settings = context->getSettingsRef();
-    size_t max_values = settings.use_index_for_in_with_subqueries_max_values;
+    size_t max_values = settings[Setting::use_index_for_in_with_subqueries_max_values];
     bool too_many_values = max_values && max_values < set->getTotalRowCount();
     if (!too_many_values)
     {
@@ -106,7 +117,8 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     set_and_key->key = std::move(key);
 
     auto size_limits = getSizeLimitsForSet(settings);
-    set_and_key->set = std::make_shared<Set>(size_limits, settings.use_index_for_in_with_subqueries_max_values, settings.transform_null_in);
+    set_and_key->set
+        = std::make_shared<Set>(size_limits, settings[Setting::use_index_for_in_with_subqueries_max_values], settings[Setting::transform_null_in]);
     set_and_key->set->setHeader(source->getCurrentDataStream().header.getColumnsWithTypeAndName());
 }
 
@@ -120,7 +132,8 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     set_and_key->key = std::move(key);
 
     auto size_limits = getSizeLimitsForSet(settings);
-    set_and_key->set = std::make_shared<Set>(size_limits, settings.use_index_for_in_with_subqueries_max_values, settings.transform_null_in);
+    set_and_key->set
+        = std::make_shared<Set>(size_limits, settings[Setting::use_index_for_in_with_subqueries_max_values], settings[Setting::transform_null_in]);
 }
 
 FutureSetFromSubquery::~FutureSetFromSubquery() = default;
@@ -157,11 +170,11 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const ContextPtr & conte
         return nullptr;
 
     auto creating_set = std::make_unique<CreatingSetStep>(
-            plan->getCurrentDataStream(),
-            set_and_key,
-            external_table,
-            SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode),
-            context);
+        plan->getCurrentDataStream(),
+        set_and_key,
+        external_table,
+        SizeLimits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]),
+        context);
     creating_set->setStepDescription("Create set for subquery");
     plan->addStep(std::move(creating_set));
     return plan;
@@ -187,7 +200,7 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
 
 SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
 {
-    if (!context->getSettingsRef().use_index_for_in_with_subqueries)
+    if (!context->getSettingsRef()[Setting::use_index_for_in_with_subqueries])
         return nullptr;
 
     if (auto set = get())

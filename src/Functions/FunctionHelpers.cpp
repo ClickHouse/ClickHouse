@@ -58,12 +58,12 @@ ColumnWithTypeAndName columnGetNested(const ColumnWithTypeAndName & col)
         {
             return ColumnWithTypeAndName{nullptr, nested_type, col.name};
         }
-        else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*col.column))
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*col.column))
         {
             const auto & nested_col = nullable->getNestedColumnPtr();
             return ColumnWithTypeAndName{nested_col, nested_type, col.name};
         }
-        else if (const auto * const_column = checkAndGetColumn<ColumnConst>(&*col.column))
+        if (const auto * const_column = checkAndGetColumn<ColumnConst>(&*col.column))
         {
             const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&const_column->getDataColumn());
 
@@ -79,8 +79,7 @@ ColumnWithTypeAndName columnGetNested(const ColumnWithTypeAndName & col)
             }
             return ColumnWithTypeAndName{nullable_res, nested_type, col.name};
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} for DataTypeNullable", col.dumpStructure());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} for DataTypeNullable", col.dumpStructure());
     }
     return col;
 }
@@ -228,7 +227,7 @@ wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const
 
     if (src->onlyNull())
         return src;
-    else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*src))
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*src))
     {
         src_not_nullable = nullable->getNestedColumnPtr();
         result_null_map_column = nullable->getNullMapColumnPtr();

@@ -56,14 +56,16 @@ public:
     ObjectStorageQueueMetadata(
         const fs::path & zookeeper_path_,
         const ObjectStorageQueueTableMetadata & table_metadata_,
-        const ObjectStorageQueueSettings & settings_);
+        size_t cleanup_interval_min_ms_,
+        size_t cleanup_interval_max_ms_);
 
     ~ObjectStorageQueueMetadata();
 
-    static void syncWithKeeper(
+    static ObjectStorageQueueTableMetadata syncWithKeeper(
         const fs::path & zookeeper_path,
-        const ObjectStorageQueueTableMetadata & table_metadata,
         const ObjectStorageQueueSettings & settings,
+        const ColumnsDescription & columns,
+        const std::string & format,
         LoggerPtr log);
 
     void shutdown();
@@ -78,8 +80,7 @@ public:
     Bucket getBucketForPath(const std::string & path) const;
     ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket, const Processor & processor);
 
-    static size_t getBucketsNum(const ObjectStorageQueueSettings & settings);
-    static size_t getBucketsNum(const ObjectStorageQueueTableMetadata & settings);
+    static size_t getBucketsNum(const ObjectStorageQueueTableMetadata & metadata);
 
     void checkTableMetadataEquals(const ObjectStorageQueueMetadata & other);
 
@@ -90,10 +91,11 @@ private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
 
-    ObjectStorageQueueSettings settings;
     ObjectStorageQueueTableMetadata table_metadata;
+    const ObjectStorageQueueMode mode;
     const fs::path zookeeper_path;
     const size_t buckets_num;
+    const size_t cleanup_interval_min_ms, cleanup_interval_max_ms;
 
     LoggerPtr log;
 

@@ -63,6 +63,9 @@ static struct InitFiu
     REGULAR(keepermap_fail_drop_data) \
     REGULAR(lazy_pipe_fds_fail_close) \
     PAUSEABLE(infinite_sleep) \
+    PAUSEABLE(stop_moving_part_before_swap_with_active) \
+    REGULAR(slowdown_index_analysis) \
+    REGULAR(replicated_merge_tree_all_replicas_stale) \
 
 
 namespace FailPoints
@@ -181,14 +184,13 @@ void FailPointInjection::disableFailPoint(const String & fail_point_name)
 void FailPointInjection::wait(const String & fail_point_name)
 {
     std::unique_lock lock(mu);
-    if (auto iter = fail_point_wait_channels.find(fail_point_name); iter == fail_point_wait_channels.end())
+    auto iter = fail_point_wait_channels.find(fail_point_name);
+    if (iter == fail_point_wait_channels.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not find channel for fail point {}", fail_point_name);
-    else
-    {
-        lock.unlock();
-        auto ptr = iter->second;
-        ptr->wait();
-    }
+
+    lock.unlock();
+    auto ptr = iter->second;
+    ptr->wait();
 }
 
 void FailPointInjection::enableFromGlobalConfig(const Poco::Util::AbstractConfiguration & config)

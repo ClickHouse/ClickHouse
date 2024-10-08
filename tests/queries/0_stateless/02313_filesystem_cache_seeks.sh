@@ -23,7 +23,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 's3_cache_multi' 'azure_cache'; d
     ORDER BY tuple()
     SETTINGS storage_policy = '$STORAGE_POLICY'" > /dev/null
 
-    $CLICKHOUSE_CLIENT --enable_filesystem_cache_on_write_operations=0 -n --query "INSERT INTO test_02313
+    $CLICKHOUSE_CLIENT --enable_filesystem_cache_on_write_operations=0 --query "INSERT INTO test_02313
     SELECT * FROM
         generateRandom('id Int32, val String')
     LIMIT 100000"

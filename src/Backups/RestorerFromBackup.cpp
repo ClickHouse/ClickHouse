@@ -36,6 +36,11 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds lock_acquire_timeout;
+}
+
 namespace ErrorCodes
 {
     extern const int BACKUP_ENTRY_NOT_FOUND;
@@ -136,6 +141,8 @@ void RestorerFromBackup::run(Mode mode)
     waitFutures();
 
     /// Check access rights.
+    setStage(Stage::CHECKING_ACCESS_RIGHTS);
+    loadSystemAccessTables();
     checkAccessForObjectsFoundInBackup();
 
     if (mode == Mode::CHECK_ACCESS_ONLY)
@@ -482,25 +489,6 @@ void RestorerFromBackup::findTableInBackupImpl(const QualifiedTableName & table_
             res_table_info.partitions.emplace();
         insertAtEnd(*res_table_info.partitions, *partitions);
     }
-
-    /// Special handling for ACL-related system tables.
-    if (!restore_settings.structure_only && isSystemAccessTableName(table_name))
-    {
-        if (!access_restorer)
-            access_restorer = std::make_unique<AccessRestorerFromBackup>(backup, restore_settings);
-
-        try
-        {
-            /// addDataPath() will parse access*.txt files and extract access entities from them.
-            /// We need to do that early because we need those access entities to check access.
-            access_restorer->addDataPath(data_path_in_backup);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage("While parsing data of {} from backup", tableNameWithTypeToString(table_name.database, table_name.table, false));
-            throw;
-        }
-    }
 }
 
 void RestorerFromBackup::findDatabaseInBackup(const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names)
@@ -624,6 +612,27 @@ size_t RestorerFromBackup::getNumTables() const
     return table_infos.size();
 }
 
+void RestorerFromBackup::loadSystemAccessTables()
+{
+    if (restore_settings.structure_only)
+        return;
+
+    /// Special handling for ACL-related system tables.
+    std::lock_guard lock{mutex};
+    for (const auto & [table_name, table_info] : table_infos)
+    {
+        if (isSystemAccessTableName(table_name))
+        {
+            if (!access_restorer)
+                access_restorer = std::make_unique<AccessRestorerFromBackup>(backup, restore_settings);
+            access_restorer->addDataPath(table_info.data_path_in_backup);
+        }
+    }
+
+    if (access_restorer)
+        access_restorer->loadFromBackup();
+}
+
 void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
 {
     AccessRightsElements required_access;
@@ -706,6 +715,15 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
     required_access = AccessRights{required_access}.getElements();
 
     context->checkAccess(required_access);
+}
+
+AccessEntitiesToRestore RestorerFromBackup::getAccessEntitiesToRestore(const String & data_path_in_backup) const
+{
+    std::lock_guard lock{mutex};
+    if (!access_restorer)
+        return {};
+    access_restorer->generateRandomIDsAndResolveDependencies(context->getAccessControl());
+    return access_restorer->getEntitiesToRestore(data_path_in_backup);
 }
 
 void RestorerFromBackup::createDatabases()
@@ -949,7 +967,7 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
 
         StoragePtr storage = database->getTable(resolved_id.table_name, context);
         table_info.storage = storage;
-        table_info.table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+        table_info.table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
         if (!restore_settings.allow_different_table_def && !table_info.is_predefined_table)
         {
@@ -1064,19 +1082,6 @@ void RestorerFromBackup::runDataRestoreTasks()
 
         waitFutures();
     }
-}
-
-std::vector<std::pair<UUID, AccessEntityPtr>> RestorerFromBackup::getAccessEntitiesToRestore()
-{
-    std::lock_guard lock{mutex};
-
-    if (!access_restorer || access_restored)
-        return {};
-
-    /// getAccessEntitiesToRestore() will return entities only when called first time (we don't want to restore the same entities again).
-    access_restored = true;
-
-    return access_restorer->getAccessEntities(context->getAccessControl());
 }
 
 void RestorerFromBackup::throwTableIsNotEmpty(const StorageID & storage_id)

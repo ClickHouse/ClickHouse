@@ -38,6 +38,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsMilliseconds storage_system_stack_trace_pipe_read_timeout_ms;
+}
 
 namespace ErrorCodes
 {
@@ -164,8 +168,7 @@ bool wait(int timeout_ms)
         {
             if (notification_num == sequence_num.load(std::memory_order_relaxed))
                 return true;
-            else
-                continue;   /// Drain delayed notifications.
+            continue; /// Drain delayed notifications.
         }
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Read wrong number of bytes from pipe");
@@ -288,7 +291,7 @@ public:
         , predicate(filter_dag ? filter_dag->getOutputs().at(0) : nullptr)
         , max_block_size(max_block_size_)
         , pipe_read_timeout_ms(
-              static_cast<int>(context->getSettingsRef().storage_system_stack_trace_pipe_read_timeout_ms.totalMilliseconds()))
+              static_cast<int>(context->getSettingsRef()[Setting::storage_system_stack_trace_pipe_read_timeout_ms].totalMilliseconds()))
         , log(log_)
         , proc_it("/proc/self/task")
         /// It shouldn't be possible to do concurrent reads from this table.

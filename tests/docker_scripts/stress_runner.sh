@@ -62,7 +62,7 @@ start_server
 setup_logs_replication
 
 clickhouse-client --query "CREATE DATABASE datasets"
-clickhouse-client --multiquery < /repo/tests/docker_scripts/create.sql
+clickhouse-client < /repo/tests/docker_scripts/create.sql
 clickhouse-client --query "SHOW TABLES FROM datasets"
 
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"

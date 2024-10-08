@@ -20,6 +20,14 @@
 namespace DB
 {
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
+    extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
+    extern const MergeTreeSettingsUInt64 max_number_of_merges_with_ttl_in_pool;
+    extern const MergeTreeSettingsUInt64 replicated_max_mutations_in_one_entry;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -1460,7 +1468,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         }
 
         const auto data_settings = data.getSettings();
-        if (data_settings->allow_remote_fs_zero_copy_replication)
+        if ((*data_settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
         {
             auto disks = storage.getDisks();
             DiskPtr disk_with_zero_copy = nullptr;
@@ -1515,7 +1523,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         bool ignore_max_size = false;
         if (entry.type == LogEntry::MERGE_PARTS)
         {
-            ignore_max_size = max_source_parts_size == data_settings->max_bytes_to_merge_at_max_space_in_pool;
+            ignore_max_size = max_source_parts_size == (*data_settings)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool];
 
             if (isTTLMergeType(entry.merge_type))
             {
@@ -1526,11 +1534,11 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                     return false;
                 }
                 size_t total_merges_with_ttl = data.getTotalMergesWithTTLInMergeList();
-                if (total_merges_with_ttl >= data_settings->max_number_of_merges_with_ttl_in_pool)
+                if (total_merges_with_ttl >= (*data_settings)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool])
                 {
                     constexpr auto fmt_string = "Not executing log entry {} for part {} because {} merges with TTL already executing, maximum {}.";
                     LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.new_part_name, total_merges_with_ttl,
-                              data_settings->max_number_of_merges_with_ttl_in_pool);
+                              (*data_settings)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool]);
                     return false;
                 }
             }
@@ -1789,17 +1797,14 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntry
             queue.splice(queue.end(), queue, it);
             break;
         }
-        else
-        {
-            ++(*it)->num_postponed;
-            (*it)->last_postpone_time = time(nullptr);
-        }
+
+        ++(*it)->num_postponed;
+        (*it)->last_postpone_time = time(nullptr);
     }
 
     if (entry)
         return std::make_shared<SelectedEntry>(entry, std::unique_ptr<CurrentlyExecuting>{new CurrentlyExecuting(entry, *this, lock)});
-    else
-        return {};
+    return {};
 }
 
 
@@ -2154,8 +2159,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
 
     if (candidates.empty())
         return false;
-    else
-        LOG_DEBUG(log, "Trying to finalize {} mutations", candidates.size());
+    LOG_DEBUG(log, "Trying to finalize {} mutations", candidates.size());
 
     /// We need to check committing block numbers and new parts which could be committed.
     /// Actually we don't need most of predicate logic here but it all the code related to committing blocks
@@ -2222,6 +2226,7 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
     res.inserts_in_queue = 0;
     res.merges_in_queue = 0;
     res.part_mutations_in_queue = 0;
+    res.metadata_alters_in_queue = 0;
     res.queue_oldest_time = 0;
     res.inserts_oldest_time = 0;
     res.merges_oldest_time = 0;
@@ -2263,6 +2268,11 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
                 res.part_mutations_oldest_time = static_cast<UInt32>(entry->create_time);
                 res.oldest_part_to_mutate_to = entry->new_part_name;
             }
+        }
+
+        if (entry->type == LogEntry::ALTER_METADATA)
+        {
+            ++res.metadata_alters_in_queue;
         }
     }
 
@@ -2479,8 +2489,7 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::operator()(
 {
     if (left)
         return canMergeTwoParts(left, right, out_reason);
-    else
-        return canMergeSinglePart(right, out_reason);
+    return canMergeSinglePart(right, out_reason);
 }
 
 template<typename VirtualPartsT, typename MutationsStateT>
@@ -2719,7 +2728,7 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
     if (in_partition == queue.mutations_by_partition.end())
         return {};
 
-    UInt64 mutations_limit = queue.storage.getSettings()->replicated_max_mutations_in_one_entry;
+    UInt64 mutations_limit = (*queue.storage.getSettings())[MergeTreeSetting::replicated_max_mutations_in_one_entry];
     UInt64 mutations_count = 0;
 
     Int64 current_version = queue.getCurrentMutationVersion(part->info.partition_id, part->info.getDataVersion());
@@ -2824,11 +2833,9 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const std::string & z
         LOG_TRACE(queue.log, "Mutation {} is not done because some parts [{}] were just committed", znode_name, fmt::join(it->second.parts_to_do.getParts(), ", "));
         return false;
     }
-    else
-    {
-        LOG_TRACE(queue.log, "Mutation {} is done because it doesn't exist anymore", znode_name);
-        return true;
-    }
+
+    LOG_TRACE(queue.log, "Mutation {} is done because it doesn't exist anymore", znode_name);
+    return true;
 }
 
 bool ReplicatedMergeTreeMergePredicate::isGoingToBeDropped(const MergeTreePartInfo & new_drop_range_info,
