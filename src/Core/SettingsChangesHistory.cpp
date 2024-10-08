@@ -94,11 +94,11 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"distributed_cache_read_alignment", 0, 0, "A setting for ClickHouse Cloud"},
             {"distributed_cache_max_unacked_inflight_packets", 10, 10, "A setting for ClickHouse Cloud"},
             {"distributed_cache_data_packet_ack_window", 5, 5, "A setting for ClickHouse Cloud"},
+            {"input_format_parquet_bloom_filter_push_down", false, true, "When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and bloom filter in the Parquet metadata."},
         }
     },
     {"24.9",
         {
-            {"input_format_parquet_bloom_filter_push_down", false, true, "When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and bloom filter in the Parquet metadata."},
             {"output_format_orc_dictionary_key_size_threshold", 0.0, 0.0, "For a string column in ORC output format, if the number of distinct values is greater than this fraction of the total number of non-null rows, turn off dictionary encoding. Otherwise dictionary encoding is enabled"},
             {"input_format_json_empty_as_default", false, false, "Added new setting to allow to treat empty fields in JSON input as default values."},
             {"input_format_try_infer_variants", false, false, "Try to infer Variant type in text formats when there is more than one possible type for column/array elements"},
