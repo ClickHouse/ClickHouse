@@ -90,13 +90,15 @@ void NATSProducer::startProducingTaskLoop()
 {
     try
     {
-        while ((!payloads.isFinishedAndEmpty() || natsConnection_Buffered(connection->getConnection()) != 0))
+        while (!payloads.isFinishedAndEmpty() || !connection->isConnected())
         {
             if (!connection->isConnected())
                 reconnect_callback(connection);
             else
                 publish();
         }
+
+        natsConnection_Flush(connection->getConnection());
     }
     catch (...)
     {
