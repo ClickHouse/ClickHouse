@@ -48,9 +48,9 @@ function check_query_settings()
 {
 result=$(${CLICKHOUSE_CLIENT} -q "
     SYSTEM FLUSH LOGS;
-    SELECT attribute['min_compress_block_size'],
-           attribute['max_block_size'],
-           attribute['max_execution_time']
+    SELECT attribute['clickhouse.setting.min_compress_block_size'],
+           attribute['clickhouse.setting.max_block_size'],
+           attribute['clickhouse.setting.max_execution_time']
     FROM system.opentelemetry_span_log
     WHERE finish_date                      >= yesterday()
     AND   operation_name                   = 'query'

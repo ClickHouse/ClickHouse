@@ -600,7 +600,8 @@ void logQueryFinish(
                         break;
                 }
 
-                query_span->addAttribute(name, value_str);
+                query_span->addAttribute(fmt::format("clickhouse.setting.{}", name), value_str);
+
             }
         }
         query_span->finish();

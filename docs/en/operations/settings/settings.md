@@ -660,6 +660,13 @@ See also:
 
 - [GROUP BY clause](/docs/en/sql-reference/statements/select/group-by.md)
 
+## log_query_settings {#log-query-settings}
+Type: Bool
+
+Default value: 1
+
+Log query settings into the query_log and opentelemetry_span_log.
+
 ## partial_merge_join_optimizations {#partial_merge_join_optimizations}
 
 Disables optimizations in partial merge join algorithm for [JOIN](../../sql-reference/statements/select/join.md) queries.
