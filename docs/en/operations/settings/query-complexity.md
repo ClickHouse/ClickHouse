@@ -49,10 +49,10 @@ Default values are defined in [Settings.h](https://github.com/ClickHouse/ClickHo
 
 See also the description of [max_memory_usage](#settings_max_memory_usage).
 
-For example if you want to set `max_memory_usage_for_user` to 1000 bytes for a user named `clickhouse-read`, you can use the statement
+For example if you want to set `max_memory_usage_for_user` to 1000 bytes for a user named `clickhouse_read`, you can use the statement
 
 ``` sql
-ALTER USER clickhouse-read SETTINGS max_memory_usage_for_user = 1000;
+ALTER USER clickhouse_read SETTINGS max_memory_usage_for_user = 1000;
 ```
 
 You can verify it worked by logging out of your client, logging back in, then use the `getSetting` function:
