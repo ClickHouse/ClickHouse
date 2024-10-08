@@ -172,7 +172,8 @@ static void collectLazilyReadColumnNames(
 
     lazily_read_columns.reserve(lazily_read_column_name_set.size());
 
-    for (const auto & column_name : lazily_read_column_name_set) {
+    for (const auto & column_name : lazily_read_column_name_set)
+    {
         auto name_and_type = storage_snapshot->tryGetColumn(options, column_name);
         lazily_read_columns.emplace_back(
             name_and_type->type->createColumn(),

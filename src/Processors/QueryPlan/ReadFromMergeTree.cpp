@@ -1860,7 +1860,8 @@ void ReadFromMergeTree::updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_re
 
     NameSet names_set;
 
-    for (const auto & column : lazily_read_info->lazily_read_columns) {
+    for (const auto & column : lazily_read_info->lazily_read_columns)
+    {
         names_set.insert(column.name);
     }
     std::erase_if(all_column_names, [&names_set] (const String & column_name)
