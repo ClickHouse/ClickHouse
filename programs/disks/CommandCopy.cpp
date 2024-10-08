@@ -46,7 +46,7 @@ public:
                 path_from,
                 disk_from.getDisk()->getName());
         }
-        else if (disk_from.getDisk()->isFile(path_from))
+        if (disk_from.getDisk()->isFile(path_from))
         {
             auto target_location = getTargetLocation(path_from, disk_to, path_to);
             if (!disk_to.getDisk()->exists(target_location) || disk_to.getDisk()->isFile(target_location))
@@ -77,7 +77,7 @@ public:
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "cannot overwrite non-directory {} with directory {}", path_to, target_location);
             }
-            else if (!disk_to.getDisk()->exists(target_location))
+            if (!disk_to.getDisk()->exists(target_location))
             {
                 disk_to.getDisk()->createDirectory(target_location);
             }

@@ -1,4 +1,3 @@
-version: '2.2'
 services:
   psql:
     image: postgres:12.2-alpine
