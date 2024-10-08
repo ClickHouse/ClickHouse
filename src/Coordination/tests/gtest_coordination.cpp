@@ -175,31 +175,54 @@ TYPED_TEST(CoordinationTest, BufferSerde)
     request->xid = 3;
     dynamic_cast<Coordination::ZooKeeperGetRequest &>(*request).path = "/path/value";
 
-    DB::WriteBufferFromNuraftBuffer wbuf;
-    request->write(wbuf);
-    auto nuraft_buffer = wbuf.getBuffer();
-    EXPECT_EQ(nuraft_buffer->size(), 28);
+    const auto test_serde = [&](bool use_xid_64)
+    {
+        size_t xid_size = use_xid_64 ? sizeof(int64_t) : sizeof(int32_t);
+        DB::WriteBufferFromNuraftBuffer wbuf;
+        request->write(wbuf, use_xid_64);
+        auto nuraft_buffer = wbuf.getBuffer();
+        EXPECT_EQ(nuraft_buffer->size(), 24 + xid_size);
 
-    DB::ReadBufferFromNuraftBuffer rbuf(nuraft_buffer);
+        DB::ReadBufferFromNuraftBuffer rbuf(nuraft_buffer);
 
-    int32_t length;
-    Coordination::read(length, rbuf);
-    EXPECT_EQ(length + sizeof(length), nuraft_buffer->size());
+        int32_t length;
+        Coordination::read(length, rbuf);
+        EXPECT_EQ(length + sizeof(length), nuraft_buffer->size());
 
-    int32_t xid;
-    Coordination::read(xid, rbuf);
-    EXPECT_EQ(xid, request->xid);
+        int64_t xid = 0;
+        if (use_xid_64)
+        {
+            Coordination::read(xid, rbuf);
+        }
+        else
+        {
+            int32_t xid_32 = 0;
+            Coordination::read(xid_32, rbuf);
+            xid = xid_32;
+        }
 
-    Coordination::OpNum opnum;
-    Coordination::read(opnum, rbuf);
+        EXPECT_EQ(xid, request->xid);
 
-    Coordination::ZooKeeperRequestPtr request_read = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
-    request_read->xid = xid;
-    request_read->readImpl(rbuf);
+        Coordination::OpNum opnum;
+        Coordination::read(opnum, rbuf);
 
-    EXPECT_EQ(request_read->getOpNum(), Coordination::OpNum::Get);
-    EXPECT_EQ(request_read->xid, 3);
-    EXPECT_EQ(dynamic_cast<Coordination::ZooKeeperGetRequest &>(*request_read).path, "/path/value");
+        Coordination::ZooKeeperRequestPtr request_read = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
+        request_read->xid = xid;
+        request_read->readImpl(rbuf);
+
+        EXPECT_EQ(request_read->getOpNum(), Coordination::OpNum::Get);
+        EXPECT_EQ(request_read->xid, 3);
+        EXPECT_EQ(dynamic_cast<Coordination::ZooKeeperGetRequest &>(*request_read).path, "/path/value");
+    };
+
+    {
+        SCOPED_TRACE("32bit XID");
+        test_serde(/*use_xid_64=*/false);
+    }
+    {
+        SCOPED_TRACE("64bit XID");
+        test_serde(/*use_xid_64=*/true);
+    }
 }
 
 template <typename StateMachine>
@@ -1798,23 +1821,14 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotBroken)
     EXPECT_THROW(manager.restoreFromLatestSnapshot(), DB::Exception);
 }
 
-nuraft::ptr<nuraft::buffer> getBufferFromZKRequest(int64_t session_id, int64_t zxid, const Coordination::ZooKeeperRequestPtr & request)
-{
-    DB::WriteBufferFromNuraftBuffer buf;
-    DB::writeIntBinary(session_id, buf);
-    request->write(buf);
-    using namespace std::chrono;
-    auto time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-    DB::writeIntBinary(time, buf);
-    DB::writeIntBinary(zxid, buf);
-    DB::writeIntBinary(DB::KeeperMemoryStorage::DigestVersion::NO_DIGEST, buf);
-    return buf.getBuffer();
-}
-
 nuraft::ptr<nuraft::log_entry>
 getLogEntryFromZKRequest(size_t term, int64_t session_id, int64_t zxid, const Coordination::ZooKeeperRequestPtr & request)
 {
-    auto buffer = getBufferFromZKRequest(session_id, zxid, request);
+    DB::KeeperStorageBase::RequestForSession request_for_session;
+    request_for_session.session_id = session_id;
+    request_for_session.zxid = zxid;
+    request_for_session.request = request;
+    auto buffer = DB::IKeeperStateMachine::getZooKeeperLogEntry(request_for_session);
     return nuraft::cs_new<nuraft::log_entry>(term, buffer);
 }
 
