@@ -156,8 +156,6 @@ void NATSConnection::disconnectImpl()
 {
     if (isDisconnectedImpl())
         return;
-    else if (isConnectedImpl())
-        natsConnection_Flush(connection.get());
 
     natsConnection_Close(connection.get());
 }
