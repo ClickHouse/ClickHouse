@@ -6,7 +6,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 
 
 namespace DB
@@ -53,7 +53,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
 {
     processing_threads_num_changed = engine_settings.processing_threads_num.changed;
     if (!processing_threads_num_changed && engine_settings.processing_threads_num <= 1)
-        processing_threads_num = std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
+        processing_threads_num = std::max<uint32_t>(getNumberOfCPUCoresToUse(), 16);
     else
         processing_threads_num = engine_settings.processing_threads_num;
 }
