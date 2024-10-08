@@ -222,7 +222,7 @@ SELECT
     number
 FROM numbers(0, 1000);
 -- { echoOn }
-SELECT * FROM optimize_lazy_materialization_with_datetime_data_type ORDER BY b LIMIT 10;
+SELECT a, b, toUInt64(c) FROM optimize_lazy_materialization_with_datetime_data_type ORDER BY b LIMIT 10;
 -- { echoOff }
 
 -- queries with fixed datetime64 data type
@@ -241,7 +241,7 @@ SELECT
     number
 FROM numbers(0, 1000);
 -- { echoOn }
-SELECT * FROM optimize_lazy_materialization_with_datetime64_data_type ORDER BY b LIMIT 10;
+SELECT a, b, toUInt64(c) FROM optimize_lazy_materialization_with_datetime64_data_type ORDER BY b LIMIT 10;
 -- { echoOff }
 
 -- queries with fixed enum data type

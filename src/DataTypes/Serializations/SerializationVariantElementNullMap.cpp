@@ -104,22 +104,12 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
         /// Deserialize discriminators according to serialization mode.
         if (discriminators_state->mode.value == SerializationVariant::DiscriminatorsSerializationMode::BASIC)
         {
-            size_t discriminators_offset = variant_element_null_map_state->discriminators->size();
             SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(
                 *variant_element_null_map_state->discriminators->assumeMutable(), *discriminators_stream, 0, rows_offset + limit, 0);
-
-
-            if (rows_offset)
-            {
-                auto & discriminators_data = assert_cast<ColumnVariant::ColumnDiscriminators &>(*variant_element_null_map_state->discriminators->assumeMutable()).getData();
-
-                for (size_t i = discriminators_offset; i + rows_offset < discriminators_data.size(); ++i)
-                    discriminators_data[i] = discriminators_data[i + rows_offset];
-                variant_element_null_map_state->discriminators->assumeMutable()->popBack(rows_offset);
-            }
         }
         else
-            variant_limit = SerializationVariantElement::deserializeCompactDiscriminators(
+        {
+            auto variant_pair = SerializationVariantElement::deserializeCompactDiscriminators(
                 variant_element_null_map_state->discriminators,
                 variant_discriminator,
                 rows_offset,
@@ -128,6 +118,9 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
                 settings.continuous_reading,
                 variant_element_null_map_state->discriminators_state,
                 this);
+
+            variant_limit = variant_pair.second;
+        }
 
         addToSubstreamsCache(cache, settings.path, variant_element_null_map_state->discriminators);
     }
@@ -142,6 +135,16 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
         return;
     }
     settings.path.pop_back();
+
+    if (rows_offset)
+    {
+        size_t discriminators_offset = variant_element_null_map_state->discriminators->size() - limit - rows_offset;
+        auto & discriminators_data = assert_cast<ColumnVariant::ColumnDiscriminators &>(*variant_element_null_map_state->discriminators->assumeMutable()).getData();
+
+        for (size_t i = discriminators_offset; i + rows_offset < discriminators_data.size(); ++i)
+            discriminators_data[i] = discriminators_data[i + rows_offset];
+        variant_element_null_map_state->discriminators->assumeMutable()->popBack(rows_offset);
+    }
 
     MutableColumnPtr mutable_column = result_column->assumeMutable();
     auto & data = assert_cast<ColumnUInt8 &>(*mutable_column).getData();

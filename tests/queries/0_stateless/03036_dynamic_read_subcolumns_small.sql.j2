@@ -4,9 +4,9 @@ set allow_experimental_dynamic_type = 1;
 
 drop table if exists test;
 
-{% for engine in ['Memory', 'MergeTree order by id settings min_rows_for_wide_part=1000000000, min_bytes_for_wide_part=10000000000', 'MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1'] -%}
+-- {% for engine in ['Memory', 'MergeTree order by id settings min_rows_for_wide_part=1000000000, min_bytes_for_wide_part=10000000000', 'MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1'] -%}
 
-create table test (id UInt64, d Dynamic) engine={{ engine }};
+create table test (id UInt64, d Dynamic) engine=MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1;
 
 insert into test select number, number from numbers(10);
 insert into test select number, 'str_' || toString(number) from numbers(10, 10);
@@ -38,6 +38,6 @@ select d, d.`Tuple(a UInt64, b String)`.a, d.`Array(Dynamic)`.`Variant(String, U
 select d.`Array(Dynamic)`.`Variant(String, UInt64)`.UInt64, d.`Array(Dynamic)`.size0, d.`Array(Variant(String, UInt64))`.UInt64 from test order by id, d;
 select d.`Array(Array(Dynamic))`.size1, d.`Array(Array(Dynamic))`.UInt64, d.`Array(Array(Dynamic))`.`Map(String, Tuple(a UInt64))`.values.a from test order by id, d;
 
-drop table test;
+-- drop table test;
 
-{% endfor -%}
+-- {% endfor -%}

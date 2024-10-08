@@ -221,29 +221,29 @@ SELECT * FROM optimize_lazy_materialization_with_date32_data_type ORDER BY b LIM
 16	16	1970-01-17
 18	18	1970-01-19
 -- { echoOn }
-SELECT * FROM optimize_lazy_materialization_with_datetime_data_type ORDER BY b LIMIT 10;
-0	0	1970-01-01 08:00:00
-2	2	1970-01-01 08:00:02
-4	4	1970-01-01 08:00:04
-6	6	1970-01-01 08:00:06
-8	8	1970-01-01 08:00:08
-10	10	1970-01-01 08:00:10
-12	12	1970-01-01 08:00:12
-14	14	1970-01-01 08:00:14
-16	16	1970-01-01 08:00:16
-18	18	1970-01-01 08:00:18
+SELECT a, b, toUInt64(c) FROM optimize_lazy_materialization_with_datetime_data_type ORDER BY b LIMIT 10;
+0	0	0
+2	2	2
+4	4	4
+6	6	6
+8	8	8
+10	10	10
+12	12	12
+14	14	14
+16	16	16
+18	18	18
 -- { echoOn }
-SELECT * FROM optimize_lazy_materialization_with_datetime64_data_type ORDER BY b LIMIT 10;
-0	0	1970-01-01 08:00:00.000
-2	2	1970-01-01 08:00:02.000
-4	4	1970-01-01 08:00:04.000
-6	6	1970-01-01 08:00:06.000
-8	8	1970-01-01 08:00:08.000
-10	10	1970-01-01 08:00:10.000
-12	12	1970-01-01 08:00:12.000
-14	14	1970-01-01 08:00:14.000
-16	16	1970-01-01 08:00:16.000
-18	18	1970-01-01 08:00:18.000
+SELECT a, b, toUInt64(c) FROM optimize_lazy_materialization_with_datetime64_data_type ORDER BY b LIMIT 10;
+0	0	0
+2	2	2
+4	4	4
+6	6	6
+8	8	8
+10	10	10
+12	12	12
+14	14	14
+16	16	16
+18	18	18
 -- { echoOn }
 SELECT * FROM optimize_lazy_materialization_with_enum_data_type ORDER BY b LIMIT 10;
 0	0	hello
