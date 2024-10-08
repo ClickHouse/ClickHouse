@@ -416,6 +416,7 @@ FROM numbers(0, 1000);
 SELECT * FROM optimize_lazy_materialization_with_variant_data_type ORDER BY b LIMIT 10;
 -- queries with subcolumn of variant data type
 SELECT a, b, c.UInt64 FROM optimize_lazy_materialization_with_variant_data_type ORDER BY b LIMIT 10;
+SELECT a, b, c.UInt64.null FROM optimize_lazy_materialization_with_variant_data_type ORDER BY b LIMIT 10;
 -- { echoOff }
 
 -- queries with low_cardinality data type

@@ -156,7 +156,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
             dynamic_element_state->shared_variant = makeNullable(ColumnDynamic::getSharedVariantDataType()->createColumn());
         size_t prev_size = result_column->size();
         dynamic_element_state->variant_serialization->deserializeBinaryBulkWithMultipleStreams(
-            dynamic_element_state->shared_variant, limit, settings, dynamic_element_state->variant_element_state, cache);
+            dynamic_element_state->shared_variant, rows_offset, limit, settings, dynamic_element_state->variant_element_state, cache);
         settings.path.pop_back();
 
         /// If we need to read a subcolumn from variant column, create an empty variant column, fill it and extract subcolumn.

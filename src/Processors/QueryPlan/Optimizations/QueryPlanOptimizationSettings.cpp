@@ -32,6 +32,8 @@ namespace Setting
     extern const SettingsBool optimize_sorting_by_input_stream_properties;
     extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
     extern const SettingsBool query_plan_split_filter;
+    extern const SettingsBool query_plan_optimize_lazy_materialization;
+    extern const SettingsUInt64 query_plan_max_limit_for_lazy_materialization;
 }
 
 QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const Settings & from)
@@ -82,8 +84,8 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
     settings.force_projection_name = settings.optimize_projection ? from[Setting::force_optimize_projection_name].value : "";
     settings.optimize_use_implicit_projections = settings.optimize_projection && from[Setting::optimize_use_implicit_projections];
 
-    settings.optimize_lazy_materialization = from.query_plan_optimize_lazy_materialization;
-    settings.max_limit_for_lazy_materialization = from.query_plan_max_limit_for_lazy_materialization;
+    settings.optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization];
+    settings.max_limit_for_lazy_materialization = from[Setting::query_plan_max_limit_for_lazy_materialization];
 
     return settings;
 }

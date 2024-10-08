@@ -32,11 +32,11 @@ static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
 }
 
 static void removeUsedColumnNames(
-    const ActionsDAGPtr & actions,
+    const ActionsDAG & actions,
     NameSet & lazily_read_column_name_set,
     AliasToNamePtr & alias_index)
 {
-    const auto & actions_outputs = actions->getOutputs();
+    const auto & actions_outputs = actions.getOutputs();
 
     for (const auto * output_node : actions_outputs)
     {
@@ -132,10 +132,9 @@ static void collectLazilyReadColumnNames(
     if (const auto & prewhere_info = read_from_merge_tree->getPrewhereInfo())
     {
         if (prewhere_info->row_level_filter)
-            removeUsedColumnNames(prewhere_info->row_level_filter, lazily_read_column_name_set, alias_index);
+            removeUsedColumnNames(*prewhere_info->row_level_filter, lazily_read_column_name_set, alias_index);
 
-        if (prewhere_info->prewhere_actions)
-            removeUsedColumnNames(prewhere_info->prewhere_actions, lazily_read_column_name_set, alias_index);
+        removeUsedColumnNames(prewhere_info->prewhere_actions, lazily_read_column_name_set, alias_index);
     }
 
     for (auto step_it = steps.rbegin(); step_it != steps.rend(); ++step_it)

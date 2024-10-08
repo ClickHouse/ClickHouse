@@ -386,6 +386,17 @@ SELECT a, b, c.UInt64 FROM optimize_lazy_materialization_with_variant_data_type 
 14	14	\N
 16	16	16
 18	18	\N
+SELECT a, b, c.UInt64.null FROM optimize_lazy_materialization_with_variant_data_type ORDER BY b LIMIT 10;
+0	0	0
+2	2	1
+4	4	1
+6	6	0
+8	8	1
+10	10	0
+12	12	1
+14	14	1
+16	16	0
+18	18	1
 -- { echoOn }
 SELECT * FROM optimize_lazy_materialization_with_low_cardinality_data_type ORDER BY b LIMIT 10;
 0	0	aa

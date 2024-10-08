@@ -561,12 +561,12 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
     {
         settings.path.push_back(Substream::ObjectDynamicPath);
         settings.path.back().object_path_name = path;
-        dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(dynamic_paths[path], limit, settings, object_state->dynamic_path_states[path], cache);
+        dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(dynamic_paths[path], rows_offset, limit, settings, object_state->dynamic_path_states[path], cache);
         settings.path.pop_back();
     }
 
     settings.path.push_back(Substream::ObjectSharedData);
-    shared_data_serialization->deserializeBinaryBulkWithMultipleStreams(shared_data, limit, settings, object_state->shared_data_state, cache);
+    shared_data_serialization->deserializeBinaryBulkWithMultipleStreams(shared_data, rows_offset, limit, settings, object_state->shared_data_state, cache);
     settings.path.pop_back();
     settings.path.pop_back();
 }

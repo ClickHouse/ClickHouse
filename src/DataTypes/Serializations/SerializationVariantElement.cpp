@@ -124,10 +124,11 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
             auto & variant_rows_offsets = discriminators_state->variant_rows_offsets;
             variant_rows_offsets.clear();
             variant_rows_offsets.resize(1, 0);
-            auto & discriminators_data = assert_cast<ColumnVariant::ColumnDiscriminators &>(*variant_element_state->discriminators->assumeMutable()).getData();
 
             if (rows_offset)
             {
+                auto & discriminators_data = assert_cast<ColumnVariant::ColumnDiscriminators &>(*variant_element_state->discriminators->assumeMutable()).getData();
+
                 for (size_t i = discriminators_offset; i != discriminators_offset + rows_offset; ++i)
                 {
                     ColumnVariant::Discriminator discr = discriminators_data[i];
@@ -313,7 +314,7 @@ size_t SerializationVariantElement::deserializeCompactDiscriminators(
         }
         else
         {
-            SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(discriminators, *stream, limit_in_granule, 0);
+            SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(discriminators, *stream, 0, limit_in_granule, 0);
             size_t start = discriminators_data.size() - limit_in_granule;
             size_t skipped_rows = std::min(rows_offset, limit_in_granule);
 

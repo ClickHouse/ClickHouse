@@ -94,6 +94,7 @@ private:
     static size_t deserializeCompactDiscriminators(
         ColumnPtr & discriminators_column,
         ColumnVariant::Discriminator variant_discriminator,
+        size_t rows_offset,
         size_t limit,
         ReadBuffer * stream,
         bool continuous_reading,

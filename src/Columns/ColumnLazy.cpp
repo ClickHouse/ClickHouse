@@ -6,6 +6,7 @@
 #include <Core/Field.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Common/WeakHash.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 
@@ -97,7 +98,11 @@ bool ColumnLazy::tryInsert(const Field &)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method tryInsert is not supported for {}", getName());
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnLazy::insertFrom(const IColumn & src_, size_t n)
+#else
+void ColumnLazy::doInsertFrom(const IColumn & src_, size_t n)
+#endif
 {
     if (captured_columns.empty())
     {
@@ -112,6 +117,25 @@ void ColumnLazy::insertFrom(const IColumn & src_, size_t n)
 
     for (size_t i = 0; i < column_size; ++i)
         captured_columns[i]->insertFrom(*src.captured_columns[i], n);
+}
+
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+void ColumnLazy::insertManyFrom(const IColumn & src, size_t position, size_t length)
+#else
+void ColumnLazy::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
+#endif
+{
+    if (captured_columns.empty())
+    {
+        s += length;
+        return;
+    }
+
+    const size_t column_size = captured_columns.size();
+    for (size_t i = 0; i < column_size; ++i)
+        captured_columns[i]->insertManyFrom(
+            *assert_cast<const ColumnLazy &>(src).captured_columns[i],
+            position, length);
 }
 
 void ColumnLazy::insertDefault()
@@ -139,9 +163,9 @@ void ColumnLazy::updateHashWithValue(size_t, SipHash &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateHashWithValue is not supported for {}", getName());
 }
 
-void ColumnLazy::updateWeakHash32(WeakHash32 &) const
+WeakHash32 ColumnLazy::getWeakHash32() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateWeakHash32 is not supported for {}", getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getWeakHash32 is not supported for {}", getName());
 }
 
 void ColumnLazy::updateHashFast(SipHash &) const
@@ -149,7 +173,11 @@ void ColumnLazy::updateHashFast(SipHash &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateHashFast is not supported for {}", getName());
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnLazy::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
+void ColumnLazy::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     if (captured_columns.empty())
     {
@@ -231,10 +259,17 @@ MutableColumns ColumnLazy::scatter(ColumnIndex, const Selector &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method scatter is not supported for {}", getName());
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnLazy::compareAt(size_t, size_t, const IColumn &, int) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compareAt is not supported for {}", getName());
 }
+#else
+int ColumnLazy::doCompareAt(size_t, size_t, const IColumn &, int) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method doCompareAt is not supported for {}", getName());
+}
+#endif
 
 void ColumnLazy::compareColumn(const IColumn &, size_t,
                                PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &,

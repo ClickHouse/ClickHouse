@@ -5,6 +5,7 @@
 #include <Common/Logger.h>
 #include <Common/typeid_cast.h>
 #include "Columns/IColumn.h"
+#include "Core/Settings.h"
 #include <DataTypes/DataTypeTuple.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
@@ -12,6 +13,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool use_uncompressed_cache;
+}
 
 struct RowOffsetWithIdx
 {
@@ -93,7 +99,7 @@ MergeTreeLazilyReader::MergeTreeLazilyReader(
     : storage(storage_)
     , data_parts_info(lazily_read_info_->data_parts_info)
     , storage_snapshot(storage_snapshot_)
-    , use_uncompressed_cache(context_->getSettings().use_uncompressed_cache)
+    , use_uncompressed_cache(context_->getSettingsRef()[Setting::use_uncompressed_cache])
 {
     NameSet columns_name_set;
 
