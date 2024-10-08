@@ -298,6 +298,8 @@ namespace
                 authentication_methods.emplace_back(std::make_shared<ASTAuthenticationData>());
                 authentication_methods.back()->type = AuthenticationType::NO_PASSWORD;
 
+                parseValidUntil(pos, expected, authentication_methods.back()->valid_until);
+
                 return true;
             }
 
