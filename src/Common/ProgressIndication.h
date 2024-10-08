@@ -115,6 +115,8 @@ private:
     /// It is possible concurrent access to the following:
     /// - writeProgress() (class properties) (guarded with progress_mutex)
     /// - hosts_data/cpu_usage_meter (guarded with profile_events_mutex)
+    ///
+    /// It is also possible to have more races if query is cancelled, so that clearProgressOutput() is called concurrently
     mutable std::mutex profile_events_mutex;
     mutable std::mutex progress_mutex;
 

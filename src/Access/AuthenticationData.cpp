@@ -375,7 +375,8 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
             break;
         }
 
-        case AuthenticationType::NO_PASSWORD: [[fallthrough]];
+        case AuthenticationType::NO_PASSWORD:
+            break;
         case AuthenticationType::MAX:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "AST: Unexpected authentication type {}", toString(auth_type));
     }
@@ -500,10 +501,9 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
             auth_data.setPasswordHashBinary(AuthenticationData::Util::stringToDigest(value));
             return auth_data;
         }
-        else
-        {
-            auth_data.setPasswordHashHex(value);
-        }
+
+        auth_data.setPasswordHashHex(value);
+
 
         if (query.type == AuthenticationType::SHA256_PASSWORD && args_size == 2)
         {

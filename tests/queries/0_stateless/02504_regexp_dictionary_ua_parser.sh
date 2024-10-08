@@ -11,7 +11,7 @@ cp $CURDIR/data_ua_parser/os.yaml ${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}/
 cp $CURDIR/data_ua_parser/browser.yaml ${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}/
 cp $CURDIR/data_ua_parser/device.yaml ${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}/
 
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 drop dictionary if exists regexp_os;
 drop dictionary if exists regexp_browser;
 drop dictionary if exists regexp_device;
@@ -61,10 +61,10 @@ create table user_agents
 Engine = Log();
 "
 
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 insert into user_agents select ua from input('ua String') FORMAT LineAsString" < $CURDIR/data_ua_parser/useragents.txt
 
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 select ua, device,
 concat(tupleElement(browser, 1), ' ', tupleElement(browser, 2), '.', tupleElement(browser, 3)) as browser ,
 concat(tupleElement(os, 1), ' ', tupleElement(os, 2), '.', tupleElement(os, 3), '.', tupleElement(os, 4)) as os
@@ -74,7 +74,7 @@ from (
      dictGet('regexp_device', 'device_replacement', ua) device from user_agents) order by ua;
 "
 
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 drop dictionary if exists regexp_os;
 drop dictionary if exists regexp_browser;
 drop dictionary if exists regexp_device;

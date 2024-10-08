@@ -1,15 +1,14 @@
 #pragma once
 
+#include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/MemoryStatisticsOS.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
 #include <IO/ReadBufferFromFile.h>
 
 #include <condition_variable>
-#include <map>
 #include <mutex>
 #include <string>
-#include <thread>
 #include <vector>
 #include <optional>
 #include <unordered_map>
@@ -69,7 +68,9 @@ public:
 
     AsynchronousMetrics(
         unsigned update_period_seconds,
-        const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
+        const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
+        bool update_jemalloc_epoch_,
+        bool update_rss_);
 
     virtual ~AsynchronousMetrics();
 
@@ -111,6 +112,9 @@ private:
 #if defined(OS_LINUX) || defined(OS_FREEBSD)
     MemoryStatisticsOS memory_stat TSA_GUARDED_BY(data_mutex);
 #endif
+
+    [[maybe_unused]] const bool update_jemalloc_epoch;
+    [[maybe_unused]] const bool update_rss;
 
 #if defined(OS_LINUX)
     std::optional<ReadBufferFromFilePRead> meminfo TSA_GUARDED_BY(data_mutex);

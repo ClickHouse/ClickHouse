@@ -15,6 +15,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool optimize_rewrite_array_exists_to_has;
+}
 
 namespace
 {
@@ -27,7 +31,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_rewrite_array_exists_to_has)
+        if (!getSettings()[Setting::optimize_rewrite_array_exists_to_has])
             return;
 
         auto * array_exists_function_node = node->as<FunctionNode>();
