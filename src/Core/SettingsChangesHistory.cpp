@@ -94,6 +94,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"distributed_cache_read_alignment", 0, 0, "A setting for ClickHouse Cloud"},
             {"distributed_cache_max_unacked_inflight_packets", 10, 10, "A setting for ClickHouse Cloud"},
             {"distributed_cache_data_packet_ack_window", 5, 5, "A setting for ClickHouse Cloud"},
+            {"short_circuit_default_implementation_for_nulls", false, true, "Setting for short-circuit default implementations for null in function with useDefaultImplementationForNulls() = true. If true, function will not actually evaluate for rows in which there are at least one argument with null value."},
         }
     },
     {"24.9",
@@ -104,7 +105,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"join_output_by_rowlist_perkey_rows_threshold", 0, 5, "The lower limit of per-key average rows in the right table to determine whether to output by row list in hash join."},
             {"create_if_not_exists", false, false, "New setting."},
             {"allow_materialized_view_with_bad_select", true, true, "Support (but not enable yet) stricter validation in CREATE MATERIALIZED VIEW"},
-            {"short_circuit_default_implementation_for_nulls", true, true, "Setting for short-circuit default implementations for null in function with useDefaultImplementationForNulls() = true. If true, function will not actually evaluate for rows in which there are at least one argument with null value."},
             {"output_format_always_quote_identifiers", false, false, "New setting."},
             {"output_format_identifier_quoting_style", "Backticks", "Backticks", "New setting."},
             {"parallel_replicas_mark_segment_size", 128, 0, "Value for this setting now determined automatically"},
