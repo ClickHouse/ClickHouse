@@ -103,14 +103,13 @@ std::optional<IStorage::AlterLockHolder> IStorage::tryLockForAlter(const std::ch
 
 IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds & acquire_timeout)
 {
-
-    if (auto lock = tryLockForAlter(acquire_timeout); lock == std::nullopt)
+    auto lock = tryLockForAlter(acquire_timeout);
+    if (lock == std::nullopt)
         throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
                         "Locking attempt for ALTER on \"{}\" has timed out! ({} ms) "
                         "Possible deadlock avoided. Client should retry.",
                         getStorageID().getFullTableName(), acquire_timeout.count());
-    else
-        return std::move(*lock);
+    return std::move(*lock);
 }
 
 

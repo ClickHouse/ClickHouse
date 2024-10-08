@@ -12,6 +12,12 @@
 namespace DB
 {
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsUInt64 max_file_name_length;
+    extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -139,7 +145,7 @@ void MergeTreeDataPartWriterWide::addStreams(
         auto full_stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
 
         String stream_name;
-        if (storage_settings->replace_long_file_name_to_hash && full_stream_name.size() > storage_settings->max_file_name_length)
+        if ((*storage_settings)[MergeTreeSetting::replace_long_file_name_to_hash] && full_stream_name.size() > (*storage_settings)[MergeTreeSetting::max_file_name_length])
             stream_name = sipHash128String(full_stream_name);
         else
             stream_name = full_stream_name;
