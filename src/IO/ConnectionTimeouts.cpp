@@ -27,8 +27,7 @@ Poco::Timespan ConnectionTimeouts::saturate(Poco::Timespan timespan, Poco::Times
 {
     if (limit.totalMicroseconds() == 0)
         return timespan;
-    else
-        return (timespan > limit) ? limit : timespan;
+    return (timespan > limit) ? limit : timespan;
 }
 
 /// Timeouts for the case when we have just single attempt to connect.

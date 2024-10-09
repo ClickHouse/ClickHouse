@@ -410,14 +410,13 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                 LOG_ERROR(getLogger("KeeperSnapshotManager"), "{}. Ignoring it", get_error_msg());
                 continue;
             }
-            else
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "{}. Ignoring it can lead to data loss. "
-                    "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
-                    get_error_msg());
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "{}. Ignoring it can lead to data loss. "
+                "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
+                get_error_msg());
         }
-        else if (match_result == EXACT)
+        if (match_result == EXACT)
         {
             if (!node.empty())
             {

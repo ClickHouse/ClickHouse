@@ -53,10 +53,8 @@ public:
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "cannot move '{}' to '{}': Directory not empty", path_from, target_location);
                 }
-                else
-                {
-                    disk.getDisk()->moveDirectory(path_from, target_location);
-                }
+
+                disk.getDisk()->moveDirectory(path_from, target_location);
             }
         }
         else

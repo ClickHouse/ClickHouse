@@ -1687,7 +1687,7 @@ try
                     initialized = true;
                     return;
                 }
-                else if (changelog_description.from_log_index > start_to_read_from)
+                if (changelog_description.from_log_index > start_to_read_from)
                 {
                     /// We don't have required amount of reserved logs, but nothing was lost.
                     LOG_WARNING(

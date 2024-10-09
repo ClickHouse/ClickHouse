@@ -386,10 +386,9 @@ size_t ReplicatedMergeTreeCleanupThread::clearOldLogs()
                 /// Another replica already deleted the same node concurrently.
                 break;
             }
-            else
-            {
-                zkutil::KeeperMultiException::check(e, ops, responses);
-            }
+
+            zkutil::KeeperMultiException::check(e, ops, responses);
+
             ops.clear();
         }
     }

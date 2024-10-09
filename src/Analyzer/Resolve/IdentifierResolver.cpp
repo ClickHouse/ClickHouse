@@ -552,9 +552,9 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromExpressionArguments
     auto node_type = it->second->getNodeType();
     if (identifier_lookup.isExpressionLookup() && !isExpressionNodeType(node_type))
         return {};
-    else if (identifier_lookup.isTableExpressionLookup() && !isTableExpressionNodeType(node_type))
+    if (identifier_lookup.isTableExpressionLookup() && !isTableExpressionNodeType(node_type))
         return {};
-    else if (identifier_lookup.isFunctionLookup() && !isFunctionExpressionNodeType(node_type))
+    if (identifier_lookup.isFunctionLookup() && !isFunctionExpressionNodeType(node_type))
         return {};
 
     if (!resolve_full_identifier && identifier_lookup.identifier.isCompound() && identifier_lookup.isExpressionLookup())
@@ -638,10 +638,9 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
 
         if (parts_size == 1 && path_start == table_name)
             return true;
-        else if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
+        if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
             return true;
-        else
-            return false;
+        return false;
     }
 
     if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier)) || table_expression_data.canBindIdentifier(IdentifierView(identifier)))
@@ -910,10 +909,9 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableExpression(con
 
         if (parts_size == 1 && path_start == table_name)
             return table_expression_node;
-        else if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
+        if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
             return table_expression_node;
-        else
-            return {};
+        return {};
     }
 
      /** If identifier first part binds to some column start or table has full identifier name. Then we can try to find whole identifier in table.

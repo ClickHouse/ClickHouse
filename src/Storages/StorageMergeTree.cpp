@@ -248,8 +248,8 @@ void StorageMergeTree::read(
     if (local_context->canUseParallelReplicasCustomKey() && settings[Setting::parallel_replicas_for_non_replicated_merge_tree]
         && !settings[Setting::allow_experimental_analyzer] && local_context->getClientInfo().distributed_depth == 0)
     {
-        if (auto cluster = local_context->getClusterForParallelReplicas();
-            local_context->canUseParallelReplicasCustomKeyForCluster(*cluster))
+        auto cluster = local_context->getClusterForParallelReplicas();
+        if (local_context->canUseParallelReplicasCustomKeyForCluster(*cluster))
         {
             auto modified_query_info = query_info;
             modified_query_info.cluster = std::move(cluster);
@@ -264,12 +264,11 @@ void StorageMergeTree::read(
                 local_context);
             return;
         }
-        else
-            LOG_WARNING(
-                log,
-                "Parallel replicas with custom key will not be used because cluster defined by 'cluster_for_parallel_replicas' ('{}') has "
-                "multiple shards",
-                cluster->getName());
+        LOG_WARNING(
+            log,
+            "Parallel replicas with custom key will not be used because cluster defined by 'cluster_for_parallel_replicas' ('{}') has "
+            "multiple shards",
+            cluster->getName());
     }
 
     const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower()
@@ -378,11 +377,13 @@ void StorageMergeTree::alter(
     if (commands.isSettingsAlter())
     {
         changeSettings(new_metadata.settings_changes, table_lock_holder);
+        /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     }
     else if (commands.isCommentAlter())
     {
         setInMemoryMetadata(new_metadata);
+        /// It is safe to ignore exceptions here as only the comment changed, which is not validated in `alterTable`
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     }
     else
@@ -413,7 +414,17 @@ void StorageMergeTree::alter(
             /// Reinitialize primary key because primary key column types might have changed.
             setProperties(new_metadata, old_metadata, false, local_context);
 
-            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+            try
+            {
+                DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+            }
+            catch (...)
+            {
+                LOG_ERROR(log, "Failed to alter table in database, reverting changes");
+                changeSettings(old_metadata.settings_changes, table_lock_holder);
+                setProperties(old_metadata, new_metadata, false, local_context);
+                throw;
+            }
 
             {
                 /// Reset Object columns, because column of type
@@ -495,8 +506,7 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
     {
         if (is_mutation)
             throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space for mutating part '{}'", future_part->parts[0]->name);
-        else
-            throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space for merging parts");
+        throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space for merging parts");
     }
 
     future_part->updatePath(storage, reserved_space.get());
@@ -1022,8 +1032,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
                 disable_reason = PreformattedMessage::create("Some part currently in a merging or mutating process");
                 return false;
             }
-            else
-                return true;
+            return true;
         }
 
         if (currently_merging_mutating_parts.contains(left) || currently_merging_mutating_parts.contains(right))
@@ -1356,13 +1365,10 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
                 }
                 break;
             }
-            else
-            {
-                current_ast_elements += commands_size;
-                commands->insert(commands->end(), single_mutation_commands->begin(), single_mutation_commands->end());
-                last_mutation_to_apply = it;
-            }
 
+            current_ast_elements += commands_size;
+            commands->insert(commands->end(), single_mutation_commands->begin(), single_mutation_commands->end());
+            last_mutation_to_apply = it;
         }
 
         assert(commands->empty() == (last_mutation_to_apply == mutations_end_it));
@@ -1790,25 +1796,23 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, c
         removePartsFromWorkingSet(txn, {part}, clear_without_timeout, &parts_lock);
         return part;
     }
-    else
-    {
-        /// Wait merges selector
-        std::unique_lock lock(currently_processing_in_background_mutex);
-        auto parts_lock = lockParts();
 
-        auto part = getPartIfExistsUnlocked(part_name, {MergeTreeDataPartState::Active}, parts_lock);
-        /// It's okay, part was already removed
-        if (!part)
-            return nullptr;
+    /// Wait merges selector
+    std::unique_lock lock(currently_processing_in_background_mutex);
+    auto parts_lock = lockParts();
 
-        /// Part will be "removed" by merge or mutation, it's OK in case of some
-        /// background cleanup processes like removing of empty parts.
-        if (currently_merging_mutating_parts.contains(part))
-            return nullptr;
+    auto part = getPartIfExistsUnlocked(part_name, {MergeTreeDataPartState::Active}, parts_lock);
+    /// It's okay, part was already removed
+    if (!part)
+        return nullptr;
 
-        removePartsFromWorkingSet(txn, {part}, clear_without_timeout, &parts_lock);
-        return part;
-    }
+    /// Part will be "removed" by merge or mutation, it's OK in case of some
+    /// background cleanup processes like removing of empty parts.
+    if (currently_merging_mutating_parts.contains(part))
+        return nullptr;
+
+    removePartsFromWorkingSet(txn, {part}, clear_without_timeout, &parts_lock);
+    return part;
 }
 
 void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
@@ -2429,9 +2433,9 @@ ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
 {
     if (action_type == ActionLocks::PartsMerge)
         return merger_mutator.merges_blocker.cancel();
-    else if (action_type == ActionLocks::PartsTTLMerge)
+    if (action_type == ActionLocks::PartsTTLMerge)
         return merger_mutator.ttl_merges_blocker.cancel();
-    else if (action_type == ActionLocks::PartsMove)
+    if (action_type == ActionLocks::PartsMove)
         return parts_mover.moves_blocker.cancel();
 
     return {};
