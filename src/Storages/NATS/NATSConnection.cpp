@@ -12,6 +12,8 @@ namespace DB
 /// disconnectedCallback may be called after connection destroy
 LoggerPtr NATSConnection::callback_logger = getLogger("NATSConnection callback");
 
+constexpr int infinite_reconnect_count = -1;
+
 NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerPtr log_, NATSOptionsPtr options_)
     : configuration(configuration_)
     , log(std::move(log_))
@@ -51,7 +53,7 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
         }
         natsOptions_SetServers(options.get(), servers, static_cast<int>(configuration.servers.size()));
     }
-    natsOptions_SetMaxReconnect(options.get(), configuration.max_reconnect);
+    natsOptions_SetMaxReconnect(options.get(), infinite_reconnect_count);
     natsOptions_SetReconnectWait(options.get(), configuration.reconnect_wait);
     natsOptions_SetDisconnectedCB(options.get(), disconnectedCallback, this);
     natsOptions_SetReconnectedCB(options.get(), reconnectedCallback, this);
@@ -96,22 +98,6 @@ bool NATSConnection::connect()
 {
     std::lock_guard lock(mutex);
     connectImpl();
-    return isConnectedImpl();
-}
-
-bool NATSConnection::reconnect()
-{
-    std::lock_guard lock(mutex);
-    if (isConnectedImpl())
-        return true;
-    else if (!isDisconnectedImpl())
-        return false;
-
-    disconnectImpl();
-
-    LOG_DEBUG(log, "Trying to restore connection {} to NATS {}", static_cast<void*>(this), connectionInfoForLog());
-    connectImpl();
-
     return isConnectedImpl();
 }
 

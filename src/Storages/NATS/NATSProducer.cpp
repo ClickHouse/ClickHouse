@@ -18,24 +18,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-NATSProducer::NATSProducer(
-    const NATSConfiguration & configuration_,
-    NATSOptionsPtr options_,
-    const String & subject_,
-    LoggerPtr log_,
-    ReconnectCallback reconnect_callback_)
+NATSProducer::NATSProducer(NATSConnectionPtr connection_, const Timeout reconnect_timeout_, const String & subject_, LoggerPtr log_)
     : AsynchronousMessageProducer(log_)
-    , connection(std::make_shared<NATSConnection>(configuration_, log_, std::move(options_)))
+    , connection(std::move(connection_))
+    , reconnect_timeout(reconnect_timeout_)
     , subject(subject_)
-    , reconnect_callback(std::move(reconnect_callback_))
     , payloads(BATCH)
 {
-}
-
-void NATSProducer::initialize()
-{
-    if (!connection->isConnected())
-        reconnect_callback(connection);
 }
 
 void NATSProducer::finishImpl()
@@ -57,7 +46,7 @@ void NATSProducer::publish()
     natsStatus status;
     while (!payloads.empty())
     {
-        if (natsConnection_Buffered(connection->getConnection()) > MAX_BUFFERED)
+        if (!connection->isConnected() || natsConnection_Buffered(connection->getConnection()) > MAX_BUFFERED)
             break;
         bool pop_result = payloads.pop(payload);
 
@@ -86,12 +75,16 @@ void NATSProducer::startProducingTaskLoop()
 {
     try
     {
-        while (!payloads.isFinishedAndEmpty() || !connection->isConnected())
+        while (!payloads.isFinishedAndEmpty())
         {
             if (!connection->isConnected())
-                reconnect_callback(connection);
+                std::this_thread::sleep_for(reconnect_timeout);
             else
                 publish();
+        }
+
+        while(!connection->isConnected()){
+            std::this_thread::sleep_for(reconnect_timeout);
         }
 
         natsConnection_Flush(connection->getConnection());

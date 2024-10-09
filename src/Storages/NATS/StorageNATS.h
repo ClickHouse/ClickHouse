@@ -6,6 +6,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Storages/NATS/NATSConnection.h>
+#include <Storages/NATS/NATSHandler.h>
 #include <Storages/NATS/NATSSettings.h>
 #include <Poco/Semaphore.h>
 #include <Common/thread_local_rng.h>
@@ -98,7 +99,7 @@ private:
     std::mutex task_mutex;
     BackgroundSchedulePool::TaskHolder streaming_task;
     BackgroundSchedulePool::TaskHolder looping_task;
-    BackgroundSchedulePool::TaskHolder reconnection_task;
+    BackgroundSchedulePool::TaskHolder subscribe_consumers_task;
 
     /// True if consumers have subscribed to all subjects
     std::atomic<bool> consumers_ready{false};
@@ -129,14 +130,13 @@ private:
     /// Functions working in the background
     void streamingToViewsFunc();
     void loopingFunc();
-    void reconnectionFunc();
+    void subscribeConsumersFunc();
 
+    void createConsumers();
     bool subscribeConsumers();
 
     void stopLoop();
     void stopLoopIfNoReaders();
-
-    void startReconnection(NATSConnectionPtr connection_);
 
     static Names parseList(const String & list, char delim);
     static String getTableBasedName(String name, const StorageID & table_id);

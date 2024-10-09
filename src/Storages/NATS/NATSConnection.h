@@ -1,8 +1,10 @@
 #pragma once
 
+#include <Storages/NATS/NATSConnection.h>
+
 #include <Common/Logger.h>
 
-#include <Storages/NATS/NATSHandler.h>
+#include <nats.h>
 
 #include <mutex>
 
@@ -25,6 +27,8 @@ struct NATSConfiguration
     bool secure;
 };
 
+using NATSOptionsPtr = std::unique_ptr<natsOptions, decltype(&natsOptions_Destroy)>;
+
 class NATSConnection
 {
 public:
@@ -37,9 +41,6 @@ public:
 
     /// Must bse called from event loop thread
     bool connect();
-
-    /// Must bse called from event loop thread
-    bool reconnect();
 
     void disconnect();
 

@@ -15,22 +15,16 @@ namespace DB
 
 class NATSProducer : public AsynchronousMessageProducer
 {
-    using ReconnectCallback = std::function<void (NATSConnectionPtr)>;
+    using Timeout = std::chrono::system_clock::duration;
 
 public:
-    NATSProducer(
-        const NATSConfiguration & configuration_,
-        NATSOptionsPtr options_,
-        const String & subject_,
-        LoggerPtr log_,
-        ReconnectCallback reconnect_callback_);
+    NATSProducer(NATSConnectionPtr connection_, const Timeout reconnect_timeout_, const String & subject_, LoggerPtr log_);
 
     void produce(const String & message, size_t rows_in_message, const Columns & columns, size_t last_row) override;
 
 private:
     String getProducingTaskName() const override { return "NatsProducingTask"; }
 
-    void initialize() override;
     void stopProducingTask() override;
     void finishImpl() override;
 
@@ -39,9 +33,8 @@ private:
     void publish();
 
     NATSConnectionPtr connection;
+    const Timeout reconnect_timeout;
     const String subject;
-
-    ReconnectCallback reconnect_callback;
 
     /* payloads.queue:
      *      - payloads are pushed to queue in countRow and popped by another thread in writingFunc, each payload gets into queue only once

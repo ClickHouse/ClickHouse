@@ -1,6 +1,7 @@
 #pragma once
 
 #include <uv.h>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -9,6 +10,7 @@
 #include <base/types.h>
 #include <Common/Logger.h>
 
+#include <Storages/NATS/NATSConnection.h>
 #include <Storages/UVLoop.h>
 
 namespace DB
@@ -16,13 +18,11 @@ namespace DB
 
 namespace Loop
 {
+    static const UInt8 INITIALIZED = 0;
     static const UInt8 RUN = 1;
     static const UInt8 STOP = 2;
     static const UInt8 CLOSED = 3;
 }
-
-using NATSOptionsPtr = std::unique_ptr<natsOptions, decltype(&natsOptions_Destroy)>;
-using LockPtr = std::unique_ptr<std::lock_guard<std::mutex>>;
 
 class NATSHandler
 {
@@ -35,14 +35,14 @@ public:
     void runLoop();
     void stopLoop();
 
+    std::future<NATSConnectionPtr> createConnection(const NATSConfiguration & configuration, std::uint64_t connect_attempts_count);
+
+private:
     /// Execute task on event loop thread
     void post(Task task);
 
-    UInt8 getLoopState() { return loop_state.load(); }
-
     NATSOptionsPtr createOptions();
 
-private:
     UVLoop loop;
     LoggerPtr log;
 

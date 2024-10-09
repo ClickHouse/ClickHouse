@@ -1,6 +1,8 @@
-#include <Core/Defines.h>
 #include <Storages/NATS/NATSHandler.h>
+
 #include <adapters/libuv.h>
+
+#include <Core/Defines.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
@@ -9,18 +11,19 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int CANNOT_CONNECT_NATS;
 }
 
 NATSHandler::NATSHandler(LoggerPtr log_)
     : log(log_)
-    , loop_state(Loop::STOP)
+    , loop_state(Loop::INITIALIZED)
 {
 }
 
 void NATSHandler::runLoop()
 {
-    if (loop_state.load() != Loop::STOP)
+    if (loop_state.load() != Loop::INITIALIZED)
     {
         return;
     }
@@ -51,9 +54,9 @@ void NATSHandler::runLoop()
 
         while (!executed_tasks.empty())
         {
-            const auto & task = executed_tasks.front();
-            task();
+            auto task = std::move(executed_tasks.front());
             executed_tasks.pop();
+            task();
         }
 
         num_pending_callbacks = uv_run(loop.getLoop(), UV_RUN_NOWAIT);
@@ -61,6 +64,8 @@ void NATSHandler::runLoop()
     loop_state.store(Loop::CLOSED);
 
     LOG_DEBUG(log, "Background loop ended");
+
+    nats_ReleaseThreadMemory();
 }
 
 void NATSHandler::stopLoop()
@@ -76,8 +81,59 @@ void NATSHandler::stopLoop()
 
 void NATSHandler::post(Task task)
 {
+    if (loop_state.load() != Loop::INITIALIZED && loop_state.load() != Loop::RUN)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not post task to event loop: event loop stopped");
+
     std::lock_guard<std::mutex> lock(tasks_mutex);
     tasks.push(std::move(task));
+}
+
+std::future<NATSConnectionPtr> NATSHandler::createConnection(const NATSConfiguration & configuration, std::uint64_t connect_attempts_count)
+{
+    auto promise = std::make_shared<std::promise<NATSConnectionPtr>>();
+
+    auto connect_future = promise->get_future();
+    post(
+        [this, &configuration, connect_attempts_count, connect_promise = std::move(promise)]()
+        {
+            try
+            {
+                if (loop_state.load() != Loop::RUN)
+                    throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot connect to NATS: Event loop stopped");
+
+                for (size_t i = 0; i < connect_attempts_count; ++i)
+                {
+                    auto connection = std::make_shared<NATSConnection>(configuration, log, createOptions());
+                    if (!connection->connect())
+                    {
+                        LOG_DEBUG(
+                            log,
+                            "Connect to {} attempt #{} failed, error: {}. Reconnecting...",
+                            connection->connectionInfoForLog(), i + 1, nats_GetLastError(nullptr));
+                        continue;
+                    }
+                    connect_promise->set_value(connection);
+
+                    return;
+                }
+
+                throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot connect to Nats last error: {}", nats_GetLastError(nullptr));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log);
+                try
+                {
+                    connect_promise->set_exception(std::current_exception());
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log);
+                }
+            }
+        });
+
+    return connect_future;
 }
 
 NATSOptionsPtr NATSHandler::createOptions()

@@ -1285,7 +1285,7 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
 
 def test_nats_no_connection_at_startup_1(nats_cluster):
     nats_cluster.pause_container("nats1")
-    instance.query(
+    instance.query_and_get_error(
         """
         CREATE TABLE test.cs (key UInt64, value UInt64)
             ENGINE = NATS
@@ -1296,7 +1296,6 @@ def test_nats_no_connection_at_startup_1(nats_cluster):
                      nats_row_delimiter = '\\n';
     """
     )
-    instance.query_and_get_error("SELECT count() FROM test.cs")
     nats_cluster.unpause_container("nats1")
 
 
