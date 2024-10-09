@@ -43,7 +43,7 @@ struct natsLibuvEvent
 
 };
 
-typedef struct
+struct natsLibuvEvents
 {
     natsConnection  *nc;
     uv_loop_t       *loop;
@@ -55,7 +55,7 @@ typedef struct
     natsLibuvEvent  *head;
     natsLibuvEvent  *tail;
 
-} natsLibuvEvents;
+};
 
 // Forward declarations
 natsStatus natsLibuv_Detach(void *userData);
@@ -67,8 +67,7 @@ natsStatus natsLibuv_Detach(void *userData);
 static uv_once_t    uvOnce = UV_ONCE_INIT;
 static uv_key_t     uvLoopThreadKey;
 
-static void
-initOnce(void)
+static void initOnce(void)
 {
     if (uv_key_create(&uvLoopThreadKey) != 0)
         abort();
@@ -107,6 +106,13 @@ natsLibuv_SetThreadLocalLoop(uv_loop_t *loop)
 static natsStatus
 uvScheduleToEventLoop(natsLibuvEvents *nle, int eventType, bool add)
 {
+    uv_mutex_lock(nle->lock);
+    if (!nle->scheduler){
+        uv_mutex_unlock(nle->lock);
+        return NATS_ILLEGAL_STATE;
+    }
+    uv_mutex_unlock(nle->lock);
+
     natsLibuvEvent  *newEvent = nullptr;
     int             res;
 
@@ -128,9 +134,9 @@ uvScheduleToEventLoop(natsLibuvEvents *nle, int eventType, bool add)
 
     nle->tail = newEvent;
 
-    uv_mutex_unlock(nle->lock);
-
     res = uv_async_send(nle->scheduler);
+
+    uv_mutex_unlock(nle->lock);
 
     return (res == 0 ? NATS_OK : NATS_ERR);
 }
@@ -232,33 +238,43 @@ uvAsyncAttach(natsLibuvEvents *nle)
 static void
 finalCloseCb(uv_handle_t* handle)
 {
-    natsLibuvEvents *nle = static_cast<natsLibuvEvents*>(handle->data);
-    natsLibuvEvent  *event;
-
-    while ((event = nle->head) != nullptr)
-    {
-        nle->head = event->next;
-        free(event);
-    }
-    free(nle->handle);
-    free(nle->scheduler);
-    uv_mutex_destroy(nle->lock);
-    free(nle->lock);
-    free(nle);
+    free(handle);
 }
 
 static void
 closeSchedulerCb(uv_handle_t* scheduler)
 {
-    natsLibuvEvents *nle = static_cast<natsLibuvEvents*>(scheduler->data);
-
-    uv_close(reinterpret_cast<uv_handle_t*>(nle->handle), finalCloseCb);
+    free(scheduler);
 }
 
 static void
 uvAsyncDetach(natsLibuvEvents *nle)
 {
-    uv_close(reinterpret_cast<uv_handle_t*>(nle->scheduler), closeSchedulerCb);
+    uv_mutex_lock(nle->lock);
+
+    uv_handle_t * scheduler = reinterpret_cast<uv_handle_t*>(nle->scheduler);
+    nle->scheduler = nullptr;
+
+    uv_handle_t* handle = reinterpret_cast<uv_handle_t*>(nle->handle);
+    nle->handle = nullptr;
+
+    natsLibuvEvent  *event;
+    while ((event = nle->head) != nullptr)
+    {
+        nle->head = event->next;
+        free(event);
+    }
+
+    uv_mutex_unlock(nle->lock);
+
+    uv_mutex_destroy(nle->lock);
+    free(nle->lock);
+    nle->lock = nullptr;
+
+    free(nle);
+
+    uv_close(scheduler, closeSchedulerCb);
+    uv_close(handle, finalCloseCb);
 }
 
 static void
