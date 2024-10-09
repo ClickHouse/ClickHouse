@@ -1,8 +1,9 @@
+import logging
+
 import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-import logging
 
 cluster = ClickHouseCluster(__file__)
 
