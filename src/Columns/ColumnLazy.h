@@ -1,8 +1,5 @@
 #pragma once
 
-#include <cstring>
-#include <cassert>
-
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
 #include <Common/PODArray.h>
@@ -13,8 +10,23 @@
 namespace DB
 {
 
-/** Column for lazy materialization.
-  */
+/**
+ * ColumnLazy is not used to actually store specific column data but rather to hold necessary
+ * information to defer the materialization of actual column data.
+ * Currently, it is mainly used to defer the materialization of mergetree data. In queries that
+ * resemble 'SELECT * FROM TABLE ORDER BY C1 LIMIT XXX', when we first read column data from mergetree,
+ * we only read the C1 column, while other columns only record _part_index, _part_offset and maintain
+ * this information in ColumnLazy. After the LIMIT phase ends, we then read the actual data of columns
+ * other than C1 from mergetree.
+ * The captured_columns field within ColumnLazy is used to record information necessary for the actual
+ * materialization of specific column data, such as _part_index and _part_offset.
+ *
+ * Future applications of ColumnLazy could include:
+ * 1. In cases such as a join b join c, we could materialize columns after all joins are completed,
+ *    benefiting from reduced materialization.
+ * 2. Beyond reading from mergetree, it can also be useful for reading from formats like Parquet or
+ *    ORC.
+ */
 class ColumnLazy final : public COWHelper<IColumn, ColumnLazy>
 {
 private:

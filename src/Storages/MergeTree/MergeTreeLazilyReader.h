@@ -8,6 +8,18 @@ namespace DB
 using AliasToName = std::unordered_map<std::string, std::string>;
 using AliasToNamePtr = std::shared_ptr<AliasToName>;
 
+struct RowOffsetWithIdx
+{
+    size_t row_offset;
+    size_t row_idx;
+
+    RowOffsetWithIdx(const size_t row_offset_, const size_t row_idx_)
+        : row_offset(row_offset_), row_idx(row_idx_) {}
+};
+
+using RowOffsetsWithIdx = std::vector<RowOffsetWithIdx>;
+using PartIndexToRowOffsets = std::map<size_t, RowOffsetsWithIdx>;
+
 class MergeTreeLazilyReader : public IColumnLazyHelper
 {
 public:
@@ -24,6 +36,11 @@ public:
         ColumnsWithTypeAndName & res_columns) override;
 
 private:
+    void readLazyColumns(
+        const MergeTreeReaderSettings & reader_settings,
+        const PartIndexToRowOffsets & part_to_row_offsets,
+        MutableColumns & lazily_read_columns);
+
     const MergeTreeData & storage;
     DataPartsInfoPtr data_parts_info;
     StorageSnapshotPtr storage_snapshot;

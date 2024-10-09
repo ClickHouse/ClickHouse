@@ -340,6 +340,7 @@ public:
         SerializeBinaryBulkStatePtr & state) const;
 
     /// Read no more than limit values and append them into column.
+    /// If rows_offset is not 0, the deserialization process will skip the first rows_offset rows.
     virtual void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
         size_t rows_offset,
@@ -351,6 +352,7 @@ public:
     /** Override these methods for data types that require just single stream (most of data types).
       */
     virtual void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const;
+    /// If rows_offset is not 0, the deserialization process will skip the first rows_offset rows.
     virtual void deserializeBinaryBulk(
         IColumn & column,
         ReadBuffer & istr,

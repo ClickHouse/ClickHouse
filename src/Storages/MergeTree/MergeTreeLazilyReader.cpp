@@ -19,18 +19,6 @@ namespace Setting
     extern const SettingsBool use_uncompressed_cache;
 }
 
-struct RowOffsetWithIdx
-{
-    size_t row_offset;
-    size_t row_idx;
-
-    RowOffsetWithIdx(const size_t row_offset_, const size_t row_idx_)
-        : row_offset(row_offset_), row_idx(row_idx_) {}
-};
-
-using RowOffsetsWithIdx = std::vector<RowOffsetWithIdx>;
-using PartIndexToRowOffsets = std::map<size_t, RowOffsetsWithIdx>;
-
 void matchDataPartToRowOffsets(
     const ColumnUInt64 * row_num_column,
     const ColumnUInt64 * part_num_column,
@@ -117,44 +105,12 @@ MergeTreeLazilyReader::MergeTreeLazilyReader(
     }
 }
 
-void MergeTreeLazilyReader::transformLazyColumns(
-    const ColumnLazy & column_lazy,
-    ColumnsWithTypeAndName & res_columns)
+void MergeTreeLazilyReader::readLazyColumns(
+    const MergeTreeReaderSettings & reader_settings,
+    const PartIndexToRowOffsets & part_to_row_offsets,
+    MutableColumns & lazily_read_columns)
 {
-    const size_t columns_size = lazy_columns.size();
-    const auto & columns = column_lazy.getColumns();
-
-    chassert(res_columns.empty());
-    chassert(columns.size() == 2);
-    const auto * row_num_column = typeid_cast<const ColumnUInt64 *>(columns[0].get());
-    const auto * part_num_column = typeid_cast<const ColumnUInt64 *>(columns[1].get());
-
-    chassert(row_num_column->size() == part_num_column->size());
-    const size_t rows_size = row_num_column->size();
-
-    ReadSettings read_settings;
-    read_settings.direct_io_threshold = 1;
-    MergeTreeReaderSettings reader_settings =
-    {
-        .read_settings = read_settings,
-        .save_marks_in_cache = false,
-    };
-
-    MutableColumns lazily_read_columns;
-    lazily_read_columns.resize(columns_size);
-
-    for (size_t i = 0; i < lazy_columns.size(); ++i)
-    {
-        const auto & column_with_type_and_name = lazy_columns[i];
-        lazily_read_columns[i] = column_with_type_and_name.type->createColumn();
-        lazily_read_columns[i]->reserve(rows_size);
-        res_columns.emplace_back(column_with_type_and_name.type, column_with_type_and_name.name);
-    }
-
-    PartIndexToRowOffsets part_to_row_offsets;
-    IColumn::Permutation permutation;
-
-    matchDataPartToRowOffsets(row_num_column, part_num_column, part_to_row_offsets, permutation);
+    const auto columns_size = lazily_read_columns.size();
 
     for (const auto & it : part_to_row_offsets)
     {
@@ -202,9 +158,11 @@ void MergeTreeLazilyReader::transformLazyColumns(
             Columns columns_to_read;
             columns_to_read.resize(columns_for_reader.size());
 
+            /// Read a row of data from wide or compact MergeTree, skipping the first skipped_rows rows.
             auto read_rows = reader->readRows(mark_range_iter->begin, mark_range_iter->end, continue_reading,
                                                       1, skipped_rows, columns_to_read);
 
+            /// Handle cases where columns are missing in MergeTree.
             bool should_evaluate_missing_defaults = false;
             reader->fillMissingColumns(columns_to_read, should_evaluate_missing_defaults, read_rows);
 
@@ -239,11 +197,13 @@ void MergeTreeLazilyReader::transformLazyColumns(
                 {
                     if (next_offset - prev_offset < read_rows)
                     {
+                        /// The next row of data was already read during the previous read.
                         for (size_t i = 0; i < columns_size; ++i)
                             lazily_read_columns[i]->insert((*columns_to_read[i])[next_offset - prev_offset]);
                     }
                     else
                     {
+                        /// If the next row of data is within the same granule, calculate the number of rows to skip for the next read.
                         chassert(next_offset > prev_offset);
                         skipped_rows = next_offset - prev_offset - 1;
                         continue_reading = true;
@@ -252,6 +212,7 @@ void MergeTreeLazilyReader::transformLazyColumns(
                 }
                 else
                 {
+                    /// If the next row of data is not within the same granule, reposition to the next granule.
                     continue_reading = false;
                     break;
                 }
@@ -259,7 +220,52 @@ void MergeTreeLazilyReader::transformLazyColumns(
 
         }
     }
+}
 
+void MergeTreeLazilyReader::transformLazyColumns(
+    const ColumnLazy & column_lazy,
+    ColumnsWithTypeAndName & res_columns)
+{
+    const size_t columns_size = lazy_columns.size();
+    const auto & columns = column_lazy.getColumns();
+
+    chassert(res_columns.empty());
+    chassert(columns.size() == 2);
+    const auto * row_num_column = typeid_cast<const ColumnUInt64 *>(columns[0].get());
+    const auto * part_num_column = typeid_cast<const ColumnUInt64 *>(columns[1].get());
+
+    chassert(row_num_column->size() == part_num_column->size());
+    const size_t rows_size = row_num_column->size();
+
+    ReadSettings read_settings;
+    read_settings.direct_io_threshold = 1;
+    MergeTreeReaderSettings reader_settings =
+    {
+        .read_settings = read_settings,
+        .save_marks_in_cache = false,
+    };
+
+    MutableColumns lazily_read_columns;
+    lazily_read_columns.resize(columns_size);
+
+    for (size_t i = 0; i < lazy_columns.size(); ++i)
+    {
+        const auto & column_with_type_and_name = lazy_columns[i];
+        lazily_read_columns[i] = column_with_type_and_name.type->createColumn();
+        lazily_read_columns[i]->reserve(rows_size);
+        res_columns.emplace_back(column_with_type_and_name.type, column_with_type_and_name.name);
+    }
+
+    PartIndexToRowOffsets part_to_row_offsets;
+    IColumn::Permutation permutation;
+
+    /// Reorder the rows to organize rows within the same data part sequentially, making full use of sequential reads.
+    matchDataPartToRowOffsets(row_num_column, part_num_column, part_to_row_offsets, permutation);
+
+    /// Actually read the lazily materialized column data from MergeTree.
+    readLazyColumns(reader_settings, part_to_row_offsets, lazily_read_columns);
+
+    /// Restore the original order of the rows.
     for (size_t i = 0; i < lazily_read_columns.size(); ++i)
         res_columns[i].column = lazily_read_columns[i]->permute(permutation, 0);
 }
