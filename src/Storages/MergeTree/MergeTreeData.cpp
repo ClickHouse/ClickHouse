@@ -1973,7 +1973,8 @@ void MergeTreeData::loadUnexpectedDataParts()
     }
 
     ThreadFuzzer::maybeInjectSleep();
-    ThreadPoolCallbackRunnerLocal<void> runner(getUnexpectedPartsLoadingThreadPool().get(), "UnexpectedParts");
+    auto runner = threadPoolCallbackRunner<void>(getUnexpectedPartsLoadingThreadPool().get(), "UnexpectedParts");
+    std::vector<std::future<void>> parts_futures;
 
     for (auto & load_state : unexpected_data_parts)
     {
@@ -1981,10 +1982,10 @@ void MergeTreeData::loadUnexpectedDataParts()
         chassert(!load_state.part);
         if (unexpected_data_parts_loading_canceled)
         {
-            runner.waitForAllToFinishAndRethrowFirstError();
+            waitForAllToFinishAndRethrowFirstError(parts_futures);
             return;
         }
-        runner([&]()
+        parts_futures.push_back(runner([&]()
         {
             loadUnexpectedDataPart(load_state);
 
@@ -1993,9 +1994,9 @@ void MergeTreeData::loadUnexpectedDataParts()
             {
                 load_state.part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
             }
-        }, Priority{});
+        }, Priority{}));
     }
-    runner.waitForAllToFinishAndRethrowFirstError();
+    waitForAllToFinishAndRethrowFirstError(parts_futures);
     LOG_DEBUG(log, "Loaded {} unexpected data parts", unexpected_data_parts.size());
 
     {
