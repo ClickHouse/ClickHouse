@@ -1,6 +1,6 @@
 #include <Storages/NATS/NATSHandler.h>
 
-#include <adapters/libuv.h>
+#include <Storages/NATS/NATSLibUVAdapter.h>
 
 #include <Core/Defines.h>
 #include <Common/Exception.h>
