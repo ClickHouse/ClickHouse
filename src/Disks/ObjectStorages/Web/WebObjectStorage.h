@@ -124,16 +124,14 @@ protected:
         {
             if (is_file)
                 return std::map<String, FileDataPtr>::find(path);
-            else
-                return std::map<String, FileDataPtr>::find(path.ends_with("/") ? path : path + '/');
+            return std::map<String, FileDataPtr>::find(path.ends_with("/") ? path : path + '/');
         }
 
         auto add(const String & path, FileDataPtr data)
         {
             if (data->type == FileType::Directory)
                 return emplace(path.ends_with("/") ? path : path + '/', data);
-            else
-                return emplace(path, data);
+            return emplace(path, data);
         }
     };
 
