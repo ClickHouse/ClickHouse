@@ -768,6 +768,11 @@ size_t ZooKeeperMultiRequest::sizeImpl() const
 
 void ZooKeeperMultiRequest::readImpl(ReadBuffer & in)
 {
+    return readImpl(in, /*request_validator=*/{});
+}
+
+void ZooKeeperMultiRequest::readImpl(ReadBuffer & in, RequestValidator request_validator)
+{
     while (true)
     {
         OpNum op_num;
@@ -788,6 +793,8 @@ void ZooKeeperMultiRequest::readImpl(ReadBuffer & in)
 
         ZooKeeperRequestPtr request = ZooKeeperRequestFactory::instance().get(op_num);
         request->readImpl(in);
+        if (request_validator)
+            request_validator(*request);
         requests.push_back(request);
 
         if (in.eof())

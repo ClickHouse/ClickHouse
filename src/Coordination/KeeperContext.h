@@ -1,6 +1,7 @@
 #pragma once
 #include <Coordination/KeeperFeatureFlags.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
@@ -94,6 +95,7 @@ public:
 
     const CoordinationSettingsPtr & getCoordinationSettings() const;
 
+    bool isOperationSupported(Coordination::OpNum operation) const;
 private:
     /// local disk defined using path or disk name
     using Storage = std::variant<DiskPtr, std::string>;

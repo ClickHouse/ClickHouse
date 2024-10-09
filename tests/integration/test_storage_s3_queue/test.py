@@ -99,6 +99,7 @@ def started_cluster():
             with_minio=True,
             with_azurite=True,
             with_zookeeper=True,
+            keeper_required_feature_flags=['create_if_not_exists'],
             main_configs=[
                 "configs/zookeeper.xml",
                 "configs/s3queue_log.xml",
@@ -110,6 +111,7 @@ def started_cluster():
             user_configs=["configs/users.xml"],
             with_minio=True,
             with_zookeeper=True,
+            keeper_required_feature_flags=['create_if_not_exists'],
             main_configs=[
                 "configs/s3queue_log.xml",
             ],
@@ -118,6 +120,7 @@ def started_cluster():
         cluster.add_instance(
             "old_instance",
             with_zookeeper=True,
+            keeper_required_feature_flags=['create_if_not_exists'],
             image="clickhouse/clickhouse-server",
             tag="23.12",
             stay_alive=True,
@@ -127,6 +130,7 @@ def started_cluster():
         cluster.add_instance(
             "node1",
             with_zookeeper=True,
+            keeper_required_feature_flags=['create_if_not_exists'],
             stay_alive=True,
             main_configs=[
                 "configs/zookeeper.xml",
@@ -137,6 +141,7 @@ def started_cluster():
         cluster.add_instance(
             "node2",
             with_zookeeper=True,
+            keeper_required_feature_flags=['create_if_not_exists'],
             stay_alive=True,
             main_configs=[
                 "configs/zookeeper.xml",
@@ -149,6 +154,7 @@ def started_cluster():
             user_configs=["configs/users.xml"],
             with_minio=True,
             with_zookeeper=True,
+            keeper_required_feature_flags=['create_if_not_exists'],
             main_configs=[
                 "configs/s3queue_log.xml",
                 "configs/merge_tree.xml",
@@ -158,6 +164,7 @@ def started_cluster():
         cluster.add_instance(
             "instance_24.5",
             with_zookeeper=True,
+            keeper_required_feature_flags=['create_if_not_exists'],
             image="clickhouse/clickhouse-server",
             tag="24.5",
             stay_alive=True,
