@@ -410,13 +410,37 @@ Code: 44. DB::Exception: Received from localhost:9000. DB::Exception: Illegal ty
 
 ## ignore
 
-Accepts any arguments, including `NULL` and does nothing. Always returns 0.
-The argument is internally still evaluated. Useful e.g. for benchmarks.
+Accepts arbitrary arguments and unconditionally returns `0`.
+The argument is still evaluated internally, making it useful for eg. benchmarking.
 
 **Syntax**
 
 ```sql
-ignore(x)
+ignore([arg1[, arg2[, ...]])
+```
+
+**Arguments**
+
+- Accepts arbitrarily many arguments of arbitrary type, including `NULL`.
+
+**Returned value**
+
+- Returns `0`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT ignore(0, 'ClickHouse', NULL);
+```
+
+Result:
+
+```response
+┌─ignore(0, 'ClickHouse', NULL)─┐
+│                             0 │
+└───────────────────────────────┘
 ```
 
 ## sleep
