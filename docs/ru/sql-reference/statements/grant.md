@@ -464,7 +464,7 @@ GRANT INSERT(x,y) ON db.table TO john
     - `FILE`. Уровень: `GLOBAL`
     - `URL`. Уровень: `GLOBAL`
     - `REMOTE`. Уровень: `GLOBAL`
-    - `YSQL`. Уровень: `GLOBAL`
+    - `MYSQL`. Уровень: `GLOBAL`
     - `ODBC`. Уровень: `GLOBAL`
     - `JDBC`. Уровень: `GLOBAL`
     - `HDFS`. Уровень: `GLOBAL`
