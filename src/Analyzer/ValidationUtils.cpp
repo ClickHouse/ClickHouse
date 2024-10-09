@@ -188,9 +188,9 @@ private:
 
                 if (!lhs_child && !rhs_child)
                     continue;
-                else if (lhs_child && !rhs_child)
+                if (lhs_child && !rhs_child)
                     return false;
-                else if (!lhs_child && rhs_child)
+                if (!lhs_child && rhs_child)
                     return false;
 
                 nodes_to_process.emplace_back(lhs_child.get(), rhs_child.get());

@@ -121,12 +121,11 @@ public:
 
         if (container_type == details::ContainerType::SMALL)
             return small.size();
-        else if (container_type == details::ContainerType::MEDIUM)
+        if (container_type == details::ContainerType::MEDIUM)
             return getContainer<Medium>().size();
-        else if (container_type == details::ContainerType::LARGE)
+        if (container_type == details::ContainerType::LARGE)
             return getContainer<Large>().size();
-        else
-            throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
+        throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
     }
 
     void merge(const Self & rhs)
