@@ -34,6 +34,11 @@
 namespace DB
 {
 
+namespace Settings
+{
+extern const SettingsBool short_circuit_default_implementation_for_nulls;
+}
+
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
@@ -336,7 +341,7 @@ IExecutableFunction::IExecutableFunction()
     if (CurrentThread::isInitialized())
     {
         auto query_context = CurrentThread::get().getQueryContext();
-        if (query_context && query_context->getSettingsRef().short_circuit_default_implementation_for_nulls)
+        if (query_context && query_context->getSettingsRef()[Settings::short_circuit_default_implementation_for_nulls])
             short_circuit_default_implementation_for_nulls = true;
     }
 }
