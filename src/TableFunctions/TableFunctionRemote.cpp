@@ -183,13 +183,11 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
                     {
                         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table name was not found in function arguments. {}", static_cast<const std::string>(help_message));
                     }
-                    else
-                    {
-                        std::swap(qualified_name.database, qualified_name.table);
-                        args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-                        qualified_name.table = checkAndGetLiteralArgument<String>(args[arg_num], "table");
-                        ++arg_num;
-                    }
+
+                    std::swap(qualified_name.database, qualified_name.table);
+                    args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
+                    qualified_name.table = checkAndGetLiteralArgument<String>(args[arg_num], "table");
+                    ++arg_num;
                 }
 
                 database = std::move(qualified_name.database);

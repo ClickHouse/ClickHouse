@@ -926,8 +926,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}",
                         formatted1, std::string_view(begin, end-begin));
-                else
-                    throw;
+
+                throw;
             }
 
             chassert(ast2);
