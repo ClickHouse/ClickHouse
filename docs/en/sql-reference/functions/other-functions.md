@@ -3953,13 +3953,15 @@ Retrieves the connection ID of the client that submitted the current query and r
 connectionId()
 ```
 
+Alias: `connection_id`.
+
 **Parameters**
 
 None.
 
 **Returned value**
 
-Returns an integer of type UInt64.
+The current connection ID. [UInt64](../data-types/int-uint.md).
 
 **Implementation details**
 
@@ -3971,40 +3973,6 @@ Query:
 
 ```sql
 SELECT connectionId();
-```
-
-```response
-0
-```
-
-## connection_id
-
-An alias of `connectionId`. Retrieves the connection ID of the client that submitted the current query and returns it as a UInt64 integer.
-
-**Syntax**
-
-```sql
-connection_id()
-```
-
-**Parameters**
-
-None.
-
-**Returned value**
-
-Returns an integer of type UInt64.
-
-**Implementation details**
-
-This function is most useful in debugging scenarios or for internal purposes within the MySQL handler. It was created for compatibility with [MySQL's `CONNECTION_ID` function](https://dev.mysql.com/doc/refman/8.0/en/information-functions.html#function_connection-id) It is not typically used in production queries.
-
-**Example**
-
-Query:
-
-```sql
-SELECT connection_id();
 ```
 
 ```response
