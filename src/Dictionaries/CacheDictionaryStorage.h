@@ -64,8 +64,7 @@ public:
     {
         if (dictionary_key_type == DictionaryKeyType::Simple)
             return "Cache";
-        else
-            return "ComplexKeyCache";
+        return "ComplexKeyCache";
     }
 
     bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::Simple; }

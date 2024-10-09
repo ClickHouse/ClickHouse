@@ -643,7 +643,8 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
         {
             nodes_exist = false;
             break;
-        } else if (response.error != Coordination::Error::ZOK)
+        }
+        if (response.error != Coordination::Error::ZOK)
         {
             throw zkutil::KeeperException::fromPath(response.error, check_paths[i]);
         }
@@ -1216,7 +1217,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     String to_db_name_replicated = getDatabaseName() + BROKEN_REPLICATED_TABLES_SUFFIX;
     if (total_tables * db_settings.max_broken_tables_ratio < tables_to_detach.size())
         throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "Too many tables to recreate: {} of {}", tables_to_detach.size(), total_tables);
-    else if (!tables_to_detach.empty())
+    if (!tables_to_detach.empty())
     {
         LOG_WARNING(log, "Will recreate {} broken tables to recover replica", tables_to_detach.size());
         /// It's too dangerous to automatically drop tables, so we will move them to special database.
@@ -1225,14 +1226,14 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         String query = fmt::format("CREATE DATABASE IF NOT EXISTS {} ENGINE=Ordinary", backQuoteIfNeed(to_db_name));
         auto query_context = Context::createCopy(getContext());
         query_context->setSetting("allow_deprecated_database_ordinary", 1);
-        executeQuery(query, query_context, QueryFlags{ .internal = true });
+        executeQuery(query, query_context, QueryFlags{.internal = true});
 
         /// But we want to avoid discarding UUID of ReplicatedMergeTree tables, because it will not work
         /// if zookeeper_path contains {uuid} macro. Replicated database do not recreate replicated tables on recovery,
         /// so it's ok to save UUID of replicated table.
         query = fmt::format("CREATE DATABASE IF NOT EXISTS {} ENGINE=Atomic", backQuoteIfNeed(to_db_name_replicated));
         query_context = Context::createCopy(getContext());
-        executeQuery(query, query_context, QueryFlags{ .internal = true });
+        executeQuery(query, query_context, QueryFlags{.internal = true});
     }
 
     size_t moved_tables = 0;

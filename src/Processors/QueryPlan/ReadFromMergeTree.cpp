@@ -1441,8 +1441,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             });
         return Pipe::unitePipes(std::move(pipes));
     }
-    else
-        return merging_pipes.empty() ? Pipe::unitePipes(std::move(no_merging_pipes)) : Pipe::unitePipes(std::move(merging_pipes));
+    return merging_pipes.empty() ? Pipe::unitePipes(std::move(no_merging_pipes)) : Pipe::unitePipes(std::move(merging_pipes));
 }
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool find_exact_ranges) const
@@ -1933,8 +1932,7 @@ bool ReadFromMergeTree::isQueryWithSampling() const
     const auto & select = query_info.query->as<ASTSelectQuery &>();
     if (query_info.table_expression_modifiers)
         return query_info.table_expression_modifiers->getSampleSizeRatio() != std::nullopt;
-    else
-        return select.sampleSize() != nullptr;
+    return select.sampleSize() != nullptr;
 }
 
 Pipe ReadFromMergeTree::spreadMarkRanges(
@@ -1988,15 +1986,13 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
 
         return spreadMarkRangesAmongStreamsFinal(std::move(parts_with_ranges), num_streams, result.column_names_to_read, column_names_to_read, result_projection);
     }
-    else if (query_info.input_order_info)
+    if (query_info.input_order_info)
     {
         return spreadMarkRangesAmongStreamsWithOrder(
             std::move(parts_with_ranges), num_streams, column_names_to_read, result_projection, query_info.input_order_info);
     }
-    else
-    {
-        return spreadMarkRangesAmongStreams(std::move(parts_with_ranges), num_streams, column_names_to_read);
-    }
+
+    return spreadMarkRangesAmongStreams(std::move(parts_with_ranges), num_streams, column_names_to_read);
 }
 
 Pipe ReadFromMergeTree::groupStreamsByPartition(AnalysisResult & result, std::optional<ActionsDAG> & result_projection)

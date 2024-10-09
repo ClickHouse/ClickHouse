@@ -1797,17 +1797,14 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntry
             queue.splice(queue.end(), queue, it);
             break;
         }
-        else
-        {
-            ++(*it)->num_postponed;
-            (*it)->last_postpone_time = time(nullptr);
-        }
+
+        ++(*it)->num_postponed;
+        (*it)->last_postpone_time = time(nullptr);
     }
 
     if (entry)
         return std::make_shared<SelectedEntry>(entry, std::unique_ptr<CurrentlyExecuting>{new CurrentlyExecuting(entry, *this, lock)});
-    else
-        return {};
+    return {};
 }
 
 
@@ -2162,8 +2159,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
 
     if (candidates.empty())
         return false;
-    else
-        LOG_DEBUG(log, "Trying to finalize {} mutations", candidates.size());
+    LOG_DEBUG(log, "Trying to finalize {} mutations", candidates.size());
 
     /// We need to check committing block numbers and new parts which could be committed.
     /// Actually we don't need most of predicate logic here but it all the code related to committing blocks
@@ -2493,8 +2489,7 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::operator()(
 {
     if (left)
         return canMergeTwoParts(left, right, out_reason);
-    else
-        return canMergeSinglePart(right, out_reason);
+    return canMergeSinglePart(right, out_reason);
 }
 
 template<typename VirtualPartsT, typename MutationsStateT>
@@ -2838,11 +2833,9 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const std::string & z
         LOG_TRACE(queue.log, "Mutation {} is not done because some parts [{}] were just committed", znode_name, fmt::join(it->second.parts_to_do.getParts(), ", "));
         return false;
     }
-    else
-    {
-        LOG_TRACE(queue.log, "Mutation {} is done because it doesn't exist anymore", znode_name);
-        return true;
-    }
+
+    LOG_TRACE(queue.log, "Mutation {} is done because it doesn't exist anymore", znode_name);
+    return true;
 }
 
 bool ReplicatedMergeTreeMergePredicate::isGoingToBeDropped(const MergeTreePartInfo & new_drop_range_info,
