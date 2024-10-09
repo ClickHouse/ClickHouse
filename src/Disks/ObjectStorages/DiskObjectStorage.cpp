@@ -110,7 +110,7 @@ DiskObjectStorage::DiskObjectStorage(
                                         if (read_resource_name_from_config.empty())
                                             LOG_INFO(log, "Using resource '{}' for READ", resource_name);
                                         else
-                                            LOG_INFO(log, "Resource '{}' should be used for READ, but it is overriden by config to resource '{}'",
+                                            LOG_INFO(log, "Resource '{}' should be used for READ, but it is overridden by config to resource '{}'",
                                                 resource_name, read_resource_name_from_config);
                                         read_resource_name_from_sql = resource_name;
                                         break;
@@ -120,7 +120,7 @@ DiskObjectStorage::DiskObjectStorage(
                                         if (write_resource_name_from_config.empty())
                                             LOG_INFO(log, "Using resource '{}' for WRITE", resource_name);
                                         else
-                                            LOG_INFO(log, "Resource '{}' should be used for WRITE, but it is overriden by config to resource '{}'",
+                                            LOG_INFO(log, "Resource '{}' should be used for WRITE, but it is overridden by config to resource '{}'",
                                                 resource_name, write_resource_name_from_config);
                                         write_resource_name_from_sql = resource_name;
                                         break;

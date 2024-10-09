@@ -431,7 +431,7 @@ TEST(SchedulerUnifiedNode, QueueWithRequestsDestruction)
 
     t.enqueue(all, {10, 10}); // enqueue reqeuests to be canceled
 
-    // This will destory the queue and fail both requests
+    // This will destroy the queue and fail both requests
     auto a = t.createUnifiedNode("A", all);
     t.failed(20);
 
@@ -472,7 +472,7 @@ TEST(SchedulerUnifiedNode, ResourceGuardException)
         }
     });
 
-    // This will destory the queue and fail both requests
+    // This will destroy the queue and fail both requests
     auto a = t.createUnifiedNode("A", all);
     t.failed(20);
     consumer.join();

@@ -336,7 +336,7 @@ struct ResourceTestManager : public ResourceTestBase
             waitExecute();
         }
 
-        /// Just enqueue resource request, do not block (neede for tests to sync). Call `waitExecuted()` afterwards
+        /// Just enqueue resource request, do not block (needed for tests to sync). Call `waitExecuted()` afterwards
         Guard(ResourceTestManager & t_, ResourceLink link_, ResourceCost cost_, EnqueueOnlyEnum)
             : ResourceGuard(ResourceGuard::Metrics::getIOWrite(), link_, cost_, Lock::Defer)
             , t(t_)
@@ -345,7 +345,7 @@ struct ResourceTestManager : public ResourceTestBase
             t.onEnqueue(link);
         }
 
-        /// Waits for ResourceRequest::execute() to be called for enqueued requet
+        /// Waits for ResourceRequest::execute() to be called for enqueued request
         void waitExecute()
         {
             lock();

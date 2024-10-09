@@ -34,7 +34,7 @@ std::unique_ptr<IWorkloadEntityStorage> createWorkloadEntityStorage(const Contex
                 zookeeper_path_key,
                 disk_path_key);
         }
-        abort(); // TODO(serxa): crate WorkloadEntityKeeperStorage object
+        abort(); // TODO(serxa): create WorkloadEntityKeeperStorage object
         //return std::make_unique<WorkloadEntityKeeperStorage>(global_context, config.getString(zookeeper_path_key));
     }
     else
