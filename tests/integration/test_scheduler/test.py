@@ -645,7 +645,7 @@ def test_create_workload():
         )
 
     do_checks()
-    node.restart_clickhouse() # Check that workloads persist
+    node.restart_clickhouse()  # Check that workloads persist
     do_checks()
 
 
@@ -706,7 +706,9 @@ def test_workload_hierarchy_changes():
         split_idx = random.randint(1, len(queries) - 2)
         for query_idx in range(0, split_idx):
             node.query(queries[query_idx])
-        node.query("create resource io_test (write disk non_existent_disk, read disk non_existent_disk);")
+        node.query(
+            "create resource io_test (write disk non_existent_disk, read disk non_existent_disk);"
+        )
         node.query("drop resource io_test;")
         for query_idx in range(split_idx, len(queries)):
             node.query(queries[query_idx])
