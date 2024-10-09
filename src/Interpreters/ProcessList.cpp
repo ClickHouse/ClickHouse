@@ -722,9 +722,7 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
     return per_query_infos;
 }
 
-namespace {
-    auto logger = getLogger("QueryMetricLog");
-}
+static auto logger = getLogger("QueryMetricLog");
 
 QueryStatusPtr ProcessList::getProcessListElement(const String & query_id) const
 {
