@@ -19,8 +19,21 @@ public:
     {
         enum Value
         {
-            BASIC = 0,
-            STRING = 1, /// Serialize as single String column containing serialized JSON.
+            /// V1 serialization:
+            /// - ObjectStructure stream:
+            ///     <max_dynamic_paths parameter>
+            ///     <actual number of dynamic paths>
+            ///     <sorted list of dynamic paths>
+            ///     <statistics with number of non-null values for dynamic paths> (only in MergeTree serialization)
+            ///     <statistics with number of non-null values for some paths in shared data> (only in MergeTree serialization)
+            /// - ObjectData stream:
+            ///   - ObjectTypedPath stream for each column in typed paths
+            ///   - ObjectDynamicPath stream for each column in dynamic paths
+            ///   - ObjectSharedData stream shared data column.
+            V1 = 0,
+            /// String serialization:
+            ///  - ObjectData stream with single String column containing serialized JSON.
+            STRING = 1,
         };
 
         Value value;
