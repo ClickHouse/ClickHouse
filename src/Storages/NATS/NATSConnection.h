@@ -3,6 +3,7 @@
 #include <Storages/NATS/NATSConnection.h>
 
 #include <Common/Logger.h>
+#include <base/types.h>
 
 #include <nats.h>
 
