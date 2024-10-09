@@ -15,26 +15,26 @@ key5
 {"key1":"value7"}
 {"key0":"value8"}
 {"key1":"value9"}
-{"key2":"value300000"}
-{"key3":"value300001"}
-{"key2":"value300002"}
-{"key3":"value300003"}
-{"key2":"value300004"}
-{"key3":"value300005"}
-{"key2":"value300006"}
-{"key3":"value300007"}
-{"key2":"value300008"}
-{"key3":"value300009"}
-{"key4":"value600000"}
-{"key5":"value600001"}
-{"key4":"value600002"}
-{"key5":"value600003"}
-{"key4":"value600004"}
-{"key5":"value600005"}
-{"key4":"value600006"}
-{"key5":"value600007"}
-{"key4":"value600008"}
-{"key5":"value600009"}
+{"key2":"value60000"}
+{"key3":"value60001"}
+{"key2":"value60002"}
+{"key3":"value60003"}
+{"key2":"value60004"}
+{"key3":"value60005"}
+{"key2":"value60006"}
+{"key3":"value60007"}
+{"key2":"value60008"}
+{"key3":"value60009"}
+{"key4":"value120000"}
+{"key5":"value120001"}
+{"key4":"value120002"}
+{"key5":"value120003"}
+{"key4":"value120004"}
+{"key5":"value120005"}
+{"key4":"value120006"}
+{"key5":"value120007"}
+{"key4":"value120008"}
+{"key5":"value120009"}
 value0	\N	\N	\N	\N	\N
 \N	value1	\N	\N	\N	\N
 value2	\N	\N	\N	\N	\N
@@ -45,26 +45,26 @@ value6	\N	\N	\N	\N	\N
 \N	value7	\N	\N	\N	\N
 value8	\N	\N	\N	\N	\N
 \N	value9	\N	\N	\N	\N
-\N	\N	value300000	\N	\N	\N
-\N	\N	\N	value300001	\N	\N
-\N	\N	value300002	\N	\N	\N
-\N	\N	\N	value300003	\N	\N
-\N	\N	value300004	\N	\N	\N
-\N	\N	\N	value300005	\N	\N
-\N	\N	value300006	\N	\N	\N
-\N	\N	\N	value300007	\N	\N
-\N	\N	value300008	\N	\N	\N
-\N	\N	\N	value300009	\N	\N
-\N	\N	\N	\N	value600000	\N
-\N	\N	\N	\N	\N	value600001
-\N	\N	\N	\N	value600002	\N
-\N	\N	\N	\N	\N	value600003
-\N	\N	\N	\N	value600004	\N
-\N	\N	\N	\N	\N	value600005
-\N	\N	\N	\N	value600006	\N
-\N	\N	\N	\N	\N	value600007
-\N	\N	\N	\N	value600008	\N
-\N	\N	\N	\N	\N	value600009
+\N	\N	value60000	\N	\N	\N
+\N	\N	\N	value60001	\N	\N
+\N	\N	value60002	\N	\N	\N
+\N	\N	\N	value60003	\N	\N
+\N	\N	value60004	\N	\N	\N
+\N	\N	\N	value60005	\N	\N
+\N	\N	value60006	\N	\N	\N
+\N	\N	\N	value60007	\N	\N
+\N	\N	value60008	\N	\N	\N
+\N	\N	\N	value60009	\N	\N
+\N	\N	\N	\N	value120000	\N
+\N	\N	\N	\N	\N	value120001
+\N	\N	\N	\N	value120002	\N
+\N	\N	\N	\N	\N	value120003
+\N	\N	\N	\N	value120004	\N
+\N	\N	\N	\N	\N	value120005
+\N	\N	\N	\N	value120006	\N
+\N	\N	\N	\N	\N	value120007
+\N	\N	\N	\N	value120008	\N
+\N	\N	\N	\N	\N	value120009
 All paths:
 ['key0','key1','key2','key3','key4','key5']
 Shared data paths:
@@ -82,26 +82,26 @@ key5
 {"key1":"value7"}
 {"key0":"value8"}
 {"key1":"value9"}
-{"key2":"value300000"}
-{"key3":"value300001"}
-{"key2":"value300002"}
-{"key3":"value300003"}
-{"key2":"value300004"}
-{"key3":"value300005"}
-{"key2":"value300006"}
-{"key3":"value300007"}
-{"key2":"value300008"}
-{"key3":"value300009"}
-{"key4":"value600000"}
-{"key5":"value600001"}
-{"key4":"value600002"}
-{"key5":"value600003"}
-{"key4":"value600004"}
-{"key5":"value600005"}
-{"key4":"value600006"}
-{"key5":"value600007"}
-{"key4":"value600008"}
-{"key5":"value600009"}
+{"key2":"value60000"}
+{"key3":"value60001"}
+{"key2":"value60002"}
+{"key3":"value60003"}
+{"key2":"value60004"}
+{"key3":"value60005"}
+{"key2":"value60006"}
+{"key3":"value60007"}
+{"key2":"value60008"}
+{"key3":"value60009"}
+{"key4":"value120000"}
+{"key5":"value120001"}
+{"key4":"value120002"}
+{"key5":"value120003"}
+{"key4":"value120004"}
+{"key5":"value120005"}
+{"key4":"value120006"}
+{"key5":"value120007"}
+{"key4":"value120008"}
+{"key5":"value120009"}
 value0	\N	\N	\N	\N	\N
 \N	value1	\N	\N	\N	\N
 value2	\N	\N	\N	\N	\N
@@ -112,23 +112,23 @@ value6	\N	\N	\N	\N	\N
 \N	value7	\N	\N	\N	\N
 value8	\N	\N	\N	\N	\N
 \N	value9	\N	\N	\N	\N
-\N	\N	value300000	\N	\N	\N
-\N	\N	\N	value300001	\N	\N
-\N	\N	value300002	\N	\N	\N
-\N	\N	\N	value300003	\N	\N
-\N	\N	value300004	\N	\N	\N
-\N	\N	\N	value300005	\N	\N
-\N	\N	value300006	\N	\N	\N
-\N	\N	\N	value300007	\N	\N
-\N	\N	value300008	\N	\N	\N
-\N	\N	\N	value300009	\N	\N
-\N	\N	\N	\N	value600000	\N
-\N	\N	\N	\N	\N	value600001
-\N	\N	\N	\N	value600002	\N
-\N	\N	\N	\N	\N	value600003
-\N	\N	\N	\N	value600004	\N
-\N	\N	\N	\N	\N	value600005
-\N	\N	\N	\N	value600006	\N
-\N	\N	\N	\N	\N	value600007
-\N	\N	\N	\N	value600008	\N
-\N	\N	\N	\N	\N	value600009
+\N	\N	value60000	\N	\N	\N
+\N	\N	\N	value60001	\N	\N
+\N	\N	value60002	\N	\N	\N
+\N	\N	\N	value60003	\N	\N
+\N	\N	value60004	\N	\N	\N
+\N	\N	\N	value60005	\N	\N
+\N	\N	value60006	\N	\N	\N
+\N	\N	\N	value60007	\N	\N
+\N	\N	value60008	\N	\N	\N
+\N	\N	\N	value60009	\N	\N
+\N	\N	\N	\N	value120000	\N
+\N	\N	\N	\N	\N	value120001
+\N	\N	\N	\N	value120002	\N
+\N	\N	\N	\N	\N	value120003
+\N	\N	\N	\N	value120004	\N
+\N	\N	\N	\N	\N	value120005
+\N	\N	\N	\N	value120006	\N
+\N	\N	\N	\N	\N	value120007
+\N	\N	\N	\N	value120008	\N
+\N	\N	\N	\N	\N	value120009

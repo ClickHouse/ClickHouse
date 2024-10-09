@@ -102,7 +102,7 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     for (const auto & column : columns_list)
     {
         auto compression = getCodecDescOrDefault(column.name, default_codec);
-        addStreams(column, nullptr, compression);
+        MergeTreeDataPartWriterWide::addStreams(column, nullptr, compression);
     }
 }
 
