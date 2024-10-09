@@ -83,7 +83,8 @@ void NATSProducer::startProducingTaskLoop()
                 publish();
         }
 
-        while(!connection->isConnected()){
+        while (!connection->isConnected())
+        {
             std::this_thread::sleep_for(reconnect_timeout);
         }
 

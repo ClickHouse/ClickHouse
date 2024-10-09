@@ -453,7 +453,7 @@ void StorageNATS::shutdown(bool /* is_drop */)
                 consumer->unsubscribe();
         }
 
-        if(consumers_connection)
+        if (consumers_connection)
             consumers_connection->disconnect();
 
         for (size_t i = 0; i < num_created_consumers; ++i)
