@@ -188,7 +188,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
                     .part_log_writer = part_log_writer,
                 };
             }
-            else if (storage.findReplicaHavingCoveringPart(entry.new_part_name, /* active */ false))
+            if (storage.findReplicaHavingCoveringPart(entry.new_part_name, /* active */ false))
             {
                 /// Why this if still needed? We can check for part in zookeeper, don't find it and sleep for any amount of time. During this sleep part will be actually committed from other replica
                 /// and exclusive zero copy lock will be released. We will take the lock and execute mutation one more time, while it was possible just to download the part from other replica.
@@ -200,17 +200,19 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
                 /// In case of DROP_RANGE on fast replica and stale replica we can have some failed select queries in case of zero copy replication.
                 zero_copy_lock->lock->unlock();
 
-                LOG_DEBUG(log, "We took zero copy lock, but mutation of part {} finished by some other replica, will release lock and download mutated part to avoid data duplication", entry.new_part_name);
+                LOG_DEBUG(
+                    log,
+                    "We took zero copy lock, but mutation of part {} finished by some other replica, will release lock and download "
+                    "mutated part to avoid data duplication",
+                    entry.new_part_name);
                 return PrepareResult{
                     .prepared_successfully = false,
                     .need_to_check_missing_part_in_fetch = true,
                     .part_log_writer = part_log_writer,
                 };
             }
-            else
-            {
-                LOG_DEBUG(log, "Zero copy lock taken, will mutate part {}", entry.new_part_name);
-            }
+
+            LOG_DEBUG(log, "Zero copy lock taken, will mutate part {}", entry.new_part_name);
         }
     }
 

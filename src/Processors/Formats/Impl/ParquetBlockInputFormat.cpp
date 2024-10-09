@@ -134,12 +134,11 @@ static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type
         };
         if (size <= 4)
             return narrow(Decimal32(0));
-        else if (size <= 8)
+        if (size <= 8)
             return narrow(Decimal64(0));
-        else if (size <= 16)
+        if (size <= 16)
             return narrow(Decimal128(0));
-        else
-            return narrow(Decimal256(0));
+        return narrow(Decimal256(0));
     }
     while (false);
 

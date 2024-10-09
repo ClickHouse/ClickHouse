@@ -579,8 +579,7 @@ String AsyncLoader::checkCycle(const LoadJobPtr & job, LoadJobSet & left, LoadJo
         {
             if (!visited.contains(job)) // Check for cycle end
                 throw Exception(ErrorCodes::ASYNC_LOAD_CYCLE, "Load job dependency cycle detected: {} -> {}", job->name, chain);
-            else
-                return fmt::format("{} -> {}", job->name, chain); // chain is not a cycle yet -- continue building
+            return fmt::format("{} -> {}", job->name, chain); // chain is not a cycle yet -- continue building
         }
     }
     left.erase(job);
