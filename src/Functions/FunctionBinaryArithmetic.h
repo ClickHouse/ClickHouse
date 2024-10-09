@@ -55,6 +55,7 @@
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include "Core/ExternalResultDescription.h"
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -255,7 +256,7 @@ struct BinaryOperation
     static const constexpr bool allow_string_integer = false;
 
     template <OpCase op_case>
-    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap = nullptr, NullMap * res_nullmap = nullptr)
+    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap = nullptr, NullMap * res_nullmap [[maybe_unused]] = nullptr)
     {
         if constexpr (op_case == OpCase::RightConstant)
         {
@@ -269,41 +270,30 @@ struct BinaryOperation
         {
             if (right_nullmap)
             {
-                assert(res_nullmap);
                 for (size_t i = 0; i < size; ++i)
                     if ((*right_nullmap)[i])
                         c[i] = ResultType();
                     else
-                        apply<op_case, true>(a, b, c, i, &((*res_nullmap)[i]));
+                        apply<op_case>(a, b, c, i);
             }
             else
                 for (size_t i = 0; i < size; ++i)
-                    apply<op_case, false>(a, b, c, i);
+                    apply<op_case>(a, b, c, i);
         }
     }
 
     static ResultType process(A a, B b) { return Op::template apply<ResultType>(a, b); }
 
-    static ResultType process(A a, B b, NullMap::value_type * m) { return Op::template apply<ResultType>(a, b, m); }
+    static ResultType process(A a, B b, NullMap::value_type * m [[maybe_unused]] = nullptr) { return Op::template apply<ResultType>(a, b, m); }
 
 private:
-    template <OpCase op_case, bool nullable>
-    static void apply(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t i, NullMap::value_type * m = nullptr)
+    template <OpCase op_case>
+    static void apply(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t i)
     {
-        if constexpr (nullable)
-        {
-            if constexpr (op_case == OpCase::Vector)
-                c[i] = Op::template apply<ResultType>(a[i], b[i], m);
-            else
-                c[i] = Op::template apply<ResultType>(*a, b[i], m);
-        }
+        if constexpr (op_case == OpCase::Vector)
+            c[i] = Op::template apply<ResultType>(a[i], b[i]);
         else
-        {
-            if constexpr (op_case == OpCase::Vector)
-                c[i] = Op::template apply<ResultType>(a[i], b[i]);
-            else
-                c[i] = Op::template apply<ResultType>(*a, b[i]);
-        }
+            c[i] = Op::template apply<ResultType>(*a, b[i]);
     }
 };
 
@@ -1761,7 +1751,7 @@ public:
                     else
                         type_res = std::make_shared<ResultDataType>();
 
-                    if (is_divide_or_null || is_modulo_or_null)
+                    if constexpr (is_divide_or_null || is_modulo_or_null)
                         type_res = std::make_shared<DataTypeNullable>(type_res);
 
                     return true;
@@ -2241,14 +2231,6 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             return executeTupleNumberOperator(arguments, result_type, input_rows_count, function_builder);
         }
 
-        /// Result can be nullable enven if input arguments are not nullable
-        if (is_divide_or_null || is_modulo_or_null)
-        {
-            NullMap res_null_map(input_rows_count, 0);
-            auto res = executeImpl2(arguments, result_type, input_rows_count, nullptr, &res_null_map);
-            return wrapInNullable(res, arguments, result_type, input_rows_count, &res_null_map);
-        }
-
         return executeImpl2(arguments, result_type, input_rows_count);
     }
 
@@ -2266,10 +2248,18 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             bool is_const = checkColumnConst<ColumnNullable>(right_argument.column.get());
             const ColumnNullable * nullable_column = is_const ? checkAndGetColumnConstData<ColumnNullable>(right_argument.column.get())
                                                               : checkAndGetColumn<ColumnNullable>(right_argument.column.get());
-            //NullMap res_null_map(input_rows_count, 0);
-            const auto & null_bytemap = nullable_column->getNullMapData();
-            auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &null_bytemap, res_nullmap);
+            const auto & right_null_bytemap = nullable_column->getNullMapData();
+            NullMap res_null_map(right_null_bytemap.begin(), right_null_bytemap.end());
+            auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &right_null_bytemap, &res_null_map);
             return wrapInNullable(res, arguments, result_type, input_rows_count, res_nullmap);
+        }
+        /// Process special case when operation is divideOrNull and moduloOrNull
+        else if ((is_divide_or_null || is_modulo_or_null) && !res_nullmap)
+        {
+            std::cerr << "gethere 1" << std::endl;
+            NullMap res_null_map(input_rows_count, 0);
+            auto res = executeImpl2(arguments, result_type, input_rows_count, nullptr, &res_null_map);
+            return wrapInNullable(res, arguments, result_type, input_rows_count, &res_null_map);
         }
 
         /// Special case - one or both arguments are IPv4
