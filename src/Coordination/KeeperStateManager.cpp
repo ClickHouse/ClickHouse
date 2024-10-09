@@ -157,22 +157,21 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
                 check_duplicated_hostnames[endpoint],
                 new_server_id);
         }
-        else
+
+        /// Fullscan to check duplicated ids
+        for (const auto & [id_endpoint, id] : check_duplicated_hostnames)
         {
-            /// Fullscan to check duplicated ids
-            for (const auto & [id_endpoint, id] : check_duplicated_hostnames)
-            {
-                if (new_server_id == id)
-                    throw Exception(
-                        ErrorCodes::RAFT_ERROR,
-                        "Raft config contains duplicate ids: id {} has been already added with endpoint {}, "
-                        "but going to add it one more time with endpoint {}",
-                        id,
-                        id_endpoint,
-                        endpoint);
-            }
-            check_duplicated_hostnames.emplace(endpoint, new_server_id);
+            if (new_server_id == id)
+                throw Exception(
+                    ErrorCodes::RAFT_ERROR,
+                    "Raft config contains duplicate ids: id {} has been already added with endpoint {}, "
+                    "but going to add it one more time with endpoint {}",
+                    id,
+                    id_endpoint,
+                    endpoint);
         }
+        check_duplicated_hostnames.emplace(endpoint, new_server_id);
+
 
         auto peer_config = nuraft::cs_new<nuraft::srv_config>(new_server_id, 0, endpoint, "", !can_become_leader, priority);
         if (my_server_id == new_server_id)

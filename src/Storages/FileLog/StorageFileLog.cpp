@@ -165,11 +165,8 @@ StorageFileLog::StorageFileLog(
             LOG_ERROR(log, "The absolute data path should be inside `user_files_path`({})", getContext()->getUserFilesPath());
             return;
         }
-        else
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The absolute data path should be inside `user_files_path`({})",
-                getContext()->getUserFilesPath());
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "The absolute data path should be inside `user_files_path`({})", getContext()->getUserFilesPath());
     }
 
     bool created_metadata_directory = false;
@@ -670,10 +667,9 @@ void StorageFileLog::threadFunc()
                         milliseconds_to_wait *= filelog_settings->poll_directory_watch_events_backoff_factor.value;
                     break;
                 }
-                else
-                {
-                    milliseconds_to_wait = filelog_settings->poll_directory_watch_events_backoff_init.totalMilliseconds();
-                }
+
+                milliseconds_to_wait = filelog_settings->poll_directory_watch_events_backoff_init.totalMilliseconds();
+
 
                 auto ts = std::chrono::steady_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts-start_time);

@@ -760,35 +760,35 @@ ASTExplainQuery::ExplainKind QueryFuzzer::fuzzExplainKind(ASTExplainQuery::Expla
     {
         return kind;
     }
-    else if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::ParsedAST;
     }
-    else if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::AnalyzedSyntax;
     }
-    else if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::QueryTree;
     }
-    else if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::QueryPlan;
     }
-    else if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::QueryPipeline;
     }
-    else if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::QueryEstimates;
     }
-    else if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::TableOverride;
     }
-    else if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::CurrentTransaction;
     }

@@ -54,8 +54,7 @@ SettingSourceRestrictions getSettingSourceRestrictions(std::string_view name)
     auto settingConstraintIter = SETTINGS_SOURCE_RESTRICTIONS.find(name);
     if (settingConstraintIter != SETTINGS_SOURCE_RESTRICTIONS.end())
         return settingConstraintIter->second;
-    else
-        return SettingSourceRestrictions(); // allows everything
+    return SettingSourceRestrictions(); // allows everything
 }
 
 }
@@ -310,8 +309,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
     {
         if (reaction == THROW_ON_VIOLATION)
             throw Exception(explain, code);
-        else
-            return false;
+        return false;
     }
 
     std::string_view setting_name = setting_name_resolver(change.name);
@@ -335,8 +333,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
     {
         if (reaction == THROW_ON_VIOLATION)
             throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} should not be changed", setting_name);
-        else
-            return false;
+        return false;
     }
 
     const auto & min_value = constraint.min_value;
@@ -351,8 +348,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
                 max_value,
                 min_value,
                 setting_name);
-        else
-            return false;
+        return false;
     }
 
     if (!min_value.isNull() && less_or_cannot_compare(new_value, min_value))
@@ -362,8 +358,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
             throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} shouldn't be less than {}",
                 setting_name, applyVisitor(FieldVisitorToString(), min_value));
         }
-        else
-            change.value = min_value;
+        change.value = min_value;
     }
 
     if (!max_value.isNull() && less_or_cannot_compare(max_value, new_value))
@@ -373,16 +368,14 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
             throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} shouldn't be greater than {}",
                 setting_name, applyVisitor(FieldVisitorToString(), max_value));
         }
-        else
-            change.value = max_value;
+        change.value = max_value;
     }
 
     if (!getSettingSourceRestrictions(setting_name).isSourceAllowed(source))
     {
         if (reaction == THROW_ON_VIOLATION)
             throw Exception(ErrorCodes::READONLY, "Setting {} is not allowed to be set by {}", setting_name, toString(source));
-        else
-            return false;
+        return false;
     }
 
     return true;

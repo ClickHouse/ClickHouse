@@ -412,10 +412,9 @@ bool DiskObjectStorage::tryReserve(UInt64 bytes)
         reserved_bytes += bytes;
         return true;
     }
-    else
-    {
-        LOG_TRACE(log, "Could not reserve {} on remote disk {}. Not enough unreserved space", ReadableSize(bytes), backQuote(name));
-    }
+
+    LOG_TRACE(log, "Could not reserve {} on remote disk {}. Not enough unreserved space", ReadableSize(bytes), backQuote(name));
+
 
     return false;
 }

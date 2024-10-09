@@ -69,7 +69,7 @@ public:
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "cannot overwrite non-directory {} with directory {}", path_to, target_location);
             }
-            else if (!disk_to.getDisk()->existsDirectory(target_location))
+            if (!disk_to.getDisk()->existsDirectory(target_location))
             {
                 disk_to.getDisk()->createDirectory(target_location);
             }

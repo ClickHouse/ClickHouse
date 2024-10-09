@@ -209,25 +209,23 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
                 QueryPlanOptimizationSettings::fromContext(my_context),
                 BuildQueryPipelineSettings::fromContext(my_context)));
         }
-        else
-        {
-            std::vector<IConnectionPool::Entry> connections;
-            connections.reserve(try_results.size());
-            for (auto & try_result : try_results)
-                connections.emplace_back(std::move(try_result.entry));
 
-            String query_string = formattedAST(query);
+        std::vector<IConnectionPool::Entry> connections;
+        connections.reserve(try_results.size());
+        for (auto & try_result : try_results)
+            connections.emplace_back(std::move(try_result.entry));
 
-            my_scalars["_shard_num"]
-                = Block{{DataTypeUInt32().createColumnConst(1, my_shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
-            auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, my_stage);
+        String query_string = formattedAST(query);
 
-            auto pipe = createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending);
-            QueryPipelineBuilder builder;
-            builder.init(std::move(pipe));
-            return builder;
-        }
+        my_scalars["_shard_num"] = Block{
+            {DataTypeUInt32().createColumnConst(1, my_shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
+        auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+            std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, my_stage);
+
+        auto pipe = createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending);
+        QueryPipelineBuilder builder;
+        builder.init(std::move(pipe));
+        return builder;
     };
 
     pipes.emplace_back(createDelayedPipe(shard.header, lazily_create_stream, add_totals, add_extremes));

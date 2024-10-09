@@ -87,8 +87,7 @@ void RewriteArrayExistsFunctionMatcher::visit(const ASTFunction & func, ASTPtr &
         ast = std::move(new_func);
         return;
     }
-    else if (
-        (filter_id = filter_arguments[1]->as<ASTIdentifier>()) && filter_arguments[0]->as<ASTLiteral>()
+    if ((filter_id = filter_arguments[1]->as<ASTIdentifier>()) && filter_arguments[0]->as<ASTLiteral>()
         && filter_id->full_name == id->full_name)
     {
         /// arrayExists(x -> elem = x, arr) -> has(arr, elem)

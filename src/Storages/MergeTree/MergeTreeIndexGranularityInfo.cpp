@@ -132,10 +132,9 @@ size_t MergeTreeIndexGranularityInfo::getMarkSizeInBytes(size_t columns_num) con
 {
     if (mark_type.part_type == MergeTreeDataPartType::Wide)
         return mark_type.adaptive ? getAdaptiveMrkSizeWide() : getNonAdaptiveMrkSizeWide();
-    else if (mark_type.part_type == MergeTreeDataPartType::Compact)
+    if (mark_type.part_type == MergeTreeDataPartType::Compact)
         return getAdaptiveMrkSizeCompact(columns_num);
-    else
-        throw Exception(ErrorCodes::UNKNOWN_PART_TYPE, "Unknown part type");
+    throw Exception(ErrorCodes::UNKNOWN_PART_TYPE, "Unknown part type");
 }
 
 std::string MergeTreeIndexGranularityInfo::describe() const

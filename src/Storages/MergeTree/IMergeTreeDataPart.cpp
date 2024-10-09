@@ -426,8 +426,7 @@ String IMergeTreeDataPart::getNewName(const MergeTreePartInfo & new_part_info) c
         MergeTreePartInfo::parseMinMaxDatesFromPartName(name, min_date, max_date);
         return new_part_info.getPartNameV0(min_date, max_date);
     }
-    else
-        return new_part_info.getPartNameV1();
+    return new_part_info.getPartNameV1();
 }
 
 std::optional<size_t> IMergeTreeDataPart::getColumnPosition(const String & column_name) const
@@ -454,8 +453,7 @@ std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
         const auto & hyperrectangle = minmax_idx->hyperrectangle[storage.minmax_idx_date_column_pos];
         return {DayNum(hyperrectangle.left.safeGet<UInt64>()), DayNum(hyperrectangle.right.safeGet<UInt64>())};
     }
-    else
-        return {};
+    return {};
 }
 
 std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
@@ -471,7 +469,7 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
             return {hyperrectangle.left.safeGet<UInt64>(), hyperrectangle.right.safeGet<UInt64>()};
         }
         /// The case of DateTime64
-        else if (hyperrectangle.left.getType() == Field::Types::Decimal64)
+        if (hyperrectangle.left.getType() == Field::Types::Decimal64)
         {
             assert(hyperrectangle.right.getType() == Field::Types::Decimal64);
 
@@ -480,13 +478,11 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 
             assert(left.getScale() == right.getScale());
 
-            return { left.getValue() / left.getScaleMultiplier(), right.getValue() / right.getScaleMultiplier() };
+            return {left.getValue() / left.getScaleMultiplier(), right.getValue() / right.getScaleMultiplier()};
         }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part minmax index by time is neither DateTime or DateTime64");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part minmax index by time is neither DateTime or DateTime64");
     }
-    else
-        return {};
+    return {};
 }
 
 
@@ -664,8 +660,7 @@ UInt64 IMergeTreeDataPart::getExistingBytesOnDisk() const
     if ((*storage.getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge] && supportLightweightDeleteMutate() && hasLightweightDelete()
         && existing_rows_count.has_value() && existing_rows_count.value() < rows_count && rows_count > 0)
         return bytes_on_disk * existing_rows_count.value() / rows_count;
-    else
-        return bytes_on_disk;
+    return bytes_on_disk;
 }
 
 size_t IMergeTreeDataPart::getFileSizeOrZero(const String & file_name) const
@@ -2347,7 +2342,7 @@ bool IMergeTreeDataPart::checkAllTTLCalculated(const StorageMetadataPtr & metada
     {
         if (isEmpty()) /// All rows were finally deleted and we don't store TTL
             return true;
-        else if (ttl_infos.table_ttl.min == 0)
+        if (ttl_infos.table_ttl.min == 0)
             return false;
     }
 

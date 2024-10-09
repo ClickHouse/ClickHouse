@@ -520,7 +520,7 @@ struct ColumnTuple::Less
                 res = column->compareAt(a, b, *column, nan_direction_hint);
             if (res < 0)
                 return positive;
-            else if (res > 0)
+            if (res > 0)
                 return !positive;
         }
         return false;
@@ -703,8 +703,7 @@ bool ColumnTuple::structureEquals(const IColumn & rhs) const
 
         return true;
     }
-    else
-        return false;
+    return false;
 }
 
 bool ColumnTuple::isCollationSupported() const
