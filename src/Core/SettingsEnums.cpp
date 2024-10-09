@@ -68,6 +68,14 @@ IMPLEMENT_SETTING_ENUM(OverflowMode, ErrorCodes::UNKNOWN_OVERFLOW_MODE,
     {{"throw", OverflowMode::THROW},
      {"break", OverflowMode::BREAK}})
 
+IMPLEMENT_SETTING_ENUM(DistributedCacheLogMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"nothing", DistributedCacheLogMode::LOG_NOTHING},
+     {"on_error", DistributedCacheLogMode::LOG_ON_ERROR},
+     {"all", DistributedCacheLogMode::LOG_ALL}})
+
+IMPLEMENT_SETTING_ENUM(DistributedCachePoolBehaviourOnLimit, ErrorCodes::BAD_ARGUMENTS,
+    {{"wait", DistributedCachePoolBehaviourOnLimit::WAIT},
+     {"allocate_bypassing_pool", DistributedCachePoolBehaviourOnLimit::ALLOCATE_NEW_BYPASSING_POOL}});
 
 IMPLEMENT_SETTING_ENUM(OverflowModeGroupBy, ErrorCodes::UNKNOWN_OVERFLOW_MODE,
     {{"throw", OverflowMode::THROW},
@@ -178,7 +186,8 @@ IMPLEMENT_SETTING_ENUM(LightweightMutationProjectionMode, ErrorCodes::BAD_ARGUME
      {"rebuild", LightweightMutationProjectionMode::REBUILD}})
 
 IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"throw", DeduplicateMergeProjectionMode::THROW},
+    {{"ignore", DeduplicateMergeProjectionMode::IGNORE},
+     {"throw", DeduplicateMergeProjectionMode::THROW},
      {"drop", DeduplicateMergeProjectionMode::DROP},
      {"rebuild", DeduplicateMergeProjectionMode::REBUILD}})
 
@@ -251,9 +260,17 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"throw", GroupArrayActionWhenLimitReached::THROW}, {"discard", GroupArrayActionWhenLimitReached::DISCARD}})
 
-IMPLEMENT_SETTING_ENUM(IdentifierQuotingStyle, ErrorCodes::BAD_ARGUMENTS,
-    {{"None", IdentifierQuotingStyle::None},
-     {"Backticks", IdentifierQuotingStyle::Backticks},
+IMPLEMENT_SETTING_ENUM(
+    IdentifierQuotingStyle,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"Backticks", IdentifierQuotingStyle::Backticks},
      {"DoubleQuotes", IdentifierQuotingStyle::DoubleQuotes},
      {"BackticksMySQL", IdentifierQuotingStyle::BackticksMySQL}})
+
+IMPLEMENT_SETTING_ENUM(
+    IdentifierQuotingRule,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"user_display", IdentifierQuotingRule::UserDisplay},
+     {"when_necessary", IdentifierQuotingRule::WhenNecessary},
+     {"always", IdentifierQuotingRule::Always}})
 }

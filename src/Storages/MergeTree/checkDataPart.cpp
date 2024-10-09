@@ -28,6 +28,11 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+}
+
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
@@ -77,7 +82,14 @@ bool isRetryableException(std::exception_ptr exception_ptr)
 #endif
     catch (const ErrnoException & e)
     {
-        return e.getErrno() == EMFILE;
+        return e.getErrno() == EMFILE
+            || e.getErrno() == ENOMEM
+            || isNotEnoughMemoryErrorCode(e.code())
+            || e.code() == ErrorCodes::NETWORK_ERROR
+            || e.code() == ErrorCodes::SOCKET_TIMEOUT
+            || e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK
+            || e.code() == ErrorCodes::ABORTED;
+
     }
     catch (const Coordination::Exception & e)
     {
@@ -90,6 +102,22 @@ bool isRetryableException(std::exception_ptr exception_ptr)
             || e.code() == ErrorCodes::SOCKET_TIMEOUT
             || e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK
             || e.code() == ErrorCodes::ABORTED;
+    }
+    catch (const std::filesystem::filesystem_error & e)
+    {
+        return e.code() == std::errc::no_space_on_device ||
+            e.code() == std::errc::read_only_file_system ||
+            e.code() == std::errc::too_many_files_open_in_system ||
+            e.code() == std::errc::operation_not_permitted ||
+            e.code() == std::errc::device_or_resource_busy ||
+            e.code() == std::errc::permission_denied ||
+            e.code() == std::errc::too_many_files_open ||
+            e.code() == std::errc::text_file_busy ||
+            e.code() == std::errc::timed_out ||
+            e.code() == std::errc::not_enough_memory ||
+            e.code() == std::errc::not_supported ||
+            e.code() == std::errc::too_many_links ||
+            e.code() == std::errc::too_many_symbolic_link_levels;
     }
     catch (const Poco::Net::NetException &)
     {
@@ -160,7 +188,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         };
     };
 
-    auto ratio_of_defaults = data_part->storage.getSettings()->ratio_of_defaults_for_sparse_serialization;
+    auto ratio_of_defaults = (*data_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization];
     SerializationInfoByName serialization_infos;
 
     if (data_part_storage.exists(IMergeTreeDataPart::SERIALIZATION_FILE_NAME))
@@ -171,13 +199,9 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             SerializationInfo::Settings settings{ratio_of_defaults, false};
             serialization_infos = SerializationInfoByName::readJSON(columns_txt, settings, *serialization_file);
         }
-        catch (const Poco::Exception & ex)
-        {
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Failed to load {}, with error {}", IMergeTreeDataPart::SERIALIZATION_FILE_NAME, ex.message());
-        }
         catch (...)
         {
-            throw;
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Failed to load file {} of data part {}, with error {}", IMergeTreeDataPart::SERIALIZATION_FILE_NAME, data_part->name, getCurrentExceptionMessage(true));
         }
     }
 
@@ -399,18 +423,45 @@ IMergeTreeDataPart::Checksums checkDataPart(
 
         ReadSettings read_settings;
         read_settings.enable_filesystem_cache = false;
+        read_settings.enable_filesystem_cache_log = false;
+        read_settings.enable_filesystem_read_prefetches_log = false;
+        read_settings.page_cache = nullptr;
+        read_settings.load_marks_asynchronously = false;
+        read_settings.remote_fs_prefetch = false;
+        read_settings.page_cache_inject_eviction = false;
+        read_settings.use_page_cache_for_disks_without_file_cache = false;
+        read_settings.local_fs_method = LocalFSReadMethod::pread;
 
-        return checkDataPart(
-            data_part,
-            data_part_storage,
-            data_part->getColumns(),
-            data_part->getType(),
-            data_part->getFileNamesWithoutChecksums(),
-            read_settings,
-            require_checksums,
-            is_cancelled,
-            is_broken_projection,
-            throw_on_broken_projection);
+        try
+        {
+            return checkDataPart(
+                data_part,
+                data_part_storage,
+                data_part->getColumns(),
+                data_part->getType(),
+                data_part->getFileNamesWithoutChecksums(),
+                read_settings,
+                require_checksums,
+                is_cancelled,
+                is_broken_projection,
+                throw_on_broken_projection);
+        }
+        catch (...)
+        {
+            if (isRetryableException(std::current_exception()))
+            {
+                LOG_DEBUG(
+                    getLogger("checkDataPart"),
+                    "Got retriable error {} checking data part {}, will return empty", data_part->name, getCurrentExceptionMessage(false));
+
+                /// We were unable to check data part because of some temporary exception
+                /// like Memory limit exceeded. If part is actually broken we will retry check
+                /// with the next read attempt of this data part.
+                return IMergeTreeDataPart::Checksums{};
+            }
+            throw;
+        }
+
     };
 
     try
@@ -431,7 +482,16 @@ IMergeTreeDataPart::Checksums checkDataPart(
     catch (...)
     {
         if (isRetryableException(std::current_exception()))
-            throw;
+        {
+            LOG_DEBUG(
+                getLogger("checkDataPart"),
+                "Got retriable error {} checking data part {}, will return empty", data_part->name, getCurrentExceptionMessage(false));
+
+            /// We were unable to check data part because of some temporary exception
+            /// like Memory limit exceeded. If part is actually broken we will retry check
+            /// with the next read attempt of this data part.
+            return {};
+        }
         return drop_cache_and_check();
     }
 }

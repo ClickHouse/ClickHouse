@@ -1,6 +1,7 @@
+import re
+
 import pytest
 
-import re
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
