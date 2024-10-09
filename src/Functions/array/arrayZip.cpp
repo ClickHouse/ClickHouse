@@ -106,9 +106,8 @@ public:
                     "The argument 1 and argument {} of function {} have different array sizes",
                     unaligned_index + 1,
                     getName());
-            else
-                return ColumnArray::create(
-                    ColumnTuple::create(std::move(tuple_columns)), static_cast<const ColumnArray &>(*holders[0]).getOffsetsPtr());
+            return ColumnArray::create(
+                ColumnTuple::create(std::move(tuple_columns)), static_cast<const ColumnArray &>(*holders[0]).getOffsetsPtr());
         }
         else
             return executeUnaligned(holders, tuple_columns, input_rows_count, has_unaligned);

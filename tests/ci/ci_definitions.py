@@ -22,6 +22,7 @@ class Labels:
     PR_CHERRYPICK = "pr-cherrypick"
     PR_CI = "pr-ci"
     PR_FEATURE = "pr-feature"
+    PR_PERFORMANCE = "pr-performance"
     PR_SYNCED_TO_CLOUD = "pr-synced-to-cloud"
     PR_SYNC_UPSTREAM = "pr-sync-upstream"
     RELEASE = "release"
@@ -335,7 +336,7 @@ class JobConfig:
     # sets number of batches for a multi-batch job
     num_batches: int = 1
     # label that enables job in CI, if set digest isn't used
-    run_by_label: str = ""
+    run_by_labels: List[str] = field(default_factory=list)
     # to run always regardless of the job digest or/and label
     run_always: bool = False
     # disables CI await for a given job
