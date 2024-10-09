@@ -317,7 +317,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
     auto object_state = std::make_shared<DeserializeBinaryBulkStateObject>();
     object_state->structure_state = std::move(structure_state);
 
-    auto structure_state_concrete = checkAndGetState<DeserializeBinaryBulkStateObjectStructure>(object_state->structure_state);
+    auto * structure_state_concrete = checkAndGetState<DeserializeBinaryBulkStateObjectStructure>(object_state->structure_state);
     if (structure_state_concrete->serialization_version.value == ObjectSerializationVersion::Value::STRING)
     {
         state = std::move(object_state);
