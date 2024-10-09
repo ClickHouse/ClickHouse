@@ -5,11 +5,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int RESOURCE_NOT_FOUND;
-}
-
 ClassifierDescription::ClassifierDescription(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
