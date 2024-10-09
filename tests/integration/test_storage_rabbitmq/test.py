@@ -839,7 +839,9 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster):
         time.sleep(random.uniform(0, 1))
         thread.start()
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    # with threadsanitizer the speed of execution is about 8-13k rows per second.
+    # so consumption of 1 mln rows will require about 125 seconds
+    deadline = time.monotonic() + 180
     expected = messages_num * threads_num * NUM_MV
     while time.monotonic() < deadline:
         result = 0
@@ -853,7 +855,7 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster):
         time.sleep(1)
     else:
         pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
+            f"Time limit of 180 seconds reached. The result did not match the expected value."
         )
 
     for thread in threads:
