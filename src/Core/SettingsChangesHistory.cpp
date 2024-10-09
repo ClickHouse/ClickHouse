@@ -96,6 +96,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"distributed_cache_read_alignment", 0, 0, "A setting for ClickHouse Cloud"},
             {"distributed_cache_max_unacked_inflight_packets", 10, 10, "A setting for ClickHouse Cloud"},
             {"distributed_cache_data_packet_ack_window", 5, 5, "A setting for ClickHouse Cloud"},
+            {"max_parts_to_move", 0, 1000, "New setting"},
         }
     },
     {"24.9",
