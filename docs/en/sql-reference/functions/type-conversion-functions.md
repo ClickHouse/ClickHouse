@@ -5244,7 +5244,7 @@ toFixedString(s, N)
 **Arguments**
 
 - `s` — A String to convert to a fixed string. [String](../data-types/string.md).
-- `N` — Length N. [UInt8]()
+- `N` — Length N. [UInt8](../data-types/int-uint.md)
 
 **Returned value**
 
