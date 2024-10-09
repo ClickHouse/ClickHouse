@@ -6243,204 +6243,6 @@ Type: UInt64
 
 Default value: 268402944
 
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-
-Default value: `1`
-
-## query_cache_ttl {#query-cache-ttl}
-
-After this time in seconds entries in the [query cache](../query-cache.md) become stale.
-
-Possible values:
-
-- Positive integer >= 0.
-
-Default value: `60`
-
-## query_cache_share_between_users {#query-cache-share-between-users}
-
-If turned on, the result of `SELECT` queries cached in the [query cache](../query-cache.md) can be read by other users.
-It is not recommended to enable this setting due to security reasons.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-
-Default value: `0`.
-
-## query_cache_tag {#query-cache-tag}
-
-A string which acts as a label for [query cache](../query-cache.md) entries.
-The same queries with different tags are considered different by the query cache.
-
-Possible values:
-
-- Any string
-
-Default value: `''`
-
-## query_cache_max_size_in_bytes {#query-cache-max-size-in-bytes}
-
-The maximum amount of memory (in bytes) the current user may allocate in the [query cache](../query-cache.md). 0 means unlimited.
-
-Possible values:
-
-- Positive integer >= 0.
-
-Default value: 0 (no restriction).
-
-## query_cache_max_entries {#query-cache-max-entries}
-
-The maximum number of query results the current user may store in the [query cache](../query-cache.md). 0 means unlimited.
-
-Possible values:
-
-- Positive integer >= 0.
-
-Default value: 0 (no restriction).
-
-## query_metric_log_interval (#query_metric_log_interval)
-
-The interval in milliseconds at which the [query_metric_log](../../operations/system-tables/query_metric_log.md) for individual queries is collected.
-
-If set to any negative value, it will take the value `collect_interval_milliseconds` from the [query_metric_log setting](../../operations/server-configuration-parameters/settings.md#query_metric_log) or default to 1000 if not present.
-
-To disable the collection of a single query, set `query_metric_log_interval` to 0.
-
-Default value: -1
-
-## insert_quorum {#insert_quorum}
-
-:::note
-This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information.
-:::
-
-Enables the quorum writes.
-
-- If `insert_quorum < 2`, the quorum writes are disabled.
-- If `insert_quorum >= 2`, the quorum writes are enabled.
-- If `insert_quorum = 'auto'`, use majority number (`number_of_replicas / 2 + 1`) as quorum number.
-
-Default value: 0 - disabled.
-
-Quorum writes
-
-`INSERT` succeeds only when ClickHouse manages to correctly write data to the `insert_quorum` of replicas during the `insert_quorum_timeout`. If for any reason the number of replicas with successful writes does not reach the `insert_quorum`, the write is considered failed and ClickHouse will delete the inserted block from all the replicas where data has already been written.
-
-When `insert_quorum_parallel` is disabled, all replicas in the quorum are consistent, i.e. they contain data from all previous `INSERT` queries (the `INSERT` sequence is linearized). When reading data written using `insert_quorum` and `insert_quorum_parallel` is disabled, you can turn on sequential consistency for `SELECT` queries using [select_sequential_consistency](#select_sequential_consistency).
-
-ClickHouse generates an exception:
-
-- If the number of available replicas at the time of the query is less than the `insert_quorum`.
-- When `insert_quorum_parallel` is disabled and an attempt to write data is made when the previous block has not yet been inserted in `insert_quorum` of replicas. This situation may occur if the user tries to perform another `INSERT` query to the same table before the previous one with `insert_quorum` is completed.
-
-See also:
-
-- [insert_quorum_timeout](#insert_quorum_timeout)
-- [insert_quorum_parallel](#insert_quorum_parallel)
-- [select_sequential_consistency](#select_sequential_consistency)
-
-## insert_quorum_timeout {#insert_quorum_timeout}
-
-Write to a quorum timeout in milliseconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
-
-Default value: 600 000 milliseconds (ten minutes).
-
-See also:
-
-- [insert_quorum](#insert_quorum)
-- [insert_quorum_parallel](#insert_quorum_parallel)
-- [select_sequential_consistency](#select_sequential_consistency)
-
-## insert_quorum_parallel {#insert_quorum_parallel}
-
-:::note
-This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information.
-:::
-
-Enables or disables parallelism for quorum `INSERT` queries. If enabled, additional `INSERT` queries can be sent while previous queries have not yet finished. If disabled, additional writes to the same table will be rejected.
-
-Possible values:
-
-- 0 — Disabled.
-- 1 — Enabled.
-
-Default value: 1.
-
-See also:
-
-- [insert_quorum](#insert_quorum)
-- [insert_quorum_timeout](#insert_quorum_timeout)
-- [select_sequential_consistency](#select_sequential_consistency)
-
-## select_sequential_consistency {#select_sequential_consistency}
-
-:::note
-This setting differ in behavior between SharedMergeTree and ReplicatedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information about the behavior of `select_sequential_consistency` in SharedMergeTree.
-:::
-
-Enables or disables sequential consistency for `SELECT` queries. Requires `insert_quorum_parallel` to be disabled (enabled by default).
-
-Possible values:
-
-- 0 — Disabled.
-- 1 — Enabled.
-
-Default value: 0.
-
-Usage
-
-When sequential consistency is enabled, ClickHouse allows the client to execute the `SELECT` query only for those replicas that contain data from all previous `INSERT` queries executed with `insert_quorum`. If the client refers to a partial replica, ClickHouse will generate an exception. The SELECT query will not include data that has not yet been written to the quorum of replicas.
-
-When `insert_quorum_parallel` is enabled (the default), then `select_sequential_consistency` does not work. This is because parallel `INSERT` queries can be written to different sets of quorum replicas so there is no guarantee a single replica will have received all writes.
-
-See also:
-
-- [insert_quorum](#insert_quorum)
-- [insert_quorum_timeout](#insert_quorum_timeout)
-- [insert_quorum_parallel](#insert_quorum_parallel)
-
-## insert_deduplicate {#insert-deduplicate}
-
-Enables or disables block deduplication of `INSERT` (for Replicated\* tables).
-
-Possible values:
-
-- 0 — Disabled.
-- 1 — Enabled.
-
-Default value: 1.
-
-By default, blocks inserted into replicated tables by the `INSERT` statement are deduplicated (see [Data Replication](../../engines/table-engines/mergetree-family/replication.md)).
-For the replicated tables by default the only 100 of the most recent blocks for each partition are deduplicated (see [replicated_deduplication_window](merge-tree-settings.md/#replicated-deduplication-window), [replicated_deduplication_window_seconds](merge-tree-settings.md/#replicated-deduplication-window-seconds)).
-For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non-replicated-deduplication-window).
-
-## Asynchronous Insert settings
-
-### async_insert {#async-insert}
-
-Enables or disables asynchronous inserts. Note that deduplication is disabled by default, see [async_insert_deduplicate](#async-insert-deduplicate).
-
-If enabled, the data is combined into batches before the insertion into tables, so it is possible to do small and frequent insertions into ClickHouse (up to 15000 queries per second) without buffer tables.
-
-The data is inserted either after the [async_insert_max_data_size](#async-insert-max-data-size) is exceeded or after [async_insert_busy_timeout_ms](#async-insert-busy-timeout-ms) milliseconds since the first `INSERT` query. If the [async_insert_stale_timeout_ms](#async-insert-stale-timeout-ms) is set to a non-zero value, the data is inserted after `async_insert_stale_timeout_ms` milliseconds since the last query. Also the buffer will be flushed to disk if at least [async_insert_max_query_number](#async-insert-max-query-number) async insert queries per block were received. This last setting takes effect only if [async_insert_deduplicate](#async-insert-deduplicate) is enabled.
-
-If [wait_for_async_insert](#wait-for-async-insert) is enabled, every client will wait for the data to be processed and flushed to the table. Otherwise, the query would be processed almost instantly, even if the data is not inserted.
-
-Possible values:
-
-- 0 — Insertions are made synchronously, one after another.
-- 1 — Multiple asynchronous insertions enabled.
-
-Default value: `0`.
-
-### async_insert_threads {#async-insert-threads}
-
-The maximum number of threads for background data parsing and insertion.
 Sets the minimum number of bytes in the block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones.
 
 Possible values:
@@ -8329,6 +8131,16 @@ Type: Milliseconds
 Default value: 0
 
 The wait time in the request queue, if the number of concurrent requests exceeds the maximum.
+
+## query_metric_log_interval (#query_metric_log_interval)
+
+The interval in milliseconds at which the [query_metric_log](../../operations/system-tables/query_metric_log.md) for individual queries is collected.
+
+If set to any negative value, it will take the value `collect_interval_milliseconds` from the [query_metric_log setting](../../operations/server-configuration-parameters/settings.md#query_metric_log) or default to 1000 if not present.
+
+To disable the collection of a single query, set `query_metric_log_interval` to 0.
+
+Default value: -1
 
 ## rabbitmq_max_wait_ms {#rabbitmq_max_wait_ms}
 
