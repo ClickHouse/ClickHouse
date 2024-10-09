@@ -72,6 +72,8 @@ public:
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
+    virtual void deserializeObject(IColumn & column, std::string_view object, const FormatSettings & settings) const = 0;
+
     static void restoreColumnObject(ColumnObject & column_object, size_t prev_size);
 
 private:
