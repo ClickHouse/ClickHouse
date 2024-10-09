@@ -13,19 +13,19 @@ max-statements=200
 [tool.pylint.'MESSAGES CONTROL']
           # pytest.mark.parametrize is not callable (not-callable)
 disable = '''
-          missing-docstring,
-          too-few-public-methods,
-          invalid-name,
-          too-many-arguments,
-          too-many-locals,
-          too-many-instance-attributes,
+          bare-except,
+          broad-except,
           cell-var-from-loop,
           fixme,
+          invalid-name,
+          missing-docstring,
+          redefined-outer-name,
+          too-few-public-methods,
+          too-many-arguments,
+          too-many-instance-attributes,
+          too-many-locals,
           too-many-public-methods,
           wildcard-import,
-          redefined-outer-name,
-          broad-except,
-          bare-except,
           '''
 
 [tool.isort]

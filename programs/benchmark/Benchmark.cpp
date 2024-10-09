@@ -445,15 +445,13 @@ private:
                     shutdown = true;
                     throw;
                 }
-                else
-                {
-                    std::cerr << getCurrentExceptionMessage(print_stacktrace,
-                        true /*check embedded stack trace*/) << std::endl;
 
-                    size_t info_index = round_robin ? 0 : connection_index;
-                    ++comparison_info_per_interval[info_index]->errors;
-                    ++comparison_info_total[info_index]->errors;
-                }
+                std::cerr << getCurrentExceptionMessage(print_stacktrace,
+                    true /*check embedded stack trace*/) << std::endl;
+
+                size_t info_index = round_robin ? 0 : connection_index;
+                ++comparison_info_per_interval[info_index]->errors;
+                ++comparison_info_total[info_index]->errors;
             }
             // Count failed queries toward executed, so that we'd reach
             // max_iterations even if every run fails.

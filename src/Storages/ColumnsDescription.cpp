@@ -607,7 +607,7 @@ bool ColumnsDescription::hasSubcolumn(const String & column_name) const
     auto it = columns.get<1>().find(ordinary_column_name);
     if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
     {
-        if (auto dynamic_subcolumn_type = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
+        if (auto /*dynamic_subcolumn_type*/ _ = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
             return true;
     }
 
@@ -811,7 +811,7 @@ bool ColumnsDescription::hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, cons
     it = columns.get<1>().find(ordinary_column_name);
     if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
     {
-        if (auto dynamic_subcolumn_type = it->type->hasSubcolumn(dynamic_subcolumn_name))
+        if (auto /*dynamic_subcolumn_type*/ _ = it->type->hasSubcolumn(dynamic_subcolumn_name))
             return true;
     }
 
