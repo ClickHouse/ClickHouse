@@ -34,7 +34,7 @@
 namespace DB
 {
 
-namespace Settings
+namespace Setting
 {
 extern const SettingsBool short_circuit_default_implementation_for_nulls;
 }
@@ -341,7 +341,7 @@ IExecutableFunction::IExecutableFunction()
     if (CurrentThread::isInitialized())
     {
         auto query_context = CurrentThread::get().getQueryContext();
-        if (query_context && query_context->getSettingsRef()[Settings::short_circuit_default_implementation_for_nulls])
+        if (query_context && query_context->getSettingsRef()[Setting::short_circuit_default_implementation_for_nulls])
             short_circuit_default_implementation_for_nulls = true;
     }
 }
