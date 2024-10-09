@@ -24,11 +24,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace {
-    auto logger = getLogger("QueryMetricLog");
-}
 namespace DB
 {
+
+static auto logger = getLogger("QueryMetricLog");
 
 ColumnsDescription QueryMetricLogElement::getColumnsDescription()
 {
