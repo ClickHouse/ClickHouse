@@ -1,8 +1,9 @@
 import json
+from random import randint
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from random import randint
 
 cluster = ClickHouseCluster(__file__)
 cluster_name = "parallel_replicas_with_unavailable_nodes"

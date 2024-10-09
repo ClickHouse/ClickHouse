@@ -594,6 +594,14 @@ public:
         optimizeTree();
     }
 
+    void makeDifference(const Node & other)
+    {
+        Node rhs = other;
+        makeDifferenceRec(*this, rhs);
+        flags -= other.flags;
+        optimizeTree();
+    }
+
     ProtoElements getElements() const
     {
         ProtoElements res;
@@ -1109,6 +1117,32 @@ private:
         result.wildcard_grant = wildcard_grant || rhs.wildcard_grant;
     }
 
+    void makeDifferenceRec(Node & result, Node & rhs)
+    {
+        if (rhs.children)
+        {
+            for (auto & rhs_child : *rhs.children)
+            {
+                auto & result_child = result.getLeaf(rhs_child.node_name, rhs_child.level, !rhs_child.isLeaf());
+                auto & lhs_child = getLeaf(rhs_child.node_name, rhs_child.level, !rhs_child.isLeaf());
+                lhs_child.makeDifferenceRec(result_child, rhs_child);
+            }
+        }
+
+        if (children)
+        {
+            for (auto & lhs_child : *children)
+            {
+                auto & result_child = result.getLeaf(lhs_child.node_name, lhs_child.level, !lhs_child.isLeaf());
+                auto & rhs_child = rhs.getLeaf(lhs_child.node_name, lhs_child.level, !lhs_child.isLeaf());
+                lhs_child.makeDifferenceRec(result_child, rhs_child);
+            }
+        }
+
+        result.flags = flags - rhs.flags;
+        result.wildcard_grant = wildcard_grant || rhs.wildcard_grant;
+    }
+
     void modifyFlagsRec(const ModifyFlagsFunction & function, bool grant_option, bool & flags_added, bool & flags_removed)
     {
         if (children)
@@ -1120,9 +1154,6 @@ private:
         }
 
         calculateMinMaxFlags();
-
-        if (!isLeaf())
-            return;
 
         auto new_flags = function(flags, min_flags_with_children, max_flags_with_children, level, grant_option);
 
@@ -1449,17 +1480,17 @@ bool AccessRights::isGrantedImplHelper(const AccessRightsElement & element) cons
     {
         if (element.anyParameter())
             return isGrantedImpl<grant_option, wildcard>(element.access_flags);
-        else
-            return isGrantedImpl<grant_option, wildcard>(element.access_flags, element.parameter);
+
+        return isGrantedImpl<grant_option, wildcard>(element.access_flags, element.parameter);
     }
-    else if (element.anyDatabase())
+    if (element.anyDatabase())
         return isGrantedImpl<grant_option, wildcard>(element.access_flags);
-    else if (element.anyTable())
+    if (element.anyTable())
         return isGrantedImpl<grant_option, wildcard>(element.access_flags, element.database);
-    else if (element.anyColumn())
+    if (element.anyColumn())
         return isGrantedImpl<grant_option, wildcard>(element.access_flags, element.database, element.table);
-    else
-        return isGrantedImpl<grant_option, wildcard>(element.access_flags, element.database, element.table, element.columns);
+
+    return isGrantedImpl<grant_option, wildcard>(element.access_flags, element.database, element.table, element.columns);
 }
 
 template <bool grant_option, bool wildcard>
@@ -1469,16 +1500,14 @@ bool AccessRights::isGrantedImpl(const AccessRightsElement & element) const
     {
         if (element.grant_option)
             return isGrantedImplHelper<true, true>(element);
-        else
-            return isGrantedImplHelper<grant_option, true>(element);
+
+        return isGrantedImplHelper<grant_option, true>(element);
     }
-    else
-    {
-        if (element.grant_option)
-            return isGrantedImplHelper<true, wildcard>(element);
-        else
-            return isGrantedImplHelper<grant_option, wildcard>(element);
-    }
+
+    if (element.grant_option)
+        return isGrantedImplHelper<true, wildcard>(element);
+
+    return isGrantedImplHelper<grant_option, wildcard>(element);
 }
 
 template <bool grant_option, bool wildcard>
@@ -1573,6 +1602,22 @@ void AccessRights::makeIntersection(const AccessRights & other)
             return;
         }
         root_node->makeIntersection(*other_root_node);
+        if (!root_node->flags && !root_node->children)
+            root_node = nullptr;
+    };
+    helper(root, other.root);
+    helper(root_with_grant_option, other.root_with_grant_option);
+}
+
+
+void AccessRights::makeDifference(const AccessRights & other)
+{
+    auto helper = [](std::unique_ptr<Node> & root_node, const std::unique_ptr<Node> & other_root_node)
+    {
+        if (!root_node || !other_root_node)
+            return;
+
+        root_node->makeDifference(*other_root_node);
         if (!root_node->flags && !root_node->children)
             root_node = nullptr;
     };
