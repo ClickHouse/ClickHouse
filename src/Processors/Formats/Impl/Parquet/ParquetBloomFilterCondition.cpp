@@ -350,11 +350,11 @@ std::unordered_set<std::size_t> ParquetBloomFilterCondition::getFilteringColumnK
  *      `FUNCTION_IN`
  *
  * Complex types and structs are not supported.
- * There are two sources of data types being analyze, and they need to be compatible: DB::Field type and parquet type.
+ * There are two sources of data types being analyzed, and they need to be compatible: DB::Field type and parquet type.
  * This is determined by the `isColumnSupported` method.
  *
  * Some interesting examples:
- * 1. file(..., 'string_column UInt64') where str_column = '50'; Field.type == UInt64. Parquet type string. Not supported. isColumnSupported takes care of it.
+ * 1. file(..., 'string_column UInt64') where str_column = '50'; Field.type == UInt64. Parquet type string. Not supported.
  * 2. file(...) where str_column = 50; Field.type == String (conversion already taken care by `KeyCondition`). Parquet type string.
  * 3. file(...) where uint32_column = toIPv4(5). Field.type == IPv4. Incompatible column types, resolved by `KeyCondition` itself.
  * 4. file(...) where toIPv4(uint32_column) = toIPv4(5). Field.type == IPv4. We know it is safe to hash it using an int32 API.
@@ -463,8 +463,7 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
 
             if (hashes.empty())
             {
-                // todo maybe it is not necessary to copy the hashes
-                condition_elements.emplace_back(Function::FUNCTION_UNKNOWN, hashes);
+                condition_elements.emplace_back(Function::FUNCTION_UNKNOWN);
                 continue;
             }
 
@@ -474,19 +473,19 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
         }
         else if (rpn_element.function == RPNElement::FUNCTION_NOT)
         {
-            condition_elements.emplace_back(Function::FUNCTION_NOT, hashes);
+            condition_elements.emplace_back(Function::FUNCTION_NOT);
         }
         else if (rpn_element.function == RPNElement::FUNCTION_OR)
         {
-            condition_elements.emplace_back(Function::FUNCTION_OR, hashes);
+            condition_elements.emplace_back(Function::FUNCTION_OR);
         }
         else if (rpn_element.function == RPNElement::FUNCTION_AND)
         {
-            condition_elements.emplace_back(Function::FUNCTION_AND, hashes);
+            condition_elements.emplace_back(Function::FUNCTION_AND);
         }
         else
         {
-            condition_elements.emplace_back(Function::ALWAYS_TRUE, hashes);
+            condition_elements.emplace_back(Function::ALWAYS_TRUE);
         }
     }
 
