@@ -288,11 +288,11 @@ toIPv4OrDefault(value)
 
 **Arguments**
 
-- `value` — The value with IPv4 address.
+- `value` — A string-encoded IPv4 address. [String](../data-types/string.md)
 
 **Returned value**
 
-- `value` converted to the current IPv4 address. [String](../data-types/string.md).
+- `value` converted to an IPv4 address. [IPv4](../data-types/ipv4.md).
 
 **Example**
 
@@ -324,11 +324,11 @@ toIPv4OrNull(value)
 
 **Arguments**
 
-- `value` — The value with IPv4 address.
+- `value` — A string-encoded IPv4 address. [String](../data-types/string.md)
 
 **Returned value**
 
-- `value` converted to the current IPv4 address. [String](../data-types/string.md).
+- `value` converted to an IPv4 address. [IPv4](../data-types/ipv4.md).
 
 **Example**
 

@@ -68,10 +68,8 @@ struct ArrayFirstLastIndexImpl
 
                 return out_column;
             }
-            else
-            {
-                return DataTypeUInt32().createColumnConst(array.size(), 0u);
-            }
+
+            return DataTypeUInt32().createColumnConst(array.size(), 0u);
         }
 
         const auto & filter = column_filter->getData();
