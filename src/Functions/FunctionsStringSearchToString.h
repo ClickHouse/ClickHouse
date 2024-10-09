@@ -60,6 +60,11 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr column = arguments[0].column;
@@ -79,9 +84,8 @@ public:
 
             return col_res;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 };
 

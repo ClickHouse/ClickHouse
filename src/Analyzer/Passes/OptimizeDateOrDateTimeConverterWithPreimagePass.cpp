@@ -165,27 +165,26 @@ private:
                 createFunctionNode("greaterOrEquals", column_node, std::make_shared<ConstantNode>(start_date_or_date_time)),
                 createFunctionNode("less", column_node, std::make_shared<ConstantNode>(end_date_or_date_time)));
         }
-        else if (comparator == "notEquals")
+        if (comparator == "notEquals")
         {
             return createFunctionNode(
                 "or",
                 createFunctionNode("less", column_node, std::make_shared<ConstantNode>(start_date_or_date_time)),
                 createFunctionNode("greaterOrEquals", column_node, std::make_shared<ConstantNode>(end_date_or_date_time)));
         }
-        else if (comparator == "greater")
+        if (comparator == "greater")
         {
             return createFunctionNode("greaterOrEquals", column_node, std::make_shared<ConstantNode>(end_date_or_date_time));
         }
-        else if (comparator == "lessOrEquals")
+        if (comparator == "lessOrEquals")
         {
             return createFunctionNode("less", column_node, std::make_shared<ConstantNode>(end_date_or_date_time));
         }
-        else if (comparator == "less" || comparator == "greaterOrEquals")
+        if (comparator == "less" || comparator == "greaterOrEquals")
         {
             return createFunctionNode(comparator, column_node, std::make_shared<ConstantNode>(start_date_or_date_time));
         }
-        else [[unlikely]]
-        {
+        [[unlikely]] {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Expected equals, notEquals, less, lessOrEquals, greater, greaterOrEquals. Actual {}",

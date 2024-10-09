@@ -613,7 +613,7 @@ void ReplicatedMergeTreePartCheckThread::run()
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Someone erased checking part from parts_queue. This is a bug.");
             }
-            else if (recheck_after.has_value())
+            if (recheck_after.has_value())
             {
                 LOG_TRACE(log, "Will recheck part {} after after {}s", selected->name, *recheck_after);
                 selected->time = std::chrono::steady_clock::now() + std::chrono::seconds(*recheck_after);
