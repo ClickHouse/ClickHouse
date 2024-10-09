@@ -2681,7 +2681,7 @@ void Server::createServers(
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(Poco::Timespan());
-                socket.setSendTimeout(settings.send_timeout);
+                socket.setSendTimeout(settings[Setting::send_timeout]);
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
