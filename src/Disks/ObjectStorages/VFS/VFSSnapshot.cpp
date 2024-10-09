@@ -49,7 +49,7 @@ void VFSSnapshotEntry::serialize(WriteBuffer & buf) const
 void VFSSnapshotDataBase::writeEntryInSnaphot(
     const VFSSnapshotEntry & entry, WriteBuffer & write_buffer, VFSSnapshotEntries & entries_to_remove)
 {
-    LOG_DEBUG(log, "Write entry in snapshot {} links: {}", entry.remote_path, entry.link_count);
+    LOG_DEBUG(log, "Write entry in snapshot remote_path: {} links: {}", entry.remote_path, entry.link_count);
 
     if (entry.link_count < 0)
     {
@@ -78,9 +78,9 @@ SnapshotMetadata VFSSnapshotDataBase::mergeWithWals(VFSLogItems && wal_items, co
     new_shapshot_write_buffer->finalize();
 
     SnapshotMetadata new_snaphot_meta(new_object_key);
-    
+
     LOG_DEBUG(log, "Merge snapshot have finished, going to remove {} from object storage", entires_to_remove.size());
-    removeShapshotEntires(entires_to_remove);    
+    removeShapshotEntires(entires_to_remove);
     return new_snaphot_meta;
 }
 
@@ -96,7 +96,7 @@ VFSSnapshotEntries VFSSnapshotDataBase::mergeWithWalsImpl(VFSLogItems && wal_ite
 
     auto current_snapshot_entry = VFSSnapshotEntry::deserialize(read_buffer);
     LOG_DEBUG(log, "Read entry from snapshot {} {}", current_snapshot_entry->remote_path, current_snapshot_entry->link_count);
-    
+
 
     // Implementation similar to the merge operation:
     // Iterating thought 2 sorted vectors.
@@ -128,15 +128,13 @@ VFSSnapshotEntries VFSSnapshotDataBase::mergeWithWalsImpl(VFSLogItems && wal_ite
         // Write and skip entries from snaphot which we won't update
         while (current_snapshot_entry && current_snapshot_entry->remote_path < entry_to_merge.remote_path)
         {
-            // auto next_snapshot_entry = VFSSnapshotEntry::deserialize(read_buffer);
-            // if (next_snapshot_entry && current_snapshot_entry->remote_path > next_snapshot_entry->remote_path)
-            // {
-            //     throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "VFS snapshot is not sorted.");
-            // }
-            writeEntryInSnaphot(*current_snapshot_entry, write_buffer, entries_to_remove);
-            current_snapshot_entry = VFSSnapshotEntry::deserialize(read_buffer);
-            LOG_DEBUG(log, "Read entry from snapshot {} {}", current_snapshot_entry->remote_path, current_snapshot_entry->link_count);
-            //std::swap(current_snapshot_entry, next_snapshot_entry);
+            auto next_snapshot_entry = VFSSnapshotEntry::deserialize(read_buffer);
+            if (next_snapshot_entry && current_snapshot_entry->remote_path > next_snapshot_entry->remote_path)
+            {
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "VFS snapshot is not sorted.");
+            }
+            current_snapshot_entry->serialize(write_buffer);
+            std::swap(current_snapshot_entry, next_snapshot_entry);
         }
 
         if (!current_snapshot_entry || current_snapshot_entry->remote_path > entry_to_merge.remote_path)
@@ -158,16 +156,14 @@ VFSSnapshotEntries VFSSnapshotDataBase::mergeWithWalsImpl(VFSLogItems && wal_ite
 
     while (current_snapshot_entry)
     {
-        // current_snapshot_entry->serialize(write_buffer);
-        writeEntryInSnaphot(*current_snapshot_entry, write_buffer, entries_to_remove);
-        current_snapshot_entry = VFSSnapshotEntry::deserialize(read_buffer);
-        // auto next_snapshot_entry = VFSSnapshotEntry::deserialize(read_buffer);
+        current_snapshot_entry->serialize(write_buffer);
+        auto next_snapshot_entry = VFSSnapshotEntry::deserialize(read_buffer);
 
-        // if (next_snapshot_entry && current_snapshot_entry->remote_path > next_snapshot_entry->remote_path)
-        // {
-        //     throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "VFS snapshot is not sorted.");
-        // }
-        // std::swap(current_snapshot_entry, next_snapshot_entry);
+        if (next_snapshot_entry && current_snapshot_entry->remote_path > next_snapshot_entry->remote_path)
+        {
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "VFS snapshot is not sorted.");
+        }
+        std::swap(current_snapshot_entry, next_snapshot_entry);
     }
     write_buffer.finalize();
     return entries_to_remove;
@@ -188,9 +184,11 @@ std::unique_ptr<ReadBuffer> VFSSnapshotDataFromObjectStorage::getShapshotReadBuf
 std::pair<std::unique_ptr<WriteBuffer>, String>
 VFSSnapshotDataFromObjectStorage::getShapshotWriteBufferAndSnaphotObject(const SnapshotMetadata & snapshot_meta) const
 {
-    String new_object_path = fmt::format("/vfs_shapshots/shapshot_{}", snapshot_meta.znode_version + 1);
+    String new_object_path = fmt::format("vfs_snapshots/shapshot_{}/", snapshot_meta.znode_version + 1);
+    // FIXME: object_storage->generateObjectKeyForPath is not suitable because it generates
+    // keys like data/ial/ddowfjnxhlexodkhjwdwnzdukbolt
     auto new_object_key = object_storage->generateObjectKeyForPath(new_object_path);
-    String new_key = String("snapshot/") + new_object_key.serialize();
+    String new_key = new_object_path + new_object_key.serialize();
     LOG_DEBUG(log, "New snapshot path: {}", new_key);
     StoredObject new_object(new_key);
     std::unique_ptr<WriteBuffer> new_shapshot_write_buffer = object_storage->writeObject(new_object, WriteMode::Rewrite);
@@ -208,7 +206,7 @@ void VFSSnapshotDataFromObjectStorage::removeShapshotEntires(const VFSSnapshotEn
         objects_to_remove.emplace_back(entry.remote_path);
     }
     object_storage->removeObjectsIfExist(objects_to_remove);
-    LOG_DEBUG(log, "Removed {} objects", entires_to_remove.size());    
+    LOG_DEBUG(log, "Removed {} objects", entires_to_remove.size());
 }
 
 }

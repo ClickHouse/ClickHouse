@@ -26,11 +26,9 @@ private:
 
     mutable SharedMutex metadata_mutex;
     DiskPtr disk;
-    
-
-public:
     String compatible_key_prefix;
 
+public:
     MetadataStorageFromDisk(DiskPtr disk_, String compatible_key_prefix_);
 
     MetadataTransactionPtr createTransaction() override;
@@ -77,10 +75,11 @@ public:
 
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::unique_lock<SharedMutex> & lock) const;
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<SharedMutex> & lock) const;
+
+    String getCompatibleKeyPrefix() const { return compatible_key_prefix; }
 };
 
 
-/// TODO: While inheritance but composition with delegating is better
 class VFSMetadataStorageFromDisk final : public MetadataStorageFromDisk
 {
 public:
@@ -95,9 +94,11 @@ public:
 
     void shutdown() override
     {
-        // close vfs_log
+        /// TODO: close vfs_log
         gc->shutdown();
     }
+
+    bool supportsVFS() const override { return true; }
 
 private:
     VFSLogPtr vfs_log;
@@ -107,7 +108,7 @@ private:
 
 class MetadataStorageFromDiskTransaction : public IMetadataTransaction, public MetadataOperationsHolder
 {
-protected:  // TODO check needed
+protected:
     const MetadataStorageFromDisk & metadata_storage;
 
 public:
@@ -165,15 +166,15 @@ public:
 };
 
 
-/// TODO: While inheritance but composition with delegating is better
 class VFSMetadataStorageFromDiskTransaction final : public MetadataStorageFromDiskTransaction
 {
     VFSLogPtr vfs_log;
+
 public:
     explicit VFSMetadataStorageFromDiskTransaction(const MetadataStorageFromDisk & metadata_storage_, VFSLogPtr vfs_log_)
-        : MetadataStorageFromDiskTransaction(metadata_storage_),
-          vfs_log(vfs_log_)
-    {}
+        : MetadataStorageFromDiskTransaction(metadata_storage_), vfs_log(vfs_log_)
+    {
+    }
 
     ~VFSMetadataStorageFromDiskTransaction() override = default;
 
@@ -191,5 +192,4 @@ public:
 
     TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t target_size) override;
 };
-
 }

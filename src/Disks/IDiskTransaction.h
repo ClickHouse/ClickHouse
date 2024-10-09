@@ -78,15 +78,6 @@ public:
         const WriteSettings & settings = {},
         bool autocommit = true) = 0;
 
-    virtual std::unique_ptr<WriteBuffer> writeMetadataFile( /// NOLINT
-        const std::string & /* path */,
-        const WriteSettings & /* settings */ = {},
-        bool /* autocommit */ = true)
-    {
-        chassert(false && "Not implemented"); // TODO(vfs): make more correct
-        return {};
-    }
-
     using WriteBlobFunction = std::function<size_t(const std::vector<std::string> & blob_path, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>;
 
     /// Write a file using a custom function to write an object to the disk's object storage.

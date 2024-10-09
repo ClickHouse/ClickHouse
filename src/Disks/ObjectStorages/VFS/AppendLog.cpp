@@ -12,6 +12,7 @@
 
 namespace DB::ErrorCodes
 {
+extern const int ATTEMPT_TO_READ_AFTER_EOF;
 extern const int BAD_ARGUMENTS;
 extern const int ARGUMENT_OUT_OF_BOUND;
 extern const int CORRUPTED_DATA;

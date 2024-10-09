@@ -10,6 +10,7 @@
 #include <Common/ZooKeeper/ZooKeeperLock.h>
 
 
+// TODO: Add VFS events
 // namespace ProfileEvents
 // {
 // extern const Event VFSGcRunsCompleted;
@@ -22,11 +23,7 @@
 namespace DB
 {
 using ms = std::chrono::milliseconds;
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-extern const int INVALID_STATE;
-}
+
 namespace FailPoints
 {
 extern const char vfs_gc_optimistic_lock_delay[];
@@ -52,7 +49,7 @@ VFSGarbageCollector::VFSGarbageCollector(
         [this]
         {
             try
-            {                                
+            {
                 run();
             }
             catch (...)
@@ -149,17 +146,17 @@ void VFSGarbageCollector::updateShapshotMetadata(const SnapshotMetadata & new_sn
 
 void VFSGarbageCollector::updateSnapshot()
 {
-    LOG_DEBUG(log, "List object storage started ==============================");
+    LOG_TEST(log, "List object storage started ==============================");
     RelativePathsWithMetadata files;
     object_storage->listObjects("", files, 0);
-    for (auto && file: files)
+    for (auto && file : files)
     {
         LOG_DEBUG(log, "Object: {} {}", file->relative_path, file->metadata->size_bytes);
     }
-    LOG_DEBUG(log, "List object storage finished {} ==============================", files.size());
+    LOG_TEST(log, "List object storage finished {} ==============================", files.size());
 
     SnapshotMetadata snapshot_meta = getSnapshotMetadata();
-    auto wal_items_batch = wal->read(settings.batch_size);    
+    auto wal_items_batch = wal->read(settings.batch_size);
     if (wal_items_batch.size() == 0ul)
     {
         LOG_DEBUG(log, "Merge snapshot exit due to empty wal.");
@@ -170,14 +167,18 @@ void VFSGarbageCollector::updateSnapshot()
 
     auto new_snaphot_meta = vfs_shapshot_data.mergeWithWals(std::move(wal_items_batch), snapshot_meta);
 
-    LOG_DEBUG(log, "List object storage started ==============================");
+    LOG_TEST(log, "List object storage started ==============================");
     files.clear();
     object_storage->listObjects("", files, 0);
-    for (auto && file: files)
+    for (auto && file : files)
     {
-        LOG_DEBUG(log, "Object: {} {}", file->relative_path, file->metadata->size_bytes);
+        LOG_TEST(log, "Object: {} {}", file->relative_path, file->metadata->size_bytes);
     }
-    LOG_DEBUG(log, "List object storage finished {} remove snapshot path: {} ==============================", files.size(), snapshot_meta.object_storage_key);
+    LOG_TEST(
+        log,
+        "List object storage finished {} remove snapshot path: {} ==============================",
+        files.size(),
+        snapshot_meta.object_storage_key);
 
     updateShapshotMetadata(new_snaphot_meta, snapshot_meta.znode_version);
     if (!snapshot_meta.is_initial_snaphot)
@@ -185,14 +186,5 @@ void VFSGarbageCollector::updateSnapshot()
     wal->dropUpTo(next_index);
 
     LOG_DEBUG(log, "Snapshot update finished with new shapshot key {}", new_snaphot_meta.object_storage_key);
-
-    LOG_DEBUG(log, "List object storage started 3 ==============================");
-    files.clear();    
-    object_storage->listObjects("", files, 0);
-    for (auto && file: files)
-    {
-        LOG_DEBUG(log, "Object: {} {}", file->relative_path, file->metadata->size_bytes);
-    }
-    LOG_DEBUG(log, "List object storage finished {} ==============================", files.size());
 }
 }

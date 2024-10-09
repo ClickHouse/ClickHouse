@@ -1,10 +1,10 @@
-#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
-#include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Common/getRandomASCIIString.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <ranges>
 #include <filesystem>
+#include <ranges>
+#include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Common/getRandomASCIIString.h>
 
 
 namespace DB
@@ -163,25 +163,19 @@ void MetadataStorageFromDiskTransaction::commit()
     MetadataOperationsHolder::commitImpl(metadata_storage.metadata_mutex);
 }
 
-void MetadataStorageFromDiskTransaction::writeStringToFile(
-     const std::string & path,
-     const std::string & data)
+void MetadataStorageFromDiskTransaction::writeStringToFile(const std::string & path, const std::string & data)
 {
     addOperation(std::make_unique<WriteFileOperation>(path, *metadata_storage.getDisk(), data));
 }
 
-void MetadataStorageFromDiskTransaction::writeMetadataToFile(
-     const std::string & path,
-     const DiskObjectStorageMetadata & metadata)
+void MetadataStorageFromDiskTransaction::writeMetadataToFile(const std::string & path, const DiskObjectStorageMetadata & metadata)
 {
     addOperation(std::make_unique<WriteFileOperation>(path, *metadata_storage.getDisk(), metadata.serializeToString()));
 }
 
-void MetadataStorageFromDiskTransaction::writeInlineDataToFile(
-     const std::string & path,
-     const std::string & data)
+void MetadataStorageFromDiskTransaction::writeInlineDataToFile(const std::string & path, const std::string & data)
 {
-    auto metadata = std::make_unique<DiskObjectStorageMetadata>(metadata_storage.compatible_key_prefix, path);
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(metadata_storage.getCompatibleKeyPrefix(), path);
     metadata->setInlineData(data);
     writeStringToFile(path, metadata->serializeToString());
 }
@@ -245,23 +239,24 @@ void MetadataStorageFromDiskTransaction::setReadOnly(const std::string & path)
 
 void MetadataStorageFromDiskTransaction::createEmptyMetadataFile(const std::string & path)
 {
-    auto metadata = std::make_unique<DiskObjectStorageMetadata>(metadata_storage.compatible_key_prefix, path);
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(metadata_storage.getCompatibleKeyPrefix(), path);
     writeStringToFile(path, metadata->serializeToString());
 }
 
 void MetadataStorageFromDiskTransaction::createMetadataFile(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes)
 {
-    auto metadata = std::make_unique<DiskObjectStorageMetadata>(metadata_storage.compatible_key_prefix, path);
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(metadata_storage.getCompatibleKeyPrefix(), path);
     metadata->addObject(std::move(object_key), size_in_bytes);
 
     auto data = metadata->serializeToString();
     if (!data.empty())
-        addOperation(std::make_unique<WriteFileOperation>(path, *metadata_storage.getDisk(), data));    
+        addOperation(std::make_unique<WriteFileOperation>(path, *metadata_storage.getDisk(), data));
 }
 
 void MetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes)
 {
-    addOperation(std::make_unique<AddBlobOperation>(path, std::move(object_key), size_in_bytes, *metadata_storage.getDisk(), metadata_storage));
+    addOperation(
+        std::make_unique<AddBlobOperation>(path, std::move(object_key), size_in_bytes, *metadata_storage.getDisk(), metadata_storage));
 }
 
 UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromDiskTransaction::unlinkMetadata(const std::string & path)
@@ -282,7 +277,8 @@ TruncateFileOperationOutcomePtr MetadataStorageFromDiskTransaction::truncateFile
 
 TruncateFileOperationOutcomePtr VFSMetadataStorageFromDiskTransaction::truncateFile(const std::string & path, size_t target_size)
 {
-    auto operation = std::make_unique<VFSTruncateMetadataFileOperation>(path, target_size, metadata_storage, *metadata_storage.getDisk(), *vfs_log);
+    auto operation
+        = std::make_unique<VFSTruncateMetadataFileOperation>(path, target_size, metadata_storage, *metadata_storage.getDisk(), *vfs_log);
     auto result = operation->outcome;
     addOperation(std::move(operation));
     return result;
@@ -303,19 +299,23 @@ void VFSMetadataStorageFromDiskTransaction::createHardLink(const std::string & p
 
 void VFSMetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes)
 {
-    addOperation(std::make_unique<VFSAddBlobOperation>(path, std::move(object_key), size_in_bytes, *metadata_storage.getDisk(), metadata_storage, *vfs_log));
+    addOperation(std::make_unique<VFSAddBlobOperation>(
+        path, std::move(object_key), size_in_bytes, *metadata_storage.getDisk(), metadata_storage, *vfs_log));
 }
 
-void VFSMetadataStorageFromDiskTransaction::createMetadataFile(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes)
+void VFSMetadataStorageFromDiskTransaction::createMetadataFile(
+    const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes)
 {
-    auto metadata = std::make_unique<DiskObjectStorageMetadata>(metadata_storage.compatible_key_prefix, path);
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(metadata_storage.getCompatibleKeyPrefix(), path);
     metadata->addObject(std::move(object_key), size_in_bytes);
 
     auto data = metadata->serializeToString();
-    if (!data.empty())    
-        addOperation(std::make_unique<VFSWriteMetadataFileOperation>(path, *metadata_storage.getDisk(), metadata_storage, *metadata, *vfs_log));
+    if (!data.empty())
+        addOperation(
+            std::make_unique<VFSWriteMetadataFileOperation>(path, *metadata_storage.getDisk(), metadata_storage, *metadata, *vfs_log));
     else
-        LOG_TEST(getLogger("createMetadataFile"), "Create metadata path: {} key: {}, size: {}", path, object_key.serialize(), size_in_bytes);
+        LOG_TEST(
+            getLogger("createMetadataFile"), "Create metadata path: {} key: {}, size: {}", path, object_key.serialize(), size_in_bytes);
 }
 
 void VFSMetadataStorageFromDiskTransaction::replaceFile(const std::string & path_from, const std::string & path_to)
@@ -323,9 +323,7 @@ void VFSMetadataStorageFromDiskTransaction::replaceFile(const std::string & path
     addOperation(std::make_unique<VFSReplaceFileOperation>(path_from, path_to, *metadata_storage.getDisk(), metadata_storage, *vfs_log));
 }
 
-void VFSMetadataStorageFromDiskTransaction::writeMetadataToFile(
-     const std::string & path,
-     const DiskObjectStorageMetadata & metadata)
+void VFSMetadataStorageFromDiskTransaction::writeMetadataToFile(const std::string & path, const DiskObjectStorageMetadata & metadata)
 {
     addOperation(std::make_unique<VFSWriteMetadataFileOperation>(path, *metadata_storage.getDisk(), metadata_storage, metadata, *vfs_log));
 }

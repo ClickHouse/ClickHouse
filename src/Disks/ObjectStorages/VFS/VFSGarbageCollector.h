@@ -37,7 +37,7 @@ public:
         VFSLogPtr wal_,
         BackgroundSchedulePool & pool,
         const GarbageCollectorSettings & settings_);
-    
+
     ~VFSGarbageCollector();
 
     void shutdown();

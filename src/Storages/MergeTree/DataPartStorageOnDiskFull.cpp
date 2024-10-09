@@ -143,15 +143,6 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskFull::writeFile(
         return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
 }
 
-
-std::unique_ptr<WriteBuffer> DataPartStorageOnDiskFull::writeMetadataFile(const String & name, const WriteSettings & settings)
-{
-    if (transaction)
-        return transaction->writeMetadataFile(fs::path(root_path) / part_dir / name, mode, settings, /* autocommit = */ false);
-    else
-        return volume->getDisk()->writeMetadataFile(fs::path(root_path) / part_dir / name, mode, settings);
-}
-
 void DataPartStorageOnDiskFull::createFile(const String & name)
 {
     executeWriteOperation([&](auto & disk) { disk.createFile(fs::path(root_path) / part_dir / name); });

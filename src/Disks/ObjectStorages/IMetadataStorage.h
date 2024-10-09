@@ -57,13 +57,15 @@ public:
 
     /// General purpose methods
 
-    /// Write metadata string to file
+    /// Write an arbitrary string to the file.
+    /// Use it only for files that do not have metadata format.
+    /// For writing metadata to the file use `writeMetadataToFile()` method
     virtual void writeStringToFile(const std::string & /* path */, const std::string & /* data */)
     {
         throwNotImplemented();
     }
 
-    /// Write metadata to file
+    /// Write metadata to the file
     virtual void writeMetadataToFile(const std::string & /* path */, const DiskObjectStorageMetadata & /* metadata */)
     {
         throwNotImplemented();
@@ -248,6 +250,8 @@ public:
     /// Return object information (absolute_path, bytes_size, ...) for metadata path.
     /// object_storage_path is absolute.
     virtual StoredObjects getStorageObjects(const std::string & path) const = 0;
+
+    virtual bool supportsVFS() const { return false;}
 
 protected:
     [[noreturn]] static void throwNotImplemented()

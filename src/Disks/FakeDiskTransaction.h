@@ -75,14 +75,6 @@ public:
         return disk.writeFile(path, buf_size, mode, settings);
     }
 
-    std::unique_ptr<WriteBuffer> writeMetadataFile( /// NOLINT
-        const std::string & path,
-        const WriteSettings & settings = {},
-        bool /*autocommit */ = true) override
-    {
-        return disk.writeMetadataFile(path, mode, settings);
-    }
-
     void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override
     {
         disk.writeFileUsingBlobWritingFunction(path, mode, std::move(write_blob_function));

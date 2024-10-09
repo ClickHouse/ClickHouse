@@ -1,8 +1,8 @@
 #include "VFSLog.h"
 
+#include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
 #include <Disks/ObjectStorages/VFS/JSONSerializer.h>
 #include <Common/Concepts.h>
-#include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
 
 
 namespace DB
@@ -14,28 +14,28 @@ VFSLog::VFSLog(const String & log_dir) : wal(log_dir) // TODO: read settings fro
 
 void VFSLog::link(const String & remote_path, const String & local_path)
 {
-    VFSEvent event {remote_path, local_path, {}, {}, VFSAction::LINK};
+    VFSEvent event{remote_path, local_path, {}, {}, VFSAction::LINK};
     write(event);
     LOG_DEBUG(getLogger("VFSLog"), "Link remote_path: {} local_path: {}", remote_path, local_path);
 }
 
 void VFSLog::link(const DiskObjectStorageMetadata & metadata)
 {
-    for (const auto & key_with_meta : metadata.getKeysWithMeta())    
-        link(key_with_meta.key.serialize(), metadata.getMetadataFilePath());    
+    for (const auto & key_with_meta : metadata.getKeysWithMeta())
+        link(key_with_meta.key.serialize(), metadata.getMetadataFilePath());
 }
 
 void VFSLog::unlink(const String & remote_path, const String & local_path)
 {
-    VFSEvent event {remote_path, local_path, {}, {}, VFSAction::UNLINK};
+    VFSEvent event{remote_path, local_path, {}, {}, VFSAction::UNLINK};
     write(event);
     LOG_DEBUG(getLogger("VFSLog"), "Unlink remote_path: {} local_path: {}", remote_path, local_path);
 }
 
 void VFSLog::unlink(const DiskObjectStorageMetadata & metadata)
 {
-    for (const auto & key_with_meta : metadata.getKeysWithMeta())    
-        unlink(key_with_meta.key.serialize(), metadata.getMetadataFilePath());    
+    for (const auto & key_with_meta : metadata.getKeysWithMeta())
+        unlink(key_with_meta.key.serialize(), metadata.getMetadataFilePath());
 }
 
 

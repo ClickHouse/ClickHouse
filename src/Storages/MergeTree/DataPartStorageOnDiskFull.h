@@ -40,8 +40,6 @@ public:
         WriteMode mode,
         const WriteSettings & settings) override;
 
-    std::unique_ptr<WriteBuffer> writeMetadataFile(const String & name, const WriteSettings & settings) override;
-
     void createFile(const String & name) override;
     void moveFile(const String & from_name, const String & to_name) override;
     void replaceFile(const String & from_name, const String & to_name) override;

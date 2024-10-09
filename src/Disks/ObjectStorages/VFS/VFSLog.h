@@ -52,7 +52,7 @@ class VFSLog
 {
 public:
     VFSLog(const String & log_dir);
-    
+
     void link(const String & remote_path, const String & local_path);
     void link(const DiskObjectStorageMetadata & metadata);
     void unlink(const String & remote_path, const String & local_path);

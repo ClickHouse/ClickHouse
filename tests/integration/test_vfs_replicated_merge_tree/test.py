@@ -161,21 +161,21 @@ def test_insert_select_replicated(cluster, min_rows_for_wide_part, files_per_par
     # Wait at least one GC iteration
     time.sleep(1.5)    
 
-    assert len(list_objects(cluster, "snapshot/")) == 1
+    assert len(list_objects(cluster, "vfs_snapshots/")) == 1
     assert len(list_objects(cluster, "data/")) == (3 * FILES_OVERHEAD) + (files_per_part * 3)
 
     get_node(cluster, 0).query("drop table s3_test SYNC")
     get_node(cluster, 1).query("drop table s3_test SYNC")
 
     # Wait at least one GC iteration
-    time.sleep(1.5)    
+    time.sleep(2)    
 
     assert len(list_objects(cluster, "data/")) == (1 * FILES_OVERHEAD) + (files_per_part * 3)
 
     get_node(cluster, 2).query("drop table s3_test SYNC")
 
     # Wait at least one GC iteration
-    time.sleep(1.5)    
+    time.sleep(2)    
 
     assert len(list_objects(cluster, "data/")) == 0
 

@@ -1,8 +1,8 @@
 #pragma once
 
+#include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
 #include <Disks/ObjectStorages/IMetadataOperation.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
 #include <Disks/ObjectStorages/VFS/VFSLog.h>
 
 #include <numeric>
@@ -138,7 +138,12 @@ private:
 
 struct VFSWriteMetadataFileOperation : public IMetadataOperation
 {
-    VFSWriteMetadataFileOperation(const std::string & path_, IDisk & disk_, const MetadataStorageFromDisk & metadata_storage_, const DiskObjectStorageMetadata & metadata_, VFSLog & vfs_log_);
+    VFSWriteMetadataFileOperation(
+        const std::string & path_,
+        IDisk & disk_,
+        const MetadataStorageFromDisk & metadata_storage_,
+        const DiskObjectStorageMetadata & metadata_,
+        VFSLog & vfs_log_);
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
 
@@ -148,7 +153,7 @@ struct VFSWriteMetadataFileOperation : public IMetadataOperation
 
 private:
     std::string path;
-    IDisk & disk;    
+    IDisk & disk;
     const MetadataStorageFromDisk & metadata_storage;
     VFSLog & vfs_log;
     bool existed = false;
@@ -163,10 +168,7 @@ private:
 struct CreateHardlinkOperation final : public IMetadataOperation
 {
     CreateHardlinkOperation(
-        const std::string & path_from_,
-        const std::string & path_to_,
-        IDisk & disk_,
-        const MetadataStorageFromDisk & metadata_storage_);
+        const std::string & path_from_, const std::string & path_to_, IDisk & disk_, const MetadataStorageFromDisk & metadata_storage_);
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
 
@@ -187,8 +189,7 @@ struct VFSCreateHardlinkOperation final : public IMetadataOperation
         const std::string & path_to_,
         IDisk & disk_,
         const MetadataStorageFromDisk & metadata_storage_,
-        VFSLog & vfs_log_
-        );
+        VFSLog & vfs_log_);
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
 
@@ -197,12 +198,12 @@ struct VFSCreateHardlinkOperation final : public IMetadataOperation
 private:
     std::string path_from;
     std::string path_to;
-    IDisk & disk;    
+    IDisk & disk;
     const MetadataStorageFromDisk & metadata_storage;
     VFSLog & vfs_log;
     DiskObjectStorageMetadataPtr metadata;
 
-    std::unique_ptr<CreateHardlinkOperation> create_hardlink_operation;    
+    std::unique_ptr<CreateHardlinkOperation> create_hardlink_operation;
 };
 
 
@@ -256,7 +257,12 @@ private:
 
 struct VFSReplaceFileOperation final : public IMetadataOperation
 {
-    VFSReplaceFileOperation(const std::string & path_from_, const std::string & path_to_, IDisk & disk_, const MetadataStorageFromDisk & metadata_storage_, VFSLog & vfs_log_);
+    VFSReplaceFileOperation(
+        const std::string & path_from_,
+        const std::string & path_to_,
+        IDisk & disk_,
+        const MetadataStorageFromDisk & metadata_storage_,
+        VFSLog & vfs_log_);
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
 
@@ -267,15 +273,14 @@ struct VFSReplaceFileOperation final : public IMetadataOperation
 private:
     std::string path_from;
     std::string path_to;
-    IDisk & disk;    
+    IDisk & disk;
     const MetadataStorageFromDisk & metadata_storage;
     VFSLog & vfs_log;
-    
+
     DiskObjectStorageMetadataPtr prev_metadata;
 
-    std::unique_ptr<ReplaceFileOperation> replace_file_operation;  
+    std::unique_ptr<ReplaceFileOperation> replace_file_operation;
 };
-      
 
 
 struct AddBlobOperation final : public IMetadataOperation
@@ -286,12 +291,9 @@ struct AddBlobOperation final : public IMetadataOperation
         uint64_t size_in_bytes_,
         IDisk & disk_,
         const MetadataStorageFromDisk & metadata_storage_)
-        : path(path_)
-        , object_key(std::move(object_key_))
-        , size_in_bytes(size_in_bytes_)
-        , disk(disk_)
-        , metadata_storage(metadata_storage_)
-    {}
+        : path(path_), object_key(std::move(object_key_)), size_in_bytes(size_in_bytes_), disk(disk_), metadata_storage(metadata_storage_)
+    {
+    }
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
 
@@ -315,15 +317,15 @@ struct VFSAddBlobOperation final : public IMetadataOperation
         uint64_t size_in_bytes_,
         IDisk & disk_,
         const MetadataStorageFromDisk & metadata_storage_,
-        VFSLog & vfs_log_
-        )
+        VFSLog & vfs_log_)
         : path(path_)
         , object_key(std::move(object_key_))
         , size_in_bytes(size_in_bytes_)
         , disk(disk_)
         , metadata_storage(metadata_storage_)
         , vfs_log(vfs_log_)
-    {}
+    {
+    }
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
 
@@ -333,7 +335,7 @@ private:
     std::string path;
     ObjectStorageKey object_key;
     uint64_t size_in_bytes;
-    IDisk & disk;    
+    IDisk & disk;
     const MetadataStorageFromDisk & metadata_storage;
     VFSLog & vfs_log;
 
@@ -344,13 +346,8 @@ struct UnlinkMetadataFileOperation final : public IMetadataOperation
 {
     const UnlinkMetadataFileOperationOutcomePtr outcome = std::make_shared<UnlinkMetadataFileOperationOutcome>();
 
-    UnlinkMetadataFileOperation(
-        const std::string & path_,
-        IDisk & disk_,
-        const MetadataStorageFromDisk & metadata_storage_)
-        : path(path_)
-        , disk(disk_)
-        , metadata_storage(metadata_storage_)
+    UnlinkMetadataFileOperation(const std::string & path_, IDisk & disk_, const MetadataStorageFromDisk & metadata_storage_)
+        : path(path_), disk(disk_), metadata_storage(metadata_storage_)
     {
     }
 
@@ -372,15 +369,8 @@ struct VFSUnlinkMetadataFileOperation final : public IMetadataOperation
     const UnlinkMetadataFileOperationOutcomePtr outcome = std::make_shared<UnlinkMetadataFileOperationOutcome>();
 
     VFSUnlinkMetadataFileOperation(
-        const std::string & path_,
-        IDisk & disk_,
-        const MetadataStorageFromDisk & metadata_storage_,
-        VFSLog & vfs_log_
-        )
-        : path(path_)
-        , disk(disk_)
-        , metadata_storage(metadata_storage_)
-        , vfs_log(vfs_log_)
+        const std::string & path_, IDisk & disk_, const MetadataStorageFromDisk & metadata_storage_, VFSLog & vfs_log_)
+        : path(path_), disk(disk_), metadata_storage(metadata_storage_), vfs_log(vfs_log_)
     {
     }
 
@@ -392,7 +382,7 @@ struct VFSUnlinkMetadataFileOperation final : public IMetadataOperation
 
 private:
     std::string path;
-    IDisk & disk;    
+    IDisk & disk;
     const MetadataStorageFromDisk & metadata_storage;
     VFSLog & vfs_log;
     DiskObjectStorageMetadataPtr prev_metadata;
@@ -402,13 +392,8 @@ private:
 
 struct SetReadonlyFileOperation final : public IMetadataOperation
 {
-    SetReadonlyFileOperation(
-        const std::string & path_,
-        IDisk & disk_,
-        const MetadataStorageFromDisk & metadata_storage_)
-        : path(path_)
-        , disk(disk_)
-        , metadata_storage(metadata_storage_)
+    SetReadonlyFileOperation(const std::string & path_, IDisk & disk_, const MetadataStorageFromDisk & metadata_storage_)
+        : path(path_), disk(disk_), metadata_storage(metadata_storage_)
     {
     }
 
@@ -429,14 +414,8 @@ struct TruncateMetadataFileOperation final : public IMetadataOperation
     const TruncateFileOperationOutcomePtr outcome = std::make_shared<TruncateFileOperationOutcome>();
 
     TruncateMetadataFileOperation(
-        const std::string & path_,
-        size_t target_size_,
-        const MetadataStorageFromDisk & metadata_storage_,
-        IDisk & disk_)
-        : path(path_)
-        , target_size(target_size_)
-        , metadata_storage(metadata_storage_)
-        , disk(disk_)
+        const std::string & path_, size_t target_size_, const MetadataStorageFromDisk & metadata_storage_, IDisk & disk_)
+        : path(path_), target_size(target_size_), metadata_storage(metadata_storage_), disk(disk_)
     {
     }
 
@@ -459,12 +438,7 @@ struct VFSTruncateMetadataFileOperation final : public IMetadataOperation
     const TruncateFileOperationOutcomePtr outcome = std::make_shared<TruncateFileOperationOutcome>();
 
     VFSTruncateMetadataFileOperation(
-        const std::string & path_,
-        size_t target_size,
-        const MetadataStorageFromDisk & metadata_storage,
-        IDisk & disk,
-        VFSLog & vfs_log_
-        )
+        const std::string & path_, size_t target_size, const MetadataStorageFromDisk & metadata_storage, IDisk & disk, VFSLog & vfs_log_)
         : truncate_operation(std::make_unique<TruncateMetadataFileOperation>(path, target_size, metadata_storage, disk))
         , vfs_log(vfs_log_)
         , path(path_)

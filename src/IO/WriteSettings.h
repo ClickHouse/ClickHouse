@@ -25,7 +25,11 @@ struct WriteSettings
     bool s3_allow_parallel_part_upload = true;
     bool azure_allow_parallel_part_upload = true;
 
+    /// Indicator that writing buffer is only disk object storage metadata
+    /// It is used for zero-copy mode when only metadata is replicated between
+    /// replicas
+    bool write_disk_object_storage_metadata = false;
+
     bool operator==(const WriteSettings & other) const = default;
 };
-
 }

@@ -85,9 +85,10 @@ TEST(DiskObjectStorageVFS, ExceptionOnUnsortedSnapshot)
     EXPECT_THROW(auto new_snapshot = snapshot_data.mergeWithWals({}, placeholder_metadata), Exception) << "Snaphot is unsorted";
 }
 
+// FIXME: Restore the test
 // TEST(DiskObjectStorageVFS, MergeWalWithSnaphot)
 // {
-//     WALItems wals = {{"/c", 1}, {"/d", 2}, {"/b", 1}};
+//     VFSLogItems wals = {{"/c", 1}, {"/d", 2}, {"/b", 1}};
 
 //     String expected_snaphot_state;
 //     VFSSnapshotDataFromString snapshot_data;

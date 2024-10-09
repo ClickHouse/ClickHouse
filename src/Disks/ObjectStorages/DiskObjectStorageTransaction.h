@@ -52,6 +52,14 @@ using DiskObjectStorageOperations = std::vector<DiskObjectStorageOperation>;
 /// If finalize failed -- nothing is reverted, garbage is left in blob storage.
 struct DiskObjectStorageTransaction : public IDiskTransaction, std::enable_shared_from_this<DiskObjectStorageTransaction>
 {
+private:
+
+    std::unique_ptr<WriteBufferFromFileBase> writeMetadataFile( /// NOLINT
+        const std::string & path,
+        WriteMode /* mode */,
+        const WriteSettings & /* settings */,
+        bool autocommit);
+
 protected:
     IObjectStorage & object_storage;
     IMetadataStorage & metadata_storage;
@@ -103,12 +111,6 @@ public:
     std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
         const std::string & path,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        WriteMode mode = WriteMode::Rewrite,
-        const WriteSettings & settings = {},
-        bool autocommit = true) override;
-
-    std::unique_ptr<WriteBuffer> writeMetadataFile( /// NOLINT
-        const std::string & path,
         WriteMode mode = WriteMode::Rewrite,
         const WriteSettings & settings = {},
         bool autocommit = true) override;
