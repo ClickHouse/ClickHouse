@@ -604,6 +604,9 @@ See also:
 -   [Interval](../../sql-reference/data-types/special-data-types/interval.md)
 )", 0) \
     \
+    M(Bool, date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands, false, R"(
+Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to [0, 3, 6],
+corresponding to 'seconds', 'milliseconds', and 'microseconds')", 0) \
     M(Bool, input_format_ipv4_default_on_conversion_error, false, R"(
 Deserialization of IPv4 will use default values instead of throwing exception on conversion error.
 
