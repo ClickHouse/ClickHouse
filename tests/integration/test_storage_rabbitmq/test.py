@@ -18,7 +18,7 @@ from helpers.test_tools import TSV
 
 from . import rabbitmq_pb2
 
-DEFAULT_TIMEOUT_SEC = 90
+DEFAULT_TIMEOUT_SEC = 60
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -3863,7 +3863,7 @@ def test_rabbitmq_handle_error_mode_stream(rabbitmq_cluster):
     errors_count = 0
     while time.monotonic() < deadline:
         errors_count = int(instance.query("SELECT count() FROM test.errors"))
-        if errors_count == num_rows:
+        if errors_count == num_rows / 2:
             break
         time.sleep(0.05)
     else:
