@@ -1,18 +1,17 @@
 #pragma once
 
-#include <Access/AccessRights.h>
-#include <Access/ContextAccessParams.h>
-#include <Access/EnabledRowPolicies.h>
-#include <Interpreters/ClientInfo.h>
-#include <Access/QuotaUsage.h>
-#include <Common/SettingsChanges.h>
-#include <Core/UUID.h>
-#include <base/scope_guard.h>
-#include <boost/container/flat_set.hpp>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
+#include <Access/AccessRights.h>
+#include <Access/ContextAccessParams.h>
+#include <Access/EnabledRowPolicies.h>
+#include <Access/QuotaUsage.h>
+#include <Core/UUID.h>
+#include <Interpreters/ClientInfo.h>
+#include <base/scope_guard.h>
+#include <Common/SettingsChanges.h>
 
 
 namespace Poco { class Logger; }
@@ -132,6 +131,8 @@ public:
     void checkGranteeIsAllowed(const UUID & grantee_id, const IAccessEntity & grantee) const;
     /// Checks if grantees are allowed for the current user, throws an exception if not.
     void checkGranteesAreAllowed(const std::vector<UUID> & grantee_ids) const;
+
+    static AccessRights addImplicitAccessRights(const AccessRights & access, const AccessControl & access_control);
 
     ContextAccess(const AccessControl & access_control_, const Params & params_);
     ~ContextAccess();

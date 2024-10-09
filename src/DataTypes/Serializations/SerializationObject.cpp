@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeString.h>
+#include <IO/ReadBufferFromString.h>
 
 namespace DB
 {
@@ -587,6 +588,15 @@ void SerializationObject::serializeBinary(const Field & field, WriteBuffer & ost
 
 void SerializationObject::serializeBinary(const IColumn & col, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
+    if (settings.binary.write_json_as_string)
+    {
+        /// Serialize row as JSON string.
+        WriteBufferFromOwnString buf;
+        serializeText(col, row_num, buf, settings);
+        writeStringBinary(buf.str(), ostr);
+        return;
+    }
+
     const auto & column_object = assert_cast<const ColumnObject &>(col);
     const auto & typed_paths = column_object.getTypedPaths();
     const auto & dynamic_paths = column_object.getDynamicPaths();
@@ -678,6 +688,14 @@ void SerializationObject::restoreColumnObject(ColumnObject & column_object, size
 
 void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    if (settings.binary.read_json_as_string)
+    {
+        String data;
+        readStringBinary(data, istr);
+        deserializeObject(col, data, settings);
+        return;
+    }
+
     auto & column_object = assert_cast<ColumnObject &>(col);
     auto & typed_paths = column_object.getTypedPaths();
     auto & dynamic_paths = column_object.getDynamicPaths();
