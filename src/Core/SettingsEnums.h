@@ -10,7 +10,7 @@
 #include <Core/ParallelReplicasMode.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadSettings.h>
-#include <Parsers/ASTSQLSecurity.h>
+#include <Access/Common/SQLSecurityDefs.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/ShellCommandSettings.h>
@@ -218,6 +218,9 @@ enum class DefaultTableEngine : uint8_t
 
 DECLARE_SETTING_ENUM(DefaultTableEngine)
 
+DECLARE_SETTING_ENUM(DistributedCacheLogMode)
+
+DECLARE_SETTING_ENUM(DistributedCachePoolBehaviourOnLimit)
 
 enum class CleanDeletedRows : uint8_t
 {

@@ -580,7 +580,7 @@ AsynchronousInsertQueue::Milliseconds AsynchronousInsertQueue::getBusyWaitTimeou
     /// that is, if the time since the last insert and the difference between the last two queue flushes were both
     /// long enough (exceeding the adjusted timeout).
     /// This ensures the timeout value converges to the minimum over time for non-frequent inserts.
-    else if (last_insert_time + decreased_timeout_ms < now && t1 + decreased_timeout_ms < t2)
+    if (last_insert_time + decreased_timeout_ms < now && t1 + decreased_timeout_ms < t2)
         return normalize(decreased_timeout_ms);
 
     return normalize(shard.busy_timeout_ms);

@@ -1972,7 +1972,7 @@ Result:
 
 ## toISOYear
 
-Converts a date, or date with time, to a UInt16 number containing the ISO Year number.
+Converts a date, or date with time, to the ISO year as a UInt16 number.
 
 **Syntax**
 
@@ -1982,11 +1982,11 @@ toISOYear(value)
 
 **Arguments**
 
-- `value` — The value with date or date with time.
+- `value` — The value with date or date with time. [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
 
 **Returned value**
 
-- `value` converted to the current ISO year number. [UInt16](../data-types/int-uint.md).
+- The input value converted to a ISO year number. [UInt16](../data-types/int-uint.md).
 
 **Example**
 
@@ -1995,7 +1995,7 @@ Query:
 ```sql
 SELECT
   toISOYear(toDate('2024/10/02')) as year1,
-  toISOYear(toDateTime('2024/10/02 01:30:00')) as year2
+  toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
 ```
 
 Result:

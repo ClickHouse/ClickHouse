@@ -497,63 +497,55 @@ private:
         {
             return executeOnNonNullable(arguments, result_type);
         }
-        else
-        {
-            /**
+
+        /**
              * To correctly process the Nullable values (either #col_array, #arg_column or both) we create a new columns
              * and operate on it. The columns structure follows:
              * {0, 1, 2, 3, 4}
              * {data (array) argument, "value" argument, data null map, "value" null map, function result}.
              */
-            ColumnsWithTypeAndName source_columns(4);
+        ColumnsWithTypeAndName source_columns(4);
 
-            if (nullable)
-            {
-                const auto & nested_col = nullable->getNestedColumnPtr();
+        if (nullable)
+        {
+            const auto & nested_col = nullable->getNestedColumnPtr();
 
-                auto & data = source_columns[0];
+            auto & data = source_columns[0];
 
-                data.column = ColumnArray::create(nested_col, col_array->getOffsetsPtr());
-                data.type = std::make_shared<DataTypeArray>(
-                    static_cast<const DataTypeNullable &>(
-                        *static_cast<const DataTypeArray &>(
-                            *arguments[0].type
-                        ).getNestedType()
-                    ).getNestedType());
+            data.column = ColumnArray::create(nested_col, col_array->getOffsetsPtr());
+            data.type = std::make_shared<DataTypeArray>(
+                static_cast<const DataTypeNullable &>(*static_cast<const DataTypeArray &>(*arguments[0].type).getNestedType())
+                    .getNestedType());
 
-                auto & null_map = source_columns[2];
+            auto & null_map = source_columns[2];
 
-                null_map.column = nullable->getNullMapColumnPtr();
-                null_map.type = std::make_shared<DataTypeUInt8>();
-            }
-            else
-            {
-                auto & data = source_columns[0];
-                data = arguments[0];
-            }
-
-            if (arg_nullable)
-            {
-                auto & arg = source_columns[1];
-                arg.column = arg_nullable->getNestedColumnPtr();
-                arg.type =
-                    static_cast<const DataTypeNullable &>(
-                        *arguments[1].type
-                    ).getNestedType();
-
-                auto & null_map = source_columns[3];
-                null_map.column = arg_nullable->getNullMapColumnPtr();
-                null_map.type = std::make_shared<DataTypeUInt8>();
-            }
-            else
-            {
-                auto & arg = source_columns[1];
-                arg = arguments[1];
-            }
-
-            /// Now perform the function.
-            return executeOnNonNullable(source_columns, result_type);
+            null_map.column = nullable->getNullMapColumnPtr();
+            null_map.type = std::make_shared<DataTypeUInt8>();
         }
+        else
+        {
+            auto & data = source_columns[0];
+            data = arguments[0];
+        }
+
+        if (arg_nullable)
+        {
+            auto & arg = source_columns[1];
+            arg.column = arg_nullable->getNestedColumnPtr();
+            arg.type = static_cast<const DataTypeNullable &>(*arguments[1].type).getNestedType();
+
+            auto & null_map = source_columns[3];
+            null_map.column = arg_nullable->getNullMapColumnPtr();
+            null_map.type = std::make_shared<DataTypeUInt8>();
+        }
+        else
+        {
+            auto & arg = source_columns[1];
+            arg = arguments[1];
+        }
+
+        /// Now perform the function.
+        return executeOnNonNullable(source_columns, result_type);
     }
 
 #define INTEGRAL_PACK UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64
@@ -876,53 +868,51 @@ private:
 
             return result_type->createColumnConst(item_arg->size(), current);
         }
-        else
+
+        /// Null map of the 2nd function argument, if it applies.
+        const NullMap * null_map = nullptr;
+
+        if (arguments.size() > 2)
+            if (const auto & col = arguments[3].column; col)
+                null_map = &assert_cast<const ColumnUInt8 &>(*col).getData();
+
+        const size_t size = item_arg->size();
+        auto col_res = ResultColumnType::create(size);
+
+        auto & data = col_res->getData();
+
+        for (size_t row = 0; row < size; ++row)
         {
-            /// Null map of the 2nd function argument, if it applies.
-            const NullMap * null_map = nullptr;
+            const auto & value = (*item_arg)[row];
 
-            if (arguments.size() > 2)
-                if (const auto & col = arguments[3].column; col)
-                    null_map = &assert_cast<const ColumnUInt8 &>(*col).getData();
+            data[row] = 0;
 
-            const size_t size = item_arg->size();
-            auto col_res = ResultColumnType::create(size);
-
-            auto & data = col_res->getData();
-
-            for (size_t row = 0; row < size; ++row)
+            for (size_t i = 0, arr_size = arr.size(); i < arr_size; ++i)
             {
-                const auto & value = (*item_arg)[row];
-
-                data[row] = 0;
-
-                for (size_t i = 0, arr_size = arr.size(); i < arr_size; ++i)
+                if (arr[i].isNull())
                 {
-                    if (arr[i].isNull())
-                    {
-                        if (!null_map)
-                            continue;
+                    if (!null_map)
+                        continue;
 
-                        if (!(*null_map)[row])
-                            continue;
-                    }
-                    else
-                    {
-                        if (null_map && (*null_map)[row])
-                            continue;
-                        if (!applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
-                            continue;
-                    }
-
-                    ConcreteAction::apply(data[row], i);
-
-                    if constexpr (!ConcreteAction::resume_execution)
-                        break;
+                    if (!(*null_map)[row])
+                        continue;
                 }
-            }
+                else
+                {
+                    if (null_map && (*null_map)[row])
+                        continue;
+                    if (!applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
+                        continue;
+                }
 
-            return col_res;
+                ConcreteAction::apply(data[row], i);
+
+                if constexpr (!ConcreteAction::resume_execution)
+                    break;
+            }
         }
+
+        return col_res;
     }
 
     static ColumnPtr executeNothing(const ColumnsWithTypeAndName & arguments)

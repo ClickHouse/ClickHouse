@@ -128,8 +128,7 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
         if (throw_on_error)
             throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Cannot get metadata of {}.{}",
                             backQuote(table_id.database_name), backQuote(table_id.table_name));
-        else
-            return nullptr;
+        return nullptr;
     }
 
     auto create_table_query = std::make_shared<ASTCreateQuery>();
@@ -166,8 +165,7 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
                     if (throw_on_error)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot parse metadata of {}.{}",
                                         backQuote(table_id.database_name), backQuote(table_id.table_name));
-                    else
-                        return nullptr;
+                    return nullptr;
                 }
                 ast_column_declaration->type = ast_type;
 

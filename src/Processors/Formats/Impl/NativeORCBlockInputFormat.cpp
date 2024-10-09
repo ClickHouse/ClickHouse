@@ -151,8 +151,7 @@ static DataTypePtr parseORCType(const orc::Type * orc_type, bool skip_columns_wi
                 // In HIVE 0.11/0.12 precision is set as 0, but means max precision
                 return createDecimal<DataTypeDecimal>(38, 6);
             }
-            else
-                return createDecimal<DataTypeDecimal>(precision, scale);
+            return createDecimal<DataTypeDecimal>(precision, scale);
         }
         case orc::TypeKind::LIST: {
             if (subtype_count != 1)
@@ -410,8 +409,7 @@ static bool evaluateRPNElement(const Field & field, const KeyCondition::RPNEleme
         case KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL: {
             if (field.isNull())
                 return elem.function == KeyCondition::RPNElement::FUNCTION_IS_NULL;
-            else
-                return elem.function == KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL;
+            return elem.function == KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL;
         }
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected RPNElement Function {}", elem.toString());
@@ -740,7 +738,7 @@ static const orc::Type * traverseDownORCTypeByName(
         const auto [next_target, next_orc_type]= search_struct_field(target, orc_type);
         return next_orc_type ? traverseDownORCTypeByName(next_target, next_orc_type, type, ignore_case) : nullptr;
     }
-    else if (orc::LIST == orc_type->getKind())
+    if (orc::LIST == orc_type->getKind())
     {
         /// For cases in which header contains subcolumns flattened from nested columns.
         /// For example, "a Nested(x String, y Int64)" is flattened to "a.x Array(String), a.y Array(Int64)", and orc file schema is still "a array<struct<x string, y long>>".
@@ -1478,17 +1476,13 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
 
             if (precision <= DecimalUtils::max_precision<Decimal32>)
                 return readColumnWithDecimalDataCast<Decimal32, orc::Decimal64VectorBatch>(orc_column, orc_type, column_name, interal_type);
-            else if (precision <= DecimalUtils::max_precision<Decimal64>)
+            if (precision <= DecimalUtils::max_precision<Decimal64>)
                 return readColumnWithDecimalDataCast<Decimal64, orc::Decimal64VectorBatch>(orc_column, orc_type, column_name, interal_type);
-            else if (precision <= DecimalUtils::max_precision<Decimal128>)
+            if (precision <= DecimalUtils::max_precision<Decimal128>)
                 return readColumnWithDecimalDataCast<Decimal128, orc::Decimal128VectorBatch>(
                     orc_column, orc_type, column_name, interal_type);
-            else
-                throw Exception(
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "Decimal precision {} in ORC type {} is out of bound",
-                    precision,
-                    orc_type->toString());
+            throw Exception(
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Decimal precision {} in ORC type {} is out of bound", precision, orc_type->toString());
         }
         case orc::MAP: {
             DataTypePtr key_type_hint;
@@ -1658,16 +1652,14 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
             {
                 if (!allow_missing_columns)
                     throw Exception{ErrorCodes::THERE_IS_NO_COLUMN, "Column '{}' is not presented in input data.", header_column.name};
-                else
-                {
-                    column.name = header_column.name;
-                    column.type = header_column.type;
-                    column.column = header_column.column->cloneResized(num_rows);
-                    columns_list.push_back(std::move(column.column));
-                    if (block_missing_values)
-                        block_missing_values->setBits(column_i, num_rows);
-                    continue;
-                }
+
+                column.name = header_column.name;
+                column.type = header_column.type;
+                column.column = header_column.column->cloneResized(num_rows);
+                columns_list.push_back(std::move(column.column));
+                if (block_missing_values)
+                    block_missing_values->setBits(column_i, num_rows);
+                continue;
             }
         }
         else
