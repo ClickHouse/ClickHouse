@@ -684,12 +684,6 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
             rows_offset -= skipped_rows;
         }
 
-        if (rows_offset)
-        {
-            low_cardinality_state->num_pending_rows = 0;
-            continue;
-        }
-
         size_t num_rows_to_read = std::min<UInt64>(limit, low_cardinality_state->num_pending_rows - skipped_rows);
         read_indexes(skipped_rows, num_rows_to_read);
         limit -= num_rows_to_read;
