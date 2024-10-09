@@ -10,11 +10,13 @@ namespace DB
 class ASTCreateResourceQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
-    enum class AccessMode {
+    enum class AccessMode
+    {
         Read,
         Write
     };
-    struct Operation {
+    struct Operation
+    {
         AccessMode mode;
         String disk;
     };
