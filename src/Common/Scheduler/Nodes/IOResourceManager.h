@@ -249,7 +249,8 @@ private:
     private:
         IOResourceManager * resource_manager;
         std::mutex mutex;
-        struct Attachment {
+        struct Attachment
+        {
             ResourcePtr resource;
             VersionPtr version;
             ResourceLink link;

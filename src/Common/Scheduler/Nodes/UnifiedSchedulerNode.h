@@ -20,7 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_SCHEDULER_NODE;
-    extern const int LOGICAL_ERROR;
 }
 
 class UnifiedSchedulerNode;
@@ -84,7 +83,8 @@ private:
     }
 
     /// A branch of the tree for a specific priority value
-    struct FairnessBranch {
+    struct FairnessBranch
+    {
         SchedulerNodePtr root; /// FairPolicy node is used if multiple children with the same priority are attached
         std::unordered_map<String, UnifiedSchedulerNodePtr> children; // basename -> child
 

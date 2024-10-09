@@ -20,7 +20,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int RESOURCE_ACCESS_DENIED;
     extern const int RESOURCE_NOT_FOUND;
     extern const int INVALID_SCHEDULER_NODE;
     extern const int LOGICAL_ERROR;

@@ -29,6 +29,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int RESOURCE_ACCESS_DENIED;
+}
+
 struct ResourceTestBase
 {
     ResourceTestBase()
