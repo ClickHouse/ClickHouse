@@ -493,6 +493,14 @@ Default value: 0
 
 Read data types in binary format instead of type names in RowBinaryWithNamesAndTypes input format
 
+### input_format_binary_read_json_as_string {#input_format_binary_read_json_as_string}
+
+Type: Bool
+
+Default value: 0
+
+Read values of [JSON](../../sql-reference/data-types/newjson.md) data type as JSON [String](../../sql-reference/data-types/string.md) values in RowBinary input format.
+
 ## input_format_bson_skip_fields_with_unsupported_types_in_schema_inference {#input_format_bson_skip_fields_with_unsupported_types_in_schema_inference}
 
 Type: Bool
@@ -1567,7 +1575,15 @@ Type: Bool
 
 Default value: 0
 
-Write data types in binary format instead of type names in RowBinaryWithNamesAndTypes output format 
+Write data types in binary format instead of type names in RowBinaryWithNamesAndTypes output format
+
+### output_format_binary_write_json_as_string {#output_format_binary_write_json_as_string}
+
+Type: Bool
+
+Default value: 0
+
+Write values of [JSON](../../sql-reference/data-types/newjson.md) data type as JSON [String](../../sql-reference/data-types/string.md) values in RowBinary output format.
 
 ## output_format_bson_string_as_string {#output_format_bson_string_as_string}
 
