@@ -599,6 +599,42 @@ Result:
 └───────────────┘
 ```
 
+## currentSchemas
+
+Returns a single-element array with the name of the current database schema.
+
+**Syntax**
+
+```sql
+currentSchemas(bool)
+```
+
+Alias: `current_schemas`.
+
+**Arguments**
+
+- `bool`: A boolean value. [Bool](../data-types/boolean.md).
+
+:::note
+The boolean argument is ignored. It only exists for the sake of compatibility with the [implementation](https://www.postgresql.org/docs/7.3/functions-misc.html) of this function in PostgreSQL.
+:::
+
+**Returned values**
+
+- Returns a single-element array with the name of the current database
+
+**Example**
+
+```sql
+SELECT currentSchemas(true);
+```
+
+Result:
+
+```response
+['default']
+```
+
 ## isConstant
 
 Returns whether the argument is a constant expression.
