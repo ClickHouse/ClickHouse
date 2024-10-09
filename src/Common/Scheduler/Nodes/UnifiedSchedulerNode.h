@@ -29,7 +29,7 @@ using UnifiedSchedulerNodePtr = std::shared_ptr<UnifiedSchedulerNode>;
 /*
  * Unified scheduler node combines multiple nodes internally to provide all available scheduling policies and constraints.
  * Whole scheduling hierarchy could "logically" consist of unified nodes only. Physically intermediate "internal" nodes
- * are also present. This approch is easiers for manipulations in runtime than using multiple types of nodes.
+ * are also present. This approach is easiers for manipulations in runtime than using multiple types of nodes.
  *
  * Unified node is capable of updating its internal structure based on:
  * 1. Number of children (fifo if =0 or fairness/priority if >0).

@@ -460,7 +460,7 @@ void WorkloadEntityStorageBase::makeEventsForAllEntities(std::unique_lock<std::r
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid workload entity type '{}'", ast->getID());
     }
 
-    // Resources should be created first becase workloads could reference them
+    // Resources should be created first because workloads could reference them
     for (auto & [entity_name, ast] : resources)
         onEntityAdded(WorkloadEntityType::Resource, entity_name, ast);
 

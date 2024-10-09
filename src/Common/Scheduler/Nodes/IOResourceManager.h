@@ -30,7 +30,7 @@ namespace DB
  *
  * Manager process updates of WORKLOADs and RESOURCEs: CREATE/DROP/ALTER.
  * When a RESOURCE is created (dropped) a corresponding scheduler nodes hierarchy is created (destroyed).
- * After DROP RESOURCE parts of hierarchy might be keept alive while at least one query uses it.
+ * After DROP RESOURCE parts of hierarchy might be kept alive while at least one query uses it.
  *
  * Manager is specific to IO only because it create scheduler node hierarchies for RESOURCEs having
  * WRITE DISK and/or READ DISK definitions. CPU and memory resources are managed separately.
@@ -46,7 +46,7 @@ namespace DB
  * Parent of the root workload for a resource is SchedulerRoot with its own scheduler thread.
  * So every resource has its dedicated thread for processing of resource request and other events (see EventQueue).
  *
- * Here is an example of SQL and corresponding heirarchy of scheduler nodes:
+ * Here is an example of SQL and corresponding hierarchy of scheduler nodes:
  *    CREATE RESOURCE my_io_resource (...)
  *    CREATE WORKLOAD all
  *    CREATE WORKLOAD production PARENT all
@@ -85,7 +85,7 @@ namespace DB
  *
  * Previous version should hold reference to a newer version. It is required for proper handling of updates.
  * Classifiers that were created for any of old versions may use nodes of newer version due to updateNode().
- * It may move a queue to a new position in the hierarchy or create/destry constraints, thus resource requests
+ * It may move a queue to a new position in the hierarchy or create/destroy constraints, thus resource requests
  * created by old classifier may reference constraints of newer versions through `request->constraints` which
  * is filled during dequeueRequst().
  *
