@@ -89,7 +89,7 @@ SerializationDynamic::DynamicSerializationVersion::DynamicSerializationVersion(U
 void SerializationDynamic::DynamicSerializationVersion::checkVersion(UInt64 version)
 {
     if (version != V1 && version != V2)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version for Dynamic structure serialization.");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version for Dynamic structure serialization: {}", version);
 }
 
 void SerializationDynamic::serializeBinaryBulkStatePrefix(
