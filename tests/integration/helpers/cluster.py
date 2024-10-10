@@ -2818,7 +2818,7 @@ class ClickHouseCluster:
                             if feature_flag in self.keeper_required_feature_flags:
                                 return 1
 
-                            #return random.randint(0, 1)
+                            # return random.randint(0, 1)
                             return 0
 
                         with open(feature_flags_config, "w") as ff_config:
