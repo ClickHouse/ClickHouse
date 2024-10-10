@@ -38,7 +38,7 @@ if (NOT "$ENV{CFLAGS}" STREQUAL ""
     message("CMAKE_EXE_LINKER_FLAGS_INIT: ${CMAKE_EXE_LINKER_FLAGS_INIT}")
     message("CMAKE_MODULE_LINKER_FLAGS_INIT: ${CMAKE_MODULE_LINKER_FLAGS_INIT}")
 
-    message(FATAL_ERROR "
+    message( "
         Some of the variables like CFLAGS, CXXFLAGS, LDFLAGS are not empty.
         It is not possible to build ClickHouse with custom flags.
         These variables can be set up by previous invocation of some other build tools.

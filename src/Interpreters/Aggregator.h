@@ -309,9 +309,9 @@ public:
     /// For external aggregation.
     void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0) const;
 
-    bool hasTemporaryData() const { return tmp_data && !tmp_data->empty(); }
+    bool hasTemporaryData() const { return !tmp_files.empty(); }
 
-    const TemporaryDataOnDisk & getTemporaryData() const { return *tmp_data; }
+    std::vector<TemporaryBlockStreamHolder> & getTemporaryData() { return tmp_files; }
 
     /// Get data structure of the result.
     Block getHeader(bool final) const;
@@ -355,7 +355,8 @@ private:
     LoggerPtr log = getLogger("Aggregator");
 
     /// For external aggregation.
-    TemporaryDataOnDiskPtr tmp_data;
+    TemporaryDataOnDiskScopePtr tmp_data;
+    mutable std::vector<TemporaryBlockStreamHolder> tmp_files;
 
     size_t min_bytes_for_prefetch = 0;
 
@@ -456,7 +457,7 @@ private:
     void writeToTemporaryFileImpl(
         AggregatedDataVariants & data_variants,
         Method & method,
-        TemporaryFileStream & out) const;
+        TemporaryBlockStreamHolder & out) const;
 
     /// Merge NULL key data from hash table `src` into `dst`.
     template <typename Method, typename Table>

@@ -934,7 +934,7 @@ static Block generateBlock(size_t size = 0)
     return block;
 }
 
-static size_t readAllTemporaryData(TemporaryFileStream & stream)
+static size_t readAllTemporaryData(NativeReader & stream)
 {
     Block block;
     size_t read_rows = 0;
@@ -947,6 +947,7 @@ static size_t readAllTemporaryData(TemporaryFileStream & stream)
 }
 
 TEST_F(FileCacheTest, temporaryData)
+try
 {
     ServerUUID::setRandomForUnitTests();
     DB::FileCacheSettings settings;
@@ -959,7 +960,7 @@ TEST_F(FileCacheTest, temporaryData)
     file_cache.initialize();
 
     const auto user = FileCache::getCommonUser();
-    auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(nullptr, &file_cache, TemporaryDataOnDiskSettings{});
+    auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(&file_cache, TemporaryDataOnDiskSettings{});
 
     auto some_data_holder = file_cache.getOrSet(FileCache::createKeyForPath("some_data"), 0, 5_KiB, 5_KiB, CreateFileSegmentSettings{}, 0, user);
 
@@ -982,12 +983,17 @@ TEST_F(FileCacheTest, temporaryData)
 
     size_t size_used_with_temporary_data;
     size_t segments_used_with_temporary_data;
+
+
     {
-        auto tmp_data = std::make_unique<TemporaryDataOnDisk>(tmp_data_scope);
+        TemporaryBlockStreamHolder stream(generateBlock(), tmp_data_scope.get());
+        ASSERT_TRUE(stream);
+        /// Do nothitng with stream, just create it and destroy.
+    }
 
-        auto & stream = tmp_data->createStream(generateBlock());
-
-        ASSERT_GT(stream.write(generateBlock(100)), 0);
+    {
+        TemporaryBlockStreamHolder stream(generateBlock(), tmp_data_scope.get());
+        ASSERT_GT(stream->write(generateBlock(100)), 0);
 
         ASSERT_GT(file_cache.getUsedCacheSize(), 0);
         ASSERT_GT(file_cache.getFileSegmentsNum(), 0);
@@ -995,22 +1001,22 @@ TEST_F(FileCacheTest, temporaryData)
         size_t used_size_before_attempt = file_cache.getUsedCacheSize();
         /// data can't be evicted because it is still held by `some_data_holder`
         ASSERT_THROW({
-            stream.write(generateBlock(2000));
-            stream.flush();
+            stream->write(generateBlock(2000));
+            stream.finishWriting();
         }, DB::Exception);
+
+        ASSERT_THROW(stream.finishWriting(), DB::Exception);
 
         ASSERT_EQ(file_cache.getUsedCacheSize(), used_size_before_attempt);
     }
 
     {
         size_t before_used_size = file_cache.getUsedCacheSize();
-        auto tmp_data = std::make_unique<TemporaryDataOnDisk>(tmp_data_scope);
-
-        auto write_buf_stream = tmp_data->createRawStream();
+        auto write_buf_stream = std::make_unique<TemporaryDataBuffer>(tmp_data_scope.get());
 
         write_buf_stream->write("1234567890", 10);
         write_buf_stream->write("abcde", 5);
-        auto read_buf = dynamic_cast<IReadableWriteBuffer *>(write_buf_stream.get())->tryGetReadBuffer();
+        auto read_buf = write_buf_stream->read();
 
         ASSERT_GT(file_cache.getUsedCacheSize(), before_used_size + 10);
 
@@ -1023,22 +1029,22 @@ TEST_F(FileCacheTest, temporaryData)
     }
 
     {
-        auto tmp_data = std::make_unique<TemporaryDataOnDisk>(tmp_data_scope);
-        auto & stream = tmp_data->createStream(generateBlock());
+        TemporaryBlockStreamHolder stream(generateBlock(), tmp_data_scope.get());
 
-        ASSERT_GT(stream.write(generateBlock(100)), 0);
+        ASSERT_GT(stream->write(generateBlock(100)), 0);
 
         some_data_holder.reset();
 
-        stream.write(generateBlock(2000));
+        stream->write(generateBlock(2000));
 
-        auto stat = stream.finishWriting();
+        stream.finishWriting();
 
-        ASSERT_TRUE(fs::exists(stream.getPath()));
-        ASSERT_GT(fs::file_size(stream.getPath()), 100);
+        String file_path = stream.getHolder()->describeFilePath().substr(strlen("fscache://"));
 
-        ASSERT_EQ(stat.num_rows, 2100);
-        ASSERT_EQ(readAllTemporaryData(stream), 2100);
+        ASSERT_TRUE(fs::exists(file_path)) << "File " << file_path << " should exist";
+        ASSERT_GT(fs::file_size(file_path), 100) << "File " << file_path << " should be larger than 100 bytes";
+
+        ASSERT_EQ(readAllTemporaryData(*stream.getReadStream()), 2100);
 
         size_used_with_temporary_data = file_cache.getUsedCacheSize();
         segments_used_with_temporary_data = file_cache.getFileSegmentsNum();
@@ -1053,6 +1059,11 @@ TEST_F(FileCacheTest, temporaryData)
     /// Some segments reserved by `some_data_holder` was eviced by temporary data
     ASSERT_LE(file_cache.getUsedCacheSize(), size_used_before_temporary_data);
     ASSERT_LE(file_cache.getFileSegmentsNum(), segments_used_before_temporary_data);
+}
+catch (...)
+{
+    std::cerr << getCurrentExceptionMessage(true) << std::endl;
+    throw;
 }
 
 TEST_F(FileCacheTest, CachedReadBuffer)
@@ -1148,18 +1159,22 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
         DB::FileCache file_cache("cache", settings);
         file_cache.initialize();
 
-        auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(/*volume=*/nullptr, &file_cache, /*settings=*/TemporaryDataOnDiskSettings{});
-
-        auto tmp_data = std::make_unique<TemporaryDataOnDisk>(tmp_data_scope);
+        auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(&file_cache, TemporaryDataOnDiskSettings{});
 
         auto block = generateBlock(/*size=*/3);
-        auto & stream = tmp_data->createStream(block);
-        stream.write(block);
-        stream.finishWriting();
+        TemporaryBlockStreamHolder stream(block, tmp_data_scope.get());
 
-        /// We allocate buffer of size min(getSize(), DBMS_DEFAULT_BUFFER_SIZE)
+        stream->write(block);
+        auto stat = stream.finishWriting();
+
+        /// We allocate buffer of size min(stat.compressed_size, DBMS_DEFAULT_BUFFER_SIZE)
         /// We do care about buffer size because realistic external group by could generate 10^5 temporary files
-        ASSERT_EQ(stream.getSize(), 62);
+        ASSERT_EQ(stat.compressed_size, 62);
+
+        auto reader = stream.getReadStream();
+        auto * read_buf = reader.getHolder();
+        const auto & internal_buffer = static_cast<TemporaryDataReadBuffer *>(read_buf)->compressed_buf.getHolder()->internalBuffer();
+        ASSERT_EQ(internal_buffer.size(), 62);
     }
 
     /// Temporary data stored on disk
@@ -1170,16 +1185,14 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
         disk = createDisk("temporary_data_read_buffer_size_test_dir");
         VolumePtr volume = std::make_shared<SingleDiskVolume>("volume", disk);
 
-        auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(/*volume=*/volume, /*cache=*/nullptr, /*settings=*/TemporaryDataOnDiskSettings{});
-
-        auto tmp_data = std::make_unique<TemporaryDataOnDisk>(tmp_data_scope);
+        auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(volume, TemporaryDataOnDiskSettings{});
 
         auto block = generateBlock(/*size=*/3);
-        auto & stream = tmp_data->createStream(block);
-        stream.write(block);
-        stream.finishWriting();
+        TemporaryBlockStreamHolder stream(block, tmp_data_scope.get());
+        stream->write(block);
+        auto stat = stream.finishWriting();
 
-        ASSERT_EQ(stream.getSize(), 62);
+        ASSERT_EQ(stat.compressed_size, 62);
     }
 }
 
