@@ -60,6 +60,10 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 
 Table engine `Iceberg` is an alias to `IcebergS3` now.
 
+### Data cache {#data-cache}
+
+`Iceberg` table engine and table function support data caching same as `S3`, `AzureBlobStorage`, `HDFS` storages. See [here](../../../engines/table-engines/integrations/s3.md#data-cache).
+
 ## See also
 
 - [iceberg table function](/docs/en/sql-reference/table-functions/iceberg.md)
