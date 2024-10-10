@@ -141,7 +141,7 @@ void QueryMetricLog::finishQuery(const String & query_id, QueryStatusInfoPtr que
 
     if (query_info)
     {
-        auto elem = createLogMetricElement(query_id, *query_info, std::chrono::system_clock::now());
+        auto elem = createLogMetricElement(query_id, *query_info, std::chrono::system_clock::now(), false);
         if (elem)
             add(std::move(elem.value()));
     }
@@ -149,7 +149,7 @@ void QueryMetricLog::finishQuery(const String & query_id, QueryStatusInfoPtr que
     queries.erase(it);
 }
 
-std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint current_time)
+std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint current_time, bool schedule_next)
 {
     LOG_TRACE(logger, "createLogMetricElement {}", query_id);
     SCOPE_EXIT({ LOG_TRACE(logger, "~createLogMetricElement {}", query_id); });
@@ -183,9 +183,12 @@ std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(cons
         elem.profile_events = query_status.last_profile_events;
     }
 
-    query_status.next_collect_time += std::chrono::milliseconds(query_status.interval_milliseconds);
-    const auto wait_time = std::chrono::duration_cast<std::chrono::milliseconds>(query_status.next_collect_time - std::chrono::system_clock::now()).count();
-    getContext()->getProcessList().scheduleQueryMetricLogTask(query_id, wait_time);
+    if (schedule_next)
+    {
+        query_status.next_collect_time += std::chrono::milliseconds(query_status.interval_milliseconds);
+        const auto wait_time = std::chrono::duration_cast<std::chrono::milliseconds>(query_status.next_collect_time - std::chrono::system_clock::now()).count();
+        getContext()->getProcessList().scheduleQueryMetricLogTask(query_id, wait_time);
+    }
 
     return elem;
 }
