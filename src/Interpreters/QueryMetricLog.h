@@ -39,6 +39,7 @@ struct QueryMetricLogStatus
     UInt64 interval_milliseconds;
     std::chrono::system_clock::time_point next_collect_time;
     std::vector<ProfileEvents::Count> last_profile_events = std::vector<ProfileEvents::Count>(ProfileEvents::end());
+    std::unique_ptr<BackgroundSchedulePool::TaskHolder> task;
 };
 
 class QueryMetricLog : public SystemLog<QueryMetricLogElement>

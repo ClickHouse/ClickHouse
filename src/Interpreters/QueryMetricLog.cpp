@@ -107,20 +107,18 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_t
 
     auto context = getContext();
     const auto & process_list = context->getProcessList();
-    process_list.createQueryMetricLogTask(query_id, interval_milliseconds, [this, &process_list, query_id] {
+    status.task = std::make_unique<BackgroundSchedulePool::TaskHolder>(context->getQueryMetricLogPool().createTask("QueryMetricLog", [this, &process_list, query_id] {
         auto current_time = std::chrono::system_clock::now();
         const auto query_info = process_list.getQueryInfo(query_id, false, true, false);
-
-        /// The query info should always be found because this task is owned by the QueryStatus,
-        /// so whenever a query actually finishes the task is destroyed, deactivated and thus this
-        /// lambda should never run anymore.
         if (!query_info)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query info not found: {}", query_id);
+            return;
 
         auto elem = createLogMetricElement(query_id, *query_info, current_time);
         if (elem)
             add(std::move(elem.value()));
-    });
+    }));
+
+    (*status.task)->scheduleAfter(interval_milliseconds);
 
     std::lock_guard lock(queries_mutex);
     queries.emplace(query_id, std::move(status));
@@ -151,8 +149,8 @@ void QueryMetricLog::finishQuery(const String & query_id, QueryStatusInfoPtr que
 
 std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint current_time, bool schedule_next)
 {
-    // LOG_TRACE(logger, "createLogMetricElement {}", query_id);
-    // SCOPE_EXIT({ LOG_TRACE(logger, "~createLogMetricElement {}", query_id); });
+    LOG_TRACE(logger, "createLogMetricElement {}", query_id);
+    SCOPE_EXIT({ LOG_TRACE(logger, "~createLogMetricElement {}", query_id); });
 
     std::lock_guard lock(queries_mutex);
     auto query_status_it = queries.find(query_id);
@@ -187,7 +185,7 @@ std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(cons
     {
         query_status.next_collect_time += std::chrono::milliseconds(query_status.interval_milliseconds);
         const auto wait_time = std::chrono::duration_cast<std::chrono::milliseconds>(query_status.next_collect_time - std::chrono::system_clock::now()).count();
-        getContext()->getProcessList().scheduleQueryMetricLogTask(query_id, wait_time);
+        (*query_status.task)->scheduleAfter(wait_time);
     }
 
     return elem;

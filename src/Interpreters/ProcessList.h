@@ -168,8 +168,6 @@ protected:
     /// This field is unused in this class, but it
     /// increments/decrements metric in constructor/destructor.
     CurrentMetrics::Increment num_queries_increment;
-
-    std::unique_ptr<BackgroundSchedulePool::TaskHolder> query_metric_log_task;
 public:
     QueryStatus(
         ContextPtr context_,
@@ -387,8 +385,8 @@ protected:
     /// Call under lock. Finds process with specified current_user and current_query_id.
     QueryStatusPtr tryGetProcessListElement(const String & current_query_id, const String & current_user) TSA_REQUIRES(mutex);
 
-    /// Call under lock. Finds process with specified query_id.
-    QueryStatusPtr getProcessListElement(const String & query_id) const TSA_REQUIRES(mutex);
+    /// Finds process with specified query_id.
+    QueryStatusPtr getProcessListElement(const String & query_id) const;
 
     /// limit for insert. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
     size_t max_insert_queries_amount = 0;
