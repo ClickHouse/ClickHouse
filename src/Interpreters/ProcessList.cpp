@@ -746,8 +746,8 @@ QueryStatusPtr ProcessList::getProcessListElement(const String & query_id) const
 
 QueryStatusInfoPtr ProcessList::getQueryInfo(const String & query_id, bool get_thread_list, bool get_profile_events, bool get_settings) const
 {
-    LOG_TRACE(logger, "getQueryInfo {}", query_id);
-    SCOPE_EXIT({ LOG_TRACE(logger, "~getQueryInfo {}", query_id); });
+    // LOG_TRACE(logger, "getQueryInfo {}", query_id);
+    // SCOPE_EXIT({ LOG_TRACE(logger, "~getQueryInfo {}", query_id); });
 
     /// We need to ensure that `process` (QueryStatusPtr) is never released in the QueryMetricLog
     /// task thread. If we didn't acquire the lock until the end of this function, it could happen
