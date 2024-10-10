@@ -3,7 +3,6 @@
 #include <Functions/GCDLCMImpl.h>
 
 #include <boost/integer/common_factor.hpp>
-#include "Columns/ColumnNullable.h"
 
 
 namespace
@@ -38,7 +37,7 @@ struct LCMImpl : public GCDLCMImpl<A, B, LCMImpl<A, B>, NameLCM>
 {
     using ResultType = typename GCDLCMImpl<A, B, LCMImpl<A, B>, NameLCM>::ResultType;
 
-    static ResultType applyImpl(A a, B b, NullMap::value_type * m [[maybe_unused]] = nullptr)
+    static ResultType applyImpl(A a, B b)
     {
         using Int = typename NumberTraits::ToInteger<ResultType>::Type;
         using Unsigned = make_unsigned_t<Int>;

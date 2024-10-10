@@ -1,7 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <base/arithmeticOverflow.h>
-#include "Columns/ColumnNullable.h"
 
 namespace DB
 {
@@ -15,7 +14,7 @@ struct PlusImpl
     static const constexpr bool is_commutative = true;
 
     template <typename Result = ResultType>
-    static NO_SANITIZE_UNDEFINED Result apply(A a, B b, NullMap::value_type * m [[maybe_unused]] = nullptr)
+    static NO_SANITIZE_UNDEFINED Result apply(A a, B b)
     {
         /// Next everywhere, static_cast - so that there is no wrong result in expressions of the form Int64 c = UInt32(a) * Int32(-1).
         if constexpr (is_big_int_v<A> || is_big_int_v<B>)

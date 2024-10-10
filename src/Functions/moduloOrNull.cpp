@@ -4,6 +4,7 @@
 #include <Functions/FunctionBinaryArithmetic.h>
 #include "Common/StackTrace.h"
 #include <Common/Exception.h>
+#include "Functions/StringHelpers.h"
 #include "base/extended_types.h"
 #include <libdivide.h>
 
@@ -46,11 +47,21 @@ struct ModuloOrNullImpl
         try
         {
             res = Op::template apply<ResultType>(a, b);
+            if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                if (!std::isfinite(res) && m)
+                    *m = 1;
+            }
         }
         catch (const std::exception&)
         {
             if (m)
                 *m = 1;
+            else
+            {
+                std::cerr << "gethere 1" << std::endl;
+                throw;
+            }
         }
         return res;
     }
@@ -58,7 +69,16 @@ struct ModuloOrNullImpl
     static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size, NullMap * res_nullmap)
     {
         /// Modulo with too small divisor.
-        if (unlikely((std::is_signed_v<B> && b == -1) || b == 1))
+        if constexpr (std::is_signed_v<B>)
+        {
+            if (unlikely((b == -1)))
+            {
+                for (size_t i = 0; i < size; ++i)
+                    dst[i] = 0;
+                return;
+            }
+        }
+        if (b == 1)
         {
             for (size_t i = 0; i < size; ++i)
                 dst[i] = 0;
@@ -120,7 +140,7 @@ struct ModuloOrNullImpl
             if constexpr (std::is_floating_point_v<Result>)
             {
                 if (!std::isfinite(res) && m)
-                    * m = 1;
+                    *m = 1;
             }
         }
         catch (const std::exception&)
@@ -128,6 +148,11 @@ struct ModuloOrNullImpl
             std::cerr <<"gethere 6 exception, m vallue:" << !!m << std::endl;
             std::cerr << StackTrace().toString() << std::endl;
             if (m) *m = 1;
+            else
+            {
+                std::cerr << "gethere 7" << std::endl;
+                throw;
+            }
         }
         return res;
     }

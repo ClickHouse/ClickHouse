@@ -2,7 +2,6 @@
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <Core/AccurateComparison.h>
 #include <Functions/LeastGreatestGeneric.h>
-#include "Columns/ColumnNullable.h"
 
 
 namespace DB
@@ -17,13 +16,6 @@ struct LeastBaseImpl
 
     template <typename Result = ResultType>
     static Result apply(A a, B b)
-    {
-        /** gcc 4.9.2 successfully vectorizes a loop from this function. */
-        return static_cast<Result>(a) < static_cast<Result>(b) ? static_cast<Result>(a) : static_cast<Result>(b);
-    }
-
-    template <typename Result = ResultType>
-    static Result apply(A a, B b, NullMap::value_type *)
     {
         /** gcc 4.9.2 successfully vectorizes a loop from this function. */
         return static_cast<Result>(a) < static_cast<Result>(b) ? static_cast<Result>(a) : static_cast<Result>(b);
@@ -54,7 +46,7 @@ struct LeastSpecialImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static Result apply(A a, B b, NullMap::value_type * m [[maybe_unused]] = nullptr)
+    static Result apply(A a, B b)
     {
         static_assert(std::is_same_v<Result, ResultType>, "ResultType != Result");
         return accurate::lessOp(a, b) ? static_cast<Result>(a) : static_cast<Result>(b);

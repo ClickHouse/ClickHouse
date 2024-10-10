@@ -284,7 +284,7 @@ struct BinaryOperation
 
     static ResultType process(A a, B b) { return Op::template apply<ResultType>(a, b); }
 
-    static ResultType process(A a, B b, NullMap::value_type * m [[maybe_unused]] = nullptr) { return Op::template apply<ResultType>(a, b, m); }
+    static ResultType process(A a, B b, NullMap::value_type * m [[maybe_unused]] = nullptr) { return Op::template apply<ResultType>(a, b); }
 
 private:
     template <OpCase op_case>
@@ -553,7 +553,7 @@ private:
 public:
     template <OpCase op_case, bool is_decimal_a, bool is_decimal_b>
     static void NO_INLINE process(const auto & a, const auto & b, ResultContainerType & c,
-        NativeResultType scale_a, NativeResultType scale_b, const NullMap * right_nullmap = nullptr)
+        NativeResultType scale_a, NativeResultType scale_b, const NullMap * right_nullmap = nullptr, NullMap * res_nullmap = nullptr)
     {
         if constexpr (op_case == OpCase::LeftConstant) static_assert(!is_decimal<decltype(a)>);
         if constexpr (op_case == OpCase::RightConstant) static_assert(!is_decimal<decltype(b)>);
@@ -609,7 +609,7 @@ public:
         }
         else if constexpr (is_division && is_decimal_b)
         {
-            processWithRightNullmapImpl<op_case>(a, b, c, size, right_nullmap, [&scale_a](const auto & left, const auto & right)
+            processWithRightNullmapImpl<op_case>(a, b, c, size, right_nullmap, res_nullmap, [&scale_a](const auto & left, const auto & right)
             {
                 return applyScaledDiv<is_decimal_a>(
                     static_cast<NativeResultType>(left), right, scale_a);
@@ -618,7 +618,7 @@ public:
         }
 
         processWithRightNullmapImpl<op_case>(
-            a, b, c, size, right_nullmap,
+            a, b, c, size, right_nullmap, res_nullmap,
             [](const auto & left, const auto & right)
             {
                 return apply(
@@ -628,25 +628,42 @@ public:
     }
 
     template <bool is_decimal_a, bool is_decimal_b, class A, class B>
-    static ResultType process(A a, B b, NativeResultType scale_a, NativeResultType scale_b)
+    static ResultType process(A a, B b, NativeResultType scale_a, NativeResultType scale_b, NullMap * res_nullmap)
         requires(!is_decimal<A> && !is_decimal<B>)
     {
-        if constexpr (is_division && is_decimal_b)
-            return applyScaledDiv<is_decimal_a>(a, b, scale_a);
-        else if constexpr (is_plus_minus_compare)
+        try
         {
-            if (scale_a != 1)
-                return applyScaled<true>(a, b, scale_a);
-            if (scale_b != 1)
-                return applyScaled<false>(a, b, scale_b);
-        }
+            if constexpr (is_division && is_decimal_b)
+                return applyScaledDiv<is_decimal_a>(a, b, scale_a);
+            else if constexpr (is_plus_minus_compare)
+            {
+                if (scale_a != 1)
+                    return applyScaled<true>(a, b, scale_a);
+                if (scale_b != 1)
+                    return applyScaled<false>(a, b, scale_b);
+            }
 
-        return apply(a, b);
+            ResultType res = apply(a, b);
+            if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                if (!std::isfinite(res) && res_nullmap)
+                    (*res_nullmap)[0] = 1;
+            }
+            return res;
+        }
+        catch (const std::exception&)
+        {
+            if (res_nullmap)
+                (*res_nullmap)[0] = 1;
+            else
+                throw;
+            return ResultType();
+        }
     }
 
 private:
     template <OpCase op_case, typename ApplyFunc>
-    static void processWithRightNullmapImpl(const auto & a, const auto & b, ResultContainerType & c, size_t size, const NullMap * right_nullmap, ApplyFunc apply_func)
+    static void processWithRightNullmapImpl(const auto & a, const auto & b, ResultContainerType & c, size_t size, const NullMap * right_nullmap, NullMap * res_nullmap, ApplyFunc apply_func)
     {
         if (right_nullmap)
         {
@@ -660,7 +677,24 @@ private:
                 }
 
                 for (size_t i = 0; i < size; ++i)
-                    c[i] = apply_func(undec(a[i]), undec(b));
+                {
+                    try
+                    {
+                        c[i] = apply_func(undec(a[i]), undec(b));
+                        if constexpr (std::is_floating_point_v<ResultContainerType>)
+                        {
+                            if (!std::isfinite(c[i]) && res_nullmap)
+                                (*res_nullmap)[i] = 1;
+                        }
+                    }
+                    catch (const std::exception&)
+                    {
+                        if (res_nullmap)
+                            (*res_nullmap)[i] = 1;
+                        else
+                            throw;
+                    }
+                }
             }
             else
             {
@@ -669,19 +703,55 @@ private:
                     if ((*right_nullmap)[i])
                         c[i] = ResultType();
                     else
-                        c[i] = apply_func(unwrap<op_case, OpCase::LeftConstant>(a, i), undec(b[i]));
+                    {
+                        try
+                        {
+                            c[i] = apply_func(unwrap<op_case, OpCase::LeftConstant>(a, i), undec(b[i]));
+                            if constexpr (std::is_floating_point_v<ResultContainerType>)
+                            {
+                                if (!std::isfinite(c[i]) && res_nullmap)
+                                    (*res_nullmap)[i] = 1;
+                            }
+                        }
+                        catch (const std::exception&)
+                        {
+                            if (res_nullmap)
+                                (*res_nullmap)[i] = 1;
+                            else
+                                throw;
+                        }
+                    }
                 }
             }
         }
         else
+        {
             for (size_t i = 0; i < size; ++i)
-                c[i] = apply_func(unwrap<op_case, OpCase::LeftConstant>(a, i), unwrap<op_case, OpCase::RightConstant>(b, i));
+            {
+                try
+                {
+                    c[i] = apply_func(unwrap<op_case, OpCase::LeftConstant>(a, i), unwrap<op_case, OpCase::RightConstant>(b, i));
+                    if constexpr (std::is_floating_point_v<ResultContainerType>)
+                    {
+                        if (!std::isfinite(c[i]) && res_nullmap)
+                            (*res_nullmap)[i] = 1;
+                    }
+                }
+                catch (const std::exception&)
+                {
+                    if (res_nullmap)
+                        (*res_nullmap)[i] = 1;
+                    else
+                        throw;
+                }
+            }
+        }
     }
 
     static constexpr bool is_plus_minus =   IsOperation<Operation>::plus ||
                                             IsOperation<Operation>::minus;
     static constexpr bool is_multiply =     IsOperation<Operation>::multiply;
-    static constexpr bool is_float_division = IsOperation<Operation>::div_floating;
+    static constexpr bool is_float_division = IsOperation<Operation>::div_floating || IsOperation<Operation>::divide_or_null;
     static constexpr bool is_int_division = IsOperation<Operation>::int_div ||
                                             IsOperation<Operation>::int_div_or_zero;
     static constexpr bool is_division = is_float_division || is_int_division;
@@ -1346,12 +1416,12 @@ class FunctionBinaryArithmetic : public IFunction
     }
 
     template <OpCase op_case, bool left_decimal, bool right_decimal, typename OpImpl, typename OpImplCheck>
-    void helperInvokeEither(const auto& left, const auto& right, auto& vec_res, auto scale_a, auto scale_b, const NullMap * right_nullmap) const
+    void helperInvokeEither(const auto& left, const auto& right, auto& vec_res, auto scale_a, auto scale_b, const NullMap * right_nullmap, NullMap * res_nullmap) const
     {
         if (check_decimal_overflow)
-            OpImplCheck::template process<op_case, left_decimal, right_decimal>(left, right, vec_res, scale_a, scale_b, right_nullmap);
+            OpImplCheck::template process<op_case, left_decimal, right_decimal>(left, right, vec_res, scale_a, scale_b, right_nullmap, res_nullmap);
         else
-            OpImpl::template process<op_case, left_decimal, right_decimal>(left, right, vec_res, scale_a, scale_b, right_nullmap);
+            OpImpl::template process<op_case, left_decimal, right_decimal>(left, right, vec_res, scale_a, scale_b, right_nullmap, res_nullmap);
     }
 
     template <class LeftDataType, class RightDataType, class ResultDataType>
@@ -1359,7 +1429,7 @@ class FunctionBinaryArithmetic : public IFunction
         const auto & left, const auto & right,
         const ColumnConst * const col_left_const, const ColumnConst * const col_right_const,
         const auto * const col_left, const auto * const col_right,
-        size_t col_left_size, const NullMap * right_nullmap) const
+        size_t col_left_size, const NullMap * right_nullmap, NullMap * res_nullmap) const
     {
         using T0 = typename LeftDataType::FieldType;
         using T1 = typename RightDataType::FieldType;
@@ -1414,8 +1484,8 @@ class FunctionBinaryArithmetic : public IFunction
             ResultType res = {};
             if (!right_nullmap || !(*right_nullmap)[0])
                 res = check_decimal_overflow
-                    ? OpImplCheck::template process<left_is_decimal, right_is_decimal>(const_a, const_b, scale_a, scale_b)
-                    : OpImpl::template process<left_is_decimal, right_is_decimal>(const_a, const_b, scale_a, scale_b);
+                    ? OpImplCheck::template process<left_is_decimal, right_is_decimal>(const_a, const_b, scale_a, scale_b, res_nullmap)
+                    : OpImpl::template process<left_is_decimal, right_is_decimal>(const_a, const_b, scale_a, scale_b, res_nullmap);
 
             return ResultDataType(type.getPrecision(), type.getScale())
                 .createColumnConst(col_left_const->size(), toField(res, type.getScale()));
@@ -1429,7 +1499,7 @@ class FunctionBinaryArithmetic : public IFunction
         if (col_left && col_right)
         {
             helperInvokeEither<OpCase::Vector, left_is_decimal, right_is_decimal, OpImpl, OpImplCheck>(
-                col_left->getData(), col_right->getData(), vec_res, scale_a, scale_b, right_nullmap);
+                col_left->getData(), col_right->getData(), vec_res, scale_a, scale_b, right_nullmap, res_nullmap);
         }
         else if (col_left_const && col_right)
         {
@@ -1437,7 +1507,7 @@ class FunctionBinaryArithmetic : public IFunction
                 helperGetOrConvert<T0, ResultDataType>(col_left_const, left));
 
             helperInvokeEither<OpCase::LeftConstant, left_is_decimal, right_is_decimal, OpImpl, OpImplCheck>(
-                const_a, col_right->getData(), vec_res, scale_a, scale_b, right_nullmap);
+                const_a, col_right->getData(), vec_res, scale_a, scale_b, right_nullmap, res_nullmap);
         }
         else if (col_left && col_right_const)
         {
@@ -1445,7 +1515,7 @@ class FunctionBinaryArithmetic : public IFunction
                 helperGetOrConvert<T1, ResultDataType>(col_right_const, right));
 
             helperInvokeEither<OpCase::RightConstant, left_is_decimal, right_is_decimal, OpImpl, OpImplCheck>(
-                col_left->getData(), const_b, vec_res, scale_a, scale_b, right_nullmap);
+                col_left->getData(), const_b, vec_res, scale_a, scale_b, right_nullmap, res_nullmap);
         }
         else
             return nullptr;
@@ -2098,7 +2168,8 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     col_left_const, col_right_const,
                     col_left, col_right,
                     col_left_size,
-                    right_nullmap);
+                    right_nullmap,
+                    res_nullmap);
             }
             /// Here we check if we have `intDiv` or `intDivOrZero` and at least one of the arguments is decimal, because in this case originally we had result as decimal, so we need to convert result into integer after calculations
             else if constexpr (!decimal_with_float && (is_int_div || is_int_div_or_zero) && (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>))
@@ -2122,7 +2193,8 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                             col_left_const, col_right_const,
                             col_left, col_right,
                             col_left_size,
-                            right_nullmap);
+                            right_nullmap,
+                            res_nullmap);
 
                     auto col = ColumnWithTypeAndName(res, type_res, name);
                     return castColumn(col, std::make_shared<ResultDataType>());
@@ -2253,10 +2325,9 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &right_null_map, &res_null_map);
             return wrapInNullable(res, arguments, result_type, input_rows_count, &res_null_map);
         }
-        /// Process special case when operation is divideOrNull and moduloOrNull
+        /// Process special case when operation is divideOrNull and moduloOrNull which will return NULL divided zero.
         else if ((is_divide_or_null || is_modulo_or_null) && !res_nullmap)
         {
-            std::cerr << "gethere divornull or modornull and resnull map is null" << std::endl;
             NullMap res_null_map(input_rows_count, 0);
             auto res = executeImpl2(arguments, result_type, input_rows_count, nullptr, &res_null_map);
             return wrapInNullable(res, arguments, result_type, input_rows_count, &res_null_map);

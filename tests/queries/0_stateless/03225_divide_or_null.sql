@@ -22,3 +22,17 @@ SELECT divideOrNull(CAST(16, 'Int8'), CAST(materialize(9), 'Nullable(Int128)'));
 SELECT divideOrNull(CAST(16, 'Int128'), CAST(materialize(9), 'Nullable(Int128)'));
 SELECT divideOrNull(CAST(16, 'UInt256'), CAST(materialize(9), 'Nullable(UInt128)'));
 SELECT divideOrNull(CAST(16, 'UInt256'), CAST(materialize(9), 'Nullable(UInt128)'));
+
+SELECT divideOrNull(toDecimal32(16.2, 2), toDecimal32(0.0, 1));
+SELECT divideOrNull(toDecimal32(16.2, 2), materialize(toDecimal32(0.0, 1)));
+SELECT divideOrNull(materialize(toDecimal32(16.2, 2)), toDecimal32(0.0, 1));
+SELECT divideOrNull(materialize(toDecimal32(16.2, 2)), materialize(toDecimal32(0.0, 1)));
+
+SELECT divideOrNull(toDecimal32(16.2, 2), 0.0);
+SELECT divideOrNull(toDecimal32(16.2, 2), materialize(0.0));
+SELECT divideOrNull(materialize(toDecimal32(16.2, 2)), materialize(0.0));
+
+SELECT tupleDivideOrNull((15, 10, 5), (0, 0, 0));
+SELECT tupleDivideOrNull((15, 10, 5), (5, 0, 0));
+SELECT tupleDivideOrNullByNumber((15, 10, 5), 5);
+SELECT tupleDivideOrNullByNumber((15, 10, 5), 0);

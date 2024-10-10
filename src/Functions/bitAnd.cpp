@@ -20,7 +20,7 @@ struct BitAndImpl
     static constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static Result apply(A a, B b, NullMap::value_type * m [[maybe_unused]] = nullptr)
+    static Result apply(A a, B b)
     {
         return static_cast<Result>(a) & static_cast<Result>(b);
     }

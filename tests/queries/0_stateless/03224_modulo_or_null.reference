@@ -20,3 +20,13 @@ Nullable(UInt8)
 \N
 \N
 \N
+\N
+\N
+\N
+\N
+\N
+\N
+(NULL,1,1)
+(0,1,1)
+(NULL,NULL,NULL)
+(1,0,1)

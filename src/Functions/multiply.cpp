@@ -2,7 +2,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <base/arithmeticOverflow.h>
-#include "Columns/ColumnNullable.h"
 
 namespace DB
 {
@@ -15,7 +14,7 @@ struct MultiplyImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static NO_SANITIZE_UNDEFINED Result apply(A a, B b, NullMap::value_type * m [[maybe_unused]] = nullptr)
+    static NO_SANITIZE_UNDEFINED Result apply(A a, B b)
     {
         if constexpr (is_big_int_v<A> || is_big_int_v<B>)
         {
