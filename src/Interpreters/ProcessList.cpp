@@ -726,8 +726,8 @@ static auto logger = getLogger("QueryMetricLog");
 
 QueryStatusPtr ProcessList::getProcessListElement(const String & query_id) const
 {
-    LOG_TRACE(logger, "getProcessListElement {}", query_id);
-    SCOPE_EXIT({ LOG_TRACE(logger, "~getProcessListElement {}", query_id); });
+    // LOG_TRACE(logger, "getProcessListElement {}", query_id);
+    // SCOPE_EXIT({ LOG_TRACE(logger, "~getProcessListElement {}", query_id); });
 
     QueryStatusPtr process_found;
     {
@@ -766,8 +766,8 @@ QueryStatusInfoPtr ProcessList::getQueryInfo(const String & query_id, bool get_t
 
 void ProcessList::createQueryMetricLogTask(const String & query_id, UInt64 interval_milliseconds, const BackgroundSchedulePool::TaskFunc & function) const
 {
-    LOG_TRACE(logger, "createQueryMetricLogTask {}", query_id);
-    SCOPE_EXIT({ LOG_TRACE(logger, "~createQueryMetricLogTask {}", query_id); });
+    // LOG_TRACE(logger, "createQueryMetricLogTask {}", query_id);
+    // SCOPE_EXIT({ LOG_TRACE(logger, "~createQueryMetricLogTask {}", query_id); });
 
     LockAndBlocker lock(mutex);
     auto process = getProcessListElement(query_id);
@@ -783,8 +783,8 @@ void ProcessList::createQueryMetricLogTask(const String & query_id, UInt64 inter
 
 void ProcessList::scheduleQueryMetricLogTask(const String & query_id, UInt64 interval_milliseconds) const
 {
-    LOG_TRACE(logger, "scheduleQueryMetricLogTask {}", query_id);
-    SCOPE_EXIT({ LOG_TRACE(logger, "~scheduleQueryMetricLogTask {}", query_id); });
+    // LOG_TRACE(logger, "scheduleQueryMetricLogTask {}", query_id);
+    // SCOPE_EXIT({ LOG_TRACE(logger, "~scheduleQueryMetricLogTask {}", query_id); });
 
     LockAndBlocker lock(mutex);
     auto process = getProcessListElement(query_id);
