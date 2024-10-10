@@ -35,7 +35,8 @@ private:
     bool remove_filter_column;
     bool on_totals;
 
-    ConstantFilterDescription constant_filter_description;
+    ConstantFilterDescription constant_from_filter_description;
+    ConstantFilterDescription constant_to_filter_description;
     size_t from_filter_column_position = 0;
     size_t to_filter_column_position = 0;
 

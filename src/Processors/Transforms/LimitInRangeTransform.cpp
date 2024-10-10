@@ -41,6 +41,11 @@ Block LimitInRangeTransform::transformHeader(
                 header.erase(filter_column_name);
             // else
             // replaceFilterToConstant(header, filter_column_name);
+
+            /** #TODO
+            * case: SELECT metric > 1 FROM my_first_table LIMIT INRANGE FROM metric > 1
+            * check remove_filter_column in PlannerExpressionAnalysis.cpp
+            **/
         }
     };
 
@@ -71,12 +76,29 @@ LimitInRangeTransform::LimitInRangeTransform(
     if (!to_filter_column_name.empty())
         to_filter_column_position = transformed_header.getPositionByName(to_filter_column_name);
 
-    (void)on_totals;
+    auto & from_column = transformed_header.getByPosition(from_filter_column_position).column;
+    auto & to_column = transformed_header.getByPosition(to_filter_column_position).column;
+
+    if (from_column)
+        constant_from_filter_description = ConstantFilterDescription(*from_column);
+    if (to_column)
+        constant_to_filter_description = ConstantFilterDescription(*from_column);
 }
 
 IProcessor::Status LimitInRangeTransform::prepare()
 {
     // TODO: may be some optimizations here. check other transforms.
+
+    if (!on_totals && !from_filter_column_name.empty() && constant_from_filter_description.always_false
+        /// Optimization for `LIMIT INRANGE FROM column in (empty set)`.
+        /// The result will not change after set was created, so we can skip this check.
+        /// It is implemented in prepare() stop pipeline before reading from input port.
+    )
+    {
+        input.close();
+        output.finish();
+        return Status::Finished;
+    }
 
     if (output.isFinished())
     {

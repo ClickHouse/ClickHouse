@@ -931,6 +931,7 @@ bool addPreliminaryLimitOptimizationStepIfNeeded(QueryPlan & query_plan,
     bool apply_prelimit = apply_limit && query_node.hasLimit() && !query_node.isLimitWithTies() && !query_node.isGroupByWithTotals()
         && !query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree
         && !query_analysis_result.query_has_array_join_in_join_tree && !query_node.isDistinct() && !query_node.hasLimitBy()
+        && !query_node.hasLimitInrangeFrom() && !query_node.hasLimitInrangeTo()
         && !settings[Setting::extremes] && !has_withfill;
     bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
     if (apply_prelimit)
