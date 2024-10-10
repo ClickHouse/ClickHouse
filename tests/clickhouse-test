@@ -917,6 +917,7 @@ class SettingsRandomizer:
             ["left", "auto"]
             # ["left", "auto", "right"]
         ),
+        "output_format_native_write_json_as_string": lambda: random.randint(0, 1),
     }
 
     @staticmethod
