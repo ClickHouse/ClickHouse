@@ -1,6 +1,10 @@
+#include <cmath>
+#include <type_traits>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
+#include "Common/StackTrace.h"
 #include <Common/Exception.h>
+#include "base/extended_types.h"
 #include <libdivide.h>
 
 namespace DB
@@ -15,13 +19,14 @@ struct ModuloOrNullImpl
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
 
+    /// NOTE: res_nullmap already initialized with right_nullmap if it is not nullptr
     template <OpCase op_case>
-    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap, NullMap * res_nullmap)
+    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap [[maybe_unused]], NullMap * res_nullmap)
     {
         chassert(res_nullmap);
-        if constexpr (op_case == OpCase::RightConstant)
+        if constexpr (op_case == OpCase::RightConstant && !std::is_same_v<ResultType, Float64> && !is_big_int_v<A> && !is_big_int_v<B> && !std::is_same_v<A, Int8> && !std::is_same_v<B, Int8> && !std::is_same_v<A, UInt8> && !std::is_same_v<B, UInt8>)
         {
-            if (right_nullmap && (*right_nullmap)[0])
+            if ((*res_nullmap)[0])
                 return;
             vectorConstant(a, *b, c, size, res_nullmap);
         }
@@ -35,6 +40,21 @@ struct ModuloOrNullImpl
         }
     }
 
+    static ResultType process(A a, B b, NullMap::value_type * m [[maybe_unused]] = nullptr)
+    {
+        ResultType res{};
+        try
+        {
+            res = Op::template apply<ResultType>(a, b);
+        }
+        catch (const std::exception&)
+        {
+            if (m)
+                *m = 1;
+        }
+        return res;
+    }
+
     static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size, NullMap * res_nullmap)
     {
         /// Modulo with too small divisor.
@@ -46,12 +66,15 @@ struct ModuloOrNullImpl
         }
 
         /// Modulo with too large divisor.
-        if (unlikely(b > std::numeric_limits<A>::max()
-            || (std::is_signed_v<A> && std::is_signed_v<B> && b < std::numeric_limits<A>::lowest())))
+        if constexpr ((std::is_signed_v<B> && std::is_signed_v<A>) || (std::is_unsigned_v<B> && std::is_unsigned_v<A>))
         {
-            for (size_t i = 0; i < size; ++i)
-                dst[i] = static_cast<ResultType>(src[i]);
-            return;
+            if (unlikely(b > std::numeric_limits<A>::max()
+                || (std::is_signed_v<A> && std::is_signed_v<B> && b < std::numeric_limits<A>::lowest())))
+            {
+                for (size_t i = 0; i < size; ++i)
+                    dst[i] = static_cast<ResultType>(src[i]);
+                return;
+            }
         }
 
         /// Set result to NULL if divide by zero or too large divisor.
@@ -86,17 +109,25 @@ struct ModuloOrNullImpl
         }
     }
 
-    static ResultType process(A a, B b, NullMap::value_type * m)
+    template <typename Result = ResultType>
+    static Result apply(A a, B b, NullMap::value_type * m [[maybe_unused]] = nullptr)
     {
-        ResultType res;
+        Result res{};
         try
         {
-            res = Op::template apply<ResultType>(a, b);
+            std::cerr <<"gethere 5 my apply" << std::endl;
+            res = Op::template apply<Result>(a, b);
+            if constexpr (std::is_floating_point_v<Result>)
+            {
+                if (!std::isfinite(res) && m)
+                    * m = 1;
+            }
         }
         catch (const std::exception&)
         {
-            if (m)
-                *m = 1;
+            std::cerr <<"gethere 6 exception, m vallue:" << !!m << std::endl;
+            std::cerr << StackTrace().toString() << std::endl;
+            if (m) *m = 1;
         }
         return res;
     }
@@ -107,17 +138,27 @@ private:
     {
         try
         {
+            std::cerr <<"gethere 5" << std::endl;
             if constexpr (op_case == OpCase::Vector)
                 c[i] = Op::template apply<ResultType>(a[i], b[i]);
             else
                 c[i] = Op::template apply<ResultType>(*a, b[i]);
+
+            if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                if (!std::isfinite(c[i]) && m)
+                    * m = 1;
+            }
         }
         catch (const std::exception&)
         {
+            std::cerr <<"gethere 6" << std::endl;
+            std::cerr << StackTrace().toString() << std::endl;
             *m = 1;
         }
     }
 
+public:
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = false; /// TODO implement the checks
 #endif
@@ -125,26 +166,27 @@ private:
 
 namespace impl_
 {
-template <> struct BinaryOperationImpl<UInt64, UInt8, ModuloImpl<UInt64, UInt8>> : ModuloOrNullImpl<UInt64, UInt8> {};
-template <> struct BinaryOperationImpl<UInt64, UInt16, ModuloImpl<UInt64, UInt16>> : ModuloOrNullImpl<UInt64, UInt16> {};
-template <> struct BinaryOperationImpl<UInt64, UInt32, ModuloImpl<UInt64, UInt32>> : ModuloOrNullImpl<UInt64, UInt32> {};
-template <> struct BinaryOperationImpl<UInt64, UInt64, ModuloImpl<UInt64, UInt64>> : ModuloOrNullImpl<UInt64, UInt64> {};
-
-template <> struct BinaryOperationImpl<UInt32, UInt8, ModuloImpl<UInt32, UInt8>> : ModuloOrNullImpl<UInt32, UInt8> {};
-template <> struct BinaryOperationImpl<UInt32, UInt16, ModuloImpl<UInt32, UInt16>> : ModuloOrNullImpl<UInt32, UInt16> {};
-template <> struct BinaryOperationImpl<UInt32, UInt32, ModuloImpl<UInt32, UInt32>> : ModuloOrNullImpl<UInt32, UInt32> {};
-template <> struct BinaryOperationImpl<UInt32, UInt64, ModuloImpl<UInt32, UInt64>> : ModuloOrNullImpl<UInt32, UInt64> {};
-
-template <> struct BinaryOperationImpl<Int64, Int8, ModuloImpl<Int64, Int8>> : ModuloOrNullImpl<Int64, Int8> {};
-template <> struct BinaryOperationImpl<Int64, Int16, ModuloImpl<Int64, Int16>> : ModuloOrNullImpl<Int64, Int16> {};
-template <> struct BinaryOperationImpl<Int64, Int32, ModuloImpl<Int64, Int32>> : ModuloOrNullImpl<Int64, Int32> {};
-template <> struct BinaryOperationImpl<Int64, Int64, ModuloImpl<Int64, Int64>> : ModuloOrNullImpl<Int64, Int64> {};
-
-template <> struct BinaryOperationImpl<Int32, Int8, ModuloImpl<Int32, Int8>> : ModuloOrNullImpl<Int32, Int8> {};
-template <> struct BinaryOperationImpl<Int32, Int16, ModuloImpl<Int32, Int16>> : ModuloOrNullImpl<Int32, Int16> {};
-template <> struct BinaryOperationImpl<Int32, Int32, ModuloImpl<Int32, Int32>> : ModuloOrNullImpl<Int32, Int32> {};
-template <> struct BinaryOperationImpl<Int32, Int64, ModuloImpl<Int32, Int64>> : ModuloOrNullImpl<Int32, Int64> {};
-template <typename A, typename B> struct BinaryOperationImpl<A, B, ModuloImpl<A, B>> : ModuloOrNullImpl<A, B> {};
+//template <> struct BinaryOperationImpl<UInt64, UInt8, ModuloImpl<UInt64, UInt8>> : ModuloOrNullImpl<UInt64, UInt8> {};
+//template <> struct BinaryOperationImpl<UInt64, UInt16, ModuloImpl<UInt64, UInt16>> : ModuloOrNullImpl<UInt64, UInt16> {};
+//template <> struct BinaryOperationImpl<UInt64, UInt32, ModuloImpl<UInt64, UInt32>> : ModuloOrNullImpl<UInt64, UInt32> {};
+//template <> struct BinaryOperationImpl<UInt64, UInt64, ModuloImpl<UInt64, UInt64>> : ModuloOrNullImpl<UInt64, UInt64> {};
+//
+//template <> struct BinaryOperationImpl<UInt32, UInt8, ModuloImpl<UInt32, UInt8>> : ModuloOrNullImpl<UInt32, UInt8> {};
+//template <> struct BinaryOperationImpl<UInt32, UInt16, ModuloImpl<UInt32, UInt16>> : ModuloOrNullImpl<UInt32, UInt16> {};
+//template <> struct BinaryOperationImpl<UInt32, UInt32, ModuloImpl<UInt32, UInt32>> : ModuloOrNullImpl<UInt32, UInt32> {};
+//template <> struct BinaryOperationImpl<UInt32, UInt64, ModuloImpl<UInt32, UInt64>> : ModuloOrNullImpl<UInt32, UInt64> {};
+//
+//template <> struct BinaryOperationImpl<Int64, Int8, ModuloImpl<Int64, Int8>> : ModuloOrNullImpl<Int64, Int8> {};
+//template <> struct BinaryOperationImpl<Int64, Int16, ModuloImpl<Int64, Int16>> : ModuloOrNullImpl<Int64, Int16> {};
+//template <> struct BinaryOperationImpl<Int64, Int32, ModuloImpl<Int64, Int32>> : ModuloOrNullImpl<Int64, Int32> {};
+//template <> struct BinaryOperationImpl<Int64, Int64, ModuloImpl<Int64, Int64>> : ModuloOrNullImpl<Int64, Int64> {};
+//
+//template <> struct BinaryOperationImpl<Int32, Int8, ModuloImpl<Int32, Int8>> : ModuloOrNullImpl<Int32, Int8> {};
+//template <> struct BinaryOperationImpl<Int32, Int16, ModuloImpl<Int32, Int16>> : ModuloOrNullImpl<Int32, Int16> {};
+//template <> struct BinaryOperationImpl<Int32, Int32, ModuloImpl<Int32, Int32>> : ModuloOrNullImpl<Int32, Int32> {};
+//template <> struct BinaryOperationImpl<Int32, Int64, ModuloImpl<Int32, Int64>> : ModuloOrNullImpl<Int32, Int64> {};
+//template <> struct BinaryOperationImpl<double, double, ModuloImpl<double, double>> : ModuloOrNullImpl<double, double> {};
+template <typename A, typename B> struct BinaryOperationImpl<A, B, ModuloOrNullImpl<A, B>> : ModuloOrNullImpl<A, B> {};
 }
 
 struct NameModuloOrNull { static constexpr auto name = "moduloOrNull"; };

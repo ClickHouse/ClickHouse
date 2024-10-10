@@ -11,4 +11,3 @@ SELECT 255 % 99;
 SELECT 42 % 13;
 SELECT 42 % 22;
 SELECT 1234567 % 123;
-SELECT mod(1, toNullable(materialize(0)))

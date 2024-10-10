@@ -15,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_DIVISION;
+    extern const int LOGICAL_ERROR;
 }
 
 template <typename A, typename B>
@@ -194,6 +195,31 @@ struct PositiveModuloImpl : ModuloImpl<A, B>
         }
         return static_cast<ResultType>(res);
     }
+};
+
+template <typename A, typename B>
+struct DivideFloatingImpl
+{
+    using ResultType = typename NumberTraits::ResultOfFloatingPointDivision<A, B>::Type;
+    static const constexpr bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
+
+    template <typename Result = ResultType>
+    static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]], NullMap::value_type * m [[maybe_unused]] = nullptr)
+    {
+        return static_cast<Result>(a) / b;
+    }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    {
+        if (left->getType()->isIntegerTy())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "DivideFloatingImpl expected a floating-point type");
+        return b.CreateFDiv(left, right);
+    }
+#endif
 };
 
 }

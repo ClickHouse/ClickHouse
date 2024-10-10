@@ -2248,15 +2248,15 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             bool is_const = checkColumnConst<ColumnNullable>(right_argument.column.get());
             const ColumnNullable * nullable_column = is_const ? checkAndGetColumnConstData<ColumnNullable>(right_argument.column.get())
                                                               : checkAndGetColumn<ColumnNullable>(right_argument.column.get());
-            const auto & right_null_bytemap = nullable_column->getNullMapData();
-            NullMap res_null_map(right_null_bytemap.begin(), right_null_bytemap.end());
-            auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &right_null_bytemap, &res_null_map);
-            return wrapInNullable(res, arguments, result_type, input_rows_count, res_nullmap);
+            const auto & right_null_map = nullable_column->getNullMapData();
+            NullMap res_null_map(right_null_map.begin(), right_null_map.end());
+            auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &right_null_map, &res_null_map);
+            return wrapInNullable(res, arguments, result_type, input_rows_count, &res_null_map);
         }
         /// Process special case when operation is divideOrNull and moduloOrNull
         else if ((is_divide_or_null || is_modulo_or_null) && !res_nullmap)
         {
-            std::cerr << "gethere 1" << std::endl;
+            std::cerr << "gethere divornull or modornull and resnull map is null" << std::endl;
             NullMap res_null_map(input_rows_count, 0);
             auto res = executeImpl2(arguments, result_type, input_rows_count, nullptr, &res_null_map);
             return wrapInNullable(res, arguments, result_type, input_rows_count, &res_null_map);
