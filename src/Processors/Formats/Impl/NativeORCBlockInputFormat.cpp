@@ -898,6 +898,7 @@ static void updateIncludeTypeIds(
 NativeORCBlockInputFormat::NativeORCBlockInputFormat(
     ReadBuffer & in_, Block header_, const FormatSettings & format_settings_, bool use_prefetch_, size_t min_bytes_for_seek_)
     : IInputFormat(std::move(header_), &in_)
+    , block_missing_values(getPort().getHeader().columns())
     , format_settings(format_settings_)
     , skip_stripes(format_settings.orc.skip_stripes)
     , use_prefetch(use_prefetch_)
