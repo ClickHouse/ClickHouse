@@ -69,12 +69,6 @@ public:
     bool canUpdateInputHeader() const override { return true; }
 
 protected:
-    /// Create output stream from header and traits.
-    static Blocks createOutputStream(
-            const Block & input_stream,
-            Block output_header,
-            const DataStreamTraits & stream_traits);
-
     TransformTraits transform_traits;
 
 private:
