@@ -47,7 +47,6 @@ void XMLRowOutputFormat::writePrefix()
     writeCString("<?xml version='1.0' encoding='UTF-8' ?>\n", *ostr);
     writeCString("<result>\n", *ostr);
     writeCString("\t<meta>\n", *ostr);
-
     writeCString("\t\t<columns>\n", *ostr);
 
     for (const auto & field : fields)
@@ -65,11 +64,8 @@ void XMLRowOutputFormat::writePrefix()
     }
 
     writeCString("\t\t</columns>\n", *ostr);
-
     writeCString("\t</meta>\n", *ostr);
-
-    if (!fields.empty())
-        writeCString("\t<data>\n", *ostr);
+    writeCString("\t<data>\n", *ostr);
 }
 
 
@@ -101,8 +97,7 @@ void XMLRowOutputFormat::writeRowEndDelimiter()
 
 void XMLRowOutputFormat::writeSuffix()
 {
-    if (!fields.empty())
-        writeCString("\t</data>\n", *ostr);
+    writeCString("\t</data>\n", *ostr);
 }
 
 
