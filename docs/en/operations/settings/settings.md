@@ -717,6 +717,22 @@ Default value: 0
 
 In CREATE TABLE statement allows specifying Variant type with similar variant types (for example, with different numeric or date types). Enabling this setting may introduce some ambiguity when working with values with similar types.
 
+## allow_suspicious_types_in_group_by {#allow_suspicious_types_in_group_by}
+
+Type: Bool
+
+Default value: 0
+
+Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in GROUP BY keys.
+
+## allow_suspicious_types_in_order_by {#allow_suspicious_types_in_order_by}
+
+Type: Bool
+
+Default value: 0
+
+Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in ORDER BY keys.
+
 ## allow_unrestricted_reads_from_keeper {#allow_unrestricted_reads_from_keeper}
 
 Type: Bool
@@ -9746,5 +9762,3 @@ Type: Int64
 Default value: 0
 
 Allows you to select the max window log of ZSTD (it will not be used for MergeTree family)
-
-

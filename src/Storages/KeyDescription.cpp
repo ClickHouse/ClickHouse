@@ -151,6 +151,18 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
             throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY,
                             "Column {} with type {} is not allowed in key expression, it's not comparable",
                             backQuote(result.sample_block.getByPosition(i).name), result.data_types.back()->getName());
+
+        auto check = [&](const IDataType & type)
+        {
+            if (isDynamic(type) || isVariant(type))
+                throw Exception(
+                    ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY,
+                    "Column with type Variant/Dynamic is not allowed in key expression. Consider using a subcolumn with a specific data "
+                    "type instead (for example 'column.Int64' or 'json.some.path.:Int64' if its a JSON path subcolumn) or casting this column to a specific data type");
+        };
+
+        check(*result.data_types.back());
+        result.data_types.back()->forEachChild(check);
     }
 
     return result;

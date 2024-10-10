@@ -512,6 +512,8 @@ The result of operator `<` for values `d1` with underlying type `T1` and `d2` wi
 - If `T1 = T2 = T`, the result will be `d1.T < d2.T` (underlying values will be compared).
 - If `T1 != T2`, the result will be `T1 < T2` (type names will be compared).
 
+By default `Dynamic` type is not allowed in `GROUP BY`/`ORDER BY` keys, if you want to use it consider its special comparison rule and enable `allow_suspicious_types_in_group_by`/`allow_suspicious_types_in_order_by` settings.
+
 Examples:
 ```sql
 CREATE TABLE test (d Dynamic) ENGINE=Memory;
@@ -535,7 +537,7 @@ SELECT d, dynamicType(d) FROM test;
 ```
 
 ```sql
-SELECT d, dynamicType(d) FROM test ORDER BY d;
+SELECT d, dynamicType(d) FROM test ORDER BY d SETTINGS allow_suspicious_types_in_order_by=1;
 ```
 
 ```sql
@@ -557,7 +559,7 @@ Example:
 ```sql
 CREATE TABLE test (d Dynamic) ENGINE=Memory;
 INSERT INTO test VALUES (1::UInt32), (1::Int64), (100::UInt32), (100::Int64);
-SELECT d, dynamicType(d) FROM test ORDER by d;
+SELECT d, dynamicType(d) FROM test ORDER BY d SETTINGS allow_suspicious_types_in_order_by=1;
 ```
 
 ```text
@@ -570,7 +572,7 @@ SELECT d, dynamicType(d) FROM test ORDER by d;
 ```
 
 ```sql
-SELECT d, dynamicType(d) FROM test GROUP by d;
+SELECT d, dynamicType(d) FROM test GROUP by d SETTINGS allow_suspicious_types_in_group_by=1;
 ```
 
 ```text
@@ -582,7 +584,7 @@ SELECT d, dynamicType(d) FROM test GROUP by d;
 └─────┴────────────────┘
 ```
 
-**Note**: the described comparison rule is not applied during execution of comparison functions like `<`/`>`/`=` and others because of [special work](#using-dynamic-type-in-functions) of functions with `Dynamic` type
+**Note:** the described comparison rule is not applied during execution of comparison functions like `<`/`>`/`=` and others because of [special work](#using-dynamic-type-in-functions) of functions with `Dynamic` type
 
 ## Reaching the limit in number of different data types stored inside Dynamic
 
