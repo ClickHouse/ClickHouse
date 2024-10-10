@@ -271,8 +271,7 @@ String StorageRabbitMQ::getTableBasedName(String name, const StorageID & table_i
 {
     if (name.empty())
         return fmt::format("{}_{}", table_id.database_name, table_id.table_name);
-    else
-        return fmt::format("{}_{}_{}", name, table_id.database_name, table_id.table_name);
+    return fmt::format("{}_{}_{}", name, table_id.database_name, table_id.table_name);
 }
 
 
@@ -1258,11 +1257,10 @@ bool StorageRabbitMQ::tryStreamToViews()
         LOG_TRACE(log, "Reschedule streaming. Queues are empty.");
         return false;
     }
-    else
-    {
-        LOG_TEST(log, "Will start background loop to let messages be pushed to channel");
-        startLoop();
-    }
+
+    LOG_TEST(log, "Will start background loop to let messages be pushed to channel");
+    startLoop();
+
 
     /// Reschedule.
     return true;
