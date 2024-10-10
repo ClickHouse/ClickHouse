@@ -285,8 +285,8 @@ struct ReplaceRegexpImpl
 
             if (needle.empty())
             {
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offsets[i - 1]], hs_data, hs_length + 1);
-                res_offsets[i] = res_offsets[i - 1] + hs_length + 1;
+                memcpySmallAllowReadWriteOverflow15(&res_data[i > 0 ? res_offsets[i - 1] : 0], hs_data, hs_length + 1);
+                res_offsets[i] = (i > 0 ? res_offsets[i - 1] : 0) + hs_length + 1;
                 continue;
             }
 
@@ -316,8 +316,8 @@ struct ReplaceRegexpImpl
 
         if (needle.empty())
         {
-            res_data.assign(haystack_data.begin(), haystack_data.end());
-            res_offsets.assign(haystack_offsets.begin(), haystack_offsets.end());
+            res_data.assign(haystack_data);
+            res_offsets.assign(haystack_offsets);
             return;
         }
 
@@ -386,8 +386,8 @@ struct ReplaceRegexpImpl
 
             if (needle.empty())
             {
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offsets[i - 1]], hs_data, hs_length + 1);
-                res_offsets[i] = res_offsets[i - 1] + hs_length + 1;
+                memcpySmallAllowReadWriteOverflow15(&res_data[i > 0 ? res_offsets[i - 1] : 0], hs_data, hs_length + 1);
+                res_offsets[i] = (i > 0 ? res_offsets[i - 1] : 0) + hs_length + 1;
                 continue;
             }
 
