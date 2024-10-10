@@ -109,7 +109,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool allow_experimental_full_text_index;
     extern const SettingsBool allow_experimental_inverted_index;
-    extern const SettingsBool allow_experimental_refreshable_materialized_view;
     extern const SettingsBool allow_experimental_statistics;
     extern const SettingsBool allow_experimental_vector_similarity_index;
     extern const SettingsBool allow_materialized_view_with_bad_select;
@@ -1576,10 +1575,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (create.refresh_strategy)
     {
-        if (!getContext()->getSettingsRef()[Setting::allow_experimental_refreshable_materialized_view])
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Refreshable materialized views are experimental. Enable allow_experimental_refreshable_materialized_view to use");
-
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.refresh_strategy);
     }
