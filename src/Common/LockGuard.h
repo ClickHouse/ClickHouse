@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/** LockGuard provide RAII-style locking mechanism for a mutex.
+/** LockGuard provides RAII-style locking mechanism for a mutex.
  ** It's intended to be used like std::unique_ptr but with TSA annotations
   */
 template <typename Mutex>
