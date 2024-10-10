@@ -29,7 +29,7 @@ from pyspark.sql.types import (
 from pyspark.sql.window import Window
 
 import helpers.client
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
 from helpers.s3_tools import (
     AzureUploader,
     HDFSUploader,
