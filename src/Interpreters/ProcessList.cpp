@@ -726,9 +726,10 @@ static auto logger = getLogger("QueryMetricLog");
 
 QueryStatusPtr ProcessList::getProcessListElement(const String & query_id) const
 {
-    // LOG_TRACE(logger, "getProcessListElement {}", query_id);
-    // SCOPE_EXIT({ LOG_TRACE(logger, "~getProcessListElement {}", query_id); });
+    LOG_TRACE(logger, "getProcessListElement {}", query_id);
+    SCOPE_EXIT({ LOG_TRACE(logger, "~getProcessListElement {}", query_id); });
 
+    LockAndBlocker lock(mutex);
     QueryStatusPtr process_found;
     {
         for (const auto & process : processes)
@@ -746,55 +747,15 @@ QueryStatusPtr ProcessList::getProcessListElement(const String & query_id) const
 
 QueryStatusInfoPtr ProcessList::getQueryInfo(const String & query_id, bool get_thread_list, bool get_profile_events, bool get_settings) const
 {
-    // LOG_TRACE(logger, "getQueryInfo {}", query_id);
-    // SCOPE_EXIT({ LOG_TRACE(logger, "~getQueryInfo {}", query_id); });
+    LOG_TRACE(logger, "getQueryInfo {}", query_id);
+    SCOPE_EXIT({ LOG_TRACE(logger, "~getQueryInfo {}", query_id); });
 
-    /// We need to ensure that `process` (QueryStatusPtr) is never released in the QueryMetricLog
-    /// task thread. If we didn't acquire the lock until the end of this function, it could happen
-    /// that we get `process` but immediately the query finishes and is removed from `processes`.
-    /// Then, this code would have the only reference to it. Thus, the moment `process`'s shared_ptr
-    /// goes out of scope at the end of this function, `query_metric_log_task` destructor is called,
-    /// which locks the same `exec_mutex` that is hold while this method is executed.
-    LockAndBlocker lock(mutex);
     auto process = getProcessListElement(query_id);
-
     if (process)
         return std::make_shared<QueryStatusInfo>(process->getInfo(get_thread_list, get_profile_events, get_settings));
 
     return nullptr;
 }
-
-void ProcessList::createQueryMetricLogTask(const String & query_id, UInt64 interval_milliseconds, const BackgroundSchedulePool::TaskFunc & function) const
-{
-    // LOG_TRACE(logger, "createQueryMetricLogTask {}", query_id);
-    // SCOPE_EXIT({ LOG_TRACE(logger, "~createQueryMetricLogTask {}", query_id); });
-
-    LockAndBlocker lock(mutex);
-    auto process = getProcessListElement(query_id);
-
-    /// Some extra quick queries might have already finished
-    /// e.g. SHOW PROCESSLIST FORMAT Null
-    if (!process)
-        return;
-
-    process->query_metric_log_task = std::make_unique<BackgroundSchedulePool::TaskHolder>(process->getContext()->getQueryMetricLogPool().createTask("QueryMetricLog", function));
-    (*process->query_metric_log_task)->scheduleAfter(interval_milliseconds);
-}
-
-void ProcessList::scheduleQueryMetricLogTask(const String & query_id, UInt64 interval_milliseconds) const
-{
-    // LOG_TRACE(logger, "scheduleQueryMetricLogTask {}", query_id);
-    // SCOPE_EXIT({ LOG_TRACE(logger, "~scheduleQueryMetricLogTask {}", query_id); });
-
-    LockAndBlocker lock(mutex);
-    auto process = getProcessListElement(query_id);
-
-    if (!process || !process->query_metric_log_task)
-        return;
-
-    (*process->query_metric_log_task)->scheduleAfter(interval_milliseconds);
-}
-
 
 ProcessListForUser::ProcessListForUser(ProcessList * global_process_list)
     : ProcessListForUser(nullptr, global_process_list)
