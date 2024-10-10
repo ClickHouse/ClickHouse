@@ -1684,13 +1684,23 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
         }
 
         auto join_pipeline_type = join_algorithm->pipelineType();
+
+        ColumnIdentifierSet outer_scope_columns_nonempty;
+        if (outer_scope_columns.empty())
+        {
+            if (left_header.columns() > 1)
+                outer_scope_columns_nonempty.insert(left_header.getByPosition(0).name);
+            else if (right_header.columns() > 1)
+                outer_scope_columns_nonempty.insert(right_header.getByPosition(0).name);
+        }
+
         auto join_step = std::make_unique<JoinStep>(
             left_plan.getCurrentDataStream(),
             right_plan.getCurrentDataStream(),
             std::move(join_algorithm),
             settings[Setting::max_block_size],
             settings[Setting::max_threads],
-            outer_scope_columns,
+            outer_scope_columns.empty() ? outer_scope_columns_nonempty : outer_scope_columns,
             false /*optimize_read_in_order*/,
             true /*optimize_skip_unused_shards*/);
         join_step->inner_table_selection_mode = settings[Setting::query_plan_join_inner_table_selection];
