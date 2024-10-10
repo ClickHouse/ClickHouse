@@ -50,12 +50,10 @@
 #include <base/map.h>
 #include <base/types.h>
 #include <base/wide_integer_to_string.h>
-#include "Common/StackTrace.h"
 #include <Common/Arena.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include "Core/ExternalResultDescription.h"
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -646,7 +644,7 @@ public:
             ResultType res = apply(a, b);
             if constexpr (std::is_floating_point_v<ResultType>)
             {
-                if (!std::isfinite(res) && res_nullmap)
+                if (unlikely(!std::isfinite(res)) && res_nullmap)
                     (*res_nullmap)[0] = 1;
             }
             return res;
@@ -657,7 +655,7 @@ public:
                 (*res_nullmap)[0] = 1;
             else
                 throw;
-            return ResultType();
+            return ResultType(); /// Unreachable to disable compiler error.
         }
     }
 
@@ -683,7 +681,7 @@ private:
                         c[i] = apply_func(undec(a[i]), undec(b));
                         if constexpr (std::is_floating_point_v<ResultContainerType>)
                         {
-                            if (!std::isfinite(c[i]) && res_nullmap)
+                            if (unlikely(!std::isfinite(c[i])) && res_nullmap)
                                 (*res_nullmap)[i] = 1;
                         }
                     }
@@ -709,7 +707,7 @@ private:
                             c[i] = apply_func(unwrap<op_case, OpCase::LeftConstant>(a, i), undec(b[i]));
                             if constexpr (std::is_floating_point_v<ResultContainerType>)
                             {
-                                if (!std::isfinite(c[i]) && res_nullmap)
+                                if (unlikely(!std::isfinite(c[i])) && res_nullmap)
                                     (*res_nullmap)[i] = 1;
                             }
                         }
@@ -733,7 +731,7 @@ private:
                     c[i] = apply_func(unwrap<op_case, OpCase::LeftConstant>(a, i), unwrap<op_case, OpCase::RightConstant>(b, i));
                     if constexpr (std::is_floating_point_v<ResultContainerType>)
                     {
-                        if (!std::isfinite(c[i]) && res_nullmap)
+                        if (unlikely(!std::isfinite(c[i])) && res_nullmap)
                             (*res_nullmap)[i] = 1;
                     }
                 }
