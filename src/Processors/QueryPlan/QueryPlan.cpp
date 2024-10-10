@@ -238,7 +238,7 @@ static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map,
         step.describeIndexes(map);
 }
 
-JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options)
+JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) const
 {
     checkInitialized();
 
@@ -364,7 +364,7 @@ std::string debugExplainStep(const IQueryPlanStep & step)
     return out.str();
 }
 
-void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent)
+void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent) const
 {
     checkInitialized();
 
@@ -418,7 +418,7 @@ static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSet
         settings.offset += settings.indent;
 }
 
-void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options)
+void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const
 {
     checkInitialized();
 
@@ -506,7 +506,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
     updateDataStreams(*root);
 }
 
-void QueryPlan::explainEstimate(MutableColumns & columns)
+void QueryPlan::explainEstimate(MutableColumns & columns) const
 {
     checkInitialized();
 

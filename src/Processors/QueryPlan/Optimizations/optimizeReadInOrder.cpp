@@ -91,7 +91,7 @@ using StepStack = std::vector<IQueryPlanStep*>;
 QueryPlan::Node * findReadingStep(QueryPlan::Node & node, bool allow_existing_order)
 {
     IQueryPlanStep * step = node.step.get();
-    if (auto * reading = checkSupportedReadingStep(step, allow_existing_order))
+    if (auto * /*reading*/ _ = checkSupportedReadingStep(step, allow_existing_order))
         return &node;
 
     if (node.children.size() != 1)
@@ -824,7 +824,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
 
         return order_info;
     }
-    else if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
+    if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
     {
         auto order_info = buildInputOrderFromSortDescription(
             merge,
@@ -880,7 +880,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 
         return order_info;
     }
-    else if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
+    if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
     {
         auto order_info = buildInputOrderFromUnorderedKeys(
             merge,
@@ -967,7 +967,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node)
 
         return order_info;
     }
-    else if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
+    if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
     {
         auto order_info = buildInputOrderFromUnorderedKeys(
             merge,

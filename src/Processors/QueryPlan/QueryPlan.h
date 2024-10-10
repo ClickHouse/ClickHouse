@@ -81,10 +81,10 @@ public:
         bool header = false;
     };
 
-    JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options);
-    void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent = 0);
-    void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options);
-    void explainEstimate(MutableColumns & columns);
+    JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options) const;
+    void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent = 0) const;
+    void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const;
+    void explainEstimate(MutableColumns & columns) const;
 
     /// Do not allow to change the table while the pipeline alive.
     void addTableLock(TableLockHolder lock) { resources.table_locks.emplace_back(std::move(lock)); }

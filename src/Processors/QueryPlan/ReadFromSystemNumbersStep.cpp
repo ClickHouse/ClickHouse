@@ -377,18 +377,16 @@ void shrinkRanges(RangesWithStep & ranges, size_t size)
             size -= static_cast<UInt64>(range_size);
             continue;
         }
-        else if (range_size == size)
+        if (range_size == size)
         {
             last_range_idx = i;
             break;
         }
-        else
-        {
-            auto & range = ranges[i];
-            range.size = static_cast<UInt128>(size);
-            last_range_idx = i;
-            break;
-        }
+
+        auto & range = ranges[i];
+        range.size = static_cast<UInt128>(size);
+        last_range_idx = i;
+        break;
     }
 
     /// delete the additional ranges

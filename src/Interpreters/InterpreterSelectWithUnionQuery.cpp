@@ -252,10 +252,9 @@ Block InterpreterSelectWithUnionQuery::getCurrentChildResultHeader(const ASTPtr 
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
         return InterpreterSelectWithUnionQuery(ast_ptr_, context, options.copy().analyze().noModify(), required_result_column_names)
             .getSampleBlock();
-    else if (ast_ptr_->as<ASTSelectQuery>())
+    if (ast_ptr_->as<ASTSelectQuery>())
         return InterpreterSelectQuery(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
-    else
-        return InterpreterSelectIntersectExceptQuery(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
+    return InterpreterSelectIntersectExceptQuery(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
 }
 
 std::unique_ptr<IInterpreterUnionOrSelectQuery>
@@ -263,10 +262,9 @@ InterpreterSelectWithUnionQuery::buildCurrentChildInterpreter(const ASTPtr & ast
 {
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
         return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, context, options, current_required_result_column_names);
-    else if (ast_ptr_->as<ASTSelectQuery>())
+    if (ast_ptr_->as<ASTSelectQuery>())
         return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, options, current_required_result_column_names);
-    else
-        return std::make_unique<InterpreterSelectIntersectExceptQuery>(ast_ptr_, context, options);
+    return std::make_unique<InterpreterSelectIntersectExceptQuery>(ast_ptr_, context, options);
 }
 
 InterpreterSelectWithUnionQuery::~InterpreterSelectWithUnionQuery() = default;
