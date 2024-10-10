@@ -151,6 +151,7 @@ CentOS
 CertificateHandler
 Chadmin
 ChannelID
+ChartDB
 Cidr
 Ciphertext
 CityHash
@@ -900,6 +901,7 @@ SendScalars
 ShareAlike
 SharedMergeTree
 Shortkeys
+Signup
 SimHash
 Simhash
 SimpleAggregateFunction
@@ -1372,6 +1374,7 @@ changelog
 changelogs
 charset
 charsets
+chartdb
 chconn
 cheatsheet
 checkouting
@@ -1476,6 +1479,7 @@ curdate
 currentDatabase
 currentProfiles
 currentRoles
+currentSchemas
 currentUser
 customizable
 customizations
@@ -1646,10 +1650,12 @@ exponentialmovingaverage
 expr
 exprN
 extendedVerification
+extract
 extractAll
 extractAllGroups
 extractAllGroupsHorizontal
 extractAllGroupsVertical
+extractGroups
 extractKeyValuePairs
 extractKeyValuePairsWithEscaping
 extractTextFromHTML
@@ -1704,6 +1710,7 @@ formatters
 fqdn
 frac
 freezed
+frictionless
 fromDaysSinceYearZero
 fromModifiedJulianDay
 fromModifiedJulianDayOrNull
@@ -2555,6 +2562,7 @@ shortkeys
 shoutout
 showCertificate
 sigmoid
+signup
 simdjson
 simpleJSON
 simpleJSONExtractBool
