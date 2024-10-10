@@ -1961,7 +1961,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
 
             auto & table_expression_column_nodes_with_names = table_expressions_column_nodes_with_names_stack.back();
 
-            for (auto & [table_expression_column_node, _] : table_expression_column_nodes_with_names)
+            for (auto & [table_expression_column_node, _1] : table_expression_column_nodes_with_names)
             {
                 auto array_join_resolved_expression = identifier_resolver.tryResolveExpressionFromArrayJoinExpressions(table_expression_column_node,
                         table_expression,
