@@ -2435,6 +2435,7 @@ def test_filesystem_cache(started_cluster):
     )
 
     instance.query("SYSTEM FLUSH LOGS")
+    instance.query("SYSTEM DROP SCHEMA CACHE")
 
     assert count * 2 == int(
         instance.query(
