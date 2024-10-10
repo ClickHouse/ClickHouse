@@ -47,6 +47,8 @@ namespace Setting
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsUInt64 join_on_disk_max_files_to_merge;
     extern const SettingsUInt64 join_output_by_rowlist_perkey_rows_threshold;
+    extern const SettingsUInt64 prefetch_ahead_distance;
+    extern const SettingsUInt64 prefetch_small_loop_size;
     extern const SettingsOverflowMode join_overflow_mode;
     extern const SettingsUInt64 join_to_sort_maximum_table_rows;
     extern const SettingsUInt64 join_to_sort_minimum_perkey_rows;
