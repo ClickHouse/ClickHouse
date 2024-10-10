@@ -120,6 +120,7 @@ public:
     ColumnPtr compress() const override;
 
     bool hasDynamicStructure() const override { return nested->hasDynamicStructure(); }
+    bool dynamicStructureEquals(const IColumn & rhs) const override;
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
 };
 

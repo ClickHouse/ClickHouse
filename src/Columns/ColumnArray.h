@@ -192,6 +192,13 @@ public:
     bool hasDynamicStructure() const override { return getData().hasDynamicStructure(); }
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
 
+    bool dynamicStructureEquals(const IColumn & rhs) const override
+    {
+        if (const auto * rhs_concrete = typeid_cast<const ColumnArray *>(&rhs))
+            return data->dynamicStructureEquals(*rhs_concrete->data);
+        return false;
+    }
+
 private:
     WrappedPtr data;
     WrappedPtr offsets;

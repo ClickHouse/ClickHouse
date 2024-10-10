@@ -367,6 +367,7 @@ public:
     bool addNewVariant(const DataTypePtr & new_variant) { return addNewVariant(new_variant, new_variant->getName()); }
 
     bool hasDynamicStructure() const override { return true; }
+    bool dynamicStructureEquals(const IColumn & rhs) const override;
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
 
     const StatisticsPtr & getStatistics() const { return statistics; }
