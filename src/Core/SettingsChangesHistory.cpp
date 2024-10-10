@@ -68,6 +68,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.10",
         {
+            {"enforce_strict_identifier_format", false, false, "New setting."},
             {"enable_parsing_to_custom_serialization", false, true, "New setting"},
             {"mongodb_throw_on_unsupported_query", false, true, "New setting."},
             {"enable_parallel_replicas", false, false, "Parallel replicas with read tasks became the Beta tier feature."},
@@ -75,7 +76,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"restore_replace_external_dictionary_source_to_null", false, false, "New setting."},
             {"show_create_query_identifier_quoting_rule", "when_necessary", "when_necessary", "New setting."},
             {"show_create_query_identifier_quoting_style", "Backticks", "Backticks", "New setting."},
-            {"enforce_strict_identifier_format", false, false, "New setting."},
+            {"output_format_native_write_json_as_string", false, false, "Add new setting to allow write JSON column as single String column in Native format"},
             {"output_format_binary_write_json_as_string", false, false, "Add new setting to write values of JSON type as JSON string in RowBinary output format"},
             {"input_format_binary_read_json_as_string", false, false, "Add new setting to read values of JSON type as JSON string in RowBinary input format"},
             {"min_free_disk_bytes_to_perform_insert", 0, 0, "New setting."},
