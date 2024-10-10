@@ -454,7 +454,12 @@ void StorageNATS::shutdown(bool /* is_drop */)
         }
 
         if (consumers_connection)
+        {
+            if (consumers_connection->isConnected())
+                natsConnection_Flush(consumers_connection->getConnection());
+
             consumers_connection->disconnect();
+        }
 
         for (size_t i = 0; i < num_created_consumers; ++i)
             popConsumer();
