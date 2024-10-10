@@ -3,7 +3,7 @@
 static uv_once_t    uvOnce = UV_ONCE_INIT;
 static uv_key_t     uvLoopThreadKey;
 
-static void initOnce(void)
+static void initOnce()
 {
     if (uv_key_create(&uvLoopThreadKey) != 0)
         abort();
@@ -19,7 +19,7 @@ static void initOnce(void)
  *
  * Needs to be called once so that the adapter can initialize some state.
  */
-void natsLibuv_Init(void)
+void natsLibuv_Init()
 {
     uv_once(&uvOnce, initOnce);
 }
@@ -226,7 +226,7 @@ uvAsyncCb(uv_async_t *handle)
     natsLibuvEvent   *event  = nullptr;
     bool             more    = false;
 
-    while (1)
+    while (true)
     {
         uv_mutex_lock(nle->lock);
 
