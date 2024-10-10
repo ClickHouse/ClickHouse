@@ -68,6 +68,8 @@ public:
         , rows_to_add(left_block.rows())
         , join_data_avg_perkey_rows(join.getJoinedData()->avgPerKeyRows())
         , output_by_row_list_threshold(join.getTableJoin().outputByRowListPerkeyRowsThreshold())
+        , prefetch_ahead_distance(join.getTableJoin().prefetchAheadDistance())
+        , prefetch_small_loop_size(join.getTableJoin().prefetchSmallLoopSize())
         , join_data_sorted(join.getJoinedData()->sorted)
         , is_join_get(is_join_get_)
     {
@@ -150,6 +152,8 @@ public:
     bool output_by_row_list = false;
     size_t join_data_avg_perkey_rows = 0;
     size_t output_by_row_list_threshold = 0;
+    size_t prefetch_ahead_distance = 0;
+    size_t prefetch_small_loop_size = 0;
     bool join_data_sorted = false;
     IColumn::Filter filter;
 

@@ -179,6 +179,18 @@ KeyGetter HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::createKeyGetter(const
         return KeyGetter(key_columns, key_sizes, nullptr);
 }
 
+template <typename KeyGetter, typename Arena>
+concept HasGetKeyHolderMemberFunc = requires
+{
+    {std::declval<KeyGetter>().getKeyHolder(0, std::declval<Arena &>())};
+};
+
+template <typename HashTable, typename KeyHolder>
+concept HasPrefetchMemberFunc = requires
+{
+    {std::declval<HashTable>().prefetch(std::declval<KeyHolder>())};
+};
+
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 template <typename KeyGetter, typename HashMap>
 size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCase(
@@ -205,6 +217,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeC
     /// For ALL and ASOF join always insert values
     is_inserted = !mapped_one || is_asof_join;
 
+    size_t prefetch_ahead_distance = join.getTableJoin().prefetchAheadDistance();
+
     for (size_t i = 0; i < rows; ++i)
     {
         if (null_map && (*null_map)[i])
@@ -224,7 +238,22 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeC
         else if constexpr (mapped_one)
             is_inserted |= Inserter<HashMap, KeyGetter>::insertOne(join, map, key_getter, stored_block, i, pool);
         else
+        {
+            /// Do data prefetch
+            if constexpr (HasGetKeyHolderMemberFunc<KeyGetter, Arena>)
+            {
+                using KeyHolder = decltype(key_getter.getKeyHolder(0, std::declval<Arena &>()));
+                if constexpr (HasPrefetchMemberFunc<decltype(map), KeyHolder>)
+                {
+                    if (i + prefetch_ahead_distance < rows)
+                    {
+                        auto && key_holder_prefetch = key_getter.getKeyHolder(i + prefetch_ahead_distance, pool);
+                        map.prefetch(std::move(key_holder_prefetch));
+                    }
+                }
+            }
             Inserter<HashMap, KeyGetter>::insertAll(join, map, key_getter, stored_block, i, pool);
+        }
     }
     return map.getBufferSizeInCells();
 }
@@ -351,6 +380,9 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     IColumn::Offset current_offset = 0;
     size_t max_joined_block_rows = added_columns.max_joined_block_rows;
     size_t i = 0;
+    size_t prefetch_ahead_distance = added_columns.prefetch_ahead_distance;
+    size_t prefetch_small_loop_size = added_columns.prefetch_small_loop_size;
+
     for (; i < rows; ++i)
     {
         if constexpr (join_features.need_replication)
@@ -360,6 +392,26 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
                 added_columns.offsets_to_replicate->resize(i);
                 added_columns.filter.resize(i);
                 break;
+            }
+        }
+
+        /// Do data prefetch
+        if constexpr (HasGetKeyHolderMemberFunc<KeyGetter, Arena>)
+        {
+            using KeyHolder = decltype(key_getter_vector[0].getKeyHolder(0, std::declval<Arena &>()));
+            auto & data_prefetch = *(mapv[0]);
+            if constexpr (HasPrefetchMemberFunc<decltype(data_prefetch), KeyHolder>)
+            {
+                if (i + prefetch_ahead_distance < rows && added_columns.join_on_keys.size() < prefetch_small_loop_size)
+                {
+                    const auto & join_keys_prefetch = added_columns.join_on_keys[0];
+                    if (!(join_keys_prefetch.null_map && (*join_keys_prefetch.null_map)[i + prefetch_ahead_distance]) &&
+                        !join_keys_prefetch.isRowFiltered(i + prefetch_ahead_distance))
+                    {
+                        auto && key_holder_prefetch = key_getter_vector[0].getKeyHolder(i + prefetch_ahead_distance, pool);
+                        data_prefetch.prefetch(std::move(key_holder_prefetch));
+                    }
+                }
             }
         }
 

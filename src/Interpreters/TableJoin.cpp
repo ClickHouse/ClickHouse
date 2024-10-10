@@ -139,6 +139,8 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
     , output_by_rowlist_perkey_rows_threshold(settings[Setting::join_output_by_rowlist_perkey_rows_threshold])
     , sort_right_minimum_perkey_rows(settings[Setting::join_to_sort_minimum_perkey_rows])
     , sort_right_maximum_table_rows(settings[Setting::join_to_sort_maximum_table_rows])
+    , prefetch_ahead_distance(settings[Setting::prefetch_ahead_distance])
+    , prefetch_small_loop_size(settings[Setting::prefetch_small_loop_size])
     , allow_join_sorting(settings[Setting::allow_experimental_join_right_table_sorting])
     , max_memory_usage(settings[Setting::max_memory_usage])
     , tmp_volume(tmp_volume_)

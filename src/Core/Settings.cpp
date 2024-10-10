@@ -1859,6 +1859,8 @@ Possible values:
     M(UInt64, join_output_by_rowlist_perkey_rows_threshold, 5, R"(
 The lower limit of per-key average rows in the right table to determine whether to output by row list in hash join.
 )", 0) \
+    M(UInt64, prefetch_ahead_distance, 100, R"(Empirical prefetch look ahead distance.)", 0) \
+    M(UInt64, prefetch_small_loop_size, 5, R"(The lower limit of join key size in the right table to determine whether to data prefetch.)", 0) \
     M(JoinStrictness, join_default_strictness, JoinStrictness::All, R"(
 Sets default strictness for [JOIN clauses](../../sql-reference/statements/select/join.md/#select-join).
 

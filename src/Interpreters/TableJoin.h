@@ -151,6 +151,8 @@ private:
     const size_t output_by_rowlist_perkey_rows_threshold = 0;
     const size_t sort_right_minimum_perkey_rows = 0;
     const size_t sort_right_maximum_table_rows = 0;
+    const size_t prefetch_ahead_distance = 0;
+    const size_t prefetch_small_loop_size = 0;
     const bool allow_join_sorting = false;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
@@ -302,6 +304,8 @@ public:
     size_t outputByRowListPerkeyRowsThreshold() const { return output_by_rowlist_perkey_rows_threshold; }
     size_t sortRightMinimumPerkeyRows() const { return sort_right_minimum_perkey_rows; }
     size_t sortRightMaximumTableRows() const { return sort_right_maximum_table_rows; }
+    size_t prefetchAheadDistance() const { return prefetch_ahead_distance; }
+    size_t prefetchSmallLoopSize() const { return prefetch_small_loop_size; }
     bool allowJoinSorting() const { return allow_join_sorting; }
     size_t defaultMaxBytes() const { return default_max_bytes; }
     size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
