@@ -576,11 +576,13 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             {
                 parsed_add_identified_with = parseAddIdentifiedWith(pos, expected, auth_data);
             }
+            continue;
         }
 
         if (!reset_authentication_methods_to_new && alter && auth_data.empty())
         {
             reset_authentication_methods_to_new = parseResetAuthenticationMethods(pos, expected);
+            continue;
         }
 
         AllowedClientHosts new_hosts;
@@ -642,6 +644,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (auth_data.empty() && !global_valid_until)
         {
             parseValidUntil(pos, expected, global_valid_until);
+            continue;
         }
 
         break;
