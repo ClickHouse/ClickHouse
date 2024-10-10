@@ -13,7 +13,7 @@ if(COMPILER_PIPE)
 else()
     set(MAX_COMPILER_MEMORY 1000)
 endif()
-set(MAX_LINKER_MEMORY 3500)
+set(MAX_LINKER_MEMORY 2500)
 include(../cmake/limit_jobs.cmake)
 
 include (../cmake/version.cmake)
