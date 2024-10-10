@@ -1,9 +1,5 @@
 #pragma once
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /** \cond
  *
  */
@@ -21,17 +17,15 @@ extern "C" {
 #define NATS_LIBUV_WRITE    (3)
 #define NATS_LIBUV_DETACH   (4)
 
-struct natsLibuvEvent_;
-
-typedef struct natsLibuvEvent_
+struct natsLibuvEvent
 {
     int                     type;
     bool                    add;
-    struct natsLibuvEvent_  *next;
+    struct natsLibuvEvent  *next;
 
-} natsLibuvEvent;
+};
 
-typedef struct
+struct natsLibuvEvents
 {
     natsConnection  *nc;
     uv_loop_t       *loop;
@@ -43,7 +37,7 @@ typedef struct
     natsLibuvEvent  *head;
     natsLibuvEvent  *tail;
 
-} natsLibuvEvents;
+};
 
 /** \endcond
  *
@@ -59,7 +53,7 @@ typedef struct
  *
  * Needs to be called once so that the adapter can initialize some state.
  */
-void natsLibuv_Init(void);
+void natsLibuv_Init();
 
 /** \brief Register the event loop with the thread running `uv_run()`.
  *
@@ -116,7 +110,3 @@ natsStatus natsLibuv_Write(void *userData, bool add);
 natsStatus natsLibuv_Detach(void *userData);
 
 /** @} */ // end of libuvFunctions
-
-#ifdef __cplusplus
-}
-#endif

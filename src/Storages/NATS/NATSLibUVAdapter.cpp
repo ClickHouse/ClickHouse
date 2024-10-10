@@ -1,13 +1,5 @@
 #include <Storages/NATS/NATSLibUVAdapter.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-/** \endcond
- *
- */
-
 static uv_once_t    uvOnce = UV_ONCE_INIT;
 static uv_key_t     uvLoopThreadKey;
 
@@ -27,8 +19,7 @@ static void initOnce(void)
  *
  * Needs to be called once so that the adapter can initialize some state.
  */
-void
-natsLibuv_Init(void)
+void natsLibuv_Init(void)
 {
     uv_once(&uvOnce, initOnce);
 }
@@ -44,13 +35,13 @@ natsLibuv_Init(void)
 void
 natsLibuv_SetThreadLocalLoop(uv_loop_t *loop)
 {
-    uv_key_set(&uvLoopThreadKey, (void*)loop);
+    uv_key_set(&uvLoopThreadKey, static_cast<void*>(loop));
 }
 
 static natsStatus
 uvScheduleToEventLoop(natsLibuvEvents *nle, int eventType, bool add)
 {
-    natsLibuvEvent  *newEvent = NULL;
+    natsLibuvEvent  *newEvent = nullptr;
     int             res;
 
     uv_mutex_lock(nle->lock);
@@ -61,20 +52,20 @@ uvScheduleToEventLoop(natsLibuvEvents *nle, int eventType, bool add)
     }
     uv_mutex_unlock(nle->lock);
 
-    newEvent = (natsLibuvEvent*) malloc(sizeof(natsLibuvEvent));
-    if (newEvent == NULL)
+    newEvent = static_cast<natsLibuvEvent*>(malloc(sizeof(natsLibuvEvent)));
+    if (newEvent == nullptr)
         return NATS_NO_MEMORY;
 
     newEvent->type  = eventType;
     newEvent->add   = add;
-    newEvent->next  = NULL;
+    newEvent->next  = nullptr;
 
     uv_mutex_lock(nle->lock);
 
-    if (nle->head == NULL)
+    if (nle->head == nullptr)
         nle->head = newEvent;
 
-    if (nle->tail != NULL)
+    if (nle->tail != nullptr)
         nle->tail->next = newEvent;
 
     nle->tail = newEvent;
@@ -89,7 +80,7 @@ uvScheduleToEventLoop(natsLibuvEvents *nle, int eventType, bool add)
 static void
 natsLibuvPoll(uv_poll_t* handle, int status, int events)
 {
-    natsLibuvEvents *nle = (natsLibuvEvents*) handle->data;
+    natsLibuvEvents *nle = static_cast<natsLibuvEvents*>(handle->data);
 
     if (status != 0)
     {
@@ -150,14 +141,14 @@ uvAsyncAttach(natsLibuvEvents *nle)
     natsStatus  s = NATS_OK;
 
     // We are reconnecting, destroy the old handle, create a new one
-    if (nle->handle != NULL)
+    if (nle->handle != nullptr)
     {
-        uv_close((uv_handle_t*) nle->handle, uvHandleClosedCb);
-        nle->handle = NULL;
+        uv_close(reinterpret_cast<uv_handle_t*>(nle->handle), uvHandleClosedCb);
+        nle->handle = nullptr;
     }
 
-    nle->handle = (uv_poll_t*) malloc(sizeof(uv_poll_t));
-    if (nle->handle == NULL)
+    nle->handle = static_cast<uv_poll_t*>(malloc(sizeof(uv_poll_t)));
+    if (nle->handle == nullptr)
         s = NATS_NO_MEMORY;
 
     if (s == NATS_OK)
@@ -171,7 +162,7 @@ uvAsyncAttach(natsLibuvEvents *nle)
     }
 
     if ((s == NATS_OK)
-        && (nle->handle->data = (void*) nle)
+        && (nle->handle->data = static_cast<void*>(nle))
         && (uv_poll_start(nle->handle, UV_READABLE, natsLibuvPoll) != 0))
     {
         s = NATS_ERR;
@@ -192,23 +183,19 @@ closeSchedulerCb(uv_handle_t* scheduler)
     free(scheduler);
 }
 
-static void
-uvAsyncDetach(natsLibuvEvents *nle)
+static void uvAsyncDetach(natsLibuvEvents *nle)
 {
-    uv_handle_t * scheduler;
-    uv_handle_t* handle;
-    natsLibuvEvent *event;
-
     if (nle->lock)
         uv_mutex_lock(nle->lock);
 
-    scheduler = (uv_handle_t*) nle->scheduler;
-    nle->scheduler = NULL;
+    uv_handle_t * scheduler = reinterpret_cast<uv_handle_t*>(nle->scheduler);
+    nle->scheduler = nullptr;
 
-    handle = (uv_handle_t*) nle->handle;
-    nle->handle = NULL;
+    uv_handle_t* handle = reinterpret_cast<uv_handle_t*>(nle->handle);
+    nle->handle = nullptr;
 
-    while ((event = nle->head) != NULL)
+    natsLibuvEvent *event;
+    while ((event = nle->head) != nullptr)
     {
         nle->head = event->next;
         free(event);
@@ -220,7 +207,7 @@ uvAsyncDetach(natsLibuvEvents *nle)
         uv_mutex_destroy(nle->lock);
 
         free(nle->lock);
-        nle->lock = NULL;
+        nle->lock = nullptr;
     }
     free(nle);
 
@@ -234,9 +221,9 @@ uvAsyncDetach(natsLibuvEvents *nle)
 static void
 uvAsyncCb(uv_async_t *handle)
 {
-    natsLibuvEvents  *nle    = (natsLibuvEvents*) handle->data;
+    natsLibuvEvents  *nle    = static_cast<natsLibuvEvents*>(handle->data);
     natsStatus       s       = NATS_OK;
-    natsLibuvEvent   *event  = NULL;
+    natsLibuvEvent   *event  = nullptr;
     bool             more    = false;
 
     while (1)
@@ -244,7 +231,7 @@ uvAsyncCb(uv_async_t *handle)
         uv_mutex_lock(nle->lock);
 
         event = nle->head;
-        if (event == NULL)
+        if (event == nullptr)
         {
             // This is possible, even on entry of this function because
             // the callback is called when the handle is initialized.
@@ -254,9 +241,9 @@ uvAsyncCb(uv_async_t *handle)
 
         nle->head = event->next;
         if (event == nle->tail)
-            nle->tail = NULL;
+            nle->tail = nullptr;
 
-        more = (nle->head != NULL ? true : false);
+        more = (nle->head != nullptr ? true : false);
 
         uv_mutex_unlock(nle->lock);
 
@@ -298,7 +285,7 @@ uvAsyncCb(uv_async_t *handle)
 /** \brief Attach a connection to the given event loop.
  *
  * This callback is invoked after `NATS` library has connected, or reconnected.
- * For a reconnect event, `*userData` will not be `nullptr`. This function will
+ * For a reconnect event, `*userData` will not be `nullptrptr`. This function will
  * start polling on READ events for the given `socket`.
  *
  * @param userData the location where the adapter stores the user object passed
@@ -310,41 +297,41 @@ uvAsyncCb(uv_async_t *handle)
 natsStatus
 natsLibuv_Attach(void **userData, void *loop, natsConnection *nc, natsSock socket)
 {
-    uv_loop_t       *uvLoop = (uv_loop_t*) loop;
+    uv_loop_t       *uvLoop = static_cast<uv_loop_t*>(loop);
     bool            sched   = false;
-    natsLibuvEvents *nle    = (natsLibuvEvents*) (*userData);
+    natsLibuvEvents *nle    = static_cast<natsLibuvEvents*>(*userData);
     natsStatus      s       = NATS_OK;
 
     sched = ((uv_key_get(&uvLoopThreadKey) != loop) ? true : false);
 
-    // This is the first attach (when reconnecting, nle will be non-nullptr).
-    if (nle == NULL)
+    // This is the first attach (when reconnecting, nle will be non-nullptrptr).
+    if (nle == nullptr)
     {
         // This has to run from the event loop!
         if (sched)
             return NATS_ILLEGAL_STATE;
 
-        nle = (natsLibuvEvents*) calloc(1, sizeof(natsLibuvEvents));
-        if (nle == NULL)
+        nle = static_cast<natsLibuvEvents*>(calloc(1, sizeof(natsLibuvEvents)));
+        if (nle == nullptr)
             return NATS_NO_MEMORY;
 
-        nle->lock = (uv_mutex_t*) malloc(sizeof(uv_mutex_t));
-        if (nle->lock == NULL)
+        nle->lock = static_cast<uv_mutex_t*>(malloc(sizeof(uv_mutex_t)));
+        if (nle->lock == nullptr)
             s = NATS_NO_MEMORY;
 
         if ((s == NATS_OK) && (uv_mutex_init(nle->lock) != 0))
         {
             free(nle->lock);
-            nle->lock = NULL;
+            nle->lock = nullptr;
 
             s = NATS_ERR;
         }
 
-        if ((s == NATS_OK) && ((nle->scheduler = (uv_async_t*) malloc(sizeof(uv_async_t))) == NULL))
+        if ((s == NATS_OK) && ((nle->scheduler = static_cast<uv_async_t*>(malloc(sizeof(uv_async_t)))) == nullptr))
         {
             uv_mutex_destroy(nle->lock);
             free(nle->lock);
-            nle->lock = NULL;
+            nle->lock = nullptr;
 
             s = NATS_NO_MEMORY;
         }
@@ -353,10 +340,10 @@ natsLibuv_Attach(void **userData, void *loop, natsConnection *nc, natsSock socke
         {
             uv_mutex_destroy(nle->lock);
             free(nle->lock);
-            nle->lock = NULL;
+            nle->lock = nullptr;
 
             free(nle->scheduler);
-            nle->scheduler = NULL;
+            nle->scheduler = nullptr;
 
             s = NATS_ERR;
         }
@@ -365,7 +352,7 @@ natsLibuv_Attach(void **userData, void *loop, natsConnection *nc, natsSock socke
         {
             nle->nc              = nc;
             nle->loop            = uvLoop;
-            nle->scheduler->data = (void*) nle;
+            nle->scheduler->data = static_cast<void*>(nle);
         }
         else
         {
@@ -385,7 +372,7 @@ natsLibuv_Attach(void **userData, void *loop, natsConnection *nc, natsSock socke
     }
 
     if (s == NATS_OK)
-        *userData = (void*) nle;
+        *userData = static_cast<void*>(nle);
 
     return s;
 }
@@ -401,7 +388,7 @@ natsLibuv_Attach(void **userData, void *loop, natsConnection *nc, natsSock socke
 natsStatus
 natsLibuv_Read(void *userData, bool add)
 {
-    natsLibuvEvents *nle = (natsLibuvEvents*) userData;
+    natsLibuvEvents *nle = static_cast<natsLibuvEvents*>(userData);
     natsStatus      s    = NATS_OK;
     bool            sched;
 
@@ -415,7 +402,7 @@ natsLibuv_Read(void *userData, bool add)
     // false, we are in the event loop thread, which is the thread removing
     // events from the list. Also, all calls to the read/write/etc.. callbacks
     // are protected by the connection's lock in the NATS library.
-    if (sched || (nle->head != NULL))
+    if (sched || (nle->head != nullptr))
         s = uvScheduleToEventLoop(nle, NATS_LIBUV_READ, add);
     else
         s = uvPollUpdate(nle, NATS_LIBUV_READ, add);
@@ -434,14 +421,14 @@ natsLibuv_Read(void *userData, bool add)
 natsStatus
 natsLibuv_Write(void *userData, bool add)
 {
-    natsLibuvEvents *nle = (natsLibuvEvents*) userData;
+    natsLibuvEvents *nle = static_cast<natsLibuvEvents*>(userData);
     natsStatus      s    = NATS_OK;
     bool            sched;
 
     sched = ((uv_key_get(&uvLoopThreadKey) != nle->loop) ? true : false);
 
     // See comment in natsLibuvRead
-    if (sched || (nle->head != NULL))
+    if (sched || (nle->head != nullptr))
         s = uvScheduleToEventLoop(nle, NATS_LIBUV_WRITE, add);
     else
         s = uvPollUpdate(nle, NATS_LIBUV_WRITE, add);
@@ -460,14 +447,14 @@ natsLibuv_Write(void *userData, bool add)
 natsStatus
 natsLibuv_Detach(void *userData)
 {
-    natsLibuvEvents *nle = (natsLibuvEvents*) userData;
+    natsLibuvEvents *nle = static_cast<natsLibuvEvents*>(userData);
     natsStatus      s    = NATS_OK;
     bool            sched;
 
     sched = ((uv_key_get(&uvLoopThreadKey) != nle->loop) ? true : false);
 
     // See comment in natsLibuvRead
-    if (sched || (nle->head != NULL))
+    if (sched || (nle->head != nullptr))
         s = uvScheduleToEventLoop(nle, NATS_LIBUV_DETACH, true);
     else
         uvAsyncDetach(nle);
@@ -476,7 +463,3 @@ natsLibuv_Detach(void *userData)
 }
 
 /** @} */ // end of libuvFunctions
-
-#ifdef __cplusplus
-}
-#endif
