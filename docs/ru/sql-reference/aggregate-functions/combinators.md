@@ -93,7 +93,7 @@ WITH anySimpleState(number) AS c SELECT toTypeName(c), c FROM numbers(1);
 ## -Distinct {#agg-functions-combinator-distinct}
 
 При наличии комбинатора Distinct, каждое уникальное значение аргументов, будет учитано в агрегатной функции только один раз.
-Примеры: `sum(DISTINCT x)`, `groupArray(DISTINCT x)`, `corrStableDistinct(DISTINCT x, y)` и т.п.
+Примеры: `sum(DISTINCT x)` (или `sumDistinct(x)`), `groupArray(DISTINCT x)` (или `groupArrayDistinct(x)`), `corrStable(DISTINCT x, y)` (или `corrStableDistinct(x, y)`) и т.п.
 
 ## -OrDefault {#agg-functions-combinator-ordefault}
 
