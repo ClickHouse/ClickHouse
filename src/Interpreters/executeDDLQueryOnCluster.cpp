@@ -304,17 +304,15 @@ Block DDLQueryStatusSource::getSampleBlock(ContextPtr context_, bool hosts_to_wa
             {std::make_shared<DataTypeUInt64>(), "num_hosts_active"},
         };
     }
-    else
-    {
-        return Block{
-            {std::make_shared<DataTypeString>(), "host"},
-            {std::make_shared<DataTypeUInt16>(), "port"},
-            {maybe_make_nullable(std::make_shared<DataTypeInt64>()), "status"},
-            {maybe_make_nullable(std::make_shared<DataTypeString>()), "error"},
-            {std::make_shared<DataTypeUInt64>(), "num_hosts_remaining"},
-            {std::make_shared<DataTypeUInt64>(), "num_hosts_active"},
-        };
-    }
+
+    return Block{
+        {std::make_shared<DataTypeString>(), "host"},
+        {std::make_shared<DataTypeUInt16>(), "port"},
+        {maybe_make_nullable(std::make_shared<DataTypeInt64>()), "status"},
+        {maybe_make_nullable(std::make_shared<DataTypeString>()), "error"},
+        {std::make_shared<DataTypeUInt64>(), "num_hosts_remaining"},
+        {std::make_shared<DataTypeUInt64>(), "num_hosts_active"},
+    };
 }
 
 DDLQueryStatusSource::DDLQueryStatusSource(
@@ -631,8 +629,7 @@ IProcessor::Status DDLQueryStatusSource::prepare()
         output.finish();
         return Status::Finished;
     }
-    else
-        return ISource::prepare();
+    return ISource::prepare();
 }
 
 Strings DDLQueryStatusSource::getNewAndUpdate(const Strings & current_list_of_finished_hosts)
