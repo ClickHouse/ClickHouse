@@ -237,7 +237,8 @@ closeSchedulerCb(uv_handle_t* scheduler)
 static void
 uvAsyncDetach(natsLibuvEvents *nle)
 {
-    uv_mutex_lock(nle->lock);
+    if (nle->lock)
+        uv_mutex_lock(nle->lock);
 
     uv_handle_t * scheduler = reinterpret_cast<uv_handle_t*>(nle->scheduler);
     nle->scheduler = nullptr;
@@ -252,16 +253,21 @@ uvAsyncDetach(natsLibuvEvents *nle)
         free(event);
     }
 
-    uv_mutex_unlock(nle->lock);
+    if (nle->lock)
+    {
+        uv_mutex_unlock(nle->lock);
+        uv_mutex_destroy(nle->lock);
 
-    uv_mutex_destroy(nle->lock);
-    free(nle->lock);
-    nle->lock = nullptr;
-
+        free(nle->lock);
+        nle->lock = nullptr;
+    }
     free(nle);
 
-    uv_close(scheduler, closeSchedulerCb);
-    uv_close(handle, finalCloseCb);
+    if(scheduler)
+        uv_close(scheduler, closeSchedulerCb);
+
+    if(handle)
+        uv_close(handle, finalCloseCb);
 }
 
 static void
@@ -366,17 +372,31 @@ natsLibuv_Attach(void **userData, void *loop, natsConnection *nc, natsSock socke
             s = NATS_NO_MEMORY;
 
         if ((s == NATS_OK) && (uv_mutex_init(nle->lock) != 0))
-            s = NATS_ERR;
-
-        if ((s == NATS_OK)
-            && ((nle->scheduler = static_cast<uv_async_t*>(malloc(sizeof(uv_async_t)))) == nullptr))
         {
+            free(nle->lock);
+            nle->lock = nullptr;
+
+            s = NATS_ERR;
+        }
+
+        if ((s == NATS_OK) && ((nle->scheduler = static_cast<uv_async_t*>(malloc(sizeof(uv_async_t)))) == nullptr))
+        {
+            uv_mutex_destroy(nle->lock);
+            free(nle->lock);
+            nle->lock = nullptr;
+
             s = NATS_NO_MEMORY;
         }
 
-        if ((s == NATS_OK)
-            && (uv_async_init(uvLoop, nle->scheduler, uvAsyncCb) != 0))
+        if ((s == NATS_OK) && (uv_async_init(uvLoop, nle->scheduler, uvAsyncCb) != 0))
         {
+            uv_mutex_destroy(nle->lock);
+            free(nle->lock);
+            nle->lock = nullptr;
+
+            free(nle->scheduler);
+            nle->scheduler = nullptr;
+
             s = NATS_ERR;
         }
 
@@ -385,6 +405,10 @@ natsLibuv_Attach(void **userData, void *loop, natsConnection *nc, natsSock socke
             nle->nc              = nc;
             nle->loop            = uvLoop;
             nle->scheduler->data = static_cast<void*>(nle);
+        }
+        else
+        {
+            free(nle);
         }
     }
 
@@ -401,8 +425,6 @@ natsLibuv_Attach(void **userData, void *loop, natsConnection *nc, natsSock socke
 
     if (s == NATS_OK)
         *userData = static_cast<void*>(nle);
-    else
-        natsLibuv_Detach(static_cast<void*>(nle));
 
     return s;
 }
