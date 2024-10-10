@@ -263,10 +263,10 @@ uvAsyncDetach(natsLibuvEvents *nle)
     }
     free(nle);
 
-    if(scheduler)
+    if (scheduler)
         uv_close(scheduler, closeSchedulerCb);
 
-    if(handle)
+    if (handle)
         uv_close(handle, finalCloseCb);
 }
 
