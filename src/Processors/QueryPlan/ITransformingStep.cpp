@@ -10,7 +10,7 @@ ITransformingStep::ITransformingStep(Block input_header, Block output_header_, T
     , data_stream_traits(std::move(traits.data_stream_traits))
 {
     input_headers.emplace_back(std::move(input_header));
-    output_header = (std::move(output_header_));
+    output_header = std::move(output_header_);
 }
 
 QueryPipelineBuilderPtr ITransformingStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
