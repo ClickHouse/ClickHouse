@@ -23,3 +23,7 @@ if (ENABLE_UTILS)
     add_subdirectory (keeper-data-dumper)
     add_subdirectory (memcpy-bench)
 endif ()
+
+if (ENABLE_FUZZING)
+    add_subdirectory (libfuzzer-test)
+endif ()
