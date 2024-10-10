@@ -583,11 +583,6 @@ class DataTypeEnum;
 
 template <typename T> inline constexpr bool IsDataTypeEnum<DataTypeEnum<T>> = true;
 
-//class DataTypeNullable;
-//template <typename T> inline constexpr bool IsDataTypeNullable = false;
-
-//template <> inline constexpr bool IsDataTypeNullable<DataTypeNullable> = true;
-
 #define FOR_BASIC_NUMERIC_TYPES(M) \
     M(UInt8) \
     M(UInt16) \
