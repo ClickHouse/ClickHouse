@@ -291,7 +291,7 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
 }
 
 template <typename Parser>
-void SerializationJSON<Parser>::deserializeTextImpl(IColumn & column, std::string_view object, const FormatSettings & settings) const
+void SerializationJSON<Parser>::deserializeObject(IColumn & column, std::string_view object, const FormatSettings & settings) const
 {
     typename Parser::Element document;
     auto parser = parsers_pool.get([] { return new Parser; });
@@ -314,7 +314,7 @@ void SerializationJSON<Parser>::deserializeWholeText(IColumn & column, ReadBuffe
 {
     String object;
     readStringUntilEOF(object, istr);
-    deserializeTextImpl(column, object, settings);
+    deserializeObject(column, object, settings);
 }
 
 template <typename Parser>
@@ -330,7 +330,7 @@ void SerializationJSON<Parser>::deserializeTextEscaped(IColumn & column, ReadBuf
 {
     String object;
     readEscapedString(object, istr);
-    deserializeTextImpl(column, object, settings);
+    deserializeObject(column, object, settings);
 }
 
 template <typename Parser>
@@ -346,7 +346,7 @@ void SerializationJSON<Parser>::deserializeTextQuoted(IColumn & column, ReadBuff
 {
     String object;
     readQuotedString(object, istr);
-    deserializeTextImpl(column, object, settings);
+    deserializeObject(column, object, settings);
 }
 
 template <typename Parser>
@@ -362,7 +362,7 @@ void SerializationJSON<Parser>::deserializeTextCSV(IColumn & column, ReadBuffer 
 {
     String object;
     readCSVString(object, istr, settings.csv);
-    deserializeTextImpl(column, object, settings);
+    deserializeObject(column, object, settings);
 }
 
 template <typename Parser>
@@ -390,7 +390,7 @@ void SerializationJSON<Parser>::deserializeTextJSON(IColumn & column, ReadBuffer
 {
     String object_buffer;
     auto object_view = readJSONObjectAsViewPossiblyInvalid(istr, object_buffer);
-    deserializeTextImpl(column, object_view, settings);
+    deserializeObject(column, object_view, settings);
 }
 
 #if USE_SIMDJSON

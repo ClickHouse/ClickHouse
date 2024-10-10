@@ -76,6 +76,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"show_create_query_identifier_quoting_rule", "when_necessary", "when_necessary", "New setting."},
             {"show_create_query_identifier_quoting_style", "Backticks", "Backticks", "New setting."},
             {"enforce_strict_identifier_format", false, false, "New setting."},
+            {"output_format_binary_write_json_as_string", false, false, "Add new setting to write values of JSON type as JSON string in RowBinary output format"},
+            {"input_format_binary_read_json_as_string", false, false, "Add new setting to read values of JSON type as JSON string in RowBinary input format"},
             {"min_free_disk_bytes_to_perform_insert", 0, 0, "New setting."},
             {"min_free_disk_ratio_to_perform_insert", 0.0, 0.0, "New setting."},
             {"cloud_mode_database_engine", 1, 1, "A setting for ClickHouse Cloud"},
