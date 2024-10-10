@@ -455,7 +455,8 @@ void StorageNATS::shutdown(bool /* is_drop */)
 
         if (consumers_connection)
         {
-            while (consumers_connection->isConnected() && natsConnection_Buffered(consumers_connection->getConnection()) > 0){
+            while (consumers_connection->isConnected() && natsConnection_Buffered(consumers_connection->getConnection()) > 0)
+            {
                 natsConnection_Flush(consumers_connection->getConnection());
             }
 
