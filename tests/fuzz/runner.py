@@ -122,7 +122,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
 
             if parser.has_section("libfuzzer"):
                 custom_libfuzzer_options = " ".join(
-                    f"-{key}={value}" for key, value in parser["libfuzzer"].items()
+                    f"-{key}={value}" for key, value in parser["libfuzzer"].items() if key != "jobs"
                 )
 
             if parser.has_section("fuzzer_arguments"):
