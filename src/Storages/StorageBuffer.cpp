@@ -1033,7 +1033,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     Block block_to_write;
     for (size_t i : collections::range(0, structure_of_destination_table.columns()))
     {
-        auto dst_col = structure_of_destination_table.getByPosition(i);
+        const auto & dst_col = structure_of_destination_table.getByPosition(i);
         if (block.has(dst_col.name))
         {
             auto column = block.getByName(dst_col.name);

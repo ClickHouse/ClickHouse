@@ -181,7 +181,7 @@ private:
             return true;
         }
         /// (2) sorting
-        else if (const auto * next_sorting = typeid_cast<const SortingStep *>(step_affect_order); next_sorting)
+        if (const auto * next_sorting = typeid_cast<const SortingStep *>(step_affect_order); next_sorting)
         {
             if (next_sorting->getType() == SortingStep::Type::Full)
                 return true;

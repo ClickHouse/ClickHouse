@@ -206,8 +206,8 @@ namespace
                 return compareAggregationKeysWithDistinctColumns(
                     aggregating_step->getParams().keys, distinct_columns, std::move(actions_chain));
             }
-            else if (const auto * merging_aggregated_step = typeid_cast<const MergingAggregatedStep *>(aggregation_before_distinct);
-                     merging_aggregated_step)
+            if (const auto * merging_aggregated_step = typeid_cast<const MergingAggregatedStep *>(aggregation_before_distinct);
+                merging_aggregated_step)
             {
                 return compareAggregationKeysWithDistinctColumns(
                     merging_aggregated_step->getParams().keys, distinct_columns, std::move(actions_chain));

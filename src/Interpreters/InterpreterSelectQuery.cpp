@@ -816,24 +816,22 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                         ErrorCodes::SAMPLING_NOT_SUPPORTED,
                         "Storage {} doesn't support sampling",
                         storage->getStorageID().getNameForLogs());
-                else
-                    throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: sampling is only allowed with the table engines that support it");
+                throw Exception(
+                    ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: sampling is only allowed with the table engines that support it");
             }
 
             if (query.final() && (input_pipe || !storage || !storage->supportsFinal()))
             {
                 if (!input_pipe && storage)
                     throw Exception(ErrorCodes::ILLEGAL_FINAL, "Storage {} doesn't support FINAL", storage->getName());
-                else
-                    throw Exception(ErrorCodes::ILLEGAL_FINAL, "Illegal FINAL");
+                throw Exception(ErrorCodes::ILLEGAL_FINAL, "Illegal FINAL");
             }
 
             if (query.prewhere() && (input_pipe || !storage || !storage->supportsPrewhere()))
             {
                 if (!input_pipe && storage)
                     throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "Storage {} doesn't support PREWHERE", storage->getName());
-                else
-                    throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "Illegal PREWHERE");
+                throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "Illegal PREWHERE");
             }
 
             /// Save the new temporary tables in the query context
@@ -1075,7 +1073,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
         LOG_DEBUG(log, "Disabling parallel replicas because there aren't enough rows to read");
         return true;
     }
-    else if (number_of_replicas_to_use < settings[Setting::max_parallel_replicas])
+    if (number_of_replicas_to_use < settings[Setting::max_parallel_replicas])
     {
         context->setSetting("max_parallel_replicas", number_of_replicas_to_use);
         LOG_DEBUG(log, "Reducing the number of replicas to use to {}", number_of_replicas_to_use);
@@ -2442,29 +2440,27 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
         query_info.optimize_trivial_count = optimize_trivial_count;
         return storage->totalRows(settings);
     }
-    else
+
+    // It's possible to optimize count() given only partition predicates
+    ActionsDAG::NodeRawConstPtrs filter_nodes;
+    if (analysis_result.hasPrewhere())
     {
-        // It's possible to optimize count() given only partition predicates
-        ActionsDAG::NodeRawConstPtrs filter_nodes;
-        if (analysis_result.hasPrewhere())
-        {
-            auto & prewhere_info = analysis_result.prewhere_info;
-            filter_nodes.push_back(&prewhere_info->prewhere_actions.findInOutputs(prewhere_info->prewhere_column_name));
+        auto & prewhere_info = analysis_result.prewhere_info;
+        filter_nodes.push_back(&prewhere_info->prewhere_actions.findInOutputs(prewhere_info->prewhere_column_name));
 
-            if (prewhere_info->row_level_filter)
-                filter_nodes.push_back(&prewhere_info->row_level_filter->findInOutputs(prewhere_info->row_level_column_name));
-        }
-        if (analysis_result.hasWhere())
-        {
-            filter_nodes.push_back(&analysis_result.before_where->dag.findInOutputs(analysis_result.where_column_name));
-        }
-
-        auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes);
-        if (!filter_actions_dag)
-            return {};
-
-        return storage->totalRowsByPartitionPredicate(*filter_actions_dag, context);
+        if (prewhere_info->row_level_filter)
+            filter_nodes.push_back(&prewhere_info->row_level_filter->findInOutputs(prewhere_info->row_level_column_name));
     }
+    if (analysis_result.hasWhere())
+    {
+        filter_nodes.push_back(&analysis_result.before_where->dag.findInOutputs(analysis_result.where_column_name));
+    }
+
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes);
+    if (!filter_actions_dag)
+        return {};
+
+    return storage->totalRowsByPartitionPredicate(*filter_actions_dag, context);
 }
 
 /** Optimization - if not specified DISTINCT, WHERE, GROUP, HAVING, ORDER, JOIN, LIMIT BY, WITH TIES
@@ -2963,15 +2959,15 @@ static bool windowDescriptionComparator(const WindowDescription * _left, const W
     {
         if (left[i].column_name < right[i].column_name)
             return true;
-        else if (left[i].column_name > right[i].column_name)
+        if (left[i].column_name > right[i].column_name)
             return false;
-        else if (left[i].direction < right[i].direction)
+        if (left[i].direction < right[i].direction)
             return true;
-        else if (left[i].direction > right[i].direction)
+        if (left[i].direction > right[i].direction)
             return false;
-        else if (left[i].nulls_direction < right[i].nulls_direction)
+        if (left[i].nulls_direction < right[i].nulls_direction)
             return true;
-        else if (left[i].nulls_direction > right[i].nulls_direction)
+        if (left[i].nulls_direction > right[i].nulls_direction)
             return false;
 
         assert(left[i] == right[i]);

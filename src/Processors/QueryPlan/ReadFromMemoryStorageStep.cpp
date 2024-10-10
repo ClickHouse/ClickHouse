@@ -88,10 +88,8 @@ private:
         {
             return (*parallel_execution_index)++;
         }
-        else
-        {
-            return execution_index++;
-        }
+
+        return execution_index++;
     }
 
     const NamesAndTypesList requested_column_names_and_types;
