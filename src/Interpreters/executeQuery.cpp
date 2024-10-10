@@ -1167,7 +1167,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     auto timeout = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
                     auto source = std::make_shared<WaitForAsyncInsertSource>(std::move(result.future), timeout);
                     res.pipeline = QueryPipeline(Pipe(std::move(source)));
-                    res.pipeline.complete(std::make_shared<NullSink>(Block()));
                 }
 
                 const auto & table_id = insert_query->table_id;
