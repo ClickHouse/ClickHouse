@@ -58,10 +58,7 @@ struct ModuloOrNullImpl
             if (m)
                 *m = 1;
             else
-            {
-                std::cerr << "gethere 1" << std::endl;
                 throw;
-            }
         }
         return res;
     }
@@ -135,24 +132,15 @@ struct ModuloOrNullImpl
         Result res{};
         try
         {
-            std::cerr <<"gethere 5 my apply" << std::endl;
             res = Op::template apply<Result>(a, b);
             if constexpr (std::is_floating_point_v<Result>)
-            {
                 if (!std::isfinite(res) && m)
                     *m = 1;
-            }
         }
         catch (const std::exception&)
         {
-            std::cerr <<"gethere 6 exception, m vallue:" << !!m << std::endl;
-            std::cerr << StackTrace().toString() << std::endl;
             if (m) *m = 1;
-            else
-            {
-                std::cerr << "gethere 7" << std::endl;
-                throw;
-            }
+            else throw;
         }
         return res;
     }
@@ -163,22 +151,17 @@ private:
     {
         try
         {
-            std::cerr <<"gethere 5" << std::endl;
             if constexpr (op_case == OpCase::Vector)
                 c[i] = Op::template apply<ResultType>(a[i], b[i]);
             else
                 c[i] = Op::template apply<ResultType>(*a, b[i]);
 
             if constexpr (std::is_floating_point_v<ResultType>)
-            {
                 if (!std::isfinite(c[i]) && m)
                     * m = 1;
-            }
         }
         catch (const std::exception&)
         {
-            std::cerr <<"gethere 6" << std::endl;
-            std::cerr << StackTrace().toString() << std::endl;
             *m = 1;
         }
     }
