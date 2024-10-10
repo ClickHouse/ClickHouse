@@ -77,7 +77,7 @@ def started_cluster():
             with_minio=True,
             with_azurite=True,
             stay_alive=True,
-            with_hdfs=True,
+            with_hdfs=with_hdfs,
         )
 
         logging.info("Starting cluster...")
