@@ -9747,4 +9747,8 @@ Default value: 0
 
 Allows you to select the max window log of ZSTD (it will not be used for MergeTree family)
 
+## push_external_roles_in_interserver_queries
 
+Enables pushing user roles from query originator to other nodes while performing a query.
+
+Default value: `true`.
