@@ -16,6 +16,7 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
+#include <Processors/Formats/Impl/NullFormat.h>
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -1080,6 +1081,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     auto timeout = settings.wait_for_async_insert_timeout.totalMilliseconds();
                     auto source = std::make_shared<WaitForAsyncInsertSource>(std::move(result.future), timeout);
                     res.pipeline = QueryPipeline(Pipe(std::move(source)));
+                    res.pipeline.complete(std::make_shared<NullOutputFormat>(Block()));
                 }
 
                 const auto & table_id = insert_query->table_id;
