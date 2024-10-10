@@ -768,7 +768,7 @@ size_t ZooKeeperMultiRequest::sizeImpl() const
 
 void ZooKeeperMultiRequest::readImpl(ReadBuffer & in)
 {
-    return readImpl(in, /*request_validator=*/{});
+    readImpl(in, /*request_validator=*/{});
 }
 
 void ZooKeeperMultiRequest::readImpl(ReadBuffer & in, RequestValidator request_validator)
