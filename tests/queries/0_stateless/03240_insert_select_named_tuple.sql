@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 SET enable_named_columns_in_function_tuple = 1;
 
 DROP TABLE IF EXISTS src;
