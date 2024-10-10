@@ -1668,8 +1668,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (need_add_to_database && !database)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
 
-    if (create.replace_table
-        || (create.replace_view && (database->getEngineName() == "Atomic" || database->getEngineName() == "Replicated")))
+    if (create.replace_table)
     {
         chassert(!ddl_guard);
         return doCreateOrReplaceTable(create, properties, mode);
@@ -2030,16 +2029,16 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
         auto ast_rename = std::make_shared<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
         ast_rename->dictionary = create.is_dictionary;
-        if (create.create_or_replace || create.replace_view)
+        if (create.create_or_replace)
         {
-            /// CREATE OR REPLACE TABLE/VIEW
+            /// CREATE OR REPLACE TABLE
             /// Will execute ordinary RENAME instead of EXCHANGE if the target table does not exist
             ast_rename->rename_if_cannot_exchange = true;
             ast_rename->exchange = false;
         }
         else
         {
-            /// REPLACE TABLE/VIEW
+            /// REPLACE TABLE
             /// Will execute EXCHANGE query and fail if the target table does not exist
             ast_rename->exchange = true;
         }
