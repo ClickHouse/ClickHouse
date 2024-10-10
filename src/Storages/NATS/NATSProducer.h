@@ -18,7 +18,7 @@ class NATSProducer : public AsynchronousMessageProducer
     using Timeout = std::chrono::system_clock::duration;
 
 public:
-    NATSProducer(NATSConnectionPtr connection_, const Timeout reconnect_timeout_, const String & subject_, LoggerPtr log_);
+    NATSProducer(NATSConnectionPtr connection_, Timeout reconnect_timeout_, const String & subject_, LoggerPtr log_);
 
     void produce(const String & message, size_t rows_in_message, const Columns & columns, size_t last_row) override;
 

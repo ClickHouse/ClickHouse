@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-NATSProducer::NATSProducer(NATSConnectionPtr connection_, const Timeout reconnect_timeout_, const String & subject_, LoggerPtr log_)
+NATSProducer::NATSProducer(NATSConnectionPtr connection_, Timeout reconnect_timeout_, const String & subject_, LoggerPtr log_)
     : AsynchronousMessageProducer(log_)
     , connection(std::move(connection_))
     , reconnect_timeout(reconnect_timeout_)
