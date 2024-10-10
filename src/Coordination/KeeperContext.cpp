@@ -508,6 +508,9 @@ void KeeperContext::initializeFeatureFlags(const Poco::Util::AbstractConfigurati
                 feature_flags.disableFeatureFlag(feature_flag.value());
         }
 
+        if (feature_flags.isEnabled(KeeperFeatureFlag::MULTI_READ))
+            feature_flags.enableFeatureFlag(KeeperFeatureFlag::FILTERED_LIST);
+
         system_nodes_with_data[keeper_api_feature_flags_path] = feature_flags.getFeatureFlags();
     }
 
