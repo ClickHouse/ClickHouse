@@ -212,6 +212,15 @@ public:
         }
     }
 
+    void update(size_t from, bool out_of_range)
+    {
+        if (sink_null_map)
+        {
+            sink_null_map[index] = (src_null_map && src_null_map[from]) || out_of_range;
+            ++index;
+        }
+    }
+
     void update()
     {
         if (sink_null_map)
@@ -1563,7 +1572,7 @@ ColumnPtr FunctionArrayElement<mode>::executeMap2(const ColumnsWithTypeAndName &
 
         auto type = getReturnTypeImpl({temporary_results[0].type, temporary_results[1].type});
         auto col = executeImpl(temporary_results, type, input_rows_count);
-        result_key_column = removeNullableIfNeeded(col, key_type);
+        result_key_column = removeNullableIfNeeded(col, std::make_shared<DataTypeArray>(key_type));
     }
 
     /// Calculate the function for the values of the map
@@ -1577,7 +1586,7 @@ ColumnPtr FunctionArrayElement<mode>::executeMap2(const ColumnsWithTypeAndName &
 
         auto type = getReturnTypeImpl({temporary_results[0].type, temporary_results[1].type});
         auto col = executeImpl(temporary_results, type, input_rows_count);
-        result_value_column = removeNullableIfNeeded(col, value_type);
+        result_value_column = removeNullableIfNeeded(col, std::make_shared<DataTypeArray>(value_type));
     }
 
     const auto & data_keys = typeid_cast<const ColumnArray &>(*result_key_column).getDataPtr();
@@ -2100,10 +2109,37 @@ ColumnPtr FunctionArrayElement<mode>::perform(
     size_t input_rows_count) const
 {
     ColumnPtr res;
+    auto update_builder = [&]()
+    {
+        if (builder)
+        {
+            /// Initialize builders for Array(Map) or Array(Tuple)
+            const ColumnArray * col_array = assert_cast<const ColumnArray *>(arguments[0].column.get());
+            const auto & array_offsets = col_array->getOffsets();
+            const auto & index_column = arguments[1].column;
+
+            builder.initSink(input_rows_count);
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                size_t array_size = array_offsets[i] - array_offsets[i - 1];
+                Int64 index = index_column->getInt(i);
+                bool in_range
+                    = (index > 0 && static_cast<size_t>(index) <= array_size) || (index < 0 && -static_cast<size_t>(index) <= array_size);
+                builder.update(i, !in_range);
+            }
+        }
+    };
+
     if ((res = executeTuple(arguments, input_rows_count)))
+    {
+        update_builder();
         return res;
+    }
     if ((res = executeMap2(arguments, input_rows_count)))
+    {
+        update_builder();
         return res;
+    }
     if (!isColumnConst(*arguments[1].column))
     {
         if (!((res = executeArgument<UInt8>(arguments, result_type, builder, input_rows_count))
