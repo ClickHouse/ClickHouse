@@ -341,7 +341,10 @@ Coordination::Error ZooKeeper::tryGetChildren(
     const EventPtr & watch,
     Coordination::ListRequestType list_request_type)
 {
-    return tryGetChildrenWatch(path, res, stat,
+    return tryGetChildrenWatch(
+        path,
+        res,
+        stat,
         watch ? std::make_shared<Coordination::WatchCallback>(callbackForEvent(watch)) : Coordination::WatchCallbackPtr{},
         list_request_type);
 }

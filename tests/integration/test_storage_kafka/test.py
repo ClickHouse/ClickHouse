@@ -59,6 +59,7 @@ instance = cluster.add_instance(
     user_configs=["configs/users.xml"],
     with_kafka=True,
     with_zookeeper=True,  # For Replicated Table
+    keeper_required_feature_flags=["create_if_not_exists"], # new Kafka doesn't work without this feature
     macros={
         "kafka_broker": "kafka1",
         "kafka_topic_old": KAFKA_TOPIC_OLD,

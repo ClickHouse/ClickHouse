@@ -510,8 +510,11 @@ void KeeperContext::initializeFeatureFlags(const Poco::Util::AbstractConfigurati
 
         if (feature_flags.isEnabled(KeeperFeatureFlag::MULTI_READ))
             feature_flags.enableFeatureFlag(KeeperFeatureFlag::FILTERED_LIST);
+        else
+            system_nodes_with_data[keeper_api_version_path] = toString(static_cast<uint8_t>(KeeperApiVersion::ZOOKEEPER_COMPATIBLE));
 
         system_nodes_with_data[keeper_api_feature_flags_path] = feature_flags.getFeatureFlags();
+
     }
 
     feature_flags.logFlags(getLogger("KeeperContext"));
