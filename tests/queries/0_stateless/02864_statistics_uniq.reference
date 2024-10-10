@@ -2,34 +2,34 @@ CREATE TABLE default.t1\n(\n    `a` Float64 STATISTICS(tdigest),\n    `b` Int64 
 After insert
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(less(a, 10), equals(c, 0), less(b, 10)) (removed)
+          Prewhere filter column: and(less(b, 10), equals(c, 0), less(a, 10)) (removed)
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(equals(c, 11), less(a, 10), less(b, 10)) (removed)
+          Prewhere filter column: and(less(b, 10), equals(c, 11), less(a, 10)) (removed)
 After merge
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(less(a, 10), equals(c, 0), less(b, 10)) (removed)
+          Prewhere filter column: and(less(b, 10), equals(c, 0), less(a, 10)) (removed)
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(equals(c, 11), less(a, 10), less(b, 10)) (removed)
+          Prewhere filter column: and(less(b, 10), equals(c, 11), less(a, 10)) (removed)
 After modify TDigest
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(less(a, 10), equals(c, 11), less(b, 10)) (removed)
+          Prewhere filter column: and(less(b, 10), equals(c, 11), less(a, 10)) (removed)
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(less(a, 10), equals(c, 0), less(b, 10)) (removed)
+          Prewhere filter column: and(less(b, 10), equals(c, 0), less(a, 10)) (removed)
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(less(c, -1), less(a, 10), less(b, 10)) (removed)
+          Prewhere filter column: and(less(b, 10), less(c, -1), less(a, 10)) (removed)
 After drop
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(less(a, 10), equals(c, 11), less(b, 10)) (removed)
+          Prewhere filter column: and(less(b, 10), equals(c, 11), less(a, 10)) (removed)
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(less(a, 10), equals(c, 0), less(b, 10)) (removed)
+          Prewhere filter column: and(less(b, 10), equals(c, 0), less(a, 10)) (removed)
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(less(a, 10), less(c, -1), less(b, 10)) (removed)
+          Prewhere filter column: and(less(b, 10), less(c, -1), less(a, 10)) (removed)
