@@ -39,7 +39,7 @@ struct DivideOrNullImpl
                 {
                     for (size_t i = 0; i < size; ++i)
                     {
-                        if (unlikely(a[i] == std::numeric_limits<A>::min() && res_nullmap))
+                        if (unlikely(a[i] == std::numeric_limits<A>::min()) && res_nullmap)
                             (*res_nullmap)[i] = 1;
                         else
                             c[i] = -a[i];
@@ -105,7 +105,7 @@ struct DivideOrNullImpl
     {
         auto res = static_cast<Result>(a) / b;
         if constexpr (std::is_floating_point_v<ResultType>)
-            if (unlikely(!std::isfinite(res) && m))
+            if (unlikely(!std::isfinite(res)) && m)
                 *m = 1;
 
         return res;

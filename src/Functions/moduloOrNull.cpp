@@ -1,11 +1,5 @@
-#include <cmath>
-#include <type_traits>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
-#include "Common/StackTrace.h"
-#include <Common/Exception.h>
-#include "Functions/StringHelpers.h"
-#include "base/extended_types.h"
 #include <libdivide.h>
 
 namespace DB
@@ -25,6 +19,7 @@ struct ModuloOrNullImpl
     static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap [[maybe_unused]], NullMap * res_nullmap)
     {
         chassert(res_nullmap);
+        /// NOTE: to dismiss the compiler error with libdivide
         if constexpr (op_case == OpCase::RightConstant && !std::is_same_v<ResultType, Float64> && !is_big_int_v<A> && !is_big_int_v<B> && !std::is_same_v<A, Int8> && !std::is_same_v<B, Int8> && !std::is_same_v<A, UInt8> && !std::is_same_v<B, UInt8>)
         {
             if ((*res_nullmap)[0])
@@ -49,7 +44,7 @@ struct ModuloOrNullImpl
             res = Op::template apply<ResultType>(a, b);
             if constexpr (std::is_floating_point_v<ResultType>)
             {
-                if (!std::isfinite(res) && m)
+                if (unlikely(!std::isfinite(res)) && m)
                     *m = 1;
             }
         }
@@ -134,13 +129,15 @@ struct ModuloOrNullImpl
         {
             res = Op::template apply<Result>(a, b);
             if constexpr (std::is_floating_point_v<Result>)
-                if (!std::isfinite(res) && m)
+                if (unlikely(!std::isfinite(res)) && m)
                     *m = 1;
         }
         catch (const std::exception&)
         {
-            if (m) *m = 1;
-            else throw;
+            if (m)
+                *m = 1;
+            else
+                throw;
         }
         return res;
     }
@@ -157,7 +154,7 @@ private:
                 c[i] = Op::template apply<ResultType>(*a, b[i]);
 
             if constexpr (std::is_floating_point_v<ResultType>)
-                if (!std::isfinite(c[i]) && m)
+                if (unlikely(!std::isfinite(c[i])) && m)
                     * m = 1;
         }
         catch (const std::exception&)
@@ -174,26 +171,6 @@ public:
 
 namespace impl_
 {
-//template <> struct BinaryOperationImpl<UInt64, UInt8, ModuloImpl<UInt64, UInt8>> : ModuloOrNullImpl<UInt64, UInt8> {};
-//template <> struct BinaryOperationImpl<UInt64, UInt16, ModuloImpl<UInt64, UInt16>> : ModuloOrNullImpl<UInt64, UInt16> {};
-//template <> struct BinaryOperationImpl<UInt64, UInt32, ModuloImpl<UInt64, UInt32>> : ModuloOrNullImpl<UInt64, UInt32> {};
-//template <> struct BinaryOperationImpl<UInt64, UInt64, ModuloImpl<UInt64, UInt64>> : ModuloOrNullImpl<UInt64, UInt64> {};
-//
-//template <> struct BinaryOperationImpl<UInt32, UInt8, ModuloImpl<UInt32, UInt8>> : ModuloOrNullImpl<UInt32, UInt8> {};
-//template <> struct BinaryOperationImpl<UInt32, UInt16, ModuloImpl<UInt32, UInt16>> : ModuloOrNullImpl<UInt32, UInt16> {};
-//template <> struct BinaryOperationImpl<UInt32, UInt32, ModuloImpl<UInt32, UInt32>> : ModuloOrNullImpl<UInt32, UInt32> {};
-//template <> struct BinaryOperationImpl<UInt32, UInt64, ModuloImpl<UInt32, UInt64>> : ModuloOrNullImpl<UInt32, UInt64> {};
-//
-//template <> struct BinaryOperationImpl<Int64, Int8, ModuloImpl<Int64, Int8>> : ModuloOrNullImpl<Int64, Int8> {};
-//template <> struct BinaryOperationImpl<Int64, Int16, ModuloImpl<Int64, Int16>> : ModuloOrNullImpl<Int64, Int16> {};
-//template <> struct BinaryOperationImpl<Int64, Int32, ModuloImpl<Int64, Int32>> : ModuloOrNullImpl<Int64, Int32> {};
-//template <> struct BinaryOperationImpl<Int64, Int64, ModuloImpl<Int64, Int64>> : ModuloOrNullImpl<Int64, Int64> {};
-//
-//template <> struct BinaryOperationImpl<Int32, Int8, ModuloImpl<Int32, Int8>> : ModuloOrNullImpl<Int32, Int8> {};
-//template <> struct BinaryOperationImpl<Int32, Int16, ModuloImpl<Int32, Int16>> : ModuloOrNullImpl<Int32, Int16> {};
-//template <> struct BinaryOperationImpl<Int32, Int32, ModuloImpl<Int32, Int32>> : ModuloOrNullImpl<Int32, Int32> {};
-//template <> struct BinaryOperationImpl<Int32, Int64, ModuloImpl<Int32, Int64>> : ModuloOrNullImpl<Int32, Int64> {};
-//template <> struct BinaryOperationImpl<double, double, ModuloImpl<double, double>> : ModuloOrNullImpl<double, double> {};
 template <typename A, typename B> struct BinaryOperationImpl<A, B, ModuloOrNullImpl<A, B>> : ModuloOrNullImpl<A, B> {};
 }
 
