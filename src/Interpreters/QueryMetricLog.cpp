@@ -103,7 +103,7 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_t
 
     auto context = getContext();
     const auto & process_list = context->getProcessList();
-    status.task = std::make_unique<BackgroundSchedulePool::TaskHolder>(context->getQueryMetricLogPool().createTask("QueryMetricLog", [this, &process_list, query_id] {
+    status.task = context->getQueryMetricLogPool().createTask("QueryMetricLog", [this, &process_list, query_id] {
         auto current_time = std::chrono::system_clock::now();
         const auto query_info = process_list.getQueryInfo(query_id, false, true, false);
         if (!query_info)
@@ -112,9 +112,9 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_t
         auto elem = createLogMetricElement(query_id, *query_info, current_time);
         if (elem)
             add(std::move(elem.value()));
-    }));
+    });
 
-    (*status.task)->scheduleAfter(interval_milliseconds);
+    status.task->scheduleAfter(interval_milliseconds);
 
     std::lock_guard lock(queries_mutex);
     queries.emplace(query_id, std::move(status));
@@ -181,7 +181,7 @@ std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(cons
     {
         query_status.next_collect_time += std::chrono::milliseconds(query_status.interval_milliseconds);
         const auto wait_time = std::chrono::duration_cast<std::chrono::milliseconds>(query_status.next_collect_time - std::chrono::system_clock::now()).count();
-        (*query_status.task)->scheduleAfter(wait_time);
+        query_status.task->scheduleAfter(wait_time);
     }
 
     return elem;
