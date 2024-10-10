@@ -52,36 +52,11 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-/*
-char * AllocatorToORCMemoryPoolAdapter::malloc(uint64_t size)
-{
-    // Allocate extra 8 bytes to store the size
-    char * ptr = static_cast<char *>(allocator.alloc(size + 8));
-    // Store the size at the beginning of the allocated memory
-    *reinterpret_cast<uint64_t *>(ptr) = size;
-    // Return the pointer offset by 8 bytes
-    return ptr + 8;
-}
-
-void AllocatorToORCMemoryPoolAdapter::free(char * p)
-{
-    if (p)
-    {
-        // Move the pointer back by 8 bytes to get the original pointer
-        char * original_ptr = p - 8;
-        // Retrieve the size stored at the beginning of the allocated memory
-        uint64_t size = *reinterpret_cast<uint64_t *>(original_ptr);
-        // Free the memory using the allocator
-        allocator.free(original_ptr, size + 8);
-    }
-}
-*/
-
 
 ORCInputStream::ORCInputStream(SeekableReadBuffer & in_, size_t file_size_, bool use_prefetch)
     : in(in_), file_size(file_size_), supports_read_at(use_prefetch && in_.supportsReadAt())
 {
-    std::cout << "supports_read_at: " << supports_read_at << std::endl;
+    // std::cout << "supports_read_at: " << supports_read_at << std::endl;
     if (supports_read_at)
         async_runner = threadPoolCallbackRunnerUnsafe<BufferPtr>(getIOThreadPool().get(), "ORCFile");
 }

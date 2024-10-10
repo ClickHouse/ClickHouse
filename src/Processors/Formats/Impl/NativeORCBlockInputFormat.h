@@ -16,21 +16,6 @@
 namespace DB
 {
 
-/*
-class AllocatorToORCMemoryPoolAdapter : public orc::MemoryPool
-{
-public:
-    AllocatorToORCMemoryPoolAdapter() = default;
-    ~AllocatorToORCMemoryPoolAdapter() override = default;
-
-    char * malloc(uint64_t size) override;
-    void free(char * p) override;
-
-private:
-    Allocator<false> allocator;
-};
-*/
-
 class ORCInputStream : public orc::InputStream
 {
 public:
