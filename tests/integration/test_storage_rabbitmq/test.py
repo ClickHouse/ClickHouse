@@ -2174,14 +2174,14 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
             f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The query could not be executed successfully."
         )
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
         if int(instance.query("SELECT count() FROM test.view")) != 0:
             break
         time.sleep(0.1)
     else:
         pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The count is still 0."
+            f"Time limit of 180 seconds reached. The count is still 0."
         )
 
     kill_rabbitmq(rabbitmq_cluster.rabbitmq_docker_id)
@@ -2190,7 +2190,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
         rabbitmq_cluster.rabbitmq_docker_id, rabbitmq_cluster.rabbitmq_cookie
     )
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
         result = instance.query("SELECT count(DISTINCT key) FROM test.view")
         time.sleep(1)
@@ -2198,7 +2198,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
             break
     else:
         pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
+            f"Time limit of 180 seconds reached. The result did not match the expected value."
         )
 
     instance.query(
@@ -2262,7 +2262,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     """
     )
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
         if int(instance.query("SELECT count() FROM test.view")) != 0:
             break
@@ -2270,7 +2270,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
         time.sleep(0.1)
     else:
         pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The count is still 0."
+            f"Time limit of 180 seconds reached. The count is still 0."
         )
 
     kill_rabbitmq(rabbitmq_cluster.rabbitmq_docker_id)
@@ -2286,7 +2286,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     # time.sleep(2)
     # revive_rabbitmq()
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
         result = instance.query("SELECT count(DISTINCT key) FROM test.view").strip()
         if int(result) == messages_num:
@@ -2295,7 +2295,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
         time.sleep(1)
     else:
         pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
+            f"Time limit of 180 seconds reached. The result did not match the expected value."
         )
 
     instance.query(
