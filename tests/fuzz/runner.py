@@ -17,8 +17,7 @@ FUZZER_ARGS = os.getenv("FUZZER_ARGS", "")
 
 def report(source: str, reason: str, call_stack: list, test_unit: str):
     print(f"########### REPORT: {source} {reason} {test_unit}")
-    for line in call_stack:
-        print(f"    {line}")
+    print("".join(call_stack))
     print("########### END OF REPORT ###########")
 
 
@@ -31,31 +30,28 @@ def process_error(error: str):
     ERROR = r"^==\d+==\s?ERROR: (\S+): (.*)"
     error_source = ""
     error_reason = ""
-    TEST_UNIT_LINE = r"artifact_prefix='.*/'; Test unit written to (.*)"
-    call_stack = []
-    is_call_stack = False
+    test_unit = ""
+    TEST_UNIT_LINE = r"artifact_prefix='.*\/'; Test unit written to (.*)"
+    error_info = []
+    is_error = False
 
     # pylint: disable=unused-variable
-    for line_num, line in enumerate(error.splitlines(), 1):
-        if is_call_stack:
-            if re.search(r"^==\d+==", line):
-                is_call_stack = False
-                continue
-            call_stack.append(line)
-            continue
-
-        if call_stack:
+    for line_num, line in enumerate(sys.stdin, 1):
+        if is_error:
+            error_info.append(line)
             match = re.search(TEST_UNIT_LINE, line)
             if match:
-                report(error_source, error_reason, call_stack, match.group(1))
-                call_stack.clear()
+                test_unit = match.group(1)
             continue
 
         match = re.search(ERROR, line)
         if match:
+            error_info.append(line)
             error_source = match.group(1)
             error_reason = match.group(2)
-            is_call_stack = True
+            is_error = True
+
+    report(error_source, error_reason, error_info, test_unit)
 
 
 def kill_fuzzer(fuzzer: str):
