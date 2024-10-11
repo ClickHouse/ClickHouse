@@ -342,30 +342,50 @@ VolumePtr StoragePolicy::tryGetVolumeByName(const String & volume_name) const
 
 void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const
 {
-    std::unordered_set<String> new_volume_names;
-    for (const auto & volume : new_storage_policy->getVolumes())
-        new_volume_names.insert(volume->getName());
-
-    for (const auto & volume : getVolumes())
+    /// Do not check volumes for temporary policy because their names are automatically generated
+    if (!new_storage_policy->getName().starts_with(StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX))
     {
-        if (!new_volume_names.contains(volume->getName()))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "New storage policy {} shall contain volumes of the old storage policy {}",
-                backQuote(new_storage_policy->getName()),
-                backQuote(name));
+        std::unordered_set<String> new_volume_names;
+        for (const auto & volume : new_storage_policy->getVolumes())
+            new_volume_names.insert(volume->getName());
 
-        std::unordered_set<String> new_disk_names;
-        for (const auto & disk : new_storage_policy->getVolumeByName(volume->getName())->getDisks())
-            new_disk_names.insert(disk->getName());
-
-        for (const auto & disk : volume->getDisks())
-            if (!new_disk_names.contains(disk->getName()))
+        for (const auto & volume : getVolumes())
+        {
+            if (!new_volume_names.contains(volume->getName()))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "New storage policy {} shall contain disks of the old storage policy {}",
+                    "New storage policy {} shall contain volumes of the old storage policy {}",
                     backQuote(new_storage_policy->getName()),
                     backQuote(name));
+
+            std::unordered_set<String> new_disk_names;
+            for (const auto & disk : new_storage_policy->getVolumeByName(volume->getName())->getDisks())
+                new_disk_names.insert(disk->getName());
+
+            for (const auto & disk : volume->getDisks())
+                if (!new_disk_names.contains(disk->getName()))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "New storage policy {} shall contain disks of the old storage policy {}",
+                        backQuote(new_storage_policy->getName()),
+                        backQuote(name));
+        }
+    }
+    else
+    {
+        std::unordered_set<String> new_disk_names;
+        for (const auto & volume : new_storage_policy->getVolumes())
+            for (const auto & disk : volume->getDisks())
+                new_disk_names.insert(disk->getName());
+
+        for (const auto & volume : this->getVolumes())
+            for (const auto & disk : volume->getDisks())
+                if (!new_disk_names.contains(disk->getName()))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "New storage policy {} shall contain disks of the old storage policy {}",
+                        backQuote(new_storage_policy->getName()),
+                        backQuote(name));
     }
 }
 
