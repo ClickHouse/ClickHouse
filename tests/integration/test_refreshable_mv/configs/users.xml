@@ -3,7 +3,6 @@
         <default>
             <allow_experimental_database_replicated>1</allow_experimental_database_replicated>
             <allow_experimental_alter_materialized_view_structure>1</allow_experimental_alter_materialized_view_structure>
-            <allow_experimental_refreshable_materialized_view>1</allow_experimental_refreshable_materialized_view>
         </default>
     </profiles>
     <users>
