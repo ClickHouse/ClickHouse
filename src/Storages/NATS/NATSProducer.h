@@ -33,7 +33,6 @@ private:
 
     void publish();
 
-private:
     NATSConfiguration configuration;
 
     NATSHandler event_handler;
