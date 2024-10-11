@@ -2401,7 +2401,7 @@ def test_filesystem_cache(started_cluster):
     id = uuid.uuid4()
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
-    table_name = "test_filesystem_cache"
+    table_name = f"test_filesystem_cache-{uuid.uuid4()}"
 
     instance.query(
         f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name}.tsv', auto, 'x UInt64') select number from numbers(100) SETTINGS s3_truncate_on_insert=1"
