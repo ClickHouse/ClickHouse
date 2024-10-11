@@ -57,6 +57,7 @@ namespace Setting
     extern const SettingsBool optimize_throw_if_noop;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
+    extern const SettingsUInt64 max_parts_to_move;
 }
 
 namespace MergeTreeSetting
@@ -89,6 +90,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TABLE_IS_READ_ONLY;
+    extern const int TOO_MANY_PARTS;
 }
 
 namespace ActionLocks
@@ -378,11 +380,13 @@ void StorageMergeTree::alter(
     if (commands.isSettingsAlter())
     {
         changeSettings(new_metadata.settings_changes, table_lock_holder);
+        /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     }
     else if (commands.isCommentAlter())
     {
         setInMemoryMetadata(new_metadata);
+        /// It is safe to ignore exceptions here as only the comment changed, which is not validated in `alterTable`
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     }
     else
@@ -413,7 +417,17 @@ void StorageMergeTree::alter(
             /// Reinitialize primary key because primary key column types might have changed.
             setProperties(new_metadata, old_metadata, false, local_context);
 
-            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+            try
+            {
+                DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+            }
+            catch (...)
+            {
+                LOG_ERROR(log, "Failed to alter table in database, reverting changes");
+                changeSettings(old_metadata.settings_changes, table_lock_holder);
+                setProperties(old_metadata, new_metadata, false, local_context);
+                throw;
+            }
 
             {
                 /// Reset Object columns, because column of type
@@ -2332,9 +2346,9 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
     // Use the same back-pressure (delay/throw) logic as for INSERTs to be consistent and avoid possibility of exceeding part limits using MOVE PARTITION queries
     dest_table_storage->delayInsertOrThrowIfNeeded(nullptr, local_context, true);
-
-    auto lock1 = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
-    auto lock2 = dest_table->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    const auto & settings = local_context->getSettingsRef();
+    auto lock1 = lockForShare(local_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+    auto lock2 = dest_table->lockForShare(local_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
     auto merges_blocker = stopMergesAndWait();
 
     auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr();
@@ -2346,6 +2360,18 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     String partition_id = getPartitionIDFromQuery(partition, local_context);
 
     DataPartsVector src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
+    if (src_parts.size() > settings[Setting::max_parts_to_move])
+    {
+        /// Moving a large number of parts at once can take a long time or get stuck in a retry loop in case of an S3 error, for example.
+        /// Since merging is blocked, it can lead to a kind of deadlock:
+        /// MOVE cannot be done because of the number of parts, and merges are not executed because of the MOVE.
+        /// So abort the operation until parts are merged and user should retry
+        throw Exception(ErrorCodes::TOO_MANY_PARTS,
+                        "Cannot move {} parts at once, the limit is {}. "
+                        "Wait until some parts are merged and retry, move smaller partitions, or increase the setting 'max_parts_to_move'.",
+                        src_parts.size(), settings[Setting::max_parts_to_move]);
+    }
+
     MutableDataPartsVector dst_parts;
     std::vector<scope_guard> dst_parts_locks;
 

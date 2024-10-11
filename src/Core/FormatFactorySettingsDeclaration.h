@@ -541,6 +541,9 @@ Read data types in binary format instead of type names in Native input format
     M(Bool, output_format_native_encode_types_in_binary_format, false, R"(
 Write data types in binary format instead of type names in Native output format
 )", 0) \
+    M(Bool, output_format_native_write_json_as_string, false, R"(
+Write data of [JSON](../../sql-reference/data-types/newjson.md) column as [String](../../sql-reference/data-types/string.md) column containing JSON strings instead of default native JSON serialization.
+)", 0) \
     \
     M(DateTimeInputFormat, date_time_input_format, FormatSettings::DateTimeInputFormat::Basic, R"(
 Allows choosing a parser of the text representation of date and time.
@@ -651,6 +654,12 @@ Write data types in binary format instead of type names in RowBinaryWithNamesAnd
 )", 0) \
     M(URI, format_avro_schema_registry_url, "", R"(
 For AvroConfluent format: Confluent Schema Registry URL.
+)", 0) \
+    M(Bool, input_format_binary_read_json_as_string, false, R"(
+Read values of [JSON](../../sql-reference/data-types/newjson.md) data type as JSON [String](../../sql-reference/data-types/string.md) values in RowBinary input format.
+)", 0) \
+    M(Bool, output_format_binary_write_json_as_string, false, R"(
+Write values of [JSON](../../sql-reference/data-types/newjson.md) data type as JSON [String](../../sql-reference/data-types/string.md) values in RowBinary output format.
 )", 0) \
     \
     M(Bool, output_format_json_quote_64bit_integers, true, R"(
