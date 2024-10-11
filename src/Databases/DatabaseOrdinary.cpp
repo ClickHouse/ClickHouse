@@ -567,7 +567,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
         local_context->getSettingsRef()[Setting::max_parser_depth],
         local_context->getSettingsRef()[Setting::max_parser_backtracks]);
 
-    applyMetadataChangesToCreateQuery(ast, metadata);
+    applyMetadataChangesToCreateQuery(ast, metadata, local_context);
 
     statement = getObjectDefinitionFromCreateQuery(ast);
     {
