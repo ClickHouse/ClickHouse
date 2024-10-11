@@ -173,6 +173,11 @@ std::vector<uint64_t> hash(const IColumn * data_column, const parquet::ColumnDes
         }
     }
 
+    if (hashes.size() != data_column->size())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Where predicate value hashing failed for some rows, but succeeded for others. It should not happen");
+    }
+
     return hashes;
 }
 
@@ -311,6 +316,10 @@ bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const ColumnIndexToBF & co
         {
             rpn_stack.emplace_back(true, false);
         }
+        else if (element.function == Function::ALWAYS_FALSE)
+        {
+            rpn_stack.emplace_back(false, true);
+        }
         else
         {
             rpn_stack.emplace_back(true, true);
@@ -420,6 +429,7 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
             const auto & set_index = rpn_element.set_index;
             const auto & ordered_set = set_index->getOrderedSet();
             const auto & indexes_mapping = set_index->getIndexesMapping();
+            bool found_empty_column = false;
 
             std::vector<std::size_t> key_columns;
 
@@ -441,7 +451,8 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
 
                 if (column->empty())
                 {
-                    continue;
+                    found_empty_column = true;
+                    break;
                 }
 
                 if (const auto & nullable_column = checkAndGetColumn<ColumnNullable>(set_column.get()))
@@ -459,6 +470,12 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
                 hashes.emplace_back(hashes_for_column);
 
                 key_columns.push_back(indexes_mapping[i].key_index);
+            }
+
+            if (found_empty_column)
+            {
+                condition_elements.emplace_back(Function::ALWAYS_FALSE);
+                continue;
             }
 
             if (hashes.empty())
