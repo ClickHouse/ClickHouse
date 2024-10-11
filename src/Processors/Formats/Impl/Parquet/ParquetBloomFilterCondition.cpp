@@ -70,7 +70,21 @@ uint64_t hashSpecialFLBATypes(const Field & field)
     return hasher.Hash(&flba, sizeof(T));
 };
 
-template <bool FIXED_LEN>
+std::optional<uint64_t> tryHashStringWithoutCompatibilityCheck(const Field & field)
+{
+    const auto field_type = field.getType();
+
+    if (field_type != Field::Types::Which::String)
+    {
+        return std::nullopt;
+    }
+
+    parquet::XxHasher hasher;
+    parquet::ByteArray ba { field.safeGet<std::string>() };
+
+    return hasher.Hash(&ba);
+}
+
 std::optional<uint64_t> tryHashString(
     const Field & field,
     const std::shared_ptr<const parquet::LogicalType> & logical_type,
@@ -81,25 +95,28 @@ std::optional<uint64_t> tryHashString(
         return std::nullopt;
     }
 
+    return tryHashStringWithoutCompatibilityCheck(field);
+}
+
+std::optional<uint64_t> tryHashFLBA(
+    const Field & field,
+    const std::shared_ptr<const parquet::LogicalType> & logical_type,
+    parquet::ConvertedType::type converted_type,
+    std::size_t parquet_column_length)
+{
+    if (!isParquetStringTypeSupportedForBloomFilters(logical_type, converted_type))
+    {
+        return std::nullopt;
+    }
+
     const auto field_type = field.getType();
 
-    if (field_type == Field::Types::Which::String)
+    if (field_type == Field::Types::Which::IPv6 && parquet_column_length == sizeof(IPv6))
     {
-        parquet::XxHasher hasher;
-        parquet::ByteArray ba { field.safeGet<std::string>() };
-
-        return hasher.Hash(&ba);
+        return hashSpecialFLBATypes<IPv6>(field);
     }
 
-    if constexpr (FIXED_LEN)
-    {
-        if (field_type == Field::Types::Which::IPv6)
-        {
-            return hashSpecialFLBATypes<IPv6>(field);
-        }
-    }
-
-    return std::nullopt;
+    return tryHashStringWithoutCompatibilityCheck(field);
 }
 
 template <typename ParquetPhysicalType>
@@ -150,9 +167,9 @@ std::optional<uint64_t> tryHash(const Field & field, const parquet::ColumnDescri
         case parquet::Type::type::INT64:
             return tryHashInt<int64_t>(field, logical_type, converted_type);
         case parquet::Type::type::BYTE_ARRAY:
-            return tryHashString<false>(field, logical_type, converted_type);
+            return tryHashString(field, logical_type, converted_type);
         case parquet::Type::type::FIXED_LEN_BYTE_ARRAY:
-            return tryHashString<true>(field, logical_type, converted_type);
+            return tryHashFLBA(field, logical_type, converted_type, parquet_column_descriptor->type_length());
         default:
             return std::nullopt;
     }
