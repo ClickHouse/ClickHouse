@@ -410,13 +410,37 @@ Code: 44. DB::Exception: Received from localhost:9000. DB::Exception: Illegal ty
 
 ## ignore
 
-Accepts any arguments, including `NULL` and does nothing. Always returns 0.
-The argument is internally still evaluated. Useful e.g. for benchmarks.
+Accepts arbitrary arguments and unconditionally returns `0`.
+The argument is still evaluated internally, making it useful for eg. benchmarking.
 
 **Syntax**
 
 ```sql
-ignore(x)
+ignore([arg1[, arg2[, ...]])
+```
+
+**Arguments**
+
+- Accepts arbitrarily many arguments of arbitrary type, including `NULL`.
+
+**Returned value**
+
+- Returns `0`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT ignore(0, 'ClickHouse', NULL);
+```
+
+Result:
+
+```response
+┌─ignore(0, 'ClickHouse', NULL)─┐
+│                             0 │
+└───────────────────────────────┘
 ```
 
 ## sleep
@@ -573,6 +597,42 @@ Result:
 ┌─currentUser()─┐
 │ default       │
 └───────────────┘
+```
+
+## currentSchemas
+
+Returns a single-element array with the name of the current database schema.
+
+**Syntax**
+
+```sql
+currentSchemas(bool)
+```
+
+Alias: `current_schemas`.
+
+**Arguments**
+
+- `bool`: A boolean value. [Bool](../data-types/boolean.md).
+
+:::note
+The boolean argument is ignored. It only exists for the sake of compatibility with the [implementation](https://www.postgresql.org/docs/7.3/functions-misc.html) of this function in PostgreSQL.
+:::
+
+**Returned values**
+
+- Returns a single-element array with the name of the current database
+
+**Example**
+
+```sql
+SELECT currentSchemas(true);
+```
+
+Result:
+
+```response
+['default']
 ```
 
 ## isConstant
@@ -3893,13 +3953,15 @@ Retrieves the connection ID of the client that submitted the current query and r
 connectionId()
 ```
 
+Alias: `connection_id`.
+
 **Parameters**
 
 None.
 
 **Returned value**
 
-Returns an integer of type UInt64.
+The current connection ID. [UInt64](../data-types/int-uint.md).
 
 **Implementation details**
 
@@ -3911,40 +3973,6 @@ Query:
 
 ```sql
 SELECT connectionId();
-```
-
-```response
-0
-```
-
-## connection_id
-
-An alias of `connectionId`. Retrieves the connection ID of the client that submitted the current query and returns it as a UInt64 integer.
-
-**Syntax**
-
-```sql
-connection_id()
-```
-
-**Parameters**
-
-None.
-
-**Returned value**
-
-Returns an integer of type UInt64.
-
-**Implementation details**
-
-This function is most useful in debugging scenarios or for internal purposes within the MySQL handler. It was created for compatibility with [MySQL's `CONNECTION_ID` function](https://dev.mysql.com/doc/refman/8.0/en/information-functions.html#function_connection-id) It is not typically used in production queries.
-
-**Example**
-
-Query:
-
-```sql
-SELECT connection_id();
 ```
 
 ```response
