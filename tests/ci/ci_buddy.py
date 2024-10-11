@@ -61,13 +61,14 @@ class CIBuddy:
                 self.post_job_error(
                     f"{CI.Envs.GITHUB_WORKFLOW} Workflow Failed", critical=True
                 )
-        else:
-            res = CI.GH.get_workflow_job_result(CI.GH.ActionsNames.RunConfig)
-            if res != CI.GH.ActionStatuses.SUCCESS:
-                print(f"ERROR: RunConfig status is [{res}] - post report to slack")
-                self.post_job_error(
-                    f"{CI.Envs.GITHUB_WORKFLOW} Workflow Failed", critical=True
-                )
+            return
+
+        res = CI.GH.get_workflow_job_result(CI.GH.ActionsNames.RunConfig)
+        if res != CI.GH.ActionStatuses.SUCCESS:
+            print(f"ERROR: RunConfig status is [{res}] - post report to slack")
+            self.post_job_error(
+                f"{CI.Envs.GITHUB_WORKFLOW} Workflow Failed", critical=True
+            )
 
     @staticmethod
     def _get_webhooks():
