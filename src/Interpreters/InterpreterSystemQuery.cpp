@@ -889,7 +889,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     create.attach = true;
 
     auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, LoadingStrictnessLevel::ATTACH);
-    auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
+    auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
     auto data_path = database->getTableDataPath(create);
 
     table = StorageFactory::instance().get(create,
