@@ -6,7 +6,7 @@
 #include "PostgreSQLReplicationHandler.h"
 #include "MaterializedPostgreSQLSettings.h"
 
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Interpreters/evaluateConstantExpression.h>

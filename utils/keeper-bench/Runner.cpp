@@ -186,6 +186,9 @@ void Runner::parseHostsFromConfig(const Poco::Util::AbstractConfiguration & conf
 
         if (config.has(key + ".use_compression"))
             connection_info.use_compression = config.getBool(key + ".use_compression");
+
+        if (config.has(key + ".use_xid_64"))
+            connection_info.use_xid_64 = config.getBool(key + ".use_xid_64");
     };
 
     fill_connection_details("connections", default_connection_info);
@@ -1258,6 +1261,7 @@ std::shared_ptr<Coordination::ZooKeeper> Runner::getConnection(const ConnectionI
     args.connection_timeout_ms = connection_info.connection_timeout_ms;
     args.operation_timeout_ms = connection_info.operation_timeout_ms;
     args.use_compression = connection_info.use_compression;
+    args.use_xid_64 = connection_info.use_xid_64;
     return std::make_shared<Coordination::ZooKeeper>(nodes, args, nullptr);
 }
 

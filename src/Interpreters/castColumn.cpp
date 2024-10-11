@@ -35,8 +35,7 @@ static ColumnPtr castColumn(CastType cast_type, const ColumnWithTypeAndName & ar
 
     if (cast_type == CastType::accurateOrNull)
         return func_cast->execute(arguments, makeNullable(type), arg.column->size());
-    else
-        return func_cast->execute(arguments, type, arg.column->size());
+    return func_cast->execute(arguments, type, arg.column->size());
 }
 
 ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache)
