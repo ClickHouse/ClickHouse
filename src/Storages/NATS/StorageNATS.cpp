@@ -86,6 +86,7 @@ StorageNATS::StorageNATS(
         .password = nats_password.empty() ? getContext()->getConfigRef().getString("nats.password", "") : nats_password,
         .token = nats_token.empty() ? getContext()->getConfigRef().getString("nats.token", "") : nats_token,
         .credential_file = nats_credential_file.empty() ? getContext()->getConfigRef().getString("nats.credential_file", "") : nats_credential_file,
+        .max_connect_tries = nats_settings->nats_startup_connect_tries,
         .max_reconnect = static_cast<int>(nats_settings->nats_max_reconnect.value),
         .reconnect_wait = static_cast<int>(nats_settings->nats_reconnect_wait.value),
         .secure = nats_settings->nats_secure.value
@@ -101,7 +102,7 @@ StorageNATS::StorageNATS(
     nats_context->makeQueryContext();
 
     /// One looping task for all consumers as they share the same connection == the same handler == the same event loop
-    looping_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSLoopingTask", [this] { loopingFunc(); });
+    looping_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSConsumersLoopingTask", [this] { event_handler.runLoop(); });
     looping_task->deactivate();
 
     streaming_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSStreamingTask", [this] { streamingToViewsFunc(); });
@@ -175,12 +176,6 @@ ContextMutablePtr StorageNATS::addSettings(ContextPtr local_context) const
 }
 
 
-void StorageNATS::loopingFunc()
-{
-    event_handler.runLoop();
-}
-
-
 void StorageNATS::stopLoop()
 {
     event_handler.stopLoop();
@@ -236,7 +231,7 @@ void StorageNATS::subscribeConsumersFunc()
 
 void StorageNATS::createConsumers()
 {
-    auto connect_future = event_handler.createConnection(configuration, nats_settings->nats_startup_connect_tries);
+    auto connect_future = event_handler.createConnection(configuration);
     consumers_connection = connect_future.get();
 
     for (size_t i = 0; i < num_consumers; ++i)
@@ -394,12 +389,7 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
     if (!isSubjectInSubscriptions(subject))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Selected subject is not among engine subjects");
 
-    auto connection_future = event_handler.createConnection(configuration, nats_settings->nats_startup_connect_tries);
-
-    auto producer = std::make_unique<NATSProducer>(connection_future.get(),
-                                                   std::chrono::milliseconds(configuration.reconnect_wait),
-                                                   subject,
-                                                   log);
+    auto producer = std::make_unique<NATSProducer>(configuration, getContext()->getMessageBrokerSchedulePool(), subject, log);
     size_t max_rows = max_rows_per_message;
     /// Need for backward compatibility.
     if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)

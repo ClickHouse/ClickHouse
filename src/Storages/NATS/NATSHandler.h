@@ -35,7 +35,7 @@ public:
     void runLoop();
     void stopLoop();
 
-    std::future<NATSConnectionPtr> createConnection(const NATSConfiguration & configuration, std::uint64_t connect_attempts_count);
+    std::future<NATSConnectionPtr> createConnection(const NATSConfiguration & configuration);
 
 private:
     /// Execute task on event loop thread

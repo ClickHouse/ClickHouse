@@ -129,7 +129,6 @@ private:
 
     /// Functions working in the background
     void streamingToViewsFunc();
-    void loopingFunc();
     void subscribeConsumersFunc();
 
     void createConsumers();

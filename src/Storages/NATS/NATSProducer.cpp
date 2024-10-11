@@ -18,18 +18,57 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-NATSProducer::NATSProducer(NATSConnectionPtr connection_, Timeout reconnect_timeout_, const String & subject_, LoggerPtr log_)
+NATSProducer::NATSProducer(const NATSConfiguration & configuration_, BackgroundSchedulePool & broker_schedule_pool_, const String & subject_, LoggerPtr log_)
     : AsynchronousMessageProducer(log_)
-    , connection(std::move(connection_))
-    , reconnect_timeout(reconnect_timeout_)
+    , configuration(configuration_)
+    , event_handler(log)
     , subject(subject_)
     , payloads(BATCH)
 {
+    /// One looping task for all consumers as they share the same connection == the same handler == the same event loop
+    looping_task = broker_schedule_pool_.createTask("NATSProducerLoopingTask", [this] { event_handler.runLoop(); });
+    looping_task->deactivate();
+}
+
+void NATSProducer::initialize()
+{
+    looping_task->activateAndSchedule();
+
+    try
+    {
+        auto connect_future = event_handler.createConnection(configuration);
+        connection = connect_future.get();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+
+        event_handler.stopLoop();
+        looping_task->deactivate();
+
+        throw;
+    }
 }
 
 void NATSProducer::finishImpl()
 {
-    connection->disconnect();
+    try
+    {
+        if (connection)
+        {
+            if (connection->isConnected())
+                natsConnection_Flush(connection->getConnection());
+
+            connection->disconnect();
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
+
+    event_handler.stopLoop();
+    looping_task->deactivate();
 }
 
 
@@ -78,14 +117,14 @@ void NATSProducer::startProducingTaskLoop()
         while (!payloads.isFinishedAndEmpty())
         {
             if (!connection->isConnected())
-                std::this_thread::sleep_for(reconnect_timeout);
+                std::this_thread::sleep_for(std::chrono::milliseconds(configuration.reconnect_wait));
             else
                 publish();
         }
 
         while (!connection->isConnected())
         {
-            std::this_thread::sleep_for(reconnect_timeout);
+            std::this_thread::sleep_for(std::chrono::milliseconds(configuration.reconnect_wait));
         }
 
         if (natsConnection_Buffered(connection->getConnection()) > 0)

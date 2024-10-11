@@ -88,20 +88,20 @@ void NATSHandler::post(Task task)
     tasks.push(std::move(task));
 }
 
-std::future<NATSConnectionPtr> NATSHandler::createConnection(const NATSConfiguration & configuration, std::uint64_t connect_attempts_count)
+std::future<NATSConnectionPtr> NATSHandler::createConnection(const NATSConfiguration & configuration)
 {
     auto promise = std::make_shared<std::promise<NATSConnectionPtr>>();
 
     auto connect_future = promise->get_future();
     post(
-        [this, &configuration, connect_attempts_count, connect_promise = std::move(promise)]()
+        [this, &configuration, connect_promise = std::move(promise)]()
         {
             try
             {
                 if (loop_state.load() != Loop::RUN)
                     throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot connect to NATS: Event loop stopped");
 
-                for (size_t i = 0; i < connect_attempts_count; ++i)
+                for (UInt64 i = 0; i < configuration.max_connect_tries; ++i)
                 {
                     auto connection = std::make_shared<NATSConnection>(configuration, log, createOptions());
                     if (!connection->connect())

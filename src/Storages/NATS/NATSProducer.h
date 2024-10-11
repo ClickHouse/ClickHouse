@@ -7,6 +7,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Names.h>
 #include <Storages/NATS/NATSConnection.h>
+#include <Storages/NATS/NATSHandler.h>
 #include <Storages/IMessageProducer.h>
 #include <Common/ConcurrentBoundedQueue.h>
 
@@ -15,15 +16,15 @@ namespace DB
 
 class NATSProducer : public AsynchronousMessageProducer
 {
-    using Timeout = std::chrono::system_clock::duration;
-
 public:
-    NATSProducer(NATSConnectionPtr connection_, Timeout reconnect_timeout_, const String & subject_, LoggerPtr log_);
+    NATSProducer(const NATSConfiguration & configuration_, BackgroundSchedulePool & broker_schedule_pool_, const String & subject_, LoggerPtr log_);
 
     void produce(const String & message, size_t rows_in_message, const Columns & columns, size_t last_row) override;
 
 private:
     String getProducingTaskName() const override { return "NatsProducingTask"; }
+
+    void initialize() override;
 
     void stopProducingTask() override;
     void finishImpl() override;
@@ -32,8 +33,13 @@ private:
 
     void publish();
 
+private:
+    NATSConfiguration configuration;
+
+    NATSHandler event_handler;
+    BackgroundSchedulePool::TaskHolder looping_task;
+
     NATSConnectionPtr connection;
-    const Timeout reconnect_timeout;
     const String subject;
 
     /* payloads.queue:
