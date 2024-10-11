@@ -286,7 +286,10 @@ struct ReplaceRegexpImpl
             if (needle.empty())
             {
                 res_data.insert(res_data.end(), hs_data, hs_data + hs_length);
+                res_data.push_back(0);
+
                 res_offsets[i] = res_offsets[i - 1] + hs_length + 1;
+                res_offset = res_offsets[i];
                 continue;
             }
 
@@ -387,7 +390,9 @@ struct ReplaceRegexpImpl
             if (needle.empty())
             {
                 res_data.insert(res_data.end(), hs_data, hs_data + hs_length);
+                res_data.push_back(0);
                 res_offsets[i] = res_offsets[i - 1] + hs_length + 1;
+                res_offset = res_offsets[i];
                 continue;
             }
 
@@ -419,7 +424,7 @@ struct ReplaceRegexpImpl
     {
         if (needle.empty())
         {
-             chassert(input_rows_count == haystack_data.size() / n);
+            chassert(input_rows_count == haystack_data.size() / n);
             /// Since ColumnFixedString does not have a zero byte at the end, while ColumnString does,
             /// we need to split haystack_data into strings of length n, add 1 zero byte to the end of each string
             /// and then copy to res_data, ref: ColumnString.h and ColumnFixedString.h
@@ -429,7 +434,7 @@ struct ReplaceRegexpImpl
             {
                 res_data.insert(res_data.end(), haystack_data.begin() + i * n, haystack_data.begin() + (i + 1) * n);
                 res_data.push_back(0);
-                res_offsets[i] = (i + 1) * n + 1;
+                res_offsets[i] = res_offsets[i - 1] + n + 1;
             }
             return;
         }
