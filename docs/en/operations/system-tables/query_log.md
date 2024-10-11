@@ -120,7 +120,7 @@ Columns:
     - `'None'` = The query result was neither written into nor read from the query cache.
     - `'Write'` = The query result was written into the query cache.
     - `'Read'` = The query result was read from the query cache.
-- `script_line_number` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Line number of query. When script is being executed from file, script_line_number is being set to current query line number.
+- `script_line_number` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Line number of query. When the query is part of a script, script_line_number is set to current query line number.
 
 **Example**
 

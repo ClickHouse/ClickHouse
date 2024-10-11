@@ -4646,9 +4646,11 @@ Result:
 ```
 
 ## script_line_number {#script_line_number}
-Specifies the value for the `script_line_number` field of the [system.query_log](../system-tables/query_log.md) table.
-It improves readability of logs, and adds additional information, by indicating in which line a query is located.
-Default value is 0.
+
+Field of [system.query_log](../system-tables/query_log.md).
+When running a script, for each query being executed, script_line_number in query_log is set to the line number of that query.
+When running a standalone query, it will be set to 0.
+
 **Example**
 
 Query:
@@ -4663,7 +4665,7 @@ CREATE DATABASE db1;
 CREATE DATABASE db2;
 
 SYSTEM FLUSH LOGS;
-SELECT query, script_line_number FROM system.query_log WHERE type=1 AND log_comment = 'script_line_number_test' limit 6;
+SELECT query, script_line_number FROM system.query_log WHERE type = 1 AND log_comment = 'script_line_number_test' LIMIT 6;
 ```
 
 Result:
