@@ -262,28 +262,8 @@ bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const ColumnIndexToBF & co
 
     for (const auto & element : condition)
     {
-        if (element.function == Function::FUNCTION_EQUALS
-                 || element.function == Function::FUNCTION_NOT_EQUALS)
-        {
-            // in case bloom filter is not present for this row group
-            // https://github.com/ClickHouse/ClickHouse/pull/62966#discussion_r1722361237
-            if (!column_index_to_column_bf.contains(element.key_columns[0]))
-            {
-                rpn_stack.emplace_back(true, true);
-                continue;
-            }
-
-            const auto & bloom_filter = column_index_to_column_bf.at(element.key_columns[0]);
-
-            bool maybe_true = maybeTrueOnBloomFilter(element.hashes_per_column[0], bloom_filter);
-
-            rpn_stack.emplace_back(maybe_true, true);
-
-            if (element.function == Function::FUNCTION_NOT_EQUALS)
-                rpn_stack.back() = !rpn_stack.back();
-        }
-        else if (element.function == Function::FUNCTION_IN
-                 || element.function == Function::FUNCTION_NOT_IN)
+        if (element.function == Function::FUNCTION_IN
+            || element.function == Function::FUNCTION_NOT_IN)
         {
             bool maybe_true = true;
             for (auto column_index = 0u; column_index < element.hashes_per_column.size(); column_index++)
@@ -370,10 +350,9 @@ std::unordered_set<std::size_t> ParquetBloomFilterCondition::getFilteringColumnK
  * and build a simplified RPN that holds hashes instead of values.
  *
  * `KeyCondition::RPNElement::FUNCTION_IN_RANGE` becomes:
- *      `FUNCTION_EQUALS` when range limits are equal
- *      `FUNCTION_UNKNOWN` when range limits are different
  * `KeyCondition::RPNElement::FUNCTION_IN_SET` becomes
  *      `FUNCTION_IN`
+ *      `FUNCTION_UNKNOWN` when range limits are different
  *
  * Complex types and structs are not supported.
  * There are two sources of data types being analyzed, and they need to be compatible: DB::Field type and parquet type.
@@ -432,8 +411,8 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
             hashes.emplace_back(std::move(hashes_for_column));
 
             auto function = rpn_element.function == RPNElement::FUNCTION_IN_RANGE
-                ? ParquetBloomFilterCondition::ConditionElement::Function::FUNCTION_EQUALS
-                : ParquetBloomFilterCondition::ConditionElement::Function::FUNCTION_NOT_EQUALS;
+                ? ParquetBloomFilterCondition::ConditionElement::Function::FUNCTION_IN
+                : ParquetBloomFilterCondition::ConditionElement::Function::FUNCTION_NOT_IN;
 
             std::vector<std::size_t> key_columns;
             key_columns.emplace_back(rpn_element.key_column);
