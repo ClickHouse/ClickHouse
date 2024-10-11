@@ -912,6 +912,7 @@ class SettingsRandomizer:
         "max_parsing_threads": lambda: random.choice([0, 1, 10]),
         "optimize_functions_to_subcolumns": lambda: random.randint(0, 1),
         "parallel_replicas_local_plan": lambda: random.randint(0, 1),
+        "output_format_native_write_json_as_string": lambda: random.randint(0, 1),
     }
 
     @staticmethod
