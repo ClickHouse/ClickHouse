@@ -36,7 +36,7 @@ def process_error(error: str):
     is_error = False
 
     # pylint: disable=unused-variable
-    for line_num, line in enumerate(sys.stdin, 1):
+    for line_num, line in enumerate(error.splitlines(), 1):
         if is_error:
             error_info.append(line)
             match = re.search(TEST_UNIT_LINE, line)
