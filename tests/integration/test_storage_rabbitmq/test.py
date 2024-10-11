@@ -2180,9 +2180,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
             break
         time.sleep(0.1)
     else:
-        pytest.fail(
-            f"Time limit of 180 seconds reached. The count is still 0."
-        )
+        pytest.fail(f"Time limit of 180 seconds reached. The count is still 0.")
 
     kill_rabbitmq(rabbitmq_cluster.rabbitmq_docker_id)
     time.sleep(4)
@@ -2269,9 +2267,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
         logging.debug(3)
         time.sleep(0.1)
     else:
-        pytest.fail(
-            f"Time limit of 180 seconds reached. The count is still 0."
-        )
+        pytest.fail(f"Time limit of 180 seconds reached. The count is still 0.")
 
     kill_rabbitmq(rabbitmq_cluster.rabbitmq_docker_id)
     time.sleep(8)
