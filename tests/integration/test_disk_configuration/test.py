@@ -381,12 +381,55 @@ def test_merge_tree_setting_override(start_cluster):
         )
     )
 
+    # TODO: test ALTER storage_policy = '', disk = ''
+
+    # TODO: clear storage_policy from metadata
+    node.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME} SYNC;
+        CREATE TABLE {TABLE_NAME} (a Int32)
+        ENGINE = MergeTree()
+        ORDER BY tuple()
+        SETTINGS storage_policy = 's3';
+        ALTER TABLE {TABLE_NAME} MODIFY SETTING disk = 's3';
+    """
+    )
+
+    assert (
+        "New storage policy `local` shall contain volumes of the old storage policy `s3`"
+        in node.query_and_get_error(
+            f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME} (a Int32)
+        ENGINE = MergeTree()
+        ORDER BY tuple()
+        SETTINGS storage_policy = 's3';
+        ALTER TABLE {TABLE_NAME} MODIFY SETTING storage_policy = 'local';
+    """
+        )
+    )
+
+    # Using default policy so storage_policy and disk are not set at the same time
+    assert (
+        "New storage policy `__disk_local` shall contain disks of the old storage policy `hybrid`"
+        in node.query_and_get_error(
+            f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME} (a Int32)
+        ENGINE = MergeTree()
+        ORDER BY tuple();
+        ALTER TABLE {TABLE_NAME} MODIFY SETTING disk = 'disk_local';
+    """
+        )
+    )
+
     assert "Unknown storage policy" in node.query_and_get_error(
         f"""
         DROP TABLE IF EXISTS {TABLE_NAME};
         CREATE TABLE {TABLE_NAME} (a Int32)
         ENGINE = MergeTree()
-        ORDER BY tuple();
+        ORDER BY tuple()
+        SETTINGS storage_policy = 'kek';
     """
     )
 
