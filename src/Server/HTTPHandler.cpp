@@ -1058,7 +1058,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             client_trace_context,
             context->getSettingsRef(),
             context->getOpenTelemetrySpanLog());
-        thread_trace_context->root_span.kind = OpenTelemetry::SERVER;
+        thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
         thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
         thread_trace_context->root_span.addAttribute("http.referer", session->getClientInfo().http_referer);
         thread_trace_context->root_span.addAttribute("http.user.agent", session->getClientInfo().http_user_agent);
