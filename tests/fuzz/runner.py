@@ -16,9 +16,9 @@ FUZZER_ARGS = os.getenv("FUZZER_ARGS", "")
 
 
 def report(source: str, reason: str, call_stack: list, test_unit: str):
-    print(f"########### REPORT: {source} {reason} {test_unit}")
-    print("".join(call_stack))
-    print("########### END OF REPORT ###########")
+    logging.info("########### REPORT: %s %s %s", source, reason, test_unit)
+    logging.info("".join(call_stack))
+    logging.info("########### END OF REPORT ###########")
 
 
 # pylint: disable=unused-argument
@@ -157,7 +157,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
         )
     except subprocess.CalledProcessError as e:
         # print("Command failed with error:", e)
-        print("Stderr output: ", e.stderr)
+        logging.info("Stderr output: %s", e.stderr)
         process_error(e.stderr)
     except subprocess.TimeoutExpired as e:
         logging.info("Timeout for %s", cmd_line)
