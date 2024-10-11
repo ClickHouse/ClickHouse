@@ -225,7 +225,7 @@ private:
                             parameter_number, arguments.size());
 
         const IColumn * col = arguments[parameter_number].column.get();
-        ResultType parameter;
+        ResultType parameter = ResultType();
 
         if (const ColumnVector<ResultType> * col_in = checkAndGetColumn<ColumnVector<ResultType>>(col))
         {
