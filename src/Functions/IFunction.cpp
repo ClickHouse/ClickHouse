@@ -234,7 +234,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
         if (!mask_info.has_ones)
         {
             /// Don't need to evaluate function if each row contains at least one null value.
-            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+            return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
         }
         else if (!mask_info.has_zeros || !short_circuit_default_implementation_for_nulls)
         {
