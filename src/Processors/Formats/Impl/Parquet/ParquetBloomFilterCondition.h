@@ -25,8 +25,6 @@ public:
         enum Function
         {
             /// Atoms of a Boolean expression.
-            FUNCTION_EQUALS,
-            FUNCTION_NOT_EQUALS,
             FUNCTION_IN,
             FUNCTION_NOT_IN,
             /// Can take any value.
