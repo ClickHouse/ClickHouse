@@ -34,9 +34,9 @@ namespace
         auto query_context = CurrentThread::getQueryContext();
         if (query_context)
             return query_context->getSettingsRef()[Setting::temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds];
-        else
-            return Context::getGlobalContextInstance()
-                ->getSettingsRef()[Setting::temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds];
+
+        return Context::getGlobalContextInstance()
+            ->getSettingsRef()[Setting::temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds];
     }
 }
 
@@ -92,7 +92,7 @@ void WriteBufferToFileSegment::nextImpl()
 
         throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Failed to reserve {} bytes for {}: reason {}, {}(segment info: {})",
             bytes_to_write,
-            file_segment->getKind() == FileSegmentKind::Temporary ? "temporary file" : "the file in cache",
+            file_segment->getKind() == FileSegmentKind::Ephemeral ? "temporary file" : "the file in cache",
             failure_reason,
             reserve_stat_msg,
             file_segment->getInfoForLog()
@@ -142,8 +142,7 @@ std::unique_ptr<ReadBuffer> WriteBufferToFileSegment::getReadBufferImpl()
     finalize();
     if (file_segment->getDownloadedSize() > 0)
         return std::make_unique<ReadBufferFromFile>(file_segment->getPath());
-    else
-        return std::make_unique<ReadBufferFromEmptyFile>();
+    return std::make_unique<ReadBufferFromEmptyFile>();
 }
 
 }

@@ -3162,3 +3162,11 @@ Type: UInt64
 Default value: 100
 
 Zero means unlimited
+
+## use_legacy_mongodb_integration
+
+Use the legacy MongoDB integration implementation. Deprecated.
+
+Type: Bool
+
+Default value: `true`.
