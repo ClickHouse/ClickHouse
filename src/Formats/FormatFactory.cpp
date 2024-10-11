@@ -312,6 +312,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.native.allow_types_conversion = settings[Setting::input_format_native_allow_types_conversion];
     format_settings.native.encode_types_in_binary_format = settings[Setting::output_format_native_encode_types_in_binary_format];
     format_settings.native.decode_types_in_binary_format = settings[Setting::input_format_native_decode_types_in_binary_format];
+    format_settings.native.write_json_as_string = settings[Setting::output_format_native_write_json_as_string];
     format_settings.max_parser_depth = settings[Setting::max_parser_depth];
     format_settings.date_time_overflow_behavior = settings[Setting::date_time_overflow_behavior];
     format_settings.try_infer_variant = settings[Setting::input_format_try_infer_variants];

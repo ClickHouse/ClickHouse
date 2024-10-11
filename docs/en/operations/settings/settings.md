@@ -5525,6 +5525,12 @@ Default value: -1
 
 Limit the max number of partitions that can be accessed in one query. <= 0 means unlimited.
 
+## max_parts_to_move {#max_parts_to_move}
+
+Limit the number of parts that can be moved in one query. Zero means unlimited.
+
+Default value: `1000`.
+
 ## max_query_size {#max_query_size}
 
 Type: UInt64
@@ -9739,4 +9745,5 @@ Default value: 0
 
 Allows you to select the max window log of ZSTD (it will not be used for MergeTree family)
 
+Default value: `true`.
 
