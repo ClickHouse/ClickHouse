@@ -165,6 +165,22 @@ SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT32, TypeIndex::Dat
 }
 
 template <>
+SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT32, TypeIndex::DateTime, false>(
+    std::unique_ptr<LazyPageReader> page_reader, const ScanSpec & scan_spec, const parquet::LogicalType &)
+{
+    return std::make_shared<NumberColumnDirectReader<DataTypeDateTime, Int32>>(
+        std::move(page_reader), scan_spec, std::make_shared<DataTypeDateTime>());
+}
+
+template <>
+SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT32, TypeIndex::DateTime, true>(
+    std::unique_ptr<LazyPageReader> page_reader, const ScanSpec & scan_spec, const parquet::LogicalType &)
+{
+    return std::make_shared<NumberDictionaryReader<DataTypeDateTime, Int32>>(
+        std::move(page_reader), scan_spec, std::make_shared<DataTypeDateTime>());
+}
+
+template <>
 SelectiveColumnReaderPtr createColumnReader<parquet::Type::FLOAT, TypeIndex::Float32, false>(
     std::unique_ptr<LazyPageReader> page_reader, const ScanSpec & scan_spec, const parquet::LogicalType &)
 {
@@ -309,6 +325,13 @@ SelectiveColumnReaderPtr ParquetColumnReaderFactory::Builder::build()
                 leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Date, true>(std::move(page_reader_), scan_spec, logical_type);
             else
                 leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Date, false>(std::move(page_reader_), scan_spec, logical_type);
+        }
+        else if (isDateTime(target_type))
+        {
+            if (dictionary_)
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::DateTime, true>(std::move(page_reader_), scan_spec, logical_type);
+            else
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::DateTime, false>(std::move(page_reader_), scan_spec, logical_type);
         }
     }
     else if (physical_type == parquet::Type::FLOAT)

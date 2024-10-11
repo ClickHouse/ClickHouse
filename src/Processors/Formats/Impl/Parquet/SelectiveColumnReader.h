@@ -95,153 +95,17 @@ public:
     template <typename T, typename S>
     void decodeFixedValue(PaddedPODArray<T> & data, const OptionalRowSet & row_set, size_t rows_to_read);
 
-    void decodeString(ColumnString::Chars & chars, ColumnString::Offsets & offsets, const OptionalRowSet & row_set, size_t rows_to_read)
-    {
-        size_t offset = 0;
-        if (row_set.has_value())
-        {
-            const auto & sets = row_set.value();
-            for (size_t i = 0; i < rows_to_read; i++)
-            {
-                auto len = loadLength(buffer + offset);
-                offset += 4;
-                if (sets.get(i))
-                {
-                    if (len)
-                        chars.insert_assume_reserved(buffer + offset, buffer + offset + len);
-                    chars.push_back(0);
-                    offsets.push_back(chars.size());
-                    offset += len;
-                }
-                else
-                {
-                    offset += len;
-                }
-            }
-        }
-        else
-        {
-            for (size_t i = 0; i < rows_to_read; i++)
-            {
-                auto len = loadLength(buffer + offset);
-                offset += 4;
-                if (len)
-                    chars.insert_assume_reserved(buffer + offset, buffer + offset + len);
-                chars.push_back(0);
-                offsets.push_back(chars.size());
-                offset += len;
-            }
-        }
-        buffer += offset;
-        remain_rows -= rows_to_read;
-    }
+    void decodeString(ColumnString::Chars & chars, ColumnString::Offsets & offsets, const OptionalRowSet & row_set, size_t rows_to_read);
 
     template <typename T, typename S>
-    void decodeFixedValueSpace(PaddedPODArray<T> & data, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read)
-    {
-        size_t rows_read = 0;
-        const S * start = reinterpret_cast<const S *>(buffer);
-        size_t count = 0;
-        if (!row_set.has_value())
-        {
-            for (size_t i = 0; i < rows_to_read; i++)
-            {
-                if (null_map[i])
-                {
-                    data.push_back(0);
-                }
-                else
-                {
-                    data.push_back(static_cast<T>(start[count]));
-                    count++;
-                }
-            }
-        }
-        else
-        {
-            const auto & sets = row_set.value();
-            while (rows_read < rows_to_read)
-            {
-                if (sets.get(rows_read))
-                {
-                    if (null_map[rows_read])
-                    {
-                        data.push_back(0);
-                    }
-                    else
-                    {
-                        data.push_back(static_cast<T>(start[count]));
-                        count++;
-                    }
-                }
-                rows_read++;
-            }
-        }
-        buffer += count * sizeof(S);
-        remain_rows -= rows_to_read;
-    }
+    void decodeFixedValueSpace(PaddedPODArray<T> & data, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read);
 
     void decodeStringSpace(
         ColumnString::Chars & chars,
         ColumnString::Offsets & offsets,
         const OptionalRowSet & row_set,
         PaddedPODArray<UInt8> & null_map,
-        size_t rows_to_read)
-    {
-        size_t offset = 0;
-        if (row_set.has_value())
-        {
-            const auto & sets = row_set.value();
-            for (size_t i = 0; i < rows_to_read; i++)
-            {
-                if (null_map[i])
-                {
-                    if (sets.get(i))
-                    {
-                        // null string
-                        chars.push_back(0);
-                        offsets.push_back(chars.size());
-                    }
-                    continue;
-                }
-                auto len = loadLength(buffer + offset);
-                offset += 4;
-                if (sets.get(i))
-                {
-                    if (len)
-                        chars.insert_assume_reserved(buffer + offset, buffer + offset + len);
-                    chars.push_back(0);
-                    offsets.push_back(chars.size());
-                    offset += len;
-                }
-                else
-                {
-                    offset += len;
-                }
-            }
-        }
-        else
-        {
-            for (size_t i = 0; i < rows_to_read; i++)
-            {
-                if (null_map[i])
-                {
-                    chars.push_back(0);
-                    offsets.push_back(chars.size());
-                    continue;
-                }
-                auto len = loadLength(buffer + offset);
-                offset += 4;
-                if (len)
-                    chars.insert_assume_reserved(buffer + offset, buffer + offset + len);
-                chars.push_back(0);
-                offsets.push_back(chars.size());
-                offset += len;
-            }
-        }
-        buffer += offset;
-        remain_rows -= rows_to_read;
-    }
+        size_t rows_to_read);
 
     size_t calculateStringTotalSize(const uint8_t * data, const OptionalRowSet & row_set, const size_t rows_to_read)
     {
@@ -555,16 +419,5 @@ private:
     size_t cur_null_count = 0;
     int def_level = 0;
     int rep_level = 0;
-};
-
-class SelectiveColumnReaderFactory
-{
-public:
-    static SelectiveColumnReaderPtr createLeafColumnReader(
-        const parquet::ColumnChunkMetaData & column_metadata,
-        const parquet::ColumnDescriptor * column_desc,
-        std::unique_ptr<LazyPageReader> page_reader,
-        ColumnFilterPtr filter);
-    static SelectiveColumnReaderPtr createOptionalColumnReader(SelectiveColumnReaderPtr child, ColumnFilterPtr filter);
 };
 }

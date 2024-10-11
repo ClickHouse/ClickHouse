@@ -103,6 +103,7 @@ template void FilterHelper::filterPlainFixedData<UInt16, Int32>(Int32 const*, DB
 template void FilterHelper::filterPlainFixedData<UInt16, UInt16>(UInt16 const*, DB::PaddedPODArray<UInt16>&, DB::RowSet const&, size_t);
 template void FilterHelper::filterPlainFixedData<Int32, Int32>(Int32 const*, DB::PaddedPODArray<Int32>&, DB::RowSet const&, size_t);
 template void FilterHelper::filterPlainFixedData<UInt32, UInt32>(UInt32 const*, DB::PaddedPODArray<UInt32>&, DB::RowSet const&, size_t);
+template void FilterHelper::filterPlainFixedData<UInt32, Int32>(Int32 const*, DB::PaddedPODArray<UInt32>&, DB::RowSet const&, size_t);
 template void FilterHelper::filterPlainFixedData<UInt32, Int64>(Int64 const*, DB::PaddedPODArray<UInt32>&, DB::RowSet const&, size_t);
 template void FilterHelper::filterPlainFixedData<Int64, Int64>(const Int64* src, PaddedPODArray<Int64> & dst, const RowSet & row_set, size_t rows_to_read);
 template void FilterHelper::filterPlainFixedData<Float32, Float32>(const Float32* src, PaddedPODArray<Float32> & dst, const RowSet & row_set, size_t rows_to_read);
@@ -190,7 +191,16 @@ void BigIntRangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t le
     batch_type min_batch = batch_type::broadcast(lower);
     batch_type max_batch;
     if (!is_single_value)
-        max_batch = batch_type::broadcast(upper);
+    {
+        if constexpr (std::is_same_v<T, Int64>)
+            max_batch = batch_type::broadcast(upper);
+        else if constexpr (std::is_same_v<T, Int32>)
+            max_batch = batch_type::broadcast(upper32);
+        else if constexpr (std::is_same_v<T, Int16>)
+            max_batch = batch_type::broadcast(upper16);
+        else
+            UNREACHABLE();
+    }
     bool aligned = offset % increment == 0;
     for (size_t i = 0; i < num_batched; ++i)
     {

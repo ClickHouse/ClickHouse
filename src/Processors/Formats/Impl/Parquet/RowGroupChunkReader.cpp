@@ -335,13 +335,14 @@ SelectResult SelectConditions::selectRows(size_t rows)
         return SelectResult{std::nullopt, std::move(intermediate_columns), {}, 0, true};
     else
     {
+        auto total_count = total_set.value().count();
         if (!intermediate_filters.empty())
         {
             auto filter = mergeFilters(intermediate_filters);
             combineRowSetAndFilter(total_set.value(), filter);
-            return SelectResult{std::move(total_set), std::move(intermediate_columns), std::move(filter), total_set.value().count(), false};
+            return SelectResult{std::move(total_set), std::move(intermediate_columns), std::move(filter), total_count, false};
         }
-        return SelectResult{std::move(total_set), {}, {}, total_set.value().count(), false};
+        return SelectResult{std::move(total_set), {}, {}, total_count, false};
     }
 }
 SelectConditions::SelectConditions(

@@ -184,6 +184,10 @@ static void computeRowSetPlain(const T * start, OptionalRowSet & row_set, const 
             filter->testInt32Values(row_set.value(), 0, rows_to_read, start);
         else if constexpr (std::is_same_v<T, Int16>)
             filter->testInt16Values(row_set.value(), 0, rows_to_read, start);
+        else if constexpr (std::is_same_v<T, Float32>)
+            filter->testFloat32Values(row_set.value(), 0, rows_to_read, start);
+        else if constexpr (std::is_same_v<T, Float64>)
+            filter->testFloat64Values(row_set.value(), 0, rows_to_read, start);
         else
             throw Exception(ErrorCodes::PARQUET_EXCEPTION, "unsupported type");
     }
@@ -568,119 +572,6 @@ void OptionalColumnReader::skipPageIfNeed()
     child->state.lazy_skip_rows = 0;
 }
 
-static bool isLogicalTypeIntOrNull(parquet::LogicalType::Type::type type)
-{
-    return type == parquet::LogicalType::Type::INT || type == parquet::LogicalType::Type::NONE;
-}
-
-static bool isLogicalTypeDate(parquet::LogicalType::Type::type type)
-{
-    return type == parquet::LogicalType::Type::DATE;
-}
-
-static bool isLogicalTypeDateTime(parquet::LogicalType::Type::type type)
-{
-    return type == parquet::LogicalType::Type::TIMESTAMP || type == parquet::LogicalType::Type::TIME;
-}
-
-static UInt32 getScaleFromLogicalTimestamp(parquet::LogicalType::TimeUnit::unit tm_unit)
-{
-    switch (tm_unit)
-    {
-        case parquet::LogicalType::TimeUnit::MILLIS:
-            return 3;
-        case parquet::LogicalType::TimeUnit::MICROS:
-            return 6;
-        case parquet::LogicalType::TimeUnit::NANOS:
-            return 9;
-        default:
-            throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, ", invalid timestamp unit: {}", tm_unit);
-    }
-}
-
-SelectiveColumnReaderPtr SelectiveColumnReaderFactory::createLeafColumnReader(
-    const parquet::ColumnChunkMetaData & column_metadata,
-    const parquet::ColumnDescriptor * column_desc,
-    std::unique_ptr<LazyPageReader> page_reader,
-    ColumnFilterPtr filter)
-{
-    ScanSpec scan_spec{.column_name = column_desc->name(), .column_desc = column_desc, .filter = filter};
-    if (column_desc->physical_type() == parquet::Type::INT64 && isLogicalTypeIntOrNull(column_desc->logical_type()->type()))
-    {
-        auto type_int64 = std::make_shared<DataTypeInt64>();
-        if (!column_metadata.has_dictionary_page())
-            return std::make_shared<NumberColumnDirectReader<DataTypeInt64, Int64>>(std::move(page_reader), scan_spec, type_int64);
-        else
-            return std::make_shared<NumberDictionaryReader<DataTypeInt64, Int64>>(std::move(page_reader), scan_spec, type_int64);
-    }
-    else if (column_desc->physical_type() == parquet::Type::INT32 && column_desc->logical_type()->type() == parquet::LogicalType::Type::INT && column_desc->converted_type() == parquet::ConvertedType::INT_16)
-    {
-        auto type_int16 = std::make_shared<DataTypeInt16>();
-        if (!column_metadata.has_dictionary_page())
-            return std::make_shared<NumberColumnDirectReader<DataTypeInt16, Int32>>(std::move(page_reader), scan_spec, type_int16);
-        else
-            return std::make_shared<NumberDictionaryReader<DataTypeInt16, Int32>>(std::move(page_reader), scan_spec, type_int16);
-    }
-    else if (column_desc->physical_type() == parquet::Type::INT32 && isLogicalTypeIntOrNull(column_desc->logical_type()->type()))
-    {
-        auto type_int32 = std::make_shared<DataTypeInt32>();
-        if (!column_metadata.has_dictionary_page())
-            return std::make_shared<NumberColumnDirectReader<DataTypeInt32, Int32>>(std::move(page_reader), scan_spec, type_int32);
-        else
-            return std::make_shared<NumberDictionaryReader<DataTypeInt32, Int32>>(std::move(page_reader), scan_spec, type_int32);
-    }
-    else if (column_desc->physical_type() == parquet::Type::INT32 && isLogicalTypeDate(column_desc->logical_type()->type()))
-    {
-        auto type_date32 = std::make_shared<DataTypeDate32>();
-        if (!column_metadata.has_dictionary_page())
-            return std::make_shared<NumberColumnDirectReader<DataTypeDate32, Int32>>(std::move(page_reader), scan_spec, type_date32);
-        else
-            return std::make_shared<NumberDictionaryReader<DataTypeDate32, Int32>>(std::move(page_reader), scan_spec, type_date32);
-    }
-    else if (column_desc->physical_type() == parquet::Type::INT64 && isLogicalTypeDateTime(column_desc->logical_type()->type()))
-    {
-        const auto & tm_type = dynamic_cast<const parquet::TimestampLogicalType &>(*column_desc->logical_type());
-        auto type_datetime64 = std::make_shared<DataTypeDateTime64>(getScaleFromLogicalTimestamp(tm_type.time_unit()));
-        if (!column_metadata.has_dictionary_page())
-            return std::make_shared<NumberColumnDirectReader<DataTypeDateTime64, Int64>>(std::move(page_reader), scan_spec, type_datetime64);
-        else
-            return std::make_shared<NumberDictionaryReader<DataTypeDateTime64, Int64>>(std::move(page_reader), scan_spec, type_datetime64);
-    }
-    else if (column_desc->physical_type() == parquet::Type::FLOAT)
-    {
-        auto type_float32 = std::make_shared<DataTypeFloat32>();
-        if (!column_metadata.has_dictionary_page())
-            return std::make_shared<NumberColumnDirectReader<DataTypeFloat32, Float32>>(std::move(page_reader), scan_spec, type_float32);
-        else
-            return std::make_shared<NumberDictionaryReader<DataTypeFloat32, Float32>>(std::move(page_reader), scan_spec, type_float32);
-    }
-    else if (column_desc->physical_type() == parquet::Type::DOUBLE)
-    {
-        auto type_float64 = std::make_shared<DataTypeFloat64>();
-        if (!column_metadata.has_dictionary_page())
-            return std::make_shared<NumberColumnDirectReader<DataTypeFloat64, Float64>>(std::move(page_reader), scan_spec, type_float64);
-        else
-            return std::make_shared<NumberDictionaryReader<DataTypeFloat64, Float64>>(std::move(page_reader), scan_spec, type_float64);
-    }
-    else if (column_desc->physical_type() == parquet::Type::BYTE_ARRAY)
-    {
-        if (!column_metadata.has_dictionary_page())
-            return std::make_shared<StringDirectReader>(std::move(page_reader), scan_spec);
-        else
-            return std::make_shared<StringDictionaryReader>(std::move(page_reader), scan_spec);
-    }
-    else
-    {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Unsupported column type");
-    }
-}
-SelectiveColumnReaderPtr SelectiveColumnReaderFactory::createOptionalColumnReader(SelectiveColumnReaderPtr child, ColumnFilterPtr filter)
-{
-    ScanSpec scan_spec;
-    scan_spec.filter = filter;
-    return std::make_shared<OptionalColumnReader>(scan_spec, std::move(child));
-}
-
 template class NumberColumnDirectReader<DataTypeInt16, Int32>;
 template class NumberColumnDirectReader<DataTypeInt32, Int32>;
 template class NumberColumnDirectReader<DataTypeInt64, Int64>;
@@ -688,6 +579,7 @@ template class NumberColumnDirectReader<DataTypeFloat32, Float32>;
 template class NumberColumnDirectReader<DataTypeFloat64, Float64>;
 template class NumberColumnDirectReader<DataTypeDate32, Int32>;
 template class NumberColumnDirectReader<DataTypeDate, Int32>;
+template class NumberColumnDirectReader<DataTypeDateTime, Int32>;
 template class NumberColumnDirectReader<DataTypeDateTime64, Int64>;
 template class NumberColumnDirectReader<DataTypeDateTime, Int64>;
 
@@ -698,6 +590,7 @@ template class NumberDictionaryReader<DataTypeFloat32, Float32>;
 template class NumberDictionaryReader<DataTypeFloat64, Float64>;
 template class NumberDictionaryReader<DataTypeDate32, Int32>;
 template class NumberDictionaryReader<DataTypeDate, Int32>;
+template class NumberDictionaryReader<DataTypeDateTime, Int32>;
 template class NumberDictionaryReader<DataTypeDateTime64, Int64>;
 template class NumberDictionaryReader<DataTypeDateTime, Int64>;
 
@@ -1144,5 +1037,153 @@ void DictDecoder::decodeFixedValueSpace(
     chassert(count == idx_buffer.size());
     remain_rows -= rows_to_read;
     idx_buffer.resize(0);
+}
+void PlainDecoder::decodeString(
+    ColumnString::Chars & chars, IColumn::Offsets & offsets, const OptionalRowSet & row_set, size_t rows_to_read)
+{
+    size_t offset = 0;
+    if (row_set.has_value())
+    {
+        const auto & sets = row_set.value();
+        for (size_t i = 0; i < rows_to_read; i++)
+        {
+            auto len = loadLength(buffer + offset);
+            offset += 4;
+            if (sets.get(i))
+            {
+                if (len)
+                    chars.insert_assume_reserved(buffer + offset, buffer + offset + len);
+                chars.push_back(0);
+                offsets.push_back(chars.size());
+                offset += len;
+            }
+            else
+            {
+                offset += len;
+            }
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < rows_to_read; i++)
+        {
+            auto len = loadLength(buffer + offset);
+            offset += 4;
+            if (len)
+                chars.insert_assume_reserved(buffer + offset, buffer + offset + len);
+            chars.push_back(0);
+            offsets.push_back(chars.size());
+            offset += len;
+        }
+    }
+    buffer += offset;
+    remain_rows -= rows_to_read;
+}
+
+void PlainDecoder::decodeStringSpace(
+    ColumnString::Chars & chars,
+    IColumn::Offsets & offsets,
+    const OptionalRowSet & row_set,
+    PaddedPODArray<UInt8, 4096> & null_map,
+    size_t rows_to_read)
+{
+    size_t offset = 0;
+    if (row_set.has_value())
+    {
+        const auto & sets = row_set.value();
+        for (size_t i = 0; i < rows_to_read; i++)
+        {
+            if (null_map[i])
+            {
+                if (sets.get(i))
+                {
+                    // null string
+                    chars.push_back(0);
+                    offsets.push_back(chars.size());
+                }
+                continue;
+            }
+            auto len = loadLength(buffer + offset);
+            offset += 4;
+            if (sets.get(i))
+            {
+                if (len)
+                    chars.insert_assume_reserved(buffer + offset, buffer + offset + len);
+                chars.push_back(0);
+                offsets.push_back(chars.size());
+                offset += len;
+            }
+            else
+            {
+                offset += len;
+            }
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < rows_to_read; i++)
+        {
+            if (null_map[i])
+            {
+                chars.push_back(0);
+                offsets.push_back(chars.size());
+                continue;
+            }
+            auto len = loadLength(buffer + offset);
+            offset += 4;
+            if (len)
+                chars.insert_assume_reserved(buffer + offset, buffer + offset + len);
+            chars.push_back(0);
+            offsets.push_back(chars.size());
+            offset += len;
+        }
+    }
+    buffer += offset;
+    remain_rows -= rows_to_read;
+}
+template <typename T, typename S>
+void PlainDecoder::decodeFixedValueSpace(
+    PaddedPODArray<T, 4096> & data, const OptionalRowSet & row_set, PaddedPODArray<UInt8, 4096> & null_map, size_t rows_to_read)
+{
+    size_t rows_read = 0;
+    const S * start = reinterpret_cast<const S *>(buffer);
+    size_t count = 0;
+    if (!row_set.has_value())
+    {
+        for (size_t i = 0; i < rows_to_read; i++)
+        {
+            if (null_map[i])
+            {
+                data.push_back(0);
+            }
+            else
+            {
+                data.push_back(static_cast<T>(start[count]));
+                count++;
+            }
+        }
+    }
+    else
+    {
+        const auto & sets = row_set.value();
+        while (rows_read < rows_to_read)
+        {
+            if (sets.get(rows_read))
+            {
+                if (null_map[rows_read])
+                {
+                    data.push_back(0);
+                }
+                else
+                {
+                    data.push_back(static_cast<T>(start[count]));
+                    count++;
+                }
+            }
+            rows_read++;
+        }
+    }
+    buffer += count * sizeof(S);
+    remain_rows -= rows_to_read;
 }
 }
