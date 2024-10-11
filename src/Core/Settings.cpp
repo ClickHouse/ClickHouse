@@ -3067,6 +3067,7 @@ Possible values:
     M(Bool, allow_drop_detached, false, R"(
 Allow ALTER TABLE ... DROP DETACHED PART[ITION] ... queries
 )", 0) \
+    M(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0) \
     \
     M(UInt64, max_table_size_to_drop, 50000000000lu, R"(
 Restriction on deleting tables in query time. The value 0 means that you can delete all tables without any restrictions.
