@@ -88,10 +88,8 @@ void NATSProducer::startProducingTaskLoop()
             std::this_thread::sleep_for(reconnect_timeout);
         }
 
-        while (natsConnection_Buffered(connection->getConnection()) > 0)
-        {
+        if (natsConnection_Buffered(connection->getConnection()) > 0)
             natsConnection_Flush(connection->getConnection());
-        }
     }
     catch (...)
     {
