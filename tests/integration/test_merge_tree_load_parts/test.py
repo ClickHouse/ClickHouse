@@ -1,9 +1,10 @@
+import time
+
 import pytest
+
 import helpers.client
 import helpers.cluster
-import time
 from helpers.corrupt_part_data_on_disk import corrupt_part_data_on_disk
-
 
 cluster = helpers.cluster.ClickHouseCluster(__file__)
 
@@ -156,15 +157,33 @@ def test_merge_tree_load_parts_corrupted(started_cluster):
     node1.query("SYSTEM WAIT LOADING PARTS mt_load_parts_2")
 
     def check_parts_loading(node, partition, loaded, failed, skipped):
+        # The whole test produces around 6-700 lines, so 2k is plenty enough.
+        # wait_for_log_line uses tail + grep, so the overhead is negligible
+        look_behind_lines = 2000
         for min_block, max_block in loaded:
             part_name = f"{partition}_{min_block}_{max_block}"
-            assert node.contains_in_log(f"Loading Active part {part_name}")
-            assert node.contains_in_log(f"Finished loading Active part {part_name}")
+            assert node.wait_for_log_line(
+                f"Loading Active part {part_name}", look_behind_lines=look_behind_lines
+            )
+            assert node.wait_for_log_line(
+                f"Finished loading Active part {part_name}",
+                look_behind_lines=look_behind_lines,
+            )
 
+        failed_part_names = []
+        # Let's wait until there is some information about all expected parts, and only
+        # check the absence of not expected log messages after all expected logs are present
         for min_block, max_block in failed:
             part_name = f"{partition}_{min_block}_{max_block}"
-            assert node.contains_in_log(f"Loading Active part {part_name}")
-            assert not node.contains_in_log(f"Finished loading Active part {part_name}")
+            failed_part_names.append(part_name)
+            assert node.wait_for_log_line(
+                f"Loading Active part {part_name}", look_behind_lines=look_behind_lines
+            )
+
+        for failed_part_name in failed_part_names:
+            assert not node.contains_in_log(
+                f"Finished loading Active part {failed_part_name}"
+            )
 
         for min_block, max_block in skipped:
             part_name = f"{partition}_{min_block}_{max_block}"

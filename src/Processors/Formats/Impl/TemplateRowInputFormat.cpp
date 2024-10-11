@@ -609,7 +609,9 @@ void registerTemplateSchemaReader(FormatFactory & factory)
         {
             size_t index = 0;
             auto idx_getter = [&](const String &) -> std::optional<size_t> { return index++; };
-            auto row_format = fillRowFormat(settings, idx_getter, false);
+            ParsedTemplateFormatString row_format;
+            if (!settings.template_settings.row_format.empty())
+                row_format = fillRowFormat(settings, idx_getter, false);
             std::unordered_set<FormatSettings::EscapingRule> visited_escaping_rules;
             String result = fmt::format("row_format={}, resultset_format={}, row_between_delimiter={}",
                 settings.template_settings.row_format,

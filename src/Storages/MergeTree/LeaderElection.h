@@ -19,7 +19,7 @@ namespace zkutil
   * For now, every replica can become leader if there is no leader among replicas with old version.
   */
 
-void checkNoOldLeaders(LoggerPtr log, ZooKeeper & zookeeper, const String path)
+inline void checkNoOldLeaders(LoggerPtr log, ZooKeeper & zookeeper, const String path)
 {
     /// Previous versions (before 21.12) used to create ephemeral sequential node path/leader_election-
     /// Replica with the lexicographically smallest node name becomes leader (before 20.6) or enables multi-leader mode (since 20.6)
@@ -35,7 +35,7 @@ void checkNoOldLeaders(LoggerPtr log, ZooKeeper & zookeeper, const String path)
         /// NOTE zookeeper_path/leader_election node must exist now, but maybe we will remove it in future versions.
         if (code == Coordination::Error::ZNONODE)
             return;
-        else if (code != Coordination::Error::ZOK)
+        if (code != Coordination::Error::ZOK)
             throw KeeperException::fromPath(code, path);
 
         Coordination::Requests ops;
@@ -79,7 +79,7 @@ void checkNoOldLeaders(LoggerPtr log, ZooKeeper & zookeeper, const String path)
         code = zookeeper.tryMulti(ops, res);
         if (code == Coordination::Error::ZOK)
             return;
-        else if (code == Coordination::Error::ZNOTEMPTY || code == Coordination::Error::ZNODEEXISTS || code == Coordination::Error::ZNONODE)
+        if (code == Coordination::Error::ZNOTEMPTY || code == Coordination::Error::ZNODEEXISTS || code == Coordination::Error::ZNONODE)
             LOG_INFO(log, "LeaderElection: leader suddenly changed or new node appeared, will retry");
         else
             KeeperMultiException::check(code, ops, res);

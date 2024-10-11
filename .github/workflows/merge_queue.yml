@@ -1,0 +1,119 @@
+# yamllint disable rule:comments-indentation
+name: MergeQueueCI
+
+env:
+  # Force the stdout and stderr streams to be unbuffered
+  PYTHONUNBUFFERED: 1
+
+on:  # yamllint disable-line rule:truthy
+  merge_group:
+
+jobs:
+  RunConfig:
+    runs-on: [self-hosted, style-checker-aarch64]
+    outputs:
+      data: ${{ steps.runconfig.outputs.CI_DATA }}
+    steps:
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true # to ensure correct digests
+          fetch-depth: 0 # to get a version
+          filter: tree:0
+      - name: Debug Info
+        uses: ./.github/actions/debug
+      - name: Cancel PR workflow
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --cancel-previous-run
+      - name: Python unit tests
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          echo "Testing the main ci directory"
+          python3 -m unittest discover -s . -p 'test_*.py'
+      - name: PrepareRunConfig
+        id: runconfig
+        run: |
+            python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --configure --outfile ${{ runner.temp }}/ci_run_data.json
+
+            echo "::group::CI configuration"
+            python3 -m json.tool ${{ runner.temp }}/ci_run_data.json
+            echo "::endgroup::"
+
+            {
+              echo 'CI_DATA<<EOF'
+              cat  ${{ runner.temp }}/ci_run_data.json
+              echo 'EOF'
+            } >> "$GITHUB_OUTPUT"
+  BuildDockers:
+    needs: [RunConfig]
+    if: ${{ !failure() && !cancelled() && toJson(fromJson(needs.RunConfig.outputs.data).docker_data.missing_multi) != '[]' }}
+    uses: ./.github/workflows/docker_test_images.yml
+    with:
+      data: ${{ needs.RunConfig.outputs.data }}
+  StyleCheck:
+    needs: [RunConfig, BuildDockers]
+    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Style check')}}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Style check
+      runner_type: style-checker-aarch64
+      run_command: |
+          python3 style_check.py
+      data: ${{ needs.RunConfig.outputs.data }}
+    secrets:
+      secret_envs: |
+        ROBOT_CLICKHOUSE_SSH_KEY<<RCSK
+        ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
+        RCSK
+  FastTest:
+    needs: [RunConfig, BuildDockers]
+    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Fast test') }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Fast test
+      runner_type: builder
+      data: ${{ needs.RunConfig.outputs.data }}
+      run_command: |
+          python3 fast_test_check.py
+
+  Builds_1:
+    needs: [RunConfig, BuildDockers]
+    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Builds_1') }}
+    # using callable wf (reusable_stage.yml) allows grouping all nested jobs under a tab
+    uses: ./.github/workflows/reusable_build_stage.yml
+    with:
+      stage: Builds_1
+      data: ${{ needs.RunConfig.outputs.data }}
+  Tests_1:
+    needs: [RunConfig, Builds_1]
+    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_1') }}
+    uses: ./.github/workflows/reusable_test_stage.yml
+    with:
+      stage: Tests_1
+      data: ${{ needs.RunConfig.outputs.data }}
+
+  CheckReadyForMerge:
+    if: ${{ !cancelled() }}
+    # Test_2 or Test_3 must not have jobs required for Mergeable check
+    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Tests_1]
+    runs-on: [self-hosted, style-checker-aarch64]
+    steps:
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+      - name: Check and set merge status
+        if: ${{ needs.StyleCheck.result == 'success' }}
+        run: |
+          export WORKFLOW_RESULT_FILE="/tmp/workflow_results.json"
+          cat > "$WORKFLOW_RESULT_FILE" << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 merge_pr.py --set-ci-status
+      - name: Check Workflow results
+        if: ${{ !cancelled() }}
+        run: |
+          export WORKFLOW_RESULT_FILE="/tmp/workflow_results.json"
+          cat > "$WORKFLOW_RESULT_FILE" << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          python3 ./tests/ci/ci_buddy.py --check-wf-status

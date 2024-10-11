@@ -13,7 +13,7 @@
 namespace DB
 {
 
-enum class AsyncEventTimeoutType
+enum class AsyncEventTimeoutType : uint8_t
 {
     CONNECT,
     RECEIVE,
@@ -46,7 +46,7 @@ public:
 class AsyncTaskExecutor
 {
 public:
-    AsyncTaskExecutor(std::unique_ptr<AsyncTask> task_);
+    explicit AsyncTaskExecutor(std::unique_ptr<AsyncTask> task_);
 
     /// Resume task execution. This method returns when task is completed or suspended.
     void resume();

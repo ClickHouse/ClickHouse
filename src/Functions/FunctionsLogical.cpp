@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/logical.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
@@ -28,7 +29,7 @@ REGISTER_FUNCTION(Logical)
     factory.registerFunction<FunctionAnd>();
     factory.registerFunction<FunctionOr>();
     factory.registerFunction<FunctionXor>();
-    factory.registerFunction<FunctionNot>({}, FunctionFactory::CaseInsensitive); /// Operator NOT(x) can be parsed as a function.
+    factory.registerFunction<FunctionNot>({}, FunctionFactory::Case::Insensitive); /// Operator NOT(x) can be parsed as a function.
 }
 
 namespace ErrorCodes
@@ -47,7 +48,7 @@ using UInt8Container = ColumnUInt8::Container;
 using UInt8ColumnPtrs = std::vector<const ColumnUInt8 *>;
 
 
-MutableColumnPtr buildColumnFromTernaryData(const UInt8Container & ternary_data, const bool make_nullable)
+MutableColumnPtr buildColumnFromTernaryData(const UInt8Container & ternary_data, bool make_nullable)
 {
     const size_t rows_count = ternary_data.size();
 
@@ -169,7 +170,7 @@ public:
         : vec(in[in.size() - N]->getData()), next(in) {}
 
     /// Returns a combination of values in the i-th row of all columns stored in the constructor.
-    inline ResultValueType apply(const size_t i) const
+    ResultValueType apply(const size_t i) const
     {
         const auto a = !!vec[i];
         return Op::apply(a, next.apply(i));
@@ -189,7 +190,7 @@ public:
     explicit AssociativeApplierImpl(const UInt8ColumnPtrs & in)
         : vec(in[in.size() - 1]->getData()) {}
 
-    inline ResultValueType apply(const size_t i) const { return !!vec[i]; }
+    ResultValueType apply(const size_t i) const { return !!vec[i]; }
 
 private:
     const UInt8Container & vec;
@@ -290,7 +291,7 @@ public:
         }
 
     /// Returns a combination of values in the i-th row of all columns stored in the constructor.
-    inline ResultValueType apply(const size_t i) const
+    ResultValueType apply(const size_t i) const
     {
         return Op::ternaryApply(vec[i], next.apply(i));
     }
@@ -314,7 +315,7 @@ public:
             TernaryValueBuilder::build(in[in.size() - 1], vec.data());
         }
 
-    inline ResultValueType apply(const size_t i) const { return vec[i]; }
+    ResultValueType apply(const size_t i) const { return vec[i]; }
 
 private:
     UInt8Container vec;
@@ -530,7 +531,7 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
         {
             has_nullable_arguments = arg_type->isNullable();
             if (has_nullable_arguments && !Impl::specialImplementationForNulls())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: Unexpected type of argument for function \"{}\": "
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of argument for function \"{}\": "
                     " argument {} is of type {}", getName(), i + 1, arg_type->getName());
         }
 
@@ -657,8 +658,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
 
     if (result_type->isNullable())
         return executeForTernaryLogicImpl<Impl>(std::move(args_in), result_type, input_rows_count);
-    else
-        return basicExecuteImpl<Impl>(std::move(args_in), input_rows_count);
+    return basicExecuteImpl<Impl>(std::move(args_in), input_rows_count);
 }
 
 template <typename Impl, typename Name>
@@ -700,11 +700,11 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::getConstantResultForNonConstArgum
         bool constant_value_bool = false;
 
         if (field_type == Field::Types::Float64)
-            constant_value_bool = static_cast<bool>(constant_field_value.get<Float64>());
+            constant_value_bool = static_cast<bool>(constant_field_value.safeGet<Float64>());
         else if (field_type == Field::Types::Int64)
-            constant_value_bool = static_cast<bool>(constant_field_value.get<Int64>());
+            constant_value_bool = static_cast<bool>(constant_field_value.safeGet<Int64>());
         else if (field_type == Field::Types::UInt64)
-            constant_value_bool = static_cast<bool>(constant_field_value.get<UInt64>());
+            constant_value_bool = static_cast<bool>(constant_field_value.safeGet<UInt64>());
 
         has_true_constant = has_true_constant || constant_value_bool;
         has_false_constant = has_false_constant || !constant_value_bool;
@@ -774,6 +774,23 @@ ColumnPtr FunctionUnaryLogical<Impl, Name>::executeImpl(const ColumnsWithTypeAnd
             getName());
 
     return res;
+}
+
+FunctionOverloadResolverPtr createInternalFunctionOrOverloadResolver()
+{
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
+}
+FunctionOverloadResolverPtr createInternalFunctionAndOverloadResolver()
+{
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+}
+FunctionOverloadResolverPtr createInternalFunctionXorOverloadResolver()
+{
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionXor>());
+}
+FunctionOverloadResolverPtr createInternalFunctionNotOverloadResolver()
+{
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionNot>());
 }
 
 }

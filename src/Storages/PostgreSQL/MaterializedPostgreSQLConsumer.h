@@ -110,7 +110,7 @@ private:
     static void insertDefaultValue(StorageData & storage_data, size_t column_idx);
     void insertValue(StorageData & storage_data, const std::string & value, size_t column_idx);
 
-    enum class PostgreSQLQuery
+    enum class PostgreSQLQuery : uint8_t
     {
         INSERT,
         UPDATE,

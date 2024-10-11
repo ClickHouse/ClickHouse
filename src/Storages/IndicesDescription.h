@@ -2,7 +2,6 @@
 
 #include <base/types.h>
 
-#include <memory>
 #include <vector>
 #include <Core/Field.h>
 #include <Interpreters/ExpressionActions.h>

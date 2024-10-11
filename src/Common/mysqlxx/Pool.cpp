@@ -228,7 +228,6 @@ Pool::Entry Pool::tryGet()
     for (auto connection_it = connections.cbegin(); connection_it != connections.cend();)
     {
         Connection * connection_ptr = *connection_it;
-        /// Fixme: There is a race condition here b/c we do not synchronize with Pool::Entry's copy-assignment operator
         if (connection_ptr->ref_count == 0)
         {
             {
@@ -389,10 +388,8 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
         {
             throw;
         }
-        else
-        {
-            return nullptr;
-        }
+
+        return nullptr;
     }
 
     connections.push_back(conn_ptr.get());

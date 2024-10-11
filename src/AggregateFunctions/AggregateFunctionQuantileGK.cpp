@@ -16,6 +16,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
@@ -137,14 +138,16 @@ public:
     {
         if (other.count == 0)
             return;
-        else if (count == 0)
+
+        /// NOLINTBEGIN(readability-else-after-return)
+        if (count == 0)
         {
             compress_threshold = other.compress_threshold;
             relative_error = other.relative_error;
             count = other.count;
             compressed = other.compressed;
 
-            sampled.resize(other.sampled.size());
+            sampled.resize_exact(other.sampled.size());
             memcpy(sampled.data(), other.sampled.data(), sizeof(Stats) * other.sampled.size());
             return;
         }
@@ -180,7 +183,7 @@ public:
             compress();
 
             backup_sampled.clear();
-            backup_sampled.reserve(sampled.size() + other.sampled.size());
+            backup_sampled.reserve_exact(sampled.size() + other.sampled.size());
             double merged_relative_error = std::max(relative_error, other.relative_error);
             size_t merged_count = count + other.count;
             Int64 additional_self_delta = static_cast<Int64>(std::floor(2 * other.relative_error * other.count));
@@ -236,6 +239,7 @@ public:
             doCompress(2 * merged_relative_error * merged_count);
             compressed = true;
         }
+        /// NOLINTEND(readability-else-after-return)
     }
 
     void write(WriteBuffer & buf) const
@@ -268,11 +272,7 @@ public:
 
         size_t sampled_len = 0;
         readBinaryLittleEndian(sampled_len, buf);
-        if (sampled_len > compress_threshold)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA, "The number of elements {} for quantileGK exceeds {}", sampled_len, compress_threshold);
-
-        sampled.resize(sampled_len);
+        sampled.resize_exact(sampled_len);
 
         for (size_t i = 0; i < sampled_len; ++i)
         {
@@ -295,12 +295,10 @@ private:
             Int64 max_rank = min_rank + curr_sample.delta;
             if (max_rank - target_error <= rank && rank <= min_rank + target_error)
                 return {i, min_rank, curr_sample.value};
-            else
-            {
-                ++i;
-                curr_sample = sampled[i];
-                min_rank += curr_sample.g;
-            }
+
+            ++i;
+            curr_sample = sampled[i];
+            min_rank += curr_sample.g;
         }
         return {sampled.size() - 1, 0, sampled.back().value};
     }
@@ -317,7 +315,7 @@ private:
             ::sort(head_sampled.begin(), head_sampled.end());
 
         backup_sampled.clear();
-        backup_sampled.reserve(sampled.size() + head_sampled.size());
+        backup_sampled.reserve_exact(sampled.size() + head_sampled.size());
 
         size_t sample_idx = 0;
         size_t ops_idx = 0;
@@ -507,8 +505,8 @@ template <template <typename, bool> class Function>
 AggregateFunctionPtr createAggregateFunctionQuantile(
     const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
 {
-    /// Second argument type check doesn't depend on the type of the first one.
-    Function<void, true>::assertSecondArg(argument_types);
+    if (argument_types.empty())
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires at least one argument", name);
 
     const DataTypePtr & argument_type = argument_types[0];
     WhichDataType which(argument_type);

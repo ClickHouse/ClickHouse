@@ -71,7 +71,7 @@ WHERE table = 'visits'
 └───────────┴───────────────────┴────────┘
 ```
 
-The `partition` column contains the names of the partitions. There are two partitions in this example: `201901` and `201902`. You can use this column value to specify the partition name in [ALTER … PARTITION](../../../sql-reference/statements/alter/partition.md) queries.
+The `partition` column contains the names of the partitions. There are two partitions in this example: `201901` and `201902`. You can use this column value to specify the partition name in [ALTER ... PARTITION](../../../sql-reference/statements/alter/partition.md) queries.
 
 The `name` column contains the names of the partition data parts. You can use this column to specify the name of the part in the [ALTER ATTACH PART](../../../sql-reference/statements/alter/partition.md#alter_attach-partition) query.
 

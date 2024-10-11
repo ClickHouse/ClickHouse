@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
 
 #include <string>
@@ -50,13 +49,13 @@ protected:
     virtual void writeFieldDelimiter() {}       /// delimiter between values
     virtual void writeRowStartDelimiter() {}    /// delimiter before each row
     virtual void writeRowEndDelimiter() {}      /// delimiter after each row
-    virtual void writePrefix() override {}      /// delimiter before resultset
-    virtual void writeSuffix() override {}      /// delimiter after resultset
+    void writePrefix() override {}      /// delimiter before resultset
+    void writeSuffix() override {}      /// delimiter after resultset
     virtual void writeBeforeTotals() {}
     virtual void writeAfterTotals() {}
     virtual void writeBeforeExtremes() {}
     virtual void writeAfterExtremes() {}
-    virtual void finalizeImpl() override {}  /// Write something after resultset, totals end extremes.
+    void finalizeImpl() override {}  /// Write something after resultset, totals end extremes.
 
     bool haveWrittenData() { return !first_row || getRowsReadBefore() != 0; }
 

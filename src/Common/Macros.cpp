@@ -77,10 +77,9 @@ String Macros::expand(const String & s,
             res.append(s, pos, String::npos);
             break;
         }
-        else
-        {
-            res.append(s, pos, begin - pos);
-        }
+
+        res.append(s, pos, begin - pos);
+
 
         ++begin;
         size_t end = s.find('}', begin);
@@ -172,15 +171,6 @@ String Macros::getValue(const String & key) const
 String Macros::expand(const String & s) const
 {
     MacroExpansionInfo info;
-    return expand(s, info);
-}
-
-String Macros::expand(const String & s, const StorageID & table_id, bool allow_uuid) const
-{
-    MacroExpansionInfo info;
-    info.table_id = table_id;
-    if (!allow_uuid)
-        info.table_id.uuid = UUIDHelpers::Nil;
     return expand(s, info);
 }
 

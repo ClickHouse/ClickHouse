@@ -55,7 +55,7 @@ static inline bool parseAddCommand(IParser::Pos & pos, ASTPtr & node, Expected &
     else
     {
         alter_command->type = ASTAlterCommand::ADD_COLUMN;
-        ParserKeyword("COLUMN").ignore(pos, expected);
+        ParserKeyword(Keyword::COLUMN).ignore(pos, expected);
 
         if (ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
         {
@@ -76,9 +76,9 @@ static inline bool parseAddCommand(IParser::Pos & pos, ASTPtr & node, Expected &
             additional_columns = std::make_shared<ASTExpressionList>();
             additional_columns->children.emplace_back(declare_column);
 
-            if (ParserKeyword("FIRST").ignore(pos, expected))
+            if (ParserKeyword(Keyword::FIRST).ignore(pos, expected))
                 alter_command->first = true;
-            else if (ParserKeyword("AFTER").ignore(pos, expected))
+            else if (ParserKeyword(Keyword::AFTER).ignore(pos, expected))
             {
                 ASTPtr after_column;
                 ParserIdentifier identifier_p;
@@ -103,12 +103,12 @@ static inline bool parseDropCommand(IParser::Pos & pos, ASTPtr & node, Expected 
 
     auto alter_command = std::make_shared<ASTAlterCommand>();
 
-    if (ParserKeyword("PRIMARY KEY").ignore(pos, expected))
+    if (ParserKeyword(Keyword::PRIMARY_KEY).ignore(pos, expected))
     {
         alter_command->index_type = "PRIMARY_KEY";
         alter_command->type = ASTAlterCommand::DROP_INDEX;
     }
-    else if (ParserKeyword("FOREIGN KEY").ignore(pos, expected))
+    else if (ParserKeyword(Keyword::FOREIGN_KEY).ignore(pos, expected))
     {
         if (!identifier_p.parse(pos, name, expected))
             return false;
@@ -117,7 +117,7 @@ static inline bool parseDropCommand(IParser::Pos & pos, ASTPtr & node, Expected 
         alter_command->type = ASTAlterCommand::DROP_INDEX;
         alter_command->index_name = getIdentifierName(name);
     }
-    else if (ParserKeyword("INDEX").ignore(pos, expected) || ParserKeyword("KEY").ignore(pos, expected))
+    else if (ParserKeyword(Keyword::INDEX).ignore(pos, expected) || ParserKeyword(Keyword::KEY).ignore(pos, expected))
     {
         if (!identifier_p.parse(pos, name, expected))
             return false;
@@ -126,7 +126,7 @@ static inline bool parseDropCommand(IParser::Pos & pos, ASTPtr & node, Expected 
         alter_command->type = ASTAlterCommand::DROP_INDEX;
         alter_command->index_name = getIdentifierName(name);
     }
-    else if (ParserKeyword("CONSTRAINT").ignore(pos, expected) || ParserKeyword("CHECK").ignore(pos, expected))
+    else if (ParserKeyword(Keyword::CONSTRAINT).ignore(pos, expected) || ParserKeyword(Keyword::CHECK).ignore(pos, expected))
     {
         if (!identifier_p.parse(pos, name, expected))
             return false;
@@ -136,7 +136,7 @@ static inline bool parseDropCommand(IParser::Pos & pos, ASTPtr & node, Expected 
     }
     else
     {
-        ParserKeyword("COLUMN").ignore(pos, expected);
+        ParserKeyword(Keyword::COLUMN).ignore(pos, expected);
 
         if (!identifier_p.parse(pos, name, expected))
             return false;
@@ -156,30 +156,30 @@ static inline bool parseAlterCommand(IParser::Pos & pos, ASTPtr & node, Expected
     ParserIdentifier identifier_p;
     auto alter_command = std::make_shared<ASTAlterCommand>();
 
-    if (ParserKeyword("INDEX").ignore(pos, expected))
+    if (ParserKeyword(Keyword::INDEX).ignore(pos, expected))
     {
         /// ALTER INDEX index_name {VISIBLE | INVISIBLE}
 
         if (!identifier_p.parse(pos, name, expected))
             return false;
 
-        alter_command->index_visible = ParserKeyword("VISIBLE").ignore(pos, expected);
+        alter_command->index_visible = ParserKeyword(Keyword::VISIBLE).ignore(pos, expected);
 
-        if (!alter_command->index_visible && !ParserKeyword("INVISIBLE").ignore(pos, expected))
+        if (!alter_command->index_visible && !ParserKeyword(Keyword::INVISIBLE).ignore(pos, expected))
             return false;
 
         alter_command->type = ASTAlterCommand::MODIFY_INDEX_VISIBLE;
         alter_command->index_name = getIdentifierName(name);
     }
-    else if (ParserKeyword("CHECK").ignore(pos, expected) || ParserKeyword("CONSTRAINT").ignore(pos, expected))
+    else if (ParserKeyword(Keyword::CHECK).ignore(pos, expected) || ParserKeyword(Keyword::CONSTRAINT).ignore(pos, expected))
     {
         /// ALTER {CHECK | CONSTRAINT} symbol [NOT] ENFORCED
         if (!identifier_p.parse(pos, name, expected))
             return false;
 
-        alter_command->not_check_enforced = ParserKeyword("NOT").ignore(pos, expected);
+        alter_command->not_check_enforced = ParserKeyword(Keyword::NOT).ignore(pos, expected);
 
-        if (!ParserKeyword("ENFORCED").ignore(pos, expected))
+        if (!ParserKeyword(Keyword::ENFORCED).ignore(pos, expected))
             return false;
 
         alter_command->type = ASTAlterCommand::MODIFY_CHECK;
@@ -189,14 +189,14 @@ static inline bool parseAlterCommand(IParser::Pos & pos, ASTPtr & node, Expected
     {
         /// ALTER [COLUMN] col_name {SET DEFAULT {literal | (expr)} | DROP DEFAULT}
 
-        ParserKeyword("COLUMN").ignore(pos, expected);
+        ParserKeyword(Keyword::COLUMN).ignore(pos, expected);
 
         if (!identifier_p.parse(pos, name, expected))
             return false;
 
-        if (ParserKeyword("DROP DEFAULT").ignore(pos, expected))
+        if (ParserKeyword(Keyword::DROP_DEFAULT).ignore(pos, expected))
             alter_command->type = ASTAlterCommand::DROP_COLUMN_DEFAULT;
-        else if (ParserKeyword("SET DEFAULT").ignore(pos, expected))
+        else if (ParserKeyword(Keyword::SET_DEFAULT).ignore(pos, expected))
         {
             ASTPtr default_expression;
             ParserExpression expression_p;
@@ -225,12 +225,12 @@ static inline bool parseRenameCommand(IParser::Pos & pos, ASTPtr & node, Expecte
     ParserIdentifier identifier_p;
     auto alter_command = std::make_shared<ASTAlterCommand>();
 
-    if (ParserKeyword("COLUMN").ignore(pos, expected))
+    if (ParserKeyword(Keyword::COLUMN).ignore(pos, expected))
     {
         if (!identifier_p.parse(pos, old_name, expected))
             return false;
 
-        if (!ParserKeyword("TO").ignore(pos, expected))
+        if (!ParserKeyword(Keyword::TO).ignore(pos, expected))
             return false;
 
         if (!identifier_p.parse(pos, new_name, expected))
@@ -240,7 +240,7 @@ static inline bool parseRenameCommand(IParser::Pos & pos, ASTPtr & node, Expecte
         alter_command->old_name = getIdentifierName(old_name);
         alter_command->column_name = getIdentifierName(new_name);
     }
-    else if (ParserKeyword("TO").ignore(pos, expected) || ParserKeyword("AS").ignore(pos, expected))
+    else if (ParserKeyword(Keyword::TO).ignore(pos, expected) || ParserKeyword(Keyword::AS).ignore(pos, expected))
     {
         if (!ParserCompoundIdentifier(true).parse(pos, new_name, expected))
             return false;
@@ -250,12 +250,12 @@ static inline bool parseRenameCommand(IParser::Pos & pos, ASTPtr & node, Expecte
         alter_command->new_table_name = new_table_id.table_name;
         alter_command->new_database_name = new_table_id.database_name;
     }
-    else if (ParserKeyword("INDEX").ignore(pos, expected) || ParserKeyword("KEY").ignore(pos, expected))
+    else if (ParserKeyword(Keyword::INDEX).ignore(pos, expected) || ParserKeyword(Keyword::KEY).ignore(pos, expected))
     {
         if (!identifier_p.parse(pos, old_name, expected))
             return false;
 
-        if (!ParserKeyword("TO").ignore(pos, expected))
+        if (!ParserKeyword(Keyword::TO).ignore(pos, expected))
             return false;
 
         if (!identifier_p.parse(pos, new_name, expected))
@@ -283,7 +283,7 @@ static inline bool parseOtherCommand(IParser::Pos & pos, ASTPtr & node, Expected
 {
     auto alter_command = std::make_shared<ASTAlterCommand>();
 
-    if (ParserKeyword("ORDER BY").ignore(pos, expected))
+    if (ParserKeyword(Keyword::ORDER_BY).ignore(pos, expected))
     {
         /// ORDER BY col_name [, col_name] ...
         ASTPtr columns;
@@ -335,7 +335,7 @@ static inline bool parseModifyCommand(IParser::Pos & pos, ASTPtr & node, Expecte
     ASTPtr old_column_name;
     auto alter_command = std::make_shared<ASTAlterCommand>();
 
-    ParserKeyword("COLUMN").ignore(pos, expected);
+    ParserKeyword(Keyword::COLUMN).ignore(pos, expected);
     if (exists_old_column_name && !ParserIdentifier().parse(pos, old_column_name, expected))
         return false;
 
@@ -343,9 +343,9 @@ static inline bool parseModifyCommand(IParser::Pos & pos, ASTPtr & node, Expecte
     if (!ParserDeclareColumn().parse(pos, additional_column, expected))
         return false;
 
-    if (ParserKeyword("FIRST").ignore(pos, expected))
+    if (ParserKeyword(Keyword::FIRST).ignore(pos, expected))
         alter_command->first = true;
-    else if (ParserKeyword("AFTER").ignore(pos, expected))
+    else if (ParserKeyword(Keyword::AFTER).ignore(pos, expected))
     {
         ASTPtr after_column;
         ParserIdentifier identifier_p;
@@ -368,27 +368,26 @@ static inline bool parseModifyCommand(IParser::Pos & pos, ASTPtr & node, Expecte
 
 bool ParserAlterCommand::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword k_add("ADD");
-    ParserKeyword k_drop("DROP");
-    ParserKeyword k_alter("ALTER");
-    ParserKeyword k_rename("RENAME");
-    ParserKeyword k_modify("MODIFY");
-    ParserKeyword k_change("CHANGE");
+    ParserKeyword k_add(Keyword::ADD);
+    ParserKeyword k_drop(Keyword::DROP);
+    ParserKeyword k_alter(Keyword::ALTER);
+    ParserKeyword k_rename(Keyword::RENAME);
+    ParserKeyword k_modify(Keyword::MODIFY);
+    ParserKeyword k_change(Keyword::CHANGE);
 
     if (k_add.ignore(pos, expected))
         return parseAddCommand(pos, node, expected);
-    else if (k_drop.ignore(pos, expected))
+    if (k_drop.ignore(pos, expected))
         return parseDropCommand(pos, node, expected);
-    else if (k_alter.ignore(pos, expected))
+    if (k_alter.ignore(pos, expected))
         return parseAlterCommand(pos, node, expected);
-    else if (k_rename.ignore(pos, expected))
+    if (k_rename.ignore(pos, expected))
         return parseRenameCommand(pos, node, expected);
-    else if (k_modify.ignore(pos, expected))
+    if (k_modify.ignore(pos, expected))
         return parseModifyCommand(pos, node, expected);
-    else if (k_change.ignore(pos, expected))
+    if (k_change.ignore(pos, expected))
         return parseModifyCommand(pos, node, expected, true);
-    else
-        return parseOtherCommand(pos, node, expected);
+    return parseOtherCommand(pos, node, expected);
 }
 }
 

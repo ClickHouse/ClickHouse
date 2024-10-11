@@ -2,14 +2,12 @@
     <storage_configuration>
         <disks>
             <azure>
-                <type>azure_blob_storage</type>
-                <storage_account_url>http://localhost:10000/devstoreaccount1</storage_account_url>
-                <container_name>cont</container_name>
+                <type>object_storage</type>
+                <object_storage_type>azure</object_storage_type>
                 <skip_access_check>false</skip_access_check>
-                <!-- default credentials for Azurite storage account -->
-                <account_name>devstoreaccount1</account_name>
-                <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
                 <max_single_part_upload_size>33554432</max_single_part_upload_size>
+                <container_name>openbucketforpublicci</container_name>
+                <connection_string from_env="AZURE_CONNECTION_STRING"/>
             </azure>
             <cached_azure>
                 <type>cache</type>

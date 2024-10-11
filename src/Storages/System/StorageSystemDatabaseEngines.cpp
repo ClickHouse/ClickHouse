@@ -14,7 +14,7 @@ ColumnsDescription StorageSystemDatabaseEngines::getColumnsDescription()
     };
 }
 
-void StorageSystemDatabaseEngines::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemDatabaseEngines::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     for (const auto & [engine, _] : DatabaseFactory::instance().getDatabaseEngines())
     {

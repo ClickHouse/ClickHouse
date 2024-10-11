@@ -99,7 +99,7 @@ bool ToTimeSpan::convertImpl(String & out, IParser::Pos & pos)
         ++pos;
         try
         {
-            auto result = kqlCallToExpression("time", {arg}, pos.max_depth);
+            auto result = kqlCallToExpression("time", {arg}, pos.max_depth, pos.max_backtracks);
             out = std::format("{}", result);
         }
         catch (...)

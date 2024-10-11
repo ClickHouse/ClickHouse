@@ -3,7 +3,7 @@
 #include <Common/ProfileEvents.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
-#include <Core/Settings.h>
+#include <Core/QueryLogElementType.h>
 #include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/SystemLog.h>
@@ -21,6 +21,8 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+struct Settings;
 
 
 /** Allows to log information about queries execution:
@@ -81,11 +83,14 @@ struct QueryLogElement
     std::unordered_set<String> used_storages;
     std::unordered_set<String> used_table_functions;
     std::set<String> used_row_policies;
+    std::unordered_set<String> used_privileges;
+    std::unordered_set<String> missing_privileges;
 
     Int32 exception_code{}; // because ErrorCodes are int
     String exception;
     String stack_trace;
     std::string_view exception_format_string{};
+    std::vector<std::string> exception_format_string_args{};
 
     ClientInfo client_info;
 
@@ -106,7 +111,6 @@ struct QueryLogElement
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 
     static void appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i);
 };

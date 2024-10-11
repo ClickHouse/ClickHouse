@@ -65,7 +65,7 @@ struct StatisticsNumeric
         memcpy(s.min_value.data(), &min, sizeof(T));
         memcpy(s.max_value.data(), &max, sizeof(T));
 
-        if constexpr (std::is_signed<T>::value)
+        if constexpr (std::is_signed_v<T>)
         {
             s.__set_min(s.min_value);
             s.__set_max(s.max_value);
@@ -139,8 +139,8 @@ struct StatisticsFixedStringCopy
     {
         if (s.empty)
             return;
-        addMin(&s.min[0]);
-        addMax(&s.max[0]);
+        addMin(s.min.data());
+        addMax(s.max.data());
         empty = false;
     }
 
@@ -409,7 +409,7 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
             #pragma clang diagnostic pop
 
             if (max_dest_size > std::numeric_limits<int>::max())
-                throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress column of size {}", formatReadableSizeWithBinarySuffix(source.size()));
+                throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress column of size {}", ReadableSize(source.size()));
 
             scratch.resize(max_dest_size);
 
@@ -436,7 +436,7 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
             size_t compressed_size;
             snappy::RawCompress(source.data(), source.size(), scratch.data(), &compressed_size);
 
-            scratch.resize(static_cast<size_t>(compressed_size));
+            scratch.resize(compressed_size);
             return scratch;
         }
 #endif

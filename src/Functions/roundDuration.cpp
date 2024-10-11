@@ -12,7 +12,7 @@ struct RoundDurationImpl
     using ResultType = UInt16;
     static constexpr bool allow_string_or_fixed_string = false;
 
-    static inline ResultType apply(A x)
+    static ResultType apply(A x)
     {
         return x < 1 ? 0
             : (x < 10 ? 1

@@ -31,6 +31,7 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     const JoinPtr & getJoin() const { return join; }
+    void setJoin(JoinPtr join_) { join = std::move(join_); }
     bool allowPushDownToRight() const;
 
     bool canUpdateInputStream() const override { return true; }

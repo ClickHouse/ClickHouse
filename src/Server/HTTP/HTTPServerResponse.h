@@ -90,7 +90,7 @@ public:
         resizeIfNeeded(buf_size);
     }
 
-    bool isChunked()
+    bool isChunked() const
     {
         return chunked;
     }
@@ -103,7 +103,7 @@ public:
         resizeIfNeeded(length);
     }
 
-    size_t isFixedLength()
+    size_t isFixedLength() const
     {
         return chunked ? 0 : fixed_length;
     }
@@ -116,7 +116,7 @@ public:
         resizeIfNeeded(buf_size);
     }
 
-    bool isPlain()
+    bool isPlain() const
     {
         return !(isChunked() || isFixedLength());
     }
@@ -132,12 +132,11 @@ protected:
     void nextImpl() override
     {
         if (chunked)
-            return nextImplChunked();
-
-        if (fixed_length)
-            return nextImplFixedLength();
-
-        WriteBufferFromPocoSocket::nextImpl();
+            nextImplChunked();
+        else if (fixed_length)
+            nextImplFixedLength();
+        else
+            WriteBufferFromPocoSocket::nextImpl();
     }
 
     void nextImplFixedLength()
@@ -209,6 +208,10 @@ public:
     /// or redirect() has been called.
     std::pair<std::shared_ptr<WriteBufferFromPocoSocket>, std::shared_ptr<WriteBufferFromPocoSocket>> beginSend();
 
+    /// Override to correctly mark that the data send had been started for
+    /// zero-copy response (i.e. replicated fetches).
+    void beginWrite(std::ostream & ostr) const;
+
     /// Sends the response header to the client, followed
     /// by the contents of the given buffer.
     ///
@@ -229,11 +232,23 @@ public:
     /// according to the given realm.
 
     /// Returns true if the response (header) has been sent.
-    bool sent() const { return !!stream; }
+    bool sent() const { return send_started; }
+
+    /// Sets the status code, which must be one of
+    /// HTTP_MOVED_PERMANENTLY (301), HTTP_FOUND (302),
+    /// or HTTP_SEE_OTHER (303),
+    /// and sets the "Location" header field
+    /// to the given URI, which according to
+    /// the HTTP specification, must be absolute.
+    ///
+    /// Must not be called after send() has been called.
+    void redirect(const std::string & uri, HTTPStatus status = HTTP_FOUND);
 
     Poco::Net::StreamSocket & getSocket() { return session.socket(); }
 
     void attachRequest(HTTPServerRequest * request_) { request = request_; }
+
+    const Poco::Net::HTTPServerSession & getSession() const { return session; }
 
 private:
     Poco::Net::HTTPServerSession & session;
@@ -241,6 +256,7 @@ private:
     ProfileEvents::Event write_event;
     std::shared_ptr<WriteBufferFromPocoSocket> stream;
     std::shared_ptr<WriteBufferFromPocoSocket> header_stream;
+    mutable bool send_started = false;
 };
 
 }

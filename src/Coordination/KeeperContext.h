@@ -1,21 +1,34 @@
 #pragma once
 #include <Coordination/KeeperFeatureFlags.h>
-#include <Disks/DiskSelector.h>
-#include <IO/WriteBufferFromString.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <memory>
+
+namespace rocksdb
+{
+struct Options;
+}
 
 namespace DB
 {
 
 class KeeperDispatcher;
 
+struct CoordinationSettings;
+using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
+
+class DiskSelector;
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+
+class WriteBufferFromOwnString;
+
 class KeeperContext
 {
 public:
-    explicit KeeperContext(bool standalone_keeper_);
+    KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr coordination_settings_);
 
     enum class Phase : uint8_t
     {
@@ -54,6 +67,12 @@ public:
 
     constexpr KeeperDispatcher * getDispatcher() const { return dispatcher; }
 
+    void setRocksDBDisk(DiskPtr disk);
+    DiskPtr getTemporaryRocksDBDisk() const;
+
+    void setRocksDBOptions(std::shared_ptr<rocksdb::Options> rocksdb_options_ = nullptr);
+    std::shared_ptr<rocksdb::Options> getRocksDBOptions() const { return rocksdb_options; }
+
     UInt64 getKeeperMemorySoftLimit() const { return memory_soft_limit; }
     void updateKeeperMemorySoftLimit(const Poco::Util::AbstractConfiguration & config);
 
@@ -68,6 +87,13 @@ public:
 
     void waitLocalLogsPreprocessedOrShutdown();
 
+    uint64_t lastCommittedIndex() const;
+    void setLastCommitIndex(uint64_t commit_index);
+    /// returns true if the log is committed, false if timeout happened
+    bool waitCommittedUpto(uint64_t log_idx, uint64_t wait_timeout_ms);
+
+    const CoordinationSettingsPtr & getCoordinationSettings() const;
+
 private:
     /// local disk defined using path or disk name
     using Storage = std::variant<DiskPtr, std::string>;
@@ -75,6 +101,7 @@ private:
     void initializeFeatureFlags(const Poco::Util::AbstractConfiguration & config);
     void initializeDisks(const Poco::Util::AbstractConfiguration & config);
 
+    Storage getRocksDBPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getLogsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getStatePathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
@@ -89,18 +116,21 @@ private:
     std::atomic<bool> local_logs_preprocessed = false;
     std::atomic<bool> shutdown_called = false;
 
-    Phase server_state{Phase::INIT};
+    std::atomic<Phase> server_state{Phase::INIT};
 
     bool ignore_system_path_on_startup{false};
     bool digest_enabled{true};
 
     std::shared_ptr<DiskSelector> disk_selector;
 
+    Storage rocksdb_storage;
     Storage log_storage;
     Storage latest_log_storage;
     Storage snapshot_storage;
     Storage latest_snapshot_storage;
     Storage state_file_storage;
+
+    std::shared_ptr<rocksdb::Options> rocksdb_options;
 
     std::vector<std::string> old_log_disk_names;
     std::vector<std::string> old_snapshot_disk_names;
@@ -113,6 +143,15 @@ private:
     KeeperDispatcher * dispatcher{nullptr};
 
     std::atomic<UInt64> memory_soft_limit = 0;
+
+    std::atomic<UInt64> last_committed_log_idx = 0;
+
+    /// will be set by dispatcher when waiting for certain commits
+    std::optional<UInt64> wait_commit_upto_idx = 0;
+    std::mutex last_committed_log_idx_cv_mutex;
+    std::condition_variable last_committed_log_idx_cv;
+
+    CoordinationSettingsPtr coordination_settings;
 };
 
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;

@@ -27,3 +27,11 @@ Lambda untuple
 Lambda carrying
 2	1
 1	0
+Lambda legacy syntax
+[2,3,4]
+[2,3,4]
+[2,3,4]
+['hello','world']
+[2,3,4]
+[2,3,4]	2
+[2,3,4]	2	1

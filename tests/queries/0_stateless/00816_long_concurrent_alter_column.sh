@@ -50,7 +50,7 @@ export -f thread2;
 export -f thread3;
 export -f thread4;
 
-TIMEOUT=30
+TIMEOUT=20
 
 timeout $TIMEOUT bash -c thread1 2> /dev/null &
 timeout $TIMEOUT bash -c thread2 2> /dev/null &

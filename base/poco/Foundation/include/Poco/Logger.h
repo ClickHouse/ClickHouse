@@ -21,7 +21,10 @@
 #include <atomic>
 #include <cstddef>
 #include <map>
+#include <memory>
+#include <unordered_map>
 #include <vector>
+
 #include "Poco/Channel.h"
 #include "Poco/Format.h"
 #include "Poco/Foundation.h"
@@ -871,20 +874,10 @@ public:
     /// If the Logger does not yet exist, it is created, based
     /// on its parent logger.
 
-    static LoggerPtr getShared(const std::string & name);
+    static LoggerPtr getShared(const std::string & name, bool should_be_owned_by_shared_ptr_if_created = true);
     /// Returns a shared pointer to the Logger with the given name.
     /// If the Logger does not yet exist, it is created, based
     /// on its parent logger.
-
-    static Logger & unsafeGet(const std::string & name);
-    /// Returns a reference to the Logger with the given name.
-    /// If the Logger does not yet exist, it is created, based
-    /// on its parent logger.
-    ///
-    /// WARNING: This method is not thread safe. You should
-    /// probably use get() instead.
-    /// The only time this method should be used is during
-    /// program initialization, when only one thread is running.
 
     static Logger & create(const std::string & name, Channel * pChannel, int level = Message::PRIO_INFORMATION);
     /// Creates and returns a reference to a Logger with the
@@ -932,6 +925,16 @@ public:
 
     static const std::string ROOT; /// The name of the root logger ("").
 
+public:
+    struct LoggerEntry
+    {
+        Poco::Logger * logger;
+        bool owned_by_shared_ptr = false;
+    };
+
+    using LoggerMap = std::unordered_map<std::string, LoggerEntry>;
+    using LoggerMapIterator = LoggerMap::iterator;
+
 protected:
     Logger(const std::string & name, Channel * pChannel, int level);
     ~Logger();
@@ -940,12 +943,16 @@ protected:
     void log(const std::string & text, Message::Priority prio, const char * file, int line);
 
     static std::string format(const std::string & fmt, int argc, std::string argv[]);
-    static Logger & unsafeCreate(const std::string & name, Channel * pChannel, int level = Message::PRIO_INFORMATION);
-    static Logger & parent(const std::string & name);
-    static void add(Logger * pLogger);
-    static Logger * find(const std::string & name);
 
 private:
+    static std::pair<Logger::LoggerMapIterator, bool> unsafeGet(const std::string & name, bool get_shared);
+    static Logger * unsafeGetRawPtr(const std::string & name);
+    static std::pair<LoggerMapIterator, bool> unsafeCreate(const std::string & name, Channel * pChannel, int level = Message::PRIO_INFORMATION);
+    static Logger & parent(const std::string & name);
+    static std::pair<LoggerMapIterator, bool> add(Logger * pLogger);
+    static std::optional<LoggerMapIterator> find(const std::string & name);
+    static Logger * findRawPtr(const std::string & name);
+
     Logger();
     Logger(const Logger &);
     Logger & operator=(const Logger &);

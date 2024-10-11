@@ -30,7 +30,6 @@ public:
     bool hasEvenlyDistributedRead() const override { return getNested()->hasEvenlyDistributedRead(); }
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
-    NamesAndTypesList getVirtuals() const override { return getNested()->getVirtuals(); }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr context,
@@ -63,7 +62,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override
     {
-        return getNested()->read(query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+        getNested()->read(query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override

@@ -18,7 +18,7 @@ namespace FileEncryption
 /// We chose to use CTR cipther algorithms because they have the following features which are important for us:
 /// - No right padding, so we can append encrypted files without deciphering;
 /// - One byte is always ciphered as one byte, so we get random access to encrypted files easily.
-enum class Algorithm
+enum class Algorithm : uint8_t
 {
     AES_128_CTR, /// Size of key is 16 bytes.
     AES_192_CTR, /// Size of key is 24 bytes.

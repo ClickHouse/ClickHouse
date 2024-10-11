@@ -11,10 +11,9 @@ from typing import List, Tuple
 
 from build_download_helper import download_all_deb_packages
 from clickhouse_helper import CiLogsCredentials
-from commit_status_helper import override_status
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPORT_PATH, TEMP_PATH
-from pr_info import FORCE_TESTS_LABEL, PRInfo
+from pr_info import PRInfo
 from report import ERROR, SUCCESS, JobReport, StatusType, TestResults
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -41,6 +40,7 @@ def get_run_command(
         f"{ci_logs_args}"
         f"--volume={result_path}:/test_output "
         f"--volume={server_log_path}:/var/log/clickhouse-server "
+        "--security-opt seccomp=unconfined "  # required to issue io_uring sys-calls
         f"--cap-add=SYS_PTRACE {env_str} {image}"
     )
 
@@ -164,7 +164,6 @@ def main():
     state, description, test_results, additional_logs = process_results(
         result_path, server_log_path
     )
-    state = override_status(state, check_name)
 
     JobReport(
         description=description,
@@ -176,10 +175,7 @@ def main():
     ).dump()
 
     if state != SUCCESS:
-        if FORCE_TESTS_LABEL in pr_info.labels:
-            print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
-        else:
-            sys.exit(1)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

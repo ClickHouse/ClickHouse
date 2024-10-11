@@ -18,7 +18,7 @@ FROM
         bitmapHasAny(bitmapBuild([toUInt64(1)]), (
             SELECT groupBitmapState(toUInt64(2))
         )) has2
-) SETTINGS allow_experimental_analyzer = 0; -- { serverError 43 }
+) SETTINGS enable_analyzer = 0; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT '--------------';
 
@@ -32,5 +32,4 @@ FROM
         bitmapHasAny(bitmapBuild([toUInt64(1)]), (
             SELECT groupBitmapState(toUInt64(2))
         )) has2
-) SETTINGS allow_experimental_analyzer = 1;
-
+) SETTINGS enable_analyzer = 1;

@@ -4,6 +4,8 @@
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
+#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Context.h>
@@ -17,6 +19,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds http_receive_timeout;
+    extern const SettingsBool odbc_bridge_use_connection_pooling;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -59,7 +67,7 @@ std::vector<std::pair<std::string, std::string>> StorageXDBC::getReadURIParams(
     const Names & /* column_names */,
     const StorageSnapshotPtr & /*storage_snapshot*/,
     const SelectQueryInfo & /*query_info*/,
-    ContextPtr /*context*/,
+    const ContextPtr & /*context*/,
     QueryProcessingStage::Enum & /*processed_stage*/,
     size_t max_block_size) const
 {
@@ -70,7 +78,7 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
     const Names & column_names,
     const ColumnsDescription & columns_description,
     const SelectQueryInfo & query_info,
-    ContextPtr local_context,
+    const ContextPtr & local_context,
     QueryProcessingStage::Enum & /*processed_stage*/,
     size_t /*max_block_size*/) const
 {
@@ -178,10 +186,11 @@ namespace
             for (size_t i = 0; i < 3; ++i)
                 engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.getLocalContext());
 
-            BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(args.getContext(),
-                args.getContext()->getSettingsRef().http_receive_timeout.value,
+            BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(
+                args.getContext(),
+                args.getContext()->getSettingsRef()[Setting::http_receive_timeout].value,
                 checkAndGetLiteralArgument<String>(engine_args[0], "connection_string"),
-                args.getContext()->getSettingsRef().odbc_bridge_use_connection_pooling.value);
+                args.getContext()->getSettingsRef()[Setting::odbc_bridge_use_connection_pooling].value);
             return std::make_shared<StorageXDBC>(
                 args.table_id,
                 checkAndGetLiteralArgument<String>(engine_args[1], "database_name"),

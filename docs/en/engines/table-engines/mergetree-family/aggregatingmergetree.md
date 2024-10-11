@@ -68,6 +68,12 @@ In the results of `SELECT` query, the values of `AggregateFunction` type have im
 
 ## Example of an Aggregated Materialized View {#example-of-an-aggregated-materialized-view}
 
+The following examples assumes that you have a database named `test` so make sure you create that if it doesn't already exist:
+
+```sql
+CREATE DATABASE test;
+```
+
 We will create the table `test.visits` that contain the raw data:
 
 ``` sql
@@ -80,17 +86,24 @@ CREATE TABLE test.visits
 ) ENGINE = MergeTree ORDER BY (StartDate, CounterID);
 ```
 
+Next, we need to create an `AggregatingMergeTree` table that will store `AggregationFunction`s that keep track of the total number of visits and the number of unique users. 
+
 `AggregatingMergeTree` materialized view that watches the `test.visits` table, and use the `AggregateFunction` type:
 
 ``` sql
-CREATE MATERIALIZED VIEW test.mv_visits
-(
+CREATE TABLE test.agg_visits (
     StartDate DateTime64 NOT NULL,
     CounterID UInt64,
     Visits AggregateFunction(sum, Nullable(Int32)),
     Users AggregateFunction(uniq, Nullable(Int32))
 )
-ENGINE = AggregatingMergeTree() ORDER BY (StartDate, CounterID)
+ENGINE = AggregatingMergeTree() ORDER BY (StartDate, CounterID);
+```
+
+And then let's create a materialized view that populates `test.agg_visits` from `test.visits` :
+
+```sql
+CREATE MATERIALIZED VIEW test.visits_mv TO test.agg_visits
 AS SELECT
     StartDate,
     CounterID,
@@ -104,23 +117,43 @@ Inserting data into the `test.visits` table.
 
 ``` sql
 INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
- VALUES (1667446031, 1, 3, 4)
-INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
- VALUES (1667446031, 1, 6, 3)
+ VALUES (1667446031000, 1, 3, 4), (1667446031000, 1, 6, 3);
 ```
 
-The data is inserted in both the table and the materialized view `test.mv_visits`.
+The data is inserted in both `test.visits` and `test.agg_visits`.
 
 To get the aggregated data, we need to execute a query such as `SELECT ... GROUP BY ...` from the materialized view `test.mv_visits`:
 
-``` sql
+```sql
 SELECT
     StartDate,
     sumMerge(Visits) AS Visits,
     uniqMerge(Users) AS Users
-FROM test.mv_visits
+FROM test.agg_visits
 GROUP BY StartDate
 ORDER BY StartDate;
+```
+
+```text
+┌───────────────StartDate─┬─Visits─┬─Users─┐
+│ 2022-11-03 03:27:11.000 │      9 │     2 │
+└─────────────────────────┴────────┴───────┘
+```
+
+And how about if we add another couple of records to `test.visits`, but this time we'll use a different timestamp for one of the records:
+
+```sql
+INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
+ VALUES (1669446031000, 2, 5, 10), (1667446031000, 3, 7, 5);
+```
+
+If we then run the `SELECT` query again, we'll see the following output:
+
+```text
+┌───────────────StartDate─┬─Visits─┬─Users─┐
+│ 2022-11-03 03:27:11.000 │     16 │     3 │
+│ 2022-11-26 07:00:31.000 │      5 │     1 │
+└─────────────────────────┴────────┴───────┘
 ```
 
 ## Related Content

@@ -82,17 +82,17 @@ public:
 
     auto pollTimeout() const { return poll_timeout; }
 
-    inline bool hasMorePolledMessages() const
+    bool hasMorePolledMessages() const
     {
         return (stalled_status == NOT_STALLED) && (current != messages.end());
     }
 
-    inline bool polledDataUnusable() const
+    bool polledDataUnusable() const
     {
         return  (stalled_status != NOT_STALLED) && (stalled_status != NO_MESSAGES_RETURNED);
     }
 
-    inline bool isStalled() const { return stalled_status != NOT_STALLED; }
+    bool isStalled() const { return stalled_status != NOT_STALLED; }
 
     void storeLastReadMessageOffset();
     void resetToLastCommitted(const char * msg);
@@ -184,15 +184,14 @@ private:
     std::atomic<UInt64> last_rebalance_timestamp_usec = 0;
     std::atomic<UInt64> num_rebalance_assignments = 0;
     std::atomic<UInt64> num_rebalance_revocations = 0;
-    std::atomic<bool> in_use = 0;
+    std::atomic<bool> in_use = false;
     /// Last used time (for TTL)
     std::atomic<UInt64> last_used_usec = 0;
 
     void drain();
     void cleanUnprocessed();
     void resetIfStopped();
-    /// Return number of messages with an error.
-    size_t filterMessageErrors();
+    void filterMessageErrors();
     ReadBufferPtr getNextMessage();
 };
 

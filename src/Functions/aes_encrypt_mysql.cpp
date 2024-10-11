@@ -7,7 +7,6 @@
 
 namespace DB
 {
-
 namespace
 {
 

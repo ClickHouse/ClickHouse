@@ -105,17 +105,17 @@ std::unique_ptr<WriteBuffer> BackupWriterFile::writeFile(const String & file_nam
 
 void BackupWriterFile::removeFile(const String & file_name)
 {
-    fs::remove(root_path / file_name);
+    (void)fs::remove(root_path / file_name);
     if (fs::is_directory(root_path) && fs::is_empty(root_path))
-        fs::remove(root_path);
+        (void)fs::remove(root_path);
 }
 
 void BackupWriterFile::removeFiles(const Strings & file_names)
 {
     for (const auto & file_name : file_names)
-        fs::remove(root_path / file_name);
+        (void)fs::remove(root_path / file_name);
     if (fs::is_directory(root_path) && fs::is_empty(root_path))
-        fs::remove(root_path);
+        (void)fs::remove(root_path);
 }
 
 void BackupWriterFile::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
@@ -132,7 +132,7 @@ void BackupWriterFile::copyFileFromDisk(const String & path_in_backup, DiskPtr s
             /// std::filesystem::copy() can copy from a single file only.
             if (auto blob_path = src_disk->getBlobPath(src_path); blob_path.size() == 1)
             {
-                auto abs_source_path = blob_path[0];
+                const auto & abs_source_path = blob_path[0];
 
                 /// std::filesystem::copy() can copy a file as a whole only.
                 if ((start_pos == 0) && (length == fs::file_size(abs_source_path)))

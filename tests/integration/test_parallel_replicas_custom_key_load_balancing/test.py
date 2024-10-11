@@ -1,5 +1,7 @@
-import pytest
 import uuid
+
+import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -33,7 +35,7 @@ def create_tables(table_name):
     for i in range(0, 4):
         nodes[i].query(f"DROP TABLE IF EXISTS {table_name} SYNC")
         nodes[i].query(
-            f"CREATE TABLE IF NOT EXISTS {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r{i+1}') ORDER BY (key)"
+            f"CREATE TABLE IF NOT EXISTS {table_name} (key UInt64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r{i+1}') ORDER BY (key)"
         )
 
     # populate data
@@ -56,12 +58,14 @@ def create_tables(table_name):
 
 @pytest.mark.parametrize("use_hedged_requests", [1, 0])
 @pytest.mark.parametrize("custom_key", ["sipHash64(key)", "key"])
-@pytest.mark.parametrize("filter_type", ["default", "range"])
+@pytest.mark.parametrize(
+    "parallel_replicas_mode", ["custom_key_sampling", "custom_key_range"]
+)
 def test_parallel_replicas_custom_key_load_balancing(
     start_cluster,
     use_hedged_requests,
     custom_key,
-    filter_type,
+    parallel_replicas_mode,
 ):
     cluster_name = "test_single_shard_multiple_replicas"
     table = "test_table"
@@ -80,8 +84,9 @@ def test_parallel_replicas_custom_key_load_balancing(
                 "log_comment": log_comment,
                 "prefer_localhost_replica": 0,
                 "max_parallel_replicas": 4,
+                "enable_parallel_replicas": 1,
                 "parallel_replicas_custom_key": custom_key,
-                "parallel_replicas_custom_key_filter_type": filter_type,
+                "parallel_replicas_mode": parallel_replicas_mode,
                 "use_hedged_requests": use_hedged_requests,
                 # avoid considering replica delay on connection choice
                 # otherwise connection can be not distributed evenly among available nodes
@@ -109,10 +114,13 @@ def test_parallel_replicas_custom_key_load_balancing(
         == "subqueries\t4\n"
     )
 
-    # check queries per node
-    assert (
-        node1.query(
-            f"SELECT h, count() FROM clusterAllReplicas({cluster_name}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' GROUP BY hostname() as h ORDER BY h SETTINGS skip_unavailable_shards=1"
+    # With enabled hedged requests, we can't guarantee exact query distribution among nodes
+    # In case of a replica being slow in terms of responsiveness, hedged connection can change initial replicas choice
+    if use_hedged_requests == 0:
+        # check queries per node
+        assert (
+            node1.query(
+                f"SELECT h, count() FROM clusterAllReplicas({cluster_name}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' GROUP BY hostname() as h ORDER BY h SETTINGS skip_unavailable_shards=1"
+            )
+            == "n1\t2\nn2\t1\nn3\t1\nn4\t1\n"
         )
-        == "n1\t2\nn2\t1\nn3\t1\nn4\t1\n"
-    )

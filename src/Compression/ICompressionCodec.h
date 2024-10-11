@@ -4,7 +4,7 @@
 #include <boost/noncopyable.hpp>
 #include <Compression/CompressionInfo.h>
 #include <base/types.h>
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 #include <Common/SipHash.h>
 
 
@@ -54,7 +54,7 @@ public:
     /// --- For the codec with HW decompressor, it means submit request to HW and return immediately.
     /// --- Must be used in pair with flushAsynchronousDecompressRequests.
     /// SoftwareFallback mode is exclusively defined for the codec with HW decompressor, enable its capability of "fallback to SW codec".
-    enum class CodecMode
+    enum class CodecMode : uint8_t
     {
         Synchronous,
         Asynchronous,

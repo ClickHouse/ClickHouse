@@ -12,6 +12,7 @@ case sensitive
 2
 4
 4
+2
 case insensitive
 2
 1
@@ -21,4 +22,8 @@ case insensitive
 2
 4
 4
+2
 errors
+FixedString
+2
+2

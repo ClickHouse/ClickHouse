@@ -25,8 +25,8 @@ namespace
         for (auto i : collections::range(AccessEntityType::MAX))
         {
             const auto & type_info = AccessEntityTypeInfo::get(i);
-            if (ParserKeyword{type_info.name}.ignore(pos, expected)
-                || (!type_info.alias.empty() && ParserKeyword{type_info.alias}.ignore(pos, expected)))
+            if (ParserKeyword::createDeprecated(type_info.name).ignore(pos, expected)
+                || (!type_info.alias.empty() && ParserKeyword::createDeprecated(type_info.alias).ignore(pos, expected)))
             {
                 type = i;
                 plural = false;
@@ -37,8 +37,8 @@ namespace
         for (auto i : collections::range(AccessEntityType::MAX))
         {
             const auto & type_info = AccessEntityTypeInfo::get(i);
-            if (ParserKeyword{type_info.plural_name}.ignore(pos, expected)
-                || (!type_info.plural_alias.empty() && ParserKeyword{type_info.plural_alias}.ignore(pos, expected)))
+            if (ParserKeyword::createDeprecated(type_info.plural_name).ignore(pos, expected)
+                || (!type_info.plural_alias.empty() && ParserKeyword::createDeprecated(type_info.plural_alias).ignore(pos, expected)))
             {
                 type = i;
                 plural = true;
@@ -49,12 +49,12 @@ namespace
         return false;
     }
 
-    bool parseOnDBAndTableName(IParserBase::Pos & pos, Expected & expected, String & database, bool & any_database, String & table, bool & any_table)
+    bool parseOnDBAndTableName(IParserBase::Pos & pos, Expected & expected, String & database, String & table, bool & wildcard, bool & default_database)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"ON"}.ignore(pos, expected)
-                && parseDatabaseAndTableNameOrAsterisks(pos, expected, database, any_database, table, any_table);
+            return ParserKeyword{Keyword::ON}.ignore(pos, expected)
+                && parseDatabaseAndTableNameOrAsterisks(pos, expected, database, table, wildcard, default_database);
         });
     }
 }
@@ -62,7 +62,7 @@ namespace
 
 bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (!ParserKeyword{"SHOW CREATE"}.ignore(pos, expected))
+    if (!ParserKeyword{Keyword::SHOW_CREATE}.ignore(pos, expected))
         return false;
 
     AccessEntityType type;
@@ -108,12 +108,13 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
         {
             ASTPtr ast;
             String database, table_name;
-            bool any_database, any_table;
+            bool wildcard = false;
+            bool default_database = false;
             if (ParserRowPolicyNames{}.parse(pos, ast, expected))
                 row_policy_names = typeid_cast<std::shared_ptr<ASTRowPolicyNames>>(ast);
-            else if (parseOnDBAndTableName(pos, expected, database, any_database, table_name, any_table))
+            else if (parseOnDBAndTableName(pos, expected, database, table_name, wildcard, default_database))
             {
-                if (any_database)
+                if (database.empty() && !default_database)
                     all = true;
                 else
                     database_and_table_name.emplace(database, table_name);

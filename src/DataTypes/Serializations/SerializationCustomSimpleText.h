@@ -18,7 +18,7 @@ public:
     explicit SerializationCustomSimpleText(const SerializationPtr & nested_);
 
     // Methods that subclasses must override in order to get full serialization/deserialization support.
-    virtual void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override = 0;
+    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override = 0;
     /// whole = true means that buffer contains only one value, so we should read until EOF.
     /// It's needed to check if there is garbage after parsed field.
     virtual void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const = 0;

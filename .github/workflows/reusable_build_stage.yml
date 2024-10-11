@@ -1,0 +1,42 @@
+### FIXME: merge reusable_test.yml and reusable_build.yml as they are almost identical
+#          and then merge reusable_build_stage.yml and reusable_test_stage.yml
+
+env:
+  PYTHONUNBUFFERED: 1
+
+name: BuildStageWF
+
+'on':
+  workflow_call:
+    inputs:
+      stage:
+        description: stage name
+        type: string
+        required: true
+      data:
+        description: ci data
+        type: string
+        required: true
+    secrets:
+      secret_envs:
+        description: if given, it's passed to the environments
+        required: false
+
+jobs:
+  s:
+    if: ${{ !failure() && !cancelled() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        job_name_and_runner_type: ${{ fromJson(inputs.data).stages_data[inputs.stage] }}
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: ${{ matrix.job_name_and_runner_type.job_name }}
+      runner_type: ${{ matrix.job_name_and_runner_type.runner_type }}
+      # don't forget to pass force flag (no ci cache/no reuse) - once it's needed
+      force: false
+      # for now let's do I deep checkout for builds
+      checkout_depth: 0
+      data: ${{ inputs.data }}
+    secrets:
+      secret_envs: ${{ secrets.secret_envs }}

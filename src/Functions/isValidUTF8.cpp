@@ -65,9 +65,9 @@ SOFTWARE.
  */
 
 #ifndef __SSE4_1__
-    static inline UInt8 isValidUTF8(const UInt8 * data, UInt64 len) { return DB::UTF8::isValidUTF8(data, len); }
+    static UInt8 isValidUTF8(const UInt8 * data, UInt64 len) { return DB::UTF8::isValidUTF8(data, len); }
 #else
-    static inline UInt8 isValidUTF8(const UInt8 * data, UInt64 len)
+    static UInt8 isValidUTF8(const UInt8 * data, UInt64 len)
     {
         /*
         * Map high nibble of "First Byte" to legal character length minus 1
@@ -219,42 +219,42 @@ SOFTWARE.
 
     static constexpr bool is_fixed_to_constant = false;
 
-    static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets, PaddedPODArray<UInt8> & res)
+    static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets, PaddedPODArray<UInt8> & res, size_t input_rows_count)
     {
-        size_t size = offsets.size();
         size_t prev_offset = 0;
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             res[i] = isValidUTF8(data.data() + prev_offset, offsets[i] - 1 - prev_offset);
             prev_offset = offsets[i];
         }
     }
 
-    static void vectorFixedToConstant(const ColumnString::Chars & /*data*/, size_t /*n*/, UInt8 & /*res*/) {}
-
-    static void vectorFixedToVector(const ColumnString::Chars & data, size_t n, PaddedPODArray<UInt8> & res)
+    static void vectorFixedToConstant(const ColumnString::Chars &, size_t, UInt8 &, size_t)
     {
-        size_t size = data.size() / n;
-        for (size_t i = 0; i < size; ++i)
+    }
+
+    static void vectorFixedToVector(const ColumnString::Chars & data, size_t n, PaddedPODArray<UInt8> & res, size_t input_rows_count)
+    {
+        for (size_t i = 0; i < input_rows_count; ++i)
             res[i] = isValidUTF8(data.data() + i * n, n);
     }
 
-    [[noreturn]] static void array(const ColumnString::Offsets &, PaddedPODArray<UInt8> &)
+    [[noreturn]] static void array(const ColumnString::Offsets &, PaddedPODArray<UInt8> &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function isValidUTF8 to Array argument");
     }
 
-    [[noreturn]] static void uuid(const ColumnUUID::Container &, size_t &, PaddedPODArray<UInt8> &)
+    [[noreturn]] static void uuid(const ColumnUUID::Container &, size_t &, PaddedPODArray<UInt8> &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function isValidUTF8 to UUID argument");
     }
 
-    [[noreturn]] static void ipv6(const ColumnIPv6::Container &, size_t &, PaddedPODArray<UInt8> &)
+    [[noreturn]] static void ipv6(const ColumnIPv6::Container &, size_t &, PaddedPODArray<UInt8> &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function isValidUTF8 to IPv6 argument");
     }
 
-    [[noreturn]] static void ipv4(const ColumnIPv4::Container &, size_t &, PaddedPODArray<UInt8> &)
+    [[noreturn]] static void ipv4(const ColumnIPv4::Container &, size_t &, PaddedPODArray<UInt8> &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function isValidUTF8 to IPv4 argument");
     }

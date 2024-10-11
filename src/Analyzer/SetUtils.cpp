@@ -9,6 +9,8 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 
+#include <Common/assert_cast.h>
+
 namespace DB
 {
 
@@ -41,6 +43,12 @@ size_t getCompoundTypeDepth(const IDataType & type)
             const auto & tuple_elements = assert_cast<const DataTypeTuple &>(*current_type).getElements();
             if (!tuple_elements.empty())
                 current_type = tuple_elements.at(0).get();
+            else
+            {
+                /// Special case: tuple with no element - tuple(). In this case, what's the compound type depth?
+                /// I'm not certain about the theoretical answer, but from experiment, 1 is the most reasonable choice.
+                return 1;
+            }
 
             ++result;
         }
@@ -54,8 +62,9 @@ size_t getCompoundTypeDepth(const IDataType & type)
 }
 
 template <typename Collection>
-Block createBlockFromCollection(const Collection & collection, const DataTypes & block_types, bool transform_null_in)
+Block createBlockFromCollection(const Collection & collection, const DataTypes& value_types, const DataTypes & block_types, bool transform_null_in)
 {
+    assert(collection.size() == value_types.size());
     size_t columns_size = block_types.size();
     MutableColumns columns(columns_size);
     for (size_t i = 0; i < columns_size; ++i)
@@ -66,13 +75,17 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes &
 
     Row tuple_values;
 
-    for (const auto & value : collection)
+    for (size_t collection_index = 0; collection_index < collection.size(); ++collection_index)
     {
+        const auto & value = collection[collection_index];
         if (columns_size == 1)
         {
-            auto field = convertFieldToTypeStrict(value, *block_types[0]);
+            const DataTypePtr & data_type = value_types[collection_index];
+            auto field = convertFieldToTypeStrict(value, *data_type, *block_types[0]);
             if (!field)
+            {
                 continue;
+            }
 
             bool need_insert_null = transform_null_in && block_types[0]->isNullable();
             if (!field->isNull() || need_insert_null)
@@ -86,7 +99,10 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes &
                 "Invalid type in set. Expected tuple, got {}",
                 value.getTypeName());
 
-        const auto & tuple = value.template get<const Tuple &>();
+        const auto & tuple = value.template safeGet<const Tuple &>();
+        const DataTypePtr & value_type = value_types[collection_index];
+        const DataTypes & tuple_value_type = typeid_cast<const DataTypeTuple *>(value_type.get())->getElements();
+
         size_t tuple_size = tuple.size();
 
         if (tuple_size != columns_size)
@@ -101,7 +117,7 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes &
         size_t i = 0;
         for (; i < tuple_size; ++i)
         {
-            auto converted_field = convertFieldToTypeStrict(tuple[i], *block_types[i]);
+            auto converted_field = convertFieldToTypeStrict(tuple[i], *tuple_value_type[i], *block_types[i]);
             if (!converted_field)
                 break;
             tuple_values[i] = std::move(*converted_field);
@@ -147,20 +163,28 @@ Block getSetElementsForConstantValue(const DataTypePtr & expression_type, const 
     if (lhs_type_depth == rhs_type_depth)
     {
         /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
-
         Array array{value};
-        result_block = createBlockFromCollection(array, set_element_types, transform_null_in);
+        DataTypes value_types{value_type};
+        result_block = createBlockFromCollection(array, value_types, set_element_types, transform_null_in);
     }
     else if (lhs_type_depth + 1 == rhs_type_depth)
     {
         /// 1 in (1, 2); (1, 2) in ((1, 2), (3, 4))
-
         WhichDataType rhs_which_type(value_type);
 
         if (rhs_which_type.isArray())
-            result_block = createBlockFromCollection(value.get<const Array &>(), set_element_types, transform_null_in);
+        {
+            const DataTypeArray * value_array_type = assert_cast<const DataTypeArray *>(value_type.get());
+            size_t value_array_size = value.safeGet<const Array &>().size();
+            DataTypes value_types(value_array_size, value_array_type->getNestedType());
+            result_block = createBlockFromCollection(value.safeGet<const Array &>(), value_types, set_element_types, transform_null_in);
+        }
         else if (rhs_which_type.isTuple())
-            result_block = createBlockFromCollection(value.get<const Tuple &>(), set_element_types, transform_null_in);
+        {
+            const DataTypeTuple * value_tuple_type = assert_cast<const DataTypeTuple *>(value_type.get());
+            const DataTypes & value_types = value_tuple_type->getElements();
+            result_block = createBlockFromCollection(value.safeGet<const Tuple &>(), value_types, set_element_types, transform_null_in);
+        }
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Unsupported type at the right-side of IN. Expected Array or Tuple. Actual {}",

@@ -4,9 +4,9 @@
 #include <Disks/DiskFactory.h>
 #include <IO/FileEncryptionCommon.h>
 #include <IO/ReadBufferFromEncryptedFile.h>
+#include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromEncryptedFile.h>
-#include <IO/ReadBufferFromEmptyFile.h>
 #include <boost/algorithm/hex.hpp>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -125,13 +125,13 @@ namespace
             check_current_key_found(current_key);
             return current_key;
         }
-        else if (config.has(key_hex_path))
+        if (config.has(key_hex_path))
         {
             String current_key = unhexKey(config.getString(key_hex_path));
             check_current_key_found(current_key);
             return current_key;
         }
-        else if (config.has(key_id_path))
+        if (config.has(key_id_path))
         {
             UInt64 current_key_id = config.getUInt64(key_id_path);
             auto it = keys_by_id.find(current_key_id);
@@ -139,15 +139,13 @@ namespace
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found a key with the current ID {}", current_key_id);
             return it->second;
         }
-        else if (keys_by_id.size() == 1 && keys_without_id.empty() && keys_by_id.begin()->first == 0)
+        if (keys_by_id.size() == 1 && keys_without_id.empty() && keys_by_id.begin()->first == 0)
         {
             /// There is only a single key defined with id=0, so we can choose it as current.
             return keys_by_id.begin()->second;
         }
-        else
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The current key is not specified");
-        }
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The current key is not specified");
     }
 
     /// Reads the current encryption algorithm from the configuration.
@@ -374,7 +372,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     {
         /// File is empty, that's a normal case, see DiskEncrypted::truncateFile().
         /// There is no header so we just return `ReadBufferFromString("")`.
-        return std::make_unique<ReadBufferFromEmptyFile>(wrapped_path);
+        return std::make_unique<ReadBufferFromFileDecorator>(std::make_unique<ReadBufferFromString>(std::string_view{}), wrapped_path);
     }
     auto encryption_settings = current_settings.get();
     FileEncryption::Header header = readHeader(*buffer);
@@ -392,7 +390,7 @@ size_t DiskEncrypted::getFileSize(const String & path) const
 UInt128 DiskEncrypted::getEncryptedFileIV(const String & path) const
 {
     auto wrapped_path = wrappedPath(path);
-    auto read_buffer = delegate->readFile(wrapped_path, ReadSettings().adjustBufferSize(FileEncryption::Header::kSize));
+    auto read_buffer = delegate->readFile(wrapped_path, getReadSettings().adjustBufferSize(FileEncryption::Header::kSize));
     if (read_buffer->eof())
         return 0;
     auto header = readHeader(*read_buffer);

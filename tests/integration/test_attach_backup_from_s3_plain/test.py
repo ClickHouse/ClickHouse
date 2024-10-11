@@ -2,6 +2,7 @@
 # pylint: disable=line-too-long
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -21,16 +22,55 @@ def start_cluster():
         cluster.shutdown()
 
 
+s3_disk_def = """disk(type=s3_plain,
+    endpoint='http://minio1:9001/root/data/disks/disk_s3_plain/{}/',
+    access_key_id='minio',
+    secret_access_key='minio123');"""
+
+local_disk_def = "disk(type=object_storage, object_storage_type = 'local_blob_storage', metadata_type = 'plain', path = '/local_plain/{}/');"
+
+
 @pytest.mark.parametrize(
-    "table_name,backup_name,storage_policy,min_bytes_for_wide_part",
+    "table_name,backup_name,storage_policy,disk_def,min_bytes_for_wide_part",
     [
         pytest.param(
-            "compact", "backup_compact", "s3_backup_compact", int(1e9), id="compact"
+            "compact",
+            "backup_compact_s3",
+            "backup_disk_s3_plain",
+            s3_disk_def,
+            int(1e9),
+            id="compact",
         ),
-        pytest.param("wide", "backup_wide", "s3_backup_wide", int(0), id="wide"),
+        pytest.param(
+            "wide",
+            "backup_wide_s3",
+            "backup_disk_s3_plain",
+            s3_disk_def,
+            int(0),
+            id="wide",
+        ),
+        pytest.param(
+            "compact",
+            "backup_compact_local",
+            "backup_disk_local_plain",
+            local_disk_def,
+            int(1e9),
+            id="compact",
+        ),
+        pytest.param(
+            "wide",
+            "backup_wide_local",
+            "backup_disk_local_plain",
+            local_disk_def,
+            int(0),
+            id="wide",
+        ),
     ],
 )
-def test_attach_part(table_name, backup_name, storage_policy, min_bytes_for_wide_part):
+def test_attach_part(
+    table_name, backup_name, storage_policy, disk_def, min_bytes_for_wide_part
+):
+    disk_definition = disk_def.format(backup_name)
     node.query(
         f"""
     -- Catch any errors (NOTE: warnings are ok)
@@ -45,7 +85,7 @@ def test_attach_part(table_name, backup_name, storage_policy, min_bytes_for_wide
     settings min_bytes_for_wide_part={min_bytes_for_wide_part}
     as select number%5 part, number key from numbers(100);
 
-    backup table ordinary_db.{table_name} TO Disk('backup_disk_s3_plain', '{backup_name}') settings deduplicate_files=0;
+    backup table ordinary_db.{table_name} TO Disk('{storage_policy}', '{backup_name}') settings deduplicate_files=0;
 
     drop table ordinary_db.{table_name};
     attach table ordinary_db.{table_name} (part UInt8, key UInt64)
@@ -53,10 +93,7 @@ def test_attach_part(table_name, backup_name, storage_policy, min_bytes_for_wide
     order by key partition by part
     settings
         max_suspicious_broken_parts=0,
-        disk=disk(type=s3_plain,
-            endpoint='http://minio1:9001/root/data/disks/disk_s3_plain/{backup_name}/',
-            access_key_id='minio',
-            secret_access_key='minio123');
+        disk={disk_definition}
     """
     )
 

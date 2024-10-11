@@ -1,4 +1,5 @@
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -46,7 +47,7 @@ def test_create():
     def check():
         assert (
             instance.query("SHOW CREATE USER u1")
-            == "CREATE USER u1 SETTINGS PROFILE s1\n"
+            == "CREATE USER u1 IDENTIFIED WITH no_password SETTINGS PROFILE `s1`\n"
         )
         assert (
             instance.query("SHOW CREATE USER u2")
@@ -64,16 +65,16 @@ def test_create():
         assert instance.query("SHOW GRANTS FOR u2") == "GRANT rx TO u2\n"
         assert (
             instance.query("SHOW CREATE ROLE rx")
-            == "CREATE ROLE rx SETTINGS PROFILE s1\n"
+            == "CREATE ROLE rx SETTINGS PROFILE `s1`\n"
         )
         assert instance.query("SHOW GRANTS FOR rx") == ""
         assert (
             instance.query("SHOW CREATE SETTINGS PROFILE s1")
-            == "CREATE SETTINGS PROFILE s1 SETTINGS max_memory_usage = 123456789 MIN 100000000 MAX 200000000\n"
+            == "CREATE SETTINGS PROFILE `s1` SETTINGS max_memory_usage = 123456789 MIN 100000000 MAX 200000000\n"
         )
         assert (
             instance.query("SHOW CREATE SETTINGS PROFILE s2")
-            == "CREATE SETTINGS PROFILE s2 SETTINGS INHERIT s1 TO u2\n"
+            == "CREATE SETTINGS PROFILE `s2` SETTINGS INHERIT `s1` TO u2\n"
         )
 
     check()
@@ -99,7 +100,7 @@ def test_alter():
     def check():
         assert (
             instance.query("SHOW CREATE USER u1")
-            == "CREATE USER u1 SETTINGS PROFILE s1\n"
+            == "CREATE USER u1 IDENTIFIED WITH no_password SETTINGS PROFILE `s1`\n"
         )
         assert (
             instance.query("SHOW CREATE USER u2")
@@ -112,7 +113,7 @@ def test_alter():
         assert instance.query("SHOW GRANTS FOR u2") == "GRANT rx, ry TO u2\n"
         assert (
             instance.query("SHOW CREATE ROLE rx")
-            == "CREATE ROLE rx SETTINGS PROFILE s2\n"
+            == "CREATE ROLE rx SETTINGS PROFILE `s2`\n"
         )
         assert instance.query("SHOW CREATE ROLE ry") == "CREATE ROLE ry\n"
         assert (
@@ -124,11 +125,11 @@ def test_alter():
         )
         assert (
             instance.query("SHOW CREATE SETTINGS PROFILE s1")
-            == "CREATE SETTINGS PROFILE s1 SETTINGS max_memory_usage = 987654321 CONST\n"
+            == "CREATE SETTINGS PROFILE `s1` SETTINGS max_memory_usage = 987654321 CONST\n"
         )
         assert (
             instance.query("SHOW CREATE SETTINGS PROFILE s2")
-            == "CREATE SETTINGS PROFILE s2 SETTINGS INHERIT s1 TO u2\n"
+            == "CREATE SETTINGS PROFILE `s2` SETTINGS INHERIT `s1` TO u2\n"
         )
 
     check()
@@ -147,10 +148,13 @@ def test_drop():
     instance.query("DROP SETTINGS PROFILE s1")
 
     def check():
-        assert instance.query("SHOW CREATE USER u1") == "CREATE USER u1\n"
+        assert (
+            instance.query("SHOW CREATE USER u1")
+            == "CREATE USER u1 IDENTIFIED WITH no_password\n"
+        )
         assert (
             instance.query("SHOW CREATE SETTINGS PROFILE s2")
-            == "CREATE SETTINGS PROFILE s2\n"
+            == "CREATE SETTINGS PROFILE `s2`\n"
         )
         assert "There is no user `u2`" in instance.query_and_get_error(
             "SHOW CREATE USER u2"

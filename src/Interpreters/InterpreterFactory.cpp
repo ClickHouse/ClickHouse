@@ -60,11 +60,13 @@
 #include <Parsers/ASTExternalDDLQuery.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 
 
 namespace ProfileEvents
 {
     extern const Event Query;
+    extern const Event InitialQuery;
     extern const Event QueriesWithSubqueries;
     extern const Event SelectQuery;
     extern const Event InsertQuery;
@@ -73,6 +75,12 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool insert_allow_materialized_columns;
+}
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_TYPE_OF_QUERY;
@@ -94,7 +102,8 @@ void InterpreterFactory::registerInterpreter(const std::string & name, CreatorFn
 InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, ContextMutablePtr context, const SelectQueryOptions & options)
 {
     ProfileEvents::increment(ProfileEvents::Query);
-
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+        ProfileEvents::increment(ProfileEvents::InitialQuery);
     /// SELECT and INSERT query will handle QueriesWithSubqueries on their own.
     if (!(query->as<ASTSelectQuery>() ||
         query->as<ASTSelectWithUnionQuery>() ||
@@ -104,7 +113,8 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
         ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
     }
 
-    Arguments arguments {
+    Arguments arguments
+    {
         .query = query,
         .context = context,
         .options = options
@@ -114,7 +124,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
 
     if (query->as<ASTSelectQuery>())
     {
-        if (context->getSettingsRef().allow_experimental_analyzer)
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
             interpreter_name = "InterpreterSelectQueryAnalyzer";
         /// This is internal part of ASTSelectWithUnionQuery.
         /// Even if there is SELECT without union, it is represented by ASTSelectWithUnionQuery with single ASTSelectQuery as a child.
@@ -125,7 +135,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         ProfileEvents::increment(ProfileEvents::SelectQuery);
 
-        if (context->getSettingsRef().allow_experimental_analyzer)
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
             interpreter_name = "InterpreterSelectQueryAnalyzer";
         else
             interpreter_name = "InterpreterSelectWithUnionQuery";
@@ -137,7 +147,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTInsertQuery>())
     {
         ProfileEvents::increment(ProfileEvents::InsertQuery);
-        bool allow_materialized = static_cast<bool>(context->getSettingsRef().insert_allow_materialized_columns);
+        bool allow_materialized = static_cast<bool>(context->getSettingsRef()[Setting::insert_allow_materialized_columns]);
         arguments.allow_materialized = allow_materialized;
         interpreter_name = "InterpreterInsertQuery";
     }
@@ -216,6 +226,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     }
     else if (query->as<ASTExplainQuery>())
     {
+        const auto kind = query->as<ASTExplainQuery>()->getKind();
+        if (kind == ASTExplainQuery::ParsedAST || kind == ASTExplainQuery::AnalyzedSyntax)
+            context->setSetting("allow_experimental_analyzer", false);
+
         interpreter_name = "InterpreterExplainQuery";
     }
     else if (query->as<ASTShowProcesslistQuery>())

@@ -1,0 +1,5 @@
+services:
+  dotnet1:
+    image: clickhouse/dotnet-client:${DOCKER_DOTNET_CLIENT_TAG:-latest}
+    # to keep container running
+    command: sleep infinity

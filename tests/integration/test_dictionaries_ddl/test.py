@@ -1,10 +1,11 @@
+import logging
 import os
-import warnings
 import time
+import warnings
 
 import pymysql
 import pytest
-import logging
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
@@ -13,7 +14,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
-    with_mysql=True,
+    with_mysql8=True,
     dictionaries=["configs/dictionaries/simple_dictionary.xml"],
     main_configs=[
         "configs/ssl_conf.xml",
@@ -26,7 +27,7 @@ node1 = cluster.add_instance(
 )
 node2 = cluster.add_instance(
     "node2",
-    with_mysql=True,
+    with_mysql8=True,
     dictionaries=["configs/dictionaries/simple_dictionary.xml"],
     main_configs=[
         "configs/dictionaries/lazy_load.xml",
@@ -117,7 +118,7 @@ def started_cluster():
 )
 def test_create_and_select_mysql(started_cluster, clickhouse, name, layout):
     mysql_conn = create_mysql_conn(
-        "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
+        "root", "clickhouse", started_cluster.mysql8_ip, started_cluster.mysql8_port
     )
     execute_mysql_query(mysql_conn, "DROP DATABASE IF EXISTS create_and_select")
     execute_mysql_query(mysql_conn, "CREATE DATABASE create_and_select")
@@ -152,7 +153,7 @@ def test_create_and_select_mysql(started_cluster, clickhouse, name, layout):
         DB 'create_and_select'
         TABLE '{}'
         REPLICA(PRIORITY 1 HOST '127.0.0.1' PORT 3333)
-        REPLICA(PRIORITY 2 HOST 'mysql57' PORT 3306)
+        REPLICA(PRIORITY 2 HOST 'mysql80' PORT 3306)
     ))
     {}
     LIFETIME(MIN 1 MAX 3)
@@ -367,7 +368,7 @@ def test_file_dictionary_restrictions(started_cluster):
 
 def test_dictionary_with_where(started_cluster):
     mysql_conn = create_mysql_conn(
-        "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
+        "root", "clickhouse", started_cluster.mysql8_ip, started_cluster.mysql8_port
     )
     execute_mysql_query(
         mysql_conn, "CREATE DATABASE IF NOT EXISTS dictionary_with_where"
@@ -393,7 +394,7 @@ def test_dictionary_with_where(started_cluster):
         PASSWORD 'clickhouse'
         DB 'dictionary_with_where'
         TABLE 'special_table'
-        REPLICA(PRIORITY 1 HOST 'mysql57' PORT 3306)
+        REPLICA(PRIORITY 1 HOST 'mysql80' PORT 3306)
         WHERE 'value1 = \\'qweqwe\\' OR value1 = \\'\\\\u3232\\''
     ))
     LAYOUT(FLAT())

@@ -357,7 +357,7 @@ Number of currently running inserts to Kafka
 
 Number of alive connections
 
-### KeeperOutstandingRequets
+### KeeperOutstandingRequests
 
 Number of outstanding requests
 
@@ -512,10 +512,6 @@ Part was moved to another disk and should be deleted in own destructor.
 ### PartsDeleting
 
 Not active data part with identity refcounter, it is deleting right now by a cleaner.
-
-### PartsInMemory
-
-In-memory parts.
 
 ### PartsOutdated
 

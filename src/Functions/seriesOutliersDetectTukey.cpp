@@ -24,9 +24,6 @@ class FunctionSeriesOutliersDetectTukey : public IFunction
 public:
     static constexpr auto name = "seriesOutliersDetectTukey";
 
-    static constexpr Float64 min_quartile = 2.0;
-    static constexpr Float64 max_quartile = 98.0;
-
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSeriesOutliersDetectTukey>(); }
 
     std::string getName() const override { return name; }
@@ -48,13 +45,13 @@ public:
                 getName(),
                 arguments.size());
 
-        FunctionArgumentDescriptors mandatory_args{{"time_series", &isArray<IDataType>, nullptr, "Array"}};
+        FunctionArgumentDescriptors mandatory_args{{"time_series", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"}};
         FunctionArgumentDescriptors optional_args{
-            {"min_percentile", &isNativeNumber<IDataType>, isColumnConst, "Number"},
-            {"max_percentile", &isNativeNumber<IDataType>, isColumnConst, "Number"},
-            {"k", &isNativeNumber<IDataType>, isColumnConst, "Number"}};
+            {"min_percentile", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), isColumnConst, "Number"},
+            {"max_percentile", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), isColumnConst, "Number"},
+            {"k", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeNumber), isColumnConst, "Number"}};
 
-        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
     }
@@ -64,15 +61,14 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr col = arguments[0].column;
-        const ColumnArray * col_arr = checkAndGetColumn<ColumnArray>(col.get());
+        const ColumnArray & col_arr = checkAndGetColumn<ColumnArray>(*col);
 
-        const IColumn & arr_data = col_arr->getData();
-        const ColumnArray::Offsets & arr_offsets = col_arr->getOffsets();
+        const IColumn & arr_data = col_arr.getData();
+        const ColumnArray::Offsets & arr_offsets = col_arr.getOffsets();
 
         ColumnPtr col_res;
         if (input_rows_count == 0)
             return ColumnArray::create(ColumnFloat64::create());
-
 
         Float64 min_percentile = 0.25; /// default 25th percentile
         Float64 max_percentile = 0.75; /// default 75th percentile
@@ -80,23 +76,20 @@ public:
 
         if (arguments.size() > 1)
         {
-            Float64 p_min = arguments[1].column->getFloat64(0);
-            if (isnan(p_min) || !isFinite(p_min) || p_min < min_quartile|| p_min > max_quartile)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second argument of function {} must be in range [2.0, 98.0]", getName());
+            static constexpr Float64 min_percentile_lower_bound = 0.02;
+            static constexpr Float64 max_percentile_upper_bound = 0.98;
 
-            min_percentile = p_min / 100;
+            min_percentile = arguments[1].column->getFloat64(0);
+            if (isnan(min_percentile) || !isFinite(min_percentile) || min_percentile < min_percentile_lower_bound|| min_percentile > max_percentile_upper_bound)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second argument of function {} must be in range [0.02, 0.98]", getName());
 
-            Float64 p_max = arguments[2].column->getFloat64(0);
-            if (isnan(p_max) || !isFinite(p_max) || p_max < min_quartile || p_max > max_quartile || p_max < min_percentile * 100)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The third argument of function {} must be in range [2.0, 98.0]", getName());
+            max_percentile = arguments[2].column->getFloat64(0);
+            if (isnan(max_percentile) || !isFinite(max_percentile) || max_percentile < min_percentile_lower_bound || max_percentile > max_percentile_upper_bound || max_percentile < min_percentile)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The third argument of function {} must be in range [0.02, 0.98]", getName());
 
-            max_percentile = p_max / 100;
-
-            auto k_val = arguments[3].column->getFloat64(0);
-            if (k_val < 0.0 || isnan(k_val) || !isFinite(k_val))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The fourth argument of function {} must be a positive number", getName());
-
-            k = k_val;
+            k = arguments[3].column->getFloat64(0);
+            if (k < 0.0 || isnan(k) || !isFinite(k))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The fourth argument of function {} must be a non-negative number", getName());
         }
 
         if (executeNumber<UInt8>(arr_data, arr_offsets, min_percentile, max_percentile, k, col_res)
@@ -112,12 +105,8 @@ public:
         {
             return col_res;
         }
-        else
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of first argument of function {}",
-                arguments[0].column->getName(),
-                getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
     }
 
 private:
@@ -155,7 +144,8 @@ private:
             src_sorted.assign(src_vec.begin() + prev_src_offset, src_vec.begin() + src_offset);
             std::sort(src_sorted.begin(), src_sorted.end());
 
-            Float64 q1, q2;
+            Float64 q1;
+            Float64 q2;
 
             Float64 p1 = len * min_percentile;
             if (p1 == static_cast<Int64>(p1))
@@ -216,8 +206,8 @@ seriesOutliersDetectTukey(series, min_percentile, max_percentile, k);
 **Arguments**
 
 - `series` - An array of numeric values.
-- `min_percentile` - The minimum percentile to be used to calculate inter-quantile range [(IQR)](https://en.wikipedia.org/wiki/Interquartile_range). The value must be in range [2,98]. The default is 25.
-- `max_percentile` - The maximum percentile to be used to calculate inter-quantile range (IQR). The value must be in range [2,98]. The default is 75.
+- `min_quantile` - The minimum quantile to be used to calculate inter-quantile range [(IQR)](https://en.wikipedia.org/wiki/Interquartile_range). The value must be in range [0.02,0.98]. The default is 0.25.
+- `max_quantile` - The maximum quantile to be used to calculate inter-quantile range (IQR). The value must be in range [0.02, 0.98]. The default is 0.75.
 - `k` - Non-negative constant value to detect mild or stronger outliers. The default value is 1.5
 
 At least four data points are required in `series` to detect outliers.
@@ -247,7 +237,7 @@ Result:
 Query:
 
 ``` sql
-SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4.50, 5, 12, 45, 12, 3.40, 3, 4, 5, 6], 20, 80, 1.5) AS print_0;
+SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4.50, 5, 12, 45, 12, 3.40, 3, 4, 5, 6], 0.2, 0.8, 1.5) AS print_0;
 ```
 
 Result:

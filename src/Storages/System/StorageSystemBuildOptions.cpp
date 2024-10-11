@@ -17,7 +17,7 @@ ColumnsDescription StorageSystemBuildOptions::getColumnsDescription()
     };
 }
 
-void StorageSystemBuildOptions::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemBuildOptions::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     for (auto * it = auto_config_build; *it; it += 2)
     {

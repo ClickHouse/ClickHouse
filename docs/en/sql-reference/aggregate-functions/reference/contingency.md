@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/contingency
-sidebar_position: 350
+sidebar_position: 116
 ---
 
 # contingency
@@ -20,7 +20,7 @@ contingency(column1, column2)
 
 **Returned value**
 
-- a value between 0 to 1. The larger the result, the closer the association of the two columns.
+- a value between 0 and 1. The larger the result, the closer the association of the two columns.
 
 **Return type** is always [Float64](../../../sql-reference/data-types/float.md).
 

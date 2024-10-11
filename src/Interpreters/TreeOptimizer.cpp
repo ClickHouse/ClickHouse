@@ -15,14 +15,11 @@
 #include <Interpreters/FunctionMaskingArgumentCheckVisitor.h>
 #include <Interpreters/RedundantFunctionsInOrderByVisitor.h>
 #include <Interpreters/RewriteCountVariantsVisitor.h>
-#include <Interpreters/MonotonicityCheckVisitor.h>
 #include <Interpreters/ConvertStringsToEnumVisitor.h>
 #include <Interpreters/ConvertFunctionOrLikeVisitor.h>
-#include <Interpreters/RewriteFunctionToSubcolumnVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
-#include <Interpreters/RewriteSumIfFunctionVisitor.h>
 #include <Interpreters/RewriteArrayExistsFunctionVisitor.h>
 #include <Interpreters/RewriteSumFunctionWithSumAndCountVisitor.h>
 #include <Interpreters/OptimizeDateOrDateTimeConverterWithPreimageVisitor.h>
@@ -43,6 +40,27 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_hyperscan;
+    extern const SettingsBool convert_query_to_cnf;
+    extern const SettingsBool enable_positional_arguments;
+    extern const SettingsUInt64 max_hyperscan_regexp_length;
+    extern const SettingsUInt64 max_hyperscan_regexp_total_length;
+    extern const SettingsBool optimize_aggregators_of_group_by_keys;
+    extern const SettingsBool optimize_append_index;
+    extern const SettingsBool optimize_arithmetic_operations_in_aggregate_functions;
+    extern const SettingsBool optimize_group_by_function_keys;
+    extern const SettingsBool optimize_if_transform_strings_to_enum;
+    extern const SettingsBool optimize_injective_functions_inside_uniq;
+    extern const SettingsBool optimize_normalize_count_variants;
+    extern const SettingsBool optimize_substitute_columns;
+    extern const SettingsBool optimize_time_filter_with_preimage;
+    extern const SettingsBool optimize_using_constraints;
+    extern const SettingsBool optimize_redundant_functions_in_order_by;
+    extern const SettingsBool optimize_rewrite_array_exists_to_has;
+    extern const SettingsBool optimize_or_like_chain;
+}
 
 namespace ErrorCodes
 {
@@ -77,11 +95,10 @@ const std::unordered_set<String> possibly_injective_function_names
   */
 void appendUnusedGroupByColumn(ASTSelectQuery * select_query)
 {
-    /// You must insert a constant that is not the name of the column in the table. Such a case is rare, but it happens.
-    /// Also start unused_column integer must not intersect with ([1, source_columns.size()])
-    /// might be in positional GROUP BY.
+    /// Since ASTLiteral is different from ASTIdentifier, so we can use a special constant String Literal for this,
+    /// and do not need to worry about it conflict with the name of the column in the table.
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::make_shared<ASTExpressionList>());
-    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>(static_cast<Int64>(-1)));
+    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>("__unused_group_by_column"));
 }
 
 /// Eliminates injective function calls and constant expressions from group by statement.
@@ -145,7 +162,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
             }
             else
             {
-                FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(function->name, context);
+                FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(function->name, context); /// NOLINT(readability-static-accessed-through-instance)
 
                 if (!function_builder)
                     function_builder = function_factory.get(function->name, context);
@@ -176,20 +193,19 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
             const auto & erase_position = group_exprs.begin() + i;
             group_exprs.erase(erase_position);
             const auto & insert_position = group_exprs.begin() + i;
-            std::remove_copy_if(
-                    std::begin(args_ast->children), std::end(args_ast->children),
-                    std::inserter(group_exprs, insert_position), is_literal
-            );
+            (void)std::remove_copy_if(
+                std::begin(args_ast->children), std::end(args_ast->children),
+                std::inserter(group_exprs, insert_position), is_literal);
         }
         else if (is_literal(group_exprs[i]))
         {
             bool keep_position = false;
-            if (settings.enable_positional_arguments)
+            if (settings[Setting::enable_positional_arguments])
             {
                 const auto & value = group_exprs[i]->as<ASTLiteral>()->value;
                 if (value.getType() == Field::Types::UInt64)
                 {
-                    auto pos = value.get<UInt64>();
+                    auto pos = value.safeGet<UInt64>();
                     if (pos > 0 && pos <= select_query->select()->children.size())
                         keep_position = true;
                 }
@@ -278,7 +294,7 @@ void optimizeDuplicatesInOrderBy(const ASTSelectQuery * select_query)
         const auto & order_by_elem = elem->as<ASTOrderByElement &>();
 
         if (order_by_elem.with_fill /// Always keep elements WITH FILL as they affects other.
-            || elems_set.emplace(name, order_by_elem.collation ? order_by_elem.collation->getColumnName() : "").second)
+            || elems_set.emplace(name, order_by_elem.getCollation() ? order_by_elem.getCollation()->getColumnName() : "").second)
             unique_elems.emplace_back(elem);
     }
 
@@ -367,92 +383,6 @@ std::unordered_set<String> getDistinctNames(const ASTSelectQuery & select)
         return {};
 
     return names;
-}
-
-/// Replace monotonous functions in ORDER BY if they don't participate in GROUP BY expression,
-/// has a single argument and not an aggregate functions.
-void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, ContextPtr context,
-                                          const TablesWithColumns & tables_with_columns,
-                                          const TreeRewriterResult & result)
-{
-    auto order_by = select_query->orderBy();
-    if (!order_by)
-        return;
-
-    /// Do not apply optimization for Distributed and Merge storages,
-    /// because we can't get the sorting key of their underlying tables
-    /// and we can break the matching of the sorting key for `read_in_order`
-    /// optimization by removing monotonous functions from the prefix of key.
-    if (result.is_remote_storage || (result.storage && result.storage->getName() == "Merge"))
-        return;
-
-    for (const auto & child : order_by->children)
-    {
-        auto * order_by_element = child->as<ASTOrderByElement>();
-
-        if (!order_by_element || order_by_element->children.empty())
-            throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE, "Bad ORDER BY expression AST");
-
-        if (order_by_element->with_fill)
-            return;
-    }
-
-    std::unordered_set<String> group_by_hashes;
-    if (auto group_by = select_query->groupBy())
-    {
-        if (select_query->group_by_with_grouping_sets)
-        {
-            for (auto & set : group_by->children)
-            {
-                for (auto & elem : set->children)
-                {
-                    const auto hash = elem->getTreeHash(/*ignore_aliases=*/ true);
-                    const auto key = toString(hash);
-                    group_by_hashes.insert(key);
-                }
-            }
-        }
-        else
-        {
-            for (auto & elem : group_by->children)
-            {
-                const auto hash = elem->getTreeHash(/*ignore_aliases=*/ true);
-                const auto key = toString(hash);
-                group_by_hashes.insert(key);
-            }
-        }
-    }
-
-    auto sorting_key_columns = result.storage_snapshot ? result.storage_snapshot->metadata->getSortingKeyColumns() : Names{};
-
-    bool is_sorting_key_prefix = true;
-    for (size_t i = 0; i < order_by->children.size(); ++i)
-    {
-        auto * order_by_element = order_by->children[i]->as<ASTOrderByElement>();
-
-        auto & ast_func = order_by_element->children[0];
-        if (!ast_func->as<ASTFunction>())
-            continue;
-
-        if (i >= sorting_key_columns.size() || ast_func->getColumnName() != sorting_key_columns[i])
-            is_sorting_key_prefix = false;
-
-        /// If order by expression matches the sorting key, do not remove
-        /// functions to allow execute reading in order of key.
-        if (is_sorting_key_prefix)
-            continue;
-
-        MonotonicityCheckVisitor::Data data{tables_with_columns, context, group_by_hashes};
-        MonotonicityCheckVisitor(data).visit(ast_func);
-
-        if (!data.isRejected())
-        {
-            ast_func = data.identifier->clone();
-            ast_func->setAlias("");
-            if (!data.monotonicity.is_positive)
-                order_by_element->direction *= -1;
-        }
-    }
 }
 
 /// If ORDER BY has argument x followed by f(x) transforms it to ORDER BY x.
@@ -603,12 +533,6 @@ void optimizeAggregationFunctions(ASTPtr & query)
     ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
 }
 
-void optimizeSumIfFunctions(ASTPtr & query)
-{
-    RewriteSumIfFunctionVisitor::Data data = {};
-    RewriteSumIfFunctionVisitor(data).visit(query);
-}
-
 void optimizeArrayExistsFunctions(ASTPtr & query)
 {
     RewriteArrayExistsFunctionVisitor::Data data = {};
@@ -660,12 +584,6 @@ void transformIfStringsIntoEnum(ASTPtr & query)
     ConvertStringsToEnumVisitor(convert_data).visit(query);
 }
 
-void optimizeFunctionsToSubcolumns(ASTPtr & query, const StorageMetadataPtr & metadata_snapshot)
-{
-    RewriteFunctionToSubcolumnVisitor::Data data{metadata_snapshot};
-    RewriteFunctionToSubcolumnVisitor(data).visit(query);
-}
-
 void optimizeOrLikeChain(ASTPtr & query)
 {
     ConvertFunctionOrLikeVisitor::Data data = {};
@@ -680,7 +598,8 @@ void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_
         optimizeMultiIfToIf(query);
 
     /// Optimize if with constant condition after constants was substituted instead of scalar subqueries.
-    OptimizeIfWithConstantConditionVisitor(aliases).visit(query);
+    OptimizeIfWithConstantConditionVisitorData visitor_data(aliases);
+    OptimizeIfWithConstantConditionVisitor(visitor_data).visit(query);
 
     if (if_chain_to_multiif)
         OptimizeIfChainsVisitor().visit(query);
@@ -730,68 +649,64 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (!select_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Select analyze for not select asts.");
 
-    if (settings.optimize_functions_to_subcolumns && result.storage_snapshot && result.storage->supportsSubcolumns())
-        optimizeFunctionsToSubcolumns(query, result.storage_snapshot->metadata);
-
     /// Move arithmetic operations out of aggregation functions
-    if (settings.optimize_arithmetic_operations_in_aggregate_functions)
+    if (settings[Setting::optimize_arithmetic_operations_in_aggregate_functions])
         optimizeAggregationFunctions(query);
 
     bool converted_to_cnf = false;
-    if (settings.convert_query_to_cnf)
+    if (settings[Setting::convert_query_to_cnf])
         converted_to_cnf = convertQueryToCNF(select_query);
 
-    if (converted_to_cnf && settings.optimize_using_constraints && result.storage_snapshot)
+    if (converted_to_cnf && settings[Setting::optimize_using_constraints] && result.storage_snapshot)
     {
-        optimizeWithConstraints(select_query, result.aliases, result.source_columns_set,
-            tables_with_columns, result.storage_snapshot->metadata, settings.optimize_append_index);
+        optimizeWithConstraints(
+            select_query,
+            result.aliases,
+            result.source_columns_set,
+            tables_with_columns,
+            result.storage_snapshot->metadata,
+            settings[Setting::optimize_append_index]);
 
-        if (settings.optimize_substitute_columns)
+        if (settings[Setting::optimize_substitute_columns])
             optimizeSubstituteColumn(select_query, result.aliases, result.source_columns_set,
                 tables_with_columns, result.storage_snapshot->metadata, result.storage);
     }
 
     /// Rewrite sum(column +/- literal) function with sum(column) +/- literal * count(column).
-    if (settings.optimize_arithmetic_operations_in_aggregate_functions)
+    if (settings[Setting::optimize_arithmetic_operations_in_aggregate_functions])
         rewriteSumFunctionWithSumAndCount(query, tables_with_columns);
 
     /// Rewrite date filters to avoid the calls of converters such as toYear, toYYYYMM, etc.
-    optimizeDateFilters(select_query, tables_with_columns, context);
+    if (settings[Setting::optimize_time_filter_with_preimage])
+        optimizeDateFilters(select_query, tables_with_columns, context);
 
     /// GROUP BY injective function elimination.
     optimizeGroupBy(select_query, context);
 
     /// GROUP BY functions of other keys elimination.
-    if (settings.optimize_group_by_function_keys)
+    if (settings[Setting::optimize_group_by_function_keys])
         optimizeGroupByFunctionKeys(select_query);
 
-    if (settings.optimize_normalize_count_variants)
+    if (settings[Setting::optimize_normalize_count_variants])
         optimizeCountConstantAndSumOne(query, context);
 
-    if (settings.optimize_rewrite_sum_if_to_count_if)
-        optimizeSumIfFunctions(query);
-
-    if (settings.optimize_rewrite_array_exists_to_has)
+    if (settings[Setting::optimize_rewrite_array_exists_to_has])
         optimizeArrayExistsFunctions(query);
 
     /// Remove injective functions inside uniq
-    if (settings.optimize_injective_functions_inside_uniq)
+    if (settings[Setting::optimize_injective_functions_inside_uniq])
         optimizeInjectiveFunctionsInsideUniq(query, context);
 
     /// Eliminate min/max/any aggregators of functions of GROUP BY keys
-    if (settings.optimize_aggregators_of_group_by_keys
+    if (settings[Setting::optimize_aggregators_of_group_by_keys]
         && !select_query->group_by_with_totals
         && !select_query->group_by_with_rollup
         && !select_query->group_by_with_cube)
         optimizeAggregateFunctionsOfGroupByKeys(select_query, query);
 
     /// Remove functions from ORDER BY if its argument is also in ORDER BY
-    if (settings.optimize_redundant_functions_in_order_by)
+    if (settings[Setting::optimize_redundant_functions_in_order_by])
         optimizeRedundantFunctionsInOrderBy(select_query, context);
-
-    /// Replace monotonous functions with its argument
-    if (settings.optimize_monotonous_functions_in_order_by)
-        optimizeMonotonousFunctionsInOrderBy(select_query, context, tables_with_columns, result);
 
     /// Remove duplicate items from ORDER BY.
     /// Execute it after all order by optimizations,
@@ -799,7 +714,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     optimizeDuplicatesInOrderBy(select_query);
 
     /// If function "if" has String-type arguments, transform them into enum
-    if (settings.optimize_if_transform_strings_to_enum)
+    if (settings[Setting::optimize_if_transform_strings_to_enum])
         transformIfStringsIntoEnum(query);
 
     /// Remove duplicated elements from LIMIT BY clause.
@@ -808,10 +723,8 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     /// Remove duplicated columns from USING(...).
     optimizeUsing(select_query);
 
-    if (settings.optimize_or_like_chain
-        && settings.allow_hyperscan
-        && settings.max_hyperscan_regexp_length == 0
-        && settings.max_hyperscan_regexp_total_length == 0)
+    if (settings[Setting::optimize_or_like_chain] && settings[Setting::allow_hyperscan] && settings[Setting::max_hyperscan_regexp_length] == 0
+        && settings[Setting::max_hyperscan_regexp_total_length] == 0)
     {
         optimizeOrLikeChain(query);
     }

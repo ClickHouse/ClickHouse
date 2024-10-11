@@ -16,7 +16,7 @@ public:
     ~WriteBufferFromNuraftBuffer() override;
 
 private:
-    void finalizeImpl() override final;
+    void finalizeImpl() final;
 
     void nextImpl() override;
 

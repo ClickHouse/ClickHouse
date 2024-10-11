@@ -13,46 +13,6 @@ namespace ErrorCodes
 
 namespace
 {
-    void formatColumnNames(const Strings & columns, const IAST::FormatSettings & settings)
-    {
-        settings.ostr << "(";
-        bool need_comma = false;
-        for (const auto & column : columns)
-        {
-            if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.ostr << backQuoteIfNeed(column);
-        }
-        settings.ostr << ")";
-    }
-
-
-    void formatONClause(const AccessRightsElement & element, const IAST::FormatSettings & settings)
-    {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "ON " << (settings.hilite ? IAST::hilite_none : "");
-        if (element.isGlobalWithParameter())
-        {
-            if (element.any_parameter)
-                settings.ostr << "*";
-            else
-                settings.ostr << backQuoteIfNeed(element.parameter);
-        }
-        else if (element.any_database)
-        {
-            settings.ostr << "*.*";
-        }
-        else
-        {
-            if (!element.database.empty())
-                settings.ostr << backQuoteIfNeed(element.database) << ".";
-            if (element.any_table)
-                settings.ostr << "*";
-            else
-                settings.ostr << backQuoteIfNeed(element.table);
-        }
-    }
-
-
     void formatElementsWithoutOptions(const AccessRightsElements & elements, const IAST::FormatSettings & settings)
     {
         bool no_output = true;
@@ -60,7 +20,7 @@ namespace
         {
             const auto & element = elements[i];
             auto keywords = element.access_flags.toKeywords();
-            if (keywords.empty() || (!element.any_column && element.columns.empty()))
+            if (keywords.empty() || (!element.anyColumn() && element.columns.empty()))
                 continue;
 
             for (const auto & keyword : keywords)
@@ -69,8 +29,8 @@ namespace
                     settings.ostr << ", ";
 
                 settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << keyword << (settings.hilite ? IAST::hilite_none : "");
-                if (!element.any_column)
-                    formatColumnNames(element.columns, settings);
+                if (!element.anyColumn())
+                    element.formatColumnNames(settings.ostr);
             }
 
             bool next_element_on_same_db_and_table = false;
@@ -86,12 +46,20 @@ namespace
             if (!next_element_on_same_db_and_table)
             {
                 settings.ostr << " ";
-                formatONClause(element, settings);
+                element.formatONClause(settings.ostr, settings.hilite);
             }
         }
 
         if (no_output)
             settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "USAGE ON " << (settings.hilite ? IAST::hilite_none : "") << "*.*";
+    }
+
+
+    void formatCurrentGrantsElements(const AccessRightsElements & elements, const IAST::FormatSettings & settings)
+    {
+        settings.ostr << "(";
+        formatElementsWithoutOptions(elements, settings);
+        settings.ostr << ")";
     }
 }
 
@@ -148,9 +116,14 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
                             "to grant or revoke, not both of them");
     }
     else if (current_grants)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " CURRENT GRANTS" << (settings.hilite ? hilite_none : "");
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "CURRENT GRANTS" << (settings.hilite ? hilite_none : "");
+        formatCurrentGrantsElements(access_rights_elements, settings);
+    }
     else
+    {
         formatElementsWithoutOptions(access_rights_elements, settings);
+    }
 
     settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (is_revoke ? " FROM " : " TO ")
                   << (settings.hilite ? IAST::hilite_none : "");

@@ -34,8 +34,8 @@ namespace DB
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             using ColVecType = typename FromDataType::ColumnType;
-            const ColVecType * col_from = checkAndGetColumn<ColVecType>(arguments[0].column.get());
-            const typename ColVecType::Container & vec_from = col_from->getData();
+            const ColVecType & col_from = checkAndGetColumn<ColVecType>(*arguments[0].column);
+            const typename ColVecType::Container & vec_from = col_from.getData();
 
             auto col_to = ColumnString::create();
             ColumnString::Chars & data_to = col_to->getChars();
@@ -179,9 +179,8 @@ namespace DB
                 */
             if (WhichDataType(from_type_not_null).isNothing()) // Nullable(Nothing)
                 return std::make_unique<FunctionBaseFromModifiedJulianDay<Name, DataTypeInt32, nullOnErrors>>(argument_types, return_type);
-            else
-                // Should not happen.
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must be integral", getName());
+            // Should not happen.
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must be integral", getName());
         }
 
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

@@ -3,11 +3,12 @@
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Parsers/IAST_fwd.h>
+#include <Processors/Chunk.h>
 #include <Poco/Logger.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerSwitcher.h>
+#include <Common/SettingsChanges.h>
 #include <Common/ThreadPool.h>
-#include <Processors/Chunk.h>
 
 #include <future>
 #include <shared_mutex>
@@ -37,18 +38,18 @@ public:
         Status status;
 
         /// Future that allows to wait until the query is flushed.
-        std::future<void> future;
+        std::future<void> future{};
 
         /// Read buffer that contains extracted
         /// from query data in case of too much data.
-        std::unique_ptr<ReadBuffer> insert_data_buffer;
+        std::unique_ptr<ReadBuffer> insert_data_buffer{};
 
         /// Block that contains received by Native
         /// protocol data in case of too much data.
-        Block insert_block;
+        Block insert_block{};
     };
 
-    enum class DataKind
+    enum class DataKind : uint8_t
     {
         Parsed = 0,
         Preprocessed = 1,
@@ -62,6 +63,10 @@ public:
     PushResult pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context);
     PushResult pushQueryWithBlock(ASTPtr query, Block block, ContextPtr query_context);
     size_t getPoolSize() const { return pool_size; }
+
+    /// This method should be called manually because it's not flushed automatically in dtor
+    /// because all tables may be already unloaded when we destroy AsynchronousInsertQueue
+    void flushAndShutdown();
 
 private:
 
@@ -113,8 +118,18 @@ private:
         {
             if (std::holds_alternative<Block>(*this))
                 return DataKind::Preprocessed;
-            else
-                return DataKind::Parsed;
+            return DataKind::Parsed;
+        }
+
+        bool empty() const
+        {
+            return std::visit([]<typename T>(const T & arg)
+            {
+                if constexpr (std::is_same_v<T, Block>)
+                    return arg.rows() == 0;
+                else
+                    return arg.empty();
+            }, *this);
         }
 
         const String * asString() const { return std::get_if<String>(this); }
@@ -132,6 +147,7 @@ private:
             const String format;
             MemoryTracker * const user_memory_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
+            NameToNameMap query_parameters;
 
             Entry(
                 DataChunk && chunk_,
@@ -140,7 +156,9 @@ private:
                 const String & format_,
                 MemoryTracker * user_memory_tracker_);
 
+            void resetChunk();
             void finish(std::exception_ptr exception_ = nullptr);
+
             std::future<void> getFuture() { return promise.get_future(); }
             bool isFinished() const { return finished; }
 
@@ -265,15 +283,13 @@ private:
         const InsertDataPtr & data,
         const Block & header,
         const ContextPtr & insert_context,
-        const LoggerPtr logger,
+        LoggerPtr logger,
         LogFunc && add_to_async_insert_log);
 
     template <typename LogFunc>
     static Chunk processPreprocessedEntries(
-        const InsertQuery & key,
         const InsertDataPtr & data,
         const Block & header,
-        const ContextPtr & insert_context,
         LogFunc && add_to_async_insert_log);
 
     template <typename E>
@@ -282,7 +298,7 @@ private:
 public:
     auto getQueueLocked(size_t shard_num) const
     {
-        auto & shard = queue_shards[shard_num];
+        const auto & shard = queue_shards[shard_num];
         std::unique_lock lock(shard.mutex);
         return std::make_pair(std::ref(shard.queue), std::move(lock));
     }

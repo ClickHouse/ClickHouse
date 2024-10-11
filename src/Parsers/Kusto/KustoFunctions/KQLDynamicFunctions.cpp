@@ -99,7 +99,7 @@ bool ArrayRotateRight::convertImpl(String & out, IParser::Pos & pos)
 
     const auto array = getArgument(function_name, pos, ArgumentState::Raw);
     const auto count = getArgument(function_name, pos, ArgumentState::Raw);
-    out = kqlCallToExpression("array_rotate_left", {array, "-1 * " + count}, pos.max_depth);
+    out = kqlCallToExpression("array_rotate_left", {array, "-1 * " + count}, pos.max_depth, pos.max_backtracks);
 
     return true;
 }
@@ -140,7 +140,7 @@ bool ArrayShiftRight::convertImpl(String & out, IParser::Pos & pos)
         "array_shift_left",
         fill ? std::initializer_list<std::string_view>{array, negated_count, *fill}
              : std::initializer_list<std::string_view>{array, negated_count},
-        pos.max_depth);
+        pos.max_depth, pos.max_backtracks);
 
     return true;
 }
@@ -233,8 +233,8 @@ bool JaccardIndex::convertImpl(String & out, IParser::Pos & pos)
     const auto rhs = getArgument(function_name, pos, ArgumentState::Raw);
     out = std::format(
         "divide(length({0}), length({1}))",
-        kqlCallToExpression("set_intersect", {lhs, rhs}, pos.max_depth),
-        kqlCallToExpression("set_union", {lhs, rhs}, pos.max_depth));
+        kqlCallToExpression("set_intersect", {lhs, rhs}, pos.max_depth, pos.max_backtracks),
+        kqlCallToExpression("set_union", {lhs, rhs}, pos.max_depth, pos.max_backtracks));
 
     return true;
 }
@@ -272,8 +272,7 @@ bool Repeat::convertImpl(String & out, IParser::Pos & pos)
 
     if (count.empty())
         throw Exception(ErrorCodes::SYNTAX_ERROR, "number of arguments do not match in function: {}", function_name);
-    else
-        out = "if(" + count + " < 0, [NULL], " + std::format("arrayWithConstant(abs({1}), {0}))", value, count);
+    out = "if(" + count + " < 0, [NULL], " + std::format("arrayWithConstant(abs({1}), {0}))", value, count);
 
     return true;
 }
@@ -292,7 +291,7 @@ bool SetDifference::convertImpl(String & out, IParser::Pos & pos)
             while (auto next_array = getOptionalArgument(function_name, pos, ArgumentState::Raw))
                 arrays.push_back(*next_array);
 
-            return kqlCallToExpression("set_union", std::vector<std::string_view>(arrays.cbegin(), arrays.cend()), pos.max_depth);
+            return kqlCallToExpression("set_union", std::vector<std::string_view>(arrays.cbegin(), arrays.cend()), pos.max_depth, pos.max_backtracks);
         });
 
     out = std::format("arrayFilter(x -> not has({1}, x), arrayDistinct({0}))", lhs, rhs);

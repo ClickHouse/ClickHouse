@@ -312,10 +312,8 @@ public:
         {
             return std::make_shared<FakeDiskTransaction>(*this);
         }
-        else
-        {
-            return createEncryptedTransaction();
-        }
+
+        return createEncryptedTransaction();
     }
 
     std::optional<UInt64> getTotalSpace() const override
@@ -349,6 +347,21 @@ public:
     {
         return delegate;
     }
+
+    UInt32 getRefCount(const String & path) const override
+    {
+        auto wrapped_path = wrappedPath(path);
+        return delegate->getRefCount(wrapped_path);
+    }
+
+#if USE_AWS_S3
+    std::shared_ptr<const S3::Client> getS3StorageClient() const override
+    {
+        return delegate->getS3StorageClient();
+    }
+
+    std::shared_ptr<const S3::Client> tryGetS3StorageClient() const override { return delegate->tryGetS3StorageClient(); }
+#endif
 
 private:
     String wrappedPath(const String & path) const

@@ -1,3 +1,4 @@
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Interpreters/AggregationUtils.h>
 
 namespace DB

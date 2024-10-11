@@ -1,0 +1,98 @@
+-- { echoOn }
+
+SET enable_analyzer = 1;
+WITH RECURSIVE recursive_cte AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM recursive_cte WHERE n < 10)
+SELECT n FROM recursive_cte;
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+SELECT '--';
+--
+WITH RECURSIVE recursive_cte AS (SELECT toUInt8(1) AS n UNION ALL SELECT toUInt8(n + 1) FROM recursive_cte WHERE n < 10)
+SELECT n FROM recursive_cte;
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+SELECT '--';
+--
+WITH RECURSIVE recursive_cte AS (SELECT toUInt16(1) AS n UNION ALL SELECT toUInt8(n + 1) FROM recursive_cte WHERE n < 10)
+SELECT n FROM recursive_cte;
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+SELECT '--';
+--
+WITH RECURSIVE recursive_cte AS (SELECT materialize(toUInt16(1)) AS n UNION ALL SELECT toUInt8(n + 1) FROM recursive_cte WHERE n < 10)
+SELECT n FROM recursive_cte;
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+SELECT '--';
+--
+WITH RECURSIVE recursive_cte AS (SELECT toUInt16(1) AS n UNION ALL SELECT materialize(toUInt8(n + 1)) FROM recursive_cte WHERE n < 10)
+SELECT n FROM recursive_cte;
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+SELECT '--';
+--
+WITH RECURSIVE recursive_cte AS (SELECT toUInt16(1) AS n, '1' AS concat UNION ALL SELECT materialize(toUInt8(n + 1)), concat || toString(n + 1) FROM recursive_cte WHERE n < 10)
+SELECT n, concat FROM recursive_cte;
+1	1
+2	12
+3	123
+4	1234
+5	12345
+6	123456
+7	1234567
+8	12345678
+9	123456789
+10	12345678910
+SELECT '--';
+--
+WITH RECURSIVE recursive_cte AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM recursive_cte)
+SELECT n FROM recursive_cte LIMIT 5;
+1
+2
+3
+4
+5
+SELECT '--';
+--
+WITH RECURSIVE recursive_cte AS (SELECT materialize(toUInt8(1)) AS n UNION ALL SELECT materialize(toUInt8(n + 1)) FROM recursive_cte WHERE n < 10)
+SELECT n FROM recursive_cte FORMAT Null SETTINGS max_recursive_cte_evaluation_depth = 5; -- { serverError TOO_DEEP_RECURSION }

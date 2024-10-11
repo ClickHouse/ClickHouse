@@ -15,7 +15,7 @@ namespace DB
 class SortNode;
 using SortNodePtr = std::shared_ptr<SortNode>;
 
-enum class SortDirection
+enum class SortDirection : uint8_t
 {
     ASCENDING = 0,
     DESCENDING = 1
@@ -131,9 +131,9 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
-    void updateTreeHashImpl(HashState & hash_state) const override;
+    void updateTreeHashImpl(HashState & hash_state, CompareOptions) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 

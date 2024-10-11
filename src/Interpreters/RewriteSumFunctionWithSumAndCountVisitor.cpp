@@ -4,6 +4,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 
+#include <Poco/String.h>
+
 namespace DB
 {
 
@@ -99,11 +101,9 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
                                                 );
         if (!new_ast)
             return;
-        else
-        {
-            new_ast->setAlias(ast->tryGetAlias());
-            ast = new_ast;
-        }
+
+        new_ast->setAlias(ast->tryGetAlias());
+        ast = new_ast;
     }
     else if (column_id == 1)
     {
@@ -118,11 +118,9 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
                                                 );
         if (!new_ast)
             return;
-        else
-        {
-            new_ast->setAlias(ast->tryGetAlias());
-            ast = new_ast;
-        }
+
+        new_ast->setAlias(ast->tryGetAlias());
+        ast = new_ast;
     }
 }
 

@@ -5,6 +5,8 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseS3.h>
 
+#include <Common/RemoteHostFilter.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <IO/S3/URI.h>
@@ -25,6 +27,11 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 static const std::unordered_set<std::string_view> optional_configuration_keys = {
     "url",
@@ -191,7 +198,8 @@ ASTPtr DatabaseS3::getCreateDatabaseQuery() const
         creation_args += fmt::format(", '{}', '{}'", config.access_key_id.value(), config.secret_access_key.value());
 
     const String query = fmt::format("CREATE DATABASE {} ENGINE = S3({})", backQuoteIfNeed(getDatabaseName()), creation_args);
-    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
+    ASTPtr ast
+        = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
     {
@@ -303,7 +311,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseS3::getTablesForBackup(const 
  * Returns an empty iterator because the database does not have its own tables
  * But only caches them for quick access
  */
-DatabaseTablesIteratorPtr DatabaseS3::getTablesIterator(ContextPtr, const FilterByNameFunction &) const
+DatabaseTablesIteratorPtr DatabaseS3::getTablesIterator(ContextPtr, const FilterByNameFunction &, bool) const
 {
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
@@ -325,7 +333,7 @@ void registerDatabaseS3(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseS3>(args.database_name, config, args.context);
     };
-    factory.registerDatabase("S3", create_fn);
+    factory.registerDatabase("S3", create_fn, {.supports_arguments = true});
 }
 }
 #endif

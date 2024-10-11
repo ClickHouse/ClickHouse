@@ -115,7 +115,7 @@ CREATE DICTIONARY lazy_db.dict3
 PRIMARY KEY key_column, second_column
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict_01018'))
 LIFETIME(MIN 1 MAX 10)
-LAYOUT(COMPLEX_KEY_HASHED()); --{serverError 1}
+LAYOUT(COMPLEX_KEY_HASHED()); --{serverError UNSUPPORTED_METHOD}
 
 DROP DATABASE IF EXISTS lazy_db;
 

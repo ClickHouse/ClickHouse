@@ -7,6 +7,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Core/ServerUUID.h>
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
@@ -282,7 +283,7 @@ void TransactionLog::removeOldEntries()
     CSN new_tail_ptr = getOldestSnapshot();
     if (new_tail_ptr < old_tail_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected tail_ptr {}, oldest snapshot is {}, it's a bug", old_tail_ptr, new_tail_ptr);
-    else if (new_tail_ptr == old_tail_ptr)
+    if (new_tail_ptr == old_tail_ptr)
         return;
 
     /// (it's not supposed to fail with ZBADVERSION while there is only one host)
@@ -407,8 +408,13 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
         {
             Coordination::SimpleFaultInjection fault(fault_probability_before_commit, fault_probability_after_commit, "commit");
 
+            Coordination::Requests requests;
+            requests.push_back(zkutil::makeCreateRequest(zookeeper_path_log + "/csn-", serializeTID(txn->tid), zkutil::CreateMode::PersistentSequential));
+
             /// Commit point
-            csn_path_created = current_zookeeper->create(zookeeper_path_log + "/csn-", serializeTID(txn->tid), zkutil::CreateMode::PersistentSequential);
+            auto res = current_zookeeper->multi(requests, /* check_session_valid */ true);
+
+            csn_path_created = dynamic_cast<const Coordination::CreateResponse *>(res.back().get())->path_created;
         }
         catch (const Coordination::Exception & e)
         {
@@ -446,6 +452,7 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
 CSN TransactionLog::finalizeCommittedTransaction(MergeTreeTransaction * txn, CSN allocated_csn, scope_guard & state_guard) noexcept
 {
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
+    auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     chassert(!allocated_csn == txn->isReadOnly());
     if (allocated_csn)
     {
@@ -596,7 +603,7 @@ void TransactionLog::assertTIDIsNotOutdated(const TransactionID & tid, const std
     /// If the second case takes place transaction's commit csn has to be set.
     /// We should load CSN again to distinguish the second case.
     if (failback_with_strict_load_csn)
-        if (CSN maybe_csn = failback_with_strict_load_csn->load())
+        if (CSN _ = failback_with_strict_load_csn->load())
             return;
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get CSN for too old TID {}, current tail_ptr is {}, probably it's a bug", tid, tail);

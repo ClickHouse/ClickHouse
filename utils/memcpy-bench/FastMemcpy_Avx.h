@@ -103,7 +103,7 @@ static INLINE void *memcpy_tiny_avx(void * __restrict dst, const void * __restri
     unsigned char *dd = reinterpret_cast<unsigned char *>(dst) + size;
     const unsigned char *ss = reinterpret_cast<const unsigned char*>(src) + size;
 
-    switch (size)
+    switch (size) /// NOLINT(bugprone-switch-missing-default-case)
     {
     case 128: memcpy_avx_128(dd - 128, ss - 128); [[fallthrough]];
     case 0:  break;
@@ -371,7 +371,7 @@ static INLINE void *memcpy_tiny_avx(void * __restrict dst, const void * __restri
 //---------------------------------------------------------------------
 // main routine
 //---------------------------------------------------------------------
-void* memcpy_fast_avx(void * __restrict destination, const void * __restrict source, size_t size)
+void* memcpy_fast_avx(void * __restrict destination, const void * __restrict source, size_t size) /// NOLINT(misc-definitions-in-headers)
 {
     unsigned char *dst = reinterpret_cast<unsigned char*>(destination);
     const unsigned char *src = reinterpret_cast<const unsigned char*>(source);

@@ -147,7 +147,7 @@ public:
 
     static T getScaleMultiplier(UInt32 scale);
 
-    inline DecimalUtils::DataTypeDecimalTrait<T> getTrait() const
+    DecimalUtils::DataTypeDecimalTrait<T> getTrait() const
     {
         return {precision, scale};
     }
@@ -195,16 +195,22 @@ inline DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Wrong precision: it must be between {} and {}, got {}",
                         DecimalUtils::min_precision, DecimalUtils::max_precision<Decimal256>, precision_value);
 
-    if (static_cast<UInt64>(scale_value) > precision_value)
+    if (scale_value > precision_value)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Negative scales and scales larger than precision are not supported");
 
     if (precision_value <= DecimalUtils::max_precision<Decimal32>)
         return std::make_shared<DecimalType<Decimal32>>(precision_value, scale_value);
-    else if (precision_value <= DecimalUtils::max_precision<Decimal64>)
+    if (precision_value <= DecimalUtils::max_precision<Decimal64>)
         return std::make_shared<DecimalType<Decimal64>>(precision_value, scale_value);
-    else if (precision_value <= DecimalUtils::max_precision<Decimal128>)
-       return std::make_shared<DecimalType<Decimal128>>(precision_value, scale_value);
+    if (precision_value <= DecimalUtils::max_precision<Decimal128>)
+        return std::make_shared<DecimalType<Decimal128>>(precision_value, scale_value);
     return std::make_shared<DecimalType<Decimal256>>(precision_value, scale_value);
 }
+
+extern template class DataTypeDecimalBase<Decimal32>;
+extern template class DataTypeDecimalBase<Decimal64>;
+extern template class DataTypeDecimalBase<Decimal128>;
+extern template class DataTypeDecimalBase<Decimal256>;
+extern template class DataTypeDecimalBase<DateTime64>;
 
 }

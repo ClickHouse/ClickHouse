@@ -3,6 +3,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
+#include <Common/ThreadPool.h>
 
 #include <Poco/Event.h>
 
@@ -83,10 +84,13 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
+    bool isRemote() const override;
 
     bool supportsParallelInsert() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
+
+    bool supportsDynamicSubcolumns() const override { return true; }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool /*async_insert*/) override;
 
@@ -149,6 +153,7 @@ private:
 
     /// There are `num_shards` of independent buffers.
     const size_t num_shards;
+    std::unique_ptr<ThreadPool> flush_pool;
     std::vector<Buffer> buffers;
 
     const Thresholds min_thresholds;

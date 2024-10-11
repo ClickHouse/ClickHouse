@@ -1,7 +1,8 @@
 #pragma once
 
-#include <Databases/DatabasesCommon.h>
 #include <Databases/DatabaseOrdinary.h>
+#include <Databases/DatabasesCommon.h>
+#include <Storages/IStorage_fwd.h>
 
 
 namespace DB
@@ -46,7 +47,7 @@ public:
 
     void drop(ContextPtr /*context*/) override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     void beforeLoadingMetadata(ContextMutablePtr context, LoadingStrictnessLevel mode) override;
 
@@ -59,7 +60,7 @@ public:
 
     UUID tryGetTableUUID(const String & table_name) const override;
 
-    void tryCreateSymlink(const String & table_name, const String & actual_data_path, bool if_data_path_exist = false);
+    void tryCreateSymlink(const StoragePtr & table, bool if_data_path_exist = false);
     void tryRemoveSymlink(const String & table_name);
 
     void waitDetachedTableNotInUse(const UUID & uuid) override;

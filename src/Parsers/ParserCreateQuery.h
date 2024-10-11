@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
@@ -13,18 +14,18 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Poco/String.h>
 
+
 namespace DB
 {
 
-/** A nested table. For example, Nested(UInt32 CounterID, FixedString(2) UserAgentMajor)
-  */
-class ParserNestedTable : public IParserBase
+/** Parses sql security option. DEFINER = user_name SQL SECURITY DEFINER
+ */
+class ParserSQLSecurity : public IParserBase
 {
 protected:
-    const char * getName() const override { return "nested table"; }
+    const char * getName() const override { return "sql security"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
-
 
 /** Storage engine or Codec. For example:
  *         Memory()
@@ -93,17 +94,15 @@ class IParserColumnDeclaration : public IParserBase
 {
 public:
     explicit IParserColumnDeclaration(bool require_type_ = true, bool allow_null_modifiers_ = false, bool check_keywords_after_name_ = false)
-    : require_type(require_type_)
-    , allow_null_modifiers(allow_null_modifiers_)
-    , check_keywords_after_name(check_keywords_after_name_)
+        : require_type(require_type_)
+        , allow_null_modifiers(allow_null_modifiers_)
+        , check_keywords_after_name(check_keywords_after_name_)
     {
     }
 
     void enableCheckTypeKeyword() { check_type_keyword = true; }
 
 protected:
-    using ASTDeclarePtr = std::shared_ptr<ASTColumnDeclaration>;
-
     const char * getName() const  override{ return "column declaration"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
@@ -121,24 +120,24 @@ using ParserCompoundColumnDeclaration = IParserColumnDeclaration<ParserCompoundI
 template <typename NameParser>
 bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_default{"DEFAULT"};
-    ParserKeyword s_null{"NULL"};
-    ParserKeyword s_not{"NOT"};
-    ParserKeyword s_materialized{"MATERIALIZED"};
-    ParserKeyword s_ephemeral{"EPHEMERAL"};
-    ParserKeyword s_alias{"ALIAS"};
-    ParserKeyword s_auto_increment{"AUTO_INCREMENT"};
-    ParserKeyword s_comment{"COMMENT"};
-    ParserKeyword s_codec{"CODEC"};
-    ParserKeyword s_stat{"STATISTIC"};
-    ParserKeyword s_ttl{"TTL"};
-    ParserKeyword s_remove{"REMOVE"};
-    ParserKeyword s_modify_setting("MODIFY SETTING");
-    ParserKeyword s_reset_setting("RESET SETTING");
-    ParserKeyword s_settings("SETTINGS");
-    ParserKeyword s_type{"TYPE"};
-    ParserKeyword s_collate{"COLLATE"};
-    ParserKeyword s_primary_key{"PRIMARY KEY"};
+    ParserKeyword s_default{Keyword::DEFAULT};
+    ParserKeyword s_null{Keyword::NULL_KEYWORD};
+    ParserKeyword s_not{Keyword::NOT};
+    ParserKeyword s_materialized{Keyword::MATERIALIZED};
+    ParserKeyword s_ephemeral{Keyword::EPHEMERAL};
+    ParserKeyword s_alias{Keyword::ALIAS};
+    ParserKeyword s_auto_increment{Keyword::AUTO_INCREMENT};
+    ParserKeyword s_comment{Keyword::COMMENT};
+    ParserKeyword s_codec{Keyword::CODEC};
+    ParserKeyword s_stat{Keyword::STATISTICS};
+    ParserKeyword s_ttl{Keyword::TTL};
+    ParserKeyword s_remove{Keyword::REMOVE};
+    ParserKeyword s_modify_setting(Keyword::MODIFY_SETTING);
+    ParserKeyword s_reset_setting(Keyword::RESET_SETTING);
+    ParserKeyword s_settings(Keyword::SETTINGS);
+    ParserKeyword s_type{Keyword::TYPE};
+    ParserKeyword s_collate{Keyword::COLLATE};
+    ParserKeyword s_primary_key{Keyword::PRIMARY_KEY};
 
     NameParser name_parser;
     ParserDataType type_parser;
@@ -147,7 +146,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserLiteral literal_parser;
     ParserCodec codec_parser;
     ParserCollation collation_parser;
-    ParserStatisticType stat_type_parser;
+    ParserStatisticsType stat_type_parser;
     ParserExpression expression_parser;
     ParserSetQuery settings_parser(true);
 
@@ -185,7 +184,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr default_expression;
     ASTPtr comment_expression;
     ASTPtr codec_expression;
-    ASTPtr stat_type_expression;
+    ASTPtr statistics_desc_expression;
     ASTPtr ttl_expression;
     ASTPtr collation_expression;
     ASTPtr settings;
@@ -205,6 +204,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         return res;
     };
 
+    /// Keep this list of keywords in sync with ParserDataType::parseImpl().
     if (!null_check_without_moving()
         && !s_default.checkWithoutMoving(pos, expected)
         && !s_materialized.checkWithoutMoving(pos, expected)
@@ -220,11 +220,9 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             return false;
         if (!type_parser.parse(pos, type, expected))
             return false;
-        if (s_collate.ignore(pos, expected))
-        {
-            if (!collation_parser.parse(pos, collation_expression, expected))
-                return false;
-        }
+        if (s_collate.ignore(pos, expected)
+            && !collation_parser.parse(pos, collation_expression, expected))
+            return false;
     }
 
     if (allow_null_modifiers)
@@ -238,6 +236,11 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         else if (s_null.check(pos, expected))
             null_modifier.emplace(true);
     }
+
+    /// Collate is also allowed after NULL/NOT NULL
+    if (!collation_expression && s_collate.ignore(pos, expected)
+        && !collation_parser.parse(pos, collation_expression, expected))
+        return false;
 
     Pos pos_before_specifier = pos;
     if (s_default.ignore(pos, expected) || s_materialized.ignore(pos, expected) || s_alias.ignore(pos, expected))
@@ -258,9 +261,8 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             auto default_function = std::make_shared<ASTFunction>();
             default_function->name = "defaultValueOfTypeName";
             default_function->arguments = std::make_shared<ASTExpressionList>();
-            // Ephemeral columns don't really have secrets but we need to format
-            // into a String, hence the strange call
-            default_function->arguments->children.emplace_back(std::make_shared<ASTLiteral>(type->as<ASTFunction>()->formatForLogging()));
+            /// Ephemeral columns don't really have secrets but we need to format into a String, hence the strange call
+            default_function->arguments->children.emplace_back(std::make_shared<ASTLiteral>(type->as<ASTDataType>()->formatForLogging()));
             default_expression = default_function;
         }
 
@@ -275,7 +277,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         {
             const String type_int("INT");
             Tokens tokens(type_int.data(), type_int.data() + type_int.size());
-            Pos tmp_pos(tokens, 0);
+            Pos tmp_pos(tokens, pos.max_depth, pos.max_backtracks);
             Expected tmp_expected;
             ParserDataType().parse(tmp_pos, type, tmp_expected);
         }
@@ -314,7 +316,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 
     if (s_stat.ignore(pos, expected))
     {
-        if (!stat_type_parser.parse(pos, stat_type_expression, expected))
+        if (!stat_type_parser.parse(pos, statistics_desc_expression, expected))
             return false;
     }
 
@@ -387,10 +389,10 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         column_declaration->children.push_back(std::move(settings));
     }
 
-    if (stat_type_expression)
+    if (statistics_desc_expression)
     {
-        column_declaration->stat_type = stat_type_expression;
-        column_declaration->children.push_back(std::move(stat_type_expression));
+        column_declaration->statistics_desc = statistics_desc_expression;
+        column_declaration->children.push_back(std::move(statistics_desc_expression));
     }
 
     if (ttl_expression)
@@ -441,15 +443,26 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-class ParserStatisticDeclaration : public IParserBase
+class ParserStatisticsDeclaration : public IParserBase
 {
 public:
-    ParserStatisticDeclaration() = default;
+    ParserStatisticsDeclaration() = default;
 
 protected:
     const char * getName() const override { return "statistics declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
+
+class ParserStatisticsDeclarationWithoutTypes : public IParserBase
+{
+public:
+    ParserStatisticsDeclarationWithoutTypes() = default;
+
+protected:
+    const char * getName() const override { return "statistics declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 
 class ParserConstraintDeclaration : public IParserBase
 {
@@ -523,7 +536,7 @@ public:
         DATABASE_ENGINE,
     };
 
-    ParserStorage(EngineKind engine_kind_) : engine_kind(engine_kind_) {}
+    explicit ParserStorage(EngineKind engine_kind_) : engine_kind(engine_kind_) {}
 
 protected:
     const char * getName() const override { return "storage definition"; }

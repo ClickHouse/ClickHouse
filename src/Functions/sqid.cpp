@@ -58,6 +58,11 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_res = ColumnString::create();
@@ -98,9 +103,9 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"sqid", &isString<IDataType>, nullptr, "String"}
+            {"sqid", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
         };
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArguments(*this, arguments, args);
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
@@ -122,9 +127,10 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 std::string_view sqid = col_non_const->getDataAt(i).toView();
-                std::vector<UInt64> integers = sqids.decode(sqid);
-                res_nested_data.insert(integers.begin(), integers.end());
-                res_offsets_data.push_back(integers.size());
+                std::vector<UInt64> integers = sqids.decode(String(sqid));
+                if (!integers.empty())
+                    res_nested_data.insert(integers.begin(), integers.end());
+                res_offsets_data.push_back(res_offsets_data.back() + integers.size());
             }
         }
         else

@@ -51,8 +51,8 @@ struct IsOperation
     static constexpr bool minus = IsSameOperation<Op, MinusImpl>::value;
     static constexpr bool multiply = IsSameOperation<Op, MultiplyImpl>::value;
     static constexpr bool div_floating = IsSameOperation<Op, DivideFloatingImpl>::value;
-    static constexpr bool div_int = IsSameOperation<Op, DivideIntegralImpl>::value;
-    static constexpr bool div_int_or_zero = IsSameOperation<Op, DivideIntegralOrZeroImpl>::value;
+    static constexpr bool int_div = IsSameOperation<Op, DivideIntegralImpl>::value;
+    static constexpr bool int_div_or_zero = IsSameOperation<Op, DivideIntegralOrZeroImpl>::value;
     static constexpr bool modulo = IsSameOperation<Op, ModuloImpl>::value;
     static constexpr bool positive_modulo = IsSameOperation<Op, PositiveModuloImpl>::value;
     static constexpr bool least = IsSameOperation<Op, LeastBaseImpl>::value;
@@ -60,8 +60,8 @@ struct IsOperation
 
     static constexpr bool bit_hamming_distance = IsSameOperation<Op, BitHammingDistanceImpl>::value;
 
-    static constexpr bool division = div_floating || div_int || div_int_or_zero || modulo;
-
+    static constexpr bool division = div_floating || int_div || int_div_or_zero || modulo;
+    // NOTE: allow_decimal should not fully contain `division` because of divInt
     static constexpr bool allow_decimal = plus || minus || multiply || division || least || greatest;
 };
 

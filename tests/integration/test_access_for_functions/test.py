@@ -1,5 +1,7 @@
-import pytest
 import uuid
+
+import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -38,8 +40,11 @@ def test_access_rights_for_function():
 
     instance.query("GRANT DROP FUNCTION ON *.* TO B")
     instance.query("DROP FUNCTION MySum", user="B")
-    assert "Unknown function MySum" in instance.query_and_get_error(
-        "SELECT MySum(1, 2)"
+
+    function_resolution_error = instance.query_and_get_error("SELECT MySum(1, 2)")
+    assert (
+        "Unknown function MySum" in function_resolution_error
+        or "Function with name `MySum` does not exist." in function_resolution_error
     )
 
     instance.query("REVOKE CREATE FUNCTION ON *.* FROM A")
@@ -62,8 +67,8 @@ def test_ignore_obsolete_grant_on_database():
             "-c",
             f"""
         cat > /var/lib/clickhouse/access/{user_id}.sql << EOF
-ATTACH USER X;
-ATTACH GRANT CREATE FUNCTION, SELECT ON mydb.* TO X;
+ATTACH USER \`{user_id}\`;
+ATTACH GRANT CREATE FUNCTION, SELECT ON mydb.* TO \`{user_id}\`;
 EOF""",
         ]
     )
@@ -73,4 +78,7 @@ EOF""",
     )
     instance.start_clickhouse()
 
-    assert instance.query("SHOW GRANTS FOR X") == "GRANT SELECT ON mydb.* TO X\n"
+    assert (
+        instance.query(f"SHOW GRANTS FOR `{user_id}`")
+        == f"GRANT SELECT ON mydb.* TO `{user_id}`\n"
+    )

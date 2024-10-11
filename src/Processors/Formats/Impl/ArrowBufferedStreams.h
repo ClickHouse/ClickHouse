@@ -6,6 +6,7 @@
 #include <optional>
 
 #include <arrow/io/interfaces.h>
+#include <arrow/memory_pool.h>
 
 #define ORC_MAGIC_BYTES "ORC"
 #define PARQUET_MAGIC_BYTES "PAR1"
@@ -122,6 +123,27 @@ private:
     bool is_open = false;
 
     ARROW_DISALLOW_COPY_AND_ASSIGN(ArrowInputStreamFromReadBuffer);
+};
+
+/// By default, arrow allocated memory using posix_memalign(), which is currently not equipped with
+/// clickhouse memory tracking. This adapter adds memory tracking.
+class ArrowMemoryPool : public arrow::MemoryPool
+{
+public:
+    static ArrowMemoryPool * instance();
+
+    arrow::Status Allocate(int64_t size, int64_t alignment, uint8_t ** out) override;
+    arrow::Status Reallocate(int64_t old_size, int64_t new_size, int64_t alignment, uint8_t ** ptr) override;
+    void Free(uint8_t * buffer, int64_t size, int64_t alignment) override;
+
+    std::string backend_name() const override { return "clickhouse"; }
+
+    int64_t bytes_allocated() const override { return 0; }
+    int64_t total_bytes_allocated() const override { return 0; }
+    int64_t num_allocations() const override { return 0; }
+
+private:
+    ArrowMemoryPool() = default;
 };
 
 std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(

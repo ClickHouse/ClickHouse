@@ -1,0 +1,15 @@
+<test>
+    <create_query>CREATE TABLE test (a Int64, b String, c LowCardinality(String)) ENGINE = MergeTree() ORDER BY a</create_query>
+    <create_query>CREATE TABLE test1 (a Int64, b String, c LowCardinality(String)) ENGINE = MergeTree() ORDER BY a</create_query>
+
+    <fill_query>INSERT INTO test SELECT number % 10000, number % 10000, number % 10000 FROM numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO test1 SELECT number % 1000 , number % 1000, number % 1000 FROM numbers(100000)</fill_query>
+
+    <query tag='INNER'>SELECT MAX(test1.a) FROM test INNER JOIN test1 on test.b = test1.b</query>
+    <query tag='LEFT'>SELECT MAX(test1.a) FROM test LEFT JOIN test1 on test.b = test1.b</query>
+    <query tag='RIGHT'>SELECT MAX(test1.a) FROM test RIGHT JOIN test1 on test.b = test1.b</query>
+    <query tag='FULL'>SELECT MAX(test1.a) FROM test FULL JOIN test1 on test.b = test1.b</query>
+
+    <drop_query>DROP TABLE IF EXISTS test</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test1</drop_query>
+</test>

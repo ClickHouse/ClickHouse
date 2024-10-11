@@ -62,6 +62,7 @@ std::shared_ptr<WriteBufferFromPocoSocket> HTTPServerResponse::send()
         stream = std::make_shared<WriteBufferFromPocoSocket>(session.socket(), write_event);
     }
 
+    send_started = true;
     return stream;
 }
 
@@ -96,7 +97,14 @@ std::pair<std::shared_ptr<WriteBufferFromPocoSocket>, std::shared_ptr<WriteBuffe
     else
         stream = std::make_shared<WriteBufferFromPocoSocket>(session.socket(), write_event);
 
+    send_started = true;
     return std::make_pair(header_stream, stream);
+}
+
+void HTTPServerResponse::beginWrite(std::ostream & ostr) const
+{
+    HTTPResponse::beginWrite(ostr);
+    send_started = true;
 }
 
 void HTTPServerResponse::sendBuffer(const void * buffer, std::size_t length)
@@ -121,6 +129,22 @@ void HTTPServerResponse::requireAuthentication(const std::string & realm)
     auth.append(realm);
     auth.append("\"");
     set("WWW-Authenticate", auth);
+}
+
+void HTTPServerResponse::redirect(const std::string & uri, HTTPStatus status)
+{
+    poco_assert(!stream);
+
+    setContentLength(0);
+    setChunkedTransferEncoding(false);
+
+    setStatusAndReason(status);
+    set("Location", uri);
+
+    // Send header
+    Poco::Net::HTTPHeaderOutputStream hs(session);
+    write(hs);
+    hs.flush();
 }
 
 }

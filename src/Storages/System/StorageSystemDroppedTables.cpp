@@ -29,7 +29,7 @@ ColumnsDescription StorageSystemDroppedTables::getColumnsDescription()
 }
 
 
-void StorageSystemDroppedTables::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemDroppedTables::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     auto tables_mark_dropped = DatabaseCatalog::instance().getTablesMarkedDropped();
 

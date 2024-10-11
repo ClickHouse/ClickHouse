@@ -1,20 +1,20 @@
+import logging
 import time
+from multiprocessing.dummy import Pool
 
 import psycopg2
 import pymysql.cursors
 import pytest
-import logging
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-from multiprocessing.dummy import Pool
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     with_odbc_drivers=True,
-    with_mysql=True,
+    with_mysql8=True,
     with_postgres=True,
     main_configs=["configs/openssl.xml", "configs/odbc_logging.xml"],
     dictionaries=[
@@ -40,10 +40,20 @@ create_table_sql_template = """
     PRIMARY KEY (`id`)) ENGINE=InnoDB;
     """
 
+create_table_sql_nullable_template = """
+    CREATE TABLE `clickhouse`.`{}` (
+        `id`   integer not null,
+        `col1` integer,
+        `col2` decimal(15,10),
+        `col3` varchar(32),
+        `col4` datetime
+        )
+    """
 
-def skip_test_msan(instance):
-    if instance.is_built_with_memory_sanitizer():
-        pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
+
+def skip_test_sanitizers(instance):
+    if instance.is_built_with_sanitizer():
+        pytest.skip("Sanitizers cannot work with third-party shared libraries")
 
 
 def get_mysql_conn():
@@ -55,13 +65,13 @@ def get_mysql_conn():
                 conn = pymysql.connect(
                     user="root",
                     password="clickhouse",
-                    host=cluster.mysql_ip,
-                    port=cluster.mysql_port,
+                    host=cluster.mysql8_ip,
+                    port=cluster.mysql8_port,
                 )
             else:
                 conn.ping(reconnect=True)
             logging.debug(
-                f"MySQL Connection establised: {cluster.mysql_ip}:{cluster.mysql_port}"
+                f"MySQL Connection establised: {cluster.mysql8_ip}:{cluster.mysql8_port}"
             )
             return conn
         except Exception as e:
@@ -75,6 +85,11 @@ def create_mysql_db(conn, name):
     with conn.cursor() as cursor:
         cursor.execute("DROP DATABASE IF EXISTS {}".format(name))
         cursor.execute("CREATE DATABASE {} DEFAULT CHARACTER SET 'utf8'".format(name))
+
+
+def create_mysql_nullable_table(conn, table_name):
+    with conn.cursor() as cursor:
+        cursor.execute(create_table_sql_nullable_template.format(table_name))
 
 
 def create_mysql_table(conn, table_name):
@@ -192,8 +207,48 @@ def started_cluster():
         cluster.shutdown()
 
 
+def test_mysql_odbc_select_nullable(started_cluster):
+    skip_test_sanitizers(node1)
+    mysql_setup = node1.odbc_drivers["MySQL"]
+
+    table_name = "test_insert_nullable_select"
+    conn = get_mysql_conn()
+    create_mysql_nullable_table(conn, table_name)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO clickhouse.{} VALUES(1, 1, 1.23456, 'data1', '2010-01-01 00:00:00');".format(
+                table_name
+            )
+        )
+        cursor.execute(
+            "INSERT INTO clickhouse.{} VALUES(2, NULL, NULL, NULL, NULL);".format(
+                table_name
+            )
+        )
+        conn.commit()
+
+    node1.query(
+        """
+        CREATE TABLE {}(id UInt32, col1 Nullable(UInt32), col2 Nullable(Decimal(15, 10)), col3 Nullable(String), col4 Nullable(DateTime)) ENGINE = ODBC('DSN={}', 'clickhouse', '{}');
+        """.format(
+            table_name, mysql_setup["DSN"], table_name
+        )
+    )
+
+    assert (
+        node1.query(
+            "SELECT id, col1, col2, col3, col4 from {} order by id asc".format(
+                table_name
+            )
+        )
+        == "1\t1\t1.23456\tdata1\t2010-01-01 00:00:00\n2\t\\N\t\\N\t\\N\t\\N\n"
+    )
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
 def test_mysql_simple_select_works(started_cluster):
-    skip_test_msan(node1)
+    skip_test_sanitizers(node1)
 
     mysql_setup = node1.odbc_drivers["MySQL"]
 
@@ -230,7 +285,7 @@ def test_mysql_simple_select_works(started_cluster):
 
     node1.query(
         """
-CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, column_x Nullable(UInt32)) ENGINE = MySQL('mysql57:3306', 'clickhouse', '{}', 'root', 'clickhouse');
+CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, column_x Nullable(UInt32)) ENGINE = MySQL('mysql80:3306', 'clickhouse', '{}', 'root', 'clickhouse');
 """.format(
             table_name, table_name
         )
@@ -276,7 +331,7 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, column_x Nulla
 
 
 def test_mysql_insert(started_cluster):
-    skip_test_msan(node1)
+    skip_test_sanitizers(node1)
 
     mysql_setup = node1.odbc_drivers["MySQL"]
     table_name = "test_insert"
@@ -319,7 +374,7 @@ def test_mysql_insert(started_cluster):
 
 
 def test_sqlite_simple_select_function_works(started_cluster):
-    skip_test_msan(node1)
+    skip_test_sanitizers(node1)
 
     sqlite_setup = node1.odbc_drivers["SQLite3"]
     sqlite_db = sqlite_setup["Database"]
@@ -383,7 +438,7 @@ def test_sqlite_simple_select_function_works(started_cluster):
 
 
 def test_sqlite_table_function(started_cluster):
-    skip_test_msan(node1)
+    skip_test_sanitizers(node1)
 
     sqlite_setup = node1.odbc_drivers["SQLite3"]
     sqlite_db = sqlite_setup["Database"]
@@ -415,7 +470,7 @@ def test_sqlite_table_function(started_cluster):
 
 
 def test_sqlite_simple_select_storage_works(started_cluster):
-    skip_test_msan(node1)
+    skip_test_sanitizers(node1)
 
     sqlite_setup = node1.odbc_drivers["SQLite3"]
     sqlite_db = sqlite_setup["Database"]
@@ -448,7 +503,7 @@ def test_sqlite_simple_select_storage_works(started_cluster):
 
 
 def test_sqlite_odbc_hashed_dictionary(started_cluster):
-    skip_test_msan(node1)
+    skip_test_sanitizers(node1)
 
     sqlite_db = node1.odbc_drivers["SQLite3"]["Database"]
     node1.exec_in_container(
@@ -531,7 +586,7 @@ def test_sqlite_odbc_hashed_dictionary(started_cluster):
 
 
 def test_sqlite_odbc_cached_dictionary(started_cluster):
-    skip_test_msan(node1)
+    skip_test_sanitizers(node1)
 
     sqlite_db = node1.odbc_drivers["SQLite3"]["Database"]
     node1.exec_in_container(
@@ -580,7 +635,7 @@ def test_sqlite_odbc_cached_dictionary(started_cluster):
 
 
 def test_postgres_odbc_hashed_dictionary_with_schema(started_cluster):
-    skip_test_msan(node1)
+    skip_test_sanitizers(node1)
 
     try:
         conn = get_postgres_conn(started_cluster)
@@ -608,7 +663,7 @@ def test_postgres_odbc_hashed_dictionary_with_schema(started_cluster):
 
 
 def test_postgres_odbc_hashed_dictionary_no_tty_pipe_overflow(started_cluster):
-    skip_test_msan(node1)
+    skip_test_sanitizers(node1)
 
     try:
         conn = get_postgres_conn(started_cluster)
@@ -630,7 +685,7 @@ def test_postgres_odbc_hashed_dictionary_no_tty_pipe_overflow(started_cluster):
 
 
 def test_no_connection_pooling(started_cluster):
-    skip_test_msan(node1)
+    skip_test_sanitizers(node1)
 
     try:
         conn = get_postgres_conn(started_cluster)
@@ -662,7 +717,7 @@ def test_no_connection_pooling(started_cluster):
 
 
 def test_postgres_insert(started_cluster):
-    skip_test_msan(node1)
+    skip_test_sanitizers(node1)
 
     conn = get_postgres_conn(started_cluster)
 
@@ -699,7 +754,7 @@ def test_postgres_insert(started_cluster):
 
 
 def test_odbc_postgres_date_data_type(started_cluster):
-    skip_test_msan(node1)
+    skip_test_sanitizers(node1)
 
     try:
         conn = get_postgres_conn(started_cluster)
@@ -728,7 +783,7 @@ def test_odbc_postgres_date_data_type(started_cluster):
 
 
 def test_odbc_postgres_conversions(started_cluster):
-    skip_test_msan(node1)
+    skip_test_sanitizers(node1)
 
     try:
         conn = get_postgres_conn(started_cluster)
@@ -786,7 +841,7 @@ def test_odbc_postgres_conversions(started_cluster):
 
 
 def test_odbc_cyrillic_with_varchar(started_cluster):
-    skip_test_msan(node1)
+    skip_test_sanitizers(node1)
 
     conn = get_postgres_conn(started_cluster)
     cursor = conn.cursor()
@@ -813,7 +868,7 @@ def test_odbc_cyrillic_with_varchar(started_cluster):
 
 
 def test_many_connections(started_cluster):
-    skip_test_msan(node1)
+    skip_test_sanitizers(node1)
 
     conn = get_postgres_conn(started_cluster)
     cursor = conn.cursor()
@@ -839,7 +894,7 @@ def test_many_connections(started_cluster):
 
 
 def test_concurrent_queries(started_cluster):
-    skip_test_msan(node1)
+    skip_test_sanitizers(node1)
 
     conn = get_postgres_conn(started_cluster)
     cursor = conn.cursor()
@@ -893,7 +948,7 @@ def test_concurrent_queries(started_cluster):
 
 
 def test_odbc_long_column_names(started_cluster):
-    skip_test_msan(node1)
+    skip_test_sanitizers(node1)
 
     conn = get_postgres_conn(started_cluster)
     cursor = conn.cursor()
@@ -931,7 +986,7 @@ def test_odbc_long_column_names(started_cluster):
 
 
 def test_odbc_long_text(started_cluster):
-    skip_test_msan(node1)
+    skip_test_sanitizers(node1)
 
     conn = get_postgres_conn(started_cluster)
     cursor = conn.cursor()

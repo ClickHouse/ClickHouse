@@ -104,7 +104,7 @@ struct AggregateFunctionVarianceData
     Float64 m2 = 0.0;
 };
 
-enum class VarKind
+enum class VarKind : uint8_t
 {
     varSampStable,
     stddevSampStable,
@@ -124,8 +124,7 @@ private:
     {
         if (count < 2)
             return std::numeric_limits<Float64>::infinity();
-        else
-            return m2 / (count - 1);
+        return m2 / (count - 1);
     }
 
     static Float64 getStddevSamp(Float64 m2, UInt64 count)
@@ -137,10 +136,9 @@ private:
     {
         if (count == 0)
             return std::numeric_limits<Float64>::infinity();
-        else if (count == 1)
+        if (count == 1)
             return 0.0;
-        else
-            return m2 / count;
+        return m2 / count;
     }
 
     static Float64 getStddevPop(Float64 m2, UInt64 count)
@@ -150,13 +148,13 @@ private:
 
     Float64 getResult(ConstAggregateDataPtr __restrict place) const
     {
-        const auto & data = this->data(place);
+        const auto & dt = data(place);
         switch (kind)
         {
-            case VarKind::varSampStable: return getVarSamp(data.m2, data.count);
-            case VarKind::stddevSampStable: return getStddevSamp(data.m2, data.count);
-            case VarKind::varPopStable: return getVarPop(data.m2, data.count);
-            case VarKind::stddevPopStable: return getStddevPop(data.m2, data.count);
+            case VarKind::varSampStable: return getVarSamp(dt.m2, dt.count);
+            case VarKind::stddevSampStable: return getStddevSamp(dt.m2, dt.count);
+            case VarKind::varPopStable: return getVarPop(dt.m2, dt.count);
+            case VarKind::stddevPopStable: return getStddevPop(dt.m2, dt.count);
         }
     }
 
@@ -182,22 +180,22 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        this->data(place).update(*columns[0], row_num);
+        data(place).update(*columns[0], row_num);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).mergeWith(this->data(rhs));
+        data(place).mergeWith(data(rhs));
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        this->data(place).serialize(buf);
+        data(place).serialize(buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        this->data(place).deserialize(buf);
+        data(place).deserialize(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -343,7 +341,7 @@ struct CovarianceData : public BaseCovarianceData<compute_marginal_moments>
     Float64 co_moment = 0.0;
 };
 
-enum class CovarKind
+enum class CovarKind : uint8_t
 {
     covarSampStable,
     covarPopStable,
@@ -363,26 +361,23 @@ private:
     {
         if (count < 2)
             return std::numeric_limits<Float64>::infinity();
-        else
-            return co_moment / (count - 1);
+        return co_moment / (count - 1);
     }
 
     static Float64 getCovarPop(Float64 co_moment, UInt64 count)
     {
         if (count == 0)
             return std::numeric_limits<Float64>::infinity();
-        else if (count == 1)
+        if (count == 1)
             return 0.0;
-        else
-            return co_moment / count;
+        return co_moment / count;
     }
 
     static Float64 getCorr(Float64 co_moment, Float64 left_m2, Float64 right_m2, UInt64 count)
     {
         if (count < 2)
             return std::numeric_limits<Float64>::infinity();
-        else
-            return co_moment / sqrt(left_m2 * right_m2);
+        return co_moment / sqrt(left_m2 * right_m2);
     }
 
     Float64 getResult(ConstAggregateDataPtr __restrict place) const

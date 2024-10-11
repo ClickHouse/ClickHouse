@@ -103,10 +103,11 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
         if (!args[i]->as<ASTIdentifier>() &&
             !args[i]->as<ASTLiteral>() &&
             !args[i]->as<ASTQueryParameter>() &&
-            !args[i]->as<ASTSubquery>())
+            !args[i]->as<ASTSubquery>() &&
+            !args[i]->as<ASTFunction>())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type of argument '{}' for table function '{}': must be an identifier or string literal",
-                argument_name, getName());
+                "Illegal type of argument '{}' for table function '{}': must be an identifier or string literal, but got: {}",
+                argument_name, getName(), args[i]->formatForErrorMessage());
     };
 
     check_argument(0, "script_name");
@@ -170,7 +171,14 @@ StoragePtr TableFunctionExecutable::executeImpl(const ASTPtr & /*ast_function*/,
     if (settings_query != nullptr)
         settings.applyChanges(settings_query->as<ASTSetQuery>()->changes);
 
-    auto storage = std::make_shared<StorageExecutable>(storage_id, format, settings, input_queries, getActualTableStructure(context, is_insert_query), ConstraintsDescription{});
+    auto storage = std::make_shared<StorageExecutable>(
+        storage_id,
+        format,
+        settings,
+        input_queries,
+        getActualTableStructure(context, is_insert_query),
+        ConstraintsDescription{},
+        /* comment = */ "");
     storage->startup();
     return storage;
 }

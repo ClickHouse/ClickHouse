@@ -221,7 +221,7 @@ private:
         {
             std::lock_guard lock(mutex);
             auto it = cells.find(key);
-            if (it != cells.end() && !it->second.expired)
+            if (it != cells.end())
             {
                 if (!it->second.expired)
                 {
@@ -230,14 +230,12 @@ private:
                     queue.splice(queue.end(), queue, it->second.queue_iterator);
                     return it->second.value;
                 }
-                else if (it->second.reference_count > 0)
+                if (it->second.reference_count > 0)
                     return nullptr;
-                else
-                {
-                    // should not reach here
-                    LOG_ERROR(getLogger("LRUResourceCache"), "element is in invalid status.");
-                    abort();
-                }
+
+                // should not reach here
+                LOG_ERROR(getLogger("LRUResourceCache"), "element is in invalid status.");
+                abort();
             }
             ++misses;
             auto & token = insert_tokens[key];

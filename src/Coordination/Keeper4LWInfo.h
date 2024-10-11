@@ -1,7 +1,5 @@
 #pragma once
 
-#include <string>
-
 #include <base/types.h>
 #include <Common/Exception.h>
 
@@ -30,9 +28,6 @@ struct Keeper4LWInfo
     uint64_t follower_count;
     uint64_t synced_follower_count;
 
-    uint64_t total_nodes_count;
-    int64_t last_zxid;
-
     String getRole() const
     {
         if (is_standalone)
@@ -52,16 +47,16 @@ struct Keeper4LWInfo
 struct KeeperLogInfo
 {
     /// My first log index in log store.
-    uint64_t first_log_idx;
+    uint64_t first_log_idx{0};
 
     /// My first log term.
-    uint64_t first_log_term;
+    uint64_t first_log_term{0};
 
     /// My last log index in log store.
-    uint64_t last_log_idx;
+    uint64_t last_log_idx{0};
 
     /// My last log term.
-    uint64_t last_log_term;
+    uint64_t last_log_term{0};
 
     /// My last committed log index in state machine.
     uint64_t last_committed_log_idx;
@@ -74,6 +69,12 @@ struct KeeperLogInfo
 
     /// The largest committed log index in last snapshot.
     uint64_t last_snapshot_idx;
+
+    uint64_t latest_logs_cache_entries;
+    uint64_t latest_logs_cache_size;
+
+    uint64_t commit_logs_cache_entries;
+    uint64_t commit_logs_cache_size;
 };
 
 }

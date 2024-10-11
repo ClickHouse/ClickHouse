@@ -15,8 +15,8 @@ namespace
         for (auto i : collections::range(AccessEntityType::MAX))
         {
             const auto & type_info = AccessEntityTypeInfo::get(i);
-            if (ParserKeyword{type_info.plural_name}.ignore(pos, expected)
-                || (!type_info.plural_alias.empty() && ParserKeyword{type_info.plural_alias}.ignore(pos, expected)))
+            if (ParserKeyword::createDeprecated(type_info.plural_name).ignore(pos, expected)
+                || (!type_info.plural_alias.empty() && ParserKeyword::createDeprecated(type_info.plural_alias).ignore(pos, expected)))
             {
                 type = i;
                 return true;
@@ -25,12 +25,12 @@ namespace
         return false;
     }
 
-    bool parseOnDBAndTableName(IParserBase::Pos & pos, Expected & expected, String & database, bool & any_database, String & table, bool & any_table)
+    bool parseOnDBAndTableName(IParserBase::Pos & pos, Expected & expected, String & database, String & table, bool & wildcard, bool & default_database)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"ON"}.ignore(pos, expected)
-                && parseDatabaseAndTableNameOrAsterisks(pos, expected, database, any_database, table, any_table);
+            return ParserKeyword{Keyword::ON}.ignore(pos, expected)
+                && parseDatabaseAndTableNameOrAsterisks(pos, expected, database, table, wildcard, default_database);
         });
     }
 }
@@ -38,7 +38,7 @@ namespace
 
 bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (!ParserKeyword{"SHOW"}.ignore(pos, expected))
+    if (!ParserKeyword{Keyword::SHOW}.ignore(pos, expected))
         return false;
 
     AccessEntityType type;
@@ -51,17 +51,17 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
     {
         all = true;
     }
-    else if (ParserKeyword{"CURRENT ROLES"}.ignore(pos, expected))
+    else if (ParserKeyword{Keyword::CURRENT_ROLES}.ignore(pos, expected))
     {
         type = AccessEntityType::ROLE;
         current_roles = true;
     }
-    else if (ParserKeyword{"ENABLED ROLES"}.ignore(pos, expected))
+    else if (ParserKeyword{Keyword::ENABLED_ROLES}.ignore(pos, expected))
     {
         type = AccessEntityType::ROLE;
         enabled_roles = true;
     }
-    else if (ParserKeyword{"CURRENT QUOTA"}.ignore(pos, expected) || ParserKeyword{"QUOTA"}.ignore(pos, expected))
+    else if (ParserKeyword{Keyword::CURRENT_QUOTA}.ignore(pos, expected) || ParserKeyword{Keyword::QUOTA}.ignore(pos, expected))
     {
         type = AccessEntityType::QUOTA;
         current_quota = true;
@@ -74,10 +74,11 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
     if (type == AccessEntityType::ROW_POLICY)
     {
         String database, table_name;
-        bool any_database, any_table;
-        if (parseOnDBAndTableName(pos, expected, database, any_database, table_name, any_table))
+        bool wildcard = false;
+        bool default_database = false;
+        if (parseOnDBAndTableName(pos, expected, database, table_name, wildcard, default_database))
         {
-            if (any_database)
+            if (database.empty() && !default_database)
                 all = true;
             else
                 database_and_table_name.emplace(database, table_name);

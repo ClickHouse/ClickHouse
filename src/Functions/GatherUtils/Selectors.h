@@ -126,19 +126,19 @@ struct ArrayAndValueSourceSelectorBySink : public ArraySinkSelector<ArrayAndValu
     template <typename Sink, typename ... Args>
     static void selectImpl(Sink && sink, IArraySource & array_source, IValueSource & value_source, Args && ... args)
     {
-        using SynkType = typename std::decay<Sink>::type;
-        using ArraySource = typename SynkType::CompatibleArraySource;
-        using ValueSource = typename SynkType::CompatibleValueSource;
+        using SinkType = typename std::decay_t<Sink>;
+        using ArraySource = typename SinkType::CompatibleArraySource;
+        using ValueSource = typename SinkType::CompatibleValueSource;
 
         auto check_type = [] (auto source_ptr)
         {
             if (source_ptr == nullptr)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "{} expected {} or {} or {} or {} but got {}",
                                 demangle(typeid(Base).name()),
-                                demangle(typeid(typename SynkType::CompatibleArraySource).name()),
-                                demangle(typeid(ConstSource<typename SynkType::CompatibleArraySource>).name()),
-                                demangle(typeid(typename SynkType::CompatibleValueSource).name()),
-                                demangle(typeid(ConstSource<typename SynkType::CompatibleValueSource>).name()),
+                                demangle(typeid(typename SinkType::CompatibleArraySource).name()),
+                                demangle(typeid(ConstSource<typename SinkType::CompatibleArraySource>).name()),
+                                demangle(typeid(typename SinkType::CompatibleValueSource).name()),
+                                demangle(typeid(ConstSource<typename SinkType::CompatibleValueSource>).name()),
                                 demangle(typeid(*source_ptr).name()));
         };
         auto check_type_and_call_concat = [& sink, & check_type, & args ...] (auto array_source_ptr, auto value_source_ptr)

@@ -9,6 +9,8 @@
 #include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 
+#include <Common/PageCache.h>
+
 #include <Databases/IDatabase.h>
 
 #include <IO/UncompressedCache.h>
@@ -51,11 +53,13 @@ void calculateMaxAndSum(Max & max, Sum & sum, T x)
 
 ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     ContextPtr global_context_,
-    int update_period_seconds,
-    int heavy_metrics_update_period_seconds,
-    const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
+    unsigned update_period_seconds,
+    unsigned heavy_metrics_update_period_seconds,
+    const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
+    bool update_jemalloc_epoch_,
+    bool update_rss_)
     : WithContext(global_context_)
-    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_)
+    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_, update_jemalloc_epoch_, update_rss_)
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
 {
     /// sanity check
@@ -75,6 +79,16 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     {
         new_values["MarkCacheBytes"] = { mark_cache->sizeInBytes(), "Total size of mark cache in bytes" };
         new_values["MarkCacheFiles"] = { mark_cache->count(), "Total number of mark files cached in the mark cache" };
+    }
+
+    if (auto page_cache = getContext()->getPageCache())
+    {
+        auto rss = page_cache->getResidentSetSize();
+        new_values["PageCacheBytes"] = { rss.page_cache_rss, "Userspace page cache memory usage in bytes" };
+        new_values["PageCachePinnedBytes"] = { page_cache->getPinnedSize(), "Userspace page cache memory that's currently in use and can't be evicted" };
+
+        if (rss.unreclaimable_rss.has_value())
+            new_values["UnreclaimableRSS"] = { *rss.unreclaimable_rss, "The amount of physical memory used by the server process, in bytes, excluding memory reclaimable by the OS (MADV_FREE)" };
     }
 
     if (auto uncompressed_cache = getContext()->getUncompressedCache())
@@ -198,27 +212,47 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             auto total = disk->getTotalSpace();
 
             /// Some disks don't support information about the space.
-            if (!total)
-                continue;
-
-            auto available = disk->getAvailableSpace();
-            auto unreserved = disk->getUnreservedSpace();
-
-            new_values[fmt::format("DiskTotal_{}", name)] = { *total,
-                "The total size in bytes of the disk (virtual filesystem). Remote filesystems may not provide this information." };
-
-            if (available)
+            if (total)
             {
-                new_values[fmt::format("DiskUsed_{}", name)] = { *total - *available,
-                    "Used bytes on the disk (virtual filesystem). Remote filesystems not always provide this information." };
+                auto available = disk->getAvailableSpace();
+                auto unreserved = disk->getUnreservedSpace();
 
-                new_values[fmt::format("DiskAvailable_{}", name)] = { *available,
-                    "Available bytes on the disk (virtual filesystem). Remote filesystems may not provide this information." };
+                new_values[fmt::format("DiskTotal_{}", name)] = { *total,
+                    "The total size in bytes of the disk (virtual filesystem). Remote filesystems may not provide this information." };
+
+                if (available)
+                {
+                    new_values[fmt::format("DiskUsed_{}", name)] = { *total - *available,
+                        "Used bytes on the disk (virtual filesystem). Remote filesystems not always provide this information." };
+
+                    new_values[fmt::format("DiskAvailable_{}", name)] = { *available,
+                        "Available bytes on the disk (virtual filesystem). Remote filesystems may not provide this information." };
+                }
+
+                if (unreserved)
+                    new_values[fmt::format("DiskUnreserved_{}", name)] = { *unreserved,
+                        "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information." };
             }
 
-            if (unreserved)
-                new_values[fmt::format("DiskUnreserved_{}", name)] = { *unreserved,
-                    "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information." };
+#if USE_AWS_S3
+            if (auto s3_client = disk->tryGetS3StorageClient())
+            {
+                if (auto put_throttler = s3_client->getPutRequestThrottler())
+                {
+                    new_values[fmt::format("DiskPutObjectThrottlerRPS_{}", name)] = { put_throttler->getMaxSpeed(),
+                        "PutObject Request throttling limit on the disk in requests per second (virtual filesystem). Local filesystems may not provide this information." };
+                    new_values[fmt::format("DiskPutObjectThrottlerAvailable_{}", name)] = { put_throttler->getAvailable(),
+                        "Number of PutObject requests that can be currently issued without hitting throttling limit on the disk (virtual filesystem). Local filesystems may not provide this information." };
+                }
+                if (auto get_throttler = s3_client->getGetRequestThrottler())
+                {
+                    new_values[fmt::format("DiskGetObjectThrottlerRPS_{}", name)] = { get_throttler->getMaxSpeed(),
+                        "GetObject Request throttling limit on the disk in requests per second (virtual filesystem). Local filesystems may not provide this information." };
+                    new_values[fmt::format("DiskGetObjectThrottlerAvailable_{}", name)] = { get_throttler->getAvailable(),
+                        "Number of GetObject requests that can be currently issued without hitting throttling limit on the disk (virtual filesystem). Local filesystems may not provide this information." };
+                }
+            }
+#endif
         }
     }
 
@@ -239,7 +273,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         size_t max_part_count_for_partition = 0;
 
         size_t number_of_databases = 0;
-        for (auto [db_name, _] : databases)
+        for (const auto & [db_name, _] : databases)
             if (db_name != DatabaseCatalog::TEMPORARY_DATABASE)
                 ++number_of_databases; /// filter out the internal database for temporary tables, system table "system.databases" behaves the same way
 
@@ -266,7 +300,8 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 
             bool is_system = db.first == DatabaseCatalog::SYSTEM_DATABASE;
 
-            for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+            // Note that we skip not yet loaded tables, so metrics could possibly be lower than expected on fully loaded database just after server start if `async_load_databases = true`.
+            for (auto iterator = db.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/true); iterator->isValid(); iterator->next())
             {
                 ++total_number_of_tables;
                 if (is_system)
@@ -396,7 +431,7 @@ void ServerAsynchronousMetrics::updateDetachedPartsStats()
         if (!db.second->canContainMergeTreeTables())
             continue;
 
-        for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+        for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
         {
             const auto & table = iterator->table();
             if (!table)

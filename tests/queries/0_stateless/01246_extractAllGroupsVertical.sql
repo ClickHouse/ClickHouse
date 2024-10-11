@@ -1,11 +1,11 @@
 -- error cases
-SELECT extractAllGroupsVertical();  --{serverError 42} not enough arguments
-SELECT extractAllGroupsVertical('hello');  --{serverError 42} not enough arguments
-SELECT extractAllGroupsVertical('hello', 123);  --{serverError 43} invalid argument type
-SELECT extractAllGroupsVertical(123, 'world');  --{serverError 43}  invalid argument type
-SELECT extractAllGroupsVertical('hello world', '((('); --{serverError 427}  invalid re
-SELECT extractAllGroupsVertical('hello world', materialize('\\w+')); --{serverError 44} non-const needle
-SELECT extractAllGroupsVertical('hello world', '\\w+'); -- { serverError 36 } 0 groups
+SELECT extractAllGroupsVertical();  --{serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH} not enough arguments
+SELECT extractAllGroupsVertical('hello');  --{serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH} not enough arguments
+SELECT extractAllGroupsVertical('hello', 123);  --{serverError ILLEGAL_TYPE_OF_ARGUMENT} invalid argument type
+SELECT extractAllGroupsVertical(123, 'world');  --{serverError ILLEGAL_TYPE_OF_ARGUMENT}  invalid argument type
+SELECT extractAllGroupsVertical('hello world', '((('); --{serverError CANNOT_COMPILE_REGEXP}  invalid re
+SELECT extractAllGroupsVertical('hello world', materialize('\\w+')); --{serverError ILLEGAL_COLUMN} non-const needle
+SELECT extractAllGroupsVertical('hello world', '\\w+'); -- { serverError BAD_ARGUMENTS } 0 groups
 
 SELECT '1 group, multiple matches, String and FixedString';
 SELECT extractAllGroupsVertical('hello world', '(\\w+)');

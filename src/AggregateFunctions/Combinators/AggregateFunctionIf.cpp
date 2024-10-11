@@ -73,7 +73,7 @@ private:
     using Base = AggregateFunctionNullBase<result_is_nullable, serialize_flag,
         AggregateFunctionIfNullUnary<result_is_nullable, serialize_flag>>;
 
-    inline bool singleFilter(const IColumn ** columns, size_t row_num) const
+    bool singleFilter(const IColumn ** columns, size_t row_num) const
     {
         const IColumn * filter_column = columns[num_arguments - 1];
 
@@ -249,7 +249,7 @@ public:
         : Base(std::move(nested_function_), arguments, params), number_of_arguments(arguments.size())
     {
         if (number_of_arguments == 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: single argument is passed to AggregateFunctionIfNullVariadic");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Single argument is passed to AggregateFunctionIfNullVariadic");
 
         if (number_of_arguments > MAX_ARGS)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -261,7 +261,7 @@ public:
         filter_is_only_null = arguments.back()->onlyNull();
     }
 
-    static inline bool singleFilter(const IColumn ** columns, size_t row_num, size_t num_arguments)
+    static bool singleFilter(const IColumn ** columns, size_t row_num, size_t num_arguments)
     {
         return assert_cast<const ColumnUInt8 &>(*columns[num_arguments - 1]).getData()[row_num];
     }
@@ -473,28 +473,20 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
         {
             return std::make_shared<AggregateFunctionIfNullUnary<true, true>>(nested_function->getName(), nested_func, arguments, params);
         }
-        else
-        {
-            if (need_to_serialize_flag)
-                return std::make_shared<AggregateFunctionIfNullUnary<false, true>>(nested_function->getName(), nested_func, arguments, params);
-            else
-                return std::make_shared<AggregateFunctionIfNullUnary<false, false>>(nested_function->getName(), nested_func, arguments, params);
-        }
+
+        if (need_to_serialize_flag)
+            return std::make_shared<AggregateFunctionIfNullUnary<false, true>>(nested_function->getName(), nested_func, arguments, params);
+        return std::make_shared<AggregateFunctionIfNullUnary<false, false>>(nested_function->getName(), nested_func, arguments, params);
     }
-    else
+
+    if (return_type_is_nullable)
     {
-        if (return_type_is_nullable)
-        {
-            return std::make_shared<AggregateFunctionIfNullVariadic<true, true>>(nested_function, arguments, params);
-        }
-        else
-        {
-            if (need_to_serialize_flag)
-                return std::make_shared<AggregateFunctionIfNullVariadic<false, true>>(nested_function, arguments, params);
-            else
-                return std::make_shared<AggregateFunctionIfNullVariadic<false, false>>(nested_function, arguments, params);
-        }
+        return std::make_shared<AggregateFunctionIfNullVariadic<true, true>>(nested_function, arguments, params);
     }
+
+    if (need_to_serialize_flag)
+        return std::make_shared<AggregateFunctionIfNullVariadic<false, true>>(nested_function, arguments, params);
+    return std::make_shared<AggregateFunctionIfNullVariadic<false, false>>(nested_function, arguments, params);
 }
 
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory & factory)

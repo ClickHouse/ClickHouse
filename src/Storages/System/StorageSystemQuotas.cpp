@@ -66,7 +66,7 @@ ColumnsDescription StorageSystemQuotas::getColumnsDescription()
 }
 
 
-void StorageSystemQuotas::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemQuotas::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();
@@ -150,10 +150,10 @@ void StorageSystemQuotas::backupData(
 }
 
 void StorageSystemQuotas::restoreDataFromBackup(
-    RestorerFromBackup & restorer, const String & /* data_path_in_backup */, const std::optional<ASTs> & /* partitions */)
+    RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
     auto & access_control = restorer.getContext()->getAccessControl();
-    access_control.restoreFromBackup(restorer);
+    access_control.restoreFromBackup(restorer, data_path_in_backup);
 }
 
 }

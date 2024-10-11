@@ -169,7 +169,7 @@ template <typename T>
 void SerializationNumber<T>::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
     /// ColumnVector<T>::ValueType is a narrower type. For example, UInt8, when the Field type is UInt64
-    typename ColumnVector<T>::ValueType x = static_cast<typename ColumnVector<T>::ValueType>(field.get<FieldType>());
+    typename ColumnVector<T>::ValueType x = static_cast<typename ColumnVector<T>::ValueType>(field.safeGet<FieldType>());
     writeBinaryLittleEndian(x, ostr);
 }
 

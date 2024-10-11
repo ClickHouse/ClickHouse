@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <boost/algorithm/hex.hpp>
 #include <IO/ReadBufferFromEncryptedFile.h>
+#include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromEncryptedFile.h>
 #include <Common/quoteString.h>
@@ -77,7 +78,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFile( //
         if (old_file_size)
         {
             /// Append mode: we continue to use the same header.
-            auto read_buffer = delegate_disk->readFile(wrapped_path, ReadSettings().adjustBufferSize(FileEncryption::Header::kSize));
+            auto read_buffer = delegate_disk->readFile(wrapped_path, getReadSettings().adjustBufferSize(FileEncryption::Header::kSize));
             header = readHeader(*read_buffer);
             key = current_settings.findKeyByFingerprint(header.key_fingerprint, path);
         }

@@ -1,14 +1,12 @@
 #pragma once
 
-#include <cmath>
-
 #include <base/sort.h>
 #include <base/TypeName.h>
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/TypeId.h>
 #include <Common/typeid_cast.h>
-#include <Columns/ColumnVectorHelper.h>
+#include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
 
@@ -18,11 +16,11 @@ namespace DB
 
 /// A ColumnVector for Decimals
 template <is_decimal T>
-class ColumnDecimal final : public COWHelper<ColumnVectorHelper, ColumnDecimal<T>>
+class ColumnDecimal final : public COWHelper<IColumnHelper<ColumnDecimal<T>, ColumnFixedSizeHelper>, ColumnDecimal<T>>
 {
 private:
     using Self = ColumnDecimal;
-    friend class COWHelper<ColumnVectorHelper, Self>;
+    friend class COWHelper<IColumnHelper<Self, ColumnFixedSizeHelper>, Self>;
 
 public:
     using ValueType = T;
@@ -54,15 +52,36 @@ public:
     size_t byteSizeAt(size_t) const override { return sizeof(data[0]); }
     size_t allocatedBytes() const override { return data.allocated_bytes(); }
     void protect() override { data.protect(); }
-    void reserve(size_t n) override { data.reserve(n); }
+    void reserve(size_t n) override { data.reserve_exact(n); }
+    size_t capacity() const override { return data.capacity(); }
     void shrinkToFit() override { data.shrink_to_fit(); }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src, size_t n) override { data.push_back(static_cast<const Self &>(src).getData()[n]); }
+#else
+    void doInsertFrom(const IColumn & src, size_t n) override { data.push_back(static_cast<const Self &>(src).getData()[n]); }
+#endif
+
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+    void insertManyFrom(const IColumn & src, size_t position, size_t length) override
+#else
+    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override
+#endif
+    {
+        ValueType v = assert_cast<const Self &>(src).getData()[position];
+        data.resize_fill(data.size() + length, v);
+    }
+
     void insertData(const char * src, size_t /*length*/) override;
     void insertDefault() override { data.push_back(T()); }
     void insertManyDefaults(size_t length) override { data.resize_fill(data.size() + length); }
-    void insert(const Field & x) override { data.push_back(x.get<T>()); }
+    void insert(const Field & x) override { data.push_back(x.safeGet<T>()); }
+    bool tryInsert(const Field & x) override;
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#else
+    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#endif
 
     void popBack(size_t n) override
     {
@@ -81,21 +100,22 @@ public:
 
     Float64 getFloat64(size_t n) const final { return DecimalUtils::convertTo<Float64>(data[n], scale); }
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-    void updateWeakHash32(WeakHash32 & hash) const override;
+    WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
-    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                       PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                       int direction, int nan_direction_hint) const override;
-    bool hasEqualValues() const override;
+#else
+    int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
+#endif
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
     void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int, IColumn::Permutation & res, EqualRanges& equal_ranges) const override;
+    size_t estimateCardinalityInPermutedRange(const IColumn::Permutation & permutation, const EqualRange & equal_range) const override;
+
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
@@ -118,33 +138,11 @@ public:
     ColumnPtr replicate(const IColumn::Offsets & offsets) const override;
     void getExtremes(Field & min, Field & max) const override;
 
-    MutableColumns scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const override
-    {
-        return this->template scatterImpl<Self>(num_columns, selector);
-    }
-
-    void gather(ColumnGathererStream & gatherer_stream) override;
-
     bool structureEquals(const IColumn & rhs) const override
     {
         if (auto rhs_concrete = typeid_cast<const ColumnDecimal<T> *>(&rhs))
             return scale == rhs_concrete->scale;
         return false;
-    }
-
-    double getRatioOfDefaultRows(double sample_ratio) const override
-    {
-        return this->template getRatioOfDefaultRowsImpl<Self>(sample_ratio);
-    }
-
-    UInt64 getNumberOfDefaultRows() const override
-    {
-        return this->template getNumberOfDefaultRowsImpl<Self>();
-    }
-
-    void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override
-    {
-        return this->template getIndicesOfNonDefaultRowsImpl<Self>(indices, from, limit);
     }
 
     ColumnPtr compress() const override;
@@ -161,6 +159,14 @@ protected:
     Container data;
     UInt32 scale;
 };
+
+template <class TCol>
+concept is_col_over_big_decimal = std::is_same_v<TCol, ColumnDecimal<typename TCol::ValueType>>
+    && is_decimal<typename TCol::ValueType> && is_over_big_int<typename TCol::NativeT>;
+
+template <class TCol>
+concept is_col_int_decimal = std::is_same_v<TCol, ColumnDecimal<typename TCol::ValueType>>
+    && is_decimal<typename TCol::ValueType> && std::is_integral_v<typename TCol::NativeT>;
 
 template <class> class ColumnVector;
 template <class T> struct ColumnVectorOrDecimalT { using Col = ColumnVector<T>; };

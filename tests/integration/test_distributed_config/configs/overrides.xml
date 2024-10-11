@@ -1,0 +1,5 @@
+<clickhouse>
+    <distributed>
+        <flush_on_detach>0</flush_on_detach>
+    </distributed>
+</clickhouse>

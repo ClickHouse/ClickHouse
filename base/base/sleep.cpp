@@ -2,6 +2,7 @@
 
 #include <ctime>
 #include <cerrno>
+#include <system_error>
 
 #if defined(OS_DARWIN)
 #include <mach/mach.h>
@@ -34,7 +35,8 @@ void sleepForNanoseconds(uint64_t nanoseconds)
     constexpr auto clock_type = CLOCK_MONOTONIC;
 
     struct timespec current_time;
-    clock_gettime(clock_type, &current_time);
+    if (0 != clock_gettime(clock_type, &current_time))
+        throw std::system_error(std::error_code(errno, std::system_category()));
 
     constexpr uint64_t resolution = 1'000'000'000;
     struct timespec finish_time = current_time;

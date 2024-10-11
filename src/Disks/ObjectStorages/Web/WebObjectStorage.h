@@ -3,6 +3,8 @@
 #include "config.h"
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
+
+#include <filesystem>
 #include <shared_mutex>
 
 namespace Poco
@@ -33,13 +35,7 @@ public:
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
-        const ReadSettings & read_settings = ReadSettings{},
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const override;
-
-    std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
-        const StoredObjects & objects,
-        const ReadSettings & read_settings = ReadSettings{},
+        const ReadSettings & read_settings,
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const override;
 
@@ -72,11 +68,6 @@ public:
 
     void startup() override;
 
-    void applyNewSettings(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        ContextPtr context) override;
-
     String getObjectsNamespace() const override { return ""; }
 
     std::unique_ptr<IObjectStorage> cloneObjectStorage(
@@ -85,7 +76,7 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & /* key_prefix */) const override
     {
         return ObjectStorageKey::createAsRelative(path);
     }
@@ -98,7 +89,7 @@ protected:
     [[noreturn]] static void throwNotAllowed();
     bool exists(const std::string & path) const;
 
-    enum class FileType
+    enum class FileType : uint8_t
     {
         File,
         Directory
@@ -133,16 +124,14 @@ protected:
         {
             if (is_file)
                 return std::map<String, FileDataPtr>::find(path);
-            else
-                return std::map<String, FileDataPtr>::find(path.ends_with("/") ? path : path + '/');
+            return std::map<String, FileDataPtr>::find(path.ends_with("/") ? path : path + '/');
         }
 
         auto add(const String & path, FileDataPtr data)
         {
             if (data->type == FileType::Directory)
                 return emplace(path.ends_with("/") ? path : path + '/', data);
-            else
-                return emplace(path, data);
+            return emplace(path, data);
         }
     };
 

@@ -26,7 +26,7 @@ class Loggers;
 class OwnJSONPatternFormatter : public OwnPatternFormatter
 {
 public:
-    OwnJSONPatternFormatter(Poco::Util::AbstractConfiguration & config);
+    explicit OwnJSONPatternFormatter(Poco::Util::AbstractConfiguration & config);
 
     void format(const Poco::Message & msg, std::string & text) override;
     void formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text) const override;

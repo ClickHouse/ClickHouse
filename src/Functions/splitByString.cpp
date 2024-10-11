@@ -2,7 +2,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionTokens.h>
 #include <Functions/FunctionFactory.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 
 
@@ -38,6 +38,8 @@ public:
     static constexpr auto name = "splitByString";
     static bool isVariadic() { return true; }
     static size_t getNumberOfArguments() { return 0; }
+
+    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {0, 2}; }
 
     static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
     {

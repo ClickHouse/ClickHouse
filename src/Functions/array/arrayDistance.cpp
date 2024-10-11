@@ -18,11 +18,11 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
-    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 struct L1Distance
@@ -90,17 +90,19 @@ struct L2Distance
         size_t & i_y,
         State<ResultType> & state)
     {
+        static constexpr bool is_float32 = std::is_same_v<ResultType, Float32>;
+
         __m512 sums;
-        if constexpr (std::is_same_v<ResultType, Float32>)
+        if constexpr (is_float32)
             sums = _mm512_setzero_ps();
         else
             sums = _mm512_setzero_pd();
 
-        const size_t n = (std::is_same_v<ResultType, Float32>) ? 16 : 8;
+        constexpr size_t n = is_float32 ? 16 : 8;
 
         for (; i_x + n < i_max; i_x += n, i_y += n)
         {
-            if constexpr (std::is_same_v<ResultType, Float32>)
+            if constexpr (is_float32)
             {
                 __m512 x = _mm512_loadu_ps(data_x + i_x);
                 __m512 y = _mm512_loadu_ps(data_y + i_y);
@@ -116,7 +118,7 @@ struct L2Distance
             }
         }
 
-        if constexpr (std::is_same_v<ResultType, Float32>)
+        if constexpr (is_float32)
             state.sum = _mm512_reduce_add_ps(sums);
         else
             state.sum = _mm512_reduce_add_pd(sums);
@@ -247,11 +249,13 @@ struct CosineDistance
         size_t & i_y,
         State<ResultType> & state)
     {
+        static constexpr bool is_float32 = std::is_same_v<ResultType, Float32>;
+
         __m512 dot_products;
         __m512 x_squareds;
         __m512 y_squareds;
 
-        if constexpr (std::is_same_v<ResultType, Float32>)
+        if constexpr (is_float32)
         {
             dot_products = _mm512_setzero_ps();
             x_squareds = _mm512_setzero_ps();
@@ -264,11 +268,11 @@ struct CosineDistance
             y_squareds = _mm512_setzero_pd();
         }
 
-        const size_t n = (std::is_same_v<ResultType, Float32>) ? 16 : 8;
+        constexpr size_t n = is_float32 ? 16 : 8;
 
         for (; i_x + n < i_max; i_x += n, i_y += n)
         {
-            if constexpr (std::is_same_v<ResultType, Float32>)
+            if constexpr (is_float32)
             {
                 __m512 x = _mm512_loadu_ps(data_x + i_x);
                 __m512 y = _mm512_loadu_ps(data_y + i_y);
@@ -286,7 +290,7 @@ struct CosineDistance
             }
         }
 
-        if constexpr (std::is_same_v<ResultType, Float32>)
+        if constexpr (is_float32)
         {
             state.dot_prod = _mm512_reduce_add_ps(dot_products);
             state.x_squared = _mm512_reduce_add_ps(x_squareds);
@@ -312,7 +316,11 @@ template <class Kernel>
 class FunctionArrayDistance : public IFunction
 {
 public:
-    String getName() const override { static auto name = String("array") + Kernel::name + "Distance"; return name; }
+    String getName() const override
+    {
+        static auto name = String("array") + Kernel::name + "Distance";
+        return name;
+    }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayDistance<Kernel>>(); }
     size_t getNumberOfArguments() const override { return 2; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
@@ -349,7 +357,7 @@ public:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Arguments of function {} has nested type {}. "
-                    "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
+                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
                     getName(),
                     common_type->getName());
         }
@@ -371,17 +379,17 @@ public:
     }
 
 
-#define SUPPORTED_TYPES(action) \
-    action(UInt8)   \
-    action(UInt16)  \
-    action(UInt32)  \
-    action(UInt64)  \
-    action(Int8)    \
-    action(Int16)   \
-    action(Int32)   \
-    action(Int64)   \
-    action(Float32) \
-    action(Float64)
+#define SUPPORTED_TYPES(ACTION) \
+    ACTION(UInt8)   \
+    ACTION(UInt16)  \
+    ACTION(UInt32)  \
+    ACTION(UInt64)  \
+    ACTION(Int8)    \
+    ACTION(Int16)   \
+    ACTION(Int32)   \
+    ACTION(Int64)   \
+    ACTION(Float32) \
+    ACTION(Float64)
 
 
 private:
@@ -390,12 +398,11 @@ private:
     {
         DataTypePtr type_x = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
 
-        /// Dynamic disaptch based on the 1st argument type
         switch (type_x->getTypeId())
         {
         #define ON_TYPE(type) \
             case TypeIndex::type: \
-                return executeWithFirstType<ResultType, type>(arguments, input_rows_count); \
+                return executeWithResultTypeAndLeftType<ResultType, type>(arguments, input_rows_count); \
                 break;
 
             SUPPORTED_TYPES(ON_TYPE)
@@ -405,23 +412,22 @@ private:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Arguments of function {} has nested type {}. "
-                    "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
+                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
                     getName(),
                     type_x->getName());
         }
     }
 
-    template <typename ResultType, typename FirstArgType>
-    ColumnPtr executeWithFirstType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    template <typename ResultType, typename LeftType>
+    ColumnPtr executeWithResultTypeAndLeftType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         DataTypePtr type_y = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
 
-        /// Dynamic disaptch based on the 2nd argument type
         switch (type_y->getTypeId())
         {
         #define ON_TYPE(type) \
             case TypeIndex::type: \
-                return executeWithTypes<ResultType, FirstArgType, type>(arguments[0].column, arguments[1].column, input_rows_count, arguments); \
+                return executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, type>(arguments[0].column, arguments[1].column, input_rows_count, arguments); \
                 break;
 
             SUPPORTED_TYPES(ON_TYPE)
@@ -431,59 +437,43 @@ private:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Arguments of function {} has nested type {}. "
-                    "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
+                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
                     getName(),
                     type_y->getName());
         }
     }
 
-    template <typename ResultType, typename FirstArgType, typename SecondArgType>
-    ColumnPtr executeWithTypes(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
+    template <typename ResultType, typename LeftType, typename RightType>
+    ColumnPtr executeWithResultTypeAndLeftTypeAndRightType(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
     {
         if (typeid_cast<const ColumnConst *>(col_x.get()))
         {
-            return executeWithTypesFirstArgConst<ResultType, FirstArgType, SecondArgType>(col_x, col_y, input_rows_count, arguments);
+            return executeWithLeftArgConst<ResultType, LeftType, RightType>(col_x, col_y, input_rows_count, arguments);
         }
-        else if (typeid_cast<const ColumnConst *>(col_y.get()))
+        if (typeid_cast<const ColumnConst *>(col_y.get()))
         {
-            return executeWithTypesFirstArgConst<ResultType, SecondArgType, FirstArgType>(col_y, col_x, input_rows_count, arguments);
+            return executeWithLeftArgConst<ResultType, RightType, LeftType>(col_y, col_x, input_rows_count, arguments);
         }
-
-        col_x = col_x->convertToFullColumnIfConst();
-        col_y = col_y->convertToFullColumnIfConst();
 
         const auto & array_x = *assert_cast<const ColumnArray *>(col_x.get());
         const auto & array_y = *assert_cast<const ColumnArray *>(col_y.get());
 
-        const auto & data_x = typeid_cast<const ColumnVector<FirstArgType> &>(array_x.getData()).getData();
-        const auto & data_y = typeid_cast<const ColumnVector<SecondArgType> &>(array_y.getData()).getData();
+        const auto & data_x = typeid_cast<const ColumnVector<LeftType> &>(array_x.getData()).getData();
+        const auto & data_y = typeid_cast<const ColumnVector<RightType> &>(array_y.getData()).getData();
 
         const auto & offsets_x = array_x.getOffsets();
-        const auto & offsets_y = array_y.getOffsets();
 
-        /// Check that arrays in both columns are the sames size
-        for (size_t row = 0; row < offsets_x.size(); ++row)
-        {
-            if (offsets_x[row] != offsets_y[row]) [[unlikely]]
-            {
-                ColumnArray::Offset prev_offset = row > 0 ? offsets_x[row] : 0;
-                throw Exception(
-                    ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
-                    "Arguments of function {} have different array sizes: {} and {}",
-                    getName(),
-                    offsets_x[row] - prev_offset,
-                    offsets_y[row] - prev_offset);
-            }
-        }
+        if (!array_x.hasEqualOffsets(array_y))
+            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Array arguments for function {} must have equal sizes", getName());
 
         const typename Kernel::ConstParams kernel_params = initConstParams(arguments);
 
-        auto result = ColumnVector<ResultType>::create(input_rows_count);
-        auto & result_data = result->getData();
+        auto col_res = ColumnVector<ResultType>::create(input_rows_count);
+        auto & result_data = col_res->getData();
 
-        /// Do the actual computation
         ColumnArray::Offset prev = 0;
         size_t row = 0;
+
         for (auto off : offsets_x)
         {
             /// Process chunks in vectorized manner
@@ -509,12 +499,12 @@ private:
             result_data[row] = Kernel::finalize(state, kernel_params);
             row++;
         }
-        return result;
+        return col_res;
     }
 
     /// Special case when the 1st parameter is Const
-    template <typename ResultType, typename FirstArgType, typename SecondArgType>
-    ColumnPtr executeWithTypesFirstArgConst(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
+    template <typename ResultType, typename LeftType, typename RightType>
+    ColumnPtr executeWithLeftArgConst(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
     {
         col_x = assert_cast<const ColumnConst *>(col_x.get())->getDataColumnPtr();
         col_y = col_y->convertToFullColumnIfConst();
@@ -522,26 +512,25 @@ private:
         const auto & array_x = *assert_cast<const ColumnArray *>(col_x.get());
         const auto & array_y = *assert_cast<const ColumnArray *>(col_y.get());
 
-        const auto & data_x = typeid_cast<const ColumnVector<FirstArgType> &>(array_x.getData()).getData();
-        const auto & data_y = typeid_cast<const ColumnVector<SecondArgType> &>(array_y.getData()).getData();
+        const auto & data_x = typeid_cast<const ColumnVector<LeftType> &>(array_x.getData()).getData();
+        const auto & data_y = typeid_cast<const ColumnVector<RightType> &>(array_y.getData()).getData();
 
         const auto & offsets_x = array_x.getOffsets();
         const auto & offsets_y = array_y.getOffsets();
 
-        /// Check that arrays in both columns are the sames size
         ColumnArray::Offset prev_offset = 0;
-        for (size_t row : collections::range(0, offsets_y.size()))
+        for (auto offset_y : offsets_y)
         {
-            if (offsets_x[0] != offsets_y[row] - prev_offset) [[unlikely]]
+            if (offsets_x[0] != offset_y - prev_offset) [[unlikely]]
             {
                 throw Exception(
                     ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                     "Arguments of function {} have different array sizes: {} and {}",
                     getName(),
                     offsets_x[0],
-                    offsets_y[row] - prev_offset);
+                    offset_y - prev_offset);
             }
-            prev_offset = offsets_y[row];
+            prev_offset = offset_y;
         }
 
         const typename Kernel::ConstParams kernel_params = initConstParams(arguments);
@@ -549,7 +538,6 @@ private:
         auto result = ColumnVector<ResultType>::create(input_rows_count);
         auto & result_data = result->getData();
 
-        /// Do the actual computation
         size_t prev = 0;
         size_t row = 0;
 
@@ -566,7 +554,7 @@ private:
             /// - the two most common metrics L2 and cosine distance,
             /// - the most powerful SIMD instruction set (AVX-512F).
 #if USE_MULTITARGET_CODE
-            if constexpr (std::is_same_v<ResultType, FirstArgType> && std::is_same_v<ResultType, SecondArgType>) /// ResultType is Float32 or Float64
+            if constexpr (std::is_same_v<ResultType, LeftType> && std::is_same_v<ResultType, RightType>) /// ResultType is Float32 or Float64
             {
                 if constexpr (std::is_same_v<Kernel, L2Distance>
                            || std::is_same_v<Kernel, CosineDistance>)

@@ -71,4 +71,12 @@ ASTPtr wrapInSelectWithUnion(const ASTPtr & select_query)
 
     return select_with_union_query;
 }
+
+bool isValidKQLPos(IParser::Pos & pos)
+{
+    return (pos.isValid() ||
+            pos->type == TokenType::ErrorSingleExclamationMark || // allow kql negative operators
+            pos->type == TokenType::ErrorWrongNumber || // allow kql timespan data type with decimal like 2.6h
+            std::string_view(pos->begin, pos->end) == "~");  // allow kql Case-Sensitive operators
+}
 }

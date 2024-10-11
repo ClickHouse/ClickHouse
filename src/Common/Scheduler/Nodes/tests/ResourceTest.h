@@ -75,7 +75,7 @@ struct ResourceTestBase
 
 struct ConstraintTest : public SemaphoreConstraint
 {
-    ConstraintTest(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
+    explicit ConstraintTest(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
         : SemaphoreConstraint(event_queue_, config, config_prefix)
     {}
 
@@ -232,12 +232,13 @@ struct ResourceTestManager : public ResourceTestBase
         ResourceTestManager & t;
 
         Guard(ResourceTestManager & t_, ResourceLink link_, ResourceCost cost)
-            : ResourceGuard(link_, cost, PostponeLocking)
+            : ResourceGuard(ResourceGuard::Metrics::getIOWrite(), link_, cost, Lock::Defer)
             , t(t_)
         {
             t.onEnqueue(link);
             lock();
             t.onExecute(link);
+            consume(cost);
         }
     };
 
@@ -282,7 +283,7 @@ struct ResourceTestManager : public ResourceTestBase
         return link_data[link];
     }
 
-    // Use at least two threads for each queue to avoid queue being deactivated:
+    // Use exactly two threads for each queue to avoid queue being deactivated (happens with 1 thread) and reordering (happens with >2 threads):
     // while the first request is executing, the second request is in queue - holding it active.
     // use onEnqueue() and onExecute() functions for this purpose.
     void onEnqueue(ResourceLink link)
@@ -310,8 +311,9 @@ struct ResourceTestManager : public ResourceTestBase
     // NOTE: actually leader's request(s) make their own small busy period.
     void blockResource(ResourceLink link)
     {
-        ResourceGuard g(link, 1, ResourceGuard::PostponeLocking);
+        ResourceGuard g(ResourceGuard::Metrics::getIOWrite(), link, 1, ResourceGuard::Lock::Defer);
         g.lock();
+        g.consume(1);
         // NOTE: at this point we assume resource to be blocked by single request (<max_requests>1</max_requests>)
         busy_period.arrive_and_wait(); // (1) notify all followers that resource is blocked
         busy_period.arrive_and_wait(); // (2) wait all followers to enqueue their requests
@@ -320,10 +322,11 @@ struct ResourceTestManager : public ResourceTestBase
     {
         getLinkData(link).left += total_requests + 1;
         busy_period.arrive_and_wait(); // (1) wait leader to block resource
-        ResourceGuard g(link, cost, ResourceGuard::PostponeLocking);
+        ResourceGuard g(ResourceGuard::Metrics::getIOWrite(), link, cost, ResourceGuard::Lock::Defer);
         onEnqueue(link);
         busy_period.arrive_and_wait(); // (2) notify leader to unblock
         g.lock();
+        g.consume(cost);
         onExecute(link);
     }
 };

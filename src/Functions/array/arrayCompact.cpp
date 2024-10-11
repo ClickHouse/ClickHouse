@@ -34,7 +34,7 @@ struct ArrayCompactImpl
         using ColVecType = ColumnVectorOrDecimal<T>;
 
         const ColVecType * check_values_column = checkAndGetColumn<ColVecType>(mapped.get());
-        const ColVecType * src_values_column = checkAndGetColumn<ColVecType>(array.getData());
+        const ColVecType * src_values_column = checkAndGetColumn<ColVecType>(&array.getData());
 
         if (!src_values_column || !check_values_column)
             return false;

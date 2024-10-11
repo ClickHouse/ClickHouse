@@ -161,9 +161,9 @@ void GrantedRoles::makeUnion(const GrantedRoles & other)
 
 void GrantedRoles::makeIntersection(const GrantedRoles & other)
 {
-    boost::range::remove_erase_if(roles, [&other](const UUID & id) { return other.roles.find(id) == other.roles.end(); });
+    boost::range::remove_erase_if(roles, [&other](const UUID & id) { return other.roles.find(id) == other.roles.end(); }); // NOLINT
 
-    boost::range::remove_erase_if(roles_with_admin_option, [&other](const UUID & id)
+    boost::range::remove_erase_if(roles_with_admin_option, [&other](const UUID & id) // NOLINT
     {
         return other.roles_with_admin_option.find(id) == other.roles_with_admin_option.end();
     });
@@ -174,6 +174,16 @@ std::vector<UUID> GrantedRoles::findDependencies() const
     std::vector<UUID> res;
     boost::range::copy(roles, std::back_inserter(res));
     return res;
+}
+
+bool GrantedRoles::hasDependencies(const std::unordered_set<UUID> & ids) const
+{
+    for (const auto & role_id : roles)
+    {
+        if (ids.contains(role_id))
+            return true;
+    }
+    return false;
 }
 
 void GrantedRoles::replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids)
@@ -218,6 +228,58 @@ void GrantedRoles::replaceDependencies(const std::unordered_map<UUID, UUID> & ol
         }
 
         boost::range::copy(new_ids, std::inserter(roles_with_admin_option, roles_with_admin_option.end()));
+    }
+}
+
+void GrantedRoles::copyDependenciesFrom(const GrantedRoles & src, const std::unordered_set<UUID> & ids)
+{
+    bool found = false;
+
+    for (const auto & role_id : src.roles)
+    {
+        if (ids.contains(role_id))
+        {
+            roles.emplace(role_id);
+            found = true;
+        }
+    }
+
+    if (found)
+    {
+        for (const auto & role_id : src.roles_with_admin_option)
+        {
+            if (ids.contains(role_id))
+                roles_with_admin_option.emplace(role_id);
+        }
+    }
+}
+
+void GrantedRoles::removeDependencies(const std::unordered_set<UUID> & ids)
+{
+    bool found = false;
+
+    for (auto it = roles.begin(); it != roles.end();)
+    {
+        if (ids.contains(*it))
+        {
+            it = roles.erase(it);
+            found = true;
+        }
+        else
+        {
+            ++it;
+        }
+    }
+
+    if (found)
+    {
+        for (auto it = roles_with_admin_option.begin(); it != roles_with_admin_option.end();)
+        {
+            if (ids.contains(*it))
+                it = roles_with_admin_option.erase(it);
+            else
+                ++it;
+        }
     }
 }
 

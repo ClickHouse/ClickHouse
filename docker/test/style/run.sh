@@ -9,6 +9,8 @@ echo "Check style" | ts
 ./check-style -n              |& tee /test_output/style_output.txt
 echo "Check python formatting with black" | ts
 ./check-black -n              |& tee /test_output/black_output.txt
+echo "Check python with flake8" | ts
+./check-flake8                |& tee /test_output/flake8_output.txt
 echo "Check python type hinting with mypy" | ts
 ./check-mypy -n               |& tee /test_output/mypy_output.txt
 echo "Check typos" | ts

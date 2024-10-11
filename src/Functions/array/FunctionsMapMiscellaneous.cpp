@@ -51,6 +51,8 @@ public:
 
     bool isVariadic() const override { return impl.isVariadic(); }
     size_t getNumberOfArguments() const override { return impl.getNumberOfArguments(); }
+    bool useDefaultImplementationForNulls() const override { return impl.useDefaultImplementationForNulls(); }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return impl.useDefaultImplementationForLowCardinalityColumns(); }
     bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants(); }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override  { return false; }
 
@@ -182,11 +184,37 @@ struct MapToNestedAdapter : public MapAdapterBase<MapToNestedAdapter<Name, retur
 
 /// Adapter that extracts array with keys or values from Map columns.
 template <typename Name, size_t position>
-struct MapToSubcolumnAdapter : public MapAdapterBase<MapToSubcolumnAdapter<Name, position>, Name>
+struct MapToSubcolumnAdapter
 {
-    static_assert(position <= 1);
-    using MapAdapterBase<MapToSubcolumnAdapter, Name>::extractNestedTypes;
-    using MapAdapterBase<MapToSubcolumnAdapter, Name>::extractNestedTypesAndColumns;
+    static_assert(position <= 1, "position of Map subcolumn must be 0 or 1");
+
+    static void extractNestedTypes(DataTypes & types)
+    {
+        if (types.empty())
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be at least 1",
+                Name::name,
+                types.size());
+
+        DataTypes new_types = {types[0]};
+        MapAdapterBase<MapToSubcolumnAdapter, Name>::extractNestedTypes(new_types);
+        types[0] = new_types[0];
+    }
+
+    static void extractNestedTypesAndColumns(ColumnsWithTypeAndName & arguments)
+    {
+        if (arguments.empty())
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be at least 1",
+                Name::name,
+                arguments.size());
+
+        ColumnsWithTypeAndName new_arguments = {arguments[0]};
+        MapAdapterBase<MapToSubcolumnAdapter, Name>::extractNestedTypesAndColumns(new_arguments);
+        arguments[0] = new_arguments[0];
+    }
 
     static DataTypePtr extractNestedType(const DataTypeMap & type_map)
     {
@@ -213,6 +241,7 @@ struct MapToSubcolumnAdapter : public MapAdapterBase<MapToSubcolumnAdapter<Name,
 class FunctionMapKeyLike : public IFunction
 {
 public:
+    FunctionMapKeyLike() : impl(/*context*/ nullptr) {} /// nullptr because getting a context here is hard and FunctionLike doesn't need context
     String getName() const override { return "mapKeyLike"; }
     size_t getNumberOfArguments() const override { return 3; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
@@ -330,7 +359,7 @@ struct NameMapValues { static constexpr auto name = "mapValues"; };
 using FunctionMapValues = FunctionMapToArrayAdapter<FunctionIdentity, MapToSubcolumnAdapter<NameMapValues, 1>, NameMapValues>;
 
 struct NameMapContains { static constexpr auto name = "mapContains"; };
-using FunctionMapContains = FunctionMapToArrayAdapter<FunctionArrayIndex<HasAction, NameMapContains>, MapToSubcolumnAdapter<NameMapKeys, 0>, NameMapContains>;
+using FunctionMapContains = FunctionMapToArrayAdapter<FunctionArrayIndex<HasAction, NameMapContains>, MapToSubcolumnAdapter<NameMapContains, 0>, NameMapContains>;
 
 struct NameMapFilter { static constexpr auto name = "mapFilter"; };
 using FunctionMapFilter = FunctionMapToArrayAdapter<FunctionArrayFilter, MapToNestedAdapter<NameMapFilter>, NameMapFilter>;

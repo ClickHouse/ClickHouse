@@ -8,7 +8,7 @@ CREATE TABLE log_for_alter (
   Data String
 ) ENGINE = Log();
 
-ALTER TABLE log_for_alter MODIFY SETTING aaa=123; -- { serverError 36 }
+ALTER TABLE log_for_alter MODIFY SETTING aaa=123; -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE IF EXISTS log_for_alter;
 
@@ -19,7 +19,7 @@ CREATE TABLE table_for_alter (
   Data String
 ) ENGINE = MergeTree() ORDER BY id SETTINGS index_granularity=4096, index_granularity_bytes = '10Mi';
 
-ALTER TABLE table_for_alter MODIFY SETTING index_granularity=555; -- { serverError 472 }
+ALTER TABLE table_for_alter MODIFY SETTING index_granularity=555; -- { serverError READONLY_SETTING }
 
 SHOW CREATE TABLE table_for_alter;
 
@@ -28,15 +28,15 @@ ALTER TABLE table_for_alter MODIFY SETTING  parts_to_throw_insert = 1, parts_to_
 SHOW CREATE TABLE table_for_alter;
 
 INSERT INTO table_for_alter VALUES (1, '1');
-INSERT INTO table_for_alter VALUES (2, '2'); -- { serverError 252 }
+INSERT INTO table_for_alter VALUES (2, '2'); -- { serverError TOO_MANY_PARTS }
 
 DETACH TABLE table_for_alter;
 
 ATTACH TABLE table_for_alter;
 
-INSERT INTO table_for_alter VALUES (2, '2'); -- { serverError 252 }
+INSERT INTO table_for_alter VALUES (2, '2'); -- { serverError TOO_MANY_PARTS }
 
-ALTER TABLE table_for_alter MODIFY SETTING xxx_yyy=124; -- { serverError 115 }
+ALTER TABLE table_for_alter MODIFY SETTING xxx_yyy=124; -- { serverError UNKNOWN_SETTING }
 
 ALTER TABLE table_for_alter MODIFY SETTING parts_to_throw_insert = 100, parts_to_delay_insert = 100;
 
@@ -64,7 +64,7 @@ CREATE TABLE table_for_reset_setting (
  Data String
 ) ENGINE = MergeTree() ORDER BY id SETTINGS index_granularity=4096, index_granularity_bytes = '10Mi';
 
-ALTER TABLE table_for_reset_setting MODIFY SETTING index_granularity=555; -- { serverError 472 }
+ALTER TABLE table_for_reset_setting MODIFY SETTING index_granularity=555; -- { serverError READONLY_SETTING }
 
 SHOW CREATE TABLE table_for_reset_setting;
 
@@ -75,7 +75,7 @@ ALTER TABLE table_for_reset_setting MODIFY SETTING  parts_to_throw_insert = 1, p
 
 SHOW CREATE TABLE table_for_reset_setting;
 
-INSERT INTO table_for_reset_setting VALUES (1, '1'); -- { serverError 252 }
+INSERT INTO table_for_reset_setting VALUES (1, '1'); -- { serverError TOO_MANY_PARTS }
 
 ALTER TABLE table_for_reset_setting RESET SETTING parts_to_delay_insert, parts_to_throw_insert;
 
@@ -89,10 +89,10 @@ ATTACH TABLE table_for_reset_setting;
 
 SHOW CREATE TABLE table_for_reset_setting;
 
-ALTER TABLE table_for_reset_setting RESET SETTING index_granularity; -- { serverError 472 }
+ALTER TABLE table_for_reset_setting RESET SETTING index_granularity; -- { serverError READONLY_SETTING }
 
 -- don't execute alter with incorrect setting
-ALTER TABLE table_for_reset_setting RESET SETTING merge_with_ttl_timeout, unknown_setting; -- { serverError 36 }
+ALTER TABLE table_for_reset_setting RESET SETTING merge_with_ttl_timeout, unknown_setting; -- { serverError BAD_ARGUMENTS }
 
 ALTER TABLE table_for_reset_setting MODIFY SETTING merge_with_ttl_timeout = 300, max_concurrent_queries = 1;
 

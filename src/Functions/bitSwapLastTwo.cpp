@@ -21,7 +21,7 @@ struct BitSwapLastTwoImpl
     using ResultType = UInt8;
     static constexpr const bool allow_string_or_fixed_string = false;
 
-    static inline ResultType NO_SANITIZE_UNDEFINED apply([[maybe_unused]] A a)
+    static ResultType NO_SANITIZE_UNDEFINED apply([[maybe_unused]] A a)
     {
         if constexpr (!std::is_same_v<A, ResultType>)
             // Should be a logical error, but this function is callable from SQL.
@@ -35,7 +35,7 @@ struct BitSwapLastTwoImpl
 #if USE_EMBEDDED_COMPILER
 static constexpr bool compilable = true;
 
-static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
+static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
 {
     if (!arg->getType()->isIntegerTy())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "__bitSwapLastTwo expected an integral type");

@@ -10,13 +10,13 @@ DATABASES=("$CLICKHOUSE_DATABASE" "")
 
 TEST_INDEX=0
 
-function runClient() 
+function runClient()
 {
     $CLICKHOUSE_CLIENT_BINARY "$@" -q "SELECT $TEST_INDEX" --log_comment 02766_connection_string.sh --send_logs_level=warning
     ((++TEST_INDEX))
 }
 
-function testConnectionString() 
+function testConnectionString()
 {
     if [ "$database" == "" ]; then
         runClient "clickhouse:$1"
@@ -26,7 +26,7 @@ function testConnectionString()
     fi
 }
 
-function testConnectionWithUserName() 
+function testConnectionWithUserName()
 {
 if [ "$user_info" == "" ] && [ "$host_port" == "" ]; then
         testConnectionString "//"
@@ -53,9 +53,9 @@ TEST_USER_NAME="test_user_02771_$$"
 TEST_USER_EMAIL_NAME="test_user_02771_$$@some_mail.com"
 TEST_USER_EMAIL_NAME_ENCODED="test_user_02771_$$%40some_mail.com"
 
-TEST_USER_PASSWORD="zyx%$&abc" 
+TEST_USER_PASSWORD="zyx%$&abc"
 # %, $, & percent encoded
-TEST_USER_PASSWORD_ENCODED="zyx%25%24%26abc" 
+TEST_USER_PASSWORD_ENCODED="zyx%25%24%26abc"
 
 $CLICKHOUSE_CLIENT -q "CREATE USER '$TEST_USER_NAME'"
 $CLICKHOUSE_CLIENT -q "CREATE USER '$TEST_USER_EMAIL_NAME' IDENTIFIED WITH plaintext_password BY '$TEST_USER_PASSWORD'"
@@ -66,14 +66,14 @@ runClient "clickhouse://$TEST_USER_EMAIL_NAME_ENCODED:$TEST_USER_PASSWORD_ENCODE
 $CLICKHOUSE_CLIENT -q "DROP USER '$TEST_USER_NAME'"
 $CLICKHOUSE_CLIENT -q "DROP USER '$TEST_USER_EMAIL_NAME'"
 
-# Percent-encoded database in non-ascii symbols 
+# Percent-encoded database in non-ascii symbols
 UTF8_DATABASE="БазаДанных_$$"
 UTF8_DATABASE_PERCENT_ENCODED="%D0%91%D0%B0%D0%B7%D0%B0%D0%94%D0%B0%D0%BD%D0%BD%D1%8B%D1%85_$$"
 $CLICKHOUSE_CLIENT -q "CREATE DATABASE IF NOT EXISTS \`$UTF8_DATABASE\`"
 runClient "clickhouse://default@$CLICKHOUSE_HOST/$UTF8_DATABASE_PERCENT_ENCODED"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`$UTF8_DATABASE\`"
 
-# clickhouse-client extra options cases 
+# clickhouse-client extra options cases
 TEST_INDEX=1000
 
 runClient "clickhouse://$CLICKHOUSE_HOST/" --user 'default'
@@ -114,13 +114,13 @@ runClient "clickhouse://" --port "$CLICKHOUSE_PORT_TCP" --host "$CLICKHOUSE_HOST
 runClient "clickhouse:///" --port "$CLICKHOUSE_PORT_TCP" --host "$CLICKHOUSE_HOST" 2>&1 | grep -o 'BAD_ARGUMENTS'
 runClient "clickhouse:///?" --port "$CLICKHOUSE_PORT_TCP" --host "$CLICKHOUSE_HOST" 2>&1 | grep -o 'BAD_ARGUMENTS'
 runClient "clickhouse://:/?" --port "$CLICKHOUSE_PORT_TCP" --host "$CLICKHOUSE_HOST" 2>&1 | grep -o 'BAD_ARGUMENTS'
-runClient "clickhouse:" --database "$CLICKHOUSE_DATABASE" --port "$CLICKHOUSE_PORT_TCP" --host "$CLICKHOUSE_HOST" 2>&1 | grep -o 'BAD_ARGUMENTS' 
+runClient "clickhouse:" --database "$CLICKHOUSE_DATABASE" --port "$CLICKHOUSE_PORT_TCP" --host "$CLICKHOUSE_HOST" 2>&1 | grep -o 'BAD_ARGUMENTS'
 
 # Using clickhouse-client and connection is prohibited
 runClient "clickhouse:" --connection "connection" 2>&1 | grep -o 'BAD_ARGUMENTS'
 
 # Space is used in connection string (This is prohibited).
-runClient " clickhouse:" 2>&1 | grep -o 'BAD_ARGUMENTS'
+runClient " clickhouse:" 2>&1 | grep -o 'SYNTAX_ERROR'
 runClient "clickhouse: " 2>&1 | grep -o 'BAD_ARGUMENTS'
 runClient "clickhouse://host1 /" 2>&1 | grep -o 'BAD_ARGUMENTS'
 runClient "clickhouse://host1, host2/" 2>&1 | grep -o 'BAD_ARGUMENTS'
@@ -151,7 +151,7 @@ runClient "clickhouse://user1@localhost,default@localhost/" 2>&1 | grep -o 'BAD_
 # Using '@' in user name is prohibited. User name should be percent-encoded.
 runClient "clickhouse://my_mail@email.com@host/" 2>&1 | grep -o 'BAD_ARGUMENTS'
 
-# Wrong input cases 
+# Wrong input cases
 TEST_INDEX=100000
 # Invalid user name
 runClient "clickhouse://non_exist_user@$CLICKHOUSE_HOST:$CLICKHOUSE_PORT_TCP/" 2>&1 | grep -o 'Authentication failed'

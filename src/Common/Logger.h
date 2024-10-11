@@ -1,13 +1,20 @@
 #pragma once
 
+#include <base/defines.h>
+
 #include <memory>
 
-#include <Poco/Channel.h>
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
 
-using LoggerPtr = Poco::LoggerPtr;
+namespace Poco
+{
+class Channel;
+class Logger;
+using LoggerPtr = std::shared_ptr<Logger>;
+}
 
+using LoggerPtr = std::shared_ptr<Poco::Logger>;
 using LoggerRawPtr = Poco::Logger *;
 
 /** RAII wrappers around Poco/Logger.h.
@@ -19,10 +26,20 @@ using LoggerRawPtr = Poco::Logger *;
   * Then it must be destroyed when underlying table is destroyed.
   */
 
-/** Get Logger with specified name. If the Logger does not exists, it is created.
+/** Get Logger with specified name. If the Logger does not exist, it is created.
   * Logger is destroyed, when last shared ptr that refers to Logger with specified name is destroyed.
   */
 LoggerPtr getLogger(const std::string & name);
+
+/** Get Logger with specified name. If the Logger does not exist, it is created.
+  * This overload was added for specific purpose, when logger is constructed from constexpr string.
+  * Logger is destroyed only during program shutdown.
+  */
+template <size_t n>
+ALWAYS_INLINE LoggerPtr getLogger(const char (&name)[n])
+{
+    return Poco::Logger::getShared(name, false /*should_be_owned_by_shared_ptr_if_created*/);
+}
 
 /** Create Logger with specified name, channel and logging level.
   * If Logger already exists, throws exception.
@@ -47,3 +64,7 @@ LoggerRawPtr createRawLogger(const std::string & name, Poco::Channel * channel, 
   * Otherwise, returns false.
   */
 bool hasLogger(const std::string & name);
+
+void disableLogging();
+
+bool isLoggingEnabled();

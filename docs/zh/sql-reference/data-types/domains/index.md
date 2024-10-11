@@ -19,9 +19,9 @@ Domain类型是特定实现的类型，它总是与某个现存的基础类型�
 ### Domains的额外特性 {#domainsde-e-wai-te-xing}
 
 -   在执行SHOW CREATE TABLE 或 DESCRIBE TABLE时，其对应的列总是展示为Domain类型的名称
--   在INSERT INTO domain_table(domain_column) VALUES(…)中输入数据总是以更人性化的格式进行输入
+-   在INSERT INTO domain_table(domain_column) VALUES(...)中输入数据总是以更人性化的格式进行输入
 -   在SELECT domain_column FROM domain_table中数据总是以更人性化的格式输出
--   在INSERT INTO domain_table FORMAT CSV …中，实现外部源数据以更人性化的格式载入
+-   在INSERT INTO domain_table FORMAT CSV ...中，实现外部源数据以更人性化的格式载入
 
 ### Domains类型的限制 {#domainslei-xing-de-xian-zhi}
 

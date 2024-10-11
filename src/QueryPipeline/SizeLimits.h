@@ -7,7 +7,7 @@ namespace DB
 {
 
 /// What to do if the limit is exceeded.
-enum class OverflowMode
+enum class OverflowMode : uint8_t
 {
     THROW     = 0,    /// Throw exception.
     BREAK     = 1,    /// Abort query execution, return what is.

@@ -26,8 +26,8 @@ struct ColumnDependency
         /// TTL is set for @column_name.
         TTL_TARGET,
 
-        /// Exists any statistic, that requires @column_name
-        STATISTIC,
+        /// Exists any statistics, that requires @column_name
+        STATISTICS,
     };
 
     ColumnDependency(const String & column_name_, Kind kind_)

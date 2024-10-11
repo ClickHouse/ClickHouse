@@ -2,12 +2,10 @@
 
 #include <base/types.h>
 
-#include <Common/Scheduler/ResourceRequest.h>
-#include <Common/Scheduler/ISchedulerQueue.h>
-
-
 namespace DB
 {
+class ISchedulerQueue;
+using ResourceCost = Int64;
 
 /*
  * Everything required for resource consumption. Connection to a specific resource queue.
@@ -15,25 +13,28 @@ namespace DB
 struct ResourceLink
 {
     ISchedulerQueue * queue = nullptr;
+
     bool operator==(const ResourceLink &) const = default;
+    explicit operator bool() const { return queue != nullptr; }
 
-    void adjust(ResourceCost estimated_cost, ResourceCost real_cost) const
+    void reset()
     {
-        if (queue)
-            queue->adjustBudget(estimated_cost, real_cost);
+        queue = nullptr;
     }
+};
 
-    void consumed(ResourceCost cost) const
-    {
-        if (queue)
-            queue->consumeBudget(cost);
-    }
+/*
+ * Everything required for IO scheduling.
+ * Note that raw pointer are stored inside, so make sure that `ClassifierPtr` that produced
+ * resource links will outlive them. Usually classifier is stored in query `Context`.
+ */
+struct IOSchedulingSettings
+{
+    ResourceLink read_resource_link;
+    ResourceLink write_resource_link;
 
-    void accumulate(ResourceCost cost) const
-    {
-        if (queue)
-            queue->accumulateBudget(cost);
-    }
+    bool operator==(const IOSchedulingSettings &) const = default;
+    explicit operator bool() const { return read_resource_link && write_resource_link; }
 };
 
 }

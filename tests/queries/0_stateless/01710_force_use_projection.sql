@@ -12,6 +12,6 @@ insert into tp values (1, 2, 3);
 
 select sum(eventcnt) eventcnt, d1 from tp group by d1;
 
-select avg(eventcnt) eventcnt, d1 from tp group by d1; -- { serverError 584 }
+select avg(eventcnt) eventcnt, d1 from tp group by d1; -- { serverError PROJECTION_NOT_USED }
 
 drop table tp;

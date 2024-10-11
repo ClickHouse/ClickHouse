@@ -1,7 +1,7 @@
 #include <Columns/ColumnString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <base/hex.h>
 #include <base/find_symbols.h>
 
@@ -27,20 +27,20 @@ namespace
             const ColumnString::Chars & data,
             const ColumnString::Offsets & offsets,
             ColumnString::Chars & res_data,
-            ColumnString::Offsets & res_offsets)
+            ColumnString::Offsets & res_offsets,
+            size_t input_rows_count)
         {
             /// The size of result is always not more than the size of source.
             /// Because entities decodes to the shorter byte sequence.
             /// Example: &#xx... &#xx... will decode to UTF-8 byte sequence not longer than 4 bytes.
             res_data.resize(data.size());
 
-            size_t size = offsets.size();
-            res_offsets.resize(size);
+            res_offsets.resize(input_rows_count);
 
             size_t prev_offset = 0;
             size_t res_offset = 0;
 
-            for (size_t i = 0; i < size; ++i)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const char * src_data = reinterpret_cast<const char *>(&data[prev_offset]);
                 size_t src_size = offsets[i] - prev_offset;
@@ -54,7 +54,7 @@ namespace
             res_data.resize(res_offset);
         }
 
-        [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
+        [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
         {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function decodeXMLComponent cannot work with FixedString argument");
         }

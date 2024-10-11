@@ -1,5 +1,6 @@
 import pytest
-from helpers.cluster import ClickHouseCluster
+
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
 cluster = ClickHouseCluster(__file__)
 ch1 = cluster.add_instance(
@@ -24,15 +25,17 @@ def started_cluster():
 
 
 def test_sql_user_defined_functions_on_cluster():
-    assert "Unknown function test_function" in ch1.query_and_get_error(
-        "SELECT test_function(1);"
-    )
-    assert "Unknown function test_function" in ch2.query_and_get_error(
-        "SELECT test_function(1);"
-    )
-    assert "Unknown function test_function" in ch3.query_and_get_error(
-        "SELECT test_function(1);"
-    )
+    def check_function_does_not_exist(node: ClickHouseInstance):
+        error_message = node.query_and_get_error("SELECT test_function(1);")
+        assert (
+            "Unknown function test_function" in error_message
+            or "Function with name `test_function` does not exist. In scope SELECT test_function(1)"
+            in error_message
+        )
+
+    check_function_does_not_exist(ch1)
+    check_function_does_not_exist(ch2)
+    check_function_does_not_exist(ch3)
 
     ch1.query_with_retry(
         "CREATE FUNCTION test_function ON CLUSTER 'cluster' AS x -> x + 1;"
@@ -43,12 +46,7 @@ def test_sql_user_defined_functions_on_cluster():
     assert ch3.query("SELECT test_function(1);") == "2\n"
 
     ch2.query_with_retry("DROP FUNCTION test_function ON CLUSTER 'cluster'")
-    assert "Unknown function test_function" in ch1.query_and_get_error(
-        "SELECT test_function(1);"
-    )
-    assert "Unknown function test_function" in ch2.query_and_get_error(
-        "SELECT test_function(1);"
-    )
-    assert "Unknown function test_function" in ch3.query_and_get_error(
-        "SELECT test_function(1);"
-    )
+
+    check_function_does_not_exist(ch1)
+    check_function_does_not_exist(ch2)
+    check_function_does_not_exist(ch3)

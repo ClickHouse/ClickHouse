@@ -15,7 +15,7 @@ namespace DB
 struct BackupLogElement
 {
     BackupLogElement() = default;
-    BackupLogElement(BackupOperationInfo info_);
+    explicit BackupLogElement(BackupOperationInfo info_);
     BackupLogElement(const BackupLogElement &) = default;
     BackupLogElement & operator=(const BackupLogElement &) = default;
     BackupLogElement(BackupLogElement &&) = default;
@@ -23,7 +23,7 @@ struct BackupLogElement
 
     std::chrono::system_clock::time_point event_time{};
     Decimal64 event_time_usec{};
-    BackupOperationInfo info{};
+    BackupOperationInfo info{}; /// NOLINT(bugprone-throw-keyword-missing)
 
     static std::string name() { return "BackupLog"; }
     static ColumnsDescription getColumnsDescription();
@@ -34,9 +34,6 @@ struct BackupLogElement
 class BackupLog : public SystemLog<BackupLogElement>
 {
     using SystemLog<BackupLogElement>::SystemLog;
-
-public:
-    static const char * getDefaultOrderBy() { return "event_date, event_time_microseconds"; }
 };
 
 }

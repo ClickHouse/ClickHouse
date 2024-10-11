@@ -1,18 +1,14 @@
 #include <base/getMemoryAmount.h>
 
+#include <base/cgroupsv2.h>
 #include <base/getPageSize.h>
+#include <base/Numa.h>
 
 #include <fstream>
-#include <sstream>
-#include <stdexcept>
 
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/param.h>
-#if defined(BSD)
-#include <sys/sysctl.h>
-#endif
-
 
 namespace
 {
@@ -20,49 +16,12 @@ namespace
 std::optional<uint64_t> getCgroupsV2MemoryLimit()
 {
 #if defined(OS_LINUX)
-    const std::filesystem::path default_cgroups_mount = "/sys/fs/cgroup";
-
-    /// This file exists iff the host has cgroups v2 enabled.
-    std::ifstream controllers_file(default_cgroups_mount / "cgroup.controllers");
-    if (!controllers_file.is_open())
+    if (!cgroupsV2Enabled())
         return {};
 
-    /// Make sure that the memory controller is enabled.
-    /// - cgroup.controllers defines which controllers *can* be enabled.
-    /// - cgroup.subtree_control defines which controllers *are* enabled.
-    /// (see https://docs.kernel.org/admin-guide/cgroup-v2.html)
-    /// Caveat: nested groups may disable controllers. For simplicity, check only the top-level group.
-    /// ReadBufferFromFile subtree_control_file(default_cgroups_mount / "cgroup.subtree_control");
-    /// std::string subtree_control;
-    /// readString(subtree_control, subtree_control_file);
-    /// if (subtree_control.find("memory") == std::string::npos)
-    ///     return {};
-    std::ifstream subtree_control_file(default_cgroups_mount / "cgroup.subtree_control");
-    std::stringstream subtree_control_buf;
-    subtree_control_buf << subtree_control_file.rdbuf();
-    std::string subtree_control = subtree_control_buf.str();
-    if (subtree_control.find("memory") == std::string::npos)
+    std::filesystem::path current_cgroup = cgroupV2PathOfProcess();
+    if (current_cgroup.empty())
         return {};
-
-    /// Identify the cgroup the process belongs to
-    /// All PIDs assigned to a cgroup are in /sys/fs/cgroups/{cgroup_name}/cgroup.procs
-    /// A simpler way to get the membership is:
-    std::ifstream cgroup_name_file("/proc/self/cgroup");
-    if (!cgroup_name_file.is_open())
-        return {};
-
-    std::stringstream cgroup_name_buf;
-    cgroup_name_buf << cgroup_name_file.rdbuf();
-    std::string cgroup_name = cgroup_name_buf.str();
-    if (!cgroup_name.empty() && cgroup_name.back() == '\n')
-        cgroup_name.pop_back(); /// remove trailing newline, if any
-    /// With cgroups v2, there will be a *single* line with prefix "0::/"
-    const std::string v2_prefix = "0::/";
-    if (!cgroup_name.starts_with(v2_prefix))
-        return {};
-    cgroup_name = cgroup_name.substr(v2_prefix.length());
-
-    std::filesystem::path current_cgroup = cgroup_name.empty() ? default_cgroups_mount : (default_cgroups_mount / cgroup_name);
 
     /// Open the bottom-most nested memory limit setting file. If there is no such file at the current
     /// level, try again at the parent level as memory settings are inherited.
@@ -74,8 +33,7 @@ std::optional<uint64_t> getCgroupsV2MemoryLimit()
             uint64_t value;
             if (setting_file >> value)
                 return {value};
-            else
-                return {}; /// e.g. the cgroups default "max"
+            return {}; /// e.g. the cgroups default "max"
         }
         current_cgroup = current_cgroup.parent_path();
     }
@@ -88,9 +46,6 @@ std::optional<uint64_t> getCgroupsV2MemoryLimit()
 
 }
 
-/** Returns the size of physical memory (RAM) in bytes.
-  * Returns 0 on unsupported platform
-  */
 uint64_t getMemoryAmountOrZero()
 {
     int64_t num_pages = sysconf(_SC_PHYS_PAGES);
@@ -102,6 +57,9 @@ uint64_t getMemoryAmountOrZero()
         return 0;
 
     uint64_t memory_amount = num_pages * page_size;
+
+    if (auto total_numa_memory = DB::getNumaNodesTotalMemory(); total_numa_memory.has_value())
+        memory_amount = *total_numa_memory;
 
     /// Respect the memory limit set by cgroups v2.
     auto limit_v2 = getCgroupsV2MemoryLimit();
@@ -118,8 +76,7 @@ uint64_t getMemoryAmountOrZero()
         {
             uint64_t limit_v1;
             if (limit_file_v1 >> limit_v1)
-                if (limit_v1 < memory_amount)
-                    memory_amount = limit_v1;
+                memory_amount = std::min(memory_amount, limit_v1);
         }
     }
 
