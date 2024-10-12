@@ -13,7 +13,7 @@ namespace DB
  * Limited throughput constraint. Blocks if token-bucket constraint is violated:
  * i.e. more than `max_burst + duration * max_speed` cost units (aka tokens) dequeued from this node in last `duration` seconds.
  */
-class ThrottlerConstraint : public ISchedulerConstraint
+class ThrottlerConstraint final : public ISchedulerConstraint
 {
 public:
     static constexpr double default_burst_seconds = 1.0;

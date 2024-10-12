@@ -45,7 +45,7 @@ public:
         const String & entity_name,
         bool throw_if_not_exists) override;
 
-    virtual scope_guard getAllEntitiesAndSubscribe(
+    scope_guard getAllEntitiesAndSubscribe(
         const OnChangedHandler & handler) override;
 
 protected:
@@ -68,7 +68,6 @@ protected:
 
     void setAllEntities(const std::vector<std::pair<String, ASTPtr>> & new_entities);
     void makeEventsForAllEntities(std::unique_lock<std::recursive_mutex> & lock);
-    void removeAllEntitiesExcept(const Strings & entity_names_to_keep);
 
     /// Called by derived class after a new workload entity has been added.
     void onEntityAdded(WorkloadEntityType entity_type, const String & entity_name, const ASTPtr & new_entity);

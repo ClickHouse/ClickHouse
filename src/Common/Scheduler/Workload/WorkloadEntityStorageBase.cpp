@@ -430,7 +430,7 @@ void WorkloadEntityStorageBase::setAllEntities(const std::vector<std::pair<Strin
     // TODO(serxa): do validation and throw LOGICAL_ERROR if failed
 
     std::unique_lock lock(mutex);
-    chassert(entities.empty());
+    chassert(entities.empty()); // TODO(serxa): keeper storage could do full refresh, so we should support it here
     entities = std::move(normalized_entities);
     for (const auto & [entity_name, entity] : entities)
         insertReferences(entity);
@@ -476,19 +476,6 @@ std::vector<std::pair<String, ASTPtr>> WorkloadEntityStorageBase::getAllEntities
     all_entities.reserve(entities.size());
     std::copy(entities.begin(), entities.end(), std::back_inserter(all_entities));
     return all_entities;
-}
-
-// TODO(serxa): add notifications or remove this function
-void WorkloadEntityStorageBase::removeAllEntitiesExcept(const Strings & entity_names_to_keep)
-{
-    boost::container::flat_set<std::string_view> names_set_to_keep{entity_names_to_keep.begin(), entity_names_to_keep.end()};
-    std::lock_guard lock(mutex);
-    for (auto it = entities.begin(); it != entities.end();)
-    {
-        auto current = it++;
-        if (!names_set_to_keep.contains(current->first))
-            entities.erase(current);
-    }
 }
 
 bool WorkloadEntityStorageBase::isIndirectlyReferenced(const String & target, const String & source)
