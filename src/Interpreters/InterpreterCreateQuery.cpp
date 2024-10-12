@@ -109,7 +109,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool allow_experimental_full_text_index;
     extern const SettingsBool allow_experimental_inverted_index;
-    extern const SettingsBool allow_experimental_refreshable_materialized_view;
     extern const SettingsBool allow_experimental_statistics;
     extern const SettingsBool allow_experimental_vector_similarity_index;
     extern const SettingsBool allow_materialized_view_with_bad_select;
@@ -1576,10 +1575,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (create.refresh_strategy)
     {
-        if (!getContext()->getSettingsRef()[Setting::allow_experimental_refreshable_materialized_view])
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Refreshable materialized views are experimental. Enable allow_experimental_refreshable_materialized_view to use");
-
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.refresh_strategy);
     }
@@ -1668,8 +1663,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (need_add_to_database && !database)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
 
-    if (create.replace_table
-        || (create.replace_view && (database->getEngineName() == "Atomic" || database->getEngineName() == "Replicated")))
+    if (create.replace_table)
     {
         chassert(!ddl_guard);
         return doCreateOrReplaceTable(create, properties, mode);
@@ -2030,16 +2024,16 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
         auto ast_rename = std::make_shared<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
         ast_rename->dictionary = create.is_dictionary;
-        if (create.create_or_replace || create.replace_view)
+        if (create.create_or_replace)
         {
-            /// CREATE OR REPLACE TABLE/VIEW
+            /// CREATE OR REPLACE TABLE
             /// Will execute ordinary RENAME instead of EXCHANGE if the target table does not exist
             ast_rename->rename_if_cannot_exchange = true;
             ast_rename->exchange = false;
         }
         else
         {
-            /// REPLACE TABLE/VIEW
+            /// REPLACE TABLE
             /// Will execute EXCHANGE query and fail if the target table does not exist
             ast_rename->exchange = true;
         }

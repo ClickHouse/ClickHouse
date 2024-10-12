@@ -413,14 +413,6 @@ Default value: 0
 
 Experimental data deduplication for SELECT queries based on part UUIDs
 
-## allow_experimental_refreshable_materialized_view {#allow_experimental_refreshable_materialized_view}
-
-Type: Bool
-
-Default value: 0
-
-Allow refreshable materialized views (CREATE MATERIALIZED VIEW \\<name\\> REFRESH ...).
-
 ## allow_experimental_shared_set_join {#allow_experimental_shared_set_join}
 
 Type: Bool
@@ -5533,6 +5525,12 @@ Default value: -1
 
 Limit the max number of partitions that can be accessed in one query. <= 0 means unlimited.
 
+## max_parts_to_move {#max_parts_to_move}
+
+Limit the number of parts that can be moved in one query. Zero means unlimited.
+
+Default value: `1000`.
+
 ## max_query_size {#max_query_size}
 
 Type: UInt64
@@ -9757,4 +9755,5 @@ Default value: 0
 
 Allows you to select the max window log of ZSTD (it will not be used for MergeTree family)
 
+Default value: `true`.
 
