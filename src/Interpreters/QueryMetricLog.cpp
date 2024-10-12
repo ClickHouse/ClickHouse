@@ -140,10 +140,11 @@ void QueryMetricLog::finishQuery(const String & query_id, QueryStatusInfoPtr que
             add(std::move(elem.value()));
     }
 
-    /// Take ownership of the task
+    /// Take ownership of the task, setting finished to true so that we don't try to schedule it anymore.
     auto task = std::move(it->second.task);
+    it->second.finished = true;
 
-    /// Make sure to always deactivate the task without locking queries_mutex to prevent deadlock
+    /// Make sure to always deactivate the task without locking queries_mutex to prevent deadlock.
     lock.unlock();
     task->deactivate();
     lock.lock();
@@ -184,7 +185,7 @@ std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(cons
         elem.profile_events = query_status.last_profile_events;
     }
 
-    if (schedule_next)
+    if (!query_status.finished && schedule_next)
     {
         query_status.next_collect_time += std::chrono::milliseconds(query_status.interval_milliseconds);
         const auto wait_time = std::chrono::duration_cast<std::chrono::milliseconds>(query_status.next_collect_time - std::chrono::system_clock::now()).count();

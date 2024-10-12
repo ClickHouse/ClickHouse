@@ -40,6 +40,7 @@ struct QueryMetricLogStatus
     std::chrono::system_clock::time_point next_collect_time;
     std::vector<ProfileEvents::Count> last_profile_events = std::vector<ProfileEvents::Count>(ProfileEvents::end());
     BackgroundSchedulePool::TaskHolder task;
+    bool finished = false;
 };
 
 class QueryMetricLog : public SystemLog<QueryMetricLogElement>
