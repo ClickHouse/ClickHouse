@@ -54,7 +54,7 @@ using UnifiedSchedulerNodePtr = std::shared_ptr<UnifiedSchedulerNode>;
  *  - unified child: leaf of this "internal" subtree (CHILD[p,w]);
  *  - intermediate node: any child that is not UnifiedSchedulerNode (unified child or `this`)
  */
-class UnifiedSchedulerNode : public ISchedulerNode
+class UnifiedSchedulerNode final : public ISchedulerNode
 {
 private:
     /// Helper function for managing a parent of a node
@@ -472,7 +472,7 @@ public:
     }
 
     /// Returns the queue to be used for resource requests or `nullptr` if it has unified children
-    std::shared_ptr<ISchedulerQueue> getQueue()
+    std::shared_ptr<ISchedulerQueue> getQueue() const
     {
         return static_pointer_cast<ISchedulerQueue>(impl.branch.queue);
     }

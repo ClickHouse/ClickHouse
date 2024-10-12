@@ -250,7 +250,7 @@ IOResourceManager::IOResourceManager(IWorkloadEntityStorage & storage_)
     subscription = storage.getAllEntitiesAndSubscribe(
         [this] (const std::vector<IWorkloadEntityStorage::Event> & events)
         {
-            for (auto [entity_type, entity_name, entity] : events)
+            for (const auto & [entity_type, entity_name, entity] : events)
             {
                 switch (entity_type)
                 {

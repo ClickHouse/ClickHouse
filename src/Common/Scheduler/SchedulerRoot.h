@@ -28,7 +28,7 @@ namespace ErrorCodes
  * Resource scheduler root node with a dedicated thread.
  * Immediate children correspond to different resources.
  */
-class SchedulerRoot : public ISchedulerNode
+class SchedulerRoot final : public ISchedulerNode
 {
 private:
     struct Resource

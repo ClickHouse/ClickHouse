@@ -28,7 +28,7 @@ namespace ErrorCodes
  * of a child is set to vruntime of "start" of the last request. This guarantees immediate processing
  * of at least single request of newly activated children and thus best isolation and scheduling latency.
  */
-class FairPolicy : public ISchedulerNode
+class FairPolicy final : public ISchedulerNode
 {
     /// Scheduling state of a child
     struct Item

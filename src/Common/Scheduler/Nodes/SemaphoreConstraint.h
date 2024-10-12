@@ -14,7 +14,7 @@ namespace DB
  * Limited concurrency constraint.
  * Blocks if either number of concurrent in-flight requests exceeds `max_requests`, or their total cost exceeds `max_cost`
  */
-class SemaphoreConstraint : public ISchedulerConstraint
+class SemaphoreConstraint final : public ISchedulerConstraint
 {
     static constexpr Int64 default_max_requests = std::numeric_limits<Int64>::max();
     static constexpr Int64 default_max_cost = std::numeric_limits<Int64>::max();

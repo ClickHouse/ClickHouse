@@ -19,7 +19,7 @@ namespace ErrorCodes
  * Scheduler node that implements priority scheduling policy.
  * Requests are scheduled in order of priorities.
  */
-class PriorityPolicy : public ISchedulerNode
+class PriorityPolicy final : public ISchedulerNode
 {
     /// Scheduling state of a child
     struct Item

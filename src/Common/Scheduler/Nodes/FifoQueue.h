@@ -23,7 +23,7 @@ namespace ErrorCodes
 /*
  * FIFO queue to hold pending resource requests
  */
-class FifoQueue : public ISchedulerQueue
+class FifoQueue final : public ISchedulerQueue
 {
 public:
     FifoQueue(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
