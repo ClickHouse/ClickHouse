@@ -22,7 +22,40 @@ struct SignImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = false;
+    static constexpr bool compilable = true;
+
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
+    {
+        const auto & type = arg->getType();
+        if (type->isIntegerTy())
+        {
+            auto * zero = llvm::ConstantInt::get(type, 0);
+            auto * one = llvm::ConstantInt::get(type, 1);
+            auto * minus_one = llvm::ConstantInt::getSigned(type, -1);
+
+            auto * is_zero = b.CreateICmpEQ(arg, zero);
+            auto * is_negative = b.CreateICmpSLT(arg, zero);
+
+            auto * select_zero = b.CreateSelect(is_zero, zero, one);
+            return b.CreateSelect(is_negative, minus_one, select_zero);
+        }
+        else if (type->isDoubleTy() || type->isFloatTy())
+        {
+            auto * zero = llvm::ConstantFP::get(type, 0.0);
+            auto * one = llvm::ConstantFP::get(type, 1.0);
+            auto * minus_one = llvm::ConstantFP::get(type, -1.0);
+
+            auto * is_zero = b.CreateFCmpOEQ(arg, zero);
+            auto * is_negative = b.CreateFCmpOLT(arg, zero);
+
+            auto * select_zero = b.CreateSelect(is_zero, zero, one);
+            return b.CreateSelect(is_negative, minus_one, select_zero);
+        }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "SignImpl compilation expected native integer or floating point type");
+    }
+
+
 #endif
 };
 

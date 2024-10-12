@@ -59,7 +59,11 @@ ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionAc
 
 #if USE_EMBEDDED_COMPILER
     if (settings.can_compile_expressions && settings.compile_expressions == CompileExpressions::yes)
+    {
+        std::cout << "old actions_dag: " << actions_dag.dumpDAG() << std::endl;
         actions_dag.compileExpressions(settings.min_count_to_compile_expression, lazy_executed_nodes);
+        std::cout << "new actions_dag: " << actions_dag.dumpDAG() << std::endl;
+    }
 #endif
 
     linearizeActions(lazy_executed_nodes);

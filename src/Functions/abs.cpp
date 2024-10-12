@@ -27,7 +27,7 @@ struct AbsImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = true; /// special type handling, some other time
+    static constexpr bool compilable = true;
 
     static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool sign)
     {
