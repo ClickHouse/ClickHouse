@@ -12,7 +12,6 @@
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
-#include <base/scope_guard.h>
 #include <chrono>
 
 
@@ -722,13 +721,8 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
     return per_query_infos;
 }
 
-static auto logger = getLogger("QueryMetricLog");
-
 QueryStatusPtr ProcessList::getProcessListElement(const String & query_id) const
 {
-    LOG_TRACE(logger, "getProcessListElement {}", query_id);
-    SCOPE_EXIT({ LOG_TRACE(logger, "~getProcessListElement {}", query_id); });
-
     LockAndBlocker lock(mutex);
     QueryStatusPtr process_found;
     {
@@ -747,9 +741,6 @@ QueryStatusPtr ProcessList::getProcessListElement(const String & query_id) const
 
 QueryStatusInfoPtr ProcessList::getQueryInfo(const String & query_id, bool get_thread_list, bool get_profile_events, bool get_settings) const
 {
-    LOG_TRACE(logger, "getQueryInfo {}", query_id);
-    SCOPE_EXIT({ LOG_TRACE(logger, "~getQueryInfo {}", query_id); });
-
     auto process = getProcessListElement(query_id);
     if (process)
         return std::make_shared<QueryStatusInfo>(process->getInfo(get_thread_list, get_profile_events, get_settings));
