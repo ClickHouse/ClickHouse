@@ -125,7 +125,7 @@ void QueryMetricLog::finishQuery(const String & query_id, QueryStatusInfoPtr que
     LOG_TRACE(logger, "finishQuery {}", query_id);
     SCOPE_EXIT({ LOG_TRACE(logger, "~finishQuery {}", query_id); });
 
-    std::lock_guard lock(queries_mutex);
+    std::unique_lock lock(queries_mutex);
     auto it = queries.find(query_id);
 
     /// finishQuery may be called from logExceptionBeforeStart when the query has not even started
@@ -140,7 +140,14 @@ void QueryMetricLog::finishQuery(const String & query_id, QueryStatusInfoPtr que
             add(std::move(elem.value()));
     }
 
-    queries.erase(it);
+    /// Take ownership of the task
+    auto task = std::move(it->second.task);
+
+    /// Make sure to always deactivate the task without locking queries_mutex to prevent deadlock
+    lock.unlock();
+    task->deactivate();
+    lock.lock();
+    queries.erase(query_id);
 }
 
 std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint current_time, bool schedule_next)
