@@ -91,15 +91,56 @@ struct ResourceTestBase
 };
 
 
-struct ConstraintTest : public SemaphoreConstraint
+struct ConstraintTest final : public ISchedulerConstraint
 {
     explicit ConstraintTest(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
-        : SemaphoreConstraint(event_queue_, config, config_prefix)
+        : ISchedulerConstraint(event_queue_, config, config_prefix)
+        , impl(event_queue_, config, config_prefix)
     {}
+
+    const String & getTypeName() const override
+    {
+        return impl.getTypeName();
+    }
+
+    bool equals(ISchedulerNode * other) override
+    {
+        return impl.equals(other);
+    }
+
+    void attachChild(const std::shared_ptr<ISchedulerNode> & child) override
+    {
+        impl.attachChild(child);
+    }
+
+    void removeChild(ISchedulerNode * child) override
+    {
+        impl.removeChild(child);
+    }
+
+    ISchedulerNode * getChild(const String & child_name) override
+    {
+        return impl.getChild(child_name);
+    }
+
+    void activateChild(ISchedulerNode * child) override
+    {
+        impl.activateChild(child);
+    }
+
+    bool isActive() override
+    {
+        return impl.isActive();
+    }
+
+    size_t activeChildren() override
+    {
+        return impl.activeChildren();
+    }
 
     std::pair<ResourceRequest *, bool> dequeueRequest() override
     {
-        auto [request, active] = SemaphoreConstraint::dequeueRequest();
+        auto [request, active] = impl.dequeueRequest();
         if (request)
         {
             std::unique_lock lock(mutex);
@@ -110,13 +151,17 @@ struct ConstraintTest : public SemaphoreConstraint
 
     void finishRequest(ResourceRequest * request) override
     {
-        {
-            std::unique_lock lock(mutex);
-            requests.erase(request);
-        }
-        SemaphoreConstraint::finishRequest(request);
+        impl.finishRequest(request);
+        std::unique_lock lock(mutex);
+        requests.erase(request);
     }
 
+    bool isSatisfied() override
+    {
+        return impl.isSatisfied();
+    }
+
+    SemaphoreConstraint impl;
     std::mutex mutex;
     std::set<ResourceRequest *> requests;
 };
