@@ -2341,10 +2341,8 @@ private:
                 }
             }
             else
-            {
                 result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(arguments, result_type, input_rows_count, from_string_tag);
 
-            }
             return true;
         };
 
