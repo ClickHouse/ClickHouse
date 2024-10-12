@@ -1150,6 +1150,9 @@ struct ConvertThroughParsing
 /// Function toUnixTimestamp has exactly the same implementation as toDateTime of String type.
 struct NameToUnixTimestamp { static constexpr auto name = "toUnixTimestamp"; };
 
+/// Function toUnixTimestampEx has exactly the same implementation as toDateTime of String type.
+struct NameToUnixTimestampEx { static constexpr auto name = "toUnixTimestampEx"; };
+
 enum class BehaviourOnErrorFromString : uint8_t
 {
     ConvertDefaultBehaviorTag,
@@ -1559,6 +1562,17 @@ struct ConvertImpl
             return ConvertImpl<FromDataType, DataTypeDateTime, Name, date_time_overflow_behavior>::template execute<Additions>(
                 arguments, result_type, input_rows_count, from_string_tag);
         }
+        else if constexpr (std::is_same_v<Name, NameToUnixTimestampEx>
+            && std::is_same_v<FromDataType, DataTypeString>
+            && std::is_same_v<ToDataType, DataTypeInt64>)
+        {
+            /// Convert String to DateTime64
+            ColumnPtr res = ConvertImpl<FromDataType, DataTypeDateTime64, Name, date_time_overflow_behavior>::template execute<UInt32>(
+                arguments, result_type, input_rows_count, from_string_tag, 0);
+            /// Convert DateTime64 to Int64
+            return ConvertImpl<DataTypeDateTime64, ToDataType, Name, date_time_overflow_behavior>::template execute<Additions>(
+                ColumnsWithTypeAndName{{res, result_type, arguments[0].name}}, result_type, input_rows_count, from_string_tag);
+        }
         else if constexpr ((std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>))
         {
             switch (from_string_tag)
@@ -1809,6 +1823,11 @@ struct ConvertImpl
                     vec_to[i] = static_cast<ToFieldType>(static_cast<IPv4::UnderlyingType>(vec_from[i]));
                 }
                 else if constexpr (std::is_same_v<Name, NameToUnixTimestamp>
+                    && (std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>))
+                {
+                    vec_to[i] = static_cast<ToFieldType>(vec_from[i] * DATE_SECONDS_PER_DAY);
+                }
+                else if constexpr (std::is_same_v<Name, NameToUnixTimestampEx>
                     && (std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>))
                 {
                     vec_to[i] = static_cast<ToFieldType>(vec_from[i] * DATE_SECONDS_PER_DAY);
@@ -2080,6 +2099,8 @@ public:
         if ((std::is_same_v<Name, NameToString> && !arguments.empty() && (isDateTime64(arguments[0].type) || isDateTime(arguments[0].type)))
             // toUnixTimestamp(value[, timezone : String])
             || std::is_same_v<Name, NameToUnixTimestamp>
+            // toUnixTimestampEx(value[, timezone : String])
+            || std::is_same_v<Name, NameToUnixTimestampEx>
             // toDate(value[, timezone : String])
             || std::is_same_v<ToDataType, DataTypeDate> // TODO: shall we allow timestamp argument for toDate? DateTime knows nothing about timezones and this argument is ignored below.
             // toDate32(value[, timezone : String])
@@ -2236,6 +2257,7 @@ private:
 
             if constexpr (IsDataTypeDecimal<RightDataType>)
             {
+
                 if constexpr (std::is_same_v<RightDataType, DataTypeDateTime64>)
                 {
                     /// Account for optional timezone argument.
@@ -2319,8 +2341,10 @@ private:
                 }
             }
             else
+            {
                 result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(arguments, result_type, input_rows_count, from_string_tag);
 
+            }
             return true;
         };
 
@@ -2880,6 +2904,7 @@ using FunctionToIPv4 = FunctionConvert<DataTypeIPv4, NameToIPv4, ToNumberMonoton
 using FunctionToIPv6 = FunctionConvert<DataTypeIPv6, NameToIPv6, ToNumberMonotonicity<UInt128>>;
 using FunctionToString = FunctionConvert<DataTypeString, NameToString, ToStringMonotonicity>;
 using FunctionToUnixTimestamp = FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToNumberMonotonicity<UInt32>>;
+using FunctionToUnixTimestampEx = FunctionConvert<DataTypeInt64, NameToUnixTimestampEx, ToNumberMonotonicity<Int64>>;
 using FunctionToDecimal32 = FunctionConvert<DataTypeDecimal<Decimal32>, NameToDecimal32, UnknownMonotonicity>;
 using FunctionToDecimal64 = FunctionConvert<DataTypeDecimal<Decimal64>, NameToDecimal64, UnknownMonotonicity>;
 using FunctionToDecimal128 = FunctionConvert<DataTypeDecimal<Decimal128>, NameToDecimal128, UnknownMonotonicity>;
@@ -5420,6 +5445,7 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<FunctionToString>();
 
     factory.registerFunction<FunctionToUnixTimestamp>();
+    factory.registerFunction<FunctionToUnixTimestampEx>();
 
     factory.registerFunction<FunctionToUInt8OrZero>();
     factory.registerFunction<FunctionToUInt16OrZero>();
