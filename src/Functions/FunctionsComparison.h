@@ -38,6 +38,7 @@
 #include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
 #include <Common/memcmpSmall.h>
+#include "DataTypes/NumberTraits.h"
 
 #if USE_EMBEDDED_COMPILER
 #    include <DataTypes/Native.h>
@@ -1406,6 +1407,7 @@ public:
 
         WhichDataType data_type_lhs(arguments[0]);
         WhichDataType data_type_rhs(arguments[1]);
+        /// TODO support date/date32
         if ((data_type_lhs.isDateOrDate32() || data_type_lhs.isDateTime()) ||
             (data_type_rhs.isDateOrDate32() || data_type_rhs.isDateTime()))
             return false;
@@ -1414,13 +1416,16 @@ public:
         {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
-            if constexpr (!std::is_same_v<DataTypeFixedString, LeftDataType> &&
-                !std::is_same_v<DataTypeFixedString, RightDataType> &&
-                !std::is_same_v<DataTypeString, LeftDataType> &&
-                !std::is_same_v<DataTypeString, RightDataType>)
+            using LeftType = typename LeftDataType::FieldType;
+            using RightType = typename RightDataType::FieldType;
+            using PromotedType = typename NumberTraits::ResultOfIf<LeftType, RightType>::Type;
+            if constexpr (
+                !std::is_same_v<DataTypeFixedString, LeftDataType> && !std::is_same_v<DataTypeFixedString, RightDataType>
+                && !std::is_same_v<DataTypeString, LeftDataType> && !std::is_same_v<DataTypeString, RightDataType>
+                && (std::is_integral_v<PromotedType> || std::is_floating_point_v<PromotedType>))
             {
                 using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
-                return OpSpec::compilable && std::is_same_v<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
+                return OpSpec::compilable;
             }
             return false;
         });
@@ -1435,23 +1440,24 @@ public:
         {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
-            if constexpr (!std::is_same_v<DataTypeFixedString, LeftDataType> &&
-                !std::is_same_v<DataTypeFixedString, RightDataType> &&
-                !std::is_same_v<DataTypeString, LeftDataType> &&
-                !std::is_same_v<DataTypeString, RightDataType>)
+            using LeftType = typename LeftDataType::FieldType;
+            using RightType = typename RightDataType::FieldType;
+            using PromotedType = typename NumberTraits::ResultOfIf<LeftType, RightType>::Type;
+
+            if constexpr (
+                !std::is_same_v<DataTypeFixedString, LeftDataType> && !std::is_same_v<DataTypeFixedString, RightDataType>
+                && !std::is_same_v<DataTypeString, LeftDataType> && !std::is_same_v<DataTypeString, RightDataType>
+                && (std::is_integral_v<PromotedType> || std::is_floating_point_v<PromotedType>))
             {
                 using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
                 if constexpr (OpSpec::compilable && std::is_same_v<typename LeftDataType::FieldType, typename RightDataType::FieldType>)
                 {
+                    auto promoted_type = std::make_shared<DataTypeNumber<PromotedType>>();
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                    // auto * lval = nativeCast(b, arguments[0], result_type);
-                    // auto * rval = nativeCast(b, arguments[1], result_type);
-                    // result = OpSpec::compile(b, lval, rval, std::is_signed_v<typename ResultDataType::FieldType>);
+                    auto * left_value = nativeCast(b, arguments[0], promoted_type);
+                    auto * right_value = nativeCast(b, arguments[1], promoted_type);
                     result = b.CreateSelect(
-                        CompileOp<Op>::compile(
-                            b, arguments[0].value, arguments[1].value, std::is_signed_v<typename LeftDataType::FieldType>),
-                        b.getInt8(1),
-                        b.getInt8(0));
+                        CompileOp<Op>::compile(b, left_value, right_value, std::is_signed_v<PromotedType>), b.getInt8(1), b.getInt8(0));
                     return true;
                 }
             }
