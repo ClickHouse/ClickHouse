@@ -117,7 +117,7 @@ ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & block, c
     return result;
 }
 
-void getBlockSortPermutationImpl(const Block & block, const SortDescription & description, IColumn::PermutationSortStability stability, UInt64 limit, IColumn::Permutation & permutation)
+void getBlockSortPermutationImpl(const Block & block, const SortDescription & description, IColumn::PermutationSortStability stability, UInt64 limit, IColumn::Permutation & permutation, EqualRanges ranges = {})
 {
     if (!block)
         return;
@@ -161,8 +161,8 @@ void getBlockSortPermutationImpl(const Block & block, const SortDescription & de
         if (limit >= size)
             limit = 0;
 
-        EqualRanges ranges;
-        ranges.emplace_back(0, permutation.size());
+        if (ranges.empty())
+            ranges.emplace_back(0, permutation.size());
 
         for (const auto & column_with_sort_description : columns_with_sort_descriptions)
         {
@@ -274,10 +274,10 @@ bool isAlreadySortedImpl(size_t rows, Comparator compare)
 
 }
 
-void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
+void sortBlock(Block & block, const SortDescription & description, UInt64 limit, EqualRanges ranges)
 {
     IColumn::Permutation permutation;
-    getBlockSortPermutationImpl(block, description, IColumn::PermutationSortStability::Unstable, limit, permutation);
+    getBlockSortPermutationImpl(block, description, IColumn::PermutationSortStability::Unstable, limit, permutation, std::move(ranges));
 
     if (permutation.empty())
         return;
