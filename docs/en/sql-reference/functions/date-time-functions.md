@@ -2924,8 +2924,18 @@ Though this function can take values of the extended types `Date32` and `DateTim
 
 **Example**
 
+Query:
+
 ```sql
 SELECT timeSlot(toDateTime('2000-01-02 03:04:05', 'UTC'));
+```
+
+Result:
+
+```response
+┌─timeSlot(toDateTime('2000-01-02 03:04:05', 'UTC'))─┐
+│                                2000-01-02 03:00:00 │
+└────────────────────────────────────────────────────┘
 ```
 
 ## toYYYYMM
