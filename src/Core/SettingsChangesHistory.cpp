@@ -68,6 +68,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.10",
         {
+            {"check_table_structure_completely", true, false, "Add new setting to allow attach when source table's projections and secondary indices is a subset of those in the target table."},
             {"enable_parsing_to_custom_serialization", false, true, "New setting"},
             {"mongodb_throw_on_unsupported_query", false, true, "New setting."},
             {"enable_parallel_replicas", false, false, "Parallel replicas with read tasks became the Beta tier feature."},
