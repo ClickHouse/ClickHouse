@@ -4342,3 +4342,37 @@ Result:
 1. │ ['{ArraySizes}','{ArrayElements, TupleElement(keys), Regular}','{ArrayElements, TupleElement(values), Regular}'] │
    └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+## globalVariable
+
+Takes constant string argument and returns the value of global variable with that name. It is intended for compatibility with MySQL.
+
+**Syntax**
+
+```sql
+globalVariable('name')
+```
+
+**Arguments**
+
+- `name` — Global variable name. [String](../data-types/string.md).
+
+**Returned value**
+
+- Returns the value of variable `name`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT globalVariable('max_allowed_packet');
+```
+
+Result:
+
+```response
+┌─globalVariable('max_allowed_packet')─┐
+│                             67108864 │
+└──────────────────────────────────────┘
+```
