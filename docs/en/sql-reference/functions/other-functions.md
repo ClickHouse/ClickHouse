@@ -4350,7 +4350,7 @@ Takes constant string argument and returns the value of global variable with tha
 **Syntax**
 
 ```sql
-globalVariable('name')
+globalVariable(name)
 ```
 
 **Arguments**
