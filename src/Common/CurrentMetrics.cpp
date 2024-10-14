@@ -29,8 +29,6 @@
     M(BackgroundDistributedSchedulePoolSize, "Limit on number of tasks in BackgroundDistributedSchedulePool") \
     M(BackgroundMessageBrokerSchedulePoolTask, "Number of active tasks in BackgroundMessageBrokerSchedulePool for message streaming") \
     M(BackgroundMessageBrokerSchedulePoolSize, "Limit on number of tasks in BackgroundMessageBrokerSchedulePool for message streaming") \
-    M(BackgroundQueryMetricLogSchedulePoolTask, "Number of active tasks in BackgroundQueryMetricLogSchedulePool for query metric logging") \
-    M(BackgroundQueryMetricLogSchedulePoolSize, "Limit on number of tasks in BackgroundQueryMetricLogSchedulePool for query metric logging") \
     M(CacheDictionaryUpdateQueueBatches, "Number of 'batches' (a set of keys) in update queue in CacheDictionaries.") \
     M(CacheDictionaryUpdateQueueKeys, "Exact number of keys in update queue in CacheDictionaries.") \
     M(DiskSpaceReservedForMerge, "Disk space reserved for currently running background merges. It is slightly more than the total size of currently merging parts.") \
