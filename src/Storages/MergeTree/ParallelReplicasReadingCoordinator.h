@@ -18,6 +18,8 @@ public:
     explicit ParallelReplicasReadingCoordinator(size_t replicas_count_);
     ~ParallelReplicasReadingCoordinator();
 
+    void init();
+
     void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement);
     ParallelReadResponse handleRequest(ParallelReadRequest request);
 
@@ -29,6 +31,8 @@ public:
 
     /// needed to report total rows to read
     void setProgressCallback(ProgressCallback callback);
+
+    size_t getReplicasCount() const { return replicas_count; }
 
 private:
     void initialize(CoordinationMode mode);

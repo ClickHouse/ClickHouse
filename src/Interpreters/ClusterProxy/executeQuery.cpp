@@ -655,12 +655,12 @@ void executeQueryWithParallelReplicas(
 
         DataStreams input_streams;
         input_streams.reserve(2);
-        input_streams.emplace_back(local_plan->getCurrentDataStream());
         input_streams.emplace_back(remote_plan->getCurrentDataStream());
+        input_streams.emplace_back(local_plan->getCurrentDataStream());
 
         std::vector<QueryPlanPtr> plans;
-        plans.emplace_back(std::move(local_plan));
         plans.emplace_back(std::move(remote_plan));
+        plans.emplace_back(std::move(local_plan));
 
         auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
         query_plan.unitePlans(std::move(union_step), std::move(plans));
