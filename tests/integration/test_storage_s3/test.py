@@ -2428,6 +2428,8 @@ def test_filesystem_cache(started_cluster):
         )
     )
 
+    instance.query("SYSTEM DROP SCHEMA CACHE")
+
     query_id = f"{table_name}-{uuid.uuid4()}"
     instance.query(
         f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name}.tsv') SETTINGS filesystem_cache_name = 'cache1', enable_filesystem_cache=1",
@@ -2435,7 +2437,6 @@ def test_filesystem_cache(started_cluster):
     )
 
     instance.query("SYSTEM FLUSH LOGS")
-    instance.query("SYSTEM DROP SCHEMA CACHE")
 
     assert count * 2 == int(
         instance.query(
