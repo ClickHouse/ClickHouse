@@ -80,6 +80,7 @@ private:
     bool project_inputs = false;
 
     ExpressionActionsSettings settings;
+    const LoggerPtr log;
 
 public:
     explicit ExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_ = {}, bool project_inputs_ = false);

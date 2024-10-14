@@ -498,7 +498,6 @@ public:
                 using T1 = typename Op<T0>::ResultType;
                 if constexpr (!std::is_same_v<T1, InvalidType> && !IsDataTypeDecimal<DataType> && Op<T0>::compilable)
                 {
-                    std::cout << "abs is compilable" << std::endl;
                     return true;
                 }
             }

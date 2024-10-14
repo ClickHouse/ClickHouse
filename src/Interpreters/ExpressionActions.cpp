@@ -1,4 +1,5 @@
 #include <Interpreters/Set.h>
+#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/ExpressionActions.h>
@@ -53,6 +54,7 @@ ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionAc
     : actions_dag(std::move(actions_dag_))
     , project_inputs(project_inputs_)
     , settings(settings_)
+    , log(getLogger("ExpressionActions"))
 {
     /// It's important to determine lazy executed nodes before compiling expressions.
     std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(actions_dag, settings.short_circuit_function_evaluation);
@@ -60,9 +62,9 @@ ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionAc
 #if USE_EMBEDDED_COMPILER
     if (settings.can_compile_expressions && settings.compile_expressions == CompileExpressions::yes)
     {
-        std::cout << "old actions_dag: " << actions_dag.dumpDAG() << std::endl;
+        LOG_TRACE(log, "Actions before compilation: {} with {} lazy_executed_nodes", actions_dag.dumpDAG(), lazy_executed_nodes.size());
         actions_dag.compileExpressions(settings.min_count_to_compile_expression, lazy_executed_nodes);
-        std::cout << "new actions_dag: " << actions_dag.dumpDAG() << std::endl;
+        LOG_TRACE(log, "Actions after compilation: {}", actions_dag.dumpDAG());
     }
 #endif
 
