@@ -4813,6 +4813,9 @@ Max attempts to read with backoff
     M(Bool, enable_filesystem_cache, true, R"(
 Use cache for remote filesystem. This setting does not turn on/off cache for disks (must be done via disk config), but allows to bypass cache for some queries if intended
 )", 0) \
+    M(String, filesystem_cache_name, "", R"(
+Filesystem cache name to use for stateless table engines or data lakes
+)", 0) \
     M(Bool, enable_filesystem_cache_on_write_operations, false, R"(
 Write into cache on write operations. To actually work this setting requires be added to disk config too
 )", 0) \
