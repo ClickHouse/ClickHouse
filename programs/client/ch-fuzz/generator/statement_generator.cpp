@@ -4,6 +4,7 @@
 #include "sql_types.h"
 
 #include <algorithm>
+#include <optional>
 #include <sys/types.h>
 
 namespace chfuzz {
@@ -49,22 +50,23 @@ void StatementGenerator::AddTableRelation(RandomGenerator &rg, const bool allow_
 	for (const auto &entry : t.cols) {
 		if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
 			for (const auto &entry2 : ntp->subtypes) {
-				rel.cols.push_back(SQLRelationCol(rel_name, "c" + std::to_string(entry2.cname)));
+				rel.cols.push_back(SQLRelationCol(rel_name, "c" + std::to_string(entry.first),
+												  std::optional<std::string>("c" + std::to_string(entry2.cname))));
 			}
 		} else {
-			rel.cols.push_back(SQLRelationCol(rel_name, "c" + std::to_string(entry.first)));
+			rel.cols.push_back(SQLRelationCol(rel_name, "c" + std::to_string(entry.first), std::nullopt));
 		}
 	}
 	if (allow_internal_cols && t.IsMergeTreeFamily() && rg.NextSmallNumber() < 4) {
-		rel.cols.push_back(SQLRelationCol(rel_name, "_block_number"));
-		rel.cols.push_back(SQLRelationCol(rel_name, "_part"));
-		rel.cols.push_back(SQLRelationCol(rel_name, "_part_data_version"));
-		rel.cols.push_back(SQLRelationCol(rel_name, "_part_index"));
-		rel.cols.push_back(SQLRelationCol(rel_name, "_part_offset"));
-		rel.cols.push_back(SQLRelationCol(rel_name, "_part_uuid"));
-		rel.cols.push_back(SQLRelationCol(rel_name, "_partition_id"));
-		rel.cols.push_back(SQLRelationCol(rel_name, "_partition_value"));
-		rel.cols.push_back(SQLRelationCol(rel_name, "_sample_factor"));
+		rel.cols.push_back(SQLRelationCol(rel_name, "_block_number", std::nullopt));
+		rel.cols.push_back(SQLRelationCol(rel_name, "_part", std::nullopt));
+		rel.cols.push_back(SQLRelationCol(rel_name, "_part_data_version", std::nullopt));
+		rel.cols.push_back(SQLRelationCol(rel_name, "_part_index", std::nullopt));
+		rel.cols.push_back(SQLRelationCol(rel_name, "_part_offset", std::nullopt));
+		rel.cols.push_back(SQLRelationCol(rel_name, "_part_uuid", std::nullopt));
+		rel.cols.push_back(SQLRelationCol(rel_name, "_partition_id", std::nullopt));
+		rel.cols.push_back(SQLRelationCol(rel_name, "_partition_value", std::nullopt));
+		rel.cols.push_back(SQLRelationCol(rel_name, "_sample_factor", std::nullopt));
 	}
 	if (rel_name == "") {
 		this->levels[this->current_level] = QueryLevel(this->current_level);
@@ -117,12 +119,18 @@ int StatementGenerator::PickUpNextCols(RandomGenerator &rg, const SQLTable &t, s
 }
 
 int StatementGenerator::GenerateTableKey(RandomGenerator &rg, sql_query_grammar::TableKey *tkey) {
-	if (!ids.empty() && rg.NextSmallNumber() < 7) {
-		const size_t ocols = (rg.NextMediumNumber() % std::min<size_t>(ids.size(), UINT32_C(3))) + 1;
+	if (!entries.empty() && rg.NextSmallNumber() < 7) {
+		const size_t ocols = (rg.NextMediumNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1;
 
-		std::shuffle(ids.begin(), ids.end(), rg.gen);
+		std::shuffle(entries.begin(), entries.end(), rg.gen);
 		for (size_t i = 0; i < ocols; i++) {
-			tkey->add_exprs()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_col()->set_column("c" + std::to_string(ids[i]));
+			const InsertEntry &entry = this->entries[i];
+			sql_query_grammar::ExprColumn *ecol = tkey->add_exprs()->mutable_comp_expr()->mutable_expr_stc()->mutable_col();
+
+			ecol->mutable_col()->set_column("c" + std::to_string(entry.cname1));
+			if (entry.cname2.has_value()) {
+				ecol->mutable_subcol()->set_column("c" + std::to_string(entry.cname2.value()));
+			}
 		}
 	}
 	return 0;
@@ -137,9 +145,13 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator &rg, sql_query_gra
 		const uint32_t pkey_size = table_order_by(rg.gen);
 
 		for (uint32_t i = 0 ; i < pkey_size; i++) {
-			const std::string &ncol = te->order().exprs(i).comp_expr().expr_stc().col().col().column();
+			const sql_query_grammar::ExprColumn &oecol = te->order().exprs(i).comp_expr().expr_stc().col();
+			sql_query_grammar::ExprColumn *necol = tkey->add_exprs()->mutable_comp_expr()->mutable_expr_stc()->mutable_col();
 
-			tkey->add_exprs()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_col()->set_column(ncol);
+			necol->mutable_col()->set_column(oecol.col().column());
+			if (oecol.has_subcol()) {
+				necol->mutable_subcol()->set_column(oecol.subcol().column());
+			}
 		}
 	}
 	if (rg.NextSmallNumber() < 5) {
@@ -253,41 +265,54 @@ int StatementGenerator::AddTableIndex(RandomGenerator &rg, SQLTable &t, const bo
 		NestedType *ntp = nullptr;
 		LowCardinality *lc = nullptr;
 
-		assert(this->ids.empty());
+		assert(this->entries.empty());
 		for (const auto &entry : t.cols) {
 			if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
 				for (const auto &entry2 : ntp->subtypes) {
 					if (itpe < sql_query_grammar::IndexType::IDXngrambf_v1 || PossibleForFullText(entry2.subtype)) {
-						ids.push_back(entry2.cname);
+						entries.push_back(InsertEntry(false, entry.second.cname, std::optional<uint32_t>(entry2.cname), entry2.array_subtype));
 					}
 				}
 			} else if (itpe < sql_query_grammar::IndexType::IDXngrambf_v1 || PossibleForFullText(entry.second.tp)) {
-				ids.push_back(entry.first);
+				entries.push_back(InsertEntry(entry.second.special == ColumnSpecial::SIGN, entry.second.cname, std::nullopt, entry.second.tp));
 			}
 		}
 	}
-	if (!ids.empty()) {
-		std::shuffle(ids.begin(), ids.end(), rg.gen);
+	if (!entries.empty()) {
+		std::shuffle(entries.begin(), entries.end(), rg.gen);
 
-		if (itpe == sql_query_grammar::IndexType::IDXhypothesis && ids.size() > 1 && rg.NextSmallNumber() < 9) {
+		if (itpe == sql_query_grammar::IndexType::IDXhypothesis && entries.size() > 1 && rg.NextSmallNumber() < 9) {
 			sql_query_grammar::BinaryExpr *bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
 			sql_query_grammar::Expr *expr1 = bexpr->mutable_lhs(), *expr2 = bexpr->mutable_rhs();
 			sql_query_grammar::ExprSchemaTableColumn *estc1 = expr1->mutable_comp_expr()->mutable_expr_stc(),
 													 *estc2 = expr2->mutable_comp_expr()->mutable_expr_stc();
 			sql_query_grammar::ExprColumn *ecol1 = estc1->mutable_col(), *ecol2 = estc2->mutable_col();
+			const InsertEntry &entry1 = this->entries[0], &entry2 = this->entries[1];
 
 			bexpr->set_op(rg.NextSmallNumber() < 8 ? sql_query_grammar::BinaryOperator::BINOP_EQ :
 				static_cast<sql_query_grammar::BinaryOperator>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::BinaryOperator::BINOP_LEGR)) + 1));
-			ecol1->mutable_col()->set_column("c" + std::to_string(ids[0]));
-			ecol2->mutable_col()->set_column("c" + std::to_string(ids[1]));
+			ecol1->mutable_col()->set_column("c" + std::to_string(entry1.cname1));
+			if (entry1.cname2.has_value()) {
+				ecol1->mutable_subcol()->set_column("c" + std::to_string(entry1.cname2.value()));
+			}
+			ecol2->mutable_col()->set_column("c" + std::to_string(entry2.cname1));
+			if (entry2.cname2.has_value()) {
+				ecol2->mutable_subcol()->set_column("c" + std::to_string(entry2.cname2.value()));
+			}
 			AddFieldAccess(rg, expr1, 11);
 			AddFieldAccess(rg, expr2, 11);
 			AddColNestedAccess(rg, ecol1, 21);
 			AddColNestedAccess(rg, ecol2, 21);
 		} else {
-			expr->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_col()->set_column("c" + std::to_string(ids[0]));
+			const InsertEntry &entry1 = this->entries[0];
+			sql_query_grammar::ExprColumn *ecol = expr->mutable_comp_expr()->mutable_expr_stc()->mutable_col();
+
+			ecol->mutable_col()->set_column("c" + std::to_string(entry1.cname1));
+			if (entry1.cname2.has_value()) {
+				ecol->mutable_subcol()->set_column("c" + std::to_string(entry1.cname2.value()));
+			}
 		}
-		ids.clear();
+		entries.clear();
 	} else {
 		AddTableRelation(rg, false, "", t);
 		this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
@@ -475,20 +500,20 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 	if (next.IsMergeTreeFamily()) {
 		NestedType *ntp = nullptr;
 
-		assert(this->ids.empty());
+		assert(this->entries.empty());
 		for (const auto &entry : next.cols) {
 			if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
 				for (const auto &entry2 : ntp->subtypes) {
 					if (!dynamic_cast<JSONType*>(entry2.subtype)) {
-						ids.push_back(entry2.cname);
+						entries.push_back(InsertEntry(false, entry.second.cname, std::optional<uint32_t>(entry2.cname), entry2.array_subtype));
 					}
 				}
 			} else if (!dynamic_cast<JSONType*>(entry.second.tp)) {
-				ids.push_back(entry.first);
+				entries.push_back(InsertEntry(entry.second.special == ColumnSpecial::SIGN, entry.second.cname, std::nullopt, entry.second.tp));
 			}
 		}
 		GenerateEngineDetails(rg, te);
-		this->ids.clear();
+		this->entries.clear();
 
 		sql_query_grammar::SettingValues *svs = ct->mutable_settings();
 		if (rg.NextSmallNumber() < 5) {
@@ -542,12 +567,12 @@ int StatementGenerator::GenerateNextCreateView(RandomGenerator &rg, sql_query_gr
 		next.teng = val;
 		te->set_engine(val);
 		if (next.IsMergeTreeFamily()) {
-			assert(this->ids.empty());
+			assert(this->entries.empty());
 			for (uint32_t i = 0 ; i < next.ncols ; i++) {
-				this->ids.push_back(i);
+				entries.push_back(InsertEntry(false, i, std::nullopt, nullptr));
 			}
 			GenerateEngineDetails(rg, te);
-			this->ids.clear();
+			this->entries.clear();
 		}
 		if (CollectionHas<SQLTable>(attached_tables) && rg.NextSmallNumber() < 5) {
 			const SQLTable &t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
@@ -606,19 +631,23 @@ int StatementGenerator::GenerateNextOptimizeTable(RandomGenerator &rg, sql_query
 			for (const auto &entry : t.cols) {
 				if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
 					for (const auto &entry2 : ntp->subtypes) {
-						ids.push_back(entry2.cname);
+						entries.push_back(InsertEntry(false, entry.second.cname, std::optional<uint32_t>(entry2.cname), entry2.array_subtype));
 					}
 				} else {
-					ids.push_back(entry.first);
+					entries.push_back(InsertEntry(entry.second.special == ColumnSpecial::SIGN, entry.second.cname, std::nullopt, entry.second.tp));
 				}
 			}
-			std::shuffle(ids.begin(), ids.end(), rg.gen);
+			std::shuffle(entries.begin(), entries.end(), rg.gen);
 			for (uint32_t i = 0; i < ocols; i++) {
+				const InsertEntry &entry = this->entries[i];
 				sql_query_grammar::ExprColumn *ec = i == 0 ? ecl->mutable_col() : ecl->add_extra_cols();
 
-				ec->mutable_col()->set_column("c" + std::to_string(ids[i]));
+				ec->mutable_col()->set_column("c" + std::to_string(entry.cname1));
+				if (entry.cname2.has_value()) {
+					ec->mutable_subcol()->set_column("c" + std::to_string(entry.cname2.value()));
+				}
 			}
-			ids.clear();
+			entries.clear();
 		}
 	}
 	ot->set_final(t.SupportsFinal() && rg.NextSmallNumber() < 3);
@@ -853,20 +882,20 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 			if (alter_order_by && nopt < (alter_order_by + 1)) {
 				NestedType *ntp = nullptr;
 
-				assert(this->ids.empty());
+				assert(this->entries.empty());
 				for (const auto &entry : t.cols) {
 					if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
 						for (const auto &entry2 : ntp->subtypes) {
 							if (!dynamic_cast<JSONType*>(entry2.subtype)) {
-								ids.push_back(entry2.cname);
+								entries.push_back(InsertEntry(false, entry.second.cname, std::optional<uint32_t>(entry2.cname), entry2.array_subtype));
 							}
 						}
 					} else if (!dynamic_cast<JSONType*>(entry.second.tp)) {
-						ids.push_back(entry.first);
+						entries.push_back(InsertEntry(entry.second.special == ColumnSpecial::SIGN, entry.second.cname, std::nullopt, entry.second.tp));
 					}
 				}
 				GenerateTableKey(rg, ati->mutable_order());
-				this->ids.clear();
+				this->entries.clear();
 			} else if (heavy_delete && nopt < (heavy_delete + alter_order_by + 1)) {
 				GenerateUptDelWhere(rg, t, ati->mutable_del()->mutable_expr()->mutable_expr());
 			} else if (add_column && nopt < (heavy_delete + alter_order_by + add_column + 1)) {

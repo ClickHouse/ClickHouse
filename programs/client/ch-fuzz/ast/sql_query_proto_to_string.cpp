@@ -190,6 +190,10 @@ CONV_FN(FieldAccess, fa) {
 
 CONV_FN(ExprColumn, ec) {
   ColumnToString(ret, true, ec.col());
+  if (ec.has_subcol()) {
+    ret += ".";
+    ColumnToString(ret, true, ec.subcol());
+  }
   if (ec.has_subcols()) {
     JSONColumnsToString(ret, ec.subcols());
   }

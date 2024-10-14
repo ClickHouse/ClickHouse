@@ -1657,9 +1657,10 @@ message FieldAccess {
 
 message ExprColumn {
   required Column col = 1;
-  optional JSONColumns subcols = 2;
-  optional TypeName dynamic_subtype = 3;
-  optional bool null = 4;
+  optional Column subcol = 2;
+  optional JSONColumns subcols = 3;
+  optional TypeName dynamic_subtype = 4;
+  optional bool null = 5;
 }
 
 message ExprSchemaTableColumn {

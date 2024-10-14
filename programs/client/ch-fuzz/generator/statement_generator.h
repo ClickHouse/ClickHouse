@@ -11,10 +11,12 @@ class QueryOracle;
 class SQLRelationCol {
 public:
 	std::string rel_name, name;
+	std::optional<std::string> name2;
 
 	SQLRelationCol() {}
 
-	SQLRelationCol(const std::string rname, const std::string n) : rel_name(rname), name(n) {}
+	SQLRelationCol(const std::string rname, const std::string cname, std::optional<std::string> cname2) :
+		rel_name(rname), name(cname), name2(cname2) {}
 };
 
 class SQLRelation {
