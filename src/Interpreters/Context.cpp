@@ -238,6 +238,13 @@ namespace Setting
     extern const SettingsBool use_page_cache_for_disks_without_file_cache;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsString workload;
+    extern const SettingsString compatibility;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsString merge_workload;
+    extern const MergeTreeSettingsString mutation_workload;
 }
 
 namespace ErrorCodes
@@ -2758,7 +2765,7 @@ void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_sett
 {
     makeQueryContext();
     classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
-    (*settings)[Setting::workload] = merge_tree_settings.merge_workload.value.empty() ? getMergeWorkload() : merge_tree_settings.merge_workload;
+    (*settings)[Setting::workload] = merge_tree_settings[MergeTreeSetting::merge_workload].value.empty() ? getMergeWorkload() : merge_tree_settings[MergeTreeSetting::merge_workload];
 }
 
 void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_settings)
@@ -2766,7 +2773,7 @@ void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_set
     makeQueryContext();
     classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
     (*settings)[Setting::workload]
-        = merge_tree_settings.mutation_workload.value.empty() ? getMutationWorkload() : merge_tree_settings.mutation_workload;
+        = merge_tree_settings[MergeTreeSetting::mutation_workload].value.empty() ? getMutationWorkload() : merge_tree_settings[MergeTreeSetting::mutation_workload];
 }
 
 void Context::makeSessionContext()
@@ -3679,21 +3686,19 @@ bool Context::tryCheckClientConnectionToMyKeeperCluster() const
             /// Connected, return true
             return true;
         }
-        else
-        {
-            Poco::Util::AbstractConfiguration::Keys keys;
-            getConfigRef().keys("auxiliary_zookeepers", keys);
 
-            /// If our server is part of some auxiliary_zookeeper
-            for (const auto & aux_zk_name : keys)
+        Poco::Util::AbstractConfiguration::Keys keys;
+        getConfigRef().keys("auxiliary_zookeepers", keys);
+
+        /// If our server is part of some auxiliary_zookeeper
+        for (const auto & aux_zk_name : keys)
+        {
+            if (checkZooKeeperConfigIsLocal(getConfigRef(), "auxiliary_zookeepers." + aux_zk_name))
             {
-                if (checkZooKeeperConfigIsLocal(getConfigRef(), "auxiliary_zookeepers." + aux_zk_name))
-                {
-                    LOG_DEBUG(shared->log, "Our Keeper server is participant of the auxiliary zookeeper cluster ({}), will try to connect to it", aux_zk_name);
-                    getAuxiliaryZooKeeper(aux_zk_name);
-                    /// Connected, return true
-                    return true;
-                }
+                LOG_DEBUG(shared->log, "Our Keeper server is participant of the auxiliary zookeeper cluster ({}), will try to connect to it", aux_zk_name);
+                getAuxiliaryZooKeeper(aux_zk_name);
+                /// Connected, return true
+                return true;
             }
         }
 
@@ -4011,8 +4016,7 @@ UInt16 Context::getServerPort(const String & port_name) const
     auto it = shared->server_ports.find(port_name);
     if (it == shared->server_ports.end())
         throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "There is no port named {}", port_name);
-    else
-        return it->second;
+    return it->second;
 }
 
 void Context::setMaxPartNumToWarn(size_t max_part_to_warn)
@@ -4656,6 +4660,11 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
     {
         const auto & config = shared->getConfigRefWithLock(lock);
         MergeTreeSettings mt_settings;
+
+        /// Respect compatibility setting from the default profile.
+        /// First, we apply compatibility values, and only after apply changes from the config.
+        mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
+
         mt_settings.loadFromConfig("merge_tree", config);
         shared->merge_tree_settings.emplace(mt_settings);
     }
@@ -4671,6 +4680,11 @@ const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
     {
         const auto & config = shared->getConfigRefWithLock(lock);
         MergeTreeSettings mt_settings;
+
+        /// Respect compatibility setting from the default profile.
+        /// First, we apply compatibility values, and only after apply changes from the config.
+        mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
+
         mt_settings.loadFromConfig("merge_tree", config);
         mt_settings.loadFromConfig("replicated_merge_tree", config);
         shared->replicated_merge_tree_settings.emplace(mt_settings);
@@ -5317,6 +5331,38 @@ void Context::resetZooKeeperMetadataTransaction()
     assert(metadata_transaction);
     assert(hasQueryContext());
     metadata_transaction = nullptr;
+}
+
+void Context::setParentTable(UUID uuid)
+{
+    chassert(!parent_table_uuid.has_value());
+    parent_table_uuid = uuid;
+}
+
+std::optional<UUID> Context::getParentTable() const
+{
+    return parent_table_uuid;
+}
+
+void Context::setDDLQueryCancellation(StopToken cancel)
+{
+    chassert(!ddl_query_cancellation.stop_possible());
+    ddl_query_cancellation = cancel;
+}
+
+StopToken Context::getDDLQueryCancellation() const
+{
+    return ddl_query_cancellation;
+}
+
+void Context::setDDLAdditionalChecksOnEnqueue(Coordination::Requests requests)
+{
+    ddl_additional_checks_on_enqueue = requests;
+}
+
+Coordination::Requests Context::getDDLAdditionalChecksOnEnqueue() const
+{
+    return ddl_additional_checks_on_enqueue;
 }
 
 

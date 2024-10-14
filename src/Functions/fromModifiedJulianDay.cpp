@@ -179,9 +179,8 @@ namespace DB
                 */
             if (WhichDataType(from_type_not_null).isNothing()) // Nullable(Nothing)
                 return std::make_unique<FunctionBaseFromModifiedJulianDay<Name, DataTypeInt32, nullOnErrors>>(argument_types, return_type);
-            else
-                // Should not happen.
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must be integral", getName());
+            // Should not happen.
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must be integral", getName());
         }
 
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
