@@ -198,7 +198,7 @@ void WorkloadEntityDiskStorage::createDirectory()
 }
 
 
-bool WorkloadEntityDiskStorage::storeEntityImpl(
+WorkloadEntityStorageBase::OperationResult WorkloadEntityDiskStorage::storeEntityImpl(
     const ContextPtr & /*current_context*/,
     WorkloadEntityType entity_type,
     const String & entity_name,
@@ -216,7 +216,7 @@ bool WorkloadEntityDiskStorage::storeEntityImpl(
         if (throw_if_exists)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' already exists", entity_name);
         else if (!replace_if_exists)
-            return false;
+            return OperationResult::Failed;
     }
 
     WriteBufferFromOwnString create_statement_buf;
@@ -247,11 +247,11 @@ bool WorkloadEntityDiskStorage::storeEntityImpl(
     }
 
     LOG_TRACE(log, "Entity {} stored", backQuote(entity_name));
-    return true;
+    return OperationResult::Ok;
 }
 
 
-bool WorkloadEntityDiskStorage::removeEntityImpl(
+WorkloadEntityStorageBase::OperationResult WorkloadEntityDiskStorage::removeEntityImpl(
     const ContextPtr & /*current_context*/,
     WorkloadEntityType entity_type,
     const String & entity_name,
@@ -267,11 +267,11 @@ bool WorkloadEntityDiskStorage::removeEntityImpl(
         if (throw_if_not_exists)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' doesn't exist", entity_name);
         else
-            return false;
+            return OperationResult::Failed;
     }
 
     LOG_TRACE(log, "Entity {} removed", backQuote(entity_name));
-    return true;
+    return OperationResult::Ok;
 }
 
 

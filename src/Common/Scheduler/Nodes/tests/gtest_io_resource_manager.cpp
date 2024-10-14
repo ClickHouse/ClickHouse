@@ -112,7 +112,7 @@ public:
     }
 
 private:
-    bool storeEntityImpl(
+    WorkloadEntityStorageBase::OperationResult storeEntityImpl(
         const ContextPtr & current_context,
         WorkloadEntityType entity_type,
         const String & entity_name,
@@ -122,17 +122,17 @@ private:
         const Settings & settings) override
     {
         UNUSED(current_context, entity_type, entity_name, create_entity_query, throw_if_exists, replace_if_exists, settings);
-        return true;
+        return OperationResult::Ok;
     }
 
-    bool removeEntityImpl(
+    WorkloadEntityStorageBase::OperationResult removeEntityImpl(
         const ContextPtr & current_context,
         WorkloadEntityType entity_type,
         const String & entity_name,
         bool throw_if_not_exists) override
     {
         UNUSED(current_context, entity_type, entity_name, throw_if_not_exists);
-        return true;
+        return OperationResult::Ok;
     }
 };
 

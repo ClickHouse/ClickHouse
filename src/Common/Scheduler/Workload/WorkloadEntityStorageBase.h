@@ -49,7 +49,14 @@ public:
         const OnChangedHandler & handler) override;
 
 protected:
-    virtual bool storeEntityImpl(
+    enum class OperationResult
+    {
+        Ok,
+        Failed,
+        Retry
+    };
+
+    virtual OperationResult storeEntityImpl(
         const ContextPtr & current_context,
         WorkloadEntityType entity_type,
         const String & entity_name,
@@ -58,7 +65,7 @@ protected:
         bool replace_if_exists,
         const Settings & settings) = 0;
 
-    virtual bool removeEntityImpl(
+    virtual OperationResult removeEntityImpl(
         const ContextPtr & current_context,
         WorkloadEntityType entity_type,
         const String & entity_name,
@@ -66,18 +73,21 @@ protected:
 
     std::unique_lock<std::recursive_mutex> getLock() const;
 
+    /// Replace current `entities` with `new_entities` and notifies subscribers.
+    /// Note that subscribers will be notified with a sequence of events.
+    /// It is guaranteed that all itermediate states (between every pair of consecutive events)
+    /// will be consistent (all references between entities will be valid)
     void setAllEntities(const std::vector<std::pair<String, ASTPtr>> & new_entities);
-    void makeEventsForAllEntities(std::unique_lock<std::recursive_mutex> & lock);
 
-    /// Called by derived class after a new workload entity has been added.
-    void onEntityAdded(WorkloadEntityType entity_type, const String & entity_name, const ASTPtr & new_entity);
+    /// Serialize `entities` stored in memory plus one optional `change` into multiline string
+    String serializeAllEntities(std::optional<Event> change = {});
 
-    /// Called by derived class after an workload entity has been removed.
-    void onEntityRemoved(WorkloadEntityType entity_type, const String & entity_name);
+private:
+    /// Change state in memory
+    void applyEvent(std::unique_lock<std::recursive_mutex> & lock, const Event & event);
 
-    /// Sends notifications to subscribers about changes in workload entities
-    /// (added with previous calls onEntityAdded(), onEntityRemoved()).
-    void unlockAndNotify(std::unique_lock<std::recursive_mutex> & lock);
+    /// Notify subscribers about changes describe by vector of events `tx`
+    void unlockAndNotify(std::unique_lock<std::recursive_mutex> & lock, std::vector<Event> tx);
 
     /// Return true iff `references` has a path from `source` to `target`
     bool isIndirectlyReferenced(const String & target, const String & source);
@@ -88,6 +98,11 @@ protected:
     /// Removes references that are described by `entity` from `references`
     void removeReferences(const ASTPtr & entity);
 
+    /// Returns an ordered vector of `entities`
+    std::vector<Event> orderEntities(
+        const std::unordered_map<String, ASTPtr> & all_entitites,
+        std::optional<Event> change = {});
+
     struct Handlers
     {
         std::mutex mutex;
@@ -96,15 +111,14 @@ protected:
     /// shared_ptr is here for safety because WorkloadEntityStorageBase can be destroyed before all subscriptions are removed.
     std::shared_ptr<Handlers> handlers;
 
-    std::vector<Event> queue;
-
     mutable std::recursive_mutex mutex;
     std::unordered_map<String, ASTPtr> entities; /// Maps entity name into CREATE entity query
 
     // Validation
-    std::unordered_map<String, std::unordered_set<String>> references; /// Keep track of references between entities. Key is target. Values is set of sources
+    std::unordered_map<String, std::unordered_set<String>> references; /// Keep track of references between entities. Key is target. Value is set of sources
     String root_name; /// current root workload name
 
+protected:
     ContextPtr global_context;
 };
 
