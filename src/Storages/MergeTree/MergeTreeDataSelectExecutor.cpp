@@ -819,7 +819,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 for (size_t i = 0; i < index->size(); i++)
                     index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
 
-                /// Need to build : (((pk1 BETWEEN 5 AND 10) AND (pk2 BETWEEN 100 AND 110)) OR ((pk1 BETWEEN 1000 AND 1005) AND (pk2 BETWEEEN 2000 AND 2100)) OR ... )
+                /// Need to build : (((pk1 BETWEEN 5 AND 10) AND (pk2 BETWEEN 100 AND 110)) OR ((pk1 BETWEEN 1000 AND 1005) AND (pk2 BETWEEN 2000 AND 2100)) OR ... )
                 for (auto range : ranges.ranges)
                 {
                     std::vector<FieldRef> index_left(index->size());
@@ -842,7 +842,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 static constexpr size_t ranges_threshold = 1000;
                 if (range_count > ranges_threshold)
                 {
-                    /// degrade to full scan - KeyCondition is initialized to alwaysUnknownOrTrue() 
+                    /// degrade to full scan - KeyCondition is initialized to alwaysUnknownOrTrue()
                     kc = make_shared<KeyCondition>(nullptr, context, primary_key.column_names, primary_key.expression);
                     break;
                 }
