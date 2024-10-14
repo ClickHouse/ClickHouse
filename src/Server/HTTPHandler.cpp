@@ -162,15 +162,16 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 
     for (auto & write_buf : write_buffers)
     {
-        if (!write_buf)
-            continue;
-
-        IReadableWriteBuffer * write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get());
-        if (write_buf_concrete)
+        if (auto * write_buf_concrete = dynamic_cast<TemporaryDataBuffer *>(write_buf.get()))
         {
-            ReadBufferPtr reread_buf = write_buf_concrete->tryGetReadBuffer();
-            if (reread_buf)
-                read_buffers.emplace_back(wrapReadBufferPointer(reread_buf));
+            if (auto reread_buf = write_buf_concrete->read())
+                read_buffers.emplace_back(std::move(reread_buf));
+        }
+
+        if (auto * write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get()))
+        {
+            if (auto reread_buf = write_buf_concrete->tryGetReadBuffer())
+                read_buffers.emplace_back(std::move(reread_buf));
         }
     }
 
@@ -312,21 +313,19 @@ void HTTPHandler::processQuery(
 
     if (buffer_size_memory > 0 || buffer_until_eof)
     {
-        CascadeWriteBuffer::WriteBufferPtrs cascade_buffer1;
-        CascadeWriteBuffer::WriteBufferConstructors cascade_buffer2;
+        CascadeWriteBuffer::WriteBufferPtrs cascade_buffers;
+        CascadeWriteBuffer::WriteBufferConstructors cascade_buffers_lazy;
 
         if (buffer_size_memory > 0)
-            cascade_buffer1.emplace_back(std::make_shared<MemoryWriteBuffer>(buffer_size_memory));
+            cascade_buffers.emplace_back(std::make_shared<MemoryWriteBuffer>(buffer_size_memory));
 
         if (buffer_until_eof)
         {
-            auto tmp_data = std::make_shared<TemporaryDataOnDisk>(server.context()->getTempDataOnDisk());
-
-            auto create_tmp_disk_buffer = [tmp_data] (const WriteBufferPtr &) -> WriteBufferPtr {
-                return tmp_data->createRawStream();
-            };
-
-            cascade_buffer2.emplace_back(std::move(create_tmp_disk_buffer));
+            auto tmp_data = server.context()->getTempDataOnDisk();
+            cascade_buffers_lazy.emplace_back([tmp_data](const WriteBufferPtr &) -> WriteBufferPtr
+            {
+                return std::make_unique<TemporaryDataBuffer>(tmp_data.get());
+            });
         }
         else
         {
@@ -342,10 +341,10 @@ void HTTPHandler::processQuery(
                 return next_buffer;
             };
 
-            cascade_buffer2.emplace_back(push_memory_buffer_and_continue);
+            cascade_buffers_lazy.emplace_back(push_memory_buffer_and_continue);
         }
 
-        used_output.out_delayed_and_compressed_holder = std::make_unique<CascadeWriteBuffer>(std::move(cascade_buffer1), std::move(cascade_buffer2));
+        used_output.out_delayed_and_compressed_holder = std::make_unique<CascadeWriteBuffer>(std::move(cascade_buffers), std::move(cascade_buffers_lazy));
         used_output.out_maybe_delayed_and_compressed = used_output.out_delayed_and_compressed_holder.get();
     }
     else

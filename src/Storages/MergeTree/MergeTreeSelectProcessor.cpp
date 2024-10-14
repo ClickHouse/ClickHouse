@@ -113,10 +113,11 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     }
 
     if (!prewhere_actions.steps.empty())
-        LOG_TRACE(log, "PREWHERE condition was split into {} steps: {}", prewhere_actions.steps.size(), prewhere_actions.dumpConditions());
+        LOG_TRACE(log, "PREWHERE condition was split into {} steps", prewhere_actions.steps.size());
 
     if (prewhere_info)
-        LOG_TEST(log, "Original PREWHERE DAG:\n{}\nPREWHERE actions:\n{}",
+        LOG_TEST(log, "Original PREWHERE DAG:{}\n{}\nPREWHERE actions:\n{}",
+            prewhere_actions.dumpConditions(),
             prewhere_info->prewhere_actions.dumpDAG(),
             (!prewhere_actions.steps.empty() ? prewhere_actions.dump() : std::string("<nullptr>")));
 }

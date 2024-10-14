@@ -54,9 +54,9 @@ namespace
     class SourceFromNativeStream : public ISource
     {
     public:
-        explicit SourceFromNativeStream(TemporaryFileStream * tmp_stream_)
-            : ISource(tmp_stream_->getHeader())
-            , tmp_stream(tmp_stream_)
+        explicit SourceFromNativeStream(const Block & header, TemporaryBlockStreamReaderHolder tmp_stream_)
+            : ISource(header)
+            , tmp_stream(std::move(tmp_stream_))
         {}
 
         String getName() const override { return "SourceFromNativeStream"; }
@@ -69,7 +69,7 @@ namespace
             auto block = tmp_stream->read();
             if (!block)
             {
-                tmp_stream = nullptr;
+                tmp_stream.reset();
                 return {};
             }
             return convertToChunk(block);
@@ -78,7 +78,7 @@ namespace
         std::optional<ReadProgress> getReadProgress() override { return std::nullopt; }
 
     private:
-        TemporaryFileStream * tmp_stream;
+        TemporaryBlockStreamReaderHolder tmp_stream;
     };
 }
 
@@ -811,15 +811,18 @@ void AggregatingTransform::initGenerate()
 
         Pipes pipes;
         /// Merge external data from all aggregators used in query.
-        for (const auto & aggregator : *params->aggregator_list_ptr)
+        for (auto & aggregator : *params->aggregator_list_ptr)
         {
-            const auto & tmp_data = aggregator.getTemporaryData();
-            for (auto * tmp_stream : tmp_data.getStreams())
-                pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(tmp_stream)));
+            auto & tmp_data = aggregator.getTemporaryData();
+            num_streams += tmp_data.size();
 
-            num_streams += tmp_data.getStreams().size();
-            compressed_size += tmp_data.getStat().compressed_size;
-            uncompressed_size += tmp_data.getStat().uncompressed_size;
+            for (auto & tmp_stream : tmp_data)
+            {
+                auto stat = tmp_stream.finishWriting();
+                compressed_size += stat.compressed_size;
+                uncompressed_size += stat.uncompressed_size;
+                pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(tmp_stream.getHeader(), tmp_stream.getReadStream())));
+            }
         }
 
         LOG_DEBUG(

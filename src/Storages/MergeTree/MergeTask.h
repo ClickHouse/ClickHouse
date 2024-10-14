@@ -41,7 +41,6 @@ namespace DB
 
 class MergeTask;
 using MergeTaskPtr = std::shared_ptr<MergeTask>;
-class RowsSourcesTemporaryFile;
 
 /**
  * Overview of the merge algorithm
@@ -235,7 +234,7 @@ private:
         bool force_ttl{false};
         CompressionCodecPtr compression_codec{nullptr};
         size_t sum_input_rows_upper_bound{0};
-        std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
+        std::shared_ptr<TemporaryDataBuffer> rows_sources_temporary_file;
         std::optional<ColumnSizeEstimator> column_sizes{};
 
         /// For projections to rebuild
@@ -314,7 +313,7 @@ private:
     struct VerticalMergeRuntimeContext : public IStageRuntimeContext
     {
         /// Begin dependencies from previous stage
-        std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
+        std::shared_ptr<TemporaryDataBuffer> rows_sources_temporary_file;
         std::optional<ColumnSizeEstimator> column_sizes;
         CompressionCodecPtr compression_codec;
         std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
