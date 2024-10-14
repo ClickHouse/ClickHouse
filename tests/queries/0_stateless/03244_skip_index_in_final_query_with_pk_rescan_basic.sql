@@ -23,6 +23,6 @@ SELECT 'Wrong result - 2 rows by next query';
 SELECT * FROM data_02201 FINAL WHERE value_max = 1 ORDER BY key, value_max SETTINGS use_skip_indexes=1, use_skip_indexes_if_final=1;
 
 SELECT 'Correct result - 1 row by next query';
-SELECT * FROM data_02201 FINAL WHERE value_max = 1 ORDER BY key, value_max SETTINGS use_skip_indexes=1, use_skip_indexes_if_final=1,skip_indexes_in_final_correctness_threshold=1;
+SELECT * FROM data_02201 FINAL WHERE value_max = 1 ORDER BY key, value_max SETTINGS use_skip_indexes=1, use_skip_indexes_if_final=1,use_skip_indexes_if_final_exact_mode=1;
 
 DROP TABLE data_02201;

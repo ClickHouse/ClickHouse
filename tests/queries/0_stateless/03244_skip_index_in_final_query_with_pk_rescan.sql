@@ -15,11 +15,11 @@ INSERT INTO t_final_query_tbl SELECT number, if(number=100444, 68889994, number+
 INSERT INTO t_final_query_tbl SELECT number, if(number=100444, 58889995, number+1) FROM numbers(1000000);
 
 SELECT 'Next 4 queries should return 0 rows and the 5th query should return 1 row';
-SELECT count(id) FROM t_final_query_tbl FINAL where v = 98889991 SETTINGS skip_indexes_in_final_correctness_threshold=1;
-SELECT count(id) FROM t_final_query_tbl FINAL where v = 88889992 SETTINGS skip_indexes_in_final_correctness_threshold=1;
-SELECT count(id) FROM t_final_query_tbl FINAL where v = 78889993 SETTINGS skip_indexes_in_final_correctness_threshold=1;
-SELECT count(id) FROM t_final_query_tbl FINAL where v = 68889994 SETTINGS skip_indexes_in_final_correctness_threshold=1;
-SELECT count(id) FROM t_final_query_tbl FINAL where v = 58889995 SETTINGS skip_indexes_in_final_correctness_threshold=1;
+SELECT count(id) FROM t_final_query_tbl FINAL where v = 98889991 SETTINGS use_skip_indexes_if_final_exact_mode=1;
+SELECT count(id) FROM t_final_query_tbl FINAL where v = 88889992 SETTINGS use_skip_indexes_if_final_exact_mode=1;
+SELECT count(id) FROM t_final_query_tbl FINAL where v = 78889993 SETTINGS use_skip_indexes_if_final_exact_mode=1;
+SELECT count(id) FROM t_final_query_tbl FINAL where v = 68889994 SETTINGS use_skip_indexes_if_final_exact_mode=1;
+SELECT count(id) FROM t_final_query_tbl FINAL where v = 58889995 SETTINGS use_skip_indexes_if_final_exact_mode=1;
 
 DROP TABLE t_final_query_tbl;
 
@@ -36,10 +36,10 @@ INSERT INTO t_final_query_tbl2 SELECT substr(lower(hex(MD5(toString(trunc(number
 INSERT INTO t_final_query_tbl2 SELECT substr(lower(hex(MD5(toString(trunc(number/1000))))), 1, 10), trunc(number%100), toDateTime(number), if(number=100444, 58889995, number) from numbers(1000000);
 
 SELECT 'Next 4 queries should return 0 rows and the 5th query should return 1 row';
-SELECT count(id1) FROM t_final_query_tbl2 FINAL where v = 98889991 SETTINGS skip_indexes_in_final_correctness_threshold=1;
-SELECT count(id1) FROM t_final_query_tbl2 FINAL where v = 88889992 SETTINGS skip_indexes_in_final_correctness_threshold=1;
-SELECT count(id1) FROM t_final_query_tbl2 FINAL where v = 78889993 SETTINGS skip_indexes_in_final_correctness_threshold=1;
-SELECT count(id1) FROM t_final_query_tbl2 FINAL where v = 68889994 SETTINGS skip_indexes_in_final_correctness_threshold=1;
-SELECT count(id1) FROM t_final_query_tbl2 FINAL where v = 58889995 SETTINGS skip_indexes_in_final_correctness_threshold=1;
+SELECT count(id1) FROM t_final_query_tbl2 FINAL where v = 98889991 SETTINGS use_skip_indexes_if_final_exact_mode=1;
+SELECT count(id1) FROM t_final_query_tbl2 FINAL where v = 88889992 SETTINGS use_skip_indexes_if_final_exact_mode=1;
+SELECT count(id1) FROM t_final_query_tbl2 FINAL where v = 78889993 SETTINGS use_skip_indexes_if_final_exact_mode=1;
+SELECT count(id1) FROM t_final_query_tbl2 FINAL where v = 68889994 SETTINGS use_skip_indexes_if_final_exact_mode=1;
+SELECT count(id1) FROM t_final_query_tbl2 FINAL where v = 58889995 SETTINGS use_skip_indexes_if_final_exact_mode=1;
 
 DROP TABLE t_final_query_tbl2;

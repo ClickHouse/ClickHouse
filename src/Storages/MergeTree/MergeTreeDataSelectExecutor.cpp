@@ -83,7 +83,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
-    extern const SettingsUInt64 skip_indexes_in_final_correctness_threshold;
+    extern const SettingsBool use_skip_indexes_if_final_exact_mode;
 }
 
 namespace MergeTreeSetting
@@ -801,8 +801,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             size_t range_count = 0;
             size_t first_part_for_next_pass = UINT64_MAX;
 
-            if (!is_select_query_with_final || !was_any_skip_index_useful || settings[Setting::skip_indexes_in_final_correctness_threshold] == 0)
-                return std::make_tuple(range_count, first_part_for_next_pass, static_cast<KeyConditionPtr>(nullptr));
+            if (!is_select_query_with_final || !was_any_skip_index_useful || !settings[Setting::use_skip_indexes_if_final_exact_mode])
+                return std::make_tuple(false, static_cast<size_t>(0), static_cast<KeyConditionPtr>(nullptr));
 
             const auto & primary_key = metadata_snapshot->getPrimaryKey();
             KeyConditionPtr kc = make_shared<KeyCondition>(nullptr, context, primary_key.column_names, primary_key.expression);
@@ -837,10 +837,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                           kc->addAnOR();
                     }
                     if (first_part_for_next_pass == UINT64_MAX)
-                        first_part_for_next_pass = part_index + 1; /// TODO : this or check part_info.level?
+                        first_part_for_next_pass = part_index + 1; /// we only need to check in newer parts
                 }
-                if (settings[Setting::skip_indexes_in_final_correctness_threshold] > 1 &&
-                    range_count > settings[Setting::skip_indexes_in_final_correctness_threshold])
+                static constexpr size_t ranges_threshold = 1000;
+                if (range_count > ranges_threshold)
                 {
                     /// degrade to full scan - KeyCondition is initialized to alwaysUnknownOrTrue() 
                     kc = make_shared<KeyCondition>(nullptr, context, primary_key.column_names, primary_key.expression);
@@ -851,7 +851,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                       log,
                       "merge_tree_skip_index_2nd_pass_for_final : range_count {}, first_part {}, new KeyCondition {}",
                       range_count, first_part_for_next_pass, kc->toString());
-            return make_tuple(range_count, first_part_for_next_pass, kc);
+            return make_tuple(true, first_part_for_next_pass, kc);
         };
 
         size_t num_threads = std::min<size_t>(num_streams, parts.size());
@@ -867,12 +867,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
                 process_part(part_index);
 
-            auto tuple = check_and_create_new_key_condition_from_pk_ranges();
-            if (std::get<0>(tuple) > 0)  /// if 2nd pass required
+            bool rescan_required = false;
+            size_t start_part = 0;
+            std::tie(rescan_required, start_part, new_key_condition) = check_and_create_new_key_condition_from_pk_ranges();
+            if (rescan_required)
             {
                 sum_marks_pk = sum_parts_pk = 0; /// reset
-                new_key_condition = std::move(std::get<2>(tuple));
-                for (size_t part_index = std::get<1>(tuple); part_index < parts.size(); ++part_index)
+                for (size_t part_index = start_part; part_index < parts.size(); ++part_index)
                     process_part(part_index);
             }
         }
@@ -911,12 +912,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
             pool.wait();
 
-            auto tuple = check_and_create_new_key_condition_from_pk_ranges();
-            if (std::get<0>(tuple) > 0)  /// if 2nd pass required
+            bool rescan_required = false;
+            size_t start_part = 0;
+            std::tie(rescan_required, start_part, new_key_condition) = check_and_create_new_key_condition_from_pk_ranges();
+            if (rescan_required)
             {
                 sum_marks_pk = sum_parts_pk = 0; /// reset
-                new_key_condition = std::move(std::get<2>(tuple));
-                for (size_t part_index = std::get<1>(tuple); part_index < parts.size(); ++part_index)
+                for (size_t part_index = start_part; part_index < parts.size(); ++part_index)
                 {
                   pool.scheduleOrThrow([&, part_index, thread_group = CurrentThread::getGroup()]
                   {
