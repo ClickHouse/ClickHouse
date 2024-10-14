@@ -4137,6 +4137,12 @@ Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
 :::
 
+:::warning
+Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
+For example: `toDecimal32(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
+You can use a String input so the operations use the underlying integer type: `toDecimal32('1.15', 2) = 1.15`
+:::
+
 **Returned value**
 
 - Value of type `Decimal(9, S)`. [Decimal32(S)](../data-types/int-uint.md).
@@ -4328,6 +4334,12 @@ Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an error.
 :::
 
+:::warning
+Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
+For example: `toDecimal32OrDefault(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
+You can use a String input so the operations use the underlying integer type: `toDecimal32OrDefault('1.15', 2) = 1.15`
+:::
+
 **Returned value**
 
 - Value of type `Decimal(9, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal32(S)](../data-types/decimal.md).
@@ -4389,6 +4401,12 @@ Unsupported arguments:
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal64`: `( -1 * 10^(18 - S), 1 * 10^(18 - S) )`.
 Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
+:::
+
+:::warning
+Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
+For example: `toDecimal64(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
+You can use a String input so the operations use the underlying integer type: `toDecimal64('1.15', 2) = 1.15`
 :::
 
 **Returned value**
@@ -4582,6 +4600,12 @@ Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an error.
 :::
 
+:::warning
+Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
+For example: `toDecimal64OrDefault(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
+You can use a String input so the operations use the underlying integer type: `toDecimal64OrDefault('1.15', 2) = 1.15`
+:::
+
 **Returned value**
 
 - Value of type `Decimal(18, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal64(S)](../data-types/decimal.md).
@@ -4643,6 +4667,12 @@ Unsupported arguments:
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal128`: `( -1 * 10^(38 - S), 1 * 10^(38 - S) )`.
 Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
+:::
+
+:::warning
+Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
+For example: `toDecimal128(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
+You can use a String input so the operations use the underlying integer type: `toDecimal128('1.15', 2) = 1.15`
 :::
 
 **Returned value**
@@ -4836,6 +4866,12 @@ Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an error.
 :::
 
+:::warning
+Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
+For example: `toDecimal128OrDefault(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
+You can use a String input so the operations use the underlying integer type: `toDecimal128OrDefault('1.15', 2) = 1.15`
+:::
+
 **Returned value**
 
 - Value of type `Decimal(38, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal128(S)](../data-types/decimal.md).
@@ -4897,6 +4933,12 @@ Unsupported arguments:
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal256`: `( -1 * 10^(76 - S), 1 * 10^(76 - S) )`.
 Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
+:::
+
+:::warning
+Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
+For example: `toDecimal256(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
+You can use a String input so the operations use the underlying integer type: `toDecimal256('1.15', 2) = 1.15`
 :::
 
 **Returned value**
@@ -5090,6 +5132,12 @@ Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an error.
 :::
 
+:::warning
+Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
+For example: `toDecimal256OrDefault(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
+You can use a String input so the operations use the underlying integer type: `toDecimal256OrDefault('1.15', 2) = 1.15`
+:::
+
 **Returned value**
 
 - Value of type `Decimal(76, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal256(S)](../data-types/decimal.md).
@@ -5182,14 +5230,51 @@ Result:
 
 Also see the `toUnixTimestamp` function.
 
-## toFixedString(s, N)
+## toFixedString
 
 Converts a [String](../data-types/string.md) type argument to a [FixedString(N)](../data-types/fixedstring.md) type (a string of fixed length N).
 If the string has fewer bytes than N, it is padded with null bytes to the right. If the string has more bytes than N, an exception is thrown.
 
-## toStringCutToZero(s)
+**Syntax**
+
+```sql
+toFixedString(s, N)
+```
+
+**Arguments**
+
+- `s` — A String to convert to a fixed string. [String](../data-types/string.md).
+- `N` — Length N. [UInt8](../data-types/int-uint.md)
+
+**Returned value**
+
+- An N length fixed string of `s`. [FixedString](../data-types/fixedstring.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toFixedString('foo', 8) AS s;
+```
+
+Result:
+
+```response
+┌─s─────────────┬─s_cut─┐
+│ foo\0\0\0\0\0 │ foo   │
+└───────────────┴───────┘
+```
+
+## toStringCutToZero
 
 Accepts a String or FixedString argument. Returns the String with the content truncated at the first zero byte found.
+
+**Syntax**
+
+```sql
+toStringCutToZero(s)
+```
 
 **Example**
 

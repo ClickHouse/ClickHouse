@@ -1623,12 +1623,22 @@ If unit `WEEK` was specified, `toStartOfInterval` assumes that weeks start on Mo
 toStartOfInterval(value, INTERVAL x unit[, time_zone])
 toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 ```
+Aliases: `time_bucket`, `date_bin`.
 
 The second overload emulates TimescaleDB's `time_bucket()` function, respectively PostgreSQL's `date_bin()` function, e.g.
 
 ``` SQL
 SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, toDateTime('2023-01-01 14:35:30'));
 ```
+
+Result:
+
+``` reference
+┌───toStartOfInterval(...)─┐
+│      2023-01-01 14:44:30 │
+└──────────────────────────┘
+```
+
 **See Also**
 - [date_trunc](#date_trunc)
 
@@ -1962,11 +1972,75 @@ Result:
 
 ## toISOYear
 
-Converts a date, or date with time, to a UInt16 number containing the ISO Year number.
+Converts a date, or date with time, to the ISO year as a UInt16 number.
+
+**Syntax**
+
+```sql
+toISOYear(value)
+```
+
+**Arguments**
+
+- `value` — The value with date or date with time. [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
+
+**Returned value**
+
+- The input value converted to a ISO year number. [UInt16](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+  toISOYear(toDate('2024/10/02')) as year1,
+  toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
+```
+
+Result:
+
+```response
+┌─year1─┬─year2─┐
+│  2024 │  2024 │
+└───────┴───────┘
+```
 
 ## toISOWeek
 
 Converts a date, or date with time, to a UInt8 number containing the ISO Week number.
+
+**Syntax**
+
+```sql
+toISOWeek(value)
+```
+
+**Arguments**
+
+- `value` — The value with date or date with time.
+
+**Returned value**
+
+- `value` converted to the current ISO week number. [UInt8](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+  toISOWeek(toDate('2024/10/02')) AS week1,
+  toISOWeek(toDateTime('2024/10/02 01:30:00')) AS week2
+```
+
+Response:
+
+```response
+┌─week1─┬─week2─┐
+│    40 │    40 │
+└───────┴───────┘
+```
 
 ## toWeek
 
