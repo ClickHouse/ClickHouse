@@ -401,7 +401,7 @@ Chunk SystemRemoteDataPathsSource::generate()
 
             if (cache)
             {
-                auto cache_paths = cache->tryGetCachePaths(cache->createKeyForPath(object.remote_path));
+                auto cache_paths = cache->tryGetCachePaths(FileCacheKey::fromPath(object.remote_path));
                 col_cache_paths->insert(Array(cache_paths.begin(), cache_paths.end()));
             }
             else
