@@ -61,7 +61,7 @@ struct AbsImpl
             return b.CreateCall(func_fabs, {arg});
         }
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "AbsImpl compilation expected native interger or floating point type");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "AbsImpl compilation expected native integer or floating point type");
     }
 #endif
 };
