@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
-#include <type_traits>
 #include <Interpreters/Context_fwd.h>
 
 
@@ -165,7 +164,8 @@ struct XorImpl
 
     static llvm::Value * tenaryApply(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * b)
     {
-        return builder.CreateICmpNE(a, b);
+        llvm::Value * xor_result = builder.CreateXor(a, b);
+        return builder.CreateSelect(xor_result, builder.getInt8(Ternary::True), builder.getInt8(Ternary::False));
     }
 #endif
 };
@@ -246,18 +246,27 @@ public:
                 llvm::Value * casted_value = nativeBoolCast(b, values[i]);
                 result = Impl::apply(b, result, casted_value);
             }
-            return result;
+            return b.CreateSelect(result, b.getInt8(1), b.getInt8(0));
         }
         else
         {
             /// First we need to cast all values to ternary logic
-            llvm::Value * result = nativeTenaryCast(b, values[0]);
+            llvm::Value * tenary_result = nativeTenaryCast(b, values[0]);
             for (size_t i = 1; i < values.size(); ++i)
             {
                 llvm::Value * casted_value = nativeTenaryCast(b, values[i]);
-                result = Impl::tenaryApply(b, result, casted_value);
+                tenary_result = Impl::tenaryApply(b, tenary_result, casted_value);
             }
-            return result;
+
+            /// Then transform ternary logic to struct which represents nullable result
+            llvm::Value * is_null = b.CreateICmpEQ(tenary_result, b.getInt8(Ternary::Null));
+            llvm::Value * is_true = b.CreateICmpEQ(tenary_result, b.getInt8(Ternary::True));
+
+            auto * nullable_result_type = toNativeType(b, result_type);
+            auto * nullable_result = llvm::Constant::getNullValue(nullable_result_type);
+            auto * nullable_result_with_value
+                = b.CreateInsertValue(nullable_result, b.CreateSelect(is_true, b.getInt8(1), b.getInt8(0)), {0});
+            return b.CreateInsertValue(nullable_result_with_value, b.CreateSelect(is_null, b.getInt8(1), b.getInt8(0)), {1});
         }
     }
 #endif

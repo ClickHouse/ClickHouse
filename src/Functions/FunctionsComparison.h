@@ -1397,6 +1397,7 @@ public:
         });
     }
 
+    // bool isCompilableImpl(const DataTypes &, const DataTypePtr &) const override { return false; }
     bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr & result_type) const override
     {
         if (2 != arguments.size())
@@ -1429,6 +1430,7 @@ public:
             }
             return false;
         });
+        return false;
     }
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr &) const override
@@ -1450,7 +1452,7 @@ public:
                 && (std::is_integral_v<PromotedType> || std::is_floating_point_v<PromotedType>))
             {
                 using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
-                if constexpr (OpSpec::compilable && std::is_same_v<typename LeftDataType::FieldType, typename RightDataType::FieldType>)
+                if constexpr (OpSpec::compilable)
                 {
                     auto promoted_type = std::make_shared<DataTypeNumber<PromotedType>>();
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
