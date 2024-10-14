@@ -79,16 +79,12 @@ struct UUIDv7Range
     uint64_t capacity;
 };
 
-/// To reserve a range of up to `input_rows_count` UUIDv7 from `max(available, now+random_counter)`:
-/// 1. calculate UUIDv7 by current timestamp (`now`) and a random counter
-/// 2. `begin = max(available, now)`
-/// 3. calculate the capacity of the range, which could be lower than `input_rows_count`
 UUIDv7Range getRangeOfAvailableParts(const UUIDv7 & available, size_t input_rows_count)
 {
-    /// 1. `now`
+    /// the UUIDv7 at current timestamp and a random counter
     UUIDv7 begin = {.timestamp = getTimestampMillisecond(), .counter = getRandomCounter()};
 
-    /// 2. `begin`
+    /// begin = max(available, now)
     bool available_is_now_or_later = begin.timestamp <= available.timestamp;
     bool available_is_too_far_ahead = begin.timestamp + 10000 <= available.timestamp;
     if (available_is_now_or_later && !available_is_too_far_ahead)
@@ -97,7 +93,7 @@ UUIDv7Range getRangeOfAvailableParts(const UUIDv7 & available, size_t input_rows
         begin.counter = available.counter;
     }
 
-    /// 3. `capacity`
+    /// Calculate the capacity of the range, which could be lower than `input_rows_count`
     UUIDv7 end;
     const uint64_t counter_nums_in_current_timestamp_left = (counter_limit - begin.counter);
     uint64_t capacity = input_rows_count;
@@ -133,9 +129,7 @@ struct Data
     UUIDv7Range reserveRange(size_t input_rows_count)
     {
         UUIDv7Range range = getRangeOfAvailableParts(lowest_available_parts, input_rows_count);
-
         lowest_available_parts = range.end;
-
         return range;
     }
 };
@@ -185,18 +179,16 @@ public:
 
             UUIDv7Range uuid_range;
             UUIDv7 available_uuid;
-            size_t done = 0;
+            size_t processed = 0;
 
-            while (done != input_rows_count)
+            while (processed != input_rows_count)
             {
-                {
-                    Data data;
-                    uuid_range = data.reserveRange(input_rows_count - done);
-                }
+                Data data;
+                uuid_range = data.reserveRange(input_rows_count - processed);
                 available_uuid = uuid_range.begin;
 
-                auto begin = vec_to.begin() + done;
-                auto end = vec_to.begin() + done + uuid_range.capacity;
+                auto begin = vec_to.begin() + processed;
+                auto end = vec_to.begin() + processed + uuid_range.capacity;
 
                 for (auto uuid_it = begin; uuid_it != end; ++uuid_it)
                 {
@@ -204,7 +196,7 @@ public:
                     ++available_uuid.counter;
                 }
 
-                done += uuid_range.capacity;
+                processed += uuid_range.capacity;
             }
         }
         return col_res;

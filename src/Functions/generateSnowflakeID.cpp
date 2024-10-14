@@ -92,27 +92,24 @@ struct SnowflakeIdRange
     SnowflakeId end;   /// exclusive
 };
 
-/// To get the range of `input_rows_count` Snowflake IDs from `max(available, now)`:
-/// 1. calculate Snowflake ID by current timestamp (`now`)
-/// 2. `begin = max(available, now)`
-/// 3. Calculate `end = begin + input_rows_count` handling `machine_seq_num` overflow
 SnowflakeIdRange getRangeOfAvailableIds(const SnowflakeId & available, uint64_t machine_id, size_t input_rows_count)
 {
-    /// 1. `now`
+    /// the Snowflake ID at current timestamp
     SnowflakeId begin = {.timestamp = getTimestamp(), .machine_id = machine_id, .machine_seq_num = 0};
 
-    /// 2. `begin`
+    /// begin = max(available, begin)
     if (begin.timestamp <= available.timestamp)
     {
         begin.timestamp = available.timestamp;
         begin.machine_seq_num = available.machine_seq_num;
     }
 
-    /// 3. `end = begin + input_rows_count`
+    /// Calculate end = begin + input_rows_count, handle machine_seq_num overflow
     SnowflakeId end;
     const uint64_t seq_nums_in_current_timestamp_left = (max_machine_seq_num - begin.machine_seq_num + 1);
     if (input_rows_count >= seq_nums_in_current_timestamp_left)
-        /// if sequence numbers in current timestamp is not enough for rows --> depending on how many elements input_rows_count overflows, forward timestamp by at least 1 tick
+        /// if sequence numbers in current timestamp is not enough for rows --> depending on how many elements input_rows_count overflows,
+        /// forward timestamp by at least 1 tick
         end.timestamp = begin.timestamp + 1 + (input_rows_count - seq_nums_in_current_timestamp_left) / (max_machine_seq_num + 1);
     else
         end.timestamp = begin.timestamp;
