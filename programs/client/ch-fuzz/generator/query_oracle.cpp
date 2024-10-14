@@ -195,7 +195,7 @@ int QueryOracle::GenerateExportQuery(RandomGenerator &rg, const SQLTable &t, sql
 			buf += " ";
 			buf += col.second.tp->TypeName(true);
 			if (col.second.nullable.has_value()) {
-				buf += col.second.nullable.value() ? " NOT" : "";
+				buf += col.second.nullable.value() ? "" : " NOT";
 				buf += " NULL";
 			}
 			sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_col()->set_column(std::move(cname));
