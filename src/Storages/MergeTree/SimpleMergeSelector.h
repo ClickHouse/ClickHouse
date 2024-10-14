@@ -94,6 +94,13 @@ public:
         /// Some sort of a maximum number of parts in partition. Can be overridden by the same merge tree setting.
         size_t parts_to_throw_insert = 3000;
 
+        /** This mode allows selector algorithm not to perform precise comparisons with base (read the comment below).
+          * Instead, we do it in an epsilon neighborhood, where epsilon is controlled by the number of parts in
+          * the current partition and is a normally distributed random variable.
+          */
+        bool use_blurry_base = false;
+        size_t blurry_base_scale_factor = 42;
+
         /** Minimum ratio of size of one part to all parts in set of parts to merge (for usual cases).
           * For example, if all parts have equal size, it means, that at least 'base' number of parts should be merged.
           * If parts has non-uniform sizes, then minimum number of parts to merge is effectively increased.

@@ -111,40 +111,33 @@ bool allow(
     /// Use log(1 + x) instead of log1p(x) because our sum_size is always integer.
     /// Also log1p seems to be slow and significantly affect performance of merges assignment.
     double size_normalized = mapPiecewiseLinearToUnit(log(1 + sum_size), min_size_to_lower_base_log, max_size_to_lower_base_log);
-
     /// Calculate boundaries for age
     double min_age_to_lower_base = interpolateLinear(settings.min_age_to_lower_base_at_min_size, settings.min_age_to_lower_base_at_max_size, size_normalized);
     double max_age_to_lower_base = interpolateLinear(settings.max_age_to_lower_base_at_min_size, settings.max_age_to_lower_base_at_max_size, size_normalized);
-
     /// Map age to 0..1
     double age_normalized = mapPiecewiseLinearToUnit(min_age, min_age_to_lower_base, max_age_to_lower_base);
-
     /// Map partition_size to 0..1
     double num_parts_normalized = mapPiecewiseLinearToUnit(partition_size, settings.min_parts_to_lower_base, settings.max_parts_to_lower_base);
-
+    /// The ratio should be within [0, 1]
     double combined_ratio = std::min(1.0, age_normalized + num_parts_normalized);
 
-    double partition_fill_factor = partition_size / settings.parts_to_throw_insert;
-    double scaling_factor = std::pow(partition_fill_factor, 42) / 2;
     double lowered_base = interpolateLinear(settings.base, 2.0, combined_ratio);
-    std::normal_distribution<double> distribution{lowered_base, (lowered_base - 1) * scaling_factor};
-    double blurry_lowered_base = std::min(distribution(thread_local_rng), lowered_base);
+    if (settings.use_blurry_base)
+    {
+        double partition_fill_factor = partition_size / settings.parts_to_throw_insert;
+        /// Scale factor controls when (relativelty to the number of parts in partition)
+        /// do we activate our special algorithm.
+        /// With standard parameters the logic kicks in starting from 80% fill factor.
+        /// The division by 2 is due to the fact that for normal distibution nearly 95.4%
+        /// of all observations fall within two standard deviations.
+        double scaling_factor = std::pow(partition_fill_factor, settings.blurry_base_scale_factor) / 2;
+        /// The base lower than 1 doesn't make sense, so we try to avoid it.
+        std::normal_distribution<double> distribution{lowered_base, (lowered_base - 1) * scaling_factor};
+        /// The threshold should be strictly bigger than 1, because we don't allow to merge the part with itself.
+        lowered_base = std::min(distribution(thread_local_rng), std::max(1.01, lowered_base));
+    }
 
-//    std::cerr << "sum_size: " << sum_size << "\n";
-//    std::cerr << "size_normalized: " << size_normalized << "\n";
-//    std::cerr << "min_age_to_lower_base: " << min_age_to_lower_base << "\n";
-//    std::cerr << "max_age_to_lower_base: " << max_age_to_lower_base << "\n";
-//    std::cerr << "age: " << min_age << "\n";
-//    std::cerr << "age_normalized: " << age_normalized << "\n";
-//    std::cerr << "partition_size: " << partition_size << "\n";
-//    std::cerr << "num_parts_normalized: " << num_parts_normalized << "\n";
-//    std::cerr << "combined_ratio: " << combined_ratio << "\n";
-//    std::cerr << "scaling_factor: " << scaling_factor << "\n";
-//    std::cerr << "lowered_base: " << scaling_factor << "\n";
-//    std::cerr << "blurry_lowered_base: " << scaling_factor << "\n";
-//    std::cerr << "-------\n";
-
-    return (sum_size + range_size * settings.size_fixed_cost_to_add) / (max_size + settings.size_fixed_cost_to_add) >= blurry_lowered_base;
+    return (sum_size + range_size * settings.size_fixed_cost_to_add) / (max_size + settings.size_fixed_cost_to_add) >= lowered_base;
 }
 
 
