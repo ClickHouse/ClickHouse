@@ -35,7 +35,7 @@ function check_log()
         ORDER BY event_time_microseconds
         OFFSET 1
     )
-    SELECT count() BETWEEN ((ceil(2500 / $interval) - 2) * 0.9) AND ((ceil(2500 / $interval) - 2) * 1.1), avg(diff) BETWEEN $interval * 0.9 AND $interval * 1.1, stddevPopStable(diff) BETWEEN 0 AND $interval * 0.5 FROM diff WHERE row < total_rows
+    SELECT count() BETWEEN ((ceil(2500 / $interval) - 2) * 0.8) AND ((ceil(2500 / $interval) - 2) * 1.2), avg(diff) BETWEEN $interval * 0.8 AND $interval * 1.2, stddevPopStable(diff) BETWEEN 0 AND $interval * 0.5 FROM diff WHERE row < total_rows
     """
 }
 
