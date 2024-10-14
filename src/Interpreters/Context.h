@@ -1122,7 +1122,6 @@ public:
     BackgroundSchedulePool & getSchedulePool() const;
     BackgroundSchedulePool & getMessageBrokerSchedulePool() const;
     BackgroundSchedulePool & getDistributedSchedulePool() const;
-    BackgroundSchedulePool & getQueryMetricLogPool() const;
 
     /// Has distributed_ddl configuration or not.
     bool hasDistributedDDL() const;
