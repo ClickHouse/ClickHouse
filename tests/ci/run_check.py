@@ -46,7 +46,6 @@ TRUSTED_CONTRIBUTORS = {
 }
 
 OK_SKIP_LABELS = {CI.Labels.RELEASE, CI.Labels.PR_BACKPORT, CI.Labels.PR_CHERRYPICK}
-PR_CHECK = "PR Check"
 
 
 LABEL_CATEGORIES = {
@@ -284,7 +283,7 @@ def main():
             status,
             url,
             format_description(description_error),
-            PR_CHECK,
+            CI.StatusNames.PR_CHECK,
             pr_info,
         )
         sys.exit(1)
@@ -309,7 +308,7 @@ def main():
             status,
             "",
             description,
-            PR_CHECK,
+            CI.StatusNames.PR_CHECK,
             pr_info,
         )
         print("::error ::Cannot run")
@@ -321,7 +320,7 @@ def main():
         status,
         "",
         description,
-        PR_CHECK,
+        CI.StatusNames.PR_CHECK,
         pr_info,
     )
 
