@@ -53,7 +53,7 @@ namespace ErrorCodes
     M(Bool, use_compact_variant_discriminators_serialization, true, "Use compact version of Variant discriminators serialization.", 0) \
     \
     /** Merge selector settings. */ \
-    M(bool, merge_selector_use_blurry_base, false, "Special mode for merge selector which makes it more aggressive when the table reaches the threshold for the number of parts.", 0) \
+    M(Bool, merge_selector_use_blurry_base, false, "Special mode for merge selector which makes it more aggressive when the table reaches the threshold for the number of parts.", 0) \
     M(UInt64, merge_selector_blurry_base_scale_factor, 42, "Controls when the logic kicks in relatively to the number of parts in partition. The bigger the factor the more belated reaction will be.", 0) \
     \
     /** Merge settings. */ \

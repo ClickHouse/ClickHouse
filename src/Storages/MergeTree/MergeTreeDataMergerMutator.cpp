@@ -522,7 +522,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
         merge_settings.max_parts_to_merge_at_once = (*data_settings)[MergeTreeSetting::max_parts_to_merge_at_once];
         merge_settings.parts_to_throw_insert = (*data_settings)[MergeTreeSetting::parts_to_throw_insert];
         merge_settings.use_blurry_base = (*data_settings)[MergeTreeSetting::merge_selector_use_blurry_base];
-        merge_settings.blurry_base_scale_factor = (*data_settings)[MergeTreeSetting::merge_selector_blurry_base_scale_factor]
+        merge_settings.blurry_base_scale_factor = (*data_settings)[MergeTreeSetting::merge_selector_blurry_base_scale_factor];
         if (!(*data_settings)[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
             merge_settings.min_age_to_force_merge = (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds];
 
