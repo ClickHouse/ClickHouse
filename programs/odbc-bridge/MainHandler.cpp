@@ -164,7 +164,7 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             std::string table_name = params.get("table_name");
             LOG_TRACE(log, "DB name: '{}', table name: '{}'", db_name, table_name);
 
-            auto quoting_style = IdentifierQuotingStyle::None;
+            auto quoting_style = IdentifierQuotingStyle::Backticks;
 #if USE_ODBC
             quoting_style = getQuotingStyle(connection_handler);
 #endif

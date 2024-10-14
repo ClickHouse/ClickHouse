@@ -1,6 +1,7 @@
-import pytest
 from datetime import datetime, timedelta
 from time import sleep
+
+import pytest
 
 from helpers.cluster import ClickHouseCluster
 

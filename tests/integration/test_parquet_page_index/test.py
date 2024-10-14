@@ -1,8 +1,10 @@
-import pytest
-from helpers.cluster import ClickHouseCluster
-import pyarrow.parquet as pq
 import os
 import time
+
+import pyarrow.parquet as pq
+import pytest
+
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 path_to_userfiles = "/var/lib/clickhouse/user_files/"
