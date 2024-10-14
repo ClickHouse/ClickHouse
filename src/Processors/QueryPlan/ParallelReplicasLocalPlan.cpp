@@ -43,7 +43,6 @@ static size_t calculateMinMarksPerTask(
     const RangesInDataPart & part,
     const Names & columns_to_read,
     PrewhereInfoPtr prewhere_info,
-    // const MergeTreeReadPoolBase::PoolSettings & pool_settings,
     size_t min_marks_for_concurrent_read,
     size_t sum_marks,
     size_t threads,
@@ -150,21 +149,18 @@ static void initCoordinator(ParallelReplicasReadingCoordinatorPtr coordinator, c
         mode = order_info->direction > 0 ? CoordinationMode::WithOrder : CoordinationMode::ReverseOrder;
     }
 
-    // TODO: get min_marks_for_concurrent_read
-    // const auto & data_settings = read_from_merge_tree->getMergeTreeData();
-    // PartRangesReadInfo info(parts_with_ranges, settings, *data_settings);
-
-    const size_t threads = read_from_merge_tree->getNumStreams();
     size_t min_marks_per_task = 0;
+    const size_t threads = read_from_merge_tree->getNumStreams();
     const auto analysis = read_from_merge_tree->getAnalyzedResult();
     const auto & ranges = analysis->parts_with_ranges;
     const auto sum_marks = ranges.getMarksCountAllParts();
+    const size_t min_marks_for_concurrent_read = read_from_merge_tree->getMinMarksForConcurrentRead(ranges);
     for (const auto & range : ranges)
     {
         min_marks_per_task = std::max(
             min_marks_per_task,
             calculateMinMarksPerTask(
-                range, analysis->column_names_to_read, read_from_merge_tree->getPrewhereInfo(), 0, sum_marks, threads, settings));
+                range, analysis->column_names_to_read, read_from_merge_tree->getPrewhereInfo(), min_marks_for_concurrent_read, sum_marks, threads, settings));
     }
 
     size_t mark_segment_size = chooseSegmentSize(
@@ -235,6 +231,7 @@ std::pair<std::unique_ptr<QueryPlan>, bool> createLocalPlanForParallelReplicas(
     { return coordinator->handleRequest(std::move(req)); };
 
     auto * analyzed_merge_tree = typeid_cast<ReadFromMergeTree *>(analyzed_read_from_merge_tree.get());
+    chassert(analyzed_merge_tree);
     initCoordinator(coordinator, analyzed_merge_tree, context->getSettingsRef(), replica_number);
     auto read_from_merge_tree_parallel_replicas = reading->createLocalParallelReplicasReadingStep(
         analyzed_merge_tree->getAnalyzedResult(), std::move(all_ranges_cb), std::move(read_task_cb), replica_number);

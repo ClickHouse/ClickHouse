@@ -807,6 +807,13 @@ struct PartRangesReadInfo
 
 }
 
+size_t ReadFromMergeTree::getMinMarksForConcurrentRead(RangesInDataParts parts_with_ranges) const
+{
+    const auto & settings = context->getSettingsRef();
+    const auto & data_settings = data.getSettings();
+    return PartRangesReadInfo(parts_with_ranges, settings, *data_settings).min_marks_for_concurrent_read;
+}
+
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & column_names)
 {
     const auto & settings = context->getSettingsRef();
