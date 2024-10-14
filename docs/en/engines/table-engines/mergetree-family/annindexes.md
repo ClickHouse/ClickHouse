@@ -135,6 +135,9 @@ clickhouse-client --param_vec='hello' --query="SELECT * FROM table WHERE L2Dista
 ```
 :::
 
+To use a different value for HNSW parameter `ef_search` in SELECT queries than the value specified when the index was created, run the query
+with `SETTINGS ef_search = <value>`.
+
 **Restrictions**: Approximate algorithms used to determine the nearest neighbors require a limit, hence queries without `LIMIT` clause
 cannot utilize ANN indexes. Also, ANN indexes are only used if the query has a `LIMIT` value smaller than setting
 `max_limit_for_ann_queries` (default: 1 million rows). This is a safeguard to prevent large memory allocations by external libraries for

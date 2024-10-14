@@ -142,6 +142,7 @@ public:
 private:
     const VectorSimilarityCondition vector_similarity_condition;
     const unum::usearch::metric_kind_t metric_kind;
+    std::optional<size_t> non_default_expansion_search;
 };
 
 
