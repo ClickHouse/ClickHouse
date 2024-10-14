@@ -379,6 +379,30 @@ Aggregator::Params::Params(
 {
 }
 
+static DataTypePtr
+getResultTypeForPartialAggregate(const Block & header, const AggregateDescription & aggregate, const DataTypes & argument_types)
+{
+    DataTypePtr type;
+    /// This could happen in gluten when there are multiple aggregate phases in one aggregation step.
+    /// For example, `select count(x), sum(distinct y) from t group by k`.
+    /// AGGREGATION_PHASE_INTERMEDIATE_TO_INTERMEDIATE and AGGREGATION_PHASE_INITIAL_TO_INTERMEDIATE
+    /// could be in the same aggregating step.
+    /// When the input is intermediate aggregate data
+    /// - There is a column in `header` of which name is same as `aggreaget.column_name`
+    /// - the output type must also be same as input (Since this is not a final stage)
+    const auto * input_col = header.findByName(aggregate.column_name);
+    if (input_col && typeid_cast<const DataTypeAggregateFunction *>(input_col->type.get()))
+    {
+        type = input_col->type;
+    }
+    else
+    {
+        type = std::make_shared<DataTypeAggregateFunction>(aggregate.function, argument_types, aggregate.parameters);
+    }
+
+    return type;
+}
+
 Block Aggregator::Params::getHeader(
     const Block & header, bool only_merge, const Names & keys, const AggregateDescriptions & aggregates, bool final)
 {
@@ -423,7 +447,7 @@ Block Aggregator::Params::getHeader(
             if (final)
                 type = aggregate.function->getResultType();
             else
-                type = std::make_shared<DataTypeAggregateFunction>(aggregate.function, argument_types, aggregate.parameters);
+                type = getResultTypeForPartialAggregate(header, aggregate, argument_types);
 
             res.insert({ type, aggregate.column_name });
         }
