@@ -21,6 +21,7 @@ node1 = cluster.add_instance(
     user_configs=["configs/users.xml"],
     with_zookeeper=True,
     macros={"shard": "shard1", "replica": "1"},
+    stay_alive=True,
 )
 node2 = cluster.add_instance(
     "node2",
@@ -203,3 +204,16 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
 
     node1.query("drop database re sync")
     node2.query("drop database re sync")
+
+
+def test_refreshable_mv_in_system_db(started_cluster):
+    node1.query(
+        "create materialized view system.a refresh every 1 second (x Int64) engine Memory as select number+1 as x from numbers(2);"
+        "system refresh view system.a;"
+    )
+
+    node1.restart_clickhouse()
+    node1.query("system refresh view system.a")
+    assert node1.query("select count(), sum(x) from system.a") == "2\t3\n"
+
+    node1.query("drop table system.a")

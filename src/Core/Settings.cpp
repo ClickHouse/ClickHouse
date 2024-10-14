@@ -3067,6 +3067,7 @@ Possible values:
     M(Bool, allow_drop_detached, false, R"(
 Allow ALTER TABLE ... DROP DETACHED PART[ITION] ... queries
 )", 0) \
+    M(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0) \
     \
     M(UInt64, max_table_size_to_drop, 50000000000lu, R"(
 Restriction on deleting tables in query time. The value 0 means that you can delete all tables without any restrictions.
@@ -5784,9 +5785,6 @@ The heartbeat interval in seconds to indicate watch query is alive.
 Timeout for waiting for window view fire signal in event time processing
 )", 0) \
     \
-    M(Bool, allow_experimental_refreshable_materialized_view, false, R"(
-Allow refreshable materialized views (CREATE MATERIALIZED VIEW \\<name\\> REFRESH ...).
-)", 0) \
     M(Bool, stop_refreshable_materialized_views_on_startup, false, R"(
 On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with SYSTEM START VIEWS or SYSTEM START VIEW \\<name\\> afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.
 )", 0) \
@@ -5822,6 +5820,7 @@ Experimental data deduplication for SELECT queries based on part UUIDs
     MAKE_OBSOLETE(M, Bool, allow_experimental_alter_materialized_view_structure, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_shared_merge_tree, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_database_replicated, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_refreshable_materialized_view, true) \
     \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_stale_timeout_ms, 0) \
     MAKE_OBSOLETE(M, StreamingHandleErrorMode, handle_kafka_error_mode, StreamingHandleErrorMode::DEFAULT) \
