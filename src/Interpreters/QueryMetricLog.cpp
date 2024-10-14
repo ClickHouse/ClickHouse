@@ -133,12 +133,21 @@ void QueryMetricLog::finishQuery(const String & query_id, QueryStatusInfoPtr que
             add(std::move(elem.value()));
     }
 
+    /// The task has an `exec_mutex` locked while being executed. This same mutex is locked when
+    /// deactivating the task, which happens automatically on its destructor. Thus, we cannot
+    /// deactivate/destroy the task while it's running. Now, the task locks `queries_mutex` to
+    /// prevent concurrent edition of the queries. In short, the mutex order is: exec_mutex ->
+    /// queries_mutex. Thus, to prevent a deadblock we need to make sure that we always lock them in
+    /// that order.
     {
-        /// Take ownership of the task, setting the old one so that we don't try to schedule it anymore.
+        /// Take ownership of the task so that we can destroy it in this scope after unlocking `queries_lock`.
         auto task = std::move(it->second.task);
+
+        /// Build an empty task for the old task to make sure it does not lock any mutex on its destruction.
         it->second.task = {};
 
-        /// Make sure to always deactivate the task without locking queries_mutex to prevent deadlock.
+        /// Ensure `queries_mutex` is unlocked before calling task's destructor at the end of this
+        /// scope which will lock `exec_mutex`.
         lock.unlock();
     }
 
