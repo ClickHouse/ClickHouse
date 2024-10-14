@@ -68,6 +68,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.10",
         {
+            {"enforce_strict_identifier_format", false, false, "New setting."},
             {"enable_parsing_to_custom_serialization", false, true, "New setting"},
             {"mongodb_throw_on_unsupported_query", false, true, "New setting."},
             {"enable_parallel_replicas", false, false, "Parallel replicas with read tasks became the Beta tier feature."},
@@ -78,7 +79,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"output_format_native_write_json_as_string", false, false, "Add new setting to allow write JSON column as single String column in Native format"},
             {"output_format_binary_write_json_as_string", false, false, "Add new setting to write values of JSON type as JSON string in RowBinary output format"},
             {"input_format_binary_read_json_as_string", false, false, "Add new setting to read values of JSON type as JSON string in RowBinary input format"},
-            {"enable_secure_identifiers", false, false, "New setting."},
             {"min_free_disk_bytes_to_perform_insert", 0, 0, "New setting."},
             {"min_free_disk_ratio_to_perform_insert", 0.0, 0.0, "New setting."},
             {"cloud_mode_database_engine", 1, 1, "A setting for ClickHouse Cloud"},
