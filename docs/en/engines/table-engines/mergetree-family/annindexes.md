@@ -139,7 +139,8 @@ clickhouse-client --param_vec='hello' --query="SELECT * FROM table WHERE L2Dista
 :::
 
 To search using a different value of HNSW parameter `hnsw_candidate_list_size_for_search` (default: 64), also known as `ef_search` in the
-original [HNSW paper](https://doi.org/10.1109/TPAMI.2018.2889473), with `SETTINGS hnsw_candidate_list_size_for_search = <value>`.
+original [HNSW paper](https://doi.org/10.1109/TPAMI.2018.2889473), run the `SELECT` query with `SETTINGS hnsw_candidate_list_size_for_search
+= <value>`.
 
 **Restrictions**: Approximate algorithms used to determine the nearest neighbors require a limit, hence queries without `LIMIT` clause
 cannot utilize ANN indexes. Also, ANN indexes are only used if the query has a `LIMIT` value smaller than setting
