@@ -347,12 +347,11 @@ ReturnType SerializationMap::deserializeTextJSONImpl(IColumn & column, ReadBuffe
                         return deserialize_nested(subcolumn_, buf_, subcolumn_serialization);
                     });
             });
-    else
-        return deserializeTextImpl<ReturnType>(column, istr,
-            [&deserialize_nested](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn) -> ReturnType
-            {
-                return deserialize_nested(subcolumn, buf, subcolumn_serialization);
-            });
+    return deserializeTextImpl<ReturnType>(
+        column,
+        istr,
+        [&deserialize_nested](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn) -> ReturnType
+        { return deserialize_nested(subcolumn, buf, subcolumn_serialization); });
 }
 
 void SerializationMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const

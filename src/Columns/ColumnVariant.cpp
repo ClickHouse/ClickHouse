@@ -1207,9 +1207,9 @@ int ColumnVariant::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_
     /// Check if we have NULLs and return result based on nan_direction_hint.
     if (left_discr == NULL_DISCRIMINATOR && right_discr == NULL_DISCRIMINATOR)
         return 0;
-    else if (left_discr == NULL_DISCRIMINATOR)
+    if (left_discr == NULL_DISCRIMINATOR)
         return nan_direction_hint;
-    else if (right_discr == NULL_DISCRIMINATOR)
+    if (right_discr == NULL_DISCRIMINATOR)
         return -nan_direction_hint;
 
     /// If rows have different discriminators, row with least discriminator is considered the least.
@@ -1449,6 +1449,31 @@ std::optional<ColumnVariant::Discriminator> ColumnVariant::getLocalDiscriminator
     }
 
     return std::nullopt;
+}
+
+std::optional<ColumnVariant::Discriminator> ColumnVariant::getGlobalDiscriminatorOfOneNoneEmptyVariantNoNulls() const
+{
+    if (auto local_discr = getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
+        return globalDiscriminatorByLocal(*local_discr);
+
+    return std::nullopt;
+}
+
+std::optional<ColumnVariant::Discriminator> ColumnVariant::getGlobalDiscriminatorOfOneNoneEmptyVariant() const
+{
+    std::optional<ColumnVariant::Discriminator> discr;
+    for (size_t i = 0; i != variants.size(); ++i)
+    {
+        if (!variants[i]->empty())
+        {
+            /// Check if we already had non-empty variant.
+            if (discr)
+                return std::nullopt;
+            discr = globalDiscriminatorByLocal(i);
+        }
+    }
+
+    return discr;
 }
 
 void ColumnVariant::applyNullMap(const ColumnVector<UInt8>::Container & null_map)

@@ -16,6 +16,7 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
+#include <Processors/Formats/Impl/NullFormat.h>
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -877,8 +878,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}",
                         formatted1, std::string_view(begin, end-begin));
-                else
-                    throw;
+
+                throw;
             }
 
             chassert(ast2);
@@ -1166,6 +1167,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     auto timeout = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
                     auto source = std::make_shared<WaitForAsyncInsertSource>(std::move(result.future), timeout);
                     res.pipeline = QueryPipeline(Pipe(std::move(source)));
+                    res.pipeline.complete(std::make_shared<NullOutputFormat>(Block()));
                 }
 
                 const auto & table_id = insert_query->table_id;
