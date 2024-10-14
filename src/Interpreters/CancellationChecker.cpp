@@ -54,7 +54,8 @@ void CancellationChecker::cancelTask(QueryToTrack task, [[maybe_unused]]CancelRe
 
 bool CancellationChecker::removeQueryFromSet(std::shared_ptr<QueryStatus> query)
 {
-    auto it = std::find_if(querySet.begin(), querySet.end(), [&](const QueryToTrack& task) {
+    auto it = std::find_if(querySet.begin(), querySet.end(), [&](const QueryToTrack& task)
+    {
         return task.query == query;
     });
 
