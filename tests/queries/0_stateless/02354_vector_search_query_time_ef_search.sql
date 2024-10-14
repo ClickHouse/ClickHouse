@@ -9,7 +9,7 @@ DROP TABLE IF EXISTS tab;
 
 -- Generate some data set that is large enough 
 CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance')) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
-INSERT INTO tab SELECT number, [toFloat32(randCanonical(1)), toFloat32(randCanonical(2))] FROM numbers(500000); -- if the test fails sporadically, increase the table size
+INSERT INTO tab SELECT number, [toFloat32(randCanonical(1)), toFloat32(randCanonical(2))] FROM numbers(500000); -- if the test fails sporadically, increase the table size, HNSW is non-deterministic ...
 
 -- Value = 0 is illegal.
 WITH [0.5, 0.5] AS reference_vec
