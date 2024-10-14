@@ -19,6 +19,9 @@ public:
     {
         AccessMode mode;
         String disk;
+
+        friend bool operator ==(const Operation & lhs, const Operation & rhs) { return lhs.mode == rhs.mode && lhs.disk == rhs.disk; }
+        friend bool operator !=(const Operation & lhs, const Operation & rhs) { return !(lhs == rhs); }
     };
 
     using Operations = std::vector<Operation>;

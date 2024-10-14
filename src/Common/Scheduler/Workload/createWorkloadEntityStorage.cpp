@@ -34,15 +34,12 @@ std::unique_ptr<IWorkloadEntityStorage> createWorkloadEntityStorage(const Contex
                 zookeeper_path_key,
                 disk_path_key);
         }
-        abort(); // TODO(serxa): create WorkloadEntityKeeperStorage object
-        //return std::make_unique<WorkloadEntityKeeperStorage>(global_context, config.getString(zookeeper_path_key));
+        return std::make_unique<WorkloadEntityKeeperStorage>(global_context, config.getString(zookeeper_path_key));
     }
-    else
-    {
-        String default_path = fs::path{global_context->getPath()} / "workload" / "";
-        String path = config.getString(disk_path_key, default_path);
-        return std::make_unique<WorkloadEntityDiskStorage>(global_context, path);
-    }
+
+    String default_path = fs::path{global_context->getPath()} / "workload" / "";
+    String path = config.getString(disk_path_key, default_path);
+    return std::make_unique<WorkloadEntityDiskStorage>(global_context, path);
 }
 
 }

@@ -24,6 +24,7 @@ node = cluster.add_instance(
         "configs/workloads.xml.default",
     ],
     with_minio=True,
+    with_zookeeper=True,
 )
 
 

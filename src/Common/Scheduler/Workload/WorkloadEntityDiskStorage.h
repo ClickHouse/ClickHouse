@@ -16,7 +16,7 @@ public:
     void loadEntities() override;
 
 private:
-    bool storeEntityImpl(
+    OperationResult storeEntityImpl(
         const ContextPtr & current_context,
         WorkloadEntityType entity_type,
         const String & entity_name,
@@ -25,7 +25,7 @@ private:
         bool replace_if_exists,
         const Settings & settings) override;
 
-    bool removeEntityImpl(
+    OperationResult removeEntityImpl(
         const ContextPtr & current_context,
         WorkloadEntityType entity_type,
         const String & entity_name,
