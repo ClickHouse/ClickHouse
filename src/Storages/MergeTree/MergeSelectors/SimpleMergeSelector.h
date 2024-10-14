@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/MergeTree/MergeSelector.h>
+#include <Storages/MergeTree/MergeSelectors/MergeSelector.h>
 
 
 /**
