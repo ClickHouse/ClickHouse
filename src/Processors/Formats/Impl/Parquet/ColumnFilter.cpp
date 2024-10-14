@@ -1,6 +1,7 @@
 #include "ColumnFilter.h"
 #include <base/Decimal.h>
 #include <Columns/ColumnSet.h>
+#include <Columns/FilterDescription.h>
 #include <Interpreters/Set.h>
 #include <Processors/Formats/Impl/Parquet/xsimd_wrapper.h>
 #include <format>
@@ -780,8 +781,9 @@ IColumn::Filter ExpressionFilter::execute(const ColumnsWithTypeAndName & columns
 {
     auto block = Block(columns);
     actions->execute(block);
-    auto filter_column = block.getByName(filter_name).column->assumeMutable();
-    ColumnUInt8 * uint8_col = static_cast<ColumnUInt8 *>(filter_column.get());
+    FilterDescription filter_desc(*block.getByName(filter_name).column);
+    auto mutable_column = filter_desc.data_holder ? filter_desc.data_holder->assumeMutable() : block.getByName(filter_name).column->assumeMutable();
+    ColumnUInt8 * uint8_col = static_cast<ColumnUInt8 *>(mutable_column.get());
     IColumn::Filter filter;
     filter.swap(uint8_col->getData());
     return filter;
@@ -800,7 +802,7 @@ ExpressionFilter::ExpressionFilter(ActionsDAG && dag_)
 {
     actions = std::make_shared<ExpressionActions>(std::move(dag_));
     filter_name = actions->getActionsDAG().getOutputs().front()->result_name;
-    if (!isUInt8(actions->getActionsDAG().getOutputs().front()->result_type))
+    if (!isUInt8(removeNullable(actions->getActionsDAG().getOutputs().front()->result_type)))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Filter result type must be UInt8");
     }

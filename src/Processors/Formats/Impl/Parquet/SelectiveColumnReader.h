@@ -230,7 +230,7 @@ public:
     }
 
     virtual size_t currentRemainRows() const { return state.remain_rows; }
-    size_t availableRows() const { return std::max(state.remain_rows - state.lazy_skip_rows, 0UL); }
+    virtual size_t availableRows() const { return std::max(state.remain_rows - state.lazy_skip_rows, 0UL); }
 
     void skipNulls(size_t rows_to_skip);
 
@@ -399,6 +399,7 @@ public:
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
     int16_t max_definition_level() const override { return child->max_definition_level(); }
     int16_t max_repetition_level() const override { return child->max_repetition_level(); }
+    size_t availableRows() const override;
 
 private:
     void applyLazySkip();

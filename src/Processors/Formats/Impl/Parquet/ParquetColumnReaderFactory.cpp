@@ -253,7 +253,7 @@ ParquetColumnReaderFactory::Builder & ParquetColumnReaderFactory::Builder::filte
 
 ParquetColumnReaderFactory::Builder & ParquetColumnReaderFactory::Builder::targetType(const DataTypePtr & target_type)
 {
-    target_type_ = target_type;
+    target_type_ = removeNullable(target_type);
     return *this;
 }
 

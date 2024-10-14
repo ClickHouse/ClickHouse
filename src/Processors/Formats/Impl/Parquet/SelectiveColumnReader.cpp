@@ -252,6 +252,8 @@ static void computeRowSetPlainSpace(
                 sets.set(i, filter->testInt64(start[count]));
             else if constexpr (std::is_same_v<T, Int32>)
                 sets.set(i, filter->testInt32(start[count]));
+            else if constexpr (std::is_same_v<T, Int16>)
+                sets.set(i, filter->testInt16(start[count]));
             else if constexpr (std::is_same_v<T, Float32>)
                 sets.set(i, filter->testFloat32(start[count]));
             else if constexpr (std::is_same_v<T, Float64>)
@@ -332,36 +334,29 @@ void NumberDictionaryReader<DataType, SerializedType>::computeRowSetSpace(
     auto nonnull_count = rows_to_read - null_count;
     nextIdxBatchIfEmpty(nonnull_count);
 
-    auto & cache = *state.filter_cache;
     int count = 0;
     auto & sets = row_set.value();
     for (size_t i = 0; i < rows_to_read; ++i)
     {
         if (null_map[i])
         {
-            if (!cache.hasNull())
-            {
-                cache.setNull(scan_spec.filter->testNull());
-            }
-            sets.set(i, cache.getNull());
+            sets.set(i, scan_spec.filter->testNull());
         }
         else
         {
-            int idx = state.idx_buffer[count++];
-            if (!cache.has(idx))
-            {
-                if constexpr (std::is_same_v<SerializedType, Int64>)
-                    cache.set(idx, scan_spec.filter->testInt64(dict[idx]));
-                else if constexpr (std::is_same_v<SerializedType, Int32>)
-                    cache.set(idx, scan_spec.filter->testInt32(dict[idx]));
-                else if constexpr (std::is_same_v<SerializedType, Float32>)
-                    cache.set(idx, scan_spec.filter->testFloat32(dict[idx]));
-                else if constexpr (std::is_same_v<SerializedType, Float64>)
-                    cache.set(idx, scan_spec.filter->testFloat64(dict[idx]));
-                else
-                    throw Exception(ErrorCodes::PARQUET_EXCEPTION, "unsupported type");
-            }
-            sets.set(i, cache.get(idx));
+            auto value = batch_buffer[count++];
+            if constexpr (std::is_same_v<SerializedType, Int64>)
+                sets.set(i, scan_spec.filter->testInt64(value));
+            else if constexpr (std::is_same_v<SerializedType, Int32>)
+                sets.set(i, scan_spec.filter->testInt32(value));
+            else if constexpr (std::is_same_v<SerializedType, Int16>)
+                sets.set(i, scan_spec.filter->testInt16(value));
+            else if constexpr (std::is_same_v<SerializedType, Float32>)
+                sets.set(i, scan_spec.filter->testFloat32(value));
+            else if constexpr (std::is_same_v<SerializedType, Float64>)
+                sets.set(i, scan_spec.filter->testFloat64(value));
+            else
+                throw Exception(ErrorCodes::PARQUET_EXCEPTION, "unsupported type");
         }
     }
 }
@@ -388,7 +383,6 @@ void NumberDictionaryReader<DataType, SerializedType>::read(MutableColumnPtr & c
             size_t count = idx_decoder.GetBatchWithDict(dict.data() , static_cast<Int32>(dict.size()), data.data() + old_size, static_cast<int>(rows_to_read));
             if (count != rows_to_read)
                 throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "read full idx batch failed. read {} rows, expect {}", count, rows_to_read);
-
         }
 
         batch_buffer.resize(0);
@@ -401,13 +395,15 @@ void NumberDictionaryReader<DataType, SerializedType>::readSpace(
     MutableColumnPtr & column, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read)
 {
     readAndDecodePage();
-    auto * int_column = static_cast<DataType::ColumnType *>(column.get());
-    auto & data = int_column->getData();
-    nextIdxBatchIfEmpty(rows_to_read - null_count);
+    auto * number_column = static_cast<DataType::ColumnType *>(column.get());
+    auto & data = number_column->getData();
     if (plain)
         plain_decoder->decodeFixedValueSpace<typename DataType::FieldType, SerializedType>(data, row_set, null_map, rows_to_read);
     else
-        dict_decoder->decodeFixedValueSpace(dict, data, row_set, null_map, rows_to_read);
+    {
+        nextIdxBatchIfEmpty(rows_to_read - null_count);
+        dict_decoder->decodeFixedValueSpace(batch_buffer, data, row_set, null_map, rows_to_read);
+    }
 }
 
 template <typename DataType, typename SerializedType>
@@ -416,7 +412,6 @@ void NumberDictionaryReader<DataType, SerializedType>::readDictPage(const parque
     const SerializedType * dict_data = reinterpret_cast<const SerializedType *>(page.data());
     size_t dict_size = page.num_values();
     dict.resize(dict_size);
-    state.filter_cache = std::make_unique<FilterCache>(dict_size);
     if constexpr (std::is_same_v<typename DataType::FieldType, SerializedType>)
         memcpy(dict.data(), dict_data, dict_size * sizeof(typename DataType::FieldType));
     else
@@ -570,6 +565,10 @@ void OptionalColumnReader::skipPageIfNeed()
     child->skipPageIfNeed();
     state.lazy_skip_rows = child->state.lazy_skip_rows;
     child->state.lazy_skip_rows = 0;
+}
+size_t OptionalColumnReader::availableRows() const
+{
+    return child->availableRows() - state.lazy_skip_rows;
 }
 
 template class NumberColumnDirectReader<DataTypeInt16, Int32>;
@@ -998,7 +997,7 @@ void DictDecoder::decodeFixedValue(
 }
 template <class DictValueType>
 void DictDecoder::decodeFixedValueSpace(
-    PaddedPODArray<DictValueType> & dict,
+    PaddedPODArray<DictValueType> & batch_buffer,
     PaddedPODArray<DictValueType> & data,
     const OptionalRowSet & row_set,
     PaddedPODArray<UInt8> & null_map,
@@ -1016,7 +1015,7 @@ void DictDecoder::decodeFixedValueSpace(
                 if (null_map[rows_read])
                     data.push_back(0);
                 else
-                    data.push_back(dict[idx_buffer[count++]]);
+                    data.push_back(batch_buffer[count++]);
             }
             else if (!null_map[rows_read])
                 count++;
@@ -1030,13 +1029,14 @@ void DictDecoder::decodeFixedValueSpace(
             if (null_map[rows_read])
                 data.push_back(0);
             else
-                data.push_back(dict[idx_buffer[count++]]);
+                data.push_back(batch_buffer[count++]);
             rows_read++;
         }
     }
-    chassert(count == idx_buffer.size());
+    chassert(count == batch_buffer.size());
     remain_rows -= rows_to_read;
     idx_buffer.resize(0);
+    batch_buffer.resize(0);
 }
 void PlainDecoder::decodeString(
     ColumnString::Chars & chars, IColumn::Offsets & offsets, const OptionalRowSet & row_set, size_t rows_to_read)
@@ -1143,7 +1143,7 @@ void PlainDecoder::decodeStringSpace(
 }
 template <typename T, typename S>
 void PlainDecoder::decodeFixedValueSpace(
-    PaddedPODArray<T, 4096> & data, const OptionalRowSet & row_set, PaddedPODArray<UInt8, 4096> & null_map, size_t rows_to_read)
+    PaddedPODArray<T> & data, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read)
 {
     size_t rows_read = 0;
     const S * start = reinterpret_cast<const S *>(buffer);

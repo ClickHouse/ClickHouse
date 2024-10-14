@@ -1,7 +1,6 @@
 #include "ParquetReader.h"
 #include <IO/SharedThreadPools.h>
 #include <Common/ThreadPool.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <arrow/io/util_internal.h>
 
 namespace DB
@@ -75,12 +74,12 @@ Block ParquetReader::read()
 }
 void ParquetReader::addFilter(const String & column_name, const ColumnFilterPtr filter)
 {
-    std::cerr << "add filter to column " << column_name << ": " << filter->toString() << std::endl;
+//    std::cerr << "add filter to column " << column_name << ": " << filter->toString() << std::endl;
     if (!filters.contains(column_name))
         filters[column_name] = filter;
     else
         filters[column_name] = filters[column_name]->merge(filter.get());
-    std::cerr << "filter on column " << column_name << ": " << filters[column_name]->toString() << std::endl;
+//    std::cerr << "filter on column " << column_name << ": " << filters[column_name]->toString() << std::endl;
 }
 void ParquetReader::setRemainFilter(std::optional<ActionsDAG> & expr)
 {

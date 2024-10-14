@@ -41,13 +41,7 @@ public:
     void setAllFalse() { std::fill(mask.begin(), mask.end(), false); }
     size_t count() const
     {
-        size_t count = 0;
-        for (size_t i = 0; i < max_rows; ++i)
-        {
-            if (mask[i])
-                ++count;
-        }
-        return count;
+        return countBytesInFilter(reinterpret_cast<const UInt8 *>(mask.data()), 0, mask.size());
     }
     PaddedPODArray<bool> & maskReference() { return mask; }
     const PaddedPODArray<bool> & maskReference() const { return mask; }
