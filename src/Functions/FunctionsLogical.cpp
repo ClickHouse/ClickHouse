@@ -510,6 +510,44 @@ ColumnPtr basicExecuteImpl(ColumnRawPtrs arguments, size_t input_rows_count)
 
 }
 
+namespace FunctionsLogicalDetail
+{
+
+#if USE_EMBEDDED_COMPILER
+
+/// Cast LLVM value with type to Tenary
+llvm::Value * nativeTenaryCast(llvm::IRBuilderBase & b, const DataTypePtr & from_type, llvm::Value * value)
+{
+    auto * result_type = llvm::Type::getInt8Ty(b.getContext());
+
+    if (from_type->isNullable())
+    {
+        auto * tenary_null = llvm::ConstantInt::get(result_type, 1);
+        auto * inner = nativeTenaryCast(b, removeNullable(from_type), b.CreateExtractValue(value, {0}));
+        auto * is_null = b.CreateExtractValue(value, {1});
+        return b.CreateSelect(b.CreateICmpNE(is_null, llvm::Constant::getNullValue(is_null->getType())), tenary_null, inner);
+    }
+
+    auto * zero = llvm::Constant::getNullValue(value->getType());
+    auto * tenary_true = llvm::ConstantInt::get(result_type, 2);
+    auto * tenary_false = llvm::ConstantInt::get(result_type, 0);
+    if (value->getType()->isIntegerTy())
+        return b.CreateSelect(b.CreateICmpEQ(value, zero), tenary_true, tenary_false);
+    if (value->getType()->isFloatingPointTy())
+        return b.CreateSelect(b.CreateFCmpOEQ(value, zero), tenary_true, tenary_false);
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast non-number {} to tenary", from_type->getName());
+}
+
+/// Cast LLVM value with type to Tenary
+llvm::Value * nativeTenaryCast(llvm::IRBuilderBase & b, const ValueWithType & value_with_type)
+{
+    return nativeTenaryCast(b, value_with_type.type, value_with_type.value);
+}
+
+#endif
+}
+
 template <typename Impl, typename Name>
 DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTypes & arguments) const
 {

@@ -79,6 +79,15 @@ namespace Ternary
     }
 }
 
+#if USE_EMBEDDED_COMPILER
+
+/// Cast LLVM value with type to Tenary
+llvm::Value * nativeTenaryCast(llvm::IRBuilderBase & b, const DataTypePtr & from_type, llvm::Value * value);
+
+/// Cast LLVM value with type to Tenary
+llvm::Value * nativeTenaryCast(llvm::IRBuilderBase & b, const ValueWithType & value_with_type);
+
+#endif
 
 struct AndImpl
 {
@@ -98,6 +107,18 @@ struct AndImpl
 
     /// Will use three-valued logic for NULLs (see above) or default implementation (any operation with NULL returns NULL).
     static constexpr bool specialImplementationForNulls() { return true; }
+
+#if USE_EMBEDDED_COMPILER
+    static llvm::Value * apply(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * b)
+    {
+        return builder.CreateAnd(a, b);
+    }
+
+    static llvm::Value * tenaryApply(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * b)
+    {
+        return builder.CreateSelect(builder.CreateICmpUGT(a, b), b, a);
+    }
+#endif
 };
 
 struct OrImpl
@@ -110,6 +131,19 @@ struct OrImpl
     static constexpr ResultType apply(UInt8 a, UInt8 b) { return a | b; }
     static constexpr ResultType ternaryApply(UInt8 a, UInt8 b) { return std::max(a, b); }
     static constexpr bool specialImplementationForNulls() { return true; }
+
+#if USE_EMBEDDED_COMPILER
+    static llvm::Value * apply(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * b)
+    {
+        return builder.CreateOr(a, b);
+    }
+
+    static llvm::Value * tenaryApply(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * b)
+    {
+        return builder.CreateSelect(builder.CreateICmpUGT(a, b), a, b);
+    }
+#endif
+
 };
 
 struct XorImpl
@@ -127,6 +161,11 @@ struct XorImpl
     static llvm::Value * apply(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * b)
     {
         return builder.CreateXor(a, b);
+    }
+
+    static llvm::Value * tenaryApply(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * b)
+    {
+        return builder.CreateICmpNE(a, b);
     }
 #endif
 };
@@ -184,47 +223,42 @@ public:
     ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override;
 
 #if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes &, const DataTypePtr &) const override { return useDefaultImplementationForNulls(); }
+    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override
+    {
+        for (const auto & arg : arguments)
+        {
+            if (!canBeNativeType(arg))
+                return false;
+        }
+        return true;
+    }
 
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & values, const DataTypePtr &) const override
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & values, const DataTypePtr & result_type) const override
     {
         assert(!values.empty());
 
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        if constexpr (!Impl::isSaturable())
+        if (useDefaultImplementationForNulls() || !result_type->isNullable())
         {
-            auto * result = nativeBoolCast(b, values[0]);
+            llvm::Value * result = nativeBoolCast(b, values[0]);
             for (size_t i = 1; i < values.size(); ++i)
-                result = Impl::apply(b, result, nativeBoolCast(b, values[i]));
-            return b.CreateSelect(result, b.getInt8(1), b.getInt8(0));
-        }
-
-        constexpr bool break_on_true = Impl::isSaturatedValue(true);
-        auto * next = b.GetInsertBlock();
-        auto * stop = llvm::BasicBlock::Create(next->getContext(), "", next->getParent());
-        b.SetInsertPoint(stop);
-
-        auto * phi = b.CreatePHI(b.getInt8Ty(), static_cast<unsigned>(values.size()));
-
-        for (size_t i = 0; i < values.size(); ++i)
-        {
-            b.SetInsertPoint(next);
-            auto * value = values[i].value;
-            auto * truth = nativeBoolCast(b, values[i]);
-            if (!values[i].type->equals(DataTypeUInt8{}))
-                value = b.CreateSelect(truth, b.getInt8(1), b.getInt8(0));
-            phi->addIncoming(value, b.GetInsertBlock());
-            if (i + 1 < values.size())
             {
-                next = llvm::BasicBlock::Create(next->getContext(), "", next->getParent());
-                b.CreateCondBr(truth, break_on_true ? stop : next, break_on_true ? next : stop);
+                llvm::Value * casted_value = nativeBoolCast(b, values[i]);
+                result = Impl::apply(b, result, casted_value);
             }
+            return result;
         }
-
-        b.CreateBr(stop);
-        b.SetInsertPoint(stop);
-
-        return phi;
+        else
+        {
+            /// First we need to cast all values to ternary logic
+            llvm::Value * result = nativeTenaryCast(b, values[0]);
+            for (size_t i = 1; i < values.size(); ++i)
+            {
+                llvm::Value * casted_value = nativeTenaryCast(b, values[i]);
+                result = Impl::tenaryApply(b, result, casted_value);
+            }
+            return result;
+        }
     }
 #endif
 };
