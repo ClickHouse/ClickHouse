@@ -1032,12 +1032,20 @@ CONV_FN(ExprOrderingTerm, eot) {
   }
 }
 
+CONV_FN(OrderByList, ol) {
+  ExprOrderingTermToString(ret, ol.ord_term());
+  for (int i = 0; i < ol.extra_ord_terms_size(); i++) {
+    ret += ", ";
+    ExprOrderingTermToString(ret, ol.extra_ord_terms(i));
+  }
+}
+
 CONV_FN(OrderByStatement, obs) {
   ret += "ORDER BY ";
-  ExprOrderingTermToString(ret, obs.ord_term());
-  for (int i = 0; i < obs.extra_ord_terms_size(); i++) {
-    ret += ", ";
-    ExprOrderingTermToString(ret, obs.extra_ord_terms(i));
+  if (obs.has_olist()) {
+    OrderByListToString(ret, obs.olist());
+  } else {
+    ret += "ALL";
   }
 }
 

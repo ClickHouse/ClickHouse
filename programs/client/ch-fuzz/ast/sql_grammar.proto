@@ -1883,9 +1883,16 @@ message ExprOrderingTerm {
   optional bool with_fill = 3;
 }
 
-message OrderByStatement {
+message OrderByList {
   required ExprOrderingTerm ord_term = 1;
   repeated ExprOrderingTerm extra_ord_terms = 2;
+}
+
+message OrderByStatement {
+  oneof order_by_oneof {
+    OrderByList olist = 1;
+    bool oall = 2;
+  }
 }
 
 message WindowDefn {

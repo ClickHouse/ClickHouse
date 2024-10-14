@@ -92,7 +92,7 @@ int QueryOracle::DumpTableContent(const SQLTable &t, sql_query_grammar::SQLQuery
 	sql_query_grammar::SelectIntoFile *sif = ts->mutable_intofile();
 	sql_query_grammar::SelectStatementCore *sel = ts->mutable_sel()->mutable_select_core();
 	sql_query_grammar::JoinedTable *jt = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
-	sql_query_grammar::OrderByStatement *obs = sel->mutable_orderby();
+	sql_query_grammar::OrderByList *obs = sel->mutable_orderby()->mutable_olist();
 
 	jt->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
 	jt->set_final(t.SupportsFinal());
@@ -397,6 +397,11 @@ int QueryOracle::GenerateSettingQuery(RandomGenerator &rg, StatementGenerator &g
 	gen.SetAllowNotDetermistic(false);
 	gen.GenerateTopSelect(rg, ts);
 	gen.SetAllowNotDetermistic(true);
+
+	sql_query_grammar::Select *osel = ts->release_sel();
+	sql_query_grammar::SelectStatementCore *nsel = ts->mutable_sel()->mutable_select_core();
+	nsel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_derived_query()->set_allocated_select(osel);
+	nsel->mutable_orderby()->set_oall(true);
 	ts->set_format(sql_query_grammar::OutFormat::OUT_CSV);
 	sif->set_path(qfile.generic_string());
 	sif->set_step(sql_query_grammar::SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);

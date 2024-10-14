@@ -506,54 +506,59 @@ int StatementGenerator::GenerateGroupBy(RandomGenerator &rg, const uint32_t ncol
 }
 
 int StatementGenerator::GenerateOrderBy(RandomGenerator &rg, const uint32_t ncols, const bool allow_settings, sql_query_grammar::OrderByStatement *ob) {
-	std::vector<GroupCol> available_cols;
+	if (rg.NextSmallNumber() < 3) {
+		ob->set_oall(true);
+	} else {
+		sql_query_grammar::OrderByList *olist = ob->mutable_olist();
+		std::vector<GroupCol> available_cols;
 
-	if (this->levels[this->current_level].group_by_all) {
-		for (const auto &entry : this->levels[this->current_level].projections) {
-			const std::string cname = "c" + std::to_string(entry);
-			available_cols.push_back(GroupCol(SQLRelationCol("", std::move(cname), std::nullopt), nullptr));
-		}
-	} else if (this->levels[this->current_level].gcols.empty() && !this->levels[this->current_level].global_aggregate) {
-		for (const auto &entry : this->levels[this->current_level].rels) {
-			for (const auto &col : entry.cols) {
-				available_cols.push_back(GroupCol(col, nullptr));
+		if (this->levels[this->current_level].group_by_all) {
+			for (const auto &entry : this->levels[this->current_level].projections) {
+				const std::string cname = "c" + std::to_string(entry);
+				available_cols.push_back(GroupCol(SQLRelationCol("", std::move(cname), std::nullopt), nullptr));
+			}
+		} else if (this->levels[this->current_level].gcols.empty() && !this->levels[this->current_level].global_aggregate) {
+			for (const auto &entry : this->levels[this->current_level].rels) {
+				for (const auto &col : entry.cols) {
+					available_cols.push_back(GroupCol(col, nullptr));
+				}
+			}
+		} else if (!this->levels[this->current_level].gcols.empty()) {
+			for (const auto &entry : this->levels[this->current_level].gcols) {
+				available_cols.push_back(entry);
 			}
 		}
-	} else if (!this->levels[this->current_level].gcols.empty()) {
-		for (const auto &entry : this->levels[this->current_level].gcols) {
-			available_cols.push_back(entry);
+		if (!available_cols.empty()) {
+			std::shuffle(available_cols.begin(), available_cols.end(), rg.gen);
 		}
-	}
-	if (!available_cols.empty()) {
-		std::shuffle(available_cols.begin(), available_cols.end(), rg.gen);
-	}
-	const uint32_t nclauses = std::min<uint32_t>(this->max_width - this->width,
-		std::min<uint32_t>(UINT32_C(5), (rg.NextRandomUInt32() % (available_cols.empty() ? 5 : available_cols.size())) + 1));
+		const uint32_t nclauses = std::min<uint32_t>(this->max_width - this->width,
+			std::min<uint32_t>(UINT32_C(5), (rg.NextRandomUInt32() % (available_cols.empty() ? 5 : available_cols.size())) + 1));
 
-	for (uint32_t i = 0 ; i < nclauses; i++) {
-		sql_query_grammar::ExprOrderingTerm *eot = i == 0 ? ob->mutable_ord_term() : ob->add_extra_ord_terms();
-		sql_query_grammar::Expr *expr = eot->mutable_expr();
-		const uint32_t next_option = rg.NextSmallNumber();
+		for (uint32_t i = 0 ; i < nclauses; i++) {
+			sql_query_grammar::ExprOrderingTerm *eot = i == 0 ? olist->mutable_ord_term() : olist->add_extra_ord_terms();
+			sql_query_grammar::Expr *expr = eot->mutable_expr();
+			const uint32_t next_option = rg.NextSmallNumber();
 
-		this->width++;
-		if (!available_cols.empty() && next_option < 9) {
-			RefColumn(rg, available_cols[i], expr);
-		} else if (ncols && next_option < 10) {
-			sql_query_grammar::LiteralValue *lv = expr->mutable_lit_val();
+			this->width++;
+			if (!available_cols.empty() && next_option < 9) {
+				RefColumn(rg, available_cols[i], expr);
+			} else if (ncols && next_option < 10) {
+				sql_query_grammar::LiteralValue *lv = expr->mutable_lit_val();
 
-			lv->mutable_int_lit()->set_uint_lit((rg.NextRandomUInt64() % ncols) + 1);
-		} else {
-			GenerateExpression(rg, expr);
-		}
-		if (allow_settings) {
-			if (rg.NextSmallNumber() < 7) {
-				eot->set_asc_desc(rg.NextBool() ? sql_query_grammar::ExprOrderingTerm_AscDesc::ExprOrderingTerm_AscDesc_ASC :
-												  sql_query_grammar::ExprOrderingTerm_AscDesc::ExprOrderingTerm_AscDesc_DESC);
+				lv->mutable_int_lit()->set_uint_lit((rg.NextRandomUInt64() % ncols) + 1);
+			} else {
+				GenerateExpression(rg, expr);
 			}
-			eot->set_with_fill(rg.NextSmallNumber() < 3);
+			if (allow_settings) {
+				if (rg.NextSmallNumber() < 7) {
+					eot->set_asc_desc(rg.NextBool() ? sql_query_grammar::ExprOrderingTerm_AscDesc::ExprOrderingTerm_AscDesc_ASC :
+													  sql_query_grammar::ExprOrderingTerm_AscDesc::ExprOrderingTerm_AscDesc_DESC);
+				}
+				eot->set_with_fill(rg.NextSmallNumber() < 3);
+			}
 		}
+		this->width -= nclauses;
 	}
-	this->width -= nclauses;
 	return 0;
 }
 
