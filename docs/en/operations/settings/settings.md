@@ -5333,13 +5333,13 @@ Default value: 1000000
 
 SELECT queries with LIMIT bigger than this setting cannot use ANN indexes. Helps to prevent memory overflows in ANN search indexes.
 
-# ef_search {#ef_search}
+# hnsw_candidate_list_size_for_search {#hnsw_candidate_list_size_for_search}
 
 Type: UInt64
 
 Default value: 0
 
-The value of HNSW parameter `ef_search` in vector similarity searches. Overrides the value of `ef_search` specified at index construction time.
+The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'. 0 means USearch's default value (64).
 
 ## max_live_view_insert_blocks_before_refresh {#max_live_view_insert_blocks_before_refresh}
 
