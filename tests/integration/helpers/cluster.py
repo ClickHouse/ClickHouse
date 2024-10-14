@@ -18,7 +18,7 @@ import traceback
 import urllib.parse
 from functools import cache
 from pathlib import Path
-from typing import List, Sequence, Tuple, Union
+from typing import Any, List, Sequence, Tuple, Union
 
 import requests
 import urllib3
@@ -228,7 +228,9 @@ def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
     raise StopIteration("Function did not finished successfully")
 
 
-def subprocess_check_call(args, detach=False, nothrow=False):
+def subprocess_check_call(
+    args: Union[Sequence[str], str], detach: bool = False, nothrow: bool = False
+) -> str:
     # Uncomment for debugging
     # logging.info('run:' + ' '.join(args))
     return run_and_check(args, detach=detach, nothrow=nothrow)
@@ -296,19 +298,32 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
     return p.returncode == 0
 
 
-def check_rabbitmq_is_available(rabbitmq_id, cookie):
-    p = subprocess.Popen(
-        docker_exec(
-            "-e",
-            f"RABBITMQ_ERLANG_COOKIE={cookie}",
-            rabbitmq_id,
-            "rabbitmqctl",
-            "await_startup",
-        ),
-        stdout=subprocess.PIPE,
-    )
-    p.wait(timeout=60)
-    return p.returncode == 0
+def check_rabbitmq_is_available(rabbitmq_id, cookie, timeout=90):
+    try:
+        subprocess.check_output(
+            docker_exec(
+                "-e",
+                f"RABBITMQ_ERLANG_COOKIE={cookie}",
+                rabbitmq_id,
+                "rabbitmqctl",
+                "await_startup",
+            ),
+            stderr=subprocess.STDOUT,
+            timeout=timeout,
+        )
+        return True
+    except subprocess.CalledProcessError as e:
+        # Raised if the command returns a non-zero exit code
+        error_message = (
+            f"RabbitMQ startup failed with return code {e.returncode}. "
+            f"Output: {e.output.decode(errors='replace')}"
+        )
+        raise RuntimeError(error_message)
+    except subprocess.TimeoutExpired as e:
+        # Raised if the command times out
+        raise RuntimeError(
+            f"RabbitMQ startup timed out. Output: {e.output.decode(errors='replace')}"
+        )
 
 
 def rabbitmq_debuginfo(rabbitmq_id, cookie):
@@ -370,22 +385,6 @@ async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None):
         tls=ssl_ctx,
     )
     return nc
-
-
-def enable_consistent_hash_plugin(rabbitmq_id, cookie):
-    p = subprocess.Popen(
-        docker_exec(
-            "-e",
-            f"RABBITMQ_ERLANG_COOKIE={cookie}",
-            rabbitmq_id,
-            "rabbitmq-plugins",
-            "enable",
-            "rabbitmq_consistent_hash_exchange",
-        ),
-        stdout=subprocess.PIPE,
-    )
-    p.communicate()
-    return p.returncode == 0
 
 
 def get_instances_dir(name):
@@ -1632,6 +1631,7 @@ class ClickHouseCluster:
         instance_env_variables=False,
         image="clickhouse/integration-test",
         tag=None,
+        # keep the docker container running when clickhouse server is stopped
         stay_alive=False,
         ipv4_address=None,
         ipv6_address=None,
@@ -2059,8 +2059,14 @@ class ClickHouseCluster:
         return self.docker_client.api.logs(container_id).decode()
 
     def exec_in_container(
-        self, container_id, cmd, detach=False, nothrow=False, use_cli=True, **kwargs
-    ):
+        self,
+        container_id: str,
+        cmd: Sequence[str],
+        detach: bool = False,
+        nothrow: bool = False,
+        use_cli: bool = True,
+        **kwargs: Any,
+    ) -> str:
         if use_cli:
             logging.debug(
                 f"run container_id:{container_id} detach:{detach} nothrow:{nothrow} cmd: {cmd}"
@@ -2071,10 +2077,11 @@ class ClickHouseCluster:
             if "privileged" in kwargs:
                 exec_cmd += ["--privileged"]
             result = subprocess_check_call(
-                exec_cmd + [container_id] + cmd, detach=detach, nothrow=nothrow
+                exec_cmd + [container_id] + list(cmd), detach=detach, nothrow=nothrow
             )
             return result
         else:
+            assert self.docker_client is not None
             exec_id = self.docker_client.api.exec_create(container_id, cmd, **kwargs)
             output = self.docker_client.api.exec_start(exec_id, detach=detach)
 
@@ -2083,16 +2090,15 @@ class ClickHouseCluster:
                 container_info = self.docker_client.api.inspect_container(container_id)
                 image_id = container_info.get("Image")
                 image_info = self.docker_client.api.inspect_image(image_id)
-                logging.debug(("Command failed in container {}: ".format(container_id)))
+                logging.debug("Command failed in container %s: ", container_id)
                 pprint.pprint(container_info)
                 logging.debug("")
-                logging.debug(
-                    ("Container {} uses image {}: ".format(container_id, image_id))
-                )
+                logging.debug("Container %s uses image %s: ", container_id, image_id)
                 pprint.pprint(image_info)
                 logging.debug("")
-                message = 'Cmd "{}" failed in container {}. Return code {}. Output: {}'.format(
-                    " ".join(cmd), container_id, exit_code, output
+                message = (
+                    f'Cmd "{" ".join(cmd)}" failed in container {container_id}. '
+                    f"Return code {exit_code}. Output: {output}"
                 )
                 if nothrow:
                     logging.debug(message)
@@ -2347,22 +2353,14 @@ class ClickHouseCluster:
         self.print_all_docker_pieces()
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
-        start = time.time()
-        while time.time() - start < timeout:
-            try:
-                if check_rabbitmq_is_available(
-                    self.rabbitmq_docker_id, self.rabbitmq_cookie
-                ):
-                    logging.debug("RabbitMQ is available")
-                    if enable_consistent_hash_plugin(
-                        self.rabbitmq_docker_id, self.rabbitmq_cookie
-                    ):
-                        logging.debug("RabbitMQ consistent hash plugin is available")
-                    return True
-                time.sleep(0.5)
-            except Exception as ex:
-                logging.debug("Can't connect to RabbitMQ " + str(ex))
-                time.sleep(0.5)
+        try:
+            if check_rabbitmq_is_available(
+                self.rabbitmq_docker_id, self.rabbitmq_cookie, timeout
+            ):
+                logging.debug("RabbitMQ is available")
+                return True
+        except Exception as ex:
+            logging.debug("RabbitMQ await_startup failed", exc_info=True)
 
         try:
             with open(os.path.join(self.rabbitmq_dir, "docker.log"), "w+") as f:
@@ -2390,39 +2388,35 @@ class ClickHouseCluster:
 
     def wait_zookeeper_secure_to_start(self, timeout=20):
         logging.debug("Wait ZooKeeper Secure to start")
-        start = time.time()
-        while time.time() - start < timeout:
-            try:
-                for instance in ["zoo1", "zoo2", "zoo3"]:
-                    conn = self.get_kazoo_client(instance)
-                    conn.get_children("/")
-                    conn.stop()
-                logging.debug("All instances of ZooKeeper Secure started")
-                return
-            except Exception as ex:
-                logging.debug("Can't connect to ZooKeeper secure " + str(ex))
-                time.sleep(0.5)
+        nodes = ["zoo1", "zoo2", "zoo3"]
+        self.wait_zookeeper_nodes_to_start(nodes, timeout)
 
-        raise Exception("Cannot wait ZooKeeper secure container")
-
-    def wait_zookeeper_to_start(self, timeout=180):
+    def wait_zookeeper_to_start(self, timeout: float = 180) -> None:
         logging.debug("Wait ZooKeeper to start")
+        nodes = ["zoo1", "zoo2", "zoo3"]
+        self.wait_zookeeper_nodes_to_start(nodes, timeout)
+
+    def wait_zookeeper_nodes_to_start(
+        self, nodes: List[str], timeout: float = 60
+    ) -> None:
         start = time.time()
+        err = Exception("")
         while time.time() - start < timeout:
             try:
-                for instance in ["zoo1", "zoo2", "zoo3"]:
-                    conn = self.get_kazoo_client(instance)
+                for node in nodes:
+                    conn = self.get_kazoo_client(node)
                     conn.get_children("/")
                     conn.stop()
-                logging.debug("All instances of ZooKeeper started")
+                logging.debug("All instances of ZooKeeper started: %s", nodes)
                 return
             except Exception as ex:
-                logging.debug(f"Can't connect to ZooKeeper {instance}: {ex}")
+                logging.debug("Can't connect to ZooKeeper %s: %s", node, ex)
+                err = ex
                 time.sleep(0.5)
 
         raise Exception(
             "Cannot wait ZooKeeper container (probably it's a `iptables-nft` issue, you may try to `sudo iptables -P FORWARD ACCEPT`)"
-        )
+        ) from err
 
     def make_hdfs_api(self, timeout=180, kerberized=False):
         if kerberized:
@@ -3367,7 +3361,7 @@ class ClickHouseInstance:
         self.name = name
         self.base_cmd = cluster.base_cmd
         self.docker_id = cluster.get_instance_docker_id(self.name)
-        self.cluster = cluster
+        self.cluster = cluster  # type: ClickHouseCluster
         self.hostname = hostname if hostname is not None else self.name
 
         self.external_dirs = external_dirs
@@ -3978,7 +3972,13 @@ class ClickHouseInstance:
         self.stop_clickhouse(stop_start_wait_sec, kill)
         self.start_clickhouse(stop_start_wait_sec)
 
-    def exec_in_container(self, cmd, detach=False, nothrow=False, **kwargs):
+    def exec_in_container(
+        self,
+        cmd: Sequence[str],
+        detach: bool = False,
+        nothrow: bool = False,
+        **kwargs: Any,
+    ) -> str:
         return self.cluster.exec_in_container(
             self.docker_id, cmd, detach, nothrow, **kwargs
         )
