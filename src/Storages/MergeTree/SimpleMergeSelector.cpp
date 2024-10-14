@@ -128,7 +128,7 @@ bool allow(
         /// Scale factor controls when (relativelty to the number of parts in partition)
         /// do we activate our special algorithm.
         /// With standard parameters the logic kicks in starting from 80% fill factor.
-        /// The division by 2 is due to the fact that for normal distibution nearly 95.4%
+        /// The division by 2 is due to the fact that for normal distribution nearly 95.4%
         /// of all observations fall within two standard deviations.
         double scaling_factor = std::pow(partition_fill_factor, settings.blurry_base_scale_factor) / 2;
         /// The base lower than 1 doesn't make sense, so we try to avoid it.
