@@ -2686,13 +2686,13 @@ Default value: 1
 
 If it is set to true, prevent scalar subqueries from (de)serializing large scalar values and possibly avoid running the same subquery more than once.
 
-## enable_secure_identifiers {#enable_secure_identifiers}
+## enable_simple_identifiers {#enable_simple_identifiers}
 
 Type: Bool
 
 Default value: 0
 
-If enabled, only allow secure identifiers which contain only underscore and alphanumeric characters
+If enabled, only allow simple identifiers which contain only underscore and alphanumeric characters. Usage of other characters, e.g. backslashes, quotation marks and backticks, may exploit escaping to inject SQL. This setting is recommended to enable for new installation.
 
 ## enable_sharing_sets_for_mutations {#enable_sharing_sets_for_mutations}
 
