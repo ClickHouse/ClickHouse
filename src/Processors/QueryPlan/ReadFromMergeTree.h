@@ -212,7 +212,7 @@ public:
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
-    size_t getMinMarksForConcurrentRead(RangesInDataParts parts_with_ranges) const;
+    size_t getMinMarksForConcurrentRead(const RangesInDataParts & parts_with_ranges) const;
 
 private:
     MergeTreeReaderSettings reader_settings;

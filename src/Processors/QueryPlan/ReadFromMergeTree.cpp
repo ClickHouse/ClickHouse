@@ -807,7 +807,7 @@ struct PartRangesReadInfo
 
 }
 
-size_t ReadFromMergeTree::getMinMarksForConcurrentRead(RangesInDataParts parts_with_ranges) const
+size_t ReadFromMergeTree::getMinMarksForConcurrentRead(const RangesInDataParts & parts_with_ranges) const
 {
     const auto & settings = context->getSettingsRef();
     const auto & data_settings = data.getSettings();
