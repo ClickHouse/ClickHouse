@@ -569,8 +569,6 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         parallel_replicas_from_merge_tree = it->second.isMergeTree() && query_context->canUseParallelReplicasOnInitiator();
     }
 
-    SortDescription group_by_sort_description;
-
     auto merging_aggregated = std::make_unique<MergingAggregatedStep>(
         query_plan.getCurrentDataStream(),
         params,
@@ -584,7 +582,6 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         query_analysis_result.aggregation_should_produce_results_in_order_of_bucket_number,
         settings[Setting::max_block_size],
         settings[Setting::aggregation_in_order_max_block_bytes],
-        std::move(group_by_sort_description),
         settings[Setting::enable_memory_bound_merging_of_aggregation_results]);
     query_plan.addStep(std::move(merging_aggregated));
 }
@@ -694,8 +691,7 @@ void addDistinctStep(QueryPlan & query_plan,
         limits,
         limit_hint_for_distinct,
         column_names,
-        pre_distinct,
-        settings[Setting::optimize_distinct_in_order]);
+        pre_distinct);
 
     distinct_step->setStepDescription(pre_distinct ? "Preliminary DISTINCT" : "DISTINCT");
     query_plan.addStep(std::move(distinct_step));
@@ -707,15 +703,13 @@ void addSortingStep(QueryPlan & query_plan,
 {
     const auto & sort_description = query_analysis_result.sort_description;
     const auto & query_context = planner_context->getQueryContext();
-    const Settings & settings = query_context->getSettingsRef();
     SortingStep::Settings sort_settings(*query_context);
 
     auto sorting_step = std::make_unique<SortingStep>(
         query_plan.getCurrentDataStream(),
         sort_description,
         query_analysis_result.partial_sorting_limit,
-        sort_settings,
-        settings[Setting::optimize_sorting_by_input_stream_properties]);
+        sort_settings);
     sorting_step->setStepDescription("Sorting for ORDER BY");
     query_plan.addStep(std::move(sorting_step));
 }
@@ -831,7 +825,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                 ///
                 /// However, INPUT `s` does not exist. Instead, we have a constant with execution name 'Hello'_String.
                 /// To fix this, we prepend a rename : 'Hello'_String -> s
-                if (const auto * constant_node = interpolate_node_typed.getExpression()->as<const ConstantNode>())
+                if (const auto * /*constant_node*/ _ = interpolate_node_typed.getExpression()->as<const ConstantNode>())
                 {
                     const auto * node = &rename_dag.addInput(alias_node->result_name, alias_node->result_type);
                     node = &rename_dag.addAlias(*node, interpolate_node_typed.getExpressionName());
@@ -1033,8 +1027,7 @@ void addWindowSteps(QueryPlan & query_plan,
                 window_description.full_sort_description,
                 window_description.partition_by,
                 0 /*limit*/,
-                sort_settings,
-                settings[Setting::optimize_sorting_by_input_stream_properties]);
+                sort_settings);
             sorting_step->setStepDescription("Sorting for window '" + window_description.window_name + "'");
             query_plan.addStep(std::move(sorting_step));
         }
@@ -1404,8 +1397,7 @@ void Planner::buildPlanForUnionNode()
             limits,
             0 /*limit hint*/,
             query_plan.getCurrentDataStream().header.getNames(),
-            false /*pre distinct*/,
-            settings[Setting::optimize_distinct_in_order]);
+            false /*pre distinct*/);
         query_plan.addStep(std::move(distinct_step));
     }
 }
@@ -1505,14 +1497,12 @@ void Planner::buildPlanForQueryNode()
             {
                 if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FINAL modifier is not supported with parallel replicas");
-                else
-                {
-                    LOG_DEBUG(
-                        getLogger("Planner"),
-                        "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
-                    auto & mutable_context = planner_context->getMutableQueryContext();
-                    mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-                }
+
+                LOG_DEBUG(
+                    getLogger("Planner"),
+                    "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
+                auto & mutable_context = planner_context->getMutableQueryContext();
+                mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
             }
         }
     }
@@ -1524,16 +1514,12 @@ void Planner::buildPlanForQueryNode()
         {
             if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOINs are not supported with parallel replicas");
-            else
-            {
-                LOG_DEBUG(
-                    getLogger("Planner"),
-                    "JOINs are not supported with parallel replicas. Query will be executed without using them.");
 
-                auto & mutable_context = planner_context->getMutableQueryContext();
-                mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-                mutable_context->setSetting("parallel_replicas_custom_key", String{""});
-            }
+            LOG_DEBUG(getLogger("Planner"), "JOINs are not supported with parallel replicas. Query will be executed without using them.");
+
+            auto & mutable_context = planner_context->getMutableQueryContext();
+            mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+            mutable_context->setSetting("parallel_replicas_custom_key", String{""});
         }
     }
 
