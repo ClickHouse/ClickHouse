@@ -16,7 +16,6 @@ import pytest
 from delta import *
 from deltalake.writer import write_deltalake
 from minio.deleteobjects import DeleteObject
-from helpers.network import PartitionManager
 from pyspark.sql.functions import (
     current_timestamp,
     monotonically_increasing_id,
@@ -36,6 +35,7 @@ from pyspark.sql.window import Window
 
 import helpers.client
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
 from helpers.s3_tools import (
     get_file_contents,
     list_s3_objects,
