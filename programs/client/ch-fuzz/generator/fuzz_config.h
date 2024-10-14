@@ -10,6 +10,7 @@ namespace chfuzz {
 class FuzzConfig {
 public:
 	uint32_t seed = 0;
+	bool read_log = false;
 	std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
 						  db_file_path = std::filesystem::temp_directory_path() / "db";
 
@@ -22,6 +23,8 @@ public:
 				db_file_path = std::filesystem::path(value);
 			} else if (key == "log_path") {
 				log_path = std::filesystem::path(value);
+			} else if (key == "read_log") {
+				read_log = static_cast<bool>(value);
 			} else if (key == "seed") {
 				seed = static_cast<uint32_t>(value);
 			} else {

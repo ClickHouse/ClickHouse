@@ -56,7 +56,7 @@ private:
     void printChangedSettings() const;
     void showWarnings();
     void ProcessQueryAndLog(std::ofstream &outf, const std::string &full_query);
-    bool ProcessCHFuzzQuery(std::ofstream &outf, const std::string &full_query);
+    bool ProcessCHFuzzQuery(const std::string &full_query);
     void parseConnectionsCredentials(Poco::Util::AbstractConfiguration & config, const std::string & connection_name);
     std::vector<String> loadWarningMessages();
 };
