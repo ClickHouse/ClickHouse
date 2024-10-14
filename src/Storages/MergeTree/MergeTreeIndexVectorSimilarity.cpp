@@ -10,6 +10,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -38,6 +39,11 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace Setting
+{
+    extern const SettingsUInt64 ef_search;
 }
 
 namespace
@@ -395,6 +401,14 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
     : vector_similarity_condition(query, context)
     , metric_kind(metric_kind_)
 {
+    const auto & settings = context->getSettingsRef();
+    bool changed = settings.isChanged("ef_search");
+    if (changed)
+    {
+        non_default_expansion_search = settings[Setting::ef_search];
+        if (non_default_expansion_search == 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Setting 'ef_search' must not be 0");
+    }
 }
 
 bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexGranulePtr) const
@@ -430,6 +444,30 @@ std::vector<UInt64> MergeTreeIndexConditionVectorSimilarity::calculateApproximat
             vector_similarity_condition.getDimensions(), index->dimensions());
 
     const std::vector<Float64> reference_vector = vector_similarity_condition.getReferenceVector();
+
+    struct ExpansionSearchChangeScope
+    {
+        explicit ExpansionSearchChangeScope(std::optional<size_t> expansion_search, USearchIndexWithSerializationPtr index_)
+            : index(index_)
+        {
+            if (expansion_search)
+            {
+                old_expansion_search = index_->expansion_search();
+                index->change_expansion_search(*expansion_search);
+            }
+        }
+
+        ~ExpansionSearchChangeScope()
+        {
+            if (old_expansion_search)
+                index->change_expansion_search(*old_expansion_search);
+        }
+
+        USearchIndexWithSerializationPtr index;
+        std::optional<size_t> old_expansion_search;
+    };
+
+    ExpansionSearchChangeScope expansion_search_change_scope(non_default_expansion_search, index);
 
     auto search_result = index->search(reference_vector.data(), limit);
     if (!search_result)

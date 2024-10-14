@@ -5333,6 +5333,14 @@ Default value: 1000000
 
 SELECT queries with LIMIT bigger than this setting cannot use ANN indexes. Helps to prevent memory overflows in ANN search indexes.
 
+# ef_search {#ef_search}
+
+Type: UInt64
+
+Default value: 0
+
+The value of HNSW parameter `ef_search` in vector similarity searches. Overrides the value of `ef_search` specified at index construction time.
+
 ## max_live_view_insert_blocks_before_refresh {#max_live_view_insert_blocks_before_refresh}
 
 Type: UInt64
