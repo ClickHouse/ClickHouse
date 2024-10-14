@@ -99,6 +99,7 @@ namespace Setting
     extern const SettingsLocalFSReadMethod storage_file_read_method;
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsInt64 zstd_window_log_max;
+    extern const SettingsBool enable_parsing_to_custom_serialization;
 }
 
 namespace ErrorCodes
@@ -1136,7 +1137,6 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     setInMemoryMetadata(storage_metadata);
 }
 
-
 static std::chrono::seconds getLockTimeout(const ContextPtr & context)
 {
     const Settings & settings = context->getSettingsRef();
@@ -1173,16 +1173,14 @@ String StorageFileSource::FilesIterator::next()
 {
     if (distributed_processing)
         return getContext()->getReadTaskCallback()();
-    else
-    {
-        const auto & fs = isReadFromArchive() ? archive_info->paths_to_archives : files;
 
-        auto current_index = index.fetch_add(1, std::memory_order_relaxed);
-        if (current_index >= fs.size())
-            return {};
+    const auto & fs = isReadFromArchive() ? archive_info->paths_to_archives : files;
 
-        return fs[current_index];
-    }
+    auto current_index = index.fetch_add(1, std::memory_order_relaxed);
+    if (current_index >= fs.size())
+        return {};
+
+    return fs[current_index];
 }
 
 const String & StorageFileSource::FilesIterator::getFileNameInArchive()
@@ -1209,6 +1207,7 @@ StorageFileSource::StorageFileSource(
     , requested_columns(info.requested_columns)
     , requested_virtual_columns(info.requested_virtual_columns)
     , block_for_format(info.format_header)
+    , serialization_hints(info.serialization_hints)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
 {
@@ -1439,6 +1438,8 @@ Chunk StorageFileSource::generate()
                 storage->format_name, *read_buf, block_for_format, getContext(), max_block_size, storage->format_settings,
                 max_parsing_threads, std::nullopt, /*is_remote_fs*/ false, CompressionMethod::None, need_only_count);
 
+            input_format->setSerializationHints(serialization_hints);
+
             if (key_condition)
                 input_format->setKeyCondition(key_condition);
 
@@ -1630,7 +1631,7 @@ void StorageFile::read(
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(context));
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, context, supportsSubsetOfColumns(context));
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && context->getSettingsRef()[Setting::optimize_count_from_files];
 
@@ -1998,62 +1999,60 @@ SinkToStoragePtr StorageFile::write(
             context,
             flags);
     }
-    else
+
+    String path;
+    if (!paths.empty())
     {
-        String path;
-        if (!paths.empty())
+        if (is_path_with_globs)
+            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                            "Table '{}' is in readonly mode because of globs in filepath",
+                            getStorageID().getNameForLogs());
+
+        path = paths.front();
+        fs::create_directories(fs::path(path).parent_path());
+
+        std::error_code error_code;
+        if (!context->getSettingsRef()[Setting::engine_file_truncate_on_insert] && !is_path_with_globs
+            && !FormatFactory::instance().checkIfFormatSupportAppend(format_name, context, format_settings)
+            && fs::file_size(path, error_code) != 0 && !error_code)
         {
-            if (is_path_with_globs)
-                throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                                "Table '{}' is in readonly mode because of globs in filepath",
-                                getStorageID().getNameForLogs());
-
-            path = paths.front();
-            fs::create_directories(fs::path(path).parent_path());
-
-            std::error_code error_code;
-            if (!context->getSettingsRef()[Setting::engine_file_truncate_on_insert] && !is_path_with_globs
-                && !FormatFactory::instance().checkIfFormatSupportAppend(format_name, context, format_settings)
-                && fs::file_size(path, error_code) != 0 && !error_code)
+            if (context->getSettingsRef()[Setting::engine_file_allow_create_multiple_files])
             {
-                if (context->getSettingsRef()[Setting::engine_file_allow_create_multiple_files])
+                auto pos = path.find_first_of('.', path.find_last_of('/'));
+                size_t index = paths.size();
+                String new_path;
+                do
                 {
-                    auto pos = path.find_first_of('.', path.find_last_of('/'));
-                    size_t index = paths.size();
-                    String new_path;
-                    do
-                    {
-                        new_path = path.substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : path.substr(pos));
-                        ++index;
-                    }
-                    while (fs::exists(new_path));
-                    paths.push_back(new_path);
-                    path = new_path;
+                    new_path = path.substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : path.substr(pos));
+                    ++index;
                 }
-                else
-                    throw Exception(
-                        ErrorCodes::CANNOT_APPEND_TO_FILE,
-                        "Cannot append data in format {} to file, because this format doesn't support appends."
-                        " You can allow to create a new file "
-                        "on each insert by enabling setting engine_file_allow_create_multiple_files",
-                        format_name);
+                while (fs::exists(new_path));
+                paths.push_back(new_path);
+                path = new_path;
             }
+            else
+                throw Exception(
+                    ErrorCodes::CANNOT_APPEND_TO_FILE,
+                    "Cannot append data in format {} to file, because this format doesn't support appends."
+                    " You can allow to create a new file "
+                    "on each insert by enabling setting engine_file_allow_create_multiple_files",
+                    format_name);
         }
-
-        return std::make_shared<StorageFileSink>(
-            metadata_snapshot,
-            getStorageID().getNameForLogs(),
-            std::unique_lock{rwlock, getLockTimeout(context)},
-            table_fd,
-            use_table_fd,
-            base_path,
-            path,
-            chooseCompressionMethod(path, compression_method),
-            format_settings,
-            format_name,
-            context,
-            flags);
     }
+
+    return std::make_shared<StorageFileSink>(
+        metadata_snapshot,
+        getStorageID().getNameForLogs(),
+        std::unique_lock{rwlock, getLockTimeout(context)},
+        table_fd,
+        use_table_fd,
+        base_path,
+        path,
+        chooseCompressionMethod(path, compression_method),
+        format_settings,
+        format_name,
+        context,
+        flags);
 }
 
 bool StorageFile::storesDataOnDisk() const
@@ -2215,8 +2214,9 @@ void registerStorageFile(StorageFactory & factory)
 
             if (0 <= source_fd) /// File descriptor
                 return std::make_shared<StorageFile>(source_fd, storage_args);
-            else /// User's file
-                return std::make_shared<StorageFile>(source_path, factory_args.getContext()->getUserFilesPath(), false, storage_args);
+
+            /// User's file
+            return std::make_shared<StorageFile>(source_path, factory_args.getContext()->getUserFilesPath(), false, storage_args);
         },
         storage_features);
 }
