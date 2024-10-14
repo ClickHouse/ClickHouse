@@ -5,6 +5,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/FailPoint.h>
+#include <Common/FieldVisitorToString.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryCache.h>
@@ -577,29 +578,7 @@ void logQueryFinish(
             for (const auto & name : changed_settings_names)
             {
                 Field value = settings.get(name);
-                String value_str;
-
-                switch (value.getType())
-                {
-                    case Field::Types::Which::String:
-                        value_str = value.safeGet<String>();
-                        break;
-                    case Field::Types::Which::Int64:
-                        value_str = std::to_string(value.safeGet<Int64>());
-                        break;
-                    case Field::Types::Which::Float64:
-                        value_str = std::to_string(value.safeGet<Float64>());
-                        break;
-                    case Field::Types::Which::Bool:
-                        value_str = value.safeGet<bool>() ? "true" : "false";
-                        break;
-                    case Field::Types::Which::UInt64:
-                        value_str = std::to_string(value.safeGet<UInt64>());
-                        break;
-                    default:
-                        value_str = "Unsupported type: " + std::to_string(static_cast<int>(value.getType()));
-                        break;
-                }
+                String value_str = convertFieldToString(value);
 
                 query_span->addAttribute(fmt::format("clickhouse.setting.{}", name), value_str);
 
