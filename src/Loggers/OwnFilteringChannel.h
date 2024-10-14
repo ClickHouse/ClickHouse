@@ -27,8 +27,12 @@ public:
     // Sets the regex patterns to use for filtering. Specifying an empty string pattern "" indicates no filtering
     void setRegexpPatterns(std::string positive_pattern_, std::string negative_pattern_)
     {
-        positive_pattern = positive_pattern_;
-        negative_pattern = negative_pattern_;
+        if (positive_pattern_ != positive_pattern || negative_pattern_ != negative_pattern)
+        {
+            std::lock_guard<std::mutex> lock(pattern_mutex);
+            positive_pattern = positive_pattern_;
+            negative_pattern = negative_pattern_;
+        }
     }
 
     void open() override
@@ -63,6 +67,7 @@ private:
     std::string negative_pattern;
     Poco::AutoPtr<Poco::Channel> pChannel;
     Poco::AutoPtr<OwnPatternFormatter> pFormatter;
+    std::mutex pattern_mutex;
 };
 
 }
