@@ -2692,7 +2692,7 @@ Type: Bool
 
 Default value: 0
 
-If enabled, only allow simple identifiers which contain only underscore and alphanumeric characters. Usage of other characters, e.g. backslashes, quotation marks and backticks, may exploit escaping to inject SQL. This setting is recommended to enable for new installation.
+If enabled, only allow simple identifier names containing alphanumeric characters and underscores only. Usage of other characters, e.g. backslashes, quotation marks and backticks, may exploit escaping to inject SQL. This setting is recommended to enable for new installation.
 
 ## enable_sharing_sets_for_mutations {#enable_sharing_sets_for_mutations}
 
