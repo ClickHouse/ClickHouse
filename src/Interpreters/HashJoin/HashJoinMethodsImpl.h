@@ -164,8 +164,19 @@ ScatteredBlock HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
 
     if constexpr (join_features.need_replication)
     {
-        std::unique_ptr<IColumn::Offsets> & offsets_to_replicate = added_columns.offsets_to_replicate;
-        block.replicate(*offsets_to_replicate, existing_columns, right_keys_to_replicate);
+        IColumn::Offsets & offsets = *added_columns.offsets_to_replicate;
+
+        chassert(block);
+        chassert(offsets.size() == block.rows());
+
+        auto && columns = block.getSourceBlock().getColumns();
+        for (size_t i = 0; i < existing_columns; ++i)
+            columns[i] = columns[i]->replicate(offsets);
+        for (size_t pos : right_keys_to_replicate)
+            columns[pos] = columns[pos]->replicate(offsets);
+
+        block.getSourceBlock().setColumns(columns);
+        block = ScatteredBlock(std::move(block).getSourceBlock());
     }
     return remaining_block;
 }
