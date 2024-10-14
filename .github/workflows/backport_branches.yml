@@ -236,18 +236,26 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stress test (tsan)
-      runner_type: stress-tester
+      runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
 #############################################################################################
 ############################# INTEGRATION TESTS #############################################
 #############################################################################################
-  IntegrationTestsRelease:
-    needs: [RunConfig, BuilderDebRelease]
+  IntegrationTestsAsanOldAnalyzer:
+    needs: [RunConfig, BuilderDebAsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Integration tests (release)
-      runner_type: stress-tester
+      test_name: Integration tests (asan, old analyzer)
+      runner_type: func-tester
+      data: ${{ needs.RunConfig.outputs.data }}
+  IntegrationTestsTsan:
+    needs: [RunConfig, BuilderDebTsan]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Integration tests (tsan)
+      runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   FinishCheck:
     if: ${{ !failure() && !cancelled() }}
@@ -257,7 +265,8 @@ jobs:
       - FunctionalStatelessTestAsan
       - FunctionalStatefulTestDebug
       - StressTestTsan
-      - IntegrationTestsRelease
+      - IntegrationTestsTsan
+      - IntegrationTestsAsanOldAnalyzer
       - CompatibilityCheckX86
       - CompatibilityCheckAarch64
     runs-on: [self-hosted, style-checker]
