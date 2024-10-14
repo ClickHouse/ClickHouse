@@ -69,6 +69,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"use_async_executor_for_materialized_views", false, false, "New setting."},
             {"composed_data_type_output_format_mode", "default", "default", "New setting"},
             {"http_response_headers", "", "", "New setting."},
+            {"output_format_orc_writer_time_zone_name", "GMT", "GMT", "The time zone name for ORC writer, the default ORC writer's time zone is GMT."},
         }
     },
     {"24.11",
