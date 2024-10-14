@@ -615,8 +615,7 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
                     tryLogCurrentException(log, "File is marked broken due to");
                     continue;
                 }
-                else
-                    throw;
+                throw;
             }
 
             BatchHeader batch_header(

@@ -16,6 +16,7 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
+#include <Processors/Formats/Impl/NullFormat.h>
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -154,7 +155,7 @@ namespace Setting
     extern const SettingsBool use_query_cache;
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
-    extern const SettingsBool enable_secure_identifiers;
+    extern const SettingsBool enforce_strict_identifier_format;
 }
 
 namespace ErrorCodes
@@ -877,8 +878,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}",
                         formatted1, std::string_view(begin, end-begin));
-                else
-                    throw;
+
+                throw;
             }
 
             chassert(ast2);
@@ -998,12 +999,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         InterpreterSetQuery::applySettingsFromQuery(ast, context);
         validateAnalyzerSettings(ast, settings[Setting::allow_experimental_analyzer]);
 
-        if (settings[Setting::enable_secure_identifiers])
+        if (settings[Setting::enforce_strict_identifier_format])
         {
             WriteBufferFromOwnString buf;
-            IAST::FormatSettings enable_secure_identifiers_settings(buf, true);
-            enable_secure_identifiers_settings.enable_secure_identifiers = true;
-            ast->format(enable_secure_identifiers_settings);
+            IAST::FormatSettings enforce_strict_identifier_format_settings(buf, true);
+            enforce_strict_identifier_format_settings.enforce_strict_identifier_format = true;
+            ast->format(enforce_strict_identifier_format_settings);
         }
 
         if (auto * insert_query = ast->as<ASTInsertQuery>())
@@ -1166,6 +1167,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     auto timeout = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
                     auto source = std::make_shared<WaitForAsyncInsertSource>(std::move(result.future), timeout);
                     res.pipeline = QueryPipeline(Pipe(std::move(source)));
+                    res.pipeline.complete(std::make_shared<NullOutputFormat>(Block()));
                 }
 
                 const auto & table_id = insert_query->table_id;
