@@ -413,14 +413,6 @@ Default value: 0
 
 Experimental data deduplication for SELECT queries based on part UUIDs
 
-## allow_experimental_refreshable_materialized_view {#allow_experimental_refreshable_materialized_view}
-
-Type: Bool
-
-Default value: 0
-
-Allow refreshable materialized views (CREATE MATERIALIZED VIEW \\<name\\> REFRESH ...).
-
 ## allow_experimental_shared_set_join {#allow_experimental_shared_set_join}
 
 Type: Bool
@@ -9728,6 +9720,10 @@ Type: Seconds
 Default value: 15
 
 The heartbeat interval in seconds to indicate watch query is alive.
+
+## enforce_strict_identifier_format
+
+If enabled, only allow identifiers containing alphanumeric characters and underscores.
 
 ## workload {#workload}
 
