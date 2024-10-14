@@ -43,7 +43,7 @@ CREATE TABLE table
 (
   id Int64,
   vectors Array(Float32),
-  INDEX index_name vectors TYPE vector_similarity(method, distance_function[, quantization, connectivity, expansion_add, expansion_search]) [GRANULARITY N]
+  INDEX index_name vectors TYPE vector_similarity(method, distance_function[, quantization, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction]) [GRANULARITY N]
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -55,11 +55,13 @@ Parameters:
   line between two points in Euclidean space), or `cosineDistance` (the [cosine
   distance](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance)- the angle between two non-zero vectors).
 - `quantization`: either `f64`, `f32`, `f16`, `bf16`, or `i8` for storing the vector with reduced precision (optional, default: `bf16`)
-- `m`: the number of neighbors per graph node (optional, default: 16)
-- `ef_construction`: (optional, default: 128)
-- `ef_search`: (optional, default: 64)
+- `hnsw_max_connections_per_layer`: the number of neighbors per HNSW graph node, also known as `M` in the [HNSW
+  paper](https://doi.org/10.1109/TPAMI.2018.2889473) (optional, default: 16)
+- `hnsw_candidate_list_size_for_construction`: the size of the dynamic candidate list when constructing the HNSW graph, also known as
+  `ef_construction` in the original [HNSW paper](https://doi.org/10.1109/TPAMI.2018.2889473) (optional, default: 128)
 
-Value 0 for parameters `m`, `ef_construction`, and `ef_search` refers to the default value.
+Values 0 for parameters `hnsw_max_connections_per_layer` and `hnsw_candidate_list_size_for_construction` means using the default values of
+these parameters.
 
 Example:
 
@@ -124,6 +126,7 @@ FROM table
 WHERE ...                       -- WHERE clause is optional
 ORDER BY Distance(vectors, reference_vector)
 LIMIT N
+SETTINGS enable_analyzer = 0;   -- Temporary limitation, will be lifted
 ```
 
 :::tip
@@ -135,8 +138,8 @@ clickhouse-client --param_vec='hello' --query="SELECT * FROM table WHERE L2Dista
 ```
 :::
 
-To use a different value for HNSW parameter `ef_search` in SELECT queries than the value specified when the index was created, run the query
-with `SETTINGS ef_search = <value>`.
+To search using a different value of HNSW parameter `hnsw_candidate_list_size_for_search` (default: 64), also known as `ef_search` in the
+original [HNSW paper](https://doi.org/10.1109/TPAMI.2018.2889473), with `SETTINGS hnsw_candidate_list_size_for_search = <value>`.
 
 **Restrictions**: Approximate algorithms used to determine the nearest neighbors require a limit, hence queries without `LIMIT` clause
 cannot utilize ANN indexes. Also, ANN indexes are only used if the query has a `LIMIT` value smaller than setting
