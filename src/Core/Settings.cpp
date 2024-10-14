@@ -5498,8 +5498,8 @@ Replace external dictionary sources to Null on restore. Useful for testing purpo
     M(Bool, create_if_not_exists, false, R"(
 Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting or `IF NOT EXISTS` is specified and a table with the provided name already exists, no exception will be thrown.
 )", 0) \
-    M(Bool, enable_secure_identifiers, false, R"(
-If enabled, only allow secure identifiers which contain only underscore and alphanumeric characters
+    M(Bool, enforce_strict_identifier_format, false, R"(
+If enabled, only allow identifiers containing alphanumeric characters and underscores.
 )", 0) \
     M(Bool, mongodb_throw_on_unsupported_query, true, R"(
 If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply to the legacy implementation or when 'allow_experimental_analyzer=0'.
