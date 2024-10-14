@@ -113,7 +113,7 @@ protected:
     bool is_cancelling { false };
     /// KILL was send to the query
     std::atomic<bool> is_killed { false };
-    CancelReason cancel_reason { CancelReason::NOT_CANCELLED };
+    std::atomic<CancelReason> cancel_reason { CancelReason::NOT_CANCELLED };
 
     /// All data to the client already had been sent.
     /// Including EndOfStream or Exception.
@@ -232,7 +232,7 @@ public:
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
-    CancellationCode cancelQuery(bool kill, CancelReason reason = CancelReason::MANUAL_CANCEL);
+    CancellationCode cancelQuery(CancelReason reason);
 
     bool isKilled() const { return is_killed; }
 
@@ -501,8 +501,8 @@ public:
     void decrementWaiters();
 
     /// Try call cancel() for input and output streams of query with specified id and user
-    CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill = false);
-    CancellationCode sendCancelToQuery(QueryStatusPtr elem, bool kill = false);
+    CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user);
+    CancellationCode sendCancelToQuery(QueryStatusPtr elem);
 
     void killAllQueries();
 };

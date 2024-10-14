@@ -13,17 +13,15 @@ namespace DB
 QueryToTrack::QueryToTrack(
     std::shared_ptr<QueryStatus> query_,
     UInt64 timeout_,
-    UInt64 endtime_)
-    : query(query_), timeout(timeout_), endtime(endtime_)
+    UInt64 endtime_,
+    OverflowMode overflow_mode_)
+    : query(query_), timeout(timeout_), endtime(endtime_), overflow_mode(overflow_mode_)
 {
 }
 
 bool CompareEndTime::operator()(const QueryToTrack& a, const QueryToTrack& b) const
 {
-    if (a.endtime != b.endtime)
-        return a.endtime < b.endtime;
-    else
-        return a.query < b.query;
+    return std::tie(a.endtime, a.query) < std::tie(b.endtime, b.query);
 }
 
 CancellationChecker::CancellationChecker() : stop_thread(false)
@@ -43,16 +41,20 @@ void CancellationChecker::terminateThread()
     cond_var.notify_all();
 }
 
-
-void CancellationChecker::cancelTask(std::shared_ptr<QueryStatus> query, CancelReason reason)
+void CancellationChecker::cancelTask(QueryToTrack task, [[maybe_unused]]CancelReason reason)
 {
-    query->cancelQuery(/*kill=*/false, /*reason=*/reason);
+    if (task.query)
+    {
+        if (task.overflow_mode == OverflowMode::THROW)
+            task.query->cancelQuery(CancelReason::TIMEOUT);
+        else
+            task.query->checkTimeLimit();
+    }
 }
 
 bool CancellationChecker::removeQueryFromSet(std::shared_ptr<QueryStatus> query)
 {
-    auto it = std::find_if(querySet.begin(), querySet.end(), [&](const QueryToTrack& task)
-    {
+    auto it = std::find_if(querySet.begin(), querySet.end(), [&](const QueryToTrack& task) {
         return task.query == query;
     });
 
@@ -66,7 +68,7 @@ bool CancellationChecker::removeQueryFromSet(std::shared_ptr<QueryStatus> query)
     return false;
 }
 
-void CancellationChecker::appendTask(const std::shared_ptr<QueryStatus> & query, const Int64 & timeout)
+void CancellationChecker::appendTask(const std::shared_ptr<QueryStatus> & query, const Int64 & timeout, OverflowMode overflow_mode)
 {
     if (timeout <= 0) // Avoid cases when the timeout is less or equal zero
     {
@@ -77,7 +79,7 @@ void CancellationChecker::appendTask(const std::shared_ptr<QueryStatus> & query,
     LOG_TRACE(getLogger("CancellationChecker"), "Added to set. query: {}, timeout: {} milliseconds", query->getInfo().query, timeout);
     const auto & now = std::chrono::steady_clock::now();
     const UInt64 & end_time = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() + timeout;
-    querySet.emplace(query, timeout, end_time);
+    querySet.emplace(query, timeout, end_time, overflow_mode);
     cond_var.notify_all();
 }
 
@@ -118,8 +120,8 @@ void CancellationChecker::workerFunction()
 
             if ((end_time_ms <= now_ms && duration_milliseconds.count() != 0))
             {
-                LOG_TRACE(getLogger("CancellationChecker"), "Cancelling the task because of the timeout: {}, query: {}", duration, next_task.query->getInfo().query);
-                cancelTask(next_task.query, CancelReason::TIMEOUT);
+                LOG_TRACE(getLogger("CancellationChecker"), "Cancelling the task because of the timeout: {} ms, query: {}", duration, next_task.query->getInfo().query);
+                cancelTask(next_task, CancelReason::TIMEOUT);
                 querySet.erase(next_task);
 
                 continue;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/ProcessList.h>
+#include "QueryPipeline/SizeLimits.h"
 #include <atomic>
 #include <set>
 
@@ -12,11 +13,13 @@ struct QueryToTrack
     QueryToTrack(
         std::shared_ptr<QueryStatus> query_,
         UInt64 timeout_,
-        UInt64 endtime_);
+        UInt64 endtime_,
+        OverflowMode overflow_mode_);
 
     std::shared_ptr<QueryStatus> query;
     UInt64 timeout;
     UInt64 endtime;
+    OverflowMode overflow_mode;
 };
 
 struct CompareEndTime
@@ -43,7 +46,7 @@ private:
     std::condition_variable cond_var;
 
     // Function to execute when a task's endTime is reached
-    void cancelTask(std::shared_ptr<QueryStatus> query, CancelReason reason);
+    void cancelTask(QueryToTrack task, CancelReason reason);
     bool removeQueryFromSet(std::shared_ptr<QueryStatus> query);
 
 public:
@@ -57,7 +60,7 @@ public:
     void terminateThread();
 
     // Method to add a new task to the multiset
-    void appendTask(const std::shared_ptr<QueryStatus> & query, const Int64 & timeout);
+    void appendTask(const std::shared_ptr<QueryStatus> & query, const Int64 & timeout, OverflowMode overflow_mode);
 
     // Used when some task is done
     void appendDoneTasks(const std::shared_ptr<QueryStatus> & query);

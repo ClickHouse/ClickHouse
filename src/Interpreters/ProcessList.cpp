@@ -462,7 +462,7 @@ CancellationCode QueryStatus::cancelQuery(bool, CancelReason reason)
 
     is_killed.store(true);
 
-    cancel_reason = reason;
+    std::atomic_exchange(&cancel_reason, reason);
 
     std::vector<ExecutorHolderPtr> executors_snapshot;
 
