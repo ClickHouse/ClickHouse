@@ -11,7 +11,6 @@
 #include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
 
-
 #if USE_EMBEDDED_COMPILER
 #    include <DataTypes/Native.h>
 #    include <llvm/IR/IRBuilder.h>
@@ -129,10 +128,9 @@ public:
             return b.CreateNot(is_null);
         }
         else
-            return b.getInt8(true);
+            return b.getInt8(1);
     }
 #endif
-
 
 private:
     MULTITARGET_FUNCTION_AVX2_SSE42(
