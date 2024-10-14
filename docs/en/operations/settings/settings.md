@@ -5339,7 +5339,7 @@ Type: UInt64
 
 Default value: 0
 
-The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'. 0 means USearch's default value (64).
+The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'. 0 means the default value of USearch (64).
 
 ## max_live_view_insert_blocks_before_refresh {#max_live_view_insert_blocks_before_refresh}
 
