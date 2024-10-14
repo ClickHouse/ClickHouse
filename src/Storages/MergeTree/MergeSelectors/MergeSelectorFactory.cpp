@@ -18,15 +18,15 @@ MergeSelectorFactory & MergeSelectorFactory::instance()
 
 void MergeSelectorFactory::registerPrivateSelector(std::string name, MergeSelectorFactory::Creator && creator)
 {
-    if (creators.emplace(name, creator).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge selector {} already exists", name);
+    if (!creators.emplace(name, creator).second)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge selector '{}' already exists", name);
 }
 
 
 void MergeSelectorFactory::registerPublicSelector(std::string name, MergeSelectorAlgorithm enum_value, Creator && creator)
 {
     registerPrivateSelector(name, std::move(creator));
-    if (enum_to_name_mapping.emplace(enum_value, name).second)
+    if (!enum_to_name_mapping.emplace(enum_value, name).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge select with enum value {} already exists with different name", enum_value);
 }
 
