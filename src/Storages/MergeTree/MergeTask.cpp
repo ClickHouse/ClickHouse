@@ -118,68 +118,6 @@ static ColumnsStatistics getStatisticsForColumns(
     return all_statistics;
 }
 
-/// Manages the "rows_sources" temporary file that is used during vertical merge.
-class RowsSourcesTemporaryFile : public ITemporaryFileLookup
-{
-public:
-    /// A logical name of the temporary file under which it will be known to the plan steps that use it.
-    static constexpr auto FILE_ID = "rows_sources";
-
-    explicit RowsSourcesTemporaryFile(TemporaryDataOnDiskScopePtr temporary_data_on_disk_)
-        : tmp_disk(std::make_unique<TemporaryDataOnDisk>(temporary_data_on_disk_))
-        , uncompressed_write_buffer(tmp_disk->createRawStream())
-        , tmp_file_name_on_disk(uncompressed_write_buffer->getFileName())
-    {
-    }
-
-    WriteBuffer & getTemporaryFileForWriting(const String & name) override
-    {
-        if (name != FILE_ID)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected temporary file name requested: {}", name);
-
-        if (write_buffer)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary file was already requested for writing, there musto be only one writer");
-
-        write_buffer = (std::make_unique<CompressedWriteBuffer>(*uncompressed_write_buffer));
-        return *write_buffer;
-    }
-
-    std::unique_ptr<ReadBuffer> getTemporaryFileForReading(const String & name) override
-    {
-        if (name != FILE_ID)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected temporary file name requested: {}", name);
-
-        if (!finalized)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary file is not finalized yet");
-
-        /// tmp_disk might not create real file if no data was written to it.
-        if (final_size == 0)
-            return std::make_unique<ReadBufferFromEmptyFile>();
-
-        /// Reopen the file for each read so that multiple reads can be performed in parallel and there is no need to seek to the beginning.
-        auto raw_file_read_buffer = std::make_unique<ReadBufferFromFile>(tmp_file_name_on_disk);
-        return std::make_unique<CompressedReadBufferFromFile>(std::move(raw_file_read_buffer));
-    }
-
-    /// Returns written data size in bytes
-    size_t finalizeWriting()
-    {
-        write_buffer->finalize();
-        uncompressed_write_buffer->finalize();
-        finalized = true;
-        final_size = write_buffer->count();
-        return final_size;
-    }
-
-private:
-    std::unique_ptr<TemporaryDataOnDisk> tmp_disk;
-    std::unique_ptr<WriteBufferFromFileBase> uncompressed_write_buffer;
-    std::unique_ptr<WriteBuffer> write_buffer;
-    const String tmp_file_name_on_disk;
-    bool finalized = false;
-    size_t final_size = 0;
-};
-
 static void addMissedColumnsToSerializationInfos(
     size_t num_rows_in_parts,
     const Names & part_columns,
@@ -480,7 +418,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         }
         case MergeAlgorithm::Vertical:
         {
-            ctx->rows_sources_temporary_file = std::make_shared<RowsSourcesTemporaryFile>(global_ctx->context->getTempDataOnDisk());
+            ctx->rows_sources_temporary_file = std::make_unique<TemporaryDataBuffer>(global_ctx->context->getTempDataOnDisk().get());
 
             std::map<String, UInt64> local_merged_column_to_size;
             for (const auto & part : global_ctx->future_part->parts)
@@ -854,22 +792,11 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
         return false;
 
-    size_t sum_input_rows_exact = global_ctx->merge_list_element_ptr->rows_read;
-    size_t input_rows_filtered = *global_ctx->input_rows_filtered;
     global_ctx->merge_list_element_ptr->columns_written = global_ctx->merging_columns.size();
     global_ctx->merge_list_element_ptr->progress.store(ctx->column_sizes->keyColumnsWeight(), std::memory_order_relaxed);
 
     /// Ensure data has written to disk.
-    size_t rows_sources_count = ctx->rows_sources_temporary_file->finalizeWriting();
-    /// In special case, when there is only one source part, and no rows were skipped, we may have
-    /// skipped writing rows_sources file. Otherwise rows_sources_count must be equal to the total
-    /// number of input rows.
-    if ((rows_sources_count > 0 || global_ctx->future_part->parts.size() > 1) && sum_input_rows_exact != rows_sources_count + input_rows_filtered)
-        throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Number of rows in source parts ({}) excluding filtered rows ({}) differs from number "
-                        "of bytes written to rows_sources file ({}). It is a bug.",
-                        sum_input_rows_exact, input_rows_filtered, rows_sources_count);
+    ctx->rows_sources_temporary_file->finishWriting();
 
     ctx->it_name_and_type = global_ctx->gathering_columns.cbegin();
 
@@ -901,12 +828,12 @@ class ColumnGathererStep : public ITransformingStep
 public:
     ColumnGathererStep(
         const DataStream & input_stream_,
-        const String & rows_sources_temporary_file_name_,
+        std::unique_ptr<ReadBuffer> rows_sources_read_buf_,
         UInt64 merge_block_size_rows_,
         UInt64 merge_block_size_bytes_,
         bool is_result_sparse_)
         : ITransformingStep(input_stream_, input_stream_.header, getTraits())
-        , rows_sources_temporary_file_name(rows_sources_temporary_file_name_)
+        , rows_sources_read_buf(std::move(rows_sources_read_buf_))
         , merge_block_size_rows(merge_block_size_rows_)
         , merge_block_size_bytes(merge_block_size_bytes_)
         , is_result_sparse(is_result_sparse_)
@@ -914,15 +841,13 @@ public:
 
     String getName() const override { return "ColumnGatherer"; }
 
-    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & pipeline_settings) override
+    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & /* pipeline_settings */) override
     {
-        const auto &header = pipeline.getHeader();
+        const auto & header = pipeline.getHeader();
         const auto input_streams_count = pipeline.getNumStreams();
 
-        if (!pipeline_settings.temporary_file_lookup)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary file lookup is not set in pipeline settings for vertical merge");
-
-        auto rows_sources_read_buf = pipeline_settings.temporary_file_lookup->getTemporaryFileForReading(rows_sources_temporary_file_name);
+        if (!rows_sources_read_buf)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data buffer for rows sources is not set");
 
         auto transform = std::make_unique<ColumnGathererTransform>(
             header,
@@ -957,7 +882,7 @@ private:
     }
 
     MergeTreeData::MergingParams merging_params{};
-    const String rows_sources_temporary_file_name;
+    std::unique_ptr<ReadBuffer> rows_sources_read_buf;
     const UInt64 merge_block_size_rows;
     const UInt64 merge_block_size_bytes;
     const bool is_result_sparse;
@@ -1008,7 +933,7 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline MergeTask::Vertic
         const auto data_settings = global_ctx->data->getSettings();
         auto merge_step = std::make_unique<ColumnGathererStep>(
             merge_column_query_plan.getCurrentDataStream(),
-            RowsSourcesTemporaryFile::FILE_ID,
+            ctx->rows_sources_temporary_file->read(),
             (*data_settings)[MergeTreeSetting::merge_max_block_size],
             (*data_settings)[MergeTreeSetting::merge_max_block_size_bytes],
             is_result_sparse);
@@ -1037,9 +962,9 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline MergeTask::Vertic
     }
 
     auto pipeline_settings = BuildQueryPipelineSettings::fromContext(global_ctx->context);
-    pipeline_settings.temporary_file_lookup = ctx->rows_sources_temporary_file;
     auto optimization_settings = QueryPlanOptimizationSettings::fromContext(global_ctx->context);
     auto builder = merge_column_query_plan.buildQueryPipeline(optimization_settings, pipeline_settings);
+    builder->addResource<std::shared_ptr<TemporaryDataBuffer>>(ctx->rows_sources_temporary_file, &QueryPlanResourceHolder::rows_sources_temporary_file);
 
     return {QueryPipelineBuilder::getPipeline(std::move(*builder)), std::move(indexes_to_recalc)};
 }
@@ -1401,7 +1326,7 @@ public:
         const SortDescription & sort_description_,
         const Names partition_key_columns_,
         const MergeTreeData::MergingParams & merging_params_,
-        const String & rows_sources_temporary_file_name_,
+        std::shared_ptr<TemporaryDataBuffer> rows_sources_temporary_file_,
         UInt64 merge_block_size_rows_,
         UInt64 merge_block_size_bytes_,
         bool blocks_are_granules_size_,
@@ -1411,7 +1336,7 @@ public:
         , sort_description(sort_description_)
         , partition_key_columns(partition_key_columns_)
         , merging_params(merging_params_)
-        , rows_sources_temporary_file_name(rows_sources_temporary_file_name_)
+        , rows_sources_temporary_file(rows_sources_temporary_file_)
         , merge_block_size_rows(merge_block_size_rows_)
         , merge_block_size_bytes(merge_block_size_bytes_)
         , blocks_are_granules_size(blocks_are_granules_size_)
@@ -1421,7 +1346,7 @@ public:
 
     String getName() const override { return "MergeParts"; }
 
-    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & pipeline_settings) override
+    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & /* pipeline_settings */) override
     {
         /// The order of the streams is important: when the key is matched, the elements go in the order of the source stream number.
         /// In the merged part, the lines with the same key must be in the ascending order of the identifier of original part,
@@ -1430,14 +1355,6 @@ public:
 
         const auto &header = pipeline.getHeader();
         const auto input_streams_count = pipeline.getNumStreams();
-
-        WriteBuffer * rows_sources_write_buf = nullptr;
-        if (!rows_sources_temporary_file_name.empty())
-        {
-            if (!pipeline_settings.temporary_file_lookup)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary file lookup is not set in pipeline settings for vertical merge");
-            rows_sources_write_buf = &pipeline_settings.temporary_file_lookup->getTemporaryFileForWriting(rows_sources_temporary_file_name);
-        }
 
         switch (merging_params.mode)
         {
@@ -1451,14 +1368,14 @@ public:
                     SortingQueueStrategy::Default,
                     /* limit_= */0,
                     /* always_read_till_end_= */false,
-                    rows_sources_write_buf,
+                    rows_sources_temporary_file,
                     blocks_are_granules_size);
                 break;
 
             case MergeTreeData::MergingParams::Collapsing:
                 merged_transform = std::make_shared<CollapsingSortedTransform>(
                     header, input_streams_count, sort_description, merging_params.sign_column, false,
-                    merge_block_size_rows, merge_block_size_bytes, rows_sources_write_buf, blocks_are_granules_size);
+                    merge_block_size_rows, merge_block_size_bytes, rows_sources_temporary_file, blocks_are_granules_size);
                 break;
 
             case MergeTreeData::MergingParams::Summing:
@@ -1473,7 +1390,7 @@ public:
             case MergeTreeData::MergingParams::Replacing:
                 merged_transform = std::make_shared<ReplacingSortedTransform>(
                     header, input_streams_count, sort_description, merging_params.is_deleted_column, merging_params.version_column,
-                    merge_block_size_rows, merge_block_size_bytes, rows_sources_write_buf, blocks_are_granules_size,
+                    merge_block_size_rows, merge_block_size_bytes, rows_sources_temporary_file, blocks_are_granules_size,
                     cleanup);
                 break;
 
@@ -1486,7 +1403,7 @@ public:
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 merged_transform = std::make_shared<VersionedCollapsingTransform>(
                     header, input_streams_count, sort_description, merging_params.sign_column,
-                    merge_block_size_rows, merge_block_size_bytes, rows_sources_write_buf, blocks_are_granules_size);
+                    merge_block_size_rows, merge_block_size_bytes, rows_sources_temporary_file, blocks_are_granules_size);
                 break;
         }
 
@@ -1528,7 +1445,7 @@ private:
     const SortDescription sort_description;
     const Names partition_key_columns;
     const MergeTreeData::MergingParams merging_params{};
-    const String rows_sources_temporary_file_name;
+    std::shared_ptr<TemporaryDataBuffer> rows_sources_temporary_file;
     const UInt64 merge_block_size_rows;
     const UInt64 merge_block_size_bytes;
     const bool blocks_are_granules_size;
@@ -1697,7 +1614,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             sort_description,
             partition_key_columns,
             global_ctx->merging_params,
-            (is_vertical_merge ? RowsSourcesTemporaryFile::FILE_ID : ""),  /// rows_sources temporaty file is used only for vertical merge
+            (is_vertical_merge ? ctx->rows_sources_temporary_file : nullptr),  /// rows_sources temporaty file is used only for vertical merge
             (*data_settings)[MergeTreeSetting::merge_max_block_size],
             (*data_settings)[MergeTreeSetting::merge_max_block_size_bytes],
             ctx->blocks_are_granules_size,
@@ -1762,7 +1679,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
     {
         auto pipeline_settings = BuildQueryPipelineSettings::fromContext(global_ctx->context);
-        pipeline_settings.temporary_file_lookup = ctx->rows_sources_temporary_file;
         auto optimization_settings = QueryPlanOptimizationSettings::fromContext(global_ctx->context);
         auto builder = merge_parts_query_plan.buildQueryPipeline(optimization_settings, pipeline_settings);
 

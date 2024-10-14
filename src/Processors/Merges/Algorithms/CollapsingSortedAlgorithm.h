@@ -11,6 +11,8 @@ namespace Poco
 namespace DB
 {
 
+class TemporaryDataBuffer;
+
 /** Merges several sorted inputs to one.
   * For each group of consecutive identical values of the primary key (the columns by which the data is sorted),
   *  keeps no more than one row with the value of the column `sign_column = -1` ("negative row")
@@ -35,7 +37,7 @@ public:
         size_t max_block_size_rows_,
         size_t max_block_size_bytes_,
         LoggerPtr log_,
-        WriteBuffer * out_row_sources_buf_ = nullptr,
+        std::shared_ptr<TemporaryDataBuffer> temp_data_buffer_ = nullptr,
         bool use_average_block_sizes = false);
 
     const char * getName() const override { return "CollapsingSortedAlgorithm"; }
@@ -62,6 +64,8 @@ private:
     PODArray<RowSourcePart> current_row_sources;   /// Sources of rows with the current primary key
 
     size_t count_incorrect_data = 0;    /// To prevent too many error messages from writing to the log.
+    std::shared_ptr<TemporaryDataBuffer> temp_data_buffer = nullptr;
+
     LoggerPtr log;
 
     void reportIncorrectData();

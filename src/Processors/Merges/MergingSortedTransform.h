@@ -20,7 +20,7 @@ public:
         SortingQueueStrategy sorting_queue_strategy,
         UInt64 limit_ = 0,
         bool always_read_till_end_ = false,
-        WriteBuffer * out_row_sources_buf_ = nullptr,
+        std::shared_ptr<TemporaryDataBuffer> out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false,
         bool have_all_inputs_ = true);
 
