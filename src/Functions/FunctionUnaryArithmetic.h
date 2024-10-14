@@ -527,7 +527,6 @@ public:
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
                     if constexpr (std::is_same_v<Op<T0>, AbsImpl<T0>> || std::is_same_v<Op<T0>, BitCountImpl<T0>>)
                     {
-                        std::cout << "start to compile abs" << std::endl;
                         /// We don't need to cast the argument to the result type if it's abs/bitcount function.
                         result = Op<T0>::compile(b, arguments[0].value, is_signed_v<T0>);
                     }
