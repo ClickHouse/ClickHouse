@@ -405,8 +405,8 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
     bool changed = settings.isChanged("ef_search");
     if (changed)
     {
-        non_default_expansion_search = settings[Setting::ef_search];
-        if (non_default_expansion_search == 0)
+        query_time_expansion_search = settings[Setting::ef_search];
+        if (query_time_expansion_search == 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Setting 'ef_search' must not be 0");
     }
 }
@@ -447,27 +447,28 @@ std::vector<UInt64> MergeTreeIndexConditionVectorSimilarity::calculateApproximat
 
     struct ExpansionSearchChangeScope
     {
+        USearchIndexWithSerializationPtr index;
+        std::optional<size_t> last_expansion_search;
+
         explicit ExpansionSearchChangeScope(std::optional<size_t> expansion_search, USearchIndexWithSerializationPtr index_)
             : index(index_)
         {
             if (expansion_search)
             {
-                old_expansion_search = index_->expansion_search();
+                last_expansion_search = index_->expansion_search();
                 index->change_expansion_search(*expansion_search);
             }
         }
 
         ~ExpansionSearchChangeScope()
         {
-            if (old_expansion_search)
-                index->change_expansion_search(*old_expansion_search);
+            if (last_expansion_search)
+                index->change_expansion_search(*last_expansion_search);
         }
-
-        USearchIndexWithSerializationPtr index;
-        std::optional<size_t> old_expansion_search;
     };
 
-    ExpansionSearchChangeScope expansion_search_change_scope(non_default_expansion_search, index);
+    /// Apply query-time setting `ef_search` which overrides the corresponding HNSW parameter specified at index construction time.
+    ExpansionSearchChangeScope expansion_search_change_scope(query_time_expansion_search, index);
 
     auto search_result = index->search(reference_vector.data(), limit);
     if (!search_result)
