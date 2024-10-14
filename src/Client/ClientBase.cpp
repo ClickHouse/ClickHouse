@@ -1992,7 +1992,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
     {
         /// Temporarily apply query settings to context.
-        std::optional<Settings> old_settings;
+        Settings old_settings = client_context->getSettingsRef();
         SCOPE_EXIT_SAFE({
             try
             {
@@ -2009,8 +2009,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
                     have_error = true;
                 }
             }
-            if (old_settings)
-                client_context->setSettings(*old_settings);
+            client_context->setSettings(old_settings);
         });
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
 
