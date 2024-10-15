@@ -2368,7 +2368,18 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
                 using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
                 if constexpr (!std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType> && OpSpec::compilable)
-                    return true;
+                {
+                    if constexpr (is_modulo)
+                    {
+                        using PromotedType = std::conditional_t<
+                            std::is_floating_point_v<typename ResultDataType::FieldType>,
+                            Float64,
+                            NumberTraits::ResultOfIf<typename LeftDataType::FieldType, typename RightDataType::FieldType>>;
+                        return std::is_integral_v<PromotedType> || std::is_floating_point_v<PromotedType>;
+                    }
+                    else
+                        return true;
+                }
             }
             return false;
         });
@@ -2393,10 +2404,23 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 if constexpr (!std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType> && OpSpec::compilable)
                 {
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                    auto * lval = nativeCast(b, arguments[0], result_type);
-                    auto * rval = nativeCast(b, arguments[1], result_type);
-                    result = OpSpec::compile(b, lval, rval, std::is_signed_v<typename ResultDataType::FieldType>);
-
+                    if constexpr (is_modulo)
+                    {
+                        using PromotedType = std::conditional_t<
+                            std::is_floating_point_v<typename ResultDataType::FieldType>,
+                            Float64,
+                            NumberTraits::ResultOfIf<typename LeftDataType::FieldType, typename RightDataType::FieldType>>;
+                        auto promoted_type = std::make_shared<DataTypeNumber<PromotedType>>();
+                        auto * lval = nativeCast(b, arguments[0], promoted_type);
+                        auto * rval = nativeCast(b, arguments[1], promoted_type);
+                        result = OpSpec::compile(b, lval, rval, std::is_signed_v<PromotedType>);
+                    }
+                    else
+                    {
+                        auto * lval = nativeCast(b, arguments[0], result_type);
+                        auto * rval = nativeCast(b, arguments[1], result_type);
+                        result = OpSpec::compile(b, lval, rval, std::is_signed_v<typename ResultDataType::FieldType>);
+                    }
                     return true;
                 }
             }

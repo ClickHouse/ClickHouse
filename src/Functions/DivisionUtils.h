@@ -8,6 +8,10 @@
 
 #include "config.h"
 
+#if USE_EMBEDDED_COMPILER
+#    include <llvm/IR/IRBuilder.h>
+#endif
+
 
 namespace DB
 {
@@ -15,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_DIVISION;
+    extern const int LOGICAL_ERROR;
 }
 
 template <typename A, typename B>
@@ -158,7 +163,20 @@ struct ModuloImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = false; /// don't know how to throw from LLVM IR
+    static constexpr bool compilable = true; /// Ignore exceptions in LLVM IR
+
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
+    {
+        if (left->getType()->isFloatingPointTy())
+        {
+            auto * func_frem = llvm::Intrinsic::getDeclaration(b.GetInsertBlock()->getModule(), llvm::Intrinsic::vp_frem, left->getType());
+            return b.CreateCall(func_frem, {left, right});
+        }
+        else if (left->getType()->isIntegerTy())
+            return is_signed ? b.CreateSRem(left, right) : b.CreateURem(left, right);
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ModuloImpl compilation expected native integer or floating point type");
+    }
 #endif
 };
 
