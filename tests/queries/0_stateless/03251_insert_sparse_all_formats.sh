@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 formats=$($CLICKHOUSE_CLIENT --query "
     SELECT name FROM system.formats
-    WHERE is_input AND is_output AND name NOT IN ('Template', 'Npy', 'RawBLOB', 'ProtobufList', 'ProtobufSingle', 'LineAsString')
+    WHERE is_input AND is_output AND name NOT IN ('Template', 'Npy', 'RawBLOB', 'ProtobufList', 'ProtobufSingle', 'Protobuf', 'LineAsString')
     ORDER BY name FORMAT TSV
 ")
 
