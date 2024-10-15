@@ -208,9 +208,6 @@ public:
     /// Get names of all layers. Name is how the layer is defined in configuration file.
     NameSet getOverlaysNames() const override;
 
-    /// Get names of all cache layers. Name is how cache is defined in configuration file.
-    NameSet getCacheLayersNames() const override;
-
     bool supportsStat() const override { return metadata_storage->supportsStat(); }
     struct stat stat(const String & path) const override;
 

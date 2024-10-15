@@ -82,7 +82,7 @@ static EncryptedObjectStorageSettingsPtr parseDiskEncryptedOSSettings(
         auto header_cache = config.getString(config_prefix + ".header_cache", "");
         if (!header_cache.empty())
         {
-            auto cache = FileCacheFactory::instance().getByName(header_cache).cache;
+            auto cache = FileCacheFactory::instance().getByName(header_cache)->cache;
             cache->initialize();
             ret->header_cache = cache;
         }
@@ -101,7 +101,7 @@ void registerDiskEncryptedOS(DiskFactory & factory, bool /* global_skip_access_c
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
                       ContextPtr /*context*/,
-                      const DisksMap & map) -> DiskPtr
+                      const DisksMap & map, bool, bool) -> DiskPtr
     {
         auto enc_settings = parseDiskEncryptedOSSettings(name, config, config_prefix, map);
         auto disk_object_storage = enc_settings->wrapped_disk->createDiskObjectStorage();

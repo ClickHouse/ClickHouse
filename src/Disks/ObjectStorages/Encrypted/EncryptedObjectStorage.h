@@ -38,23 +38,21 @@ public:
     EncryptedObjectStorage(
         ObjectStoragePtr object_storage_, EncryptedObjectStorageSettingsPtr enc_settings_, const String & enc_config_name_);
 
-    DataSourceDescription getDataSourceDescription() const override;
+    ObjectStorageType getType() const override { return object_storage->getType(); }
 
     std::string getName() const override
     {
         return fmt::format("EncryptedObjectStorage-{}({})", enc_config_name, object_storage->getName());
     }
 
+    std::string getCommonKeyPrefix() const override { return object_storage->getCommonKeyPrefix(); }
+
+    std::string getDescription() const override { return object_storage->getDescription(); }
+
     bool exists(const StoredObject & object) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
-        const ReadSettings & read_settings = ReadSettings{},
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const override;
-
-    std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
-        const StoredObjects & objects,
         const ReadSettings & read_settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const override;
@@ -88,7 +86,7 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
+    void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
@@ -96,11 +94,13 @@ public:
 
     void startup() override;
 
-    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context) override;
+    void applyNewSettings(
+        const Poco::Util::AbstractConfiguration & /* config */,
+        const std::string & /*config_prefix*/,
+        ContextPtr /* context */,
+        const ApplyNewSettingsOptions & /* options */) override;
 
     String getObjectsNamespace() const override;
-
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
 
     bool isRemote() const override { return object_storage->isRemote(); }
 
@@ -118,6 +118,8 @@ public:
 
     const std::string & getLayerName() const override { return enc_config_name; }
     bool supportsOverlays() const override { return true; }
+
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
 
 private:
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
