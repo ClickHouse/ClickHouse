@@ -48,11 +48,11 @@ int StatementGenerator::GenerateNextCreateDatabase(RandomGenerator &rg, sql_quer
 	const uint32_t dname = this->database_counter++;
 	sql_query_grammar::DatabaseEngine *deng = cd->mutable_dengine();
 	sql_query_grammar::DatabaseEngineValues val = rg.NextBool() ?
-		sql_query_grammar::DatabaseEngineValues::Atomic : sql_query_grammar::DatabaseEngineValues::Replicated;
+		sql_query_grammar::DatabaseEngineValues::DAtomic : sql_query_grammar::DatabaseEngineValues::DReplicated;
 
 	next.deng = val;
 	deng->set_engine(val);
-	if (val == sql_query_grammar::DatabaseEngineValues::Replicated) {
+	if (val == sql_query_grammar::DatabaseEngineValues::DReplicated) {
 		deng->set_zoo_path(this->zoo_path_counter++);
 	}
 	next.dname = dname;
@@ -528,7 +528,10 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 	if (next.IsMergeTreeFamily()) {
 		NestedType *ntp = nullptr;
 
-		next.is_shared_engine = supports_cloud_features && rg.NextSmallNumber() < 4;
+		if (rg.NextSmallNumber() < 4) {
+			next.toption = supports_cloud_features && rg.NextBool() ?
+				sql_query_grammar::TableEngineOption::TShared : sql_query_grammar::TableEngineOption::TReplicated;
+		}
 		assert(this->entries.empty());
 		for (const auto &entry : next.cols) {
 			if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
@@ -552,14 +555,16 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 		sv->set_property("allow_nullable_key");
 		sv->set_value("1");
 
-		if (next.is_shared_engine) {
+		if (next.toption.has_value() && next.toption.value() == sql_query_grammar::TableEngineOption::TShared) {
 			sql_query_grammar::SetValue *sv2 = svs->add_other_values();
 			sv2->set_property("storage_policy");
 			sv2->set_value("'s3_with_keeper'");
 		}
 	}
-	te->set_shared(next.is_shared_engine);
-	assert(!next.is_shared_engine || next.IsMergeTreeFamily());
+	if (next.toption.has_value()) {
+		te->set_toption(next.toption.value());
+	}
+	assert(!next.toption.has_value() || next.IsMergeTreeFamily());
 	this->staged_tables[tname] = std::move(next);
 	return 0;
 }
@@ -613,8 +618,11 @@ int StatementGenerator::GenerateNextCreateView(RandomGenerator &rg, sql_query_gr
 		next.teng = val;
 		te->set_engine(val);
 		if (next.IsMergeTreeFamily()) {
-			next.is_shared_engine = supports_cloud_features && rg.NextSmallNumber() < 4;
-			te->set_shared(next.is_shared_engine);
+			if (rg.NextSmallNumber() < 4) {
+				next.toption = supports_cloud_features && rg.NextBool() ?
+					sql_query_grammar::TableEngineOption::TShared : sql_query_grammar::TableEngineOption::TReplicated;
+				te->set_toption(next.toption.value());
+			}
 
 			assert(this->entries.empty());
 			for (uint32_t i = 0 ; i < next.ncols ; i++) {
@@ -638,7 +646,7 @@ int StatementGenerator::GenerateNextCreateView(RandomGenerator &rg, sql_query_gr
 	this->levels[this->current_level] = QueryLevel(this->current_level);
 	GenerateSelect(rg, false, next.ncols, next.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
 				   cv->mutable_select());
-	assert(!next.is_shared_engine || next.IsMergeTreeFamily());
+	assert(!next.toption.has_value() || next.IsMergeTreeFamily());
 	this->staged_views[vname] = std::move(next);
 	return 0;
 }

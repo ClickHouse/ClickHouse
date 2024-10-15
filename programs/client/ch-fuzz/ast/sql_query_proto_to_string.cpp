@@ -1653,8 +1653,8 @@ CONV_FN(SettingValues, setv) {
 CONV_FN(DatabaseEngine, deng) {
   const sql_query_grammar::DatabaseEngineValues dengine = deng.engine();
 
-  ret += DatabaseEngineValues_Name(dengine);
-  if (dengine == sql_query_grammar::DatabaseEngineValues::Replicated) {
+  ret += DatabaseEngineValues_Name(dengine).substr(1);
+  if (dengine == sql_query_grammar::DatabaseEngineValues::DReplicated) {
     ret += "('/test/db";
     ret += std::to_string(deng.zoo_path());
     ret += "', 's1', 'r1')";
@@ -1795,10 +1795,10 @@ CONV_FN(TableEngine, te) {
   const sql_query_grammar::TableEngineValues tengine = te.engine();
 
   ret += " ENGINE = ";
-  if (te.shared() &&
+  if (te.has_toption() &&
       tengine >= sql_query_grammar::TableEngineValues::MergeTree &&
       tengine <= sql_query_grammar::TableEngineValues::VersionedCollapsingMergeTree) {
-      ret += "Shared";
+      ret += TableEngineOption_Name(te.toption()).substr(1);
   }
   ret += TableEngineValues_Name(tengine);
   ret += "(";

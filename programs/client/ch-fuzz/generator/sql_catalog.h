@@ -66,7 +66,8 @@ public:
 struct SQLBase {
 public:
 	std::shared_ptr<SQLDatabase> db;
-	bool attached = true, is_shared_engine = false;
+	bool attached = true;
+	std::optional<sql_query_grammar::TableEngineOption> toption;
 	sql_query_grammar::TableEngineValues teng;
 
 	bool IsMergeTreeFamily() const {

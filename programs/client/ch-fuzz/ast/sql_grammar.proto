@@ -2359,9 +2359,9 @@ message Select {
 }
 
 enum DatabaseEngineValues {
-  Atomic = 1;
-  Lazy = 2;
-  Replicated = 3;
+  DAtomic = 1;
+  DLazy = 2;
+  DReplicated = 3;
 }
 
 message DatabaseEngine {
@@ -2602,8 +2602,13 @@ enum TableEngineValues {
   TinyLog = 10;
 }
 
+enum TableEngineOption {
+  TShared = 1;
+  TReplicated = 2;
+}
+
 message TableEngine {
-  optional bool shared = 1;
+  optional TableEngineOption toption = 1;
   required TableEngineValues engine = 2;
   repeated Column cols = 3;
   optional TableKey order = 4;
