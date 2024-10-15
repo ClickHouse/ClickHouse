@@ -100,7 +100,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"distributed_cache_data_packet_ack_window", 5, 5, "A setting for ClickHouse Cloud"},
             {"allow_experimental_refreshable_materialized_view", false, true, "Not experimental anymore"},
             {"max_parts_to_move", 1000, 1000, "New setting"},
-            {"allow_reorder_prewhere_conditions", true, true, "New setting"},
+            {"allow_reorder_prewhere_conditions", false, true, "New setting"},
         }
     },
     {"24.9",
