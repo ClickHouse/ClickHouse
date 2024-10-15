@@ -49,11 +49,21 @@ static struct InitFiu
     ONCE(smt_commit_write_zk_fail_before_op) \
     ONCE(smt_commit_merge_change_version_before_op) \
     ONCE(smt_merge_mutate_intention_freeze_in_destructor) \
+    ONCE(smt_add_part_sleep_after_add_before_commit) \
+    ONCE(smt_sleep_in_constructor) \
     ONCE(meta_in_keeper_create_metadata_failure) \
+    ONCE(smt_insert_retry_timeout) \
+    ONCE(smt_insert_fake_hardware_error) \
+    ONCE(smt_sleep_after_hardware_in_insert) \
+    ONCE(smt_throw_keeper_exception_after_successful_insert) \
+    REGULAR(smt_dont_merge_first_part) \
+    REGULAR(smt_sleep_in_schedule_data_processing_job) \
     REGULAR(cache_warmer_stall) \
     REGULAR(check_table_query_delay_for_part) \
     REGULAR(dummy_failpoint) \
     REGULAR(prefetched_reader_pool_failpoint) \
+    REGULAR(shared_set_sleep_during_update) \
+    REGULAR(smt_outdated_parts_exception_response) \
     PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
     PAUSEABLE_ONCE(finish_set_quorum_failed_parts) \
     PAUSEABLE_ONCE(finish_clean_quorum_failed_parts) \

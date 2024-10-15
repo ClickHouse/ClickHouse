@@ -5261,9 +5261,9 @@ SELECT toFixedString('foo', 8) AS s;
 Result:
 
 ```response
-┌─s─────────────┬─s_cut─┐
-│ foo\0\0\0\0\0 │ foo   │
-└───────────────┴───────┘
+┌─s─────────────┐
+│ foo\0\0\0\0\0 │
+└───────────────┘
 ```
 
 ## toStringCutToZero
