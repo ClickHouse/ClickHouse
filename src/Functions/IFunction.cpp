@@ -1,5 +1,5 @@
-#include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionDynamicAdaptor.h>
+#include <Functions/IFunctionAdaptors.h>
 
 #include <cstdlib>
 #include <memory>
@@ -198,7 +198,10 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
     }
 
     if (null_presence.has_null_constant)
+    {
+        /// If any of the input arguments is null literal, the result is null constant.
         return result_type->createColumnConstWithDefaultValue(input_rows_count);
+    }
 
     if (null_presence.has_nullable)
     {
@@ -208,16 +211,20 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
 
         IColumn::Filter mask(input_rows_count, 1);
         MaskInfo mask_info = {.has_ones = true, .has_zeros = false};
+        bool all_columns_constant = true;
         for (const auto & arg : args)
         {
+            if (!isColumnConst(*arg.column))
+                all_columns_constant = false;
+
             if (arg.type->isNullable())
             {
                 if (isColumnConst(*arg.column))
                 {
-                    if (arg.column->isNullAt(0))
+                    if (arg.column->onlyNull())
                     {
-                        mask_info.has_ones = false;
-                        mask_info.has_zeros = true;
+                        /// If any of input columns contains a null constant, the result is null constant.
+                        return result_type->createColumnConstWithDefaultValue(input_rows_count);
                     }
                 }
                 else
@@ -227,17 +234,17 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
                 }
             }
 
-            /// Exit loop early if each row contains null value
+            /// Exit loop early if each row contains at least one null value
             if (!mask_info.has_ones)
                 break;
         }
 
-        if (!mask_info.has_ones)
+        if (!mask_info.has_ones && !all_columns_constant)
         {
-            /// Don't need to evaluate function if each row contains at least one null value.
+            /// Don't need to evaluate function if each row contains at least one null value and not all input columns are constant.
             return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
         }
-        else if (!mask_info.has_zeros || !short_circuit_default_implementation_for_nulls)
+        else if (!mask_info.has_zeros || all_columns_constant || !short_circuit_default_implementation_for_nulls)
         {
             /// Each row should be evaluated if there are no nulls or short circuiting is disabled.
             ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
