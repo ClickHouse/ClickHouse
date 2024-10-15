@@ -31,7 +31,7 @@ CachedObjectStorage::CachedObjectStorage(
 
 FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
 {
-    return cache->createKeyForPath(path);
+    return FileCacheKey::fromPath(path);
 }
 
 ObjectStorageKey
@@ -71,7 +71,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
     {
         if (cache->isInitialized())
         {
-            auto cache_key = cache->createKeyForPath(object.remote_path);
+            auto cache_key = FileCacheKey::fromPath(object.remote_path);
             auto global_context = Context::getGlobalContextInstance();
             auto modified_read_settings = read_settings.withNestedBuffer();
 
