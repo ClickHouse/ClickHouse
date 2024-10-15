@@ -202,8 +202,7 @@ int StatementGenerator::AddTableColumn(RandomGenerator &rg, SQLTable &t, const u
 	col.special = special;
 	if (!modify && col.special == ColumnSpecial::NONE &&
 		(dynamic_cast<IntType*>(tp) || dynamic_cast<FloatType*>(tp) || dynamic_cast<DateType*>(tp) || dynamic_cast<DecimalType*>(tp) ||
-		 dynamic_cast<StringType*>(tp) || dynamic_cast<BoolType*>(tp) || dynamic_cast<UUIDType*>(tp) ||
-		 ((lc = dynamic_cast<LowCardinality*>(tp)) && !dynamic_cast<Nullable*>(lc->subtype))) && rg.NextSmallNumber() < 4) {
+		 dynamic_cast<StringType*>(tp) || dynamic_cast<BoolType*>(tp) || dynamic_cast<UUIDType*>(tp)) && rg.NextSmallNumber() < 4) {
 		cd->set_nullable(rg.NextBool());
 		col.nullable = std::optional<bool>(cd->nullable());
 	}
@@ -428,6 +427,7 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 	if (replace) {
 		const SQLTable &t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
 
+		next.db = t.db;
 		tname = next.tname = t.tname;
 	} else {
 		next.db = rg.PickRandomlyFromVector(FilterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
@@ -599,6 +599,7 @@ int StatementGenerator::GenerateNextCreateView(RandomGenerator &rg, sql_query_gr
 	if (replace) {
 		const SQLView &v = rg.PickRandomlyFromVector(FilterCollection<SQLView>(attached_views));
 
+		next.db = v.db;
 		vname = next.vname = v.vname;
 	} else {
 		next.db = rg.PickRandomlyFromVector(FilterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
