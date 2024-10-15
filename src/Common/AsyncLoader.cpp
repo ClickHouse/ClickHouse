@@ -724,14 +724,14 @@ void AsyncLoader::enqueue(Info & info, const LoadJobPtr & job, std::unique_lock<
 //    (when high-priority job A function waits for a lower-priority job B, and B never starts due to its priority)
 // 4) Resolve "blocked pool" deadlocks -- spawn more workers
 //    (when job A in pool P waits for another ready job B in P, but B never starts because there are no free workers in P)
-thread_local LoadJob * current_load_job = nullptr;
+static thread_local LoadJob * current_load_job = nullptr;
 
 size_t currentPoolOr(size_t pool)
 {
     return current_load_job ? current_load_job->executionPool() : pool;
 }
 
-bool detectWaitDependentDeadlock(const LoadJobPtr & waited)
+bool static detectWaitDependentDeadlock(const LoadJobPtr & waited)
 {
     if (waited.get() == current_load_job)
         return true;

@@ -353,7 +353,7 @@ void DDLRenamingMap::setNewDatabaseName(const String & old_database_name, const 
 }
 
 
-const String & DDLRenamingMap::getNewDatabaseName(const String & old_database_name) const
+String DDLRenamingMap::getNewDatabaseName(const String & old_database_name) const
 {
     auto it = old_to_new_database_names.find(old_database_name);
     if (it != old_to_new_database_names.end())

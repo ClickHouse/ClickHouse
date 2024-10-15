@@ -483,7 +483,7 @@ void RefreshTask::refreshTask()
                 znode.last_attempt_error = error_message;
             }
 
-            bool ok = updateCoordinationState(znode, false, zookeeper, lock);
+            bool ok = updateCoordinationState(znode, false, zookeeper, lock);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
             chassert(ok);
             chassert(lock.owns_lock());
 

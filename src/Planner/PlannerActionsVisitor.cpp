@@ -835,7 +835,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
             PreparedSets::toString(set_key, set_element_types));
 
     ColumnWithTypeAndName column;
-    column.name = planner_context->createSetKey(in_first_argument->getResultType(), in_second_argument);
+    column.name = DB::PlannerContext::createSetKey(in_first_argument->getResultType(), in_second_argument);
     column.type = std::make_shared<DataTypeSet>();
 
     bool set_is_created = set->get() != nullptr;

@@ -118,6 +118,7 @@ std::vector<Int64> testSelfDeduplicate(std::vector<Int64> data, std::vector<size
 
     ColumnPtr col = part.block_with_partition.block.getColumns()[0];
     std::vector<Int64> result;
+    result.resize(col->size());
     for (size_t i = 0; i < col->size(); i++)
     {
         result.push_back(col->getInt(i));
