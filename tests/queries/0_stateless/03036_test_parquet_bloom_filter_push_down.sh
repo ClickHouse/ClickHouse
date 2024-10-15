@@ -69,12 +69,6 @@ ${CLICKHOUSE_CLIENT} --query="select json from file('${DATA_FILE_USER_PATH}', Pa
 echo "Bloom filter for ipv4 column. BF is on. Specified in the schema"
 ${CLICKHOUSE_CLIENT} --query="select ipv4 from file('${DATA_FILE_USER_PATH}', Parquet, 'ipv4 IPv4') where ipv4 = toIPv4('0.0.1.143') order by ipv4 asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
 
-echo "Bloom filter for ipv4 column. Even though column is transformed, we know it is a safe transformation."
-${CLICKHOUSE_CLIENT} --query="select json from file('${DATA_FILE_USER_PATH}', Parquet) where toIPv4(ipv4) = toIPv4('0.0.1.143') order by uint16_logical asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
-
-echo "Bloom filter for ipv4 column. Even though column is transformed, we know it is a safe transformation."
-${CLICKHOUSE_CLIENT} --query="select json from file('${DATA_FILE_USER_PATH}', Parquet) where (toIPv4(ipv4)) in (toIPv4('0.0.1.143')) order by uint16_logical asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
-
 echo "Bloom filter on 64 bit column read as ipv4. We explicitly deny it, should read all rg"
 ${CLICKHOUSE_CLIENT} --query="select uint64_logical from file ('${DATA_FILE_USER_PATH}', Parquet, 'uint64_logical IPv4') where uint64_logical = toIPv4(5552715629697883300) order by uint64_logical asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;" | jq 'del(.meta,.statistics.elapsed)'
 
@@ -95,5 +89,8 @@ ${CLICKHOUSE_CLIENT} --query="select json from file('${DATA_FILE_USER_PATH}', Pa
 
 echo "Invalid column conversion with in operation. String type can not be hashed against parquet int64 physical type. Should read everything"
 ${CLICKHOUSE_CLIENT} --query="select uint64_logical from file('${DATA_FILE_USER_PATH}', Parquet, 'uint64_logical String') where uint64_logical in ('5') order by uint64_logical asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;" | jq 'del(.meta,.statistics.elapsed)'
+
+echo "Transformations on key column shall not be allowed. Should read everything"
+${CLICKHOUSE_CLIENT} --query="select uint64_logical from file('${DATA_FILE_USER_PATH}', Parquet) where negate(uint64_logical) = -7711695863945021976 order by uint64_logical asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;" | jq 'del(.meta,.statistics.elapsed)'
 
 rm -rf ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}/*
