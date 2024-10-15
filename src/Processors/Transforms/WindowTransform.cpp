@@ -1621,7 +1621,7 @@ struct StatefulWindowFunction : public WindowFunction
     }
 
     size_t sizeOfData() const override { return sizeof(State); }
-    size_t alignOfData() const override { return 1; }
+    size_t alignOfData() const override { return alignof(State); }
 
     void create(AggregateDataPtr __restrict place) const override
     {
