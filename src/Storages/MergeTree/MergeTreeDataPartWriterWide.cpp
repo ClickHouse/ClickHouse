@@ -577,7 +577,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
         {
             auto column = type->createColumn();
 
-            serialization->deserializeBinaryBulk(*column, bin_in, 1000000000, 0.0);
+            serialization->deserializeBinaryBulk(*column, bin_in, 0, 1000000000, 0.0);
 
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Still have {} rows in bin stream, last mark #{}"
@@ -599,7 +599,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
 
         auto column = type->createColumn();
 
-        serialization->deserializeBinaryBulk(*column, bin_in, index_granularity_rows, 0.0);
+        serialization->deserializeBinaryBulk(*column, bin_in, 0, index_granularity_rows, 0.0);
 
         if (bin_in.eof())
         {
@@ -642,7 +642,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
     {
         auto column = type->createColumn();
 
-        serialization->deserializeBinaryBulk(*column, bin_in, 1000000000, 0.0);
+        serialization->deserializeBinaryBulk(*column, bin_in, 0, 1000000000, 0.0);
 
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Still have {} rows in bin stream, last mark #{}"

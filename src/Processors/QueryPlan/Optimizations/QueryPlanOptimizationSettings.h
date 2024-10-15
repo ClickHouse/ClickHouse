@@ -78,6 +78,10 @@ struct QueryPlanOptimizationSettings
     String force_projection_name;
     bool optimize_use_implicit_projections = false;
 
+    /// If lazy materialization optimisation is enabled
+    bool optimize_lazy_materialization = false;
+    size_t max_limit_for_lazy_materialization = 0;
+
     bool build_sets = true;
 
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);

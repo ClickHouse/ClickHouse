@@ -48,13 +48,14 @@ void SerializationWrapper::serializeBinaryBulkWithMultipleStreams(
 
 void SerializationWrapper::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
 
-    nested_serialization->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
+    nested_serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, state, cache);
 }
 
 void SerializationWrapper::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
@@ -62,9 +63,9 @@ void SerializationWrapper::serializeBinaryBulk(const IColumn & column, WriteBuff
     nested_serialization->serializeBinaryBulk(column, ostr, offset, limit);
 }
 
-void SerializationWrapper::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void SerializationWrapper::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double avg_value_size_hint) const
 {
-    nested_serialization->deserializeBinaryBulk(column, istr, limit, avg_value_size_hint);
+    nested_serialization->deserializeBinaryBulk(column, istr, rows_offset, limit, avg_value_size_hint);
 }
 
 void SerializationWrapper::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const

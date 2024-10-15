@@ -68,7 +68,7 @@ void SerializationAggregateFunction::serializeBinaryBulk(const IColumn & column,
         function->serialize(*it, ostr, version);
 }
 
-void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
+void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double /*avg_value_size_hint*/) const
 {
     ColumnAggregateFunction & real_column = typeid_cast<ColumnAggregateFunction &>(column);
     ColumnAggregateFunction::Container & vec = real_column.getData();
@@ -80,7 +80,7 @@ void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, Rea
     size_t size_of_state = function->sizeOfData();
     size_t align_of_state = function->alignOfData();
 
-    for (size_t i = 0; i < limit; ++i)
+    for (size_t i = 0; i < rows_offset + limit; ++i)
     {
         if (istr.eof())
             break;
@@ -98,6 +98,9 @@ void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, Rea
             function->destroy(place);
             throw;
         }
+
+        if (i < rows_offset)
+            continue;
 
         vec.push_back(place);
     }
