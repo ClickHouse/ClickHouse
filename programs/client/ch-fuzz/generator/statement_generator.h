@@ -81,7 +81,7 @@ private:
 
 	std::string buf;
 	bool in_transaction = false, inside_projection = false, allow_not_deterministic = true;
-	uint32_t database_counter = 0, current_level = 0;
+	uint32_t database_counter = 0, zoo_path_counter = 0, current_level = 0;
 	std::map<uint32_t, std::shared_ptr<SQLDatabase>> staged_databases, databases;
 	std::map<uint32_t, SQLTable> staged_tables, tables;
 	std::map<uint32_t, SQLView> staged_views, views;
