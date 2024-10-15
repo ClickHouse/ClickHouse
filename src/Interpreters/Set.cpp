@@ -279,12 +279,6 @@ void Set::checkIsCreated() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to use set before it has been built.");
 }
 
-void Set::checkIsCreated() const
-{
-    if (!is_created.load())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to use set before it has been built.");
-}
-
 ColumnPtr checkDateTimePrecision(const ColumnPtr & column_to_cast, const ColumnPtr & column_after_cast, const size_t vec_res_size)
 {
     /// Handle nullable columns
