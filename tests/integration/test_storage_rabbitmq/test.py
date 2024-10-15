@@ -2157,7 +2157,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
         values.append("({i}, {i})".format(i=i))
     values = ",".join(values)
 
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
         try:
             instance.query(
@@ -2171,7 +2171,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
                 raise
     else:
         pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The query could not be executed successfully."
+            f"Time limit of 180 seconds reached. The query could not be executed successfully."
         )
 
     deadline = time.monotonic() + 180
