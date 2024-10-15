@@ -1580,7 +1580,7 @@ The log level of individual log names can be overridden. For example, to mute al
 
 **Regular Expression Filtering**
 
-The messages logged can be filtered using regular expressions using `message_regexp` and `message_regexp_negative`. This can be done on a per-level basis or globally. If both are specified for a particular logger, the global expression is ignored and the per-level one overrides it.
+The messages logged can be filtered using regular expressions using `message_regexp` and `message_regexp_negative`. This can be done on a per-level basis or globally. Note: Using this feature may cause a slight slowdown in performance.
 
 
 ```xml
