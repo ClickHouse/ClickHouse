@@ -1496,6 +1496,8 @@ try
 
     NamedCollectionFactory::instance().loadIfNot();
 
+    FileCacheFactory::instance().loadDefaultCaches(config());
+
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
 
