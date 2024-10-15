@@ -93,4 +93,7 @@ ${CLICKHOUSE_CLIENT} --query="select json from file('${DATA_FILE_USER_PATH}', Pa
 echo "BF on for parquet int8 logical type. Should skip row groups"
 ${CLICKHOUSE_CLIENT} --query="select json from file('${DATA_FILE_USER_PATH}', Parquet) where int8_logical=-126 order by uint16_logical asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
 
+echo "Invalid column conversion with in operation. String type can not be hashed against parquet int64 physical type. Should read everything"
+${CLICKHOUSE_CLIENT} --query="select uint64_logical from file('${DATA_FILE_USER_PATH}', Parquet, 'uint64_logical String') where uint64_logical in ('5') order by uint64_logical asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;" | jq 'del(.meta,.statistics.elapsed)'
+
 rm -rf ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}/*

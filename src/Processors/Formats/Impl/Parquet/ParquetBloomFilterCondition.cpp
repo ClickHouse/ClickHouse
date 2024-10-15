@@ -175,7 +175,7 @@ std::optional<uint64_t> tryHash(const Field & field, const parquet::ColumnDescri
     }
 }
 
-std::vector<uint64_t> hash(const IColumn * data_column, const parquet::ColumnDescriptor * parquet_column_descriptor)
+std::optional<std::vector<uint64_t>> hash(const IColumn * data_column, const parquet::ColumnDescriptor * parquet_column_descriptor)
 {
     std::vector<uint64_t> hashes;
 
@@ -184,15 +184,14 @@ std::vector<uint64_t> hash(const IColumn * data_column, const parquet::ColumnDes
         Field f;
         data_column->get(i, f);
 
-        if (auto hashed_value = tryHash(f, parquet_column_descriptor))
-        {
-            hashes.emplace_back(*hashed_value);
-        }
-    }
+        auto hashed_value = tryHash(f, parquet_column_descriptor);
 
-    if (hashes.size() != data_column->size())
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Where predicate value hashing failed for some rows, but succeeded for others. It should not happen");
+        if (!hashed_value)
+        {
+            return std::nullopt;
+        }
+
+        hashes.emplace_back(*hashed_value);
     }
 
     return hashes;
@@ -456,7 +455,14 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
                     column = nullable_column->getNestedColumnPtr();
                 }
 
-                auto hashes_for_column = hash(column.get(), parquet_column_descriptor);
+                auto hashes_for_column_opt = hash(column.get(), parquet_column_descriptor);
+
+                if (!hashes_for_column_opt)
+                {
+                    continue;
+                }
+
+                auto & hashes_for_column = *hashes_for_column_opt;
 
                 if (hashes_for_column.empty())
                 {

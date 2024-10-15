@@ -349,3 +349,12 @@ BF on for parquet int8 logical type. Should skip row groups
     "bytes_read": 25716
   }
 }
+Invalid column conversion with in operation. String type can not be hashed against parquet int64 physical type. Should read everything
+{
+  "data": [],
+  "rows": 0,
+  "statistics": {
+    "rows_read": 1000,
+    "bytes_read": 47419
+  }
+}
