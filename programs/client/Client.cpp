@@ -1102,7 +1102,7 @@ bool Client::chFuzz()
                     server_up &= ProcessCHFuzzQuery(full_query);
                     second_success &= !have_error;
 
-                    outf << full_query << std::endl;
+                    outf << full_query2 << std::endl;
                     server_up &= ProcessCHFuzzQuery(full_query2);
                     second_success &= !have_error;
                     (void) qo.ProcessOracleQueryResult(false, second_success, "Dump and read table");
