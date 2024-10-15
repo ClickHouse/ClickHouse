@@ -2758,6 +2758,40 @@ Result:
 └─────────────┴───────────┘
 ```
 )", 0) \
+M(UInt64, script_line_number, 0, R"(
+Specifies the value for the `script_line_number` field of the [system.query_log](../system-tables/query_log.md) table.
+It improves readability of logs, and adds additional information, by indicating in which line a query is located.
+Default value is 0.
+**Example**
+
+Query:
+
+``` sql
+DROP DATABASE IF EXISTS db;
+DROP DATABASE IF EXISTS db1;
+DROP DATABASE IF EXISTS db2;
+
+CREATE DATABASE db;
+CREATE DATABASE db1;
+CREATE DATABASE db2;
+
+SYSTEM FLUSH LOGS;
+SELECT query, script_line_number FROM system.query_log WHERE type=1 AND log_comment = 'script_line_number_test' limit 6;
+```
+
+Result:
+
+``` text
+┌─query────────────────────────┬─script_line_number─┐
+│ DROP DATABASE IF EXISTS db;  │                  1 │
+│ DROP DATABASE IF EXISTS db1; │                  2 │
+│ DROP DATABASE IF EXISTS db2; │                  3 │
+│ CREATE DATABASE db;          │                  5 │
+│ CREATE DATABASE db1;         │                  6 │
+│ CREATE DATABASE db2;         │                  7 │
+└──────────────────────────────┴────────────────────┘
+```
+)", 0) \
     M(LogsLevel, send_logs_level, LogsLevel::fatal, R"(
 Send server text logs with specified minimum level to client. Valid values: 'trace', 'debug', 'information', 'warning', 'error', 'fatal', 'none'
 )", 0) \

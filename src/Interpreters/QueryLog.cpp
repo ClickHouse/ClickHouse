@@ -119,6 +119,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"revision", std::make_shared<DataTypeUInt32>(), "ClickHouse revision."},
 
         {"log_comment", std::make_shared<DataTypeString>(), "Log comment. It can be set to arbitrary string no longer than max_query_size. An empty string if it is not defined."},
+        {"script_line_number", std::make_shared<DataTypeUInt64>(), "Log currently processed script line."},
 
         {"thread_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Thread ids that are participating in query execution. These threads may not have run simultaneously."},
         {"peak_threads_usage", std::make_shared<DataTypeUInt64>(), "Maximum count of simultaneous threads executing the query."},
@@ -229,6 +230,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(ClickHouseRevision::getVersionRevision());
 
     columns[i++]->insertData(log_comment.data(), log_comment.size());
+    columns[i++]->insert(script_line_number);
 
     {
         Array threads_array;

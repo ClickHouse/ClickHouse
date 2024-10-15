@@ -2318,6 +2318,8 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     const char * this_query_begin = all_queries_text.data() + test_tags_length;
     const char * this_query_end;
     const char * all_queries_end = all_queries_text.data() + all_queries_text.size();
+    const char * last_query_begin = this_query_begin;
+    UInt64 current_line = std::count(all_queries_text.c_str(), this_query_begin, '\n') + 1;
 
     String full_query; // full_query is the query + inline INSERT data + trailing comments (the latter is our best guess for now).
     String query_to_execute;
@@ -2330,6 +2332,11 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     {
         auto stage = analyzeMultiQueryText(this_query_begin, this_query_end, all_queries_end,
                                            query_to_execute, parsed_query, all_queries_text, current_exception);
+
+        current_line += std::count(last_query_begin, this_query_begin, '\n');
+        client_context->setSetting("script_line_number", current_line);
+        last_query_begin = this_query_begin;
+
         switch (stage)
         {
             case MultiQueryProcessingStage::QUERIES_END:

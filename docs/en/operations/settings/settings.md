@@ -4653,6 +4653,42 @@ Result:
 └─────────────┴───────────┘
 ```
 
+## script_line_number {#script_line_number}
+
+Field of [system.query_log](../system-tables/query_log.md).
+When running a script, for each query being executed, script_line_number in query_log is set to the line number of that query.
+When running a standalone query, it will be set to 0.
+
+**Example**
+
+Query:
+
+``` sql
+DROP DATABASE IF EXISTS db;
+DROP DATABASE IF EXISTS db1;
+DROP DATABASE IF EXISTS db2;
+
+CREATE DATABASE db;
+CREATE DATABASE db1;
+CREATE DATABASE db2;
+
+SYSTEM FLUSH LOGS;
+SELECT query, script_line_number FROM system.query_log WHERE type = 1 AND log_comment = 'script_line_number_test' LIMIT 6;
+```
+
+Result:
+
+``` text
+┌─query────────────────────────┬─script_line_number─┐
+│ DROP DATABASE IF EXISTS db;  │                  1 │
+│ DROP DATABASE IF EXISTS db1; │                  2 │
+│ DROP DATABASE IF EXISTS db2; │                  3 │
+│ CREATE DATABASE db;          │                  5 │
+│ CREATE DATABASE db1;         │                  6 │
+│ CREATE DATABASE db2;         │                  7 │
+└──────────────────────────────┴────────────────────┘
+```
+
 ## log_formatted_queries {#log_formatted_queries}
 
 Type: Bool

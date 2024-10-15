@@ -95,6 +95,7 @@ struct QueryLogElement
     ClientInfo client_info;
 
     String log_comment;
+    UInt64 script_line_number;
 
     std::vector<UInt64> thread_ids;
     UInt64 peak_threads_usage = 0;
