@@ -518,12 +518,10 @@ void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
         }
-
-        throw Exception(
-            ErrorCodes::UNKNOWN_DATABASE,
-            "Database {} does not exist. Maybe you meant {}?",
-            backQuoteIfNeed(database_name),
-            backQuoteIfNeed(names[0]));
+        else
+        {
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist. Maybe you meant {}?", backQuoteIfNeed(database_name), backQuoteIfNeed(names[0]));
+        }
     }
 }
 
@@ -580,12 +578,10 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
         }
-
-        throw Exception(
-            ErrorCodes::UNKNOWN_DATABASE,
-            "Database {} does not exist. Maybe you meant {}?",
-            backQuoteIfNeed(database_name),
-            backQuoteIfNeed(names[0]));
+        else
+        {
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist. Maybe you meant {}?", backQuoteIfNeed(database_name), backQuoteIfNeed(names[0]));
+        }
     }
     if (check_empty)
     {
@@ -663,12 +659,10 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
         }
-
-        throw Exception(
-            ErrorCodes::UNKNOWN_DATABASE,
-            "Database {} does not exist. Maybe you meant {}?",
-            backQuoteIfNeed(database_name),
-            backQuoteIfNeed(names[0]));
+        else
+        {
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist. Maybe you meant {}?", backQuoteIfNeed(database_name), backQuoteIfNeed(names[0]));
+        }
     }
     return db;
 }
@@ -1729,7 +1723,7 @@ bool DatabaseCatalog::maybeRemoveDirectory(const String & disk_name, const DiskP
             return false;
         }
 
-        time_t max_modification_time = std::max({st.st_atime, st.st_mtime, st.st_ctime});
+        time_t max_modification_time = std::max(st.st_atime, std::max(st.st_mtime, st.st_ctime));
         time_t current_time = time(nullptr);
         if (st.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO))
         {
@@ -1747,23 +1741,25 @@ bool DatabaseCatalog::maybeRemoveDirectory(const String & disk_name, const DiskP
 
             return true;
         }
+        else
+        {
+            auto unused_dir_rm_timeout_sec = static_cast<time_t>(getContext()->getServerSettings().database_catalog_unused_dir_rm_timeout_sec);
 
-        auto unused_dir_rm_timeout_sec = static_cast<time_t>(getContext()->getServerSettings().database_catalog_unused_dir_rm_timeout_sec);
+            if (!unused_dir_rm_timeout_sec)
+                return false;
 
-        if (!unused_dir_rm_timeout_sec)
-            return false;
+            if (current_time <= max_modification_time + unused_dir_rm_timeout_sec)
+                return false;
 
-        if (current_time <= max_modification_time + unused_dir_rm_timeout_sec)
-            return false;
+            LOG_INFO(log, "Removing unused directory {} from disk {}", unused_dir, disk_name);
 
-        LOG_INFO(log, "Removing unused directory {} from disk {}", unused_dir, disk_name);
+            /// We have to set these access rights to make recursive removal work
+            disk->chmod(unused_dir, S_IRWXU);
 
-        /// We have to set these access rights to make recursive removal work
-        disk->chmod(unused_dir, S_IRWXU);
+            disk->removeRecursive(unused_dir);
 
-        disk->removeRecursive(unused_dir);
-
-        return true;
+            return true;
+        }
     }
     catch (...)
     {

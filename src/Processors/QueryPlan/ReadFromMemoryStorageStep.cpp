@@ -88,8 +88,10 @@ private:
         {
             return (*parallel_execution_index)++;
         }
-
-        return execution_index++;
+        else
+        {
+            return execution_index++;
+        }
     }
 
     const NamesAndTypesList requested_column_names_and_types;
@@ -171,10 +173,7 @@ Pipe ReadFromMemoryStorageStep::makePipe()
 
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
-        auto source = std::make_shared<MemorySource>(columns_to_read, storage_snapshot, current_data, parallel_execution_index);
-        if (stream == 0)
-            source->addTotalRowsApprox(snapshot_data.rows_approx);
-        pipes.emplace_back(std::move(source));
+        pipes.emplace_back(std::make_shared<MemorySource>(columns_to_read, storage_snapshot, current_data, parallel_execution_index));
     }
     return Pipe::unitePipes(std::move(pipes));
 }

@@ -1,5 +1,4 @@
 #include <Server/KeeperTCPHandler.h>
-#include "Common/ZooKeeper/ZooKeeperConstants.h"
 
 #if USE_NURAFT
 
@@ -94,7 +93,7 @@ struct SocketInterruptablePollWrapper
         socket_event.data.fd = sockfd;
         if (epoll_ctl(epollfd, EPOLL_CTL_ADD, sockfd, &socket_event) < 0)
         {
-            [[maybe_unused]] int err = ::close(epollfd);
+            int err = ::close(epollfd);
             chassert(!err || errno == EINTR);
 
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot insert socket into epoll queue");
@@ -103,7 +102,7 @@ struct SocketInterruptablePollWrapper
         pipe_event.data.fd = pipe.fds_rw[0];
         if (epoll_ctl(epollfd, EPOLL_CTL_ADD, pipe.fds_rw[0], &pipe_event) < 0)
         {
-            [[maybe_unused]] int err = ::close(epollfd);
+            int err = ::close(epollfd);
             chassert(!err || errno == EINTR);
 
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot insert socket into epoll queue");
@@ -212,7 +211,7 @@ struct SocketInterruptablePollWrapper
 #if defined(POCO_HAVE_FD_EPOLL)
     ~SocketInterruptablePollWrapper()
     {
-        [[maybe_unused]] int err = ::close(epollfd);
+        int err = ::close(epollfd);
         chassert(!err || errno == EINTR);
     }
 #endif
@@ -253,9 +252,7 @@ void KeeperTCPHandler::sendHandshake(bool has_leader, bool & use_compression)
     Coordination::write(Coordination::SERVER_HANDSHAKE_LENGTH, *out);
     if (has_leader)
     {
-        if (use_xid_64)
-            Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64, *out);
-        else if (use_compression)
+        if (use_compression)
             Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION, *out);
         else
             Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION, *out);
@@ -293,23 +290,10 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
 
     Coordination::read(protocol_version, *in);
 
-    if (protocol_version != Coordination::ZOOKEEPER_PROTOCOL_VERSION
-        && protocol_version < Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION
-        && protocol_version > Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64)
-    {
+    if (protocol_version != Coordination::ZOOKEEPER_PROTOCOL_VERSION && protocol_version != Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION)
         throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected protocol version: {}", toString(protocol_version));
-    }
 
-    if (protocol_version == Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION)
-    {
-        use_compression = true;
-    }
-    else if (protocol_version >= Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64)
-    {
-        close_xid = Coordination::CLOSE_XID_64;
-        use_xid_64 = true;
-        Coordination::read(use_compression, *in);
-    }
+    use_compression = (protocol_version == Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION);
 
     Coordination::read(last_zxid_seen, *in);
     Coordination::read(timeout_ms, *in);
@@ -500,7 +484,7 @@ void KeeperTCPHandler::runImpl()
                 updateStats(response, request_with_response.request);
                 packageSent();
 
-                response->write(getWriteBuffer(), use_xid_64);
+                response->write(getWriteBuffer());
                 flushWriteBuffer();
                 log_long_operation("Sending response");
                 if (response->error == Coordination::Error::ZSESSIONEXPIRED)
@@ -546,27 +530,29 @@ bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command)
         LOG_WARNING(log, "invalid four letter command {}", IFourLetterCommand::toName(command));
         return false;
     }
-    if (!FourLetterCommandFactory::instance().isEnabled(command))
+    else if (!FourLetterCommandFactory::instance().isEnabled(command))
     {
         LOG_WARNING(log, "Not enabled four letter command {}", IFourLetterCommand::toName(command));
         return false;
     }
-
-    auto command_ptr = FourLetterCommandFactory::instance().get(command);
-    LOG_DEBUG(log, "Receive four letter command {}", command_ptr->name());
-
-    try
+    else
     {
-        String res = command_ptr->run();
-        out->write(res.data(), res.size());
-        out->next();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Error when executing four letter command " + command_ptr->name());
-    }
+        auto command_ptr = FourLetterCommandFactory::instance().get(command);
+        LOG_DEBUG(log, "Receive four letter command {}", command_ptr->name());
 
-    return true;
+        try
+        {
+            String res = command_ptr->run();
+            out->write(res.data(),res.size());
+            out->next();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Error when executing four letter command " + command_ptr->name());
+        }
+
+        return true;
+    }
 }
 
 WriteBuffer & KeeperTCPHandler::getWriteBuffer()
@@ -595,15 +581,8 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
     auto & read_buffer = getReadBuffer();
     int32_t length;
     Coordination::read(length, read_buffer);
-    int64_t xid;
-    if (use_xid_64)
-        Coordination::read(xid, read_buffer);
-    else
-    {
-        int32_t read_xid;
-        Coordination::read(read_xid, read_buffer);
-        xid = read_xid;
-    }
+    int32_t xid;
+    Coordination::read(xid, read_buffer);
 
     Coordination::OpNum opnum;
     Coordination::read(opnum, read_buffer);

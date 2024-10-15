@@ -275,7 +275,7 @@ void WriteFileOperation::execute(std::unique_lock<SharedMutex> &)
     if (disk.exists(path))
     {
         existed = true;
-        auto buf = disk.readFile(path, ReadSettings{});
+        auto buf = disk.readFile(path);
         readStringUntilEOF(prev_data, *buf);
     }
     auto buf = disk.writeFile(path);

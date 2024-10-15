@@ -172,10 +172,12 @@ createHTTPHandlerFactory(IServer & server, const Poco::Util::AbstractConfigurati
     {
         return createHandlersFactoryFromConfig(server, config, name, "http_handlers", async_metrics);
     }
-
-    auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
-    addDefaultHandlersFactory(*factory, server, config, async_metrics);
-    return factory;
+    else
+    {
+        auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
+        addDefaultHandlersFactory(*factory, server, config, async_metrics);
+        return factory;
+    }
 }
 
 static inline HTTPRequestHandlerFactoryPtr createInterserverHTTPHandlerFactory(IServer & server, const std::string & name)
@@ -195,9 +197,9 @@ HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::
 {
     if (name == "HTTPHandler-factory" || name == "HTTPSHandler-factory")
         return createHTTPHandlerFactory(server, config, name, async_metrics);
-    if (name == "InterserverIOHTTPHandler-factory" || name == "InterserverIOHTTPSHandler-factory")
+    else if (name == "InterserverIOHTTPHandler-factory" || name == "InterserverIOHTTPSHandler-factory")
         return createInterserverHTTPHandlerFactory(server, name);
-    if (name == "PrometheusHandler-factory")
+    else if (name == "PrometheusHandler-factory")
         return createPrometheusHandlerFactory(server, config, async_metrics, name);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown HTTP handler factory name.");

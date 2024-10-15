@@ -22,10 +22,8 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
 #include <base/defines.h>
-#include <base/range.h>
 #include <IO/Operators.h>
 #include <Common/re2.h>
-
 #include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
 #include <filesystem>
@@ -134,8 +132,8 @@ public:
                             "' registered for user-defined settings",
                             String{setting_name}, boost::algorithm::join(registered_prefixes, "' or '"));
         }
-
-        throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}'", String{setting_name});
+        else
+            BaseSettingsHelpers::throwSettingNotFound(setting_name);
     }
 
 private:
@@ -625,15 +623,15 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
         /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons,
         /// only the log will show the exact reason.
         throw Exception(PreformattedMessage{message.str(),
-                                            "{}: Authentication failed: password is incorrect, or there is no user with such name",
+                                            "{}: Authentication failed: password is incorrect, or there is no user with such name.{}",
                                             std::vector<std::string>{credentials.getUserName()}},
                         ErrorCodes::AUTHENTICATION_FAILED);
     }
 }
 
-void AccessControl::restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup)
+void AccessControl::restoreFromBackup(RestorerFromBackup & restorer)
 {
-    MultipleAccessStorage::restoreFromBackup(restorer, data_path_in_backup);
+    MultipleAccessStorage::restoreFromBackup(restorer);
     changes_notifier->sendNotifications();
 }
 
@@ -830,7 +828,8 @@ std::shared_ptr<const EnabledQuota> AccessControl::getAuthenticationQuota(
                                             quota_key,
                                             throw_if_client_key_empty);
     }
-    return nullptr;
+    else
+        return nullptr;
 }
 
 

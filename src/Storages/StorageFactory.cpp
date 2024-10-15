@@ -10,10 +10,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool log_queries;
-}
 
 namespace ErrorCodes
 {
@@ -132,26 +128,23 @@ StoragePtr StorageFactory::get(
             {
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Direct creation of tables with ENGINE View is not supported, use CREATE VIEW statement");
             }
-            if (name == "MaterializedView")
+            else if (name == "MaterializedView")
             {
-                throw Exception(
-                    ErrorCodes::INCORRECT_QUERY,
-                    "Direct creation of tables with ENGINE MaterializedView "
-                    "is not supported, use CREATE MATERIALIZED VIEW statement");
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                                "Direct creation of tables with ENGINE MaterializedView "
+                                "is not supported, use CREATE MATERIALIZED VIEW statement");
             }
-            if (name == "LiveView")
+            else if (name == "LiveView")
             {
-                throw Exception(
-                    ErrorCodes::INCORRECT_QUERY,
-                    "Direct creation of tables with ENGINE LiveView "
-                    "is not supported, use CREATE LIVE VIEW statement");
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                                "Direct creation of tables with ENGINE LiveView "
+                                "is not supported, use CREATE LIVE VIEW statement");
             }
-            if (name == "WindowView")
+            else if (name == "WindowView")
             {
-                throw Exception(
-                    ErrorCodes::INCORRECT_QUERY,
-                    "Direct creation of tables with ENGINE WindowView "
-                    "is not supported, use CREATE WINDOW VIEW statement");
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                                "Direct creation of tables with ENGINE WindowView "
+                                "is not supported, use CREATE WINDOW VIEW statement");
             }
 
             auto it = storages.find(name);
@@ -160,7 +153,8 @@ StoragePtr StorageFactory::get(
                 auto hints = getHints(name);
                 if (!hints.empty())
                     throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}. Maybe you meant: {}", name, toString(hints));
-                throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}", name);
+                else
+                    throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}", name);
             }
 
             auto check_feature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
@@ -238,7 +232,7 @@ StoragePtr StorageFactory::get(
         storage_def->engine->arguments->children = empty_engine_args;
     }
 
-    if (local_context->hasQueryContext() && local_context->getSettingsRef()[Setting::log_queries])
+    if (local_context->hasQueryContext() && local_context->getSettingsRef().log_queries)
         local_context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, name);
 
     return res;

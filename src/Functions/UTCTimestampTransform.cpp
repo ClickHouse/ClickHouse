@@ -93,7 +93,7 @@ namespace
                 }
                 return result_column;
             }
-            if (WhichDataType(arg1.type).isDateTime64())
+            else if (WhichDataType(arg1.type).isDateTime64())
             {
                 const auto & date_time_col = checkAndGetColumn<ColumnDateTime64>(*arg1.column);
                 const DataTypeDateTime64 * date_time_type = static_cast<const DataTypeDateTime64 *>(arg1.type.get());
@@ -114,7 +114,8 @@ namespace
                 }
                 return result_column;
             }
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {}'s 1st argument can only be datetime/datatime64. ", name);
+            else
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {}'s 1st argument can only be datetime/datatime64. ", name);
         }
 
     };

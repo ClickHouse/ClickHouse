@@ -7,7 +7,6 @@
 #include <memory>
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
-#include <Core/Settings.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Interpreters/Context.h>
@@ -21,12 +20,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsUInt64 max_query_size;
-}
 
 namespace ErrorCodes
 {
@@ -106,9 +99,9 @@ StoragePtr TableFunctionHive::executeImpl(
         partition_by_parser,
         "(" + partition_by_def + ")",
         "partition by declaration list",
-        settings[Setting::max_query_size],
-        settings[Setting::max_parser_depth],
-        settings[Setting::max_parser_backtracks]);
+        settings.max_query_size,
+        settings.max_parser_depth,
+        settings.max_parser_backtracks);
     StoragePtr storage;
     storage = std::make_shared<StorageHive>(
         hive_metastore_url,

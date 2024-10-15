@@ -2,6 +2,7 @@
 
 #include <base/argsToConfig.h>
 #include <base/safeExit.h>
+#include <Core/BaseSettingsProgramOptions.h>
 #include <Common/clearPasswordFromCommandLine.h>
 #include <Common/TerminalSize.h>
 #include <Common/Exception.h>
@@ -157,8 +158,6 @@ void ClientApplicationBase::init(int argc, char ** argv)
 
         ("config-file,C", po::value<std::string>(), "config-file path")
 
-        ("proto_caps", po::value<std::string>(), "enable/disable chunked protocol: chunked_optional, notchunked, notchunked_optional, send_chunked, send_chunked_optional, send_notchunked, send_notchunked_optional, recv_chunked, recv_chunked_optional, recv_notchunked, recv_notchunked_optional")
-
         ("query,q", po::value<std::vector<std::string>>()->multitoken(), R"(Query. Can be specified multiple times (--query "SELECT 1" --query "SELECT 2") or once with multiple comma-separated queries (--query "SELECT 1; SELECT 2;"). In the latter case, INSERT queries with non-VALUE format must be separated by empty lines.)")
         ("queries-file", po::value<std::vector<std::string>>()->multitoken(), "file path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
         ("multiquery,n", "Obsolete, does nothing")
@@ -171,8 +170,6 @@ void ClientApplicationBase::init(int argc, char ** argv)
 
         ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
         ("progress", po::value<ProgressOption>()->implicit_value(ProgressOption::TTY, "tty")->default_value(ProgressOption::DEFAULT, "default"), "Print progress of queries execution - to TTY: tty|on|1|true|yes; to STDERR non-interactive mode: err; OFF: off|0|false|no; DEFAULT - interactive to TTY, non-interactive is off")
-        ("progress-table", po::value<ProgressOption>()->implicit_value(ProgressOption::TTY, "tty")->default_value(ProgressOption::DEFAULT, "default"), "Print a progress table with changing metrics during query execution - to TTY: tty|on|1|true|yes; to STDERR non-interactive mode: err; OFF: off|0|false|no; DEFAULT - interactive to TTY, non-interactive is off.")
-        ("enable-progress-table-toggle", po::value<bool>()->default_value(true), "Enable toggling of the progress table by pressing the control key (Space). Only applicable in interactive mode with the progress table enabled.")
 
         ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
         ("wait_for_suggestions_to_load", "Load suggestion data synchonously.")
@@ -318,26 +315,6 @@ void ClientApplicationBase::init(int argc, char ** argv)
                 break;
         }
     }
-    if (options.count("progress-table"))
-    {
-        switch (options["progress-table"].as<ProgressOption>())
-        {
-            case DEFAULT:
-                config().setString("progress-table", "default");
-                break;
-            case OFF:
-                config().setString("progress-table", "off");
-                break;
-            case TTY:
-                config().setString("progress-table", "tty");
-                break;
-            case ERR:
-                config().setString("progress-table", "err");
-                break;
-        }
-    }
-    if (options.count("enable-progress-table-toggle"))
-        getClientConfiguration().setBool("enable-progress-table-toggle", options["enable-progress-table-toggle"].as<bool>());
     if (options.count("echo"))
         getClientConfiguration().setBool("echo", true);
     if (options.count("disable_suggestion"))
@@ -359,41 +336,6 @@ void ClientApplicationBase::init(int argc, char ** argv)
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
     if (options.count("server_logs_file"))
         server_logs_file = options["server_logs_file"].as<std::string>();
-
-    if (options.count("proto_caps"))
-    {
-        std::string proto_caps_str = options["proto_caps"].as<std::string>();
-
-        std::vector<std::string_view> proto_caps;
-        splitInto<','>(proto_caps, proto_caps_str);
-
-        for (auto cap_str : proto_caps)
-        {
-            std::string direction;
-
-            if (cap_str.starts_with("send_"))
-            {
-                direction = "send";
-                cap_str = cap_str.substr(std::string_view("send_").size());
-            }
-            else if (cap_str.starts_with("recv_"))
-            {
-                direction = "recv";
-                cap_str = cap_str.substr(std::string_view("recv_").size());
-            }
-
-            if (cap_str != "chunked" && cap_str != "notchunked" && cap_str != "chunked_optional" && cap_str != "notchunked_optional")
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "proto_caps option is incorrect ({})", proto_caps_str);
-
-            if (direction.empty())
-            {
-                config().setString("proto_caps.send", std::string(cap_str));
-                config().setString("proto_caps.recv", std::string(cap_str));
-            }
-            else
-                config().setString("proto_caps." + direction, std::string(cap_str));
-        }
-    }
 
     query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
     query_kind = parseQueryKind(options["query_kind"].as<std::string>());

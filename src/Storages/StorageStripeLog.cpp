@@ -48,12 +48,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsUInt64 max_compress_block_size;
-    extern const SettingsSeconds max_execution_time;
-}
 
 namespace ErrorCodes
 {
@@ -181,7 +175,8 @@ class StripeLogSink final : public SinkToStorage
 public:
     using WriteLock = std::unique_lock<std::shared_timed_mutex>;
 
-    explicit StripeLogSink(StorageStripeLog & storage_, const StorageMetadataPtr & metadata_snapshot_, WriteLock && lock_)
+    explicit StripeLogSink(
+        StorageStripeLog & storage_, const StorageMetadataPtr & metadata_snapshot_, WriteLock && lock_)
         : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
@@ -296,7 +291,7 @@ StorageStripeLog::StorageStripeLog(
     , data_file_path(table_path + "data.bin")
     , index_file_path(table_path + "index.mrk")
     , file_checker(disk, table_path + "sizes.json")
-    , max_compress_block_size(context_->getSettingsRef()[Setting::max_compress_block_size])
+    , max_compress_block_size(context_->getSettingsRef().max_compress_block_size)
     , log(getLogger("StorageStripeLog"))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -358,9 +353,9 @@ void StorageStripeLog::rename(const String & new_path_to_table_data, const Stora
 static std::chrono::seconds getLockTimeout(ContextPtr local_context)
 {
     const Settings & settings = local_context->getSettingsRef();
-    Int64 lock_timeout = settings[Setting::lock_acquire_timeout].totalSeconds();
-    if (settings[Setting::max_execution_time].totalSeconds() != 0 && settings[Setting::max_execution_time].totalSeconds() < lock_timeout)
-        lock_timeout = settings[Setting::max_execution_time].totalSeconds();
+    Int64 lock_timeout = settings.lock_acquire_timeout.totalSeconds();
+    if (settings.max_execution_time.totalSeconds() != 0 && settings.max_execution_time.totalSeconds() < lock_timeout)
+        lock_timeout = settings.max_execution_time.totalSeconds();
     return std::chrono::seconds{lock_timeout};
 }
 
@@ -478,7 +473,7 @@ void StorageStripeLog::loadIndices(const WriteLock & lock /* already locked excl
 
     if (disk->exists(index_file_path))
     {
-        CompressedReadBufferFromFile index_in(disk->readFile(index_file_path, getContext()->getReadSettings().adjustBufferSize(4096)));
+        CompressedReadBufferFromFile index_in(disk->readFile(index_file_path, ReadSettings{}.adjustBufferSize(4096)));
         indices.read(index_in);
     }
 

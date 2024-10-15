@@ -5,6 +5,7 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
 #include <Interpreters/SetKeys.h>
+#include <Parsers/IAST.h>
 #include <Storages/MergeTree/BoolMask.h>
 
 #include <Common/SharedMutex.h>

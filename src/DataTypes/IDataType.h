@@ -76,14 +76,16 @@ public:
     {
         if (custom_name)
             return custom_name->getName();
-        return doGetName();
+        else
+            return doGetName();
     }
 
     String getPrettyName(size_t indent = 0) const
     {
         if (custom_name)
             return custom_name->getName();
-        return doGetPrettyName(indent);
+        else
+            return doGetPrettyName(indent);
     }
 
     DataTypePtr getPtr() const { return shared_from_this(); }

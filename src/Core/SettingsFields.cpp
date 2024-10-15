@@ -1,7 +1,7 @@
 #include <Core/SettingsFields.h>
 #include <Core/Field.h>
 #include <Core/AccurateComparison.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
@@ -55,27 +55,25 @@ namespace
         {
             return stringToNumber<T>(f.safeGet<const String &>());
         }
-        if (f.getType() == Field::Types::UInt64)
+        else if (f.getType() == Field::Types::UInt64)
         {
             T result;
             if (!accurate::convertNumeric(f.safeGet<UInt64>(), result))
-                throw Exception(
-                    ErrorCodes::CANNOT_CONVERT_TYPE, "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
             return result;
         }
-        if (f.getType() == Field::Types::Int64)
+        else if (f.getType() == Field::Types::Int64)
         {
             T result;
             if (!accurate::convertNumeric(f.safeGet<Int64>(), result))
-                throw Exception(
-                    ErrorCodes::CANNOT_CONVERT_TYPE, "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
             return result;
         }
-        if (f.getType() == Field::Types::Bool)
+        else if (f.getType() == Field::Types::Bool)
         {
             return T(f.safeGet<bool>());
         }
-        if (f.getType() == Field::Types::Float64)
+        else if (f.getType() == Field::Types::Float64)
         {
             Float64 x = f.safeGet<Float64>();
             if constexpr (std::is_floating_point_v<T>)
@@ -89,16 +87,16 @@ namespace
                     /// Conversion of infinite values to integer is undefined.
                     throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert infinite value to integer type");
                 }
-                if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
+                else if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
                 {
                     throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert out of range floating point value to integer type");
                 }
-                return T(x);
+                else
+                    return T(x);
             }
         }
         else
-            throw Exception(
-                ErrorCodes::CANNOT_CONVERT_TYPE, "Invalid value {} of the setting, which needs {}", f, demangle(typeid(T).name()));
+            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Invalid value {} of the setting, which needs {}", f, demangle(typeid(T).name()));
     }
 
     Map stringToMap(const String & str)
@@ -212,7 +210,7 @@ namespace
 {
     UInt64 stringToMaxThreads(const String & str)
     {
-        if (startsWith(str, "auto") || startsWith(str, "'auto"))
+        if (startsWith(str, "auto"))
             return 0;
         return parseFromString<UInt64>(str);
     }
@@ -221,7 +219,8 @@ namespace
     {
         if (f.getType() == Field::Types::String)
             return stringToMaxThreads(f.safeGet<const String &>());
-        return fieldToNumber<UInt64>(f);
+        else
+            return fieldToNumber<UInt64>(f);
     }
 }
 
@@ -238,9 +237,9 @@ SettingFieldMaxThreads & SettingFieldMaxThreads::operator=(const Field & f)
 String SettingFieldMaxThreads::toString() const
 {
     if (is_auto)
-        /// Removing quotes here will introduce an incompatibility between replicas with different versions.
         return "'auto(" + ::DB::toString(value) + ")'";
-    return ::DB::toString(value);
+    else
+        return ::DB::toString(value);
 }
 
 void SettingFieldMaxThreads::parseFromString(const String & str)
@@ -262,7 +261,7 @@ void SettingFieldMaxThreads::readBinary(ReadBuffer & in)
 
 UInt64 SettingFieldMaxThreads::getAuto()
 {
-    return getNumberOfCPUCoresToUse();
+    return getNumberOfPhysicalCPUCores();
 }
 
 namespace

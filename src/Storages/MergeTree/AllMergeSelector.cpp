@@ -31,7 +31,8 @@ AllMergeSelector::PartsRange AllMergeSelector::select(
 
     if (min_partition_size)
         return *best_partition;
-    return {};
+    else
+        return {};
 }
 
 }

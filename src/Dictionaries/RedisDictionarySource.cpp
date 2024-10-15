@@ -2,10 +2,9 @@
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipeline.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Common/RemoteHostFilter.h>
 
 #include <IO/WriteHelpers.h>
 

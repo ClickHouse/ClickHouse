@@ -1,7 +1,7 @@
 import copy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, List, Literal, Optional, Union
+from typing import List, Union, Iterable, Optional, Literal, Any
 
 from ci_utils import WithIter
 from integration_test_images import IMAGES
@@ -22,7 +22,6 @@ class Labels:
     PR_CHERRYPICK = "pr-cherrypick"
     PR_CI = "pr-ci"
     PR_FEATURE = "pr-feature"
-    PR_PERFORMANCE = "pr-performance"
     PR_SYNCED_TO_CLOUD = "pr-synced-to-cloud"
     PR_SYNC_UPSTREAM = "pr-sync-upstream"
     RELEASE = "release"
@@ -63,6 +62,7 @@ class Runners(metaclass=WithIter):
     STYLE_CHECKER_ARM = "style-checker-aarch64"
     FUNC_TESTER = "func-tester"
     FUNC_TESTER_ARM = "func-tester-aarch64"
+    STRESS_TESTER = "stress-tester"
     FUZZER_UNIT_TESTER = "fuzzer-unit-tester"
 
 
@@ -336,7 +336,7 @@ class JobConfig:
     # sets number of batches for a multi-batch job
     num_batches: int = 1
     # label that enables job in CI, if set digest isn't used
-    run_by_labels: List[str] = field(default_factory=list)
+    run_by_label: str = ""
     # to run always regardless of the job digest or/and label
     run_always: bool = False
     # disables CI await for a given job
@@ -415,7 +415,6 @@ class CommonJobConfigs:
                 "./tests/clickhouse-test",
                 "./tests/config",
                 "./tests/*.txt",
-                "./tests/docker_scripts/",
             ],
             exclude_files=[".md"],
             docker=["clickhouse/stateless-test"],
@@ -432,7 +431,6 @@ class CommonJobConfigs:
                 "./tests/clickhouse-test",
                 "./tests/config",
                 "./tests/*.txt",
-                "./tests/docker_scripts/",
             ],
             exclude_files=[".md"],
             docker=["clickhouse/stateful-test"],
@@ -450,24 +448,23 @@ class CommonJobConfigs:
                 "./tests/clickhouse-test",
                 "./tests/config",
                 "./tests/*.txt",
-                "./tests/docker_scripts/",
             ],
             exclude_files=[".md"],
             docker=["clickhouse/stress-test"],
         ),
         run_command="stress_check.py",
-        runner_type=Runners.FUNC_TESTER,
+        runner_type=Runners.STRESS_TESTER,
         timeout=9000,
     )
     UPGRADE_TEST = JobConfig(
         job_name_keyword="upgrade",
         digest=DigestConfig(
-            include_paths=["./tests/ci/upgrade_check.py", "./tests/docker_scripts/"],
+            include_paths=["./tests/ci/upgrade_check.py"],
             exclude_files=[".md"],
-            docker=["clickhouse/stress-test"],
+            docker=["clickhouse/upgrade-check"],
         ),
         run_command="upgrade_check.py",
-        runner_type=Runners.FUNC_TESTER,
+        runner_type=Runners.STRESS_TESTER,
         timeout=3600,
     )
     INTEGRATION_TEST = JobConfig(
@@ -482,7 +479,7 @@ class CommonJobConfigs:
             docker=IMAGES.copy(),
         ),
         run_command='integration_test_check.py "$CHECK_NAME"',
-        runner_type=Runners.FUNC_TESTER,
+        runner_type=Runners.STRESS_TESTER,
     )
     ASTFUZZER_TEST = JobConfig(
         job_name_keyword="ast",
@@ -517,7 +514,7 @@ class CommonJobConfigs:
             docker=["clickhouse/performance-comparison"],
         ),
         run_command="performance_comparison_check.py",
-        runner_type=Runners.FUNC_TESTER,
+        runner_type=Runners.STRESS_TESTER,
     )
     SQLLANCER_TEST = JobConfig(
         job_name_keyword="lancer",

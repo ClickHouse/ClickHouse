@@ -222,7 +222,6 @@ public:
     void addNewDynamicPath(std::string_view path);
 
     void setDynamicPaths(const std::vector<String> & paths);
-    void setDynamicPaths(const std::vector<std::pair<String, ColumnPtr>> & paths);
     void setMaxDynamicPaths(size_t max_dynamic_paths_);
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
 

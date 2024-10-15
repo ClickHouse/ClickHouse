@@ -1,7 +1,6 @@
 #include <optional>
 
 #include <Common/ProfileEvents.h>
-#include <Core/Settings.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -23,6 +22,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <filesystem>
@@ -31,13 +31,6 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsString s3queue_default_zookeeper_path;
-    extern const SettingsBool s3queue_enable_logging_to_s3queue_log;
-    extern const SettingsBool stream_like_engine_allow_direct_select;
-    extern const SettingsBool use_concurrency_control;
-}
 
 namespace ErrorCodes
 {
@@ -51,7 +44,7 @@ namespace
 {
     std::string chooseZooKeeperPath(const StorageID & table_id, const Settings & settings, const ObjectStorageQueueSettings & queue_settings)
     {
-        std::string zk_path_prefix = settings[Setting::s3queue_default_zookeeper_path].value;
+        std::string zk_path_prefix = settings.s3queue_default_zookeeper_path.value;
         if (zk_path_prefix.empty())
             zk_path_prefix = "/";
 
@@ -69,7 +62,7 @@ namespace
         return zkutil::extractZooKeeperPath(result_zk_path, true);
     }
 
-    void validateSettings(
+    void checkAndAdjustSettings(
         ObjectStorageQueueSettings & queue_settings,
         bool is_attach)
     {
@@ -92,17 +85,14 @@ namespace
         }
     }
 
-    std::shared_ptr<ObjectStorageQueueLog> getQueueLog(
-        const ObjectStoragePtr & storage,
-        const ContextPtr & context,
-        const ObjectStorageQueueSettings & table_settings)
+    std::shared_ptr<ObjectStorageQueueLog> getQueueLog(const ObjectStoragePtr & storage, const ContextPtr & context, const ObjectStorageQueueSettings & table_settings)
     {
         const auto & settings = context->getSettingsRef();
         switch (storage->getType())
         {
             case DB::ObjectStorageType::S3:
             {
-                if (table_settings.enable_logging_to_queue_log || settings[Setting::s3queue_enable_logging_to_s3queue_log])
+                if (table_settings.enable_logging_to_queue_log || settings.s3queue_enable_logging_to_s3queue_log)
                     return context->getS3QueueLog();
                 return nullptr;
             }
@@ -115,6 +105,7 @@ namespace
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected object storage type: {}", storage->getType());
         }
+
     }
 }
 
@@ -151,7 +142,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "ObjectStorageQueue url must either end with '/' or contain globs");
     }
 
-    validateSettings(*queue_settings, mode > LoadingStrictnessLevel::CREATE);
+    checkAndAdjustSettings(*queue_settings, mode > LoadingStrictnessLevel::CREATE);
 
     object_storage = configuration->createObjectStorage(context_, /* is_readonly */true);
     FormatFactory::instance().checkFormatName(configuration->format);
@@ -170,16 +161,21 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     setInMemoryMetadata(storage_metadata);
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
-
-    auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
-        zk_path, *queue_settings, storage_metadata.getColumns(), configuration_->format, log);
-
-    auto queue_metadata = std::make_unique<ObjectStorageQueueMetadata>(
-        zk_path, std::move(table_metadata), queue_settings->cleanup_interval_min_ms, queue_settings->cleanup_interval_max_ms);
-
-    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata));
-
     task = getContext()->getSchedulePool().createTask("ObjectStorageQueueStreamingTask", [this] { threadFunc(); });
+
+    /// Get metadata manager from ObjectStorageQueueMetadataFactory,
+    /// it will increase the ref count for the metadata object.
+    /// The ref count is decreased when StorageObjectStorageQueue::drop() method is called.
+    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, *queue_settings);
+    try
+    {
+        files_metadata->initialize(configuration_, storage_metadata);
+    }
+    catch (...)
+    {
+        ObjectStorageQueueMetadataFactory::instance().remove(zk_path);
+        throw;
+    }
 }
 
 void StorageObjectStorageQueue::startup()
@@ -285,7 +281,7 @@ void StorageObjectStorageQueue::read(
     size_t max_block_size,
     size_t)
 {
-    if (!local_context->getSettingsRef()[Setting::stream_like_engine_allow_direct_select])
+    if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
     {
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. "
                         "To enable use setting `stream_like_engine_allow_direct_select`");
@@ -298,7 +294,7 @@ void StorageObjectStorageQueue::read(
     }
 
     auto this_ptr = std::static_pointer_cast<StorageObjectStorageQueue>(shared_from_this());
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context));
 
     auto reading = std::make_unique<ReadFromObjectStorageQueue>(
         column_names,
@@ -459,7 +455,6 @@ bool StorageObjectStorageQueue::streamToViews()
         auto read_from_format_info = prepareReadingFromFormat(
             block_io.pipeline.getHeader().getNames(),
             storage_snapshot,
-            queue_context,
             supportsSubsetOfColumns(queue_context));
 
         Pipes pipes;
@@ -485,7 +480,7 @@ bool StorageObjectStorageQueue::streamToViews()
 
         block_io.pipeline.complete(std::move(pipe));
         block_io.pipeline.setNumThreads(queue_settings->processing_threads_num);
-        block_io.pipeline.setConcurrencyControl(queue_context->getSettingsRef()[Setting::use_concurrency_control]);
+        block_io.pipeline.setConcurrencyControl(queue_context->getSettingsRef().use_concurrency_control);
 
         std::atomic_size_t rows = 0;
         block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
