@@ -1,4 +1,5 @@
 #include <Storages/Hive/StorageHive.h>
+#include "Common/RemoteHostFilter.h"
 
 #if USE_HIVE
 

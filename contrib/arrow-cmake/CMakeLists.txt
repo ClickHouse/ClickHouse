@@ -110,6 +110,7 @@ set (ORC_CXX_HAS_THREAD_LOCAL 1)
 
 include(orc_check.cmake)
 configure_file("${ORC_SOURCE_SRC_DIR}/Adaptor.hh.in" "${ORC_BUILD_INCLUDE_DIR}/Adaptor.hh")
+# configure_file("${ORC_SOURCE_SRC_DIR}/sargs/SargsApplier.hh" "${ORC_INCLUDE_DIR}/orc/sargs/SargsApplier.hh" COPYONLY)
 
 
 # ARROW_ORC + adapters/orc/CMakefiles
@@ -177,6 +178,8 @@ set(ORC_SRCS
         "${ORC_SOURCE_SRC_DIR}/io/InputStream.hh"
         "${ORC_SOURCE_SRC_DIR}/io/OutputStream.cc"
         "${ORC_SOURCE_SRC_DIR}/io/OutputStream.hh"
+        "${ORC_SOURCE_SRC_DIR}/io/Cache.hh"
+        "${ORC_SOURCE_SRC_DIR}/io/Cache.cc"
         "${ORC_SOURCE_SRC_DIR}/sargs/ExpressionTree.cc"
         "${ORC_SOURCE_SRC_DIR}/sargs/ExpressionTree.hh"
         "${ORC_SOURCE_SRC_DIR}/sargs/Literal.cc"
@@ -200,11 +203,10 @@ target_include_directories(_orc SYSTEM BEFORE PUBLIC
     ${ORC_INCLUDE_DIR}
     "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/cpp/src/orc/c++/include")
 target_include_directories(_orc SYSTEM BEFORE PUBLIC ${ORC_BUILD_INCLUDE_DIR})
+target_include_directories(_orc SYSTEM BEFORE PUBLIC ${ORC_ADDITION_SOURCE_DIR} ${ORC_SOURCE_SRC_DIR})
 target_include_directories(_orc SYSTEM PRIVATE
-    ${ORC_SOURCE_SRC_DIR}
     ${ORC_SOURCE_WRAP_DIR}
     ${ORC_BUILD_SRC_DIR}
-    ${ORC_ADDITION_SOURCE_DIR}
     ${ARROW_SRC_DIR})
 
 
