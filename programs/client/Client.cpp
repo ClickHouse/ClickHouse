@@ -1018,24 +1018,18 @@ bool Client::chFuzz()
         std::ofstream outf(fc.log_path, std::ios::out | std::ios::trunc);
         chfuzz::QueryOracle qo(std::move(fc));
         sql_query_grammar::SQLQuery sq1, sq2, sq3, sq4;
-        int nsuccessfull = 0, total_create_table_tries = 0;
+        int nsuccessfull_create_database = 0, total_create_database_tries = 0, nsuccessfull_create_table = 0, total_create_table_tries = 0;
 
         GOOGLE_PROTOBUF_VERIFY_VERSION;
 
-        outf << "--Session seed: " << rg.GetSeed() << std::endl;
-        ProcessQueryAndLog(outf, "DROP DATABASE IF EXISTS s0;");
-        ProcessQueryAndLog(outf, "CREATE DATABASE s0 Engine=Replicated('/test/db', 's1', 'r1');");
-        ProcessQueryAndLog(outf, "USE s0;");
-        processTextAsSingleQuery("CREATE TABLE fuzztest (c0 Int) Engine=SharedMergeTree() ORDER BY tuple() SETTINGS storage_policy = 's3_with_keeper';");
+        processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
+        processTextAsSingleQuery("CREATE DATABASE fuzztest Engine=Replicated('/test/db', 's1', 'r1');");
+        processTextAsSingleQuery("CREATE TABLE fuzztest.t0 (c0 Int) Engine=SharedMergeTree() ORDER BY tuple() SETTINGS storage_policy = 's3_with_keeper';");
         has_cloud_features |= !have_error;
         std::cout << "Cloud features " << (has_cloud_features ? "" : "not ") << "detected" << std::endl;
-        processTextAsSingleQuery("DROP TABLE IF EXISTS fuzztest;");
-        if (!has_cloud_features) {
-            ProcessQueryAndLog(outf, "USE default;");
-            ProcessQueryAndLog(outf, "DROP DATABASE IF EXISTS s0;");
-            ProcessQueryAndLog(outf, "CREATE DATABASE s0;");
-            ProcessQueryAndLog(outf, "USE s0;");
-        }
+        processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
+
+        outf << "--Session seed: " << rg.GetSeed() << std::endl;
         ProcessQueryAndLog(outf, "SET engine_file_truncate_on_insert = 1;");
 
         full_query2.reserve(8192);
@@ -1045,7 +1039,18 @@ bool Client::chFuzz()
             sq1.Clear();
             full_query.resize(0);
 
-            if (total_create_table_tries < 30 && nsuccessfull < 10)
+            if (total_create_database_tries < 10 && nsuccessfull_create_database < 3)
+            {
+                (void) gen.GenerateNextCreateDatabase(rg, sq1.mutable_inner_query()->mutable_create_database());
+                chfuzz::SQLQueryToString(full_query, sq1);
+                outf << full_query << std::endl;
+                server_up &= ProcessCHFuzzQuery(full_query);
+
+                gen.UpdateGenerator(sq1, !have_error);
+                nsuccessfull_create_database += (have_error ? 0 : 1);
+                total_create_database_tries++;
+            }
+            else if (total_create_table_tries < 30 && nsuccessfull_create_table < 10)
             {
                 (void) gen.GenerateNextCreateTable(rg, sq1.mutable_inner_query()->mutable_create_table());
                 chfuzz::SQLQueryToString(full_query, sq1);
@@ -1053,7 +1058,7 @@ bool Client::chFuzz()
                 server_up &= ProcessCHFuzzQuery(full_query);
 
                 gen.UpdateGenerator(sq1, !have_error);
-                nsuccessfull += (have_error ? 0 : 1);
+                nsuccessfull_create_table += (have_error ? 0 : 1);
                 total_create_table_tries++;
             }
             else

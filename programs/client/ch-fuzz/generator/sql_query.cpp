@@ -113,18 +113,22 @@ int StatementGenerator::GenerateFromElement(RandomGenerator &rg, const uint32_t 
 			this->levels[this->current_level].rels.push_back(std::move(rel));
 		} else if (table && nopt < (derived_table + cte + table + 1)) {
 			sql_query_grammar::JoinedTable *jt = tos->mutable_joined_table();
+			sql_query_grammar::ExprSchemaTable *est = jt->mutable_est();
 			const SQLTable &t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
 
-			jt->mutable_est()->mutable_table()->set_table("t" + std::to_string(t.tname));
+			est->mutable_database()->set_database("s" + std::to_string(t.db->dname));
+			est->mutable_table()->set_table("t" + std::to_string(t.tname));
 			jt->mutable_table_alias()->set_table(name);
 			jt->set_final(t.SupportsFinal() && rg.NextSmallNumber() < 3);
 			AddTableRelation(rg, true, name, t);
 		} else if (view && nopt < (derived_table + cte + table + view + 1)) {
 			SQLRelation rel(name);
 			sql_query_grammar::JoinedTable *jt = tos->mutable_joined_table();
+			sql_query_grammar::ExprSchemaTable *est = jt->mutable_est();
 			const SQLView &v = rg.PickRandomlyFromVector(FilterCollection<SQLView>(attached_views));
 
-			jt->mutable_est()->mutable_table()->set_table("v" + std::to_string(v.vname));
+			est->mutable_database()->set_database("s" + std::to_string(v.db->dname));
+			est->mutable_table()->set_table("v" + std::to_string(v.vname));
 			jt->mutable_table_alias()->set_table(name);
 			jt->set_final(!v.is_materialized && rg.NextSmallNumber() < 3);
 			for (uint32_t i = 0 ; i < v.ncols; i++) {

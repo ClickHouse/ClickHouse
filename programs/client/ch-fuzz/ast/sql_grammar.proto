@@ -2632,13 +2632,20 @@ enum SQLObject {
   DATABASE = 4;
 }
 
+message SchemaOrTable {
+  oneof drop_oneof {
+    ExprSchemaTable est = 1;
+    Database database = 2;
+  }
+}
+
 message Drop {
   optional bool is_temp = 1;
   required SQLObject sobject = 2;
   optional bool if_exists = 3;
   optional bool if_empty = 4;
-  required ExprSchemaTable est = 5;
-  repeated ExprSchemaTable other_tables = 6;
+  required SchemaOrTable object = 5;
+  repeated SchemaOrTable other_objects = 6;
   optional bool sync = 7;
 }
 
@@ -2901,12 +2908,12 @@ message AlterTable {
 
 message Attach {
   required SQLObject sobject = 1;
-  required ExprSchemaTable est = 2;
+  required SchemaOrTable object = 2;
 }
 
 message Detach {
   required SQLObject sobject = 1;
-  required ExprSchemaTable est = 2;
+  required SchemaOrTable object = 2;
   optional bool permanentely = 3;
   optional bool sync = 4;
 }

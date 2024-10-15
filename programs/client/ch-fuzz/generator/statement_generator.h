@@ -81,7 +81,7 @@ private:
 
 	std::string buf;
 	bool in_transaction = false, inside_projection = false, allow_not_deterministic = true;
-	uint32_t table_counter = 0, database_counter = 0, current_level = 0;
+	uint32_t database_counter = 0, current_level = 0;
 	std::map<uint32_t, std::shared_ptr<SQLDatabase>> staged_databases, databases;
 	std::map<uint32_t, SQLTable> staged_tables, tables;
 	std::map<uint32_t, SQLView> staged_views, views;
@@ -90,6 +90,7 @@ private:
 	std::vector<InsertEntry> entries;
 	std::vector<std::reference_wrapper<const SQLTable>> filtered_tables;
 	std::vector<std::reference_wrapper<const SQLView>> filtered_views;
+	std::vector<std::reference_wrapper<const std::shared_ptr<SQLDatabase>>> filtered_databases;
 	uint32_t depth = 0, width = 0, max_depth = 3, max_width = 3, max_databases = 4, max_tables = 10, max_views = 5;
 
 	std::map<uint32_t, std::map<std::string, SQLRelation>> ctes;
@@ -99,17 +100,14 @@ private:
 		allow_not_deterministic = value;
 	}
 
-	const std::function<bool (const SQLView&)> attached_views = [](const SQLView& t){return t.attached;};
-
-	const std::function<bool (const SQLTable&)> detached_tables = [](const SQLTable& t){return !t.attached;};
-	const std::function<bool (const SQLView&)> detached_views = [](const SQLView& t){return !t.attached;};
-
 	template<typename T>
 	const std::map<uint32_t, T>& GetNextCollection() const {
 		if constexpr (std::is_same<T, SQLTable>::value) {
 			return tables;
-		} else {
+		} else if constexpr (std::is_same<T, SQLView>::value) {
 			return views;
+		} else {
+			return databases;
 		}
 	}
 
@@ -142,8 +140,10 @@ private:
 	std::vector<std::reference_wrapper<const T>>& GetNextCollectionResult() {
 		if constexpr (std::is_same<T, SQLTable>::value) {
 			return filtered_tables;
-		} else {
+		} else if constexpr (std::is_same<T, SQLView>::value) {
 			return filtered_views;
+		} else {
+			return filtered_databases;
 		}
 	}
 
@@ -244,7 +244,13 @@ private:
 	SQLType* RandomNextType(RandomGenerator &rg, const uint32_t allowed_types);
 	SQLType* RandomNextType(RandomGenerator &rg, const uint32_t allowed_types, uint32_t &col_counter, sql_query_grammar::TopTypeName *tp);
 public:
-	const std::function<bool (const SQLTable&)> attached_tables = [](const SQLTable& t){return t.attached;};
+	const std::function<bool (const std::shared_ptr<SQLDatabase>&)> attached_databases = [](const std::shared_ptr<SQLDatabase>& d){return d->attached;};
+	const std::function<bool (const SQLTable&)> attached_tables = [](const SQLTable& t){return t.db->attached && t.attached;};
+	const std::function<bool (const SQLView&)> attached_views = [](const SQLView& v){return v.db->attached && v.attached;};
+
+	const std::function<bool (const std::shared_ptr<SQLDatabase>&)> detached_databases = [](const std::shared_ptr<SQLDatabase>& d){return !d->attached;};
+	const std::function<bool (const SQLTable&)> detached_tables = [](const SQLTable& t){return !t.db->attached || !t.attached;};
+	const std::function<bool (const SQLView&)> detached_views = [](const SQLView& v){return !v.db->attached || !v.attached;};
 
 	StatementGenerator() : supports_cloud_features(false) {
 		buf.reserve(2048);

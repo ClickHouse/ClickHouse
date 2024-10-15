@@ -1856,6 +1856,14 @@ CONV_FN(CreateTable, create_table) {
   }
 }
 
+CONV_FN(SchemaOrTable, dt) {
+  if (dt.has_est()) {
+    ExprSchemaTableToString(ret, dt.est());
+  } else if (dt.has_database()) {
+    DatabaseToString(ret, dt.database());
+  }
+}
+
 CONV_FN(Drop, dt) {
   const bool is_table = dt.sobject() == sql_query_grammar::SQLObject::TABLE;
 
@@ -1871,10 +1879,10 @@ CONV_FN(Drop, dt) {
     ret += " IF EMPTY";
   }
   ret += " ";
-  ExprSchemaTableToString(ret, dt.est());
-  for (int i = 0; i < dt.other_tables_size(); i++) {
+  SchemaOrTableToString(ret, dt.object());
+  for (int i = 0; i < dt.other_objects_size(); i++) {
     ret += ", ";
-    ExprSchemaTableToString(ret, dt.other_tables(i));
+    SchemaOrTableToString(ret, dt.other_objects(i));
   }
   if (dt.sync()) {
     ret += " SYNC";
@@ -2277,14 +2285,14 @@ CONV_FN(Attach, at) {
   ret += "ATTACH ";
   ret += SQLObject_Name(at.sobject());
   ret += " ";
-  ExprSchemaTableToString(ret, at.est());
+  SchemaOrTableToString(ret, at.object());
 }
 
 CONV_FN(Detach, dt) {
   ret += "DETACH ";
   ret += SQLObject_Name(dt.sobject());
   ret += " ";
-  ExprSchemaTableToString(ret, dt.est());
+  SchemaOrTableToString(ret, dt.object());
   if (dt.permanentely()) {
     ret += " PERMANENTLY";
   }

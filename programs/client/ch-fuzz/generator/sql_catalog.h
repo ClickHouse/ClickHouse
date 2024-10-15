@@ -58,7 +58,8 @@ public:
 
 struct SQLDatabase {
 public:
-	uint32_t dname = 0;
+	bool attached = true;
+	uint32_t dname = 0, table_counter = 0;
 	sql_query_grammar::DatabaseEngineValues deng;
 };
 
