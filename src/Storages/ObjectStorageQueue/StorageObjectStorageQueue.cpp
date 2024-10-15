@@ -151,6 +151,10 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "ObjectStorageQueue url must either end with '/' or contain globs");
     }
 
+    if (getZooKeeper()->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Keeper server doesn't support multi-reads. S3Queue table engine won't work.");
+
     validateSettings(*queue_settings, mode > LoadingStrictnessLevel::CREATE);
 
     object_storage = configuration->createObjectStorage(context_, /* is_readonly */true);
