@@ -120,6 +120,7 @@ namespace
         bool allow_no_password,
         bool allow_plaintext_password)
     {
+        const bool validate = true;
         auto user = std::make_shared<User>();
         user->setName(user_name);
         String user_config = "users." + user_name;
@@ -156,17 +157,17 @@ namespace
         if (has_password_plaintext)
         {
             user->auth_data = AuthenticationData{AuthenticationType::PLAINTEXT_PASSWORD};
-            user->auth_data.setPassword(config.getString(user_config + ".password"));
+            user->auth_data.setPassword(config.getString(user_config + ".password"), validate);
         }
         else if (has_password_sha256_hex)
         {
             user->auth_data = AuthenticationData{AuthenticationType::SHA256_PASSWORD};
-            user->auth_data.setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"));
+            user->auth_data.setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"), validate);
         }
         else if (has_password_double_sha1_hex)
         {
             user->auth_data = AuthenticationData{AuthenticationType::DOUBLE_SHA1_PASSWORD};
-            user->auth_data.setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"));
+            user->auth_data.setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"), validate);
         }
         else if (has_ldap)
         {
