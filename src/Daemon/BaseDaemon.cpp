@@ -52,7 +52,6 @@
 
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
-// #include <Loggers/OwnFilteringChannel.h>
 
 #include <Common/config_version.h>
 
@@ -627,12 +626,6 @@ void BaseDaemon::setupWatchdog()
                 pf = new OwnJSONPatternFormatter(config());
             else
                 pf = new OwnPatternFormatter;
-
-            // Apply regexp filtering after receiving the formatting channel
-            // std::string pos_pattern = config().getRawString("logger.message_regexp", "");
-            // std::string neg_pattern = config().getRawString("logger.message_regexp_negative", "");
-            // Poco::AutoPtr<OwnFilteringChannel> filter_channel = new OwnFilteringChannel(new Poco::ConsoleChannel(std::cerr), nullptr, pos_pattern, neg_pattern);
-            // Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, filter_channel);
             Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
             logger().setChannel(log);
         }
