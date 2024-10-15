@@ -532,6 +532,14 @@ Default value: 0
 
 Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*()
 
+## log_query_settings {#log-query-settings}
+
+Type: Bool
+
+Default value: 1
+
+Log query settings into the query_log and opentelemetry_span_log.
+
 ## allow_nondeterministic_mutations {#allow_nondeterministic_mutations}
 
 Type: Bool
