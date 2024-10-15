@@ -228,6 +228,7 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	{"output_format_write_statistics", TrueOrFalse},
 	{"page_cache_inject_eviction", TrueOrFalse},
 	{"parallel_distributed_insert_select", ZeroOneTwo},
+	{"parallel_replicas_local_plan", TrueOrFalse},
 	{"partial_merge_join_optimizations", TrueOrFalse},
 	{"precise_float_parsing", TrueOrFalse},
 	{"prefer_external_sort_block_bytes", [](RandomGenerator &rg, std::string &ret) {
@@ -292,6 +293,9 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	}},
 	{"compress_marks", TrueOrFalse},
 	{"compress_primary_key", TrueOrFalse},
+	{"concurrent_part_removal_threshold", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.3, 0, 100));
+	}},
 	{"deduplicate_merge_projection_mode", [](RandomGenerator &rg, std::string &ret) {
 		const std::vector<std::string> &choices = {"throw", "drop", "rebuild"};
 		ret += "'";
@@ -318,9 +322,6 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	}},
 	{"max_file_name_length", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 0, 128));
-	}},
-	{"merge_max_block_size", [](RandomGenerator &rg, std::string &ret) {
-		ret += std::to_string(rg.RandomInt<uint32_t>(1, 65536));
 	}},
 	{"merge_max_block_size", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.RandomInt<uint32_t>(1, 8192 * 3));
@@ -351,7 +352,13 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	}},
 	{"replace_long_file_name_to_hash", TrueOrFalse},
 	{"use_async_block_ids_cache", TrueOrFalse},
-	{"use_compact_variant_discriminators_serialization", TrueOrFalse}
+	{"use_compact_variant_discriminators_serialization", TrueOrFalse},
+	{"vertical_merge_algorithm_min_columns_to_activate", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.4, 0.4, 1, 100));
+	}},
+	{"vertical_merge_algorithm_min_rows_to_activate", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.4, 0.4, 1, 1000000));
+	}}
 };
 
 const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> MergeTreeColumnSettings = {

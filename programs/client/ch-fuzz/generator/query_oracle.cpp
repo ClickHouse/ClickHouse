@@ -328,6 +328,7 @@ static const std::vector<TestSetting> test_settings{
 	TestSetting("output_format_pretty_row_numbers", {"0", "1"}),
 	TestSetting("output_format_write_statistics", {"0", "1"}),
 	TestSetting("page_cache_inject_eviction", {"0", "1"}),
+	TestSetting("parallel_replicas_local_plan", {"0", "1"}),
 	TestSetting("partial_merge_join_optimizations", {"0", "1"}),
 	TestSetting("precise_float_parsing", {"0", "1"}),
 	TestSetting("prefer_external_sort_block_bytes", {"0", "1"}),
