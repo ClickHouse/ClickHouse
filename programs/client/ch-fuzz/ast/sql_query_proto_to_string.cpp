@@ -1770,8 +1770,15 @@ CONV_FN(TableKey, to) {
 }
 
 CONV_FN(TableEngine, te) {
+  const sql_query_grammar::TableEngineValues tengine = te.engine();
+
   ret += " ENGINE = ";
-  ret += TableEngineValues_Name(te.engine());
+  if (te.shared() &&
+      tengine >= sql_query_grammar::TableEngineValues::MergeTree &&
+      tengine <= sql_query_grammar::TableEngineValues::VersionedCollapsingMergeTree) {
+      ret += "Shared";
+  }
+  ret += TableEngineValues_Name(tengine);
   ret += "(";
   for (int i = 0 ; i < te.cols_size(); i++) {
     if (i != 0) {

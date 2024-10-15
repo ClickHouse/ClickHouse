@@ -1013,14 +1013,20 @@ bool Client::chFuzz()
     else
     {
         std::string full_query2;
+        bool has_cloud_features = false;
         chfuzz::RandomGenerator rg(fc.seed);
         std::ofstream outf(fc.log_path, std::ios::out | std::ios::trunc);
         chfuzz::QueryOracle qo(std::move(fc));
-        chfuzz::StatementGenerator gen;
         sql_query_grammar::SQLQuery sq1, sq2, sq3, sq4;
         int nsuccessfull = 0, total_create_table_tries = 0;
 
         GOOGLE_PROTOBUF_VERIFY_VERSION;
+
+        processTextAsSingleQuery("DROP TABLE IF EXISTS fuzztest;");
+        processTextAsSingleQuery("CREATE TABLE fuzztest (c0 Int) Engine=SharedMergeTree() ORDER BY tuple();");
+        has_cloud_features |= !have_error;
+        std::cout << "Cloud features " << (has_cloud_features ? "" : "not ") << "detected" << std::endl;
+        processTextAsSingleQuery("DROP TABLE IF EXISTS fuzztest;");
 
         outf << "--Session seed: " << rg.GetSeed() << std::endl;
         ProcessQueryAndLog(outf, "DROP DATABASE IF EXISTS s0;");
@@ -1029,6 +1035,7 @@ bool Client::chFuzz()
         ProcessQueryAndLog(outf, "SET engine_file_truncate_on_insert = 1;");
 
         full_query2.reserve(8192);
+        chfuzz::StatementGenerator gen(has_cloud_features);
         while (server_up)
         {
             sq1.Clear();

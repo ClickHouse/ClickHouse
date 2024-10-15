@@ -58,7 +58,7 @@ public:
 
 struct SQLBase {
 public:
-	bool attached = true;
+	bool attached = true, is_shared_engine = false;
 	sql_query_grammar::TableEngineValues teng;
 
 	bool IsMergeTreeFamily() const {

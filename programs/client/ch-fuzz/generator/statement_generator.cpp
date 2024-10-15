@@ -500,6 +500,7 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 	if (next.IsMergeTreeFamily()) {
 		NestedType *ntp = nullptr;
 
+		next.is_shared_engine = supports_cloud_features && rg.NextSmallNumber() < 4;
 		assert(this->entries.empty());
 		for (const auto &entry : next.cols) {
 			if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
@@ -523,6 +524,8 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 		sv->set_property("allow_nullable_key");
 		sv->set_value("1");
 	}
+	te->set_shared(next.is_shared_engine);
+	assert(!next.is_shared_engine || next.IsMergeTreeFamily());
 	this->staged_tables[tname] = std::move(next);
 	return 0;
 }
@@ -567,6 +570,9 @@ int StatementGenerator::GenerateNextCreateView(RandomGenerator &rg, sql_query_gr
 		next.teng = val;
 		te->set_engine(val);
 		if (next.IsMergeTreeFamily()) {
+			next.is_shared_engine = supports_cloud_features && rg.NextSmallNumber() < 4;
+			te->set_shared(next.is_shared_engine);
+
 			assert(this->entries.empty());
 			for (uint32_t i = 0 ; i < next.ncols ; i++) {
 				entries.push_back(InsertEntry(false, i, std::nullopt, nullptr));
@@ -589,6 +595,7 @@ int StatementGenerator::GenerateNextCreateView(RandomGenerator &rg, sql_query_gr
 	this->levels[this->current_level] = QueryLevel(this->current_level);
 	GenerateSelect(rg, false, next.ncols, next.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
 				   cv->mutable_select());
+	assert(!next.is_shared_engine || next.IsMergeTreeFamily());
 	this->staged_views[vname] = std::move(next);
 	return 0;
 }

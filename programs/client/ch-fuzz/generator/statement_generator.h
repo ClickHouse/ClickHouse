@@ -77,6 +77,8 @@ typedef struct InsertEntry {
 
 class StatementGenerator {
 private:
+	const bool supports_cloud_features;
+
 	std::string buf;
 	bool in_transaction = false, inside_projection = false, allow_not_deterministic = true;
 	uint32_t table_counter = 0, current_level = 0;
@@ -243,7 +245,10 @@ private:
 public:
 	const std::function<bool (const SQLTable&)> attached_tables = [](const SQLTable& t){return t.attached;};
 
-	StatementGenerator() {
+	StatementGenerator() : supports_cloud_features(false) {
+		buf.reserve(2048);
+	}
+	StatementGenerator (const bool scf) : supports_cloud_features(scf) {
 		buf.reserve(2048);
 	}
 
