@@ -510,8 +510,7 @@ namespace
                         UInt64 u64 = readUInt();
                         if (u64 < 2)
                             return castNumber<NumberType>(u64);
-                        else
-                            cannotConvertValue(toString(u64), field_descriptor.type_name(), TypeName<NumberType>);
+                        cannotConvertValue(toString(u64), field_descriptor.type_name(), TypeName<NumberType>);
                     };
 
                     default_function = [this]() -> NumberType { return static_cast<NumberType>(field_descriptor.default_value_bool()); };
@@ -1323,8 +1322,7 @@ namespace
                             UInt64 u64 = readUInt();
                             if (u64 < 2)
                                 return numberToDecimal(static_cast<UInt64>(u64 != 0));
-                            else
-                                cannotConvertValue(toString(u64), field_descriptor.type_name(), TypeName<DecimalType>);
+                            cannotConvertValue(toString(u64), field_descriptor.type_name(), TypeName<DecimalType>);
                         };
 
                         default_function = [this]() -> DecimalType
@@ -3048,15 +3046,13 @@ namespace
 #endif
                 return message_serializer;
             }
-            else
-            {
-                auto envelope_serializer = std::make_unique<ProtobufSerializerEnvelope>(std::move(message_serializer), reader_or_writer);
-                *root_serializer_ptr = envelope_serializer.get();
-#if 0
+
+            auto envelope_serializer = std::make_unique<ProtobufSerializerEnvelope>(std::move(message_serializer), reader_or_writer);
+            *root_serializer_ptr = envelope_serializer.get();
+#    if 0
                 LOG_INFO(getLogger("ProtobufSerializer"), "Serialization tree:\n{}", get_root_desc_function(0));
-#endif
-                return envelope_serializer;
-            }
+#    endif
+            return envelope_serializer;
         }
 
     private:
@@ -3806,14 +3802,12 @@ namespace
                     max_abs = std::max(std::abs(enum_descriptor->value(i)->number()), max_abs);
                 if (max_abs < 128)
                     return NameAndTypePair{field_descriptor->name(), getEnumDataType<Int8>(enum_descriptor)};
-                else if (max_abs < 32768)
+                if (max_abs < 32768)
                     return NameAndTypePair{field_descriptor->name(), getEnumDataType<Int16>(enum_descriptor)};
-                else
-                {
-                    if (skip_unsupported_fields)
-                        return std::nullopt;
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse supports only 8-bit and 16-bit enums");
-                }
+
+                if (skip_unsupported_fields)
+                    return std::nullopt;
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse supports only 8-bit and 16-bit enums");
             }
             case FieldTypeId::TYPE_GROUP:
             case FieldTypeId::TYPE_MESSAGE:
@@ -3825,7 +3819,7 @@ namespace
                         return std::nullopt;
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty messages are not supported");
                 }
-                else if (message_descriptor->field_count() == 1)
+                if (message_descriptor->field_count() == 1)
                 {
                     const auto * nested_field_descriptor = message_descriptor->field(0);
                     auto nested_name_and_type
@@ -3834,24 +3828,23 @@ namespace
                         return std::nullopt;
                     return NameAndTypePair{field_descriptor->name() + "_" + nested_name_and_type->name, nested_name_and_type->type};
                 }
-                else
-                {
-                    DataTypes nested_types;
-                    Strings nested_names;
-                    for (int i = 0; i != message_descriptor->field_count(); ++i)
-                    {
-                        auto nested_name_and_type = getNameAndDataTypeFromFieldRecursive(
-                            message_descriptor->field(i), skip_unsupported_fields, true, pending_resolution);
-                        if (!nested_name_and_type)
-                            continue;
-                        nested_types.push_back(nested_name_and_type->type);
-                        nested_names.push_back(nested_name_and_type->name);
-                    }
 
-                    if (nested_types.empty())
-                        return std::nullopt;
-                    return NameAndTypePair{field_descriptor->name(), std::make_shared<DataTypeTuple>(std::move(nested_types), std::move(nested_names))};
+                DataTypes nested_types;
+                Strings nested_names;
+                for (int i = 0; i != message_descriptor->field_count(); ++i)
+                {
+                    auto nested_name_and_type = getNameAndDataTypeFromFieldRecursive(
+                        message_descriptor->field(i), skip_unsupported_fields, true, pending_resolution);
+                    if (!nested_name_and_type)
+                        continue;
+                    nested_types.push_back(nested_name_and_type->type);
+                    nested_names.push_back(nested_name_and_type->name);
                 }
+
+                if (nested_types.empty())
+                    return std::nullopt;
+                return NameAndTypePair{
+                    field_descriptor->name(), std::make_shared<DataTypeTuple>(std::move(nested_types), std::move(nested_names))};
             }
         }
 
@@ -3871,26 +3864,32 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     const Strings & column_names,
     const DataTypes & data_types,
     std::vector<size_t> & missing_column_indices,
-    const google::protobuf::Descriptor & message_descriptor,
+    const ProtobufSchemas::DescriptorHolder & descriptor,
     bool with_length_delimiter,
     bool with_envelope,
     bool flatten_google_wrappers,
     ProtobufReader & reader)
 {
-    return ProtobufSerializerBuilder(reader).buildMessageSerializer(column_names, data_types, missing_column_indices, message_descriptor, with_length_delimiter, with_envelope, flatten_google_wrappers);
+    return ProtobufSerializerBuilder(reader).buildMessageSerializer(
+        column_names, data_types, missing_column_indices,
+        *descriptor.message_descriptor,
+        with_length_delimiter, with_envelope, flatten_google_wrappers);
 }
 
 std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     const Strings & column_names,
     const DataTypes & data_types,
-    const google::protobuf::Descriptor & message_descriptor,
+    const ProtobufSchemas::DescriptorHolder & descriptor,
     bool with_length_delimiter,
     bool with_envelope,
     bool defaults_for_nullable_google_wrappers,
     ProtobufWriter & writer)
 {
     std::vector<size_t> missing_column_indices;
-    return ProtobufSerializerBuilder(writer).buildMessageSerializer(column_names, data_types, missing_column_indices, message_descriptor, with_length_delimiter, with_envelope, defaults_for_nullable_google_wrappers);
+    return ProtobufSerializerBuilder(writer).buildMessageSerializer(
+        column_names, data_types, missing_column_indices,
+        *descriptor.message_descriptor,
+        with_length_delimiter, with_envelope, defaults_for_nullable_google_wrappers);
 }
 
 NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor, bool skip_unsupported_fields)

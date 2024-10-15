@@ -82,3 +82,16 @@ std::string formatReadableQuantity(double value, int precision)
     formatReadableQuantity(value, out, precision);
     return out.str();
 }
+
+void formatReadableTime(double ns, DB::WriteBuffer & out, int precision)
+{
+    const char * units[] = {" ns", " us", " ms", " s"};
+    formatReadable(ns, out, precision, units, sizeof(units) / sizeof(units[0]), 1000);
+}
+
+std::string formatReadableTime(double ns, int precision)
+{
+    DB::WriteBufferFromOwnString out;
+    formatReadableTime(ns, out, precision);
+    return out.str();
+}

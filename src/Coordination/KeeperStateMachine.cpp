@@ -348,8 +348,7 @@ IKeeperStateMachine::parseRequest(nuraft::buffer & data, bool final, ZooKeeperLo
                     xid_to_request.erase(request_it);
                     return request;
                 }
-                else
-                    return request_it->second;
+                return request_it->second;
             }
         }
     }
@@ -600,9 +599,12 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
                 s.get_last_log_idx(),
                 latest_snapshot_meta->get_last_log_idx());
         }
-        else if (s.get_last_log_idx() < latest_snapshot_meta->get_last_log_idx())
+        if (s.get_last_log_idx() < latest_snapshot_meta->get_last_log_idx())
         {
-            LOG_INFO(log, "A snapshot with a larger last log index ({}) was created, skipping applying this snapshot", latest_snapshot_meta->get_last_log_idx());
+            LOG_INFO(
+                log,
+                "A snapshot with a larger last log index ({}) was created, skipping applying this snapshot",
+                latest_snapshot_meta->get_last_log_idx());
             return true;
         }
 
