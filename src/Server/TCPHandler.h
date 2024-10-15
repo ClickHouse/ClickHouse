@@ -188,6 +188,7 @@ private:
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
     UInt32 client_tcp_protocol_version = 0;
+    UInt32 client_parallel_replicas_protocol_version = 0;
     String proto_send_chunked_cl = "notchunked";
     String proto_recv_chunked_cl = "notchunked";
     String quota_key;

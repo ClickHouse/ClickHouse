@@ -77,6 +77,14 @@ ISource::Status RemoteSource::prepare()
         return Status::Finished;
     }
 
+#if defined(OS_LINUX)
+    if (async_query_sending && !was_query_sent && fd < 0)
+    {
+        startup_event_fd.write();
+        return Status::Async;
+    }
+#endif
+
     if (is_async_state)
         return Status::Async;
 
@@ -94,6 +102,15 @@ ISource::Status RemoteSource::prepare()
     }
 
     return status;
+}
+
+int RemoteSource::schedule()
+{
+#if defined(OS_LINUX)
+    return (fd < 0 ? startup_event_fd.fd : fd);
+#else
+    return fd;
+#endif
 }
 
 void RemoteSource::work()

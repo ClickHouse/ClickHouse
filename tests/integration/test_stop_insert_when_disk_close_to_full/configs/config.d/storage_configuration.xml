@@ -1,0 +1,19 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk1>
+                <type>local</type>
+                <path>/disk1/</path>
+            </disk1>
+        </disks>
+        <policies>
+            <only_disk1>
+                <volumes>
+                    <main>
+                        <disk>disk1</disk>
+                    </main>
+                </volumes>
+            </only_disk1>
+        </policies>
+    </storage_configuration>
+</clickhouse>

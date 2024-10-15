@@ -9,9 +9,11 @@ import signal
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
 from build_download_helper import download_all_deb_packages
+from ci_config import CI
+from ci_utils import Shell, Utils
 from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from download_release_packages import download_last_release
@@ -20,18 +22,16 @@ from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
 from report import (
     ERROR,
+    FAILURE,
     SUCCESS,
     JobReport,
     StatusType,
+    TestResult,
     TestResults,
     read_test_results,
-    FAILURE,
-    TestResult,
 )
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from ci_config import CI
-from ci_utils import Utils, Shell
 
 NO_CHANGES_MSG = "Nothing to run"
 
@@ -243,10 +243,11 @@ timeout_expired = False
 
 
 def handle_sigterm(signum, _frame):
+    # TODO: think on how to process it without globals
     print(f"WARNING: Received signal {signum}")
-    global timeout_expired
+    global timeout_expired  # pylint:disable=global-statement
     timeout_expired = True
-    Shell.check(f"docker exec func-tester pkill -f clickhouse-test", verbose=True)
+    Shell.check("docker exec func-tester pkill -f clickhouse-test", verbose=True)
 
 
 def main():
@@ -338,7 +339,7 @@ def main():
         logging.info("Going to run func tests: %s", run_command)
 
         with TeePopen(run_command, run_log_path) as process:
-            global test_process
+            global test_process  # pylint:disable=global-statement
             test_process = process
             retcode = process.wait()
             if retcode == 0:
@@ -400,7 +401,7 @@ def main():
             failed_cnt
             and failed_cnt <= CI.MAX_TOTAL_FAILURES_PER_JOB_BEFORE_BLOCKING_CI
         ):
-            print(f"Won't block the CI workflow")
+            print("Won't block the CI workflow")
             should_block_ci = False
 
     if should_block_ci:

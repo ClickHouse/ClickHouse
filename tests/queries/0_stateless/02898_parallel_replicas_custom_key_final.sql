@@ -8,12 +8,12 @@ SELECT y, count()
 FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), 02898_parallel_replicas_final) FINAL
 GROUP BY y
 ORDER BY y
-SETTINGS max_parallel_replicas=3, parallel_replicas_custom_key='cityHash64(y)', parallel_replicas_custom_key_filter_type='default';
+SETTINGS max_parallel_replicas=3, enable_parallel_replicas=1, parallel_replicas_custom_key='cityHash64(y)', parallel_replicas_mode='custom_key_sampling';
 
 SELECT y, count()
 FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), 02898_parallel_replicas_final) FINAL
 GROUP BY y
 ORDER BY y
-SETTINGS max_parallel_replicas=3, parallel_replicas_custom_key='cityHash64(y)', parallel_replicas_custom_key_filter_type='range';
+SETTINGS max_parallel_replicas=3, enable_parallel_replicas=1, parallel_replicas_custom_key='cityHash64(y)', parallel_replicas_mode='custom_key_range';
 
 DROP TABLE 02898_parallel_replicas_final;

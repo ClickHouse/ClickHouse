@@ -110,8 +110,8 @@ static auto executeScript(const std::string & command, bool throw_on_error = fal
         sh->wait();
         return 0;
     }
-    else
-        return sh->tryWait();
+
+    return sh->tryWait();
 }
 
 static bool ask(std::string question)

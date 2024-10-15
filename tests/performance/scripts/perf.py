@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
 import argparse
-import clickhouse_driver
-import itertools
 import functools
+import itertools
+import logging
 import math
 import os
 import pprint
@@ -14,9 +14,10 @@ import string
 import sys
 import time
 import traceback
-import logging
 import xml.etree.ElementTree as et
 from threading import Thread
+
+import clickhouse_driver
 from scipy import stats
 
 logging.basicConfig(

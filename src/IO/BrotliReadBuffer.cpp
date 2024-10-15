@@ -85,13 +85,8 @@ bool BrotliReadBuffer::nextImpl()
             eof_flag = true;
             return !working_buffer.empty();
         }
-        else
-        {
-            throw Exception(
-                ErrorCodes::BROTLI_READ_FAILED,
-                "brotli decode error{}",
-                getExceptionEntryWithFileName(*in));
-        }
+
+        throw Exception(ErrorCodes::BROTLI_READ_FAILED, "brotli decode error{}", getExceptionEntryWithFileName(*in));
     }
 
     if (brotli->result == BROTLI_DECODER_RESULT_ERROR)

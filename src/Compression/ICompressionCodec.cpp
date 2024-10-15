@@ -65,8 +65,8 @@ ASTPtr ICompressionCodec::getCodecDesc() const
     /// If it has exactly one argument, than it's single codec, return it
     if (arguments->children.size() == 1)
         return arguments->children[0];
-    else  /// Otherwise we have multiple codecs and return them as expression list
-        return arguments;
+    /// Otherwise we have multiple codecs and return them as expression list
+    return arguments;
 }
 
 UInt64 ICompressionCodec::getHash() const

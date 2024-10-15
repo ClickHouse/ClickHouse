@@ -1,8 +1,9 @@
+import os.path
+
 import pytest
-import os.path
-from helpers.cluster import ClickHouseCluster
+
 from helpers.client import QueryRuntimeException
-import os.path
+from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))

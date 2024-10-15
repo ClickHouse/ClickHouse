@@ -1,3 +1,4 @@
+#include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/MsgPackRowInputFormat.h>
 
 #if USE_MSGPACK

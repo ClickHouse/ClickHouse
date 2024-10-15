@@ -1,0 +1,30 @@
+Empty grants
+GRANT SELECT ON system.aggregate_function_combinators
+GRANT SELECT ON system.collations
+GRANT SELECT ON system.columns
+GRANT SELECT ON system.contributors
+GRANT SELECT ON system.current_roles
+GRANT SELECT ON system.data_type_families
+GRANT SELECT ON system.database_engines
+GRANT SELECT ON system.databases
+GRANT SELECT ON system.enabled_roles
+GRANT SELECT ON system.formats
+GRANT SELECT ON system.functions
+GRANT SELECT ON system.licenses
+GRANT SELECT ON system.one
+GRANT SELECT ON system.privileges
+GRANT SELECT ON system.quota_usage
+GRANT SELECT ON system.settings
+GRANT SELECT ON system.table_engines
+GRANT SELECT ON system.table_functions
+GRANT SELECT ON system.tables
+GRANT SELECT ON system.time_zones
+Revoke grants
+GRANT SHOW DATABASES, SHOW TABLES, SHOW COLUMNS, SELECT ON *.*
+REVOKE SHOW TABLES, SHOW COLUMNS, SELECT ON test_03247.`table`
+OK
+0
+Show final
+GRANT SELECT ON *.*
+Show final with implicit
+GRANT SHOW DATABASES, SHOW TABLES, SHOW COLUMNS, SELECT ON *.*

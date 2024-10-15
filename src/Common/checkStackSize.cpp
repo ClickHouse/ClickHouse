@@ -63,8 +63,7 @@ static size_t getStackSize(void ** out_address)
             /// Most likely procfs is not mounted.
             return 0;
         }
-        else
-            throw ErrnoException(ErrorCodes::CANNOT_PTHREAD_ATTR, "Cannot pthread_getattr_np");
+        throw ErrnoException(ErrorCodes::CANNOT_PTHREAD_ATTR, "Cannot pthread_getattr_np");
     }
 #   endif
 

@@ -3,8 +3,9 @@ import time
 
 import pytest
 import requests
-from helpers.cluster import ClickHouseCluster
+
 from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__, zookeeper_config_path="configs/zookeeper.xml")
 

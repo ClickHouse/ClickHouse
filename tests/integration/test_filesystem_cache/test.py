@@ -1,12 +1,13 @@
 import logging
-import time
 import os
 import random
+import time
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
-from helpers.mock_servers import start_s3_mock, start_mock_servers
-from helpers.utility import generate_values, replace_config, SafeThread
+from helpers.mock_servers import start_mock_servers, start_s3_mock
+from helpers.utility import SafeThread, generate_values, replace_config
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 

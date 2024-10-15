@@ -1,4 +1,3 @@
-version: '2.3'
 services:
   bridge1:
     image: clickhouse/jdbc-bridge

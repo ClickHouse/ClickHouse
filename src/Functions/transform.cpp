@@ -123,19 +123,17 @@ namespace
                 checkAllowedType(ret);
                 return ret;
             }
-            else
-            {
-                auto ret = tryGetLeastSupertype(DataTypes{type_arr_to_nested, arguments[3]});
-                if (!ret)
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Function {} have signature: "
-                        "transform(T, Array(T), Array(U), U) -> U; "
-                        "or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
-                        getName());
-                checkAllowedType(ret);
-                return ret;
-            }
+
+            auto ret = tryGetLeastSupertype(DataTypes{type_arr_to_nested, arguments[3]});
+            if (!ret)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function {} have signature: "
+                    "transform(T, Array(T), Array(U), U) -> U; "
+                    "or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
+                    getName());
+            checkAllowedType(ret);
+            return ret;
         }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -171,7 +169,7 @@ namespace
                     ? default_non_const
                     : castColumn(arguments[0], result_type);
             }
-            else if (cache.table_num_to_idx)
+            if (cache.table_num_to_idx)
             {
                 if (!executeNum<ColumnVector<UInt8>>(in, *column_result, default_non_const, *in_casted, input_rows_count)
                     && !executeNum<ColumnVector<UInt16>>(in, *column_result, default_non_const, *in_casted, input_rows_count)
@@ -186,7 +184,8 @@ namespace
                     && !executeNum<ColumnDecimal<Decimal32>>(in, *column_result, default_non_const, *in_casted, input_rows_count)
                     && !executeNum<ColumnDecimal<Decimal64>>(in, *column_result, default_non_const, *in_casted, input_rows_count))
                 {
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in->getName(), getName());
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in->getName(), getName());
                 }
             }
             else if (cache.table_string_to_idx)

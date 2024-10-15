@@ -18,7 +18,7 @@ $CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 -q "create database $n
 CLICKHOUSE_CLIENT=${CLICKHOUSE_CLIENT/--database=$CLICKHOUSE_DATABASE/--database=$new_database}
 CLICKHOUSE_DATABASE="$new_database"
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
     drop table if exists data_read;
     drop table if exists data_write;
 
@@ -33,7 +33,7 @@ $CLICKHOUSE_CLIENT -nm -q "
 # suppress output
 $CLICKHOUSE_CLIENT -q "backup table data_read to S3('http://localhost:11111/test/s3_plain/backups/$CLICKHOUSE_DATABASE', 'test', 'testtest')" > /dev/null
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
     drop table data_read;
     attach table data_read (key Int) engine=ReplicatedMergeTree('/tables/{database}/data', 'read') order by key
     settings
@@ -57,7 +57,7 @@ echo "Files before DETACH TABLE"
 # sed to match any part, since in case of fault injection part name may not be all_0_0_0 but all_1_1_0
 clickhouse-disks -C "$config" --disk s3_plain_disk --query "list --recursive $path" | tail -n+2 | sed 's/all_[^_]*_[^_]*_0/all_X_X_X/g'
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
     detach table data_read;
     detach table data_write;
 "

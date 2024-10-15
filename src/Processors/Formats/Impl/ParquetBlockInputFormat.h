@@ -7,6 +7,8 @@
 #include <Formats/FormatSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
+#include <queue>
+
 namespace parquet { class FileMetaData; }
 namespace parquet::arrow { class FileReader; }
 namespace arrow { class Buffer; class RecordBatchReader;}
@@ -61,7 +63,7 @@ public:
 
     String getName() const override { return "ParquetBlockInputFormat"; }
 
-    const BlockMissingValues & getMissingValues() const override;
+    const BlockMissingValues * getMissingValues() const override;
 
     size_t getApproxBytesReadForChunk() const override { return previous_approx_bytes_read_for_chunk; }
 
@@ -224,6 +226,8 @@ private:
     // Chunk ready to be delivered by read().
     struct PendingChunk
     {
+        explicit PendingChunk(size_t num_columns) : block_missing_values(num_columns) {}
+
         Chunk chunk;
         BlockMissingValues block_missing_values;
         size_t chunk_idx; // within row group

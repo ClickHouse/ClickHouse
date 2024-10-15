@@ -124,7 +124,7 @@ public:
     AuthResult authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const String & forwarded_address) const;
 
     /// Makes a backup of access entities.
-    void restoreFromBackup(RestorerFromBackup & restorer) override;
+    void restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup) override;
 
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
 
@@ -243,7 +243,7 @@ private:
     class CustomSettingsPrefixes;
     class PasswordComplexityRules;
 
-    bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
+    bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id) override;
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
 

@@ -155,7 +155,7 @@ public:
         const String & from_file_path,
         IDisk & to_disk,
         const String & to_file_path,
-        const ReadSettings & read_settings = {},
+        const ReadSettings & read_settings,
         const WriteSettings & write_settings = {},
         const std::function<void()> & cancellation_hook = {}
         ) override;

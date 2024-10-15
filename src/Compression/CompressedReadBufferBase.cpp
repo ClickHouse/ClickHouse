@@ -255,11 +255,9 @@ size_t CompressedReadBufferBase::readCompressedDataBlockForAsynchronous(size_t &
         ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_compressed_without_checksum + sizeof(Checksum));
         return size_compressed_without_checksum + sizeof(Checksum);
     }
-    else
-    {
-        compressed_in->position() -= (sizeof(Checksum) + header_size);
-        return 0;
-    }
+
+    compressed_in->position() -= (sizeof(Checksum) + header_size);
+    return 0;
 }
 
 static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_decompressed, CompressionCodecPtr & codec,

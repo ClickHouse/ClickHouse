@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Settings.h>
 #include <Formats/FormatSettings.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -39,9 +38,7 @@ struct StoragesInfo
 class StoragesInfoStreamBase
 {
 public:
-    explicit StoragesInfoStreamBase(ContextPtr context)
-        : query_id(context->getCurrentQueryId()), settings(context->getSettingsRef()), next_row(0), rows(0)
-    {}
+    explicit StoragesInfoStreamBase(ContextPtr context);
 
     StoragesInfoStreamBase(const StoragesInfoStreamBase&) = default;
     virtual ~StoragesInfoStreamBase() = default;
@@ -89,16 +86,10 @@ public:
         return {};
     }
 protected:
-    virtual bool tryLockTable(StoragesInfo & info)
-    {
-        info.table_lock = info.storage->tryLockForShare(query_id, settings.lock_acquire_timeout);
-        // nullptr means table was dropped while acquiring the lock
-        return info.table_lock != nullptr;
-    }
+    virtual bool tryLockTable(StoragesInfo & info);
 
     String query_id;
-    Settings settings;
-
+    std::chrono::milliseconds lock_timeout;
 
     ColumnPtr database_column;
     ColumnPtr table_column;

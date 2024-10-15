@@ -1,15 +1,14 @@
-import logging
-import sys
-import threading
-import random
-import time
-import urllib.parse
 import http.server
+import logging
+import random
+import socket
 import socketserver
 import string
-import socket
 import struct
-
+import sys
+import threading
+import time
+import urllib.parse
 
 INF_COUNT = 100000000
 

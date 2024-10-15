@@ -6,6 +6,11 @@
 namespace DB
 {
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
+}
+
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
@@ -15,7 +20,7 @@ bool StorageFromMergeTreeDataPart::materializeTTLRecalculateOnly() const
 {
     if (parts.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "parts must not be empty for materializeTTLRecalculateOnly");
-    return parts.front()->storage.getSettings()->materialize_ttl_recalculate_only;
+    return (*parts.front()->storage.getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only];
 }
 
 void StorageFromMergeTreeDataPart::read(

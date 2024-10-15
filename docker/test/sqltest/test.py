@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 
-import os
-import yaml
 import html
+import os
 import random
 import string
-from clickhouse_driver import Client
 
+import yaml
+from clickhouse_driver import Client
 
 client = Client(host="localhost", port=9000)
 settings = {

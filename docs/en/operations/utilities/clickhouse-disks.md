@@ -12,7 +12,7 @@ A utility providing filesystem-like operations for ClickHouse disks. It can work
 
 * `--config-file, -C` -- path to ClickHouse config, defaults to `/etc/clickhouse-server/config.xml`.
 * `--save-logs` -- Log progress of invoked commands to `/var/log/clickhouse-server/clickhouse-disks.log`.
-* `--log-level` -- What [type](../server-configuration-parameters/settings#server_configuration_parameters-logger) of events to log, defaults to `none`.
+* `--log-level` -- What [type](../server-configuration-parameters/settings#logger) of events to log, defaults to `none`.
 * `--disk` -- what disk to use for `mkdir, move, read, write, remove` commands. Defaults to `default`.
 * `--query, -q` -- single query that can be executed without launching interactive mode
 * `--help, -h` -- print all the options and commands with description
@@ -23,7 +23,7 @@ After the launch two disks are initialized. The first one is a disk `local` that
 ## Clickhouse-disks state
 For each disk that was added the utility stores current directory (as in a usual filesystem). User can change current directory and switch between disks.
 
-State is reflected in a prompt "`disk_name`:`path_name`" 
+State is reflected in a prompt "`disk_name`:`path_name`"
 
 ## Commands
 
@@ -35,7 +35,7 @@ In these documentation file all mandatory positional arguments are referred as `
   Recursively copy data from `path-from` at disk `disk_1` (default value is a current disk (parameter `disk` in a non-interactive mode))
   to `path-to` at disk `disk_2` (default value is a current disk (parameter `disk` in a non-interactive mode)).
 * `current_disk_with_path (current, current_disk, current_path)`
-  Print current state in format: 
+  Print current state in format:
     `Disk: "current_disk" Path: "current path on current disk"`
 * `help [<command>]`
   Print help message about command `command`. If `command` is not specified print information about all commands.
@@ -54,6 +54,6 @@ In these documentation file all mandatory positional arguments are referred as `
 * `read (r) <path-from> [--path-to path]`
   Read a file from `path-from` to `path` (`stdout` if not supplied).
 * `switch-disk [--path path] <disk>`
-  Switch to disk `disk` on path `path` (if `path` is not specified default value is a previous path on disk `disk`). 
+  Switch to disk `disk` on path `path` (if `path` is not specified default value is a previous path on disk `disk`).
 * `write (w) [--path-from path] <path-to>`.
   Write a file from `path` (`stdin` if `path` is not supplied, input must finish by Ctrl+D) to `path-to`.

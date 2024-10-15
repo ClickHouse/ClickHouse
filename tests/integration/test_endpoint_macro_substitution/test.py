@@ -1,7 +1,8 @@
 import pytest
+from pyhdfs import HdfsClient
+
 from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.test_tools import TSV
-from pyhdfs import HdfsClient
 
 disk_types = {
     "default": "Local",

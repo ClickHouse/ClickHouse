@@ -18,25 +18,23 @@ ColumnPtr ArrayAllImpl::execute(const ColumnArray & array, ColumnPtr mapped)
         const auto * column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
         if (!column_filter_const)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of filter column");
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of filter column: {}; The result of the lambda is expected to be a UInt8", mapped->getDataType());
 
         if (column_filter_const->getValue<UInt8>())
             return DataTypeUInt8().createColumnConst(array.size(), 1u);
-        else
+
+        const IColumn::Offsets & offsets = array.getOffsets();
+        auto out_column = ColumnUInt8::create(offsets.size());
+        ColumnUInt8::Container & out_all = out_column->getData();
+
+        size_t pos = 0;
+        for (size_t i = 0; i < offsets.size(); ++i)
         {
-            const IColumn::Offsets & offsets = array.getOffsets();
-            auto out_column = ColumnUInt8::create(offsets.size());
-            ColumnUInt8::Container & out_all = out_column->getData();
-
-            size_t pos = 0;
-            for (size_t i = 0; i < offsets.size(); ++i)
-            {
-                out_all[i] = offsets[i] == pos;
-                pos = offsets[i];
-            }
-
-            return out_column;
+            out_all[i] = offsets[i] == pos;
+            pos = offsets[i];
         }
+
+        return out_column;
     }
 
     const IColumn::Filter & filter = column_filter->getData();

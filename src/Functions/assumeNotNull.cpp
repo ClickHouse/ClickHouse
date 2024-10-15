@@ -56,8 +56,7 @@ public:
 
         if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(&*col))
             return nullable_col->getNestedColumnPtr();
-        else
-            return col;
+        return col;
     }
 };
 

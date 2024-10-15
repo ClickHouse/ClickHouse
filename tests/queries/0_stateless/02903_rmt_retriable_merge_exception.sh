@@ -56,7 +56,8 @@ for _ in {0..50}; do
             (
                 (logger_name = 'MergeTreeBackgroundExecutor' and message like '%{$table_uuid::$part_name}%No active replica has part $part_name or covering part%') or
                 (logger_name like '$table_uuid::$part_name (MergeFromLogEntryTask)' and message like '%No active replica has part $part_name or covering part%')
-            );
+            )
+        SETTINGS max_rows_to_read = 0;
     ")
     if [[ $no_active_repilica_messages -gt 0 ]]; then
         break
@@ -78,5 +79,6 @@ $CLICKHOUSE_CLIENT -m -q "
             (logger_name = 'MergeTreeBackgroundExecutor' and message like '%{$table_uuid::$part_name}%No active replica has part $part_name or covering part%') or
             (logger_name like '$table_uuid::$part_name (MergeFromLogEntryTask)' and message like '%No active replica has part $part_name or covering part%')
         )
-    group by level;
+    group by level
+    SETTINGS max_rows_to_read = 0;
 "

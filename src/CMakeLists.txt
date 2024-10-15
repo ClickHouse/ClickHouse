@@ -72,6 +72,28 @@ add_subdirectory (Daemon)
 add_subdirectory (Loggers)
 add_subdirectory (Formats)
 
+if (OMIT_HEAVY_DEBUG_SYMBOLS)
+    # Files inherited via extract_into_parent_list that would be marked to remove heavy symbols otherwise
+    set_source_files_properties(
+        Functions/IFunction.cpp
+        Functions/FunctionFactory.cpp
+        Functions/FunctionHelpers.cpp
+        Functions/FunctionsLogical.cpp
+        Functions/if.cpp
+        Functions/multiIf.cpp
+        Functions/multiMatchAny.cpp
+        Functions/checkHyperscanRegexp.cpp
+        Functions/CastOverloadResolver.cpp
+        Functions/FunctionsConversion.cpp
+        Functions/extractTimeZoneFromFunctionArguments.cpp
+        Functions/GatherUtils/createArraySource.cpp
+        Functions/GatherUtils/createValueSource.cpp
+        Functions/GatherUtils/createArraySink.cpp
+        Functions/GatherUtils/resizeConstantSize.cpp
+        Functions/GatherUtils/resizeDynamicSize.cpp
+        PROPERTIES COMPILE_FLAGS -g0)
+endif()
+
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler)
@@ -412,9 +434,22 @@ dbms_target_link_libraries (
     PUBLIC
         boost::system
         clickhouse_common_io
-        Poco::MongoDB
         Poco::Redis
 )
+
+if (USE_MONGODB)
+    dbms_target_link_libraries (PUBLIC Poco::MongoDB)
+endif()
+
+if (TARGET ch_contrib::mongocxx)
+    dbms_target_link_libraries(
+        PUBLIC
+            ch_contrib::libbson
+            ch_contrib::libmongoc
+            ch_contrib::bsoncxx
+            ch_contrib::mongocxx
+    )
+endif ()
 
 if (TARGET ch::mysqlxx)
     dbms_target_link_libraries (PUBLIC ch::mysqlxx)

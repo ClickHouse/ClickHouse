@@ -34,7 +34,7 @@ ColumnsDescription StorageSystemZooKeeperConnection::getColumnsDescription()
         /* 6 */ {"is_expired", std::make_shared<DataTypeUInt8>(), "Is the current connection expired."},
         /* 7 */ {"keeper_api_version", std::make_shared<DataTypeUInt8>(), "Keeper API version."},
         /* 8 */ {"client_id", std::make_shared<DataTypeInt64>(), "Session id of the connection."},
-        /* 9 */ {"xid", std::make_shared<DataTypeInt32>(), "XID of the current session."},
+        /* 9 */ {"xid", std::make_shared<DataTypeInt64>(), "XID of the current session."},
         /* 10*/ {"enabled_feature_flags", std::make_shared<DataTypeArray>(std::move(feature_flags_enum)),
             "Feature flags which are enabled. Only applicable to ClickHouse Keeper."
         },

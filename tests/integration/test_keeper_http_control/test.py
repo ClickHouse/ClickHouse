@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 
 import os
+
 import pytest
 import requests
 
+import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
-import helpers.keeper_utils as keeper_utils
 
 cluster = ClickHouseCluster(__file__)
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")

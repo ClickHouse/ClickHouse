@@ -486,8 +486,7 @@ CNF & CNF::reduce()
             statements = filterCNFSubsets(statements);
             return *this;
         }
-        else
-            statements = new_statements;
+        statements = new_statements;
     }
 }
 

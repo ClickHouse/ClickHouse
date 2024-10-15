@@ -74,8 +74,7 @@ bool ParserUndropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (s_undrop.ignore(pos, expected))
         return parseUndropQuery(pos, node, expected);
-    else
-        return false;
+    return false;
 }
 
 }

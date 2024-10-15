@@ -1,6 +1,7 @@
 #include <Processors/Formats/Impl/CustomSeparatedRowInputFormat.h>
 #include <Processors/Formats/Impl/TemplateRowInputFormat.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <IO/Operators.h>

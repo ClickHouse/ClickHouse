@@ -11,6 +11,38 @@ option (ARCH_NATIVE "Add -march=native compiler flag. This makes your binaries n
 if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 
+    # Populate the ENABLE_ option flags. This is required for the build of some third-party dependencies, specifically snappy, which
+    # (somewhat weirdly) expects the relative SNAPPY_HAVE_ preprocessor variables to be populated, in addition to the microarchitecture
+    # feature flags being enabled in the compiler. This fixes the ARCH_NATIVE flag by automatically populating the ENABLE_ option flags
+    # according to the current CPU's capabilities, detected using clang.
+    if (ARCH_AMD64)
+        execute_process(
+            COMMAND sh -c "clang -E - -march=native -###"
+            INPUT_FILE /dev/null
+            OUTPUT_QUIET
+            ERROR_VARIABLE TEST_FEATURE_RESULT)
+
+        macro(TEST_AMD64_FEATURE TEST_FEATURE_RESULT feat flag)
+            if (${TEST_FEATURE_RESULT} MATCHES "\"\\+${feat}\"")
+                set(${flag} ON)
+            else ()
+                set(${flag} OFF)
+            endif ()
+        endmacro()
+
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} ssse3 ENABLE_SSSE3)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} sse4.1 ENABLE_SSE41)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} sse4.2 ENABLE_SSE42)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} vpclmulqdq ENABLE_PCLMULQDQ)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} popcnt ENABLE_POPCNT)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} avx ENABLE_AVX)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} avx2 ENABLE_AVX2)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} avx512f ENABLE_AVX512)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} avx512vbmi ENABLE_AVX512_VBMI)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} bmi ENABLE_BMI)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} bmi2 ENABLE_BMI2)
+    endif ()
+
 elseif (ARCH_AARCH64)
     # ARM publishes almost every year a new revision of it's ISA [1]. Each version comes with new mandatory and optional features from
     # which CPU vendors can pick and choose. This creates a lot of variability ... We provide two build "profiles", one for maximum

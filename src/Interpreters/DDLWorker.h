@@ -7,11 +7,13 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Storages/IStorage_fwd.h>
 #include <Parsers/IAST_fwd.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
+#include <Poco/Event.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <list>
 #include <mutex>
 #include <shared_mutex>
 #include <thread>
@@ -115,7 +117,8 @@ protected:
 
     /// Reads entry and check that the host belongs to host list of the task
     /// Returns non-empty DDLTaskPtr if entry parsed and the check is passed
-    virtual DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper);
+    /// If dry_run = false, the task will be processed right after this call.
+    virtual DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper, bool dry_run);
 
     void processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper);
     void updateMaxDDLEntryID(const String & entry_name);

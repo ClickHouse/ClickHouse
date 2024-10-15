@@ -11,7 +11,7 @@ ENGINE = Distributed(test_cluster_one_shard_three_replicas_localhost, currentDat
 
 SELECT count(), sum(id)
 FROM test_d
-SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 3, prefer_localhost_replica = 0, parallel_replicas_for_non_replicated_merge_tree=1;
+SETTINGS enable_parallel_replicas = 2, max_parallel_replicas = 3, prefer_localhost_replica = 0, parallel_replicas_for_non_replicated_merge_tree=1;
 
 DROP TABLE test_d;
 DROP TABLE test;

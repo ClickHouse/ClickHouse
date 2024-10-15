@@ -8,6 +8,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_variant_type;
+    extern const SettingsBool optimize_multiif_to_if;
+    extern const SettingsBool use_variant_as_common_type;
+}
 
 namespace
 {
@@ -25,7 +31,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_multiif_to_if)
+        if (!getSettings()[Setting::optimize_multiif_to_if])
             return;
 
         auto * function_node = node->as<FunctionNode>();
@@ -57,7 +63,8 @@ private:
 void MultiIfToIfPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
-    auto if_function_ptr = createInternalFunctionIfOverloadResolver(settings.allow_experimental_variant_type, settings.use_variant_as_common_type);
+    auto if_function_ptr
+        = createInternalFunctionIfOverloadResolver(settings[Setting::allow_experimental_variant_type], settings[Setting::use_variant_as_common_type]);
     MultiIfToIfVisitor visitor(std::move(if_function_ptr), std::move(context));
     visitor.visit(query_tree_node);
 }

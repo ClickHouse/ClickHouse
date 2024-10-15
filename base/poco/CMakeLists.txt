@@ -3,7 +3,11 @@ add_subdirectory (Data)
 add_subdirectory (Data/ODBC)
 add_subdirectory (Foundation)
 add_subdirectory (JSON)
-add_subdirectory (MongoDB)
+
+if (USE_MONGODB)
+    add_subdirectory(MongoDB)
+endif()
+
 add_subdirectory (Net)
 add_subdirectory (NetSSL_OpenSSL)
 add_subdirectory (Redis)

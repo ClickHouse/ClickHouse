@@ -318,6 +318,7 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
         /// On purpose we will escape more characters than minimally necessary.
         const char * next_pos = find_first_symbols<'\b', '\f', '\n', '\r', '\t', '\0', '\\', quote_character>(pos, end);
 
+        /// NOLINTBEGIN(readability-else-after-return)
         if (next_pos == end)
         {
             buf.write(pos, next_pos - pos);
@@ -372,6 +373,7 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
             }
             ++pos;
         }
+        /// NOLINTEND(readability-else-after-return)
     }
 }
 
@@ -683,12 +685,11 @@ void writeCSVString(const char * begin, const char * end, WriteBuffer & buf)
             buf.write(pos, end - pos);
             break;
         }
-        else /// Quotation.
-        {
-            ++next_pos;
-            buf.write(pos, next_pos - pos);
-            writeChar(quote, buf);
-        }
+
+        /// Quotation.
+        ++next_pos;
+        buf.write(pos, next_pos - pos);
+        writeChar(quote, buf);
 
         pos = next_pos;
     }
@@ -720,7 +721,7 @@ inline void writeXMLStringForTextElementOrAttributeValue(const char * begin, con
             buf.write(pos, end - pos);
             break;
         }
-        else if (*next_pos == '<')
+        if (*next_pos == '<')
         {
             buf.write(pos, next_pos - pos);
             ++next_pos;
@@ -774,7 +775,7 @@ inline void writeXMLStringForTextElement(const char * begin, const char * end, W
             buf.write(pos, end - pos);
             break;
         }
-        else if (*next_pos == '<')
+        if (*next_pos == '<')
         {
             buf.write(pos, next_pos - pos);
             ++next_pos;
@@ -1088,12 +1089,12 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
             writeDecimalFractional(static_cast<UInt32>(x), scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             return;
         }
-        else if (x <= std::numeric_limits<UInt64>::max())
+        if (x <= std::numeric_limits<UInt64>::max())
         {
             writeDecimalFractional(static_cast<UInt64>(x), scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             return;
         }
-        else if (x <= std::numeric_limits<UInt128>::max())
+        if (x <= std::numeric_limits<UInt128>::max())
         {
             writeDecimalFractional(static_cast<UInt128>(x), scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             return;
@@ -1106,7 +1107,7 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
             writeDecimalFractional(static_cast<UInt32>(x), scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             return;
         }
-        else if (x <= std::numeric_limits<UInt64>::max())
+        if (x <= std::numeric_limits<UInt64>::max())
         {
             writeDecimalFractional(static_cast<UInt64>(x), scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             return;

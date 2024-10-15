@@ -41,8 +41,7 @@ DataTypePtr DataTypeDecimal<T>::promoteNumericType() const
 {
     if (sizeof(T) <= sizeof(Decimal128))
         return std::make_shared<DataTypeDecimal<Decimal128>>(DataTypeDecimal<Decimal128>::maxPrecision(), this->scale);
-    else
-        return std::make_shared<DataTypeDecimal<Decimal256>>(DataTypeDecimal<Decimal256>::maxPrecision(), this->scale);
+    return std::make_shared<DataTypeDecimal<Decimal256>>(DataTypeDecimal<Decimal256>::maxPrecision(), this->scale);
 }
 
 template <is_decimal T>

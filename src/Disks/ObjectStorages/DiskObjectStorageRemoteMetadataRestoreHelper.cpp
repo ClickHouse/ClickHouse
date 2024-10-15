@@ -73,7 +73,7 @@ int DiskObjectStorageRemoteMetadataRestoreHelper::readSchemaVersion(IObjectStora
     if (!object_storage->exists(object))
         return version;
 
-    auto buf = object_storage->readObject(object);
+    auto buf = object_storage->readObject(object, ReadSettings{});
     readIntText(version, *buf);
 
     return version;

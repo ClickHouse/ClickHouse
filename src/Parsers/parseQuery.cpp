@@ -91,16 +91,14 @@ void writeQueryWithHighlightedErrorPositions(
             out << "\033[41;1m \033[0m";
             return;
         }
-        else
-        {
-            ssize_t bytes_to_hilite = std::min<ssize_t>(UTF8::seqLength(*current_position_to_hilite), end - current_position_to_hilite);
 
-            /// Bright on red background.
-            out << "\033[41;1m";
-            out.write(current_position_to_hilite, bytes_to_hilite);
-            out << "\033[0m";
-            pos = current_position_to_hilite + bytes_to_hilite;
-        }
+        ssize_t bytes_to_hilite = std::min<ssize_t>(UTF8::seqLength(*current_position_to_hilite), end - current_position_to_hilite);
+
+        /// Bright on red background.
+        out << "\033[41;1m";
+        out.write(current_position_to_hilite, bytes_to_hilite);
+        out << "\033[0m";
+        pos = current_position_to_hilite + bytes_to_hilite;
     }
     out.write(pos, end - pos);
 }

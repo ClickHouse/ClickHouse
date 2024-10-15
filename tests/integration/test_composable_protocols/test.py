@@ -1,13 +1,16 @@
-import ssl
-import pytest
-import os.path as p
 import os
-from helpers.cluster import ClickHouseCluster
-from helpers.client import Client
-import urllib.request, urllib.parse
-import subprocess
+import os.path as p
 import socket
+import ssl
+import subprocess
+import urllib.parse
+import urllib.request
 import warnings
+
+import pytest
+
+from helpers.client import Client
+from helpers.cluster import ClickHouseCluster
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 

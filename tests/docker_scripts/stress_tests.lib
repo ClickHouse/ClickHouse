@@ -64,6 +64,7 @@ function configure()
         randomize_config_boolean_value multi_read keeper_port
         randomize_config_boolean_value check_not_exists keeper_port
         randomize_config_boolean_value create_if_not_exists keeper_port
+        randomize_config_boolean_value remove_recursive keeper_port
     fi
 
     sudo chown clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
@@ -71,8 +72,10 @@ function configure()
 
     if [[ -n "$ZOOKEEPER_FAULT_INJECTION" ]] && [[ "$ZOOKEEPER_FAULT_INJECTION" -eq 1 ]]; then
         randomize_config_boolean_value use_compression zookeeper_fault_injection
+        randomize_config_boolean_value use_xid_64 zookeeper_fault_injection
     else
         randomize_config_boolean_value use_compression zookeeper
+        randomize_config_boolean_value use_xid_64 zookeeper
     fi
 
     randomize_config_boolean_value enable_block_number_column block_number
@@ -287,7 +290,7 @@ function check_logs_for_critical_errors()
     # Remove file fatal_messages.txt if it's empty
     [ -s /test_output/fatal_messages.txt ] || rm /test_output/fatal_messages.txt
 
-    rg -Faz "########################################" /test_output/* > /dev/null \
+    rg -Faz "########################################" /test_output/* | rg -v "rg -Faz " > /dev/null \
       && echo -e "Killed by signal (output files)$FAIL" >> /test_output/test_results.tsv
 
     function get_gdb_log_context()

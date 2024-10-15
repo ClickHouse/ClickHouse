@@ -27,7 +27,7 @@ remoteSecure(named_collection[, option=value [,..]])
 
     The `host` can be specified as a server name, or as a IPv4 or IPv6 address. An IPv6 address must be specified in square brackets.
 
-    The `port` is the TCP port on the remote server. If the port is omitted, it uses [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) from the server config file for table function `remote` (by default, 9000) and [tcp_port_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) for table function `remoteSecure` (by default, 9440).
+    The `port` is the TCP port on the remote server. If the port is omitted, it uses [tcp_port](../../operations/server-configuration-parameters/settings.md#tcp_port) from the server config file for table function `remote` (by default, 9000) and [tcp_port_secure](../../operations/server-configuration-parameters/settings.md#tcp_port_secure) for table function `remoteSecure` (by default, 9440).
 
     For IPv6 addresses, a port is required.
 

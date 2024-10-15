@@ -2,7 +2,9 @@
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Common/filesystemHelpers.h>
+#include <Core/Block.h>
 #include <Disks/IO/WriteBufferFromTemporaryFile.h>
+
 #include <filesystem>
 
 
@@ -21,10 +23,9 @@ namespace
     {
         if (format == "Protobuf")
             return "proto";
-        else if (format == "CapnProto")
+        if (format == "CapnProto")
             return "capnp";
-        else
-            return "";
+        return "";
     }
 }
 
@@ -41,20 +42,16 @@ FormatSchemaInfo::FormatSchemaInfo(const String & format_schema, const String & 
     {
         size_t colon_pos = format_schema.find(':');
         if ((colon_pos == String::npos) || (colon_pos == 0) || (colon_pos == format_schema.length() - 1))
-        {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Format schema requires the 'format_schema' setting to have the 'schema_file:message_name' format{}. Got '{}'",
                     (default_file_extension.empty() ? "" : ", e.g. 'schema." + default_file_extension + ":Message'"), format_schema);
-        }
-        else
-        {
-            path = fs::path(format_schema.substr(0, colon_pos));
-            String filename = path.has_filename() ? path.filename() : path.parent_path().filename();
-            if (filename.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Format schema requires the 'format_schema' setting to have the 'schema_file:message_name' format{}. Got '{}'",
-                    (default_file_extension.empty() ? "" : ", e.g. 'schema." + default_file_extension + ":Message'"), format_schema);
-        }
+        path = fs::path(format_schema.substr(0, colon_pos));
+        String filename = path.has_filename() ? path.filename() : path.parent_path().filename();
+        if (filename.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Format schema requires the 'format_schema' setting to have the 'schema_file:message_name' format{}. Got '{}'",
+                (default_file_extension.empty() ? "" : ", e.g. 'schema." + default_file_extension + ":Message'"), format_schema);
+
         message_name = format_schema.substr(colon_pos + 1);
     }
     else

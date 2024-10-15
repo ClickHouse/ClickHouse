@@ -1,9 +1,10 @@
 import logging
-import pytest
-from helpers.cluster import ClickHouseCluster
-from test_storage_azure_blob_storage.test import azure_query
 import os
 
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from test_storage_azure_blob_storage.test import azure_query
 
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())

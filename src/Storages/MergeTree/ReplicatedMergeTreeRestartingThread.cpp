@@ -1,3 +1,4 @@
+#include <atomic>
 #include <IO/Operators.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -19,6 +20,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsSeconds zookeeper_session_expiration_check_period;
+}
 
 namespace ErrorCodes
 {
@@ -43,7 +49,7 @@ ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(Storage
     , active_node_identifier(generateActiveNodeIdentifier())
 {
     const auto storage_settings = storage.getSettings();
-    check_period_ms = storage_settings->zookeeper_session_expiration_check_period.totalSeconds() * 1000;
+    check_period_ms = (*storage_settings)[MergeTreeSetting::zookeeper_session_expiration_check_period].totalSeconds() * 1000;
 
     task = storage.getContext()->getSchedulePool().createTask(log_name, [this]{ run(); });
 }
@@ -375,6 +381,13 @@ void ReplicatedMergeTreeRestartingThread::setReadonly(bool on_shutdown)
     bool old_val = false;
     bool became_readonly = storage.is_readonly.compare_exchange_strong(old_val, true);
 
+    if (became_readonly)
+    {
+        const UInt32 now = static_cast<UInt32>(
+            std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
+        storage.readonly_start_time.store(now, std::memory_order_relaxed);
+    }
+
     /// Do not increment the metric if replica became readonly due to shutdown.
     if (became_readonly && on_shutdown)
         return;
@@ -407,6 +420,8 @@ void ReplicatedMergeTreeRestartingThread::setNotReadonly()
         CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
         chassert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
     }
+
+    storage.readonly_start_time.store(0, std::memory_order_relaxed);
 }
 
 }

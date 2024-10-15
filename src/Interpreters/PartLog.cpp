@@ -90,6 +90,8 @@ ColumnsDescription PartLogElement::getColumnsDescription()
         }
     );
 
+    auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+
     ColumnsWithTypeAndName columns_with_type_and_name;
 
     return ColumnsDescription
@@ -142,7 +144,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
         {"error", std::make_shared<DataTypeUInt16>(), "The error code of the occurred exception."},
         {"exception", std::make_shared<DataTypeString>(), "Text message of the occurred error."},
 
-        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()), "All the profile events captured during this operation."},
+        {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "All the profile events captured during this operation."},
     };
 }
 

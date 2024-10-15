@@ -46,7 +46,7 @@ The `CHECK TABLE` query supports the following table engines:
 - [StripeLog](../../engines/table-engines/log-family/stripelog.md)
 - [MergeTree family](../../engines/table-engines/mergetree-family/mergetree.md)
 
-Performed over the tables with another table engines causes an `NOT_IMPLEMETED` exception.
+Performed over the tables with another table engines causes an `NOT_IMPLEMENTED` exception.
 
 Engines from the `*Log` family do not provide automatic data recovery on failure. Use the `CHECK TABLE` query to track data loss in a timely manner.
 

@@ -1,17 +1,16 @@
 from pathlib import Path
 from typing import Optional
 
+from ci_utils import GH
 from env_helper import (
-    S3_BUILDS_BUCKET,
-    TEMP_PATH,
-    GITHUB_UPSTREAM_REPOSITORY,
     GITHUB_REPOSITORY,
+    GITHUB_UPSTREAM_REPOSITORY,
+    S3_BUILDS_BUCKET,
     S3_BUILDS_BUCKET_PUBLIC,
+    TEMP_PATH,
 )
 from s3_helper import S3Helper
-from ci_utils import GH
 from synchronizer_utils import SYNC_BRANCH_PREFIX
-
 
 # pylint: disable=too-many-lines
 

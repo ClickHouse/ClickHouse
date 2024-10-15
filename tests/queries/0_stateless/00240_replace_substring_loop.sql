@@ -99,3 +99,6 @@ SELECT s, replaceOne(s, '_', 'o') AS a, replaceRegexpOne(s, '_', 'o') AS b, a = 
 SELECT s, replaceOne(s, '_', 'o') AS a, replaceRegexpOne(s, '_', 'o') AS b, a = b FROM (SELECT arrayJoin(['__.__', '.__']) AS s);
 SELECT s, replaceOne(s, '_', 'o') AS a, replaceRegexpOne(s, '_', 'o') AS b, a = b FROM (SELECT arrayJoin(['__.__', '__.']) AS s);
 SELECT s, replaceOne(s, '_', 'o') AS a, replaceRegexpOne(s, '_', 'o') AS b, a = b FROM (SELECT arrayJoin(['__.__', '__.__']) AS s);
+SELECT replace('ABCabc', '', 'DEF');
+SELECT replace(materialize('ABCabc'), materialize(''), 'DEF');
+SELECT replace(materialize('ABCabc'), '', 'DEF');

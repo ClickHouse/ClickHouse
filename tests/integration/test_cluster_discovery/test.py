@@ -1,10 +1,10 @@
+import functools
+
 import pytest
 
-import functools
-from .common import check_on_cluster
-
-
 from helpers.cluster import ClickHouseCluster
+
+from .common import check_on_cluster
 
 cluster = ClickHouseCluster(__file__)
 

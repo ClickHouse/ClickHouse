@@ -90,15 +90,15 @@ static inline void trySendExceptionToClient(
 
 void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 {
+    applyHTTPResponseHeaders(response, http_response_headers_override);
+
+    if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
+        response.setChunkedTransferEncoding(true);
+
     auto out = responseWriteBuffer(request, response);
 
     try
     {
-        applyHTTPResponseHeaders(response, http_response_headers_override);
-
-        if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
-            response.setChunkedTransferEncoding(true);
-
         /// Workaround. Poco does not detect 411 Length Required case.
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() && !request.hasContentLength())
             throw Exception(ErrorCodes::HTTP_LENGTH_REQUIRED,

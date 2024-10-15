@@ -49,12 +49,12 @@ namespace
         return false;
     }
 
-    bool parseOnDBAndTableName(IParserBase::Pos & pos, Expected & expected, String & database, bool & any_database, String & table, bool & any_table)
+    bool parseOnDBAndTableName(IParserBase::Pos & pos, Expected & expected, String & database, String & table, bool & wildcard, bool & default_database)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             return ParserKeyword{Keyword::ON}.ignore(pos, expected)
-                && parseDatabaseAndTableNameOrAsterisks(pos, expected, database, any_database, table, any_table);
+                && parseDatabaseAndTableNameOrAsterisks(pos, expected, database, table, wildcard, default_database);
         });
     }
 }
@@ -108,12 +108,13 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
         {
             ASTPtr ast;
             String database, table_name;
-            bool any_database, any_table;
+            bool wildcard = false;
+            bool default_database = false;
             if (ParserRowPolicyNames{}.parse(pos, ast, expected))
                 row_policy_names = typeid_cast<std::shared_ptr<ASTRowPolicyNames>>(ast);
-            else if (parseOnDBAndTableName(pos, expected, database, any_database, table_name, any_table))
+            else if (parseOnDBAndTableName(pos, expected, database, table_name, wildcard, default_database))
             {
-                if (any_database)
+                if (database.empty() && !default_database)
                     all = true;
                 else
                     database_and_table_name.emplace(database, table_name);

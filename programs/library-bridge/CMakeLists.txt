@@ -19,7 +19,6 @@ target_link_libraries(clickhouse-library-bridge PRIVATE
     daemon
     dbms
     bridge
-    clickhouse_functions
 )
 
 set_target_properties(clickhouse-library-bridge PROPERTIES RUNTIME_OUTPUT_DIRECTORY ..)

@@ -91,6 +91,11 @@ public:
             arguments[0]->getName(), arguments[1]->getName(), getName());
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeUInt8>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto data_type = arguments[0].type;

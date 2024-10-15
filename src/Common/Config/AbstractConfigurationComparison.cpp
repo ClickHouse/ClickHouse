@@ -55,25 +55,21 @@ namespace
             {
                 return right.hasProperty(right_key) && (left.getRawString(left_key) == right.getRawString(right_key));
             }
-            else
-            {
-                return !right.hasProperty(right_key);
-            }
-        }
-        else
-        {
-            /// Go through all the subkeys and compare corresponding parts of the configurations.
-            std::unordered_set<std::string_view> left_subkeys_set{left_subkeys.begin(), left_subkeys.end()};
-            for (const auto & subkey : right_subkeys)
-            {
-                if (!left_subkeys_set.contains(subkey))
-                    return false;
 
-                if (!isSameConfigurationImpl(left, concatKeyAndSubKey(left_key, subkey), right, concatKeyAndSubKey(right_key, subkey), nullptr))
-                    return false;
-            }
-            return true;
+            return !right.hasProperty(right_key);
         }
+
+        /// Go through all the subkeys and compare corresponding parts of the configurations.
+        std::unordered_set<std::string_view> left_subkeys_set{left_subkeys.begin(), left_subkeys.end()};
+        for (const auto & subkey : right_subkeys)
+        {
+            if (!left_subkeys_set.contains(subkey))
+                return false;
+
+            if (!isSameConfigurationImpl(left, concatKeyAndSubKey(left_key, subkey), right, concatKeyAndSubKey(right_key, subkey), nullptr))
+                return false;
+        }
+        return true;
     }
 }
 

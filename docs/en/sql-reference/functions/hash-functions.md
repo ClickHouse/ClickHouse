@@ -51,6 +51,40 @@ Calculates the MD5 from a string and returns the resulting set of bytes as Fixed
 If you do not need MD5 in particular, but you need a decent cryptographic 128-bit hash, use the ‘sipHash128’ function instead.
 If you want to get the same result as output by the md5sum utility, use lower(hex(MD5(s))).
 
+## RIPEMD160
+
+Produces [RIPEMD-160](https://en.wikipedia.org/wiki/RIPEMD) hash value.
+
+**Syntax**
+
+```sql
+RIPEMD160(input)
+```
+
+**Parameters**
+
+- `input`: Input string. [String](../data-types/string.md)
+
+**Returned value**
+
+- A 160-bit `RIPEMD-160` hash value of type [FixedString(20)](../data-types/fixedstring.md).
+
+**Example**
+
+Use the [hex](../functions/encoding-functions.md/#hex) function to represent the result as a hex-encoded string.
+
+Query:
+
+```sql
+SELECT HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'));
+```
+
+```response
+┌─HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'))─┐
+│ 37F332F68DB77BD9D7EDD4969571AD671CF9DD3B                      │
+└───────────────────────────────────────────────────────────────┘
+```
+
 ## sipHash64
 
 Produces a 64-bit [SipHash](https://en.wikipedia.org/wiki/SipHash) hash value.
@@ -347,7 +381,7 @@ Result:
 ## intHash64
 
 Calculates a 64-bit hash code from any type of integer.
-This is a relatively fast non-cryptographic hash function of average quality for numbers. 
+This is a relatively fast non-cryptographic hash function of average quality for numbers.
 It works faster than [intHash32](#inthash32).
 
 **Syntax**
@@ -651,7 +685,7 @@ For more information, see the link: [JumpConsistentHash](https://arxiv.org/pdf/1
 
 ## kostikConsistentHash
 
-An O(1) time and space consistent hash algorithm by Konstantin 'kostik' Oblakov. Previously `yandexConsistentHash`. 
+An O(1) time and space consistent hash algorithm by Konstantin 'kostik' Oblakov. Previously `yandexConsistentHash`.
 
 **Syntax**
 
@@ -672,7 +706,7 @@ Alias: `yandexConsistentHash` (left for backwards compatibility sake).
 
 **Implementation details**
 
-It is efficient only if n <= 32768. 
+It is efficient only if n <= 32768.
 
 **Example**
 
@@ -686,40 +720,6 @@ SELECT kostikConsistentHash(16045690984833335023, 2);
 ┌─kostikConsistentHash(16045690984833335023, 2)─┐
 │                                             1 │
 └───────────────────────────────────────────────┘
-```
-
-## ripeMD160
-
-Produces [RIPEMD-160](https://en.wikipedia.org/wiki/RIPEMD) hash value.
-
-**Syntax**
-
-```sql
-ripeMD160(input)
-```
-
-**Parameters**
-
-- `input`: Input string. [String](../data-types/string.md)
-
-**Returned value**
-
-- A [UInt256](../data-types/int-uint.md) hash value where the 160-bit RIPEMD-160 hash is stored in the first 20 bytes. The remaining 12 bytes are zero-padded.
-
-**Example**
-
-Use the [hex](../functions/encoding-functions.md/#hex) function to represent the result as a hex-encoded string.
-
-Query:
-
-```sql
-SELECT hex(ripeMD160('The quick brown fox jumps over the lazy dog'));
-```
-
-```response
-┌─hex(ripeMD160('The quick brown fox jumps over the lazy dog'))─┐
-│ 37F332F68DB77BD9D7EDD4969571AD671CF9DD3B                      │
-└───────────────────────────────────────────────────────────────┘
 ```
 
 ## murmurHash2_32, murmurHash2_64
@@ -937,7 +937,7 @@ SELECT xxHash64('')
 
 **Returned value**
 
-- Hash value. [UInt32/64](../data-types/int-uint.md).  
+- Hash value. [UInt32/64](../data-types/int-uint.md).
 
 :::note
 The return type will be `UInt32` for `xxHash32` and `UInt64` for `xxHash64`.

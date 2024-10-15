@@ -65,7 +65,7 @@ void MergeTreeTransaction::checkIsNotCancelled() const
     CSN c = csn.load();
     if (c == Tx::RolledBackCSN)
         throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction was cancelled");
-    else if (c != Tx::UnknownCSN)
+    if (c != Tx::UnknownCSN)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CSN state: {}", c);
 }
 

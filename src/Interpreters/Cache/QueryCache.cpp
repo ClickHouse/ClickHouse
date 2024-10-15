@@ -30,6 +30,10 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsString query_cache_tag;
+}
 
 namespace
 {
@@ -197,14 +201,13 @@ IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const S
     /// Finally, hash the (changed) settings as they might affect the query result (e.g. think of settings `additional_table_filters` and `limit`).
     /// Note: allChanged() returns the settings in random order. Also, update()-s of the composite hash must be done in deterministic order.
     ///       Therefore, collect and sort the settings first, then hash them.
-    Settings::Range changed_settings = settings.allChanged();
+    auto changed_settings = settings.changes();
     std::vector<std::pair<String, String>> changed_settings_sorted; /// (name, value)
-    for (const auto & setting : changed_settings)
+    for (const auto & change : changed_settings)
     {
-        const String & name = setting.getName();
-        const String & value = setting.getValueString();
+        const String & name = change.name;
         if (!isQueryCacheRelatedSetting(name)) /// see removeQueryCacheSettings() why this is a good idea
-            changed_settings_sorted.push_back({name, value});
+            changed_settings_sorted.push_back({name, Settings::valueToStringUtil(change.name, change.value)});
     }
     std::sort(changed_settings_sorted.begin(), changed_settings_sorted.end(), [](auto & lhs, auto & rhs) { return lhs.first < rhs.first; });
     for (const auto & setting : changed_settings_sorted)
@@ -230,7 +233,8 @@ QueryCache::Key::Key(
     const String & current_database,
     const Settings & settings,
     Block header_,
-    std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+    std::optional<UUID> user_id_,
+    const std::vector<UUID> & current_user_roles_,
     bool is_shared_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
     bool is_compressed_)
@@ -242,7 +246,7 @@ QueryCache::Key::Key(
     , expires_at(expires_at_)
     , is_compressed(is_compressed_)
     , query_string(queryStringFromAST(ast_))
-    , tag(settings.query_cache_tag)
+    , tag(settings[Setting::query_cache_tag])
 {
 }
 

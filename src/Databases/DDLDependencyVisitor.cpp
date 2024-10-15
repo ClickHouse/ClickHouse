@@ -22,6 +22,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+}
 
 namespace
 {
@@ -469,8 +475,8 @@ namespace
             String description = fmt::format("Query for ClickHouse dictionary {}", data.table_name);
             String fixed_query = removeWhereConditionPlaceholder(query);
             const Settings & settings = data.global_context->getSettingsRef();
-            ASTPtr select = parseQuery(parser, fixed_query, description,
-                settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+            ASTPtr select = parseQuery(
+                parser, fixed_query, description, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
             DDLDependencyVisitor::Visitor visitor{data};
             visitor.visit(select);

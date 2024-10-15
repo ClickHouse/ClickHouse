@@ -1,7 +1,9 @@
-import pytest
-from helpers.cluster import ClickHouseCluster
 import os
+
+import pytest
 from kazoo.client import KazooClient
+
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")

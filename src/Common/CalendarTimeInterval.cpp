@@ -122,13 +122,11 @@ std::chrono::sys_seconds CalendarTimeInterval::floor(std::chrono::system_clock::
 
     if (months)
         return startOfAbsoluteMonth(toAbsoluteMonth(tp) / months * months);
-    else
-    {
-        constexpr std::chrono::seconds epoch(-3600*24*3);
-        auto t = std::chrono::sys_seconds(std::chrono::floor<std::chrono::seconds>(tp));
-        /// We want to align with weeks, but 1970-01-01 is a Thursday, so align with 1969-12-29 instead.
-        return std::chrono::sys_seconds((t.time_since_epoch() - epoch) / seconds * seconds + epoch);
-    }
+
+    constexpr std::chrono::seconds epoch(-3600 * 24 * 3);
+    auto t = std::chrono::sys_seconds(std::chrono::floor<std::chrono::seconds>(tp));
+    /// We want to align with weeks, but 1970-01-01 is a Thursday, so align with 1969-12-29 instead.
+    return std::chrono::sys_seconds((t.time_since_epoch() - epoch) / seconds * seconds + epoch);
 }
 
 bool CalendarTimeInterval::operator==(const CalendarTimeInterval & rhs) const

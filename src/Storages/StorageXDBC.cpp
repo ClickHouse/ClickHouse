@@ -19,6 +19,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds http_receive_timeout;
+    extern const SettingsBool odbc_bridge_use_connection_pooling;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -180,10 +186,11 @@ namespace
             for (size_t i = 0; i < 3; ++i)
                 engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.getLocalContext());
 
-            BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(args.getContext(),
-                args.getContext()->getSettingsRef().http_receive_timeout.value,
+            BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(
+                args.getContext(),
+                args.getContext()->getSettingsRef()[Setting::http_receive_timeout].value,
                 checkAndGetLiteralArgument<String>(engine_args[0], "connection_string"),
-                args.getContext()->getSettingsRef().odbc_bridge_use_connection_pooling.value);
+                args.getContext()->getSettingsRef()[Setting::odbc_bridge_use_connection_pooling].value);
             return std::make_shared<StorageXDBC>(
                 args.table_id,
                 checkAndGetLiteralArgument<String>(engine_args[1], "database_name"),

@@ -234,11 +234,14 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 ### Синтаксис {#show-grants-syntax}
 
 ``` sql
-SHOW GRANTS [FOR user]
+SHOW GRANTS [FOR user1 [, user2 ...]] [WITH IMPLICIT] [FINAL]
 ```
 
 Если пользователь не задан, запрос возвращает привилегии текущего пользователя.
 
+`WITH IMPLICIT` добавляет неявные привилегии (например `GRANT SELECT ON system.one`).
+
+`FINAL` объединяет все текущие привилегии с привилегиями всех ролей пользователя (с наследованием).
 
 
 ## SHOW CREATE USER {#show-create-user-statement}

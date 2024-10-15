@@ -36,24 +36,22 @@ public:
 
     /// Full
     SortingStep(
-        const DataStream & input_stream,
+        const Header & input_header,
         SortDescription description_,
         UInt64 limit_,
-        const Settings & settings_,
-        bool optimize_sorting_by_input_stream_properties_);
+        const Settings & settings_);
 
     /// Full with partitioning
     SortingStep(
-        const DataStream & input_stream,
+        const Header & input_header,
         const SortDescription & description_,
         const SortDescription & partition_by_description_,
         UInt64 limit_,
-        const Settings & settings_,
-        bool optimize_sorting_by_input_stream_properties_);
+        const Settings & settings_);
 
     /// FinishSorting
     SortingStep(
-        const DataStream & input_stream_,
+        const Header & input_header,
         SortDescription prefix_description_,
         SortDescription result_description_,
         size_t max_block_size_,
@@ -61,7 +59,7 @@ public:
 
     /// MergingSorted
     SortingStep(
-        const DataStream & input_stream,
+        const Header & input_header,
         SortDescription sort_description_,
         size_t max_block_size_,
         UInt64 limit_ = 0,
@@ -79,7 +77,9 @@ public:
     /// Add limit or change it to lower value.
     void updateLimit(size_t limit_);
 
-    const SortDescription & getSortDescription() const { return result_description; }
+    const SortDescription & getSortDescription() const override { return result_description; }
+
+    bool hasPartitions() const { return !partition_by_description.empty(); }
 
     void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_);
 
@@ -95,7 +95,7 @@ public:
 
 private:
     void scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline);
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     static void mergeSorting(
         QueryPipelineBuilder & pipeline,
@@ -130,8 +130,6 @@ private:
     bool use_buffering = false;
 
     Settings sort_settings;
-
-    const bool optimize_sorting_by_input_stream_properties = false;
 };
 
 }

@@ -29,8 +29,7 @@ public:
     {
         if (settings.is_executable_pool)
             return "ExecutablePool";
-        else
-            return "Executable";
+        return "Executable";
     }
 
     void read(

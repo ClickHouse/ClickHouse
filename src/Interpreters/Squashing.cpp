@@ -1,8 +1,9 @@
 #include <vector>
 #include <Interpreters/Squashing.h>
-#include "Common/Logger.h"
-#include "Common/logger_useful.h"
 #include <Common/CurrentThread.h>
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
+#include <Columns/ColumnSparse.h>
 #include <base/defines.h>
 
 namespace DB
@@ -116,7 +117,7 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
         return result;
     }
 
-    std::vector<IColumn::MutablePtr> mutable_columns = {};
+    std::vector<IColumn::MutablePtr> mutable_columns;
     size_t rows = 0;
     for (const Chunk & chunk : input_chunks)
         rows += chunk.getNumRows();
@@ -130,8 +131,11 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
     }
 
     size_t num_columns = mutable_columns.size();
+
     /// Collect the list of source columns for each column.
-    std::vector<Columns> source_columns_list(num_columns, Columns{});
+    std::vector<Columns> source_columns_list(num_columns);
+    std::vector<UInt8> have_same_serialization(num_columns, true);
+
     for (size_t i = 0; i != num_columns; ++i)
         source_columns_list[i].reserve(input_chunks.size() - 1);
 
@@ -139,11 +143,21 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
     {
         auto columns = input_chunks[i].detachColumns();
         for (size_t j = 0; j != num_columns; ++j)
+        {
+            have_same_serialization[j] &= ISerialization::getKind(*columns[j]) == ISerialization::getKind(*mutable_columns[j]);
             source_columns_list[j].emplace_back(std::move(columns[j]));
+        }
     }
 
     for (size_t i = 0; i != num_columns; ++i)
     {
+        if (!have_same_serialization[i])
+        {
+            mutable_columns[i] = recursiveRemoveSparse(std::move(mutable_columns[i]))->assumeMutable();
+            for (auto & column : source_columns_list[i])
+                column = recursiveRemoveSparse(column);
+        }
+
         /// We know all the data we will insert in advance and can make all necessary pre-allocations.
         mutable_columns[i]->prepareForSquashing(source_columns_list[i]);
         for (auto & source_column : source_columns_list[i])

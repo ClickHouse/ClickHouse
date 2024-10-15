@@ -232,7 +232,7 @@ Below you can find some quick links which may be useful when writing code for Cl
 - [The code style guide](https://clickhouse.com/docs/en/development/style/).
 - [Adding third-party libraries](https://clickhouse.com/docs/en/development/contrib/#adding-third-party-libraries)
 - [Writing tests](https://clickhouse.com/docs/en/development/tests/)
-- [List of open issues](https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3Ahacktoberfest)
+- [List of open issues](https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22)
 
 ## Writing Documentation {#writing-documentation}
 

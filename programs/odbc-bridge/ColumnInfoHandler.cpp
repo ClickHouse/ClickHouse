@@ -2,6 +2,7 @@
 
 #if USE_ODBC
 
+#include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -27,6 +28,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 odbc_bridge_connection_pool_size;
+}
 
 namespace ErrorCodes
 {
@@ -129,8 +134,7 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
         const bool external_table_functions_use_nulls = Poco::NumberParser::parseBool(params.get("external_table_functions_use_nulls", "false"));
 
         auto connection_holder = ODBCPooledConnectionFactory::instance().get(
-                validateODBCConnectionString(connection_string),
-                getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
+            validateODBCConnectionString(connection_string), getContext()->getSettingsRef()[Setting::odbc_bridge_connection_pool_size]);
 
         /// In XDBC tables it is allowed to pass either database_name or schema_name in table definion, but not both of them.
         /// They both are passed as 'schema' parameter in request URL, so it is not clear whether it is database_name or schema_name passed.

@@ -53,6 +53,11 @@ private:
         return std::make_shared<DataTypeFloat64>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeFloat64>();
+    }
+
     template <typename LeftType, typename RightType>
     static ColumnPtr executeTyped(const ColumnConst * left_arg, const IColumn * right_arg, size_t input_rows_count)
     {

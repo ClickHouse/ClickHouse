@@ -11,7 +11,7 @@ class WindowTransform;
 class WindowStep : public ITransformingStep
 {
 public:
-    explicit WindowStep(const DataStream & input_stream_,
+    explicit WindowStep(const Header & input_header_,
             const WindowDescription & window_description_,
             const std::vector<WindowFunctionDescription> & window_functions_,
             bool streams_fan_out_);
@@ -26,7 +26,7 @@ public:
     const WindowDescription & getWindowDescription() const;
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     WindowDescription window_description;
     std::vector<WindowFunctionDescription> window_functions;

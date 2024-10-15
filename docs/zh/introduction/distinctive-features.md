@@ -37,7 +37,7 @@ ClickHouse会使用服务器上一切可用的资源，从而以最自然的方�
 
 ## 支持SQL {#zhi-chi-sql}
 
-ClickHouse支持一种[基于SQL的声明式查询语言](../sql-reference/index.md)，它在许多情况下与[ANSI SQL标准](../sql-reference/ansi.md)相同。
+ClickHouse支持一种基于SQL的声明式查询语言。
 
 支持的查询[GROUP BY](../sql-reference/statements/select/group-by.md), [ORDER BY](../sql-reference/statements/select/order-by.md), [FROM](../sql-reference/statements/select/from.md), [JOIN](../sql-reference/statements/select/join.md), [IN](../sql-reference/operators/in.md)以及非相关子查询。
 

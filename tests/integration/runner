@@ -485,7 +485,7 @@ if __name__ == "__main__":
     cmd = cmd_base + " " + args.command
     cmd_pre_pull = (
         f"{cmd_base} find /ClickHouse/tests/integration/compose -name docker_compose_*.yml "
-        r"-exec docker-compose -f '{}' pull \;"
+        r"-exec docker compose -f '{}' pull \;"
     )
 
     containers = subprocess.check_output(

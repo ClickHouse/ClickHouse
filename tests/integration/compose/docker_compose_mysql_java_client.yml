@@ -1,4 +1,3 @@
-version: '2.3'
 services:
   java1:
     image: clickhouse/mysql-java-client:${DOCKER_MYSQL_JAVA_CLIENT_TAG:-latest}

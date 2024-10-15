@@ -141,8 +141,7 @@ void AsynchronousMetrics::openSensors() TSA_REQUIRES(data_mutex)
             /// Sometimes indices are from zero sometimes from one.
             if (thermal_device_index == 0)
                 continue;
-            else
-                break;
+            break;
         }
 
         file->rewind();
@@ -210,8 +209,7 @@ void AsynchronousMetrics::openEDAC() TSA_REQUIRES(data_mutex)
         {
             if (edac_index == 0)
                 continue;
-            else
-                break;
+            break;
         }
 
         edac.emplace_back();
@@ -236,8 +234,7 @@ void AsynchronousMetrics::openSensorsChips() TSA_REQUIRES(data_mutex)
         {
             if (hwmon_index == 0)
                 continue;
-            else
-                break;
+            break;
         }
 
         String hwmon_name;
@@ -258,8 +255,7 @@ void AsynchronousMetrics::openSensorsChips() TSA_REQUIRES(data_mutex)
             {
                 if (sensor_index == 0)
                     continue;
-                else
-                    break;
+                break;
             }
 
             std::unique_ptr<ReadBufferFromFilePRead> file = openFileIfExists(sensor_value_file);
@@ -1007,8 +1003,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 {
                     if (auto hz = sysconf(_SC_CLK_TCK); hz != -1)
                         return hz;
-                    else
-                        throw ErrnoException(ErrorCodes::CANNOT_SYSCONF, "Cannot call 'sysconf' to obtain system HZ");
+                    throw ErrnoException(ErrorCodes::CANNOT_SYSCONF, "Cannot call 'sysconf' to obtain system HZ");
                 };
                 const auto cgroup_version_specific_divisor = cgroupcpu_stat ? 1e6 : get_clock_ticks();
                 const double multiplier = 1.0 / cgroup_version_specific_divisor
@@ -1764,8 +1759,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             auto it = metric_map.find(name);
             if (it == metric_map.end())
                 return { nullptr, nullptr };
-            else
-                return it->second;
+            return it->second;
         };
 
         auto rejected_connections_get_metric_name_doc = [](const String & name) -> std::pair<const char *, const char *>
@@ -1788,8 +1782,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             auto it = metric_map.find(name);
             if (it == metric_map.end())
                 return { nullptr, nullptr };
-            else
-                return it->second;
+            return it->second;
         };
 
         const auto server_metrics = protocol_server_metrics_func();

@@ -890,16 +890,19 @@ public:
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address)
     {
-        AuthenticationType user_auth_type;
         try
         {
-            user_auth_type = session.getAuthenticationTypeOrLogInFailure(user_name);
-            if (type_to_method.find(user_auth_type) != type_to_method.end())
+            const auto user_authentication_types = session.getAuthenticationTypesOrLogInFailure(user_name);
+
+            for (auto user_authentication_type : user_authentication_types)
             {
-                type_to_method[user_auth_type]->authenticate(user_name, session, mt, address);
-                mt.send(Messaging::AuthenticationOk(), true);
-                LOG_DEBUG(log, "Authentication for user {} was successful.", user_name);
-                return;
+                if (type_to_method.find(user_authentication_type) != type_to_method.end())
+                {
+                    type_to_method[user_authentication_type]->authenticate(user_name, session, mt, address);
+                    mt.send(Messaging::AuthenticationOk(), true);
+                    LOG_DEBUG(log, "Authentication for user {} was successful.", user_name);
+                    return;
+                }
             }
         }
         catch (const Exception&)
@@ -913,7 +916,7 @@ public:
         mt.send(Messaging::ErrorOrNoticeResponse(Messaging::ErrorOrNoticeResponse::ERROR, "0A000", "Authentication method is not supported"),
                 true);
 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Authentication method is not supported: {}", user_auth_type);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "None of the authentication methods registered for the user are supported");
     }
 };
 }

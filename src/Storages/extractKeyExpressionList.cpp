@@ -16,15 +16,12 @@ namespace DB
             if (expr_func->arguments)
                 /// Primary key is specified in tuple, extract its arguments.
                 return expr_func->arguments->clone();
-            else
-                return std::make_shared<ASTExpressionList>();
+            return std::make_shared<ASTExpressionList>();
         }
-        else
-        {
-            /// Primary key consists of one column.
-            auto res = std::make_shared<ASTExpressionList>();
-            res->children.push_back(node);
-            return res;
-        }
+
+        /// Primary key consists of one column.
+        auto res = std::make_shared<ASTExpressionList>();
+        res->children.push_back(node);
+        return res;
     }
 }

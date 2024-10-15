@@ -1,9 +1,7 @@
 import pytest
-from test_modify_engine_on_restart.common import (
-    get_table_path,
-    set_convert_flags,
-)
+
 from helpers.cluster import ClickHouseCluster
+from test_modify_engine_on_restart.common import get_table_path, set_convert_flags
 
 cluster = ClickHouseCluster(__file__)
 ch1 = cluster.add_instance(

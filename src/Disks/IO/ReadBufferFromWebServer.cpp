@@ -12,6 +12,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds http_connection_timeout;
+    extern const SettingsSeconds http_receive_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -53,8 +58,8 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
     const auto & server_settings = context->getServerSettings();
 
     auto connection_timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, server_settings.keep_alive_timeout);
-    connection_timeouts.withConnectionTimeout(std::max<Poco::Timespan>(settings.http_connection_timeout, Poco::Timespan(20, 0)));
-    connection_timeouts.withReceiveTimeout(std::max<Poco::Timespan>(settings.http_receive_timeout, Poco::Timespan(20, 0)));
+    connection_timeouts.withConnectionTimeout(std::max<Poco::Timespan>(settings[Setting::http_connection_timeout], Poco::Timespan(20, 0)));
+    connection_timeouts.withReceiveTimeout(std::max<Poco::Timespan>(settings[Setting::http_receive_timeout], Poco::Timespan(20, 0)));
 
     auto res = BuilderRWBufferFromHTTP(uri)
                    .withConnectionGroup(HTTPConnectionGroupType::DISK)

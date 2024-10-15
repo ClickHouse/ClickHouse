@@ -2,9 +2,9 @@
 
 #if defined(OS_LINUX) && defined(__amd64__) && defined(__SSE2__) && !defined(SANITIZER) && defined(NDEBUG)
 
-#include <sys/mman.h>
+#include <cstring>
 #include <unistd.h>
-#include <string.h>
+#include <sys/mman.h>
 #include <sys/syscall.h>
 
 #include <emmintrin.h>

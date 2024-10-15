@@ -145,6 +145,7 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
     static constexpr int MAX_LENGTH = 316;
 
+    /// NOLINTBEGIN(readability-else-after-return)
     ReadBufferFromMemory * buf_from_memory = dynamic_cast<ReadBufferFromMemory *>(&buf);
     /// Fast path (avoid copying) if the buffer have at least MAX_LENGTH bytes or buf is ReadBufferFromMemory
     if (likely(!buf.eof() && (buf_from_memory || buf.position() + MAX_LENGTH <= buf.buffer().end())))
@@ -259,6 +260,7 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
 
         return ReturnType(true);
     }
+    /// NOLINTEND(readability-else-after-return)
 }
 
 
@@ -479,7 +481,7 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in, bool & has_fractional)
             }
             return ReturnType(false);
         }
-        else if (*in.position() == 'n' || *in.position() == 'N')
+        if (*in.position() == 'n' || *in.position() == 'N')
         {
             if (assertOrParseNaN<throw_exception>(in))
             {

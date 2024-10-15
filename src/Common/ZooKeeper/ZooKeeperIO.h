@@ -45,6 +45,36 @@ void write(const std::vector<T> & arr, WriteBuffer & out)
 
 template <typename T>
 requires is_arithmetic_v<T>
+size_t size(T x)
+{
+    return sizeof(x);
+}
+
+size_t size(OpNum x);
+size_t size(const std::string & s);
+size_t size(const ACL & acl);
+size_t size(const Stat & stat);
+size_t size(const Error & x);
+
+template <size_t N>
+size_t size(const std::array<char, N>)
+{
+    return size(static_cast<int32_t>(N)) + N;
+}
+
+template <typename T>
+size_t size(const std::vector<T> & arr)
+{
+    size_t total_size = size(static_cast<int32_t>(arr.size()));
+    for (const auto & elem : arr)
+        total_size += size(elem);
+
+    return total_size;
+}
+
+
+template <typename T>
+requires is_arithmetic_v<T>
 void read(T & x, ReadBuffer & in)
 {
     readBinaryBigEndian(x, in);

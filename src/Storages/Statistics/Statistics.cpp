@@ -59,16 +59,16 @@ IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
 {
 }
 
-ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, const String & column_name_)
+ColumnPartStatistics::ColumnPartStatistics(const ColumnStatisticsDescription & stats_desc_, const String & column_name_)
     : stats_desc(stats_desc_), column_name(column_name_)
 {
 }
 
-void ColumnStatistics::update(const ColumnPtr & column)
+void ColumnPartStatistics::build(const ColumnPtr & column)
 {
     rows += column->size();
     for (const auto & stat : stats)
-        stat.second->update(column);
+        stat.second->build(column);
 }
 
 UInt64 IStatistics::estimateCardinality() const
@@ -98,7 +98,7 @@ Float64 IStatistics::estimateLess(const Field & /*val*/) const
 /// Sometimes, it is possible to combine multiple statistics in a clever way. For that reason, all estimation are performed in a central
 /// place (here), and we don't simply pass the predicate to the first statistics object that supports it natively.
 
-Float64 ColumnStatistics::estimateLess(const Field & val) const
+Float64 ColumnPartStatistics::estimateLess(const Field & val) const
 {
     if (stats.contains(StatisticsType::TDigest))
         return stats.at(StatisticsType::TDigest)->estimateLess(val);
@@ -107,12 +107,12 @@ Float64 ColumnStatistics::estimateLess(const Field & val) const
     return rows * ConditionSelectivityEstimator::default_cond_range_factor;
 }
 
-Float64 ColumnStatistics::estimateGreater(const Field & val) const
+Float64 ColumnPartStatistics::estimateGreater(const Field & val) const
 {
     return rows - estimateLess(val);
 }
 
-Float64 ColumnStatistics::estimateEqual(const Field & val) const
+Float64 ColumnPartStatistics::estimateEqual(const Field & val) const
 {
     if (stats_desc.data_type->isValueRepresentedByNumber() && stats.contains(StatisticsType::Uniq) && stats.contains(StatisticsType::TDigest))
     {
@@ -137,7 +137,7 @@ Float64 ColumnStatistics::estimateEqual(const Field & val) const
 
 /// -------------------------------------
 
-void ColumnStatistics::serialize(WriteBuffer & buf)
+void ColumnPartStatistics::serialize(WriteBuffer & buf)
 {
     writeIntBinary(V0, buf);
 
@@ -154,7 +154,7 @@ void ColumnStatistics::serialize(WriteBuffer & buf)
         stat_ptr->serialize(buf);
 }
 
-void ColumnStatistics::deserialize(ReadBuffer &buf)
+void ColumnPartStatistics::deserialize(ReadBuffer &buf)
 {
     UInt16 version;
     readIntBinary(version, buf);
@@ -180,17 +180,17 @@ void ColumnStatistics::deserialize(ReadBuffer &buf)
     }
 }
 
-String ColumnStatistics::getFileName() const
+String ColumnPartStatistics::getFileName() const
 {
     return STATS_FILE_PREFIX + columnName();
 }
 
-const String & ColumnStatistics::columnName() const
+const String & ColumnPartStatistics::columnName() const
 {
     return column_name;
 }
 
-UInt64 ColumnStatistics::rowCount() const
+UInt64 ColumnPartStatistics::rowCount() const
 {
     return rows;
 }
@@ -241,9 +241,9 @@ void MergeTreeStatisticsFactory::validate(const ColumnStatisticsDescription & st
     }
 }
 
-ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnDescription & column_desc) const
+ColumnStatisticsPartPtr MergeTreeStatisticsFactory::get(const ColumnDescription & column_desc) const
 {
-    ColumnStatisticsPtr column_stat = std::make_shared<ColumnStatistics>(column_desc.statistics, column_desc.name);
+    ColumnStatisticsPartPtr column_stat = std::make_shared<ColumnPartStatistics>(column_desc.statistics, column_desc.name);
     for (const auto & [type, desc] : column_desc.statistics.types_to_desc)
     {
         auto it = creators.find(type);

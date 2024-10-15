@@ -3,10 +3,10 @@ import os.path as p
 import time
 
 import pytest
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
-from helpers.test_tools import csv_compare
+from helpers.test_tools import TSV, csv_compare
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(

@@ -48,6 +48,7 @@ $CLICKHOUSE_CLIENT --query "
     SELECT 'id_' || splitByChar('_', query_id)[1] AS id FROM system.text_log
     WHERE query_id LIKE '%$query_id_suffix' AND message LIKE '%$message%'
     ORDER BY id
+    SETTINGS max_rows_to_read = 0
 "
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_async_insert_fallback"

@@ -260,7 +260,7 @@ public:
         Block sample_block,
         std::shared_ptr<StorageMergeTreeIndex> storage_)
         : SourceStepWithFilter(
-            DataStream{.header = std::move(sample_block)},
+            std::move(sample_block),
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -351,7 +351,7 @@ void ReadFromMergeTreeIndex::initializePipeline(QueryPipelineBuilder & pipeline,
         filtered_parts.size(),
         storage->source_table->getStorageID().getNameForLogs());
 
-    pipeline.init(Pipe(std::make_shared<MergeTreeIndexSource>(getOutputStream().header, storage->key_sample_block, std::move(filtered_parts), context, storage->with_marks)));
+    pipeline.init(Pipe(std::make_shared<MergeTreeIndexSource>(getOutputHeader(), storage->key_sample_block, std::move(filtered_parts), context, storage->with_marks)));
 }
 
 MergeTreeData::DataPartsVector StorageMergeTreeIndex::getFilteredDataParts(const ExpressionActionsPtr & virtual_columns_filter) const

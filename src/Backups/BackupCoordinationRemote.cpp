@@ -570,7 +570,7 @@ void BackupCoordinationRemote::prepareReplicatedAccess() const
     if (replicated_access)
         return;
 
-    std::vector<BackupCoordinationReplicatedAccess::FilePathForAccessEntitry> file_path_for_access_entities;
+    std::vector<BackupCoordinationReplicatedAccess::FilePathForAccessEntity> file_path_for_access_entities;
     auto holder = with_retries.createRetriesControlHolder("prepareReplicatedAccess");
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()

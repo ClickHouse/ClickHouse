@@ -19,6 +19,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds lock_acquire_timeout;
+}
 
 bool needRewriteQueryWithFinalForStorage(const Names & column_names, const StoragePtr & storage)
 {
@@ -39,7 +43,7 @@ void readFinalFromNestedStorage(
     size_t num_streams)
 {
     NameSet column_names_set = NameSet(column_names.begin(), column_names.end());
-    auto lock = nested_storage->lockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
+    auto lock = nested_storage->lockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     const auto & nested_metadata = nested_storage->getInMemoryMetadataPtr();
 
     Block nested_header = nested_metadata->getSampleBlock();
@@ -74,12 +78,12 @@ void readFinalFromNestedStorage(
 
     if (!expressions->children.empty())
     {
-        const auto & header = query_plan.getCurrentDataStream().header;
+        const auto & header = query_plan.getCurrentHeader();
         auto syntax = TreeRewriter(context).analyze(expressions, header.getNamesAndTypesList());
         auto actions = ExpressionAnalyzer(expressions, syntax, context).getActionsDAG(true /* add_aliases */, false /* project_result */);
 
         auto step = std::make_unique<FilterStep>(
-            query_plan.getCurrentDataStream(),
+            query_plan.getCurrentHeader(),
             std::move(actions),
             filter_column_name,
             false);

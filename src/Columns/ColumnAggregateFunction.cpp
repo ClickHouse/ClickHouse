@@ -746,18 +746,16 @@ MutableColumnPtr ColumnAggregateFunction::cloneResized(size_t size) const
         res_data.assign(data.begin(), data.begin() + size);
         return res;
     }
-    else
-    {
-        /// Create a new column to return.
-        MutableColumnPtr cloned_col = cloneEmpty();
-        auto * res = typeid_cast<ColumnAggregateFunction *>(cloned_col.get());
 
-        res->insertRangeFrom(*this, 0, from_size);
-        for (size_t i = from_size; i < size; ++i)
-            res->insertDefault();
+    /// Create a new column to return.
+    MutableColumnPtr cloned_col = cloneEmpty();
+    auto * res = typeid_cast<ColumnAggregateFunction *>(cloned_col.get());
 
-        return cloned_col;
-    }
+    res->insertRangeFrom(*this, 0, from_size);
+    for (size_t i = from_size; i < size; ++i)
+        res->insertDefault();
+
+    return cloned_col;
 }
 
 }

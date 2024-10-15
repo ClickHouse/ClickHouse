@@ -170,9 +170,6 @@
 [submodule "contrib/fast_float"]
 	path = contrib/fast_float
 	url = https://github.com/fastfloat/fast_float
-[submodule "contrib/libpq"]
-	path = contrib/libpq
-	url = https://github.com/ClickHouse/libpq
 [submodule "contrib/NuRaft"]
 	path = contrib/NuRaft
 	url = https://github.com/ClickHouse/NuRaft
@@ -366,6 +363,15 @@
 [submodule "contrib/double-conversion"]
 	path = contrib/double-conversion
 	url = https://github.com/ClickHouse/double-conversion.git
+[submodule "contrib/mongo-cxx-driver"]
+	path = contrib/mongo-cxx-driver
+	url = https://github.com/ClickHouse/mongo-cxx-driver.git
+[submodule "contrib/mongo-c-driver"]
+	path = contrib/mongo-c-driver
+	url = https://github.com/ClickHouse/mongo-c-driver.git
 [submodule "contrib/numactl"]
 	path = contrib/numactl
 	url = https://github.com/ClickHouse/numactl.git
+[submodule "contrib/postgres"]
+	path = contrib/postgres
+	url = https://github.com/ClickHouse/postgres.git

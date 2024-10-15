@@ -123,19 +123,17 @@ public:
             return std::make_shared<DataTypeDate>();
         if (result_type == ResultType::Date32)
             return std::make_shared<DataTypeDate32>();
-        else if (result_type == ResultType::DateTime)
+        if (result_type == ResultType::DateTime)
             return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 1, false));
-        else
-        {
-            size_t scale;
-            if (datepart_kind == IntervalKind::Kind::Millisecond)
-                scale = 3;
-            else if (datepart_kind == IntervalKind::Kind::Microsecond)
-                scale = 6;
-            else if (datepart_kind == IntervalKind::Kind::Nanosecond)
-                scale = 9;
-            return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 1, false));
-        }
+
+        size_t scale;
+        if (datepart_kind == IntervalKind::Kind::Millisecond)
+            scale = 3;
+        else if (datepart_kind == IntervalKind::Kind::Microsecond)
+            scale = 6;
+        else if (datepart_kind == IntervalKind::Kind::Nanosecond)
+            scale = 9;
+        return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 1, false));
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

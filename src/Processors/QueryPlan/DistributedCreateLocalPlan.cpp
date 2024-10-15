@@ -8,6 +8,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+}
 
 std::unique_ptr<QueryPlan> createLocalPlan(
     const ASTPtr & query_ast,
@@ -35,7 +39,7 @@ std::unique_ptr<QueryPlan> createLocalPlan(
         .setShardInfo(static_cast<UInt32>(shard_num), static_cast<UInt32>(shard_count))
         .ignoreASTOptimizations();
 
-    if (context->getSettingsRef().allow_experimental_analyzer)
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         /// For Analyzer, identifier in GROUP BY/ORDER BY/LIMIT BY lists has been resolved to
         /// ConstantNode in QueryTree if it is an alias of a constant, so we should not replace

@@ -19,6 +19,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_variant_type;
+    extern const SettingsBool use_variant_as_common_type;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -40,7 +46,7 @@ public:
     explicit FunctionMap(ContextPtr context_)
         : context(context_)
         , use_variant_as_common_type(
-              context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_as_common_type)
+              context->getSettingsRef()[Setting::allow_experimental_variant_type] && context->getSettingsRef()[Setting::use_variant_as_common_type])
         , function_array(FunctionFactory::instance().get("array", context))
         , function_map_from_arrays(FunctionFactory::instance().get("mapFromArrays", context))
     {
@@ -155,7 +161,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 

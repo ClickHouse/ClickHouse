@@ -91,7 +91,7 @@ WriteBufferFromFile::~WriteBufferFromFile()
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    int err = ::close(fd);
+    [[maybe_unused]] int err = ::close(fd);
     /// Everything except for EBADF should be ignored in dtor, since all of
     /// others (EINTR/EIO/ENOSPC/EDQUOT) could be possible during writing to
     /// fd, and then write already failed and the error had been reported to

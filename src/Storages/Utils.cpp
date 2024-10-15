@@ -18,13 +18,11 @@ namespace DB
         {
             return CurrentMetrics::AttachedView;
         }
-        else if (storage->isDictionary())
+        if (storage->isDictionary())
         {
             return CurrentMetrics::AttachedDictionary;
         }
-        else
-        {
-            return CurrentMetrics::AttachedTable;
-        }
+
+        return CurrentMetrics::AttachedTable;
     }
 }

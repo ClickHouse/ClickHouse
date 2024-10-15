@@ -56,8 +56,7 @@ public:
         auto variable = global_variable_map.find(Poco::toLower(variable_name));
         if (variable == global_variable_map.end())
             return std::make_shared<DataTypeInt32>();
-        else
-            return variable->second.type;
+        return variable->second.type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override

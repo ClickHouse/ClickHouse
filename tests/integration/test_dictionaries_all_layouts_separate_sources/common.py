@@ -1,7 +1,7 @@
 import os
 import shutil
 
-from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
+from helpers.dictionary import Dictionary, DictionaryStructure, Field, Layout, Row
 
 KEY_FIELDS = {
     "simple": [Field("KeyField", "UInt64", is_key=True, default_value_for_get=9999999)],

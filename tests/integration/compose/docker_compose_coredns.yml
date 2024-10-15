@@ -1,5 +1,3 @@
-version: "2.3"
-
 services:
   coredns:
     image: coredns/coredns:1.9.3 # :latest broke this test

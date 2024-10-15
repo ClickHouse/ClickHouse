@@ -1,15 +1,15 @@
           Prewhere filter
-          Prewhere filter column: and(notEmpty(v), equals(k, 3)) (removed)
+          Prewhere filter column: and(equals(k, 3), notEmpty(v)) (removed)
 1
           Prewhere filter
-          Prewhere filter column: and(like(d, \'%es%\'), less(c, 20), equals(b, \'3\'), equals(a, 3)) (removed)
+          Prewhere filter column: and(equals(a, 3), equals(b, \'3\'), less(c, 20), like(d, \'%es%\')) (removed)
 1
           Prewhere filter
-          Prewhere filter column: and(like(d, \'%es%\'), less(c, 20), greater(c, 0), equals(a, 3)) (removed)
+          Prewhere filter column: and(equals(a, 3), less(c, 20), greater(c, 0), like(d, \'%es%\')) (removed)
 1
           Prewhere filter
-          Prewhere filter column: and(like(d, \'%es%\'), equals(b, \'3\'), less(c, 20)) (removed)
+          Prewhere filter column: and(equals(b, \'3\'), less(c, 20), like(d, \'%es%\')) (removed)
 1
           Prewhere filter
-          Prewhere filter column: and(like(d, \'%es%\'), equals(b, \'3\'), equals(a, 3)) (removed)
+          Prewhere filter column: and(equals(a, 3), equals(b, \'3\'), like(d, \'%es%\')) (removed)
 1

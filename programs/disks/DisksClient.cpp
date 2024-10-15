@@ -49,10 +49,8 @@ std::vector<String> DiskWithPath::listAllFilesByPath(const String & any_path) co
         disk->listFiles(getRelativeFromRoot(any_path), file_names);
         return file_names;
     }
-    else
-    {
-        return {};
-    }
+
+    return {};
 }
 
 std::vector<String> DiskWithPath::getAllFilesByPattern(const String & pattern) const
@@ -61,39 +59,30 @@ std::vector<String> DiskWithPath::getAllFilesByPattern(const String & pattern) c
     {
         auto slash_pos = pattern.find_last_of('/');
         if (slash_pos >= pattern.size())
-        {
             return {"", pattern};
-        }
-        else
-        {
-            return {pattern.substr(0, slash_pos + 1), pattern.substr(slash_pos + 1, pattern.size() - slash_pos - 1)};
-        }
+
+        return {pattern.substr(0, slash_pos + 1), pattern.substr(slash_pos + 1, pattern.size() - slash_pos - 1)};
     }();
 
     if (!isDirectory(path_before))
-    {
         return {};
-    }
-    else
+
+    std::vector<String> file_names = listAllFilesByPath(path_before);
+    std::vector<String> answer;
+
+    for (const auto & file_name : file_names)
     {
-        std::vector<String> file_names = listAllFilesByPath(path_before);
-
-        std::vector<String> answer;
-
-        for (const auto & file_name : file_names)
+        if (file_name.starts_with(path_after))
         {
-            if (file_name.starts_with(path_after))
+            String file_pattern = path_before + file_name;
+            if (isDirectory(file_pattern))
             {
-                String file_pattern = path_before + file_name;
-                if (isDirectory(file_pattern))
-                {
-                    file_pattern = file_pattern + "/";
-                }
-                answer.push_back(file_pattern);
+                file_pattern = file_pattern + "/";
             }
+            answer.push_back(file_pattern);
         }
-        return answer;
     }
+    return answer;
 };
 
 void DiskWithPath::setPath(const String & any_path)

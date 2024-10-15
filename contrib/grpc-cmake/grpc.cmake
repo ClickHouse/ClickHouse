@@ -22,7 +22,7 @@
 # limitations under the License.
 
 # We want to use C++23, but GRPC is not ready
-set (CMAKE_CXX_STANDARD 20)
+set (CMAKE_CXX_STANDARD 17)
 
 set(_gRPC_ZLIB_INCLUDE_DIR "")
 set(_gRPC_ZLIB_LIBRARIES ch_contrib::zlib)

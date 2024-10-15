@@ -21,7 +21,7 @@ wait_for_number_of_parts() {
     echo "$res"
 }
 
-$CLICKHOUSE_CLIENT -nmq "
+$CLICKHOUSE_CLIENT -mq "
 DROP TABLE IF EXISTS test_without_merge;
 DROP TABLE IF EXISTS test_with_merge;
 
@@ -34,7 +34,7 @@ INSERT INTO test_without_merge SELECT 3;"
 
 wait_for_number_of_parts 'test_without_merge' 1 10
 
-$CLICKHOUSE_CLIENT -nmq "
+$CLICKHOUSE_CLIENT -mq "
 DROP TABLE test_without_merge;
 
 SELECT 'With merge any part range';
@@ -47,7 +47,7 @@ INSERT INTO test_with_merge SELECT 3;"
 
 wait_for_number_of_parts 'test_with_merge' 1 100
 
-$CLICKHOUSE_CLIENT -nmq "
+$CLICKHOUSE_CLIENT -mq "
 DROP TABLE test_with_merge;
 
 SELECT 'With merge partition only';
@@ -60,7 +60,7 @@ INSERT INTO test_with_merge SELECT 3;"
 
 wait_for_number_of_parts 'test_with_merge' 1 100
 
-$CLICKHOUSE_CLIENT -nmq "
+$CLICKHOUSE_CLIENT -mq "
 SELECT sleepEachRow(1) FROM numbers(9) SETTINGS function_sleep_max_microseconds_per_block = 10000000 FORMAT Null; -- Sleep for 9 seconds and verify that we keep the old part because it's the only one
 SELECT (now() - modification_time) > 5 FROM system.parts WHERE database = currentDatabase() AND table='test_with_merge' AND active;
 

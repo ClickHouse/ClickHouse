@@ -254,8 +254,8 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[mayb
 
         if (error->expression < 0)
             throw Exception::createRuntime(ErrorCodes::LOGICAL_ERROR, String(error->message));
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Pattern '{}' failed with error '{}'", str_patterns[error->expression], String(error->message));
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Pattern '{}' failed with error '{}'", str_patterns[error->expression], String(error->message));
     }
 
     ProfileEvents::increment(ProfileEvents::RegexpWithMultipleNeedlesCreated);

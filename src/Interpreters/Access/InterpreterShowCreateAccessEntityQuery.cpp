@@ -64,8 +64,10 @@ namespace
                 query->default_roles = user.default_roles.toASTWithNames(*access_control);
         }
 
-        if (user.auth_data.getType() != AuthenticationType::NO_PASSWORD)
-            query->auth_data = user.auth_data.toAST();
+        for (const auto & authentication_method : user.authentication_methods)
+        {
+            query->authentication_methods.push_back(authentication_method.toAST());
+        }
 
         if (user.valid_until)
         {

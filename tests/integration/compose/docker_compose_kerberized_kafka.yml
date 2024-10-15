@@ -1,5 +1,3 @@
-version: '2.3'
-
 services:
   kafka_kerberized_zookeeper:
     image: confluentinc/cp-zookeeper:5.2.0

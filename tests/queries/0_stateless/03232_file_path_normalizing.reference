@@ -1,1 +1,1 @@
-data_hive/partitioning/column0=Elizabeth/sample.parquet
+data_hive/partitioning/non_existing_column=Elizabeth/sample.parquet

@@ -205,8 +205,7 @@ JSON::ElementType JSON::getType() const
             Pos after_string = skipString();
             if (after_string < ptr_end && *after_string == ':')
                 return TYPE_NAME_VALUE_PAIR;
-            else
-                return TYPE_STRING;
+            return TYPE_STRING;
         }
         default:
             throw JSONException(std::string("JSON: unexpected char ") + *ptr_begin + ", expected one of '{[tfn-0123456789\"'");
@@ -474,8 +473,7 @@ JSON::Pos JSON::searchField(const char * data, size_t size) const
 
     if (it == end())
         return nullptr;
-    else
-        return it->data();
+    return it->data();
 }
 
 
@@ -487,7 +485,7 @@ bool JSON::hasEscapes() const
 
     if (*pos == '"')
         return false;
-    else if (*pos == '\\')
+    if (*pos == '\\')
         return true;
     throw JSONException("JSON: unexpected end of data.");
 }
@@ -503,7 +501,7 @@ bool JSON::hasSpecialChars() const
 
     if (*pos == '"')
         return false;
-    else if (pos < ptr_end)
+    if (pos < ptr_end)
         return true;
     throw JSONException("JSON: unexpected end of data.");
 }
@@ -682,10 +680,9 @@ double JSON::toDouble() const
 
     if (type == TYPE_NUMBER)
         return getDouble();
-    else if (type == TYPE_STRING)
+    if (type == TYPE_STRING)
         return JSON(ptr_begin + 1, ptr_end, level + 1).getDouble();
-    else
-        throw JSONException("JSON: cannot convert value to double.");
+    throw JSONException("JSON: cannot convert value to double.");
 }
 
 Int64 JSON::toInt() const
@@ -694,10 +691,9 @@ Int64 JSON::toInt() const
 
     if (type == TYPE_NUMBER)
         return getInt();
-    else if (type == TYPE_STRING)
+    if (type == TYPE_STRING)
         return JSON(ptr_begin + 1, ptr_end, level + 1).getInt();
-    else
-        throw JSONException("JSON: cannot convert value to signed integer.");
+    throw JSONException("JSON: cannot convert value to signed integer.");
 }
 
 UInt64 JSON::toUInt() const
@@ -706,10 +702,9 @@ UInt64 JSON::toUInt() const
 
     if (type == TYPE_NUMBER)
         return getUInt();
-    else if (type == TYPE_STRING)
+    if (type == TYPE_STRING)
         return JSON(ptr_begin + 1, ptr_end, level + 1).getUInt();
-    else
-        throw JSONException("JSON: cannot convert value to unsigned integer.");
+    throw JSONException("JSON: cannot convert value to unsigned integer.");
 }
 
 std::string JSON::toString() const
@@ -718,11 +713,9 @@ std::string JSON::toString() const
 
     if (type == TYPE_STRING)
         return getString();
-    else
-    {
-        Pos pos = skipElement();
-        return std::string(ptr_begin, pos - ptr_begin);
-    }
+
+    Pos pos = skipElement();
+    return std::string(ptr_begin, pos - ptr_begin);
 }
 
 

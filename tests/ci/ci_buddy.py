@@ -1,15 +1,15 @@
 import argparse
 import json
 import os
-from typing import Union, Dict, List
+from typing import Dict, List, Union
 
 import boto3
 import requests
 from botocore.exceptions import ClientError
 
-from pr_info import PRInfo
 from ci_config import CI
 from ci_utils import WithIter
+from pr_info import PRInfo
 
 
 class Channels(metaclass=WithIter):

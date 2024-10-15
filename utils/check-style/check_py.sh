@@ -11,6 +11,12 @@ runtime=$((`date +%s`-start))
 echo "Check python formatting with black. Done. $runtime seconds."
 
 start=`date +%s`
+echo "Check " | ts
+./check-isort -n              |& tee /test_output/isort_output.txt
+runtime=$((`date +%s`-start))
+echo "Check python formatting with isort. Done. $runtime seconds."
+
+start=`date +%s`
 ./check-pylint -n               |& tee /test_output/pylint_output.txt
 runtime=$((`date +%s`-start))
 echo "Check pylint. Done. $runtime seconds."

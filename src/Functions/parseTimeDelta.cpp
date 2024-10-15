@@ -138,6 +138,11 @@ namespace
             return std::make_shared<DataTypeFloat64>();
         }
 
+        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        {
+            return std::make_shared<DataTypeFloat64>();
+        }
+
         bool useDefaultImplementationForConstants() const override { return true; }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

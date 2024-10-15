@@ -10,7 +10,7 @@ Time window functions return the inclusive lower and exclusive upper bound of th
 
 ## tumble
 
-A tumbling time window assigns records to non-overlapping, continuous windows with a fixed duration (`interval`). 
+A tumbling time window assigns records to non-overlapping, continuous windows with a fixed duration (`interval`).
 
 **Syntax**
 
@@ -21,7 +21,7 @@ tumble(time_attr, interval [, timezone])
 **Arguments**
 - `time_attr` — Date and time. [DateTime](../data-types/datetime.md).
 - `interval` — Window interval in [Interval](../data-types/special-data-types/interval.md).
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (optional). 
+- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
 
 **Returned values**
 
@@ -57,7 +57,7 @@ tumbleStart(time_attr, interval [, timezone]);
 
 - `time_attr` — Date and time. [DateTime](../data-types/datetime.md).
 - `interval` — Window interval in [Interval](../data-types/special-data-types/interval.md).
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (optional).
+- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
 
 The parameters above can also be passed to the function as a [tuple](../data-types/tuple.md).
 
@@ -95,7 +95,7 @@ tumbleEnd(time_attr, interval [, timezone]);
 
 - `time_attr` — Date and time. [DateTime](../data-types/datetime.md).
 - `interval` — Window interval in [Interval](../data-types/special-data-types/interval.md).
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (optional).
+- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
 
 The parameters above can also be passed to the function as a [tuple](../data-types/tuple.md).
 
@@ -132,7 +132,7 @@ hop(time_attr, hop_interval, window_interval [, timezone])
 - `time_attr` — Date and time. [DateTime](../data-types/datetime.md).
 - `hop_interval` — Positive Hop interval. [Interval](../data-types/special-data-types/interval.md).
 - `window_interval` — Positive Window interval. [Interval](../data-types/special-data-types/interval.md).
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (optional).
+- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
 
 **Returned values**
 
@@ -172,7 +172,7 @@ hopStart(time_attr, hop_interval, window_interval [, timezone]);
 - `time_attr` — Date and time. [DateTime](../data-types/datetime.md).
 - `hop_interval` — Positive Hop interval. [Interval](../data-types/special-data-types/interval.md).
 - `window_interval` — Positive Window interval. [Interval](../data-types/special-data-types/interval.md).
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (optional).
+- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
 
 The parameters above can also be passed to the function as a [tuple](../data-types/tuple.md).
 
@@ -212,9 +212,9 @@ hopEnd(time_attr, hop_interval, window_interval [, timezone]);
 **Arguments**
 
 - `time_attr` — Date and time. [DateTime](../data-types/datetime.md).
-- `hop_interval` — Positive Hop interval. [Interval](../data-types/special-data-types/interval.md). 
+- `hop_interval` — Positive Hop interval. [Interval](../data-types/special-data-types/interval.md).
 - `window_interval` — Positive Window interval. [Interval](../data-types/special-data-types/interval.md).
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (optional).
+- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
 
 The parameters above can also be passed to the function as a [tuple](../data-types/tuple.md).
 

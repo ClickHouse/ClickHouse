@@ -19,6 +19,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 http_max_fields;
+    extern const SettingsUInt64 http_max_field_name_size;
+    extern const SettingsUInt64 http_max_field_value_size;
+}
 
 namespace ErrorCodes
 {
@@ -42,9 +48,9 @@ const int HTMLForm::UNKNOWN_CONTENT_LENGTH = -1;
 
 
 HTMLForm::HTMLForm(const Settings & settings)
-    : max_fields_number(settings.http_max_fields)
-    , max_field_name_size(settings.http_max_field_name_size)
-    , max_field_value_size(settings.http_max_field_value_size)
+    : max_fields_number(settings[Setting::http_max_fields])
+    , max_field_name_size(settings[Setting::http_max_field_name_size])
+    , max_field_value_size(settings[Setting::http_max_field_value_size])
     , encoding(ENCODING_URL)
 {
 }

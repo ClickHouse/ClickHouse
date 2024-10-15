@@ -84,6 +84,7 @@ private:
         int32_t connection_timeout_ms = Coordination::DEFAULT_CONNECTION_TIMEOUT_MS;
         int32_t operation_timeout_ms = Coordination::DEFAULT_OPERATION_TIMEOUT_MS;
         bool use_compression = false;
+        bool use_xid_64 = false;
 
         size_t sessions = 1;
     };

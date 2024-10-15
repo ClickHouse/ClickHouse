@@ -23,7 +23,10 @@ public:
               0,
               settings,
               settings.defaults_for_omitted_fields ? &block_missing_values : nullptr))
-        , header(header_) {}
+        , header(header_)
+        , block_missing_values(header.columns())
+        {
+        }
 
     String getName() const override { return "Native"; }
 
@@ -56,7 +59,7 @@ public:
         IInputFormat::setReadBuffer(in_);
     }
 
-    const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
+    const BlockMissingValues * getMissingValues() const override { return &block_missing_values; }
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 

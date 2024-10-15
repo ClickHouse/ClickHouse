@@ -52,7 +52,7 @@ public:
         {
             if (filter_type == "handler")
                 continue;
-            else if (filter_type == "url")
+            if (filter_type == "url")
                 addFilter(urlFilter(config, prefix + ".url"));
             else if (filter_type == "empty_query_string")
                 addFilter(emptyQueryStringFilter());

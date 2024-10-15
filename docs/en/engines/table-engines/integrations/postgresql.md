@@ -1,15 +1,18 @@
 ---
 slug: /en/engines/table-engines/integrations/postgresql
+title: PostgreSQL Table Engine
 sidebar_position: 160
 sidebar_label: PostgreSQL
 ---
 
-# PostgreSQL
-
-The PostgreSQL engine allows to perform `SELECT` and `INSERT` queries on data that is stored on a remote PostgreSQL server.
+The PostgreSQL engine allows `SELECT` and `INSERT` queries on data stored on a remote PostgreSQL server.
 
 :::note
 Currently, only PostgreSQL versions 12 and up are supported.
+:::
+
+:::note Replicating or migrating Postgres data with with PeerDB
+> In addition to the Postgres table engine, you can use [PeerDB](https://docs.peerdb.io/introduction) by ClickHouse to set up a continuous data pipeline from Postgres to ClickHouse. PeerDB is a tool designed specifically to replicate data from Postgres to ClickHouse using change data capture (CDC).
 :::
 
 ## Creating a Table {#creating-a-table}

@@ -31,9 +31,9 @@ ClickHouse:
 - Periodically updates dictionaries and dynamically loads missing values. In other words, dictionaries can be loaded dynamically.
 - Allows creating dictionaries with xml files or [DDL queries](../../sql-reference/statements/create/dictionary.md).
 
-The configuration of dictionaries can be located in one or more xml-files. The path to the configuration is specified in the [dictionaries_config](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config) parameter.
+The configuration of dictionaries can be located in one or more xml-files. The path to the configuration is specified in the [dictionaries_config](../../operations/server-configuration-parameters/settings.md#dictionaries_config) parameter.
 
-Dictionaries can be loaded at server startup or at first use, depending on the [dictionaries_lazy_load](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load) setting.
+Dictionaries can be loaded at server startup or at first use, depending on the [dictionaries_lazy_load](../../operations/server-configuration-parameters/settings.md#dictionaries_lazy_load) setting.
 
 The [dictionaries](../../operations/system-tables/dictionaries.md#system_tables-dictionaries) system table contains information about dictionaries configured at server. For each dictionary you can find there:
 
@@ -1156,7 +1156,7 @@ Setting fields:
 - `command_read_timeout` - Timeout for reading data from command stdout in milliseconds. Default value 10000. Optional parameter.
 - `command_write_timeout` - Timeout for writing data to command stdin in milliseconds. Default value 10000. Optional parameter.
 - `implicit_key` — The executable source file can return only values, and the correspondence to the requested keys is determined implicitly — by the order of rows in the result. Default value is false.
-- `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_scripts_path). Additional script arguments can be specified using a whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `0`. Optional parameter.
+- `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](../../operations/server-configuration-parameters/settings.md#user_scripts_path). Additional script arguments can be specified using a whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `0`. Optional parameter.
 - `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Optional. Default value is `false`.
 
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled; otherwise, the DB user would be able to execute arbitrary binaries on the ClickHouse node.
@@ -1191,7 +1191,7 @@ Setting fields:
 - `command_read_timeout` - timeout for reading data from command stdout in milliseconds. Default value 10000. Optional parameter.
 - `command_write_timeout` - timeout for writing data to command stdin in milliseconds. Default value 10000. Optional parameter.
 - `implicit_key` — The executable source file can return only values, and the correspondence to the requested keys is determined implicitly — by the order of rows in the result. Default value is false. Optional parameter.
-- `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_scripts_path). Additional script arguments can be specified using whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `1`. Optional parameter.
+- `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](../../operations/server-configuration-parameters/settings.md#user_scripts_path). Additional script arguments can be specified using whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `1`. Optional parameter.
 - `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Optional. Default value is `false`.
 
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on ClickHouse node.
@@ -1232,7 +1232,7 @@ SOURCE(HTTP(
 ))
 ```
 
-In order for ClickHouse to access an HTTPS resource, you must [configure openSSL](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-openssl) in the server configuration.
+In order for ClickHouse to access an HTTPS resource, you must [configure openSSL](../../operations/server-configuration-parameters/settings.md#openssl) in the server configuration.
 
 Setting fields:
 
@@ -1680,7 +1680,7 @@ Setting fields:
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 :::
 
-#### Mongodb
+#### MongoDB
 
 Example of settings:
 
@@ -1694,6 +1694,17 @@ Example of settings:
         <db>test</db>
         <collection>dictionary_source</collection>
         <options>ssl=true</options>
+    </mongodb>
+</source>
+```
+
+or
+
+``` xml
+<source>
+    <mongodb>
+        <uri>mongodb://localhost:27017/test?ssl=true</uri>
+        <collection>dictionary_source</collection>
     </mongodb>
 </source>
 ```
@@ -1721,6 +1732,22 @@ Setting fields:
 - `db` – Name of the database.
 - `collection` – Name of the collection.
 - `options` -  MongoDB connection string options (optional parameter).
+
+or
+
+``` sql
+SOURCE(MONGODB(
+    uri 'mongodb://localhost:27017/clickhouse'
+    collection 'dictionary_source'
+))
+```
+
+Setting fields:
+
+- `uri` - URI for establish the connection.
+- `collection` – Name of the collection.
+
+[More information about the engine](../../engines/table-engines/integrations/mongodb.md)
 
 
 #### Redis
@@ -2038,7 +2065,7 @@ Configuration fields:
 | `expression`                                         | [Expression](../../sql-reference/syntax.md#expressions) that ClickHouse executes on the value.<br/>The expression can be a column name in the remote SQL database. Thus, you can use it to create an alias for the remote column.<br/><br/>Default value: no expression.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | No       |
 | <a name="hierarchical-dict-attr"></a> `hierarchical` | If `true`, the attribute contains the value of a parent key for the current key. See [Hierarchical Dictionaries](#hierarchical-dictionaries).<br/><br/>Default value: `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | No       |
 | `injective`                                          | Flag that shows whether the `id -> attribute` image is [injective](https://en.wikipedia.org/wiki/Injective_function).<br/>If `true`, ClickHouse can automatically place after the `GROUP BY` clause the requests to dictionaries with injection. Usually it significantly reduces the amount of such requests.<br/><br/>Default value: `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | No       |
-| `is_object_id`                                       | Flag that shows whether the query is executed for a MongoDB document by `ObjectID`.<br/><br/>Default value: `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
+| `is_object_id`                                       | Flag that shows whether the query is executed for a MongoDB document by `ObjectID`.<br/><br/>Default value: `false`.
 
 ## Hierarchical Dictionaries
 

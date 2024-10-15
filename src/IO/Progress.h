@@ -28,7 +28,6 @@ struct ProgressValues
     UInt64 result_bytes = 0;
 
     UInt64 elapsed_ns = 0;
-    UInt64 real_time_microseconds = 0;
 
     void read(ReadBuffer & in, UInt64 server_revision);
     void write(WriteBuffer & out, UInt64 client_revision) const;
@@ -41,7 +40,6 @@ struct ReadProgress
     UInt64 read_bytes = 0;
     UInt64 total_rows_to_read = 0;
     UInt64 total_bytes_to_read = 0;
-    UInt64 real_time_microseconds = 0;
 
     ReadProgress(UInt64 read_rows_, UInt64 read_bytes_, UInt64 total_rows_to_read_ = 0, UInt64 total_bytes_to_read_ = 0)
         : read_rows(read_rows_), read_bytes(read_bytes_), total_rows_to_read(total_rows_to_read_), total_bytes_to_read(total_bytes_to_read_) {}
@@ -98,8 +96,6 @@ struct Progress
 
     std::atomic<UInt64> elapsed_ns {0};
 
-    std::atomic<UInt64> real_time_microseconds {0};
-
     Progress() = default;
 
     Progress(UInt64 read_rows_, UInt64 read_bytes_, UInt64 total_rows_to_read_ = 0, UInt64 total_bytes_to_read_ = 0)
@@ -128,8 +124,6 @@ struct Progress
     bool incrementPiecewiseAtomically(const Progress & rhs);
 
     void incrementElapsedNs(UInt64 elapsed_ns_);
-
-    void incrementRealTimeMicroseconds(UInt64 microseconds);
 
     void reset();
 

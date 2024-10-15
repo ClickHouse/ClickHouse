@@ -2,7 +2,6 @@ import http.server
 import sys
 import uuid
 
-
 # Session tokens for IMDS sessions.
 tokens = set()
 

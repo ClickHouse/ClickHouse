@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 disk_name="02963_remote_read_bug"
 
-$CLICKHOUSE_CLIENT -nm --query "
+$CLICKHOUSE_CLIENT -m --query "
 DROP TABLE IF EXISTS test;
 
 CREATE TABLE test (a Int32, s String)
@@ -22,7 +22,7 @@ OPTIMIZE TABLE test FINAL;
 
 query_id=$(random_str 10)
 
-$CLICKHOUSE_CLIENT -nm --query_id "$query_id" --query "
+$CLICKHOUSE_CLIENT -m --query_id "$query_id" --query "
 WITH RANDOM_SET AS (
     SELECT rand32() % 10000 FROM numbers(100)
 )
@@ -37,7 +37,7 @@ SETTINGS
     merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem = 1, merge_tree_min_rows_for_concurrent_read_for_remote_filesystem = 1;
 "
 
-$CLICKHOUSE_CLIENT -nm --query "
+$CLICKHOUSE_CLIENT -m --query "
 SYSTEM FLUSH LOGS;
 
 -- This threshold was determined experimentally - before the fix this ratio had values around 50K

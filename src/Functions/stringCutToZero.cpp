@@ -38,6 +38,11 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     bool useDefaultImplementationForConstants() const override { return true; }
 
     static bool tryExecuteString(const IColumn * col, ColumnPtr & col_res, size_t input_rows_count)
@@ -80,10 +85,8 @@ public:
             col_res = std::move(col_str);
             return true;
         }
-        else
-        {
-            return false;
-        }
+
+        return false;
     }
 
     static bool tryExecuteFixedString(const IColumn * col, ColumnPtr & col_res, size_t input_rows_count)
@@ -124,10 +127,8 @@ public:
             col_res = std::move(col_str);
             return true;
         }
-        else
-        {
-            return false;
-        }
+
+        return false;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

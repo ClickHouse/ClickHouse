@@ -1,21 +1,23 @@
+import gzip
 import os
-import pytest
 import sys
 import time
-import pytz
 import uuid
-import grpc
-from helpers.cluster import ClickHouseCluster, is_arm, run_and_check
 from threading import Thread
-import gzip
+
+import grpc
 import lz4.frame
+import pytest
+import pytz
+
+from helpers.cluster import ClickHouseCluster, is_arm, run_and_check
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 pb2_dir = os.path.join(script_dir, "pb2")
 if pb2_dir not in sys.path:
     sys.path.append(pb2_dir)
-import clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc  # Execute pb2/generate.py to generate these modules.
-
+import clickhouse_grpc_pb2  # Execute pb2/generate.py to generate these modules.
+import clickhouse_grpc_pb2_grpc
 
 GRPC_PORT = 9100
 DEFAULT_ENCODING = "utf-8"

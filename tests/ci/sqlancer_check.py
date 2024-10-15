@@ -7,12 +7,12 @@ import sys
 from pathlib import Path
 
 from build_download_helper import read_build_urls
+from ci_config import CI
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPORT_PATH, TEMP_PATH
 from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from ci_config import CI
 
 IMAGE_NAME = "clickhouse/sqlancer-test"
 

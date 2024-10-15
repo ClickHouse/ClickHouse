@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-from socket import socket, AF_INET, SOCK_STREAM
 import os
-
+from socket import AF_INET, SOCK_STREAM, socket
 
 EXCEPTION_CODE_HEADER = "X-ClickHouse-Exception-Code"
 TRANSFER_ENCODING_HEADER = "Transfer-Encoding"

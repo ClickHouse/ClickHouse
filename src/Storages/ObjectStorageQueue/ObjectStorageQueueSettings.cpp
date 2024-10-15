@@ -21,16 +21,28 @@ void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def)
     {
         try
         {
+            std::vector<std::string> ignore_settings;
+            auto settings_changes = storage_def.settings->changes;
+
             /// We support settings starting with s3_ for compatibility.
-            for (auto & change : storage_def.settings->changes)
+            for (auto & change : settings_changes)
             {
                 if (change.name.starts_with("s3queue_"))
                     change.name = change.name.substr(std::strlen("s3queue_"));
+
                 if (change.name == "enable_logging_to_s3queue_log")
                     change.name = "enable_logging_to_queue_log";
+
+                if (change.name == "current_shard_num")
+                    ignore_settings.push_back(change.name);
+                if (change.name == "total_shards_num")
+                    ignore_settings.push_back(change.name);
             }
 
-            applyChanges(storage_def.settings->changes);
+            for (const auto & setting : ignore_settings)
+                settings_changes.removeSetting(setting);
+
+            applyChanges(settings_changes);
         }
         catch (Exception & e)
         {

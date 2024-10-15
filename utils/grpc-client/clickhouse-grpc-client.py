@@ -20,14 +20,23 @@ STDIN_BUFFER_SIZE = 1048576
 DEFAULT_ENCODING = "utf-8"
 
 
+import argparse
+import cmd
+import os
+import signal
+import sys
+import threading
+import time
+import uuid
+
 import grpc  # pip3 install grpcio
-import argparse, cmd, os, signal, sys, threading, time, uuid
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 pb2_dir = os.path.join(script_dir, "pb2")
 if pb2_dir not in sys.path:
     sys.path.append(pb2_dir)
-import clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc  # Execute pb2/generate.py to generate these modules.
+import clickhouse_grpc_pb2  # Execute pb2/generate.py to generate these modules.
+import clickhouse_grpc_pb2_grpc
 
 
 class ClickHouseGRPCError(Exception):

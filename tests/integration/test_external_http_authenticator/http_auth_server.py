@@ -2,7 +2,6 @@ import base64
 import http.server
 import json
 
-
 GOOD_PASSWORD = "good_password"
 USER_RESPONSES = {
     "test_user_1": {"settings": {"auth_user": "'test_user'", "auth_num": "UInt64_15"}},

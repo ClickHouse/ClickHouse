@@ -2,10 +2,12 @@
 # pylint: disable=redefined-outer-name
 # pylint: disable=line-too-long
 
-from functools import wraps
 import threading
 import time
+from functools import wraps
+
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)

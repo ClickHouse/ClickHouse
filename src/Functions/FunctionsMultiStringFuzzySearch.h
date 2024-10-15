@@ -18,6 +18,14 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_hyperscan;
+    extern const SettingsUInt64 max_hyperscan_regexp_length;
+    extern const SettingsUInt64 max_hyperscan_regexp_total_length;
+    extern const SettingsBool reject_expensive_hyperscan_regexps;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -40,7 +48,7 @@ public:
     static FunctionPtr create(ContextPtr context)
     {
         const auto & settings = context->getSettingsRef();
-        return std::make_shared<FunctionsMultiStringFuzzySearch>(settings.allow_hyperscan, settings.max_hyperscan_regexp_length, settings.max_hyperscan_regexp_total_length, settings.reject_expensive_hyperscan_regexps);
+        return std::make_shared<FunctionsMultiStringFuzzySearch>(settings[Setting::allow_hyperscan], settings[Setting::max_hyperscan_regexp_length], settings[Setting::max_hyperscan_regexp_total_length], settings[Setting::reject_expensive_hyperscan_regexps]);
     }
 
     FunctionsMultiStringFuzzySearch(bool allow_hyperscan_, size_t max_hyperscan_regexp_length_, size_t max_hyperscan_regexp_total_length_, bool reject_expensive_hyperscan_regexps_)

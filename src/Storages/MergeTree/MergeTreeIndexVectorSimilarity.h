@@ -137,7 +137,7 @@ public:
 
     bool alwaysUnknownOrTrue() const override;
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const override;
-    std::vector<size_t> getUsefulRanges(MergeTreeIndexGranulePtr granule) const override;
+    std::vector<UInt64> calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule) const override;
 
 private:
     const VectorSimilarityCondition vector_similarity_condition;

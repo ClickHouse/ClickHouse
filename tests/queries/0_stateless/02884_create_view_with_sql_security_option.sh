@@ -58,6 +58,11 @@ AS SELECT * FROM $db.test_table;
 CREATE VIEW $db.test_view_10 (s String)
 SQL SECURITY DEFINER
 AS SELECT * FROM $db.test_table;
+
+CREATE VIEW $db.test_view_11 (s String)
+SQL SECURITY DEFINER
+AS SELECT * FROM $db.test_table
+WHERE s = {param_id:String};
 EOF
 
 (( $(${CLICKHOUSE_CLIENT} --query "SHOW TABLE $db.test_view_5" 2>&1 | grep -c "INVOKER") >= 1 )) && echo "OK" || echo "UNEXPECTED"
@@ -74,6 +79,7 @@ GRANT SELECT ON $db.test_view_7 TO $user2;
 GRANT SELECT ON $db.test_view_8 TO $user2;
 GRANT SELECT ON $db.test_view_9 TO $user2;
 GRANT SELECT ON $db.test_view_10 TO $user2;
+GRANT SELECT ON $db.test_view_11 TO $user2;
 EOF
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO $db.test_table VALUES ('foo'), ('bar');"
@@ -88,6 +94,7 @@ ${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT count() FROM $db.test_view_7"
 (( $(${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_view_8" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 ${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT count() FROM $db.test_view_9"
 ${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT count() FROM $db.test_view_10"
+${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT count() FROM $db.test_view_11(param_id='foo')"
 
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $db.test_view_10 MODIFY SQL SECURITY INVOKER"
 (( $(${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_view_10" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
@@ -200,6 +207,14 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM destination1"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM destination2"
 
 (( $(${CLICKHOUSE_CLIENT} --query "ALTER TABLE test_table MODIFY SQL SECURITY INVOKER" 2>&1 | grep -c "is not supported") >= 1 )) && echo "OK" || echo "UNEXPECTED"
+
+(( $(${CLICKHOUSE_CLIENT} --user $user1 --query "
+  CREATE VIEW $db.test_view_broken
+  SQL SECURITY DEFINER
+  DEFINER CURRENT_USER
+  DEFINER $user2
+  AS SELECT * FROM $db.test_table;
+" 2>&1 | grep -c "Syntax error") >= 1 )) && echo "Syntax error" || echo "UNEXPECTED"
 
 echo "===== TestGrants ====="
 ${CLICKHOUSE_CLIENT} --query "GRANT CREATE ON *.* TO $user1"

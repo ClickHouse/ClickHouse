@@ -131,16 +131,12 @@ namespace DB
             {
                 if (const auto * col_cidr_const = checkAndGetAnyColumnConst(col_cidr))
                     return executeImpl(*col_addr_const, *col_cidr_const, input_rows_count);
-                else
-                    return executeImpl(*col_addr_const, *col_cidr, input_rows_count);
+                return executeImpl(*col_addr_const, *col_cidr, input_rows_count);
             }
-            else
-            {
-                if (const auto * col_cidr_const = checkAndGetAnyColumnConst(col_cidr))
-                    return executeImpl(*col_addr, *col_cidr_const, input_rows_count);
-                else
-                    return executeImpl(*col_addr, *col_cidr, input_rows_count);
-            }
+
+            if (const auto * col_cidr_const = checkAndGetAnyColumnConst(col_cidr))
+                return executeImpl(*col_addr, *col_cidr_const, input_rows_count);
+            return executeImpl(*col_addr, *col_cidr, input_rows_count);
         }
 
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -156,6 +152,11 @@ namespace DB
             if (!isString(addr_type) || !isString(prefix_type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The arguments of function {} must be String", getName());
 
+            return std::make_shared<DataTypeUInt8>();
+        }
+
+        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        {
             return std::make_shared<DataTypeUInt8>();
         }
 

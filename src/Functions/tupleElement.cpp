@@ -75,8 +75,7 @@ public:
 
             return return_type;
         }
-        else
-            return arguments[2].type;
+        return arguments[2].type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -136,31 +135,24 @@ private:
 
             if (index > 0 && index <= tuple.getElements().size())
                 return {index - 1};
-            else
-            {
-                if (argument_size == 2)
-                    throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with index '{}'", index);
-                return std::nullopt;
-            }
 
+            if (argument_size == 2)
+                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with index '{}'", index);
+            return std::nullopt;
         }
-        else if (const auto * name_col = checkAndGetColumnConst<ColumnString>(index_column.get()))
+        if (const auto * name_col = checkAndGetColumnConst<ColumnString>(index_column.get()))
         {
             std::optional<size_t> index = tuple.tryGetPositionByName(name_col->getValue<String>());
 
             if (index.has_value())
                 return index;
-            else
-            {
-                if (argument_size == 2)
-                    throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with name '{}'", name_col->getValue<String>());
-                return std::nullopt;
-            }
+
+            if (argument_size == 2)
+                throw Exception(
+                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with name '{}'", name_col->getValue<String>());
+            return std::nullopt;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Second argument to {} must be a constant UInt or String",
-                getName());
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant UInt or String", getName());
     }
 };
 

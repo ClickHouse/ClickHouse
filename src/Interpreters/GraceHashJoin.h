@@ -128,7 +128,6 @@ private:
     Block output_sample_block;
     bool any_take_last_row;
     const size_t max_num_buckets;
-    size_t max_block_size;
 
     Names left_key_names;
     Names right_key_names;

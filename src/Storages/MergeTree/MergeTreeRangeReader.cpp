@@ -141,17 +141,15 @@ size_t MergeTreeRangeReader::DelayedStream::read(Columns & columns, size_t from_
         num_delayed_rows += num_rows;
         return 0;
     }
-    else
-    {
-        size_t read_rows = finalize(columns);
 
-        continue_reading = false;
-        current_mark = from_mark;
-        current_offset = offset;
-        num_delayed_rows = num_rows;
+    size_t read_rows = finalize(columns);
 
-        return read_rows;
-    }
+    continue_reading = false;
+    current_mark = from_mark;
+    current_offset = offset;
+    num_delayed_rows = num_rows;
+
+    return read_rows;
 }
 
 size_t MergeTreeRangeReader::DelayedStream::finalize(Columns & columns)
@@ -266,18 +264,16 @@ size_t MergeTreeRangeReader::Stream::read(Columns & columns, size_t num_rows, bo
 
         return read_rows;
     }
-    else
-    {
-        /// Nothing to read.
-        if (skip_remaining_rows_in_current_granule)
-        {
-            /// Skip the rest of the rows in granule and start new one.
-            checkNotFinished();
-            toNextMark();
-        }
 
-        return 0;
+    /// Nothing to read.
+    if (skip_remaining_rows_in_current_granule)
+    {
+        /// Skip the rest of the rows in granule and start new one.
+        checkNotFinished();
+        toNextMark();
     }
+
+    return 0;
 }
 
 void MergeTreeRangeReader::Stream::skip(size_t num_rows)
@@ -539,14 +535,14 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
         clear();
         return;
     }
-    else if (total_zero_rows_in_tails == 0 && filter.countBytesInFilter() == filter.size())
+    if (total_zero_rows_in_tails == 0 && filter.countBytesInFilter() == filter.size())
     {
         LOG_TEST(log, "ReadResult::optimize() combined filter is const True");
         setFilterConstTrue();
         return;
     }
     /// Just a guess. If only a few rows may be skipped, it's better not to skip at all.
-    else if (2 * total_zero_rows_in_tails > filter.size())
+    if (2 * total_zero_rows_in_tails > filter.size())
     {
         const NumRows rows_per_granule_previous = rows_per_granule;
         const size_t total_rows_per_granule_previous = total_rows_per_granule;
@@ -561,8 +557,8 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
         /// Check if const 1 after shrink.
         /// We can apply shrink only if after the previous step the number of rows in the result
         /// matches the rows_per_granule info. Otherwise we will not be able to match newly added zeros in granule tails.
-        if (num_rows == total_rows_per_granule_previous &&
-            filter.countBytesInFilter() + total_zero_rows_in_tails == total_rows_per_granule_previous)  /// All zeros are in tails?
+        if (num_rows == total_rows_per_granule_previous
+            && filter.countBytesInFilter() + total_zero_rows_in_tails == total_rows_per_granule_previous) /// All zeros are in tails?
         {
             setFilterConstTrue();
 
@@ -584,8 +580,11 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
             /// Shorten the filter by removing zeros from granule tails
             collapseZeroTails(filter.getData(), rows_per_granule_previous, new_data);
             if (total_rows_per_granule != new_filter->size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "New filter size {} doesn't match number of rows to be read {}",
-                    new_filter->size(), total_rows_per_granule);
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "New filter size {} doesn't match number of rows to be read {}",
+                    new_filter->size(),
+                    total_rows_per_granule);
 
             /// Need to apply combined filter here before replacing it with shortened one because otherwise
             /// the filter size will not match the number of rows in the result columns.
@@ -602,8 +601,11 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
 
             final_filter = FilterWithCachedCount(new_filter->getPtr());
             if (num_rows != final_filter.countBytesInFilter())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Count of 1s in final filter {} doesn't match number of rows {}",
-                    final_filter.countBytesInFilter(), num_rows);
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Count of 1s in final filter {} doesn't match number of rows {}",
+                    final_filter.countBytesInFilter(),
+                    num_rows);
 
             LOG_TEST(log, "ReadResult::optimize() after colapseZeroTails {}", dumpInfo());
         }
@@ -737,7 +739,7 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
     /// check if cpu support avx512 dynamically, haveAVX512BW contains check of haveAVX512F
     if (isArchSupported(TargetArch::AVX512BW))
         return TargetSpecific::AVX512BW::numZerosInTail(begin, end);
-    else if (isArchSupported(TargetArch::AVX2))
+    if (isArchSupported(TargetArch::AVX2))
         return TargetSpecific::AVX2::numZerosInTail(begin, end);
 #endif
 

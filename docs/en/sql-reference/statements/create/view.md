@@ -6,7 +6,7 @@ sidebar_label: VIEW
 
 # CREATE VIEW
 
-Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), [live](#live-view-deprecated), and [window](#window-view-experimental) (live view and window view are experimental features).
+Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), [refreshable materialized](#refreshable-materialized-view), and [window](#window-view-experimental) (refreshable materialized view and window view are experimental features).
 
 ## Normal View
 
@@ -135,15 +135,15 @@ To change SQL security for an existing view, use
 ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
 ```
 
-### Examples sql security
+### Examples
 ```sql
-CREATE test_view
+CREATE VIEW test_view
 DEFINER = alice SQL SECURITY DEFINER
 AS SELECT ...
 ```
 
 ```sql
-CREATE test_view
+CREATE VIEW test_view
 SQL SECURITY INVOKER
 AS SELECT ...
 ```
@@ -184,14 +184,6 @@ Differences from regular non-refreshable materialized views:
 The settings in the `REFRESH ... SETTINGS` part of the query are refresh settings (e.g. `refresh_retries`), distinct from regular settings (e.g. `max_threads`). Regular settings can be specified using `SETTINGS` at the end of the query.
 :::
 
-:::note
-Refreshable materialized views are a work in progress. Setting `allow_experimental_refreshable_materialized_view = 1` is required for creating one. Current limitations:
- * not compatible with Replicated database or table engines
- * It is not supported in ClickHouse Cloud
- * require [Atomic database engine](../../../engines/database-engines/atomic.md),
- * no limit on number of concurrent refreshes.
-:::
-
 ### Refresh Schedule
 
 Example refresh schedules:
@@ -202,7 +194,11 @@ REFRESH EVERY 1 MONTH OFFSET 5 DAY 2 HOUR -- on 6th day of every month, at 2:00 
 REFRESH EVERY 2 WEEK OFFSET 5 DAY 15 HOUR 10 MINUTE -- every other Saturday, at 3:10 pm
 REFRESH EVERY 30 MINUTE -- at 00:00, 00:30, 01:00, 01:30, etc
 REFRESH AFTER 30 MINUTE -- 30 minutes after the previous refresh completes, no alignment with time of day
--- REFRESH AFTER 1 HOUR OFFSET 1 MINUTE -- syntax errror, OFFSET is not allowed with AFTER
+-- REFRESH AFTER 1 HOUR OFFSET 1 MINUTE -- syntax error, OFFSET is not allowed with AFTER
+REFRESH EVERY 1 WEEK 2 DAYS -- every 9 days, not on any particular day of the week or month;
+                            -- specifically, when day number (since 1969-12-29) is divisible by 9
+REFRESH EVERY 5 MONTHS -- every 5 months, different months each year (as 12 is not divisible by 5);
+                       -- specifically, when month number (since 1970-01) is divisible by 5
 ```
 
 `RANDOMIZE FOR` randomly adjusts the time of each refresh, e.g.:
@@ -213,6 +209,16 @@ REFRESH EVERY 1 DAY OFFSET 2 HOUR RANDOMIZE FOR 1 HOUR -- every day at random ti
 At most one refresh may be running at a time, for a given view. E.g. if a view with `REFRESH EVERY 1 MINUTE` takes 2 minutes to refresh, it'll just be refreshing every 2 minutes. If it then becomes faster and starts refreshing in 10 seconds, it'll go back to refreshing every minute. (In particular, it won't refresh every 10 seconds to catch up with a backlog of missed refreshes - there's no such backlog.)
 
 Additionally, a refresh is started immediately after the materialized view is created, unless `EMPTY` is specified in the `CREATE` query. If `EMPTY` is specified, the first refresh happens according to schedule.
+
+### In Replicated DB
+
+If the refreshable materialized view is in a [Replicated database](../../../engines/database-engines/replicated.md), the replicas coordinate with each other such that only one replica performs the refresh at each scheduled time. [ReplicatedMergeTree](../../../engines/table-engines/mergetree-family/replication.md) table engine is required, so that all replicas see the data produced by the refresh.
+
+In `APPEND` mode, coordination can be disabled using `SETTINGS all_replicas = 1`. This makes replicas do refreshes independently of each other. In this case ReplicatedMergeTree is not required.
+
+In non-`APPEND` mode, only coordinated refreshing is supported. For uncoordinated, use `Atomic` database and `CREATE ... ON CLUSTER` query to create refreshable materialized views on all replicas.
+
+The coordination is done through Keeper. The znode path is determined by [default_replica_path](../../../operations/server-configuration-parameters/settings.md#default_replica_path) server setting.
 
 ### Dependencies {#refresh-dependencies}
 
@@ -276,6 +282,8 @@ This replaces *all* refresh parameters at once: schedule, dependencies, settings
 The status of all refreshable materialized views is available in table [`system.view_refreshes`](../../../operations/system-tables/view_refreshes.md). In particular, it contains refresh progress (if running), last and next refresh time, exception message if a refresh failed.
 
 To manually stop, start, trigger, or cancel refreshes use [`SYSTEM STOP|START|REFRESH|CANCEL VIEW`](../system.md#refreshable-materialized-views).
+
+To wait for a refresh to complete, use [`SYSTEM WAIT VIEW`](../system.md#refreshable-materialized-views). In particular, useful for waiting for initial refresh after creating a view.
 
 :::note
 Fun fact: the refresh query is allowed to read from the view that's being refreshed, seeing pre-refresh version of the data. This means you can implement Conway's game of life: https://pastila.nl/?00021a4b/d6156ff819c83d490ad2dcec05676865#O0LGWTO7maUQIA4AcGUtlA==

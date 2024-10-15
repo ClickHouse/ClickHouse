@@ -35,21 +35,21 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
     {
         if (mode == SelectUnionMode::UNION_DEFAULT)
             return "UNION";
-        else if (mode == SelectUnionMode::UNION_ALL)
+        if (mode == SelectUnionMode::UNION_ALL)
             return "UNION ALL";
-        else if (mode == SelectUnionMode::UNION_DISTINCT)
+        if (mode == SelectUnionMode::UNION_DISTINCT)
             return "UNION DISTINCT";
-        else if (mode == SelectUnionMode::EXCEPT_DEFAULT)
+        if (mode == SelectUnionMode::EXCEPT_DEFAULT)
             return "EXCEPT";
-        else if (mode == SelectUnionMode::EXCEPT_ALL)
+        if (mode == SelectUnionMode::EXCEPT_ALL)
             return "EXCEPT ALL";
-        else if (mode == SelectUnionMode::EXCEPT_DISTINCT)
+        if (mode == SelectUnionMode::EXCEPT_DISTINCT)
             return "EXCEPT DISTINCT";
-        else if (mode == SelectUnionMode::INTERSECT_DEFAULT)
+        if (mode == SelectUnionMode::INTERSECT_DEFAULT)
             return "INTERSECT";
-        else if (mode == SelectUnionMode::INTERSECT_ALL)
+        if (mode == SelectUnionMode::INTERSECT_ALL)
             return "INTERSECT ALL";
-        else if (mode == SelectUnionMode::INTERSECT_DISTINCT)
+        if (mode == SelectUnionMode::INTERSECT_DISTINCT)
             return "INTERSECT DISTINCT";
         return "";
     };
@@ -61,7 +61,7 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
                           << mode_to_str((is_normalized) ? union_mode : list_of_modes[it - list_of_selects->children.begin() - 1])
                           << (settings.hilite ? hilite_none : "");
 
-        if (auto * node = (*it)->as<ASTSelectWithUnionQuery>())
+        if (auto * /*node*/ _ = (*it)->as<ASTSelectWithUnionQuery>())
         {
             if (it != list_of_selects->children.begin())
                 settings.ostr << settings.nl_or_ws;

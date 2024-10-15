@@ -4,9 +4,9 @@ import random
 import string
 
 import pytest
+from azure.storage.blob import BlobServiceClient
 
 from helpers.cluster import ClickHouseCluster
-from azure.storage.blob import BlobServiceClient
 from test_storage_azure_blob_storage.test import azure_query
 
 NODE_NAME = "node"

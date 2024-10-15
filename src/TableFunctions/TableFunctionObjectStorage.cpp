@@ -89,8 +89,7 @@ ColumnsDescription TableFunctionObjectStorage<
         resolveSchemaAndFormat(columns, configuration->format, storage, configuration, std::nullopt, sample_path, context);
         return columns;
     }
-    else
-        return parseColumnsListFromString(configuration->structure, context);
+    return parseColumnsListFromString(configuration->structure, context);
 }
 
 template <typename Definition, typename Configuration>

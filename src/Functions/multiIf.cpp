@@ -24,6 +24,13 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_execute_multiif_columnar;
+    extern const SettingsBool allow_experimental_variant_type;
+    extern const SettingsBool use_variant_as_common_type;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -52,7 +59,8 @@ public:
     static FunctionPtr create(ContextPtr context_)
     {
         const auto & settings = context_->getSettingsRef();
-        return std::make_shared<FunctionMultiIf>(settings.allow_execute_multiif_columnar, settings.allow_experimental_variant_type, settings.use_variant_as_common_type);
+        return std::make_shared<FunctionMultiIf>(
+            settings[Setting::allow_execute_multiif_columnar], settings[Setting::allow_experimental_variant_type], settings[Setting::use_variant_as_common_type]);
     }
 
     explicit FunctionMultiIf(bool allow_execute_multiif_columnar_, bool allow_experimental_variant_type_, bool use_variant_as_common_type_)

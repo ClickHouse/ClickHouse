@@ -25,6 +25,16 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 backup_restore_s3_retry_attempts;
+    extern const SettingsBool enable_s3_requests_logging;
+    extern const SettingsBool s3_disable_checksum;
+    extern const SettingsUInt64 s3_max_connections;
+    extern const SettingsUInt64 s3_max_redirects;
+}
+
 namespace ErrorCodes
 {
     extern const int S3_ERROR;
@@ -55,16 +65,16 @@ namespace
         S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
             settings.auth_settings.region,
             context->getRemoteHostFilter(),
-            static_cast<unsigned>(local_settings.s3_max_redirects),
-            static_cast<unsigned>(local_settings.backup_restore_s3_retry_attempts),
-            local_settings.enable_s3_requests_logging,
+            static_cast<unsigned>(local_settings[Setting::s3_max_redirects]),
+            static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_attempts]),
+            local_settings[Setting::enable_s3_requests_logging],
             /* for_disk_s3 = */ false,
             request_settings.get_request_throttler,
             request_settings.put_request_throttler,
             s3_uri.uri.getScheme());
 
         client_configuration.endpointOverride = s3_uri.endpoint;
-        client_configuration.maxConnections = static_cast<unsigned>(global_settings.s3_max_connections);
+        client_configuration.maxConnections = static_cast<unsigned>(global_settings[Setting::s3_max_connections]);
         /// Increase connect timeout
         client_configuration.connectTimeoutMs = 10 * 1000;
         /// Requests in backups can be extremely long, set to one hour
@@ -74,7 +84,7 @@ namespace
 
         S3::ClientSettings client_settings{
             .use_virtual_addressing = s3_uri.is_virtual_hosted_style,
-            .disable_checksum = local_settings.s3_disable_checksum,
+            .disable_checksum = local_settings[Setting::s3_disable_checksum],
             .gcs_issue_compose_request = context->getConfigRef().getBool("s3.gcs_issue_compose_request", false),
             .is_s3express_bucket = S3::isS3ExpressEndpoint(s3_uri.endpoint),
         };

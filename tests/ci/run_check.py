@@ -6,6 +6,7 @@ from typing import Tuple
 
 from github import Github
 
+from ci_config import CI
 from commit_status_helper import (
     create_ci_report,
     format_description,
@@ -16,10 +17,8 @@ from commit_status_helper import (
 )
 from env_helper import GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from get_robot_token import get_best_robot_token
-from ci_config import CI
 from pr_info import PRInfo
 from report import FAILURE, PENDING, SUCCESS, StatusType
-
 
 TRUSTED_ORG_IDS = {
     54801242,  # clickhouse

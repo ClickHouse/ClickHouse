@@ -49,7 +49,7 @@ TEST_F(DiskTest, writeFile)
 
     String data;
     {
-        std::unique_ptr<DB::ReadBuffer> in = disk->readFile("test_file");
+        std::unique_ptr<DB::ReadBuffer> in = disk->readFile("test_file", DB::getReadSettings());
         readString(data, *in);
     }
 
@@ -65,10 +65,12 @@ TEST_F(DiskTest, readFile)
         writeString("test data", *out);
     }
 
+    auto read_settings = DB::getReadSettings();
+
     // Test SEEK_SET
     {
         String buf(4, '0');
-        std::unique_ptr<DB::SeekableReadBuffer> in = disk->readFile("test_file");
+        std::unique_ptr<DB::SeekableReadBuffer> in = disk->readFile("test_file", read_settings);
 
         in->seek(5, SEEK_SET);
 
@@ -78,7 +80,7 @@ TEST_F(DiskTest, readFile)
 
     // Test SEEK_CUR
     {
-        std::unique_ptr<DB::SeekableReadBuffer> in = disk->readFile("test_file");
+        std::unique_ptr<DB::SeekableReadBuffer> in = disk->readFile("test_file", read_settings);
         String buf(4, '0');
 
         in->readStrict(buf.data(), 4);

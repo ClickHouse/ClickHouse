@@ -101,7 +101,6 @@ arrayCumSumNonNegative
 arrayDifference
 arrayDistinct
 arrayDotProduct
-arrayElement
 arrayEnumerate
 arrayEnumerateDense
 arrayEnumerateDenseRanked
@@ -141,6 +140,7 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
+arrayUnion
 arrayUniq
 arrayWithConstant
 asinh
@@ -321,7 +321,6 @@ geohashesInBox
 getMacro
 getOSKernelVersion
 getServerPort
-getSetting
 getSizeOfEnumType
 getTypeSerializationStreams
 globalIn
@@ -560,7 +559,6 @@ positionCaseInsensitive
 positionCaseInsensitiveUTF8
 positionUTF8
 pow
-printf
 proportionsZTest
 protocol
 queryID

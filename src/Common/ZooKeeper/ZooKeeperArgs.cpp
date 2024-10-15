@@ -101,6 +101,8 @@ void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfig
             session_timeout_ms = config.getInt(session_timeout_key);
     }
 
+    use_xid_64 = config.getBool(std::string{config_name} + ".use_xid_64", false);
+
     Poco::Util::AbstractConfiguration::Keys keys;
     std::string raft_configuration_key = std::string{config_name} + ".raft_configuration";
     config.keys(raft_configuration_key, keys);
@@ -240,6 +242,10 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         else if (key == "use_compression")
         {
             use_compression = config.getBool(config_name + "." + key);
+        }
+        else if (key == "use_xid_64")
+        {
+            use_xid_64 = config.getBool(config_name + "." + key);
         }
         else if (key == "availability_zone_autodetect")
         {

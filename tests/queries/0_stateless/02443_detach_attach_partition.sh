@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/replication.lib
 
 
-$CLICKHOUSE_CLIENT -n -q "
+$CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS alter_table0;
     DROP TABLE IF EXISTS alter_table1;
 

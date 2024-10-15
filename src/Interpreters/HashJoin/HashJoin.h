@@ -470,6 +470,7 @@ private:
     void tryRerangeRightTableData() override;
     template <JoinKind KIND, typename Map, JoinStrictness STRICTNESS>
     void tryRerangeRightTableDataImpl(Map & map);
+    void doDebugAsserts() const;
 };
 
 }

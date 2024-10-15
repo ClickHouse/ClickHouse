@@ -34,6 +34,12 @@ tbl	1	set_idx	1		\N	0	\N	\N	\N	SET			YES	e
 --- Check with weird table names
 $4@^7	1	PRIMARY	1	c	A	0	\N	\N	\N	PRIMARY			YES	
 NULL	1	PRIMARY	1	c	A	0	\N	\N	\N	PRIMARY			YES	
+tab.with.dots	1	blf_idx	1		\N	0	\N	\N	\N	BLOOM_FILTER			YES	d, b
+tab.with.dots	1	mm1_idx	1		\N	0	\N	\N	\N	MINMAX			YES	a, c, d
+tab.with.dots	1	mm2_idx	1		\N	0	\N	\N	\N	MINMAX			YES	c, d, e
+tab.with.dots	1	PRIMARY	1	c	A	0	\N	\N	\N	PRIMARY			YES	
+tab.with.dots	1	PRIMARY	2	a	A	0	\N	\N	\N	PRIMARY			YES	
+tab.with.dots	1	set_idx	1		\N	0	\N	\N	\N	SET			YES	e
 \'	1	PRIMARY	1	c	A	0	\N	\N	\N	PRIMARY			YES	
 \'	1	PRIMARY	1	c	A	0	\N	\N	\N	PRIMARY			YES	
 --- Original table
@@ -49,10 +55,3 @@ tbl	1	PRIMARY	1	a	A	0	\N	\N	\N	PRIMARY			YES
 --- Short form
 tbl	1	mmi_idx	1		\N	0	\N	\N	\N	MINMAX			YES	b
 tbl	1	PRIMARY	1	a	A	0	\N	\N	\N	PRIMARY			YES	
---- SHOW INDEX FROM table with dots
-tab.with.dots	1	blf_idx	1		\N	0	\N	\N	\N	BLOOM_FILTER			YES	d, b
-tab.with.dots	1	mm1_idx	1		\N	0	\N	\N	\N	MINMAX			YES	a, c, d
-tab.with.dots	1	mm2_idx	1		\N	0	\N	\N	\N	MINMAX			YES	c, d, e
-tab.with.dots	1	PRIMARY	1	c	A	0	\N	\N	\N	PRIMARY			YES	
-tab.with.dots	1	PRIMARY	2	a	A	0	\N	\N	\N	PRIMARY			YES	
-tab.with.dots	1	set_idx	1		\N	0	\N	\N	\N	SET			YES	e

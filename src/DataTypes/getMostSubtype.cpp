@@ -315,12 +315,13 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
             {
                 if (min_mantissa_bits_of_floating <= 24)
                     return std::make_shared<DataTypeFloat32>();
-                else if (min_mantissa_bits_of_floating <= 53)
+                if (min_mantissa_bits_of_floating <= 53)
                     return std::make_shared<DataTypeFloat64>();
-                else
-                    throw Exception(ErrorCodes::NO_COMMON_TYPE,
-                                    "Logical error: {} but as all data types are floats, "
-                                    "we must have found maximum float type", getExceptionMessagePrefix(types));
+                throw Exception(
+                    ErrorCodes::NO_COMMON_TYPE,
+                    "Logical error: {} but as all data types are floats, "
+                    "we must have found maximum float type",
+                    getExceptionMessagePrefix(types));
             }
 
             /// If there are signed and unsigned types of same bit-width, the result must be unsigned number.
@@ -329,41 +330,42 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
             {
                 if (min_bits_of_unsigned_integer <= 8)
                     return std::make_shared<DataTypeUInt8>();
-                else if (min_bits_of_unsigned_integer <= 16)
+                if (min_bits_of_unsigned_integer <= 16)
                     return std::make_shared<DataTypeUInt16>();
-                else if (min_bits_of_unsigned_integer <= 32)
+                if (min_bits_of_unsigned_integer <= 32)
                     return std::make_shared<DataTypeUInt32>();
-                else if (min_bits_of_unsigned_integer <= 64)
+                if (min_bits_of_unsigned_integer <= 64)
                     return std::make_shared<DataTypeUInt64>();
-                else if (min_bits_of_unsigned_integer <= 128)
+                if (min_bits_of_unsigned_integer <= 128)
                     return std::make_shared<DataTypeUInt128>();
-                else if (min_bits_of_unsigned_integer <= 256)
+                if (min_bits_of_unsigned_integer <= 256)
                     return std::make_shared<DataTypeUInt256>();
-                else
-                    throw Exception(ErrorCodes::NO_COMMON_TYPE,
-                                    "Logical error: {} but as all data types are integers, "
-                                    "we must have found maximum unsigned integer type",
-                                    getExceptionMessagePrefix(types));
+                throw Exception(
+                    ErrorCodes::NO_COMMON_TYPE,
+                    "Logical error: {} but as all data types are integers, "
+                    "we must have found maximum unsigned integer type",
+                    getExceptionMessagePrefix(types));
             }
 
             /// All signed.
             {
                 if (min_bits_of_signed_integer <= 8)
                     return std::make_shared<DataTypeInt8>();
-                else if (min_bits_of_signed_integer <= 16)
+                if (min_bits_of_signed_integer <= 16)
                     return std::make_shared<DataTypeInt16>();
-                else if (min_bits_of_signed_integer <= 32)
+                if (min_bits_of_signed_integer <= 32)
                     return std::make_shared<DataTypeInt32>();
-                else if (min_bits_of_signed_integer <= 64)
+                if (min_bits_of_signed_integer <= 64)
                     return std::make_shared<DataTypeInt64>();
-                else if (min_bits_of_signed_integer <= 128)
+                if (min_bits_of_signed_integer <= 128)
                     return std::make_shared<DataTypeInt128>();
-                else if (min_bits_of_signed_integer <= 256)
+                if (min_bits_of_signed_integer <= 256)
                     return std::make_shared<DataTypeInt256>();
-                else
-                    throw Exception(ErrorCodes::NO_COMMON_TYPE,
-                                    "Logical error: {} but as all data types are integers, "
-                                    "we must have found maximum signed integer type", getExceptionMessagePrefix(types));
+                throw Exception(
+                    ErrorCodes::NO_COMMON_TYPE,
+                    "Logical error: {} but as all data types are integers, "
+                    "we must have found maximum signed integer type",
+                    getExceptionMessagePrefix(types));
             }
         }
     }

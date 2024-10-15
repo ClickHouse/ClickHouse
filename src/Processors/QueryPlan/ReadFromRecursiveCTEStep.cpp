@@ -6,15 +6,15 @@
 namespace DB
 {
 
-ReadFromRecursiveCTEStep::ReadFromRecursiveCTEStep(Block output_header, QueryTreeNodePtr recursive_cte_union_node_)
-    : ISourceStep(DataStream{.header = std::move(output_header)})
+ReadFromRecursiveCTEStep::ReadFromRecursiveCTEStep(Block output_header_, QueryTreeNodePtr recursive_cte_union_node_)
+    : ISourceStep(std::move(output_header_))
     , recursive_cte_union_node(std::move(recursive_cte_union_node_))
 {
 }
 
 void ReadFromRecursiveCTEStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    pipeline.init(Pipe(std::make_shared<RecursiveCTESource>(getOutputStream().header, recursive_cte_union_node)));
+    pipeline.init(Pipe(std::make_shared<RecursiveCTESource>(getOutputHeader(), recursive_cte_union_node)));
 }
 
 }

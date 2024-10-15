@@ -267,11 +267,9 @@ namespace cctz_extension
                     size -= offset;
                     return 0;
                 }
-                else
-                {
-                    errno = EINVAL;
-                    return -1;
-                }
+
+                errno = EINVAL;
+                return -1;
             }
         private:
             const char * data;

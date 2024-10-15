@@ -1,9 +1,11 @@
-import pytest
-from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
-import time
 import csv
 import re
+import time
+
+import pytest
+
+import helpers.keeper_utils as keeper_utils
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -342,7 +344,7 @@ def test_cmd_srvr(started_cluster):
         assert result["Received"] == "10"
         assert result["Sent"] == "10"
         assert int(result["Connections"]) == 1
-        assert int(result["Zxid"], 16) > 10
+        assert int(result["Zxid"], 16) >= 10
         assert result["Mode"] == "leader"
         assert result["Node count"] == "14"
 

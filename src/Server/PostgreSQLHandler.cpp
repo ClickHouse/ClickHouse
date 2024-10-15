@@ -22,6 +22,13 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+}
 
 namespace ErrorCodes
 {
@@ -282,11 +289,13 @@ void PostgreSQLHandler::processQuery()
 
         const auto & settings = session->sessionContext()->getSettingsRef();
         std::vector<String> queries;
-        auto parse_res = splitMultipartQuery(query->query, queries,
-            settings.max_query_size,
-            settings.max_parser_depth,
-            settings.max_parser_backtracks,
-            settings.allow_settings_after_format_in_insert);
+        auto parse_res = splitMultipartQuery(
+            query->query,
+            queries,
+            settings[Setting::max_query_size],
+            settings[Setting::max_parser_depth],
+            settings[Setting::max_parser_backtracks],
+            settings[Setting::allow_settings_after_format_in_insert]);
         if (!parse_res.second)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse and execute the following part of query: {}", String(parse_res.first));
 

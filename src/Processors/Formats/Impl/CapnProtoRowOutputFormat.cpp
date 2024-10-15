@@ -2,6 +2,7 @@
 #if USE_CAPNP
 
 #include <Formats/CapnProtoSchema.h>
+#include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/CapnProtoSerializer.h>
 #include <IO/WriteBuffer.h>

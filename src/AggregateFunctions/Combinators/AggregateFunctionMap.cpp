@@ -450,9 +450,8 @@ public:
                 auto action = NullsAction::EMPTY;
                 return aggr_func_factory.get(nested_func_name + "MappedArrays", action, arguments, params, out_properties);
             }
-            else
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregation '{}Map' is not implemented for mapped arrays",
-                                 nested_func_name);
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregation '{}Map' is not implemented for mapped arrays", nested_func_name);
         }
     }
 };

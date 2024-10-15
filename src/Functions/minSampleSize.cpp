@@ -197,14 +197,12 @@ struct ConversionImpl
             const Float64 left_value = col_p1_const->template getValue<Float64>();
             return process<true>(arguments, &left_value, input_rows_count);
         }
-        else if (const ColumnVector<Float64> * const col_p1 = checkAndGetColumn<ColumnVector<Float64>>(first_argument_column.get()))
+        if (const ColumnVector<Float64> * const col_p1 = checkAndGetColumn<ColumnVector<Float64>>(first_argument_column.get()))
         {
             return process<false>(arguments, col_p1->getData().data(), input_rows_count);
         }
-        else
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument of function {} must be a float.", name);
-        }
+
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument of function {} must be a float.", name);
     }
 
     template <bool const_p1>

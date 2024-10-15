@@ -173,7 +173,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
 
         LOG_INFO(log, "Will try to upload snapshot on {} to S3", snapshot_path);
 
-        auto snapshot_file = snapshot_disk->readFile(snapshot_path);
+        auto snapshot_file = snapshot_disk->readFile(snapshot_path, getReadSettings());
 
         auto snapshot_name = fs::path(snapshot_path).filename().string();
         auto lock_file = fmt::format(".{}_LOCK", snapshot_name);

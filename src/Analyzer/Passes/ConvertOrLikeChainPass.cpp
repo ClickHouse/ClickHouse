@@ -26,6 +26,14 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_hyperscan;
+    extern const SettingsUInt64 max_hyperscan_regexp_length;
+    extern const SettingsUInt64 max_hyperscan_regexp_total_length;
+    extern const SettingsBool reject_expensive_hyperscan_regexps;
+    extern const SettingsBool optimize_or_like_chain;
+}
 
 namespace
 {
@@ -48,10 +56,8 @@ public:
     {
         const auto & settings = getSettings();
 
-        return settings.optimize_or_like_chain
-            && settings.allow_hyperscan
-            && settings.max_hyperscan_regexp_length == 0
-            && settings.max_hyperscan_regexp_total_length == 0;
+        return settings[Setting::optimize_or_like_chain] && settings[Setting::allow_hyperscan] && settings[Setting::max_hyperscan_regexp_length] == 0
+            && settings[Setting::max_hyperscan_regexp_total_length] == 0;
     }
 
     void enterImpl(QueryTreeNodePtr & node)
@@ -139,7 +145,11 @@ private:
 void ConvertOrLikeChainPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
-    auto match_function_resolver = createInternalMultiMatchAnyOverloadResolver(settings.allow_hyperscan, settings.max_hyperscan_regexp_length, settings.max_hyperscan_regexp_total_length, settings.reject_expensive_hyperscan_regexps);
+    auto match_function_resolver = createInternalMultiMatchAnyOverloadResolver(
+        settings[Setting::allow_hyperscan],
+        settings[Setting::max_hyperscan_regexp_length],
+        settings[Setting::max_hyperscan_regexp_total_length],
+        settings[Setting::reject_expensive_hyperscan_regexps]);
     auto or_function_resolver = createInternalFunctionOrOverloadResolver();
 
     ConvertOrLikeChainVisitor visitor(std::move(or_function_resolver), std::move(match_function_resolver), std::move(context));

@@ -63,6 +63,9 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     if (tryUpdateLimitForSortingSteps(child_node, limit->getLimitForSorting()))
         return 0;
 
+    if (typeid_cast<const SortingStep *>(child.get()))
+        return 0;
+
     /// Special case for TotalsHaving. Totals may be incorrect if we push down limit.
     if (typeid_cast<const TotalsHavingStep *>(child.get()))
         return 0;
@@ -75,23 +78,14 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     /// Now we should decide if pushing down limit possible for this step.
 
     const auto & transform_traits = transforming->getTransformTraits();
-    const auto & data_stream_traits = transforming->getDataStreamTraits();
+    // const auto & data_stream_traits = transforming->getDataStreamTraits();
 
     /// Cannot push down if child changes the number of rows.
     if (!transform_traits.preserves_number_of_rows)
         return 0;
 
-    /// Cannot push down if data was sorted exactly by child stream.
-    if (!child->getOutputStream().sort_description.empty() && !data_stream_traits.preserves_sorting)
-        return 0;
-
-    /// Now we push down limit only if it doesn't change any stream properties.
-    /// TODO: some of them may be changed and, probably, not important for following streams. We may add such info.
-    if (!limit->getOutputStream().hasEqualPropertiesWith(transforming->getOutputStream()))
-        return 0;
-
     /// Input stream for Limit have changed.
-    limit->updateInputStream(transforming->getInputStreams().front());
+    limit->updateInputHeader(transforming->getInputHeaders().front());
 
     parent.swap(child);
     return 2;

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 
-import pytest
-from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
 import random
 import string
+
+import pytest
 from kazoo.client import KazooClient, KazooState
 
+import helpers.keeper_utils as keeper_utils
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
@@ -46,7 +47,14 @@ def restart_clickhouse():
     keeper_utils.wait_until_connected(cluster, node)
 
 
+def start_clean_clickhouse():
+    node.stop_clickhouse()
+    node.exec_in_container(["rm", "-rf", "/var/lib/clickhouse/coordination"])
+    node.start_clickhouse()
+
+
 def test_mntr_data_size_after_restart(started_cluster):
+    start_clean_clickhouse()
     try:
         node_zk = None
         node_zk = get_connection_zk("node")

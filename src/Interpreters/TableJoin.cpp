@@ -38,6 +38,27 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_join_right_table_sorting;
+    extern const SettingsUInt64 cross_join_min_bytes_to_compress;
+    extern const SettingsUInt64 cross_join_min_rows_to_compress;
+    extern const SettingsUInt64 default_max_bytes_in_join;
+    extern const SettingsJoinAlgorithm join_algorithm;
+    extern const SettingsUInt64 join_on_disk_max_files_to_merge;
+    extern const SettingsUInt64 join_output_by_rowlist_perkey_rows_threshold;
+    extern const SettingsOverflowMode join_overflow_mode;
+    extern const SettingsUInt64 join_to_sort_maximum_table_rows;
+    extern const SettingsUInt64 join_to_sort_minimum_perkey_rows;
+    extern const SettingsBool join_use_nulls;
+    extern const SettingsUInt64 max_bytes_in_join;
+    extern const SettingsUInt64 max_joined_block_size_rows;
+    extern const SettingsUInt64 max_memory_usage;
+    extern const SettingsUInt64 max_rows_in_join;
+    extern const SettingsUInt64 partial_merge_join_left_table_buffer_bytes;
+    extern const SettingsUInt64 partial_merge_join_rows_in_right_blocks;
+    extern const SettingsString temporary_files_codec;
+}
 
 namespace ErrorCodes
 {
@@ -104,22 +125,22 @@ bool forAllKeys(OnExpr & expressions, Func callback)
 }
 
 TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_)
-    : size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
-    , default_max_bytes(settings.default_max_bytes_in_join)
-    , join_use_nulls(settings.join_use_nulls)
-    , cross_join_min_rows_to_compress(settings.cross_join_min_rows_to_compress)
-    , cross_join_min_bytes_to_compress(settings.cross_join_min_bytes_to_compress)
-    , max_joined_block_rows(settings.max_joined_block_size_rows)
-    , join_algorithm(settings.join_algorithm)
-    , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
-    , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
-    , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
-    , temporary_files_codec(settings.temporary_files_codec)
-    , output_by_rowlist_perkey_rows_threshold(settings.join_output_by_rowlist_perkey_rows_threshold)
-    , sort_right_minimum_perkey_rows(settings.join_to_sort_minimum_perkey_rows)
-    , sort_right_maximum_table_rows(settings.join_to_sort_maximum_table_rows)
-    , allow_join_sorting(settings.allow_experimental_join_right_table_sorting)
-    , max_memory_usage(settings.max_memory_usage)
+    : size_limits(SizeLimits{settings[Setting::max_rows_in_join], settings[Setting::max_bytes_in_join], settings[Setting::join_overflow_mode]})
+    , default_max_bytes(settings[Setting::default_max_bytes_in_join])
+    , join_use_nulls(settings[Setting::join_use_nulls])
+    , cross_join_min_rows_to_compress(settings[Setting::cross_join_min_rows_to_compress])
+    , cross_join_min_bytes_to_compress(settings[Setting::cross_join_min_bytes_to_compress])
+    , max_joined_block_rows(settings[Setting::max_joined_block_size_rows])
+    , join_algorithm(settings[Setting::join_algorithm])
+    , partial_merge_join_rows_in_right_blocks(settings[Setting::partial_merge_join_rows_in_right_blocks])
+    , partial_merge_join_left_table_buffer_bytes(settings[Setting::partial_merge_join_left_table_buffer_bytes])
+    , max_files_to_merge(settings[Setting::join_on_disk_max_files_to_merge])
+    , temporary_files_codec(settings[Setting::temporary_files_codec])
+    , output_by_rowlist_perkey_rows_threshold(settings[Setting::join_output_by_rowlist_perkey_rows_threshold])
+    , sort_right_minimum_perkey_rows(settings[Setting::join_to_sort_minimum_perkey_rows])
+    , sort_right_maximum_table_rows(settings[Setting::join_to_sort_maximum_table_rows])
+    , allow_join_sorting(settings[Setting::allow_experimental_join_right_table_sorting])
+    , max_memory_usage(settings[Setting::max_memory_usage])
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
 {

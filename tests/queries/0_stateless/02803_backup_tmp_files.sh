@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
     drop table if exists data;
     create table data (key Int) engine=MergeTree() order by tuple() settings disk='s3_disk';
     insert into data select * from numbers(10);

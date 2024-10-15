@@ -26,6 +26,13 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool enable_s3_requests_logging;
+    extern const SettingsUInt64 s3_max_redirects;
+    extern const SettingsUInt64 s3_retry_attempts;
+}
+
 namespace ErrorCodes
 {
 extern const int NO_ELEMENTS_IN_CONFIG;
@@ -88,9 +95,9 @@ std::unique_ptr<S3::Client> getClient(
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         auth_settings.region,
         context->getRemoteHostFilter(),
-        static_cast<int>(global_settings.s3_max_redirects),
-        static_cast<int>(global_settings.s3_retry_attempts),
-        global_settings.enable_s3_requests_logging,
+        static_cast<int>(global_settings[Setting::s3_max_redirects]),
+        static_cast<int>(global_settings[Setting::s3_retry_attempts]),
+        global_settings[Setting::enable_s3_requests_logging],
         for_disk_s3,
         request_settings.get_request_throttler,
         request_settings.put_request_throttler,

@@ -13,12 +13,14 @@ INSERT INTO parallel_replicas (x, u, s) VALUES (41, 42, 'U'),(43, 44, 'V'),(45, 
 INSERT INTO parallel_replicas (x, u, s) VALUES (51, 52, 'Z');
 
 /*
- * Проверяем, что:
- * - на каждой реплике таблица не пустая;
- * - объединение данных всех реплик совпадает с содержанием таблицы parallel_replicas.
- */
+* Check that:
+* - the table is not empty on each replica;
+* - combining the data of all replicas coincides with the contents of the parallel_replicas table.
+*/
 
-/* Две реплики */
+/* Two replicas */
+
+SET enable_parallel_replicas=1, parallel_replicas_mode='sampling_key', max_parallel_replicas=3, parallel_replicas_for_non_replicated_merge_tree = 1;
 
 CREATE TABLE parallel_replicas_backup(d Date DEFAULT today(), x UInt32, u UInt64, s String) ENGINE = Memory;
 
@@ -38,7 +40,7 @@ SELECT x, u, s FROM parallel_replicas_backup ORDER BY x, u, s ASC;
 DROP TABLE parallel_replicas_backup;
 CREATE TABLE parallel_replicas_backup(d Date DEFAULT today(), x UInt32, u UInt64, s String) ENGINE = Memory;
 
-/* Три реплики */
+/* Three replicas */
 
 SET parallel_replicas_count = 3;
 

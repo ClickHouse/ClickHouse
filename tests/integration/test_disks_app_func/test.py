@@ -1,6 +1,6 @@
-from helpers.cluster import ClickHouseCluster
-
 import pytest
+
+from helpers.cluster import ClickHouseCluster
 
 
 @pytest.fixture(scope="module")

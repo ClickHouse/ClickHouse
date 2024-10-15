@@ -139,8 +139,7 @@ private:
 
         if (key_argument_data_type.isArray())
             return std::make_shared<DataTypeTuple>(DataTypes{arguments[0], arguments[1]});
-        else
-            return arguments[0];
+        return arguments[0];
     }
 
     template <typename KeyType, typename ValueType>

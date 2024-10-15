@@ -34,7 +34,7 @@ public:
     {
         if (!ISchedulerNode::equals(other))
             return false;
-        if (auto * o = dynamic_cast<FifoQueue *>(other))
+        if (auto * _ = dynamic_cast<FifoQueue *>(other))
             return true;
         return false;
     }

@@ -164,29 +164,25 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
                     has_pread_nowait_support.store(false, std::memory_order_relaxed);
                     break;
                 }
-                else if (errno == EAGAIN)
+                if (errno == EAGAIN)
                 {
                     /// Data is not available in page cache. Will hand off to thread pool.
                     break;
                 }
-                else if (errno == EINTR)
+                if (errno == EINTR)
                 {
                     /// Interrupted by a signal.
                     continue;
                 }
-                else
-                {
-                    ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-                    promise.set_exception(std::make_exception_ptr(
-                        ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd)));
-                    return future;
-                }
+
+                ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+                promise.set_exception(
+                    std::make_exception_ptr(ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd)));
+                return future;
             }
-            else
-            {
-                bytes_read += res;
-                __msan_unpoison(request.buf, res);
-            }
+
+            bytes_read += res;
+            __msan_unpoison(request.buf, res);
         }
 
         if (bytes_read)

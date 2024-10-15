@@ -255,17 +255,15 @@ ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition, co
             LOG_TRACE(log, "Stalled");
             return nullptr;
         }
-        else
-        {
-            messages = std::move(new_messages);
-            current = messages.begin();
-            LOG_TRACE(
-                log,
-                "Polled batch of {} messages. Offsets position: {}",
-                messages.size(),
-                consumer->get_offsets_position(consumer->get_assignment()));
-            break;
-        }
+
+        messages = std::move(new_messages);
+        current = messages.begin();
+        LOG_TRACE(
+            log,
+            "Polled batch of {} messages. Offsets position: {}",
+            messages.size(),
+            consumer->get_offsets_position(consumer->get_assignment()));
+        break;
     }
 
     filterMessageErrors();

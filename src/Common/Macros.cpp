@@ -77,10 +77,9 @@ String Macros::expand(const String & s,
             res.append(s, pos, String::npos);
             break;
         }
-        else
-        {
-            res.append(s, pos, begin - pos);
-        }
+
+        res.append(s, pos, begin - pos);
+
 
         ++begin;
         size_t end = s.find('}', begin);

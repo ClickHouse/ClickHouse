@@ -42,6 +42,7 @@
             <multi_read>1</multi_read>
             <check_not_exists>1</check_not_exists>
             <create_if_not_exists>1</create_if_not_exists>
+            <remove_recursive>1</remove_recursive>
         </feature_flags>
     </keeper_server>
 </clickhouse>

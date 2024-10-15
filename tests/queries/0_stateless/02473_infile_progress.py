@@ -2,13 +2,13 @@
 # Tags: no-replicated-database, no-parallel, no-fasttest
 
 import os
-import sys
 import signal
+import sys
 
 CURDIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, os.path.join(CURDIR, "helpers"))
 
-from client import client, prompt, end_of_block
+from client import client, end_of_block, prompt
 
 log = None
 # uncomment the line below for debugging

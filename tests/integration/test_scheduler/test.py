@@ -2,8 +2,9 @@
 # pylint: disable=redefined-outer-name
 # pylint: disable=line-too-long
 
-import time
 import threading
+import time
+
 import pytest
 
 from helpers.client import QueryRuntimeException

@@ -108,7 +108,7 @@ void ColumnStatisticsDescription::merge(const ColumnStatisticsDescription & othe
         {
             throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics type name {} has existed in column {}", stats_type, merging_column_name);
         }
-        else if (!types_to_desc.contains(stats_type))
+        if (!types_to_desc.contains(stats_type))
             types_to_desc.emplace(stats_type, stats_desc);
     }
 }

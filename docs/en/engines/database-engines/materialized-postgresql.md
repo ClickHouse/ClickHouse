@@ -155,6 +155,12 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 
     Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) database engine.
 
+    Each table can have subset of replicated columns in brackets. If subset of columns is omitted, then all columns for table will be replicated.
+
+    ``` sql
+    materialized_postgresql_tables_list = 'table1(co1, col2),table2,table3(co3, col5, col7)
+    ```
+
     Default value: empty list — means whole PostgreSQL database will be replicated.
 
 ### `materialized_postgresql_schema` {#materialized-postgresql-schema}

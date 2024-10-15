@@ -22,10 +22,10 @@ FROM t1
 WHERE k > 0
 GROUP BY k
 ORDER BY k
-SETTINGS force_primary_key = 1, allow_experimental_parallel_reading_from_replicas = 0;
+SETTINGS force_primary_key = 1, enable_parallel_replicas = 0;
 
 -- parallel replicas, primary key is used
-SET allow_experimental_parallel_reading_from_replicas=1, max_parallel_replicas=3, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost';
+SET enable_parallel_replicas=1, max_parallel_replicas=3, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost';
 SELECT
     k,
     count()

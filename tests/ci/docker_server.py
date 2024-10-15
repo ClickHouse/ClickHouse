@@ -25,11 +25,7 @@ from pr_info import PRInfo
 from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from version_helper import (
-    ClickHouseVersion,
-    get_version_from_repo,
-    version_arg,
-)
+from version_helper import ClickHouseVersion, get_version_from_repo, version_arg
 
 git = Git(ignore_no_tags=True)
 
@@ -138,14 +134,13 @@ def retry_popen(cmd: str, log_file: Path) -> int:
             retcode = process.wait()
             if retcode == 0:
                 return 0
-            else:
-                # From time to time docker build may failed. Curl issues, or even push
-                logging.error(
-                    "The following command failed, sleep %s before retry: %s",
-                    sleep_seconds,
-                    cmd,
-                )
-                time.sleep(sleep_seconds)
+            # From time to time docker build may failed. Curl issues, or even push
+            logging.error(
+                "The following command failed, sleep %s before retry: %s",
+                sleep_seconds,
+                cmd,
+            )
+            time.sleep(sleep_seconds)
     return retcode
 
 

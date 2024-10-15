@@ -90,7 +90,6 @@ private:
     /// Extracts settings to enlight which are used (and avoid copy of others).
     struct ExtractedSettings
     {
-        const bool use_index_for_in_with_subqueries;
         const SizeLimits size_limits_for_set;
         const SizeLimits size_limits_for_set_used_with_index;
         const UInt64 distributed_group_by_no_merge;
@@ -174,7 +173,7 @@ protected:
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
     void initGlobalSubqueriesAndExternalTables(bool do_global, bool is_explain);
 
-    ArrayJoinActionPtr addMultipleArrayJoinAction(ActionsDAG & actions, bool is_left) const;
+    ArrayJoin addMultipleArrayJoinAction(ActionsDAG & actions, bool is_left) const;
 
     void getRootActions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAG & actions, bool only_consts = false);
 
@@ -234,7 +233,7 @@ struct ExpressionAnalysisResult
     bool use_grouping_set_key = false;
 
     ActionsAndProjectInputsFlagPtr before_array_join;
-    ArrayJoinActionPtr array_join;
+    std::optional<ArrayJoin> array_join;
     ActionsAndProjectInputsFlagPtr before_join;
     ActionsAndProjectInputsFlagPtr converting_join_columns;
     JoinPtr join;
@@ -388,7 +387,7 @@ private:
       */
 
     /// Before aggregation:
-    ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ActionsAndProjectInputsFlagPtr & before_array_join, bool only_types);
+    std::optional<ArrayJoin> appendArrayJoin(ExpressionActionsChain & chain, ActionsAndProjectInputsFlagPtr & before_array_join, bool only_types);
     bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types);
     JoinPtr appendJoin(ExpressionActionsChain & chain, ActionsAndProjectInputsFlagPtr & converting_join_columns);
 

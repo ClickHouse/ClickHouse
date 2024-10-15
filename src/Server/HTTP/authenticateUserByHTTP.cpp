@@ -5,6 +5,7 @@
 #include <Access/Credentials.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Common/Base64.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Server/HTTP/HTTPServerRequest.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPServerResponse.h>

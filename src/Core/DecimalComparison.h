@@ -109,7 +109,7 @@ private:
     {
         if (shift.left())
             return apply<true, false>(a, b, shift.a);
-        else if (shift.right())
+        if (shift.right())
             return apply<false, true>(a, b, shift.b);
         return apply<false, false>(a, b, 1);
     }

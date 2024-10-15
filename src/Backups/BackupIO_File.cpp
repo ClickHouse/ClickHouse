@@ -132,7 +132,7 @@ void BackupWriterFile::copyFileFromDisk(const String & path_in_backup, DiskPtr s
             /// std::filesystem::copy() can copy from a single file only.
             if (auto blob_path = src_disk->getBlobPath(src_path); blob_path.size() == 1)
             {
-                auto abs_source_path = blob_path[0];
+                const auto & abs_source_path = blob_path[0];
 
                 /// std::filesystem::copy() can copy a file as a whole only.
                 if ((start_pos == 0) && (length == fs::file_size(abs_source_path)))

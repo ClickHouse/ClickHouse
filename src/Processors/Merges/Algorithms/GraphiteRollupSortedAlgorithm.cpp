@@ -98,12 +98,10 @@ static time_t roundTimeToPrecision(const DateLUTImpl & date_lut, time_t time, UI
     {
         return time / precision * precision;
     }
-    else
-    {
-        time_t date = date_lut.toDate(time);
-        time_t remainder = time - date;
-        return date + remainder / precision * precision;
-    }
+
+    time_t date = date_lut.toDate(time);
+    time_t remainder = time - date;
+    return date + remainder / precision * precision;
 }
 
 IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()

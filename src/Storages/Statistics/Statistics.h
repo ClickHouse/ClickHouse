@@ -21,17 +21,17 @@ struct StatisticsUtils
     static std::optional<Float64> tryConvertToFloat64(const Field & value, const DataTypePtr & data_type);
 };
 
-/// Statistics describe properties of the values in the column,
-/// e.g. how many unique values exist,
-/// what are the N most frequent values,
-/// how frequent is a value V, etc.
+/// Interface for a single statistics object for a column within a part.
+///
+/// Statistics describe properties of the values in the column, e.g. how many unique values exist, what are
+/// the N most frequent values, how frequent a value V is, etc.
 class IStatistics
 {
 public:
     explicit IStatistics(const SingleStatisticsDescription & stat_);
     virtual ~IStatistics() = default;
 
-    virtual void update(const ColumnPtr & column) = 0;
+    virtual void build(const ColumnPtr & column) = 0;
 
     virtual void serialize(WriteBuffer & buf) = 0;
     virtual void deserialize(ReadBuffer & buf) = 0;
@@ -51,10 +51,11 @@ protected:
 
 using StatisticsPtr = std::shared_ptr<IStatistics>;
 
-class ColumnStatistics
+/// All statistics objects for a column in a part
+class ColumnPartStatistics
 {
 public:
-    explicit ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, const String & column_name_);
+    explicit ColumnPartStatistics(const ColumnStatisticsDescription & stats_desc_, const String & column_name_);
 
     void serialize(WriteBuffer & buf);
     void deserialize(ReadBuffer & buf);
@@ -64,7 +65,7 @@ public:
 
     UInt64 rowCount() const;
 
-    void update(const ColumnPtr & column);
+    void build(const ColumnPtr & column);
 
     Float64 estimateLess(const Field & val) const;
     Float64 estimateGreater(const Field & val) const;
@@ -78,10 +79,11 @@ private:
     UInt64 rows = 0; /// the number of rows in the column
 };
 
+using ColumnStatisticsPartPtr = std::shared_ptr<ColumnPartStatistics>;
+using ColumnsStatistics = std::vector<ColumnStatisticsPartPtr>;
+
 struct ColumnDescription;
 class ColumnsDescription;
-using ColumnStatisticsPtr = std::shared_ptr<ColumnStatistics>;
-using ColumnsStatistics = std::vector<ColumnStatisticsPtr>;
 
 class MergeTreeStatisticsFactory : private boost::noncopyable
 {
@@ -93,7 +95,7 @@ public:
     using Validator = std::function<void(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
     using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
 
-    ColumnStatisticsPtr get(const ColumnDescription & column_desc) const;
+    ColumnStatisticsPartPtr get(const ColumnDescription & column_desc) const;
     ColumnsStatistics getMany(const ColumnsDescription & columns) const;
 
     void registerValidator(StatisticsType type, Validator validator);

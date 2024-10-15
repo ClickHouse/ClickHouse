@@ -1,3 +1,4 @@
+#include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/HiveTextRowInputFormat.h>
 #include <Common/assert_cast.h>
 

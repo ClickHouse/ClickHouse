@@ -7,28 +7,28 @@ import sys
 from pathlib import Path
 from typing import List
 
+from ci_config import CI
 from env_helper import (
-    GITHUB_JOB_URL,
+    CI_CONFIG_PATH,
     GITHUB_REPOSITORY,
     GITHUB_SERVER_URL,
+    IS_CI,
     REPORT_PATH,
     TEMP_PATH,
-    CI_CONFIG_PATH,
-    IS_CI,
 )
 from pr_info import PRInfo
 from report import (
     ERROR,
+    FAILURE,
+    GITHUB_JOB_URL,
     PENDING,
     SUCCESS,
     BuildResult,
     JobReport,
     create_build_html_report,
     get_worst_status,
-    FAILURE,
 )
 from stopwatch import Stopwatch
-from ci_config import CI
 
 # Old way to read the neads_data
 NEEDS_DATA_PATH = os.getenv("NEEDS_DATA_PATH", "")

@@ -14,6 +14,7 @@ SELECT sqidEncode(1, 2) AS sqid, sqidDecode(sqid);
 SELECT sqidEncode(1, 2, 3) AS sqid, sqidDecode(sqid);
 SELECT sqidEncode(1::UInt8, 2::UInt16, 3::UInt32, 4::UInt64) AS sqid, sqidDecode(sqid);
 SELECT sqidEncode(toNullable(1), toLowCardinality(2)) AS sqid;
+SELECT sqidDecode('1');
 
 SELECT '-- non-const UInt*';
 SELECT sqidEncode(materialize(1)) AS sqid, sqidDecode(sqid);

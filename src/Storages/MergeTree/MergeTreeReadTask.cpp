@@ -148,7 +148,7 @@ UInt64 MergeTreeReadTask::estimateNumRows(const BlockSizeParams & params) const
         return rows_to_read;
 
     const auto & index_granularity = info->data_part->index_granularity;
-    return index_granularity.countMarksForRows(range_readers.main.currentMark(), rows_to_read, range_readers.main.numReadRowsInCurrentGranule(), params.min_marks_to_read);
+    return index_granularity.countRowsForRows(range_readers.main.currentMark(), rows_to_read, range_readers.main.numReadRowsInCurrentGranule(), params.min_marks_to_read);
 }
 
 MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read(const BlockSizeParams & params)

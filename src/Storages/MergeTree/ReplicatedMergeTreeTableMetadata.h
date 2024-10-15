@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Parsers/IAST.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <base/types.h>
 #include <Storages/StorageInMemoryMetadata.h>

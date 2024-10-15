@@ -1,4 +1,3 @@
-version: '2.3'
 services:
   nats1:
     image: nats

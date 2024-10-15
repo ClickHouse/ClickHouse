@@ -69,6 +69,11 @@ set (SRCS_PROGRAM_OPTIONS
     "${LIBRARY_DIR}/libs/program_options/src/winmain.cpp"
 )
 
+# Always compile this file with the highest possible level of optimizations, even in Debug builds.
+# Otherwise the client takes too long to start and SQL stateless tests (many options to parse)
+# https://github.com/ClickHouse/ClickHouse/issues/65745
+set_source_files_properties(${SRCS_PROGRAM_OPTIONS} PROPERTIES COMPILE_FLAGS "-O3")
+
 add_library (_boost_program_options ${SRCS_PROGRAM_OPTIONS})
 add_library (boost::program_options ALIAS _boost_program_options)
 target_include_directories (_boost_program_options SYSTEM BEFORE PUBLIC ${LIBRARY_DIR})

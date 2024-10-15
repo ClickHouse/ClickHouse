@@ -609,12 +609,10 @@ IProcessor::Status AggregatingTransform::prepare()
             many_data.reset();
             return Status::Finished;
         }
-        else
-        {
-            /// Finish data processing and create another pipe.
-            is_consume_finished = true;
-            return Status::Ready;
-        }
+
+        /// Finish data processing and create another pipe.
+        is_consume_finished = true;
+        return Status::Ready;
     }
 
     if (!input.hasData())

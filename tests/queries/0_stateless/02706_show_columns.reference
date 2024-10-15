@@ -33,6 +33,7 @@ c	String	NO	PRI SOR	\N
 c	String	NO	PRI SOR	\N	
 c	String	NO	PRI SOR	\N	
 c	String	NO	PRI SOR	\N	
+c	String	NO	PRI SOR	\N	
 --- Original table
 int32	Nullable(Int32)	YES		\N	
 str	String	NO	SOR	\N	
@@ -44,8 +45,4 @@ uint64	UInt64	NO	PRI SOR	\N
 --- Short form
 int32	Int32	NO		\N	
 str	String	NO		\N	
-uint64	UInt64	NO	PRI SOR	\N	
---- SHOW COLUMNS FROM table with dots
-int32	Nullable(Int32)	YES		\N	
-str	String	NO	SOR	\N	
 uint64	UInt64	NO	PRI SOR	\N	

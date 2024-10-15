@@ -1,5 +1,6 @@
 -- Tags: no-parallel
 
+SET max_rows_to_read = 0; -- system.text_log can be really big
 SELECT 'Hello', throwIf(1); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 SYSTEM FLUSH LOGS;
 

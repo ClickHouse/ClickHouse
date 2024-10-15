@@ -15,6 +15,7 @@ alter table t materialize projection p_norm settings mutations_sync = 1;
 
 SYSTEM FLUSH LOGS;
 
+SET max_rows_to_read = 0; -- system.text_log can be really big
 SELECT * FROM system.text_log WHERE event_time >= now() - 30 and level == 'Error' and message like '%BAD_DATA_PART_NAME%'and message like '%p_norm%';
 
 DROP TABLE IF EXISTS t;

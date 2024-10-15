@@ -1,12 +1,13 @@
-import pytest
-from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
-import time
 import socket
 import struct
+import time
 
+import pytest
 from kazoo.client import KazooClient
 from kazoo.exceptions import NoNodeError
+
+import helpers.keeper_utils as keeper_utils
+from helpers.cluster import ClickHouseCluster
 
 # from kazoo.protocol.serialization import Connect, read_buffer, write_buffer
 

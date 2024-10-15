@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
 import os
-import sys
-import random
 import queue
+import random
+import sys
 import time
 from threading import Thread
 

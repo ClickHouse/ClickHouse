@@ -96,25 +96,18 @@ public:
                 std::move(names)
             );
         }
-        else
-        {
-            DataTypes types
-            {
-                std::make_shared<DataTypeNumber<Float64>>(),
-                std::make_shared<DataTypeNumber<Float64>>(),
-            };
 
-            Strings names
-            {
-                "t_statistic",
-                "p_value",
-            };
+        DataTypes types{
+            std::make_shared<DataTypeNumber<Float64>>(),
+            std::make_shared<DataTypeNumber<Float64>>(),
+        };
 
-            return std::make_shared<DataTypeTuple>(
-                std::move(types),
-                std::move(names)
-            );
-        }
+        Strings names{
+            "t_statistic",
+            "p_value",
+        };
+
+        return std::make_shared<DataTypeTuple>(std::move(types), std::move(names));
     }
 
     bool allocatesMemoryInArena() const override { return false; }

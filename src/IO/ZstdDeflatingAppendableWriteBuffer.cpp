@@ -210,12 +210,13 @@ bool ZstdDeflatingAppendableWriteBuffer::isNeedToAddEmptyBlock()
         /// But in this case file still corrupted and we have to remove it.
         return result != ZSTD_CORRECT_TERMINATION_LAST_BLOCK;
     }
-    else if (fsize > 0)
+    if (fsize > 0)
     {
         throw Exception(
             ErrorCodes::ZSTD_ENCODER_FAILED,
             "Trying to write to non-empty file '{}' with tiny size {}. It can lead to data corruption",
-            out->getFileName(), fsize);
+            out->getFileName(),
+            fsize);
     }
     return false;
 }

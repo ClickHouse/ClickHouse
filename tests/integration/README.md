@@ -14,7 +14,7 @@ Don't use Docker from your system repository.
 
 * [pip](https://pypi.python.org/pypi/pip) and `libpq-dev`. To install: `sudo apt-get install python3-pip libpq-dev zlib1g-dev libcrypto++-dev libssl-dev libkrb5-dev python3-dev`
 * [py.test](https://docs.pytest.org/) testing framework. To install: `sudo -H pip install pytest`
-* [docker-compose](https://docs.docker.com/compose/) and additional python libraries. To install:
+* [docker compose](https://docs.docker.com/compose/) and additional python libraries. To install:
 
 ```bash
 sudo -H pip install \
@@ -24,7 +24,6 @@ sudo -H pip install \
     confluent-kafka \
     dicttoxml \
     docker \
-    docker-compose \
     grpcio \
     grpcio-tools \
     kafka-python \
@@ -48,7 +47,7 @@ sudo -H pip install \
     nats-py
 ```
 
-(highly not recommended) If you really want to use OS packages on modern debian/ubuntu instead of "pip": `sudo apt install -y docker docker-compose python3-pytest python3-dicttoxml python3-docker python3-pymysql python3-protobuf python3-pymongo python3-tzlocal python3-kazoo python3-psycopg2 kafka-python python3-pytest-timeout python3-minio`
+(highly not recommended) If you really want to use OS packages on modern debian/ubuntu instead of "pip": `sudo apt install -y docker docker-compose-v2 python3-pytest python3-dicttoxml python3-docker python3-pymysql python3-protobuf python3-pymongo python3-tzlocal python3-kazoo python3-psycopg2 kafka-python python3-pytest-timeout python3-minio`
 
 Some tests have other dependencies, e.g. spark. See docker/test/integration/runner/Dockerfile for how to install those. See docker/test/integration/runner/dockerd-entrypoint.sh for environment variables that need to be set (e.g. JAVA_PATH).
 

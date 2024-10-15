@@ -56,26 +56,36 @@ public:
             return std::make_shared<ToDataType>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        /// If result type is DateTime or DateTime64 we don't know the timezone and scale without argument types.
+        if constexpr (!std::is_same_v<ToDataType, DataTypeDateTime> && !std::is_same_v<ToDataType, DataTypeDateTime64>)
+            return std::make_shared<ToDataType>();
+        return nullptr;
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();
 
         if (isDate(from_type))
             return DateTimeTransformImpl<DataTypeDate, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
-        else if (isDate32(from_type))
+        if (isDate32(from_type))
             return DateTimeTransformImpl<DataTypeDate32, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
-        else if (isDateTime(from_type))
+        if (isDateTime(from_type))
             return DateTimeTransformImpl<DataTypeDateTime, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
-        else if (isDateTime64(from_type))
+        if (isDateTime64(from_type))
         {
             const auto scale = static_cast<const DataTypeDateTime64 *>(from_type)->getScale();
             const TransformDateTime64<Transform> transformer(scale);
-            return DateTimeTransformImpl<DataTypeDateTime64, ToDataType, decltype(transformer)>::execute(arguments, result_type, input_rows_count, transformer);
+            return DateTimeTransformImpl<DataTypeDateTime64, ToDataType, decltype(transformer)>::execute(
+                arguments, result_type, input_rows_count, transformer);
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}",
-                arguments[0].type->getName(), this->getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal type {} of argument of function {}",
+            arguments[0].type->getName(),
+            this->getName());
     }
 
     bool hasInformationAboutPreimage() const override { return Transform::hasPreimage(); }

@@ -9,7 +9,7 @@ namespace DB
 class OffsetStep : public ITransformingStep
 {
 public:
-    OffsetStep(const DataStream & input_stream_, size_t offset_);
+    OffsetStep(const Header & input_header_, size_t offset_);
 
     String getName() const override { return "Offset"; }
 
@@ -19,9 +19,9 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
 private:
-    void updateOutputStream() override
+    void updateOutputHeader() override
     {
-        output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
+        output_header = input_headers.front();
     }
 
     size_t offset;

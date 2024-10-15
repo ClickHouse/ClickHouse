@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <Disks/SingleDiskVolume.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -135,8 +136,7 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskFull::writeFile(
 {
     if (transaction)
         return transaction->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings, /* autocommit = */ false);
-    else
-        return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
+    return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
 }
 
 void DataPartStorageOnDiskFull::createFile(const String & name)
@@ -203,7 +203,8 @@ void DataPartStorageOnDiskFull::copyFileFrom(const IDataPartStorage & source, co
     source_on_disk->getDisk()->copyFile(
         fs::path(source_on_disk->getRelativePath()) / from,
         *volume->getDisk(),
-        fs::path(root_path) / part_dir / to);
+        fs::path(root_path) / part_dir / to,
+        getReadSettings());
 }
 
 void DataPartStorageOnDiskFull::createProjection(const std::string & name)

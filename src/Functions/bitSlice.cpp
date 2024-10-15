@@ -84,18 +84,17 @@ public:
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
             return executeForSource(column_start, column_length, start_const, length_const, StringSource(*col), input_rows_count);
-        else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_string.get()))
+        if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_string.get()))
             return executeForSource(
                 column_start, column_length, start_const, length_const, FixedStringSource(*col_fixed), input_rows_count);
-        else if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
+        if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
             return executeForSource(
                 column_start, column_length, start_const, length_const, ConstSource<StringSource>(*col_const), input_rows_count);
-        else if (const ColumnConst * col_const_fixed = checkAndGetColumnConst<ColumnFixedString>(column_string.get()))
+        if (const ColumnConst * col_const_fixed = checkAndGetColumnConst<ColumnFixedString>(column_string.get()))
             return executeForSource(
                 column_start, column_length, start_const, length_const, ConstSource<FixedStringSource>(*col_const_fixed), input_rows_count);
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
     }
 
     template <class Source>

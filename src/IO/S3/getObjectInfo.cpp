@@ -82,11 +82,13 @@ ObjectInfo getObjectInfo(
     {
         return *object_info;
     }
-    else if (throw_on_error)
+    if (throw_on_error)
     {
-        throw S3Exception(error.GetErrorType(),
+        throw S3Exception(
+            error.GetErrorType(),
             "Failed to get object info: {}. HTTP response code: {}",
-            error.GetMessage(), static_cast<size_t>(error.GetResponseCode()));
+            error.GetMessage(),
+            static_cast<size_t>(error.GetResponseCode()));
     }
     return {};
 }

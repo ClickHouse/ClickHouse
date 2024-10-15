@@ -95,17 +95,12 @@ bool ZlibInflatingReadBuffer::nextImpl()
                 return !working_buffer.empty();
             }
             /// If it is not end of file, we need to reset zstr and return true, because we still have some data to read
-            else
-            {
-                rc = inflateReset(&zstr);
-                if (rc != Z_OK)
-                    throw Exception(
-                        ErrorCodes::ZLIB_INFLATE_FAILED,
-                        "inflateReset failed: {}{}",
-                        zError(rc),
-                        getExceptionEntryWithFileName(*in));
-                return true;
-            }
+
+            rc = inflateReset(&zstr);
+            if (rc != Z_OK)
+                throw Exception(
+                    ErrorCodes::ZLIB_INFLATE_FAILED, "inflateReset failed: {}{}", zError(rc), getExceptionEntryWithFileName(*in));
+            return true;
         }
 
         /// If it is not end and not OK, something went wrong, throw exception

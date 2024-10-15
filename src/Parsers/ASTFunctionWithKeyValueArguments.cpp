@@ -2,6 +2,7 @@
 
 #include <Poco/String.h>
 #include <Common/SipHash.h>
+#include <Common/maskURIPassword.h>
 #include <IO/Operators.h>
 
 namespace DB
@@ -34,6 +35,17 @@ void ASTPair::formatImpl(const FormatSettings & settings, FormatState & state, F
         /// Hide password in the definition of a dictionary:
         /// SOURCE(CLICKHOUSE(host 'example01-01-1' port 9000 user 'default' password '[HIDDEN]' db 'default' table 'ids'))
         settings.ostr << "'[HIDDEN]'";
+    }
+    else if (!settings.show_secrets && (first == "uri"))
+    {
+        // Hide password from URI in the defention of a dictionary
+        WriteBufferFromOwnString temp_buf;
+        FormatSettings tmp_settings(temp_buf, settings.one_line);
+        FormatState tmp_state;
+        second->formatImpl(tmp_settings, tmp_state, frame);
+
+        maskURIPassword(&temp_buf.str());
+        settings.ostr << temp_buf.str();
     }
     else
     {

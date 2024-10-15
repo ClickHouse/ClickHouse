@@ -72,13 +72,9 @@ private:
             auto path = [&]() -> String
             {
                 if (relative_path.ends_with("/"))
-                {
                     return relative_path + file_name;
-                }
-                else
-                {
-                    return relative_path + "/" + file_name;
-                }
+
+                return relative_path + "/" + file_name;
             }();
             if (disk.isDirectory(path))
             {

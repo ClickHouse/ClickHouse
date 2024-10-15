@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -n --query "
+$CLICKHOUSE_CLIENT --query "
 DROP TABLE IF EXISTS wikistat1 SYNC;
 DROP TABLE IF EXISTS wikistat2 SYNC;
 "
@@ -60,7 +60,7 @@ wait
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM wikistat1 WHERE NOT ignore(*)"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM wikistat2 WHERE NOT ignore(*)"
 
-$CLICKHOUSE_CLIENT -n --query "
+$CLICKHOUSE_CLIENT --query "
 DROP TABLE IF EXISTS wikistat1 SYNC;
 DROP TABLE IF EXISTS wikistat2 SYNC;
 "

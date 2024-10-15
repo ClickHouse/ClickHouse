@@ -40,6 +40,17 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool s3_check_objects_after_upload;
+    extern const SettingsUInt64 s3_max_inflight_parts_for_one_file;
+    extern const SettingsUInt64 s3_max_single_part_upload_size;
+    extern const SettingsUInt64 s3_max_upload_part_size;
+    extern const SettingsUInt64 s3_min_upload_part_size;
+    extern const SettingsUInt64 s3_strict_upload_part_size;
+    extern const SettingsUInt64 s3_upload_part_size_multiply_factor;
+    extern const SettingsUInt64 s3_upload_part_size_multiply_parts_count_threshold;
+}
 
 namespace ErrorCodes
 {
@@ -641,7 +652,7 @@ protected:
         {
             /// Do not block the main thread awaiting the others task.
             /// This test use the only one thread at all
-            getSettings().s3_max_inflight_parts_for_one_file = 0;
+            getSettings()[Setting::s3_max_inflight_parts_for_one_file] = 0;
             async_policy = std::make_unique<MockS3::SimpleAsyncTasks>();
         }
         else
@@ -662,7 +673,7 @@ INSTANTIATE_TEST_SUITE_P(WBS3
 TEST_P(SyncAsync, ExceptionOnHead) {
     setInjectionModel(std::make_shared<MockS3::HeadObjectFailIngection>());
 
-    getSettings().s3_check_objects_after_upload = true;
+    getSettings()[Setting::s3_check_objects_after_upload] = true;
 
     EXPECT_THROW({
         try {
@@ -742,8 +753,8 @@ TEST_P(SyncAsync, ExceptionOnPut) {
 TEST_P(SyncAsync, ExceptionOnCreateMPU) {
     setInjectionModel(std::make_shared<MockS3::CreateMPUFailIngection>());
 
-    getSettings().s3_max_single_part_upload_size = 0; // no single part
-    getSettings().s3_min_upload_part_size = 1; // small parts ara ok
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
+    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts ara ok
 
     EXPECT_THROW({
         try {
@@ -802,8 +813,8 @@ TEST_P(SyncAsync, ExceptionOnCreateMPU) {
 TEST_P(SyncAsync, ExceptionOnCompleteMPU) {
     setInjectionModel(std::make_shared<MockS3::CompleteMPUFailIngection>());
 
-    getSettings().s3_max_single_part_upload_size = 0; // no single part
-    getSettings().s3_min_upload_part_size = 1; // small parts ara ok
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
+    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts ara ok
 
     EXPECT_THROW({
         try {
@@ -825,8 +836,8 @@ TEST_P(SyncAsync, ExceptionOnCompleteMPU) {
 TEST_P(SyncAsync, ExceptionOnUploadPart) {
     setInjectionModel(std::make_shared<MockS3::UploadPartFailIngection>());
 
-    getSettings().s3_max_single_part_upload_size = 0; // no single part
-    getSettings().s3_min_upload_part_size = 1; // small parts ara ok
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
+    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts ara ok
 
     MockS3::EventCounts counters = {.multiUploadCreate = 1, .multiUploadAbort = 1};
 
@@ -942,14 +953,14 @@ TEST_F(WBS3Test, PrefinalizeCalledMultipleTimes) {
 }
 
 TEST_P(SyncAsync, EmptyFile) {
-    getSettings().s3_check_objects_after_upload = true;
+    getSettings()[Setting::s3_check_objects_after_upload] = true;
 
     MockS3::EventCounts counters = {.headObject = 2, .putObject = 1};
     runSimpleScenario(counters, 0);
 }
 
 TEST_P(SyncAsync, ManualNextCalls) {
-    getSettings().s3_check_objects_after_upload = true;
+    getSettings()[Setting::s3_check_objects_after_upload] = true;
 
     {
         MockS3::EventCounts counters = {.headObject = 2, .putObject = 1};
@@ -1008,101 +1019,100 @@ TEST_P(SyncAsync, ManualNextCalls) {
 }
 
 TEST_P(SyncAsync, SmallFileIsOnePutRequest) {
-    getSettings().s3_check_objects_after_upload = true;
+    getSettings()[Setting::s3_check_objects_after_upload] = true;
 
     {
-        getSettings().s3_max_single_part_upload_size = 1000;
-        getSettings().s3_min_upload_part_size = 10;
+        getSettings()[Setting::s3_max_single_part_upload_size] = 1000;
+        getSettings()[Setting::s3_min_upload_part_size] = 10;
 
         MockS3::EventCounts counters = {.headObject = 2, .putObject = 1};
 
         runSimpleScenario(counters, 1);
-        runSimpleScenario(counters, getSettings().s3_max_single_part_upload_size-1);
-        runSimpleScenario(counters, getSettings().s3_max_single_part_upload_size);
-        runSimpleScenario(counters, getSettings().s3_max_single_part_upload_size/2);
+        runSimpleScenario(counters, getSettings()[Setting::s3_max_single_part_upload_size] - 1);
+        runSimpleScenario(counters, getSettings()[Setting::s3_max_single_part_upload_size]);
+        runSimpleScenario(counters, getSettings()[Setting::s3_max_single_part_upload_size] / 2);
     }
 
     {
-
-        getSettings().s3_max_single_part_upload_size = 10;
-        getSettings().s3_min_upload_part_size = 1000;
+        getSettings()[Setting::s3_max_single_part_upload_size] = 10;
+        getSettings()[Setting::s3_min_upload_part_size] = 1000;
 
         MockS3::EventCounts counters = {.headObject = 2, .putObject = 1};
 
         runSimpleScenario(counters, 1);
-        runSimpleScenario(counters, getSettings().s3_max_single_part_upload_size-1);
-        runSimpleScenario(counters, getSettings().s3_max_single_part_upload_size);
-        runSimpleScenario(counters, getSettings().s3_max_single_part_upload_size/2);
+        runSimpleScenario(counters, getSettings()[Setting::s3_max_single_part_upload_size] - 1);
+        runSimpleScenario(counters, getSettings()[Setting::s3_max_single_part_upload_size]);
+        runSimpleScenario(counters, getSettings()[Setting::s3_max_single_part_upload_size] / 2);
     }
 }
 
 TEST_P(SyncAsync, LittleBiggerFileIsMultiPartUpload) {
-    getSettings().s3_check_objects_after_upload = true;
+    getSettings()[Setting::s3_check_objects_after_upload] = true;
 
     {
-        getSettings().s3_max_single_part_upload_size = 1000;
-        getSettings().s3_min_upload_part_size = 10;
+        getSettings()[Setting::s3_max_single_part_upload_size] = 1000;
+        getSettings()[Setting::s3_min_upload_part_size] = 10;
 
         MockS3::EventCounts counters = {.headObject = 2, .multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 2};
-        runSimpleScenario(counters, settings.s3_max_single_part_upload_size + 1);
+        runSimpleScenario(counters, settings[Setting::s3_max_single_part_upload_size] + 1);
 
         counters.uploadParts = 101;
-        runSimpleScenario(counters, 2*settings.s3_max_single_part_upload_size);
+        runSimpleScenario(counters, 2 * settings[Setting::s3_max_single_part_upload_size]);
     }
 
     {
-        getSettings().s3_max_single_part_upload_size = 10;
-        getSettings().s3_min_upload_part_size = 1000;
+        getSettings()[Setting::s3_max_single_part_upload_size] = 10;
+        getSettings()[Setting::s3_min_upload_part_size] = 1000;
 
         MockS3::EventCounts counters = {.headObject = 2, .multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 1};
 
-        runSimpleScenario(counters, settings.s3_max_single_part_upload_size + 1);
-        runSimpleScenario(counters, 2*settings.s3_max_single_part_upload_size);
-        runSimpleScenario(counters, settings.s3_min_upload_part_size-1);
-        runSimpleScenario(counters, settings.s3_min_upload_part_size);
+        runSimpleScenario(counters, settings[Setting::s3_max_single_part_upload_size] + 1);
+        runSimpleScenario(counters, 2 * settings[Setting::s3_max_single_part_upload_size]);
+        runSimpleScenario(counters, settings[Setting::s3_min_upload_part_size] - 1);
+        runSimpleScenario(counters, settings[Setting::s3_min_upload_part_size]);
     }
 }
 
 TEST_P(SyncAsync, BiggerFileIsMultiPartUpload) {
-    getSettings().s3_check_objects_after_upload = true;
+    getSettings()[Setting::s3_check_objects_after_upload] = true;
 
     {
-        getSettings().s3_max_single_part_upload_size = 1000;
-        getSettings().s3_min_upload_part_size = 10;
+        getSettings()[Setting::s3_max_single_part_upload_size] = 1000;
+        getSettings()[Setting::s3_min_upload_part_size] = 10;
 
         auto counters = MockS3::EventCounts{.headObject = 2, .multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 2};
-        runSimpleScenario(counters, settings.s3_max_single_part_upload_size + settings.s3_min_upload_part_size);
+        runSimpleScenario(counters, settings[Setting::s3_max_single_part_upload_size] + settings[Setting::s3_min_upload_part_size]);
 
         counters.uploadParts = 3;
-        runSimpleScenario(counters, settings.s3_max_single_part_upload_size + settings.s3_min_upload_part_size + 1);
-        runSimpleScenario(counters, settings.s3_max_single_part_upload_size + 2*settings.s3_min_upload_part_size - 1);
-        runSimpleScenario(counters, settings.s3_max_single_part_upload_size + 2*settings.s3_min_upload_part_size);
+        runSimpleScenario(counters, settings[Setting::s3_max_single_part_upload_size] + settings[Setting::s3_min_upload_part_size] + 1);
+        runSimpleScenario(counters, settings[Setting::s3_max_single_part_upload_size] + 2 * settings[Setting::s3_min_upload_part_size] - 1);
+        runSimpleScenario(counters, settings[Setting::s3_max_single_part_upload_size] + 2 * settings[Setting::s3_min_upload_part_size]);
     }
 
 
     {
         // but not in that case, when s3_min_upload_part_size > s3_max_single_part_upload_size
-        getSettings().s3_max_single_part_upload_size = 10;
-        getSettings().s3_min_upload_part_size = 1000;
+        getSettings()[Setting::s3_max_single_part_upload_size] = 10;
+        getSettings()[Setting::s3_min_upload_part_size] = 1000;
 
         auto counters = MockS3::EventCounts{.headObject = 2, .multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 2};
-        runSimpleScenario(counters, settings.s3_max_single_part_upload_size + settings.s3_min_upload_part_size);
-        runSimpleScenario(counters, settings.s3_max_single_part_upload_size + settings.s3_min_upload_part_size + 1);
-        runSimpleScenario(counters, 2*settings.s3_min_upload_part_size-1);
-        runSimpleScenario(counters, 2*settings.s3_min_upload_part_size);
+        runSimpleScenario(counters, settings[Setting::s3_max_single_part_upload_size] + settings[Setting::s3_min_upload_part_size]);
+        runSimpleScenario(counters, settings[Setting::s3_max_single_part_upload_size] + settings[Setting::s3_min_upload_part_size] + 1);
+        runSimpleScenario(counters, 2 * settings[Setting::s3_min_upload_part_size] - 1);
+        runSimpleScenario(counters, 2 * settings[Setting::s3_min_upload_part_size]);
 
         counters.uploadParts = 3;
-        runSimpleScenario(counters, 2*settings.s3_min_upload_part_size+1);
+        runSimpleScenario(counters, 2 * settings[Setting::s3_min_upload_part_size] + 1);
     }
 }
 
 TEST_P(SyncAsync, IncreaseUploadBuffer) {
-    getSettings().s3_check_objects_after_upload = true;
+    getSettings()[Setting::s3_check_objects_after_upload] = true;
 
     {
-        getSettings().s3_max_single_part_upload_size = 10;
-        getSettings().s3_min_upload_part_size = 10;
-        getSettings().s3_upload_part_size_multiply_parts_count_threshold = 1;
+        getSettings()[Setting::s3_max_single_part_upload_size] = 10;
+        getSettings()[Setting::s3_min_upload_part_size] = 10;
+        getSettings()[Setting::s3_upload_part_size_multiply_parts_count_threshold] = 1;
         // parts: 10 20 40 80  160
         // size:  10 30 70 150 310
 
@@ -1114,10 +1124,10 @@ TEST_P(SyncAsync, IncreaseUploadBuffer) {
     }
 
     {
-        getSettings().s3_max_single_part_upload_size = 10;
-        getSettings().s3_min_upload_part_size = 10;
-        getSettings().s3_upload_part_size_multiply_parts_count_threshold = 2;
-        getSettings().s3_upload_part_size_multiply_factor = 3;
+        getSettings()[Setting::s3_max_single_part_upload_size] = 10;
+        getSettings()[Setting::s3_min_upload_part_size] = 10;
+        getSettings()[Setting::s3_upload_part_size_multiply_parts_count_threshold] = 2;
+        getSettings()[Setting::s3_upload_part_size_multiply_factor] = 3;
         // parts: 10 10 30 30 90
         // size:  10 20 50 80 170
 
@@ -1130,13 +1140,13 @@ TEST_P(SyncAsync, IncreaseUploadBuffer) {
 }
 
 TEST_P(SyncAsync, IncreaseLimited) {
-    getSettings().s3_check_objects_after_upload = true;
+    getSettings()[Setting::s3_check_objects_after_upload] = true;
 
     {
-        getSettings().s3_max_single_part_upload_size = 10;
-        getSettings().s3_min_upload_part_size = 10;
-        getSettings().s3_upload_part_size_multiply_parts_count_threshold = 1;
-        getSettings().s3_max_upload_part_size = 45;
+        getSettings()[Setting::s3_max_single_part_upload_size] = 10;
+        getSettings()[Setting::s3_min_upload_part_size] = 10;
+        getSettings()[Setting::s3_upload_part_size_multiply_parts_count_threshold] = 1;
+        getSettings()[Setting::s3_max_upload_part_size] = 45;
         // parts: 10 20 40 45  45  45
         // size:  10 30 70 115 160 205
 
@@ -1149,11 +1159,11 @@ TEST_P(SyncAsync, IncreaseLimited) {
 }
 
 TEST_P(SyncAsync, StrictUploadPartSize) {
-    getSettings().s3_check_objects_after_upload = false;
+    getSettings()[Setting::s3_check_objects_after_upload] = false;
 
     {
-        getSettings().s3_max_single_part_upload_size = 10;
-        getSettings().s3_strict_upload_part_size = 11;
+        getSettings()[Setting::s3_max_single_part_upload_size] = 10;
+        getSettings()[Setting::s3_strict_upload_part_size] = 11;
 
         {
             auto counters = MockS3::EventCounts{.multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 6};

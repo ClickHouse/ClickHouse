@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 
 import logging
+import os
 import random
 import string
 import time
-import os
-
 from multiprocessing.dummy import Pool
-import pytest
-from helpers.cluster import ClickHouseCluster
 
+import pytest
+
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 

@@ -81,11 +81,9 @@ size_t Epoll::getManyReady(int max_events, epoll_event * events_out, int timeout
                 }
                 continue;
             }
-            else
-                throw ErrnoException(ErrorCodes::EPOLL_ERROR, "Error in epoll_wait");
+            throw ErrnoException(ErrorCodes::EPOLL_ERROR, "Error in epoll_wait");
         }
-        else
-            break;
+        break;
     }
 
     return ready_size;
@@ -95,7 +93,7 @@ Epoll::~Epoll()
 {
     if (epoll_fd != -1)
     {
-        int err = close(epoll_fd);
+        [[maybe_unused]] int err = close(epoll_fd);
         chassert(!err || errno == EINTR);
     }
 }

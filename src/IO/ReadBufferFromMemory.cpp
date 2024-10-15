@@ -18,11 +18,13 @@ off_t ReadBufferFromMemory::seek(off_t offset, int whence)
             working_buffer = internal_buffer; /// We need to restore `working_buffer` in case the position was at EOF before this seek().
             return static_cast<size_t>(pos - internal_buffer.begin());
         }
-        else
-            throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}, Max: {}",
-                offset, std::to_string(static_cast<size_t>(internal_buffer.end() - internal_buffer.begin())));
+        throw Exception(
+            ErrorCodes::SEEK_POSITION_OUT_OF_BOUND,
+            "Seek position is out of bounds. Offset: {}, Max: {}",
+            offset,
+            std::to_string(static_cast<size_t>(internal_buffer.end() - internal_buffer.begin())));
     }
-    else if (whence == SEEK_CUR)
+    if (whence == SEEK_CUR)
     {
         Position new_pos = pos + offset;
         if (new_pos >= internal_buffer.begin() && new_pos <= internal_buffer.end())
@@ -31,12 +33,13 @@ off_t ReadBufferFromMemory::seek(off_t offset, int whence)
             working_buffer = internal_buffer; /// We need to restore `working_buffer` in case the position was at EOF before this seek().
             return static_cast<size_t>(pos - internal_buffer.begin());
         }
-        else
-            throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}, Max: {}",
-                offset, std::to_string(static_cast<size_t>(internal_buffer.end() - internal_buffer.begin())));
+        throw Exception(
+            ErrorCodes::SEEK_POSITION_OUT_OF_BOUND,
+            "Seek position is out of bounds. Offset: {}, Max: {}",
+            offset,
+            std::to_string(static_cast<size_t>(internal_buffer.end() - internal_buffer.begin())));
     }
-    else
-        throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET and SEEK_CUR seek modes allowed.");
+    throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET and SEEK_CUR seek modes allowed.");
 }
 
 off_t ReadBufferFromMemory::getPosition()

@@ -189,6 +189,14 @@ TEST(S3UriTest, validPatterns)
         ASSERT_EQ(true, uri.is_virtual_hosted_style);
     }
     {
+        S3::URI uri("https://bucketname.dots-are-allowed.s3-us-east-2.amazonaws.com/data");
+        ASSERT_EQ("https://s3-us-east-2.amazonaws.com", uri.endpoint);
+        ASSERT_EQ("bucketname.dots-are-allowed", uri.bucket);
+        ASSERT_EQ("data", uri.key);
+        ASSERT_EQ("", uri.version_id);
+        ASSERT_EQ(true, uri.is_virtual_hosted_style);
+    }
+    {
         S3::URI uri("https://s3-us-east-2.amazonaws.com/bucketname/data");
         ASSERT_EQ("https://s3-us-east-2.amazonaws.com", uri.endpoint);
         ASSERT_EQ("bucketname", uri.bucket);
@@ -201,14 +209,6 @@ TEST(S3UriTest, validPatterns)
         ASSERT_EQ("https://s3express-eun1-az1.eu-north-1.amazonaws.com", uri.endpoint);
         ASSERT_EQ("test-perf-bucket--eun1-az1--x-s3", uri.bucket);
         ASSERT_EQ("test.csv", uri.key);
-        ASSERT_EQ("", uri.version_id);
-        ASSERT_EQ(true, uri.is_virtual_hosted_style);
-    }
-    {
-        S3::URI uri("https://bucket-test.cn-beijing-internal.oss-data-acc.aliyuncs.com/cc-2zeh496zqm0g6e09g");
-        ASSERT_EQ("https://cn-beijing-internal.oss-data-acc.aliyuncs.com", uri.endpoint);
-        ASSERT_EQ("bucket-test", uri.bucket);
-        ASSERT_EQ("cc-2zeh496zqm0g6e09g", uri.key);
         ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(true, uri.is_virtual_hosted_style);
     }

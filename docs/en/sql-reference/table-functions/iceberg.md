@@ -6,7 +6,7 @@ sidebar_label: iceberg
 
 # iceberg Table Function
 
-Provides a read-only table-like interface to Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure or locally stored.
+Provides a read-only table-like interface to Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS or locally stored.
 
 ## Syntax
 
@@ -17,13 +17,16 @@ icebergS3(named_collection[, option=value [,..]])
 icebergAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
 icebergAzure(named_collection[, option=value [,..]])
 
+icebergHDFS(path_to_table, [,format] [,compression_method])
+icebergHDFS(named_collection[, option=value [,..]])
+
 icebergLocal(path_to_table, [,format] [,compression_method])
 icebergLocal(named_collection[, option=value [,..]])
 ```
 
 ## Arguments
 
-Description of the arguments coincides with description of arguments in table functions `s3`, `azureBlobStorage` and `file` correspondingly.
+Description of the arguments coincides with description of arguments in table functions `s3`, `azureBlobStorage`, `HDFS` and `file` correspondingly.
 `format` stands for the format of data files in the Iceberg table.
 
 **Returned value**
@@ -36,7 +39,7 @@ SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_tab
 ```
 
 :::important
-ClickHouse currently supports reading v1 and v2 of the Iceberg format via the `icebergS3`, `icebergAzure` and `icebergLocal` table functions and `IcebergS3`, `icebergAzure` ans `icebergLocal` table engines.
+ClickHouse currently supports reading v1 and v2 of the Iceberg format via the `icebergS3`, `icebergAzure`, `icebergHDFS` and `icebergLocal` table functions and `IcebergS3`, `icebergAzure`, `IcebergHDFS` and `IcebergLocal` table engines.
 :::
 
 ## Defining a named collection

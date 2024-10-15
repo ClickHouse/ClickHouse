@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: replica
+# Tags: replica, no-fasttest
+# no-fasttest: Mutation load can be slow
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh

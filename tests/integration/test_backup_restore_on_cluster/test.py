@@ -1,10 +1,12 @@
-import pytest
-import re
 import os.path
-import random, string
+import random
+import re
+import string
+
+import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
-
 
 cluster = ClickHouseCluster(__file__)
 
@@ -769,7 +771,8 @@ def test_system_users():
     )
 
     assert (
-        node1.query("SHOW CREATE USER u1") == "CREATE USER u1 SETTINGS custom_a = 123\n"
+        node1.query("SHOW CREATE USER u1")
+        == "CREATE USER u1 IDENTIFIED WITH no_password SETTINGS custom_a = 123\n"
     )
     assert node1.query("SHOW GRANTS FOR u1") == "GRANT SELECT ON default.tbl TO u1\n"
 

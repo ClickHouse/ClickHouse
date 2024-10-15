@@ -9,13 +9,14 @@ namespace DB
 
 /** materialize(x) - materialize the constant
   */
+template <bool remove_sparse>
 class FunctionMaterialize : public IFunction
 {
 public:
     static constexpr auto name = "materialize";
     static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionMaterialize>();
+        return std::make_shared<FunctionMaterialize<remove_sparse>>();
     }
 
     /// Get the function name.
@@ -55,7 +56,10 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        return recursiveRemoveSparse(arguments[0].column->convertToFullColumnIfConst());
+        auto res = arguments[0].column->convertToFullColumnIfConst();
+        if constexpr (remove_sparse)
+            res = recursiveRemoveSparse(res);
+        return res;
     }
 
     bool hasInformationAboutMonotonicity() const override { return true; }

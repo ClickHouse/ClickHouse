@@ -45,6 +45,7 @@ uint64_t ACLMap::convertACLs(const Coordination::ACLs & acls)
     if (acls.empty())
         return 0;
 
+    std::lock_guard lock(map_mutex);
     if (acl_to_num.contains(acls))
         return acl_to_num[acls];
 
@@ -62,6 +63,7 @@ Coordination::ACLs ACLMap::convertNumber(uint64_t acls_id) const
     if (acls_id == 0)
         return Coordination::ACLs{};
 
+    std::lock_guard lock(map_mutex);
     if (!num_to_acl.contains(acls_id))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown ACL id {}. It's a bug", acls_id);
 
@@ -70,6 +72,7 @@ Coordination::ACLs ACLMap::convertNumber(uint64_t acls_id) const
 
 void ACLMap::addMapping(uint64_t acls_id, const Coordination::ACLs & acls)
 {
+    std::lock_guard lock(map_mutex);
     num_to_acl[acls_id] = acls;
     acl_to_num[acls] = acls_id;
     max_acl_id = std::max(acls_id + 1, max_acl_id); /// max_acl_id pointer next slot
@@ -77,11 +80,13 @@ void ACLMap::addMapping(uint64_t acls_id, const Coordination::ACLs & acls)
 
 void ACLMap::addUsage(uint64_t acl_id)
 {
+    std::lock_guard lock(map_mutex);
     usage_counter[acl_id]++;
 }
 
 void ACLMap::removeUsage(uint64_t acl_id)
 {
+    std::lock_guard lock(map_mutex);
     if (!usage_counter.contains(acl_id))
         return;
 

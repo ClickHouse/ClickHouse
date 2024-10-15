@@ -1,5 +1,3 @@
-version: '2.3'
-
 services:
   minio1:
     image: minio/minio:RELEASE.2024-07-31T05-46-26Z

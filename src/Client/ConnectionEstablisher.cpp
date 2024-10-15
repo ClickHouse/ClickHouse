@@ -1,6 +1,7 @@
 #include <Client/ConnectionEstablisher.h>
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
+#include <Common/FailPoint.h>
 #include <Core/Settings.h>
 
 namespace ProfileEvents
@@ -14,6 +15,10 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
+}
 
 namespace ErrorCodes
 {
@@ -21,6 +26,11 @@ namespace ErrorCodes
     extern const int DNS_ERROR;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
+}
+
+namespace FailPoints
+{
+    extern const char replicated_merge_tree_all_replicas_stale[];
 }
 
 ConnectionEstablisher::ConnectionEstablisher(
@@ -78,7 +88,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
             LOG_TRACE(log, "Table {}.{} is readonly on server {}", table_to_check->database, table_to_check->table, result.entry->getDescription());
         }
 
-        const UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
+        const UInt64 max_allowed_delay = settings[Setting::max_replica_delay_for_distributed_queries];
         if (!max_allowed_delay)
         {
             result.is_up_to_date = true;
@@ -87,7 +97,15 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
 
         const UInt32 delay = table_status_it->second.absolute_delay;
         if (delay < max_allowed_delay)
+        {
             result.is_up_to_date = true;
+
+            fiu_do_on(FailPoints::replicated_merge_tree_all_replicas_stale,
+            {
+                result.delay = 1;
+                result.is_up_to_date = false;
+            });
+        }
         else
         {
             result.is_up_to_date = false;

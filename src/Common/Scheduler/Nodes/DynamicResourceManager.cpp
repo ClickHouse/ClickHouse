@@ -166,8 +166,7 @@ ResourceLink DynamicResourceManager::Classifier::get(const String & resource_nam
 {
     if (auto iter = resources.find(resource_name); iter != resources.end())
         return iter->second;
-    else
-        throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "Access denied to resource '{}'", resource_name);
+    throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "Access denied to resource '{}'", resource_name);
 }
 
 DynamicResourceManager::DynamicResourceManager()

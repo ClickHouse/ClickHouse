@@ -166,23 +166,22 @@ public:
         WhichDataType which(nested_type);
         if (which.isUInt8())
             return executeBitmapData<UInt8>(argument_types, arguments, input_rows_count);
-        else if (which.isUInt16())
+        if (which.isUInt16())
             return executeBitmapData<UInt16>(argument_types, arguments, input_rows_count);
-        else if (which.isUInt32())
+        if (which.isUInt32())
             return executeBitmapData<UInt32>(argument_types, arguments, input_rows_count);
-        else if (which.isUInt64())
+        if (which.isUInt64())
             return executeBitmapData<UInt64>(argument_types, arguments, input_rows_count);
-        else if (which.isInt8())
+        if (which.isInt8())
             return executeBitmapData<Int8>(argument_types, arguments, input_rows_count);
-        else if (which.isInt16())
+        if (which.isInt16())
             return executeBitmapData<Int16>(argument_types, arguments, input_rows_count);
-        else if (which.isInt32())
+        if (which.isInt32())
             return executeBitmapData<Int32>(argument_types, arguments, input_rows_count);
-        else if (which.isInt64())
+        if (which.isInt64())
             return executeBitmapData<Int64>(argument_types, arguments, input_rows_count);
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
-                from_type->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}", from_type->getName(), getName());
     }
 
 private:
@@ -359,23 +358,22 @@ public:
         WhichDataType which(aggr_type->getArgumentsDataTypes()[0]);
         if (which.isUInt8())
             return executeIntType<UInt8>(arguments, input_rows_count);
-        else if (which.isUInt16())
+        if (which.isUInt16())
             return executeIntType<UInt16>(arguments, input_rows_count);
-        else if (which.isUInt32())
+        if (which.isUInt32())
             return executeIntType<UInt32>(arguments, input_rows_count);
-        else if (which.isUInt64())
+        if (which.isUInt64())
             return executeIntType<UInt64>(arguments, input_rows_count);
-        else if (which.isInt8())
+        if (which.isInt8())
             return executeIntType<Int8>(arguments, input_rows_count);
-        else if (which.isInt16())
+        if (which.isInt16())
             return executeIntType<Int16>(arguments, input_rows_count);
-        else if (which.isInt32())
+        if (which.isInt32())
             return executeIntType<Int32>(arguments, input_rows_count);
-        else if (which.isInt64())
+        if (which.isInt64())
             return executeIntType<Int64>(arguments, input_rows_count);
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
-                from_type->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}", from_type->getName(), getName());
     }
 
 private:
@@ -538,23 +536,22 @@ public:
         WhichDataType which(aggr_type->getArgumentsDataTypes()[0]);
         if (which.isUInt8())
             return executeIntType<UInt8>(arguments, input_rows_count);
-        else if (which.isUInt16())
+        if (which.isUInt16())
             return executeIntType<UInt16>(arguments, input_rows_count);
-        else if (which.isUInt32())
+        if (which.isUInt32())
             return executeIntType<UInt32>(arguments, input_rows_count);
-        else if (which.isUInt64())
+        if (which.isUInt64())
             return executeIntType<UInt64>(arguments, input_rows_count);
-        else if (which.isInt8())
+        if (which.isInt8())
             return executeIntType<Int8>(arguments, input_rows_count);
-        else if (which.isInt16())
+        if (which.isInt16())
             return executeIntType<Int16>(arguments, input_rows_count);
-        else if (which.isInt32())
+        if (which.isInt32())
             return executeIntType<Int32>(arguments, input_rows_count);
-        else if (which.isInt64())
+        if (which.isInt64())
             return executeIntType<Int64>(arguments, input_rows_count);
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
-                from_type->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}", from_type->getName(), getName());
     }
 
 private:
@@ -1136,23 +1133,22 @@ public:
         WhichDataType which(aggr_type->getArgumentsDataTypes()[0]);
         if (which.isUInt8())
             return executeBitmapData<UInt8>(arguments, input_rows_count);
-        else if (which.isUInt16())
+        if (which.isUInt16())
             return executeBitmapData<UInt16>(arguments, input_rows_count);
-        else if (which.isUInt32())
+        if (which.isUInt32())
             return executeBitmapData<UInt32>(arguments, input_rows_count);
-        else if (which.isUInt64())
+        if (which.isUInt64())
             return executeBitmapData<UInt64>(arguments, input_rows_count);
-        else if (which.isInt8())
+        if (which.isInt8())
             return executeBitmapData<Int8>(arguments, input_rows_count);
-        else if (which.isInt16())
+        if (which.isInt16())
             return executeBitmapData<Int16>(arguments, input_rows_count);
-        else if (which.isInt32())
+        if (which.isInt32())
             return executeBitmapData<Int32>(arguments, input_rows_count);
-        else if (which.isInt64())
+        if (which.isInt64())
             return executeBitmapData<Int64>(arguments, input_rows_count);
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
-                from_type->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}", from_type->getName(), getName());
     }
 
 private:

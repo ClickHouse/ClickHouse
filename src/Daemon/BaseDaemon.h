@@ -187,8 +187,7 @@ std::optional<std::reference_wrapper<Daemon>> BaseDaemon::tryGetInstance()
 
     if (ptr)
         return std::optional<std::reference_wrapper<Daemon>>(*ptr);
-    else
-        return {};
+    return {};
 }
 
 #if defined(OS_LINUX)

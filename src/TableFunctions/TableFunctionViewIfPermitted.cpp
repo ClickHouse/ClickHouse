@@ -18,6 +18,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+}
 
 namespace ErrorCodes
 {
@@ -114,7 +118,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
 
     try
     {
-        if (context->getSettingsRef().allow_experimental_analyzer)
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
             sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
         }

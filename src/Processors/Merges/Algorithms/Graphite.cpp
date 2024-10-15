@@ -52,14 +52,13 @@ RuleType ruleType(const String & s)
 {
     if (s == "all")
         return RuleTypeAll;
-    else if (s == "plain")
+    if (s == "plain")
         return RuleTypePlain;
-    else if (s == "tagged")
+    if (s == "tagged")
         return RuleTypeTagged;
-    else if (s == "tag_list")
+    if (s == "tag_list")
         return RuleTypeTagList;
-    else
-        throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "invalid rule type: {}", s);
+    throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "invalid rule type: {}", s);
 }
 
 void Pattern::updateHash(SipHash & hash) const
@@ -96,13 +95,10 @@ inline static const Patterns & selectPatternsForMetricType(const Graphite::Param
         std::string_view path_view = path;
         if (path_view.find("?"sv) == std::string::npos)
             return params.patterns_plain;
-        else
-            return params.patterns_tagged;
+        return params.patterns_tagged;
     }
-    else
-    {
-        return params.patterns;
-    }
+
+    return params.patterns;
 }
 
 Graphite::RollupRule selectPatternForPath(
@@ -177,7 +173,7 @@ static bool compareRetentions(const Retention & a, const Retention & b)
     {
         return true;
     }
-    else if (a.age < b.age && a.precision < b.precision)
+    if (a.age < b.age && a.precision < b.precision)
     {
         return false;
     }

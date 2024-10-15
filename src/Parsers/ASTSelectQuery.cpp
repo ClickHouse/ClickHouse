@@ -400,9 +400,9 @@ static String getTableExpressionAlias(const ASTTableExpression * table_expressio
 {
     if (table_expression->subquery)
         return table_expression->subquery->tryGetAlias();
-    else if (table_expression->table_function)
+    if (table_expression->table_function)
         return table_expression->table_function->tryGetAlias();
-    else if (table_expression->database_and_table_name)
+    if (table_expression->database_and_table_name)
         return table_expression->database_and_table_name->tryGetAlias();
 
     return String();

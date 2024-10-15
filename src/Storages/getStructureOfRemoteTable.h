@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/ColumnsDescription.h>
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/Cluster.h>
 

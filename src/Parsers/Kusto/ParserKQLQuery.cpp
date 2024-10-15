@@ -309,28 +309,27 @@ std::unique_ptr<IParserBase> ParserKQLQuery::getOperator(String & op_name)
 {
     if (op_name == "filter" || op_name == "where")
         return std::make_unique<ParserKQLFilter>();
-    else if (op_name == "limit" || op_name == "take")
+    if (op_name == "limit" || op_name == "take")
         return std::make_unique<ParserKQLLimit>();
-    else if (op_name == "project")
+    if (op_name == "project")
         return std::make_unique<ParserKQLProject>();
-    else if (op_name == "distinct")
+    if (op_name == "distinct")
         return std::make_unique<ParserKQLDistinct>();
-    else if (op_name == "extend")
+    if (op_name == "extend")
         return std::make_unique<ParserKQLExtend>();
-    else if (op_name == "sort by" || op_name == "order by")
+    if (op_name == "sort by" || op_name == "order by")
         return std::make_unique<ParserKQLSort>();
-    else if (op_name == "summarize")
+    if (op_name == "summarize")
         return std::make_unique<ParserKQLSummarize>();
-    else if (op_name == "table")
+    if (op_name == "table")
         return std::make_unique<ParserKQLTable>();
-    else if (op_name == "make-series")
+    if (op_name == "make-series")
         return std::make_unique<ParserKQLMakeSeries>();
-    else if (op_name == "mv-expand")
+    if (op_name == "mv-expand")
         return std::make_unique<ParserKQLMVExpand>();
-    else if (op_name == "print")
+    if (op_name == "print")
         return std::make_unique<ParserKQLPrint>();
-    else
-        return nullptr;
+    return nullptr;
 }
 
 bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)

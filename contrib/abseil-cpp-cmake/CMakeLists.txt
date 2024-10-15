@@ -1,6 +1,9 @@
 set(ABSL_ROOT_DIR "${ClickHouse_SOURCE_DIR}/contrib/abseil-cpp")
 set(ABSL_COMMON_INCLUDE_DIRS "${ABSL_ROOT_DIR}")
 
+# To avoid errors "'X' does not refer to a value" while using `offsetof` function.
+set(CMAKE_CXX_STANDARD 17)
+
 # This is a minimized version of the function definition in CMake/AbseilHelpers.cmake
 
 #

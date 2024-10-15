@@ -1,11 +1,12 @@
 #pragma once
 
 #include <Interpreters/Context.h>
-#include <Poco/Logger.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/Net/HTTPRequest.h>
 #include <Common/ShellCommand.h>
 
+#include <Poco/Logger.h>
+#include <Poco/Net/HTTPRequest.h>
+#include <Poco/URI.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {

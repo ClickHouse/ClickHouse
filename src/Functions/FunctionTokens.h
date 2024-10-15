@@ -22,6 +22,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool splitby_max_substrings_includes_remaining_string;
+}
 
 namespace ErrorCodes
 {
@@ -64,7 +68,7 @@ public:
     explicit FunctionTokens<Generator>(ContextPtr context)
     {
         const Settings & settings = context->getSettingsRef();
-        max_substrings_includes_remaining_string = settings.splitby_max_substrings_includes_remaining_string;
+        max_substrings_includes_remaining_string = settings[Setting::splitby_max_substrings_includes_remaining_string];
     }
 
     String getName() const override { return name; }
@@ -144,7 +148,7 @@ public:
 
             return col_res;
         }
-        else if (col_str_const)
+        if (col_str_const)
         {
             String src = col_str_const->getValue<String>();
             Array dst;
@@ -158,9 +162,12 @@ public:
 
             return result_type->createColumnConst(col_str_const->size(), dst);
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {}, {} of arguments of function {}",
-                    array_argument.column->getName(), array_argument.column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Illegal columns {}, {} of arguments of function {}",
+            array_argument.column->getName(),
+            array_argument.column->getName(),
+            getName());
     }
 };
 

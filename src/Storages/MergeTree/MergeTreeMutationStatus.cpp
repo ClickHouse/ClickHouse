@@ -21,7 +21,7 @@ void checkMutationStatus(std::optional<MergeTreeMutationStatus> & status, const 
     {
         throw Exception(ErrorCodes::UNFINISHED, "Mutation {} was killed", *mutation_ids.begin());
     }
-    else if (!status->is_done && !status->latest_fail_reason.empty())
+    if (!status->is_done && !status->latest_fail_reason.empty())
     {
         throw Exception(
             ErrorCodes::UNFINISHED,

@@ -112,7 +112,7 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
     if (ready <= 0)
         return PollPidResult::FAILED;
 
-    int err = close(pid_fd);
+    [[maybe_unused]] int err = close(pid_fd);
     chassert(!err || errno == EINTR);
 
     return PollPidResult::RESTART;

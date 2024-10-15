@@ -359,7 +359,7 @@ inline int memcmpSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_siz
     {
         return 0;
     }
-    else if (a_size > b_size)
+    if (a_size > b_size)
     {
         max_size = a_size;
         longest = a;

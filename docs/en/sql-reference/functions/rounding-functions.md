@@ -288,7 +288,7 @@ roundToExp2(num)
 
 **Parameters**
 
-- `num`: A number representing an age in years. [UInt](../data-types/int-uint.md)/[Float](../data-types/float.md).
+- `num`: A number to round. [UInt](../data-types/int-uint.md)/[Float](../data-types/float.md).
 
 **Returned value**
 

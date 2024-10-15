@@ -6,9 +6,9 @@ from contextlib import contextmanager
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
-from helpers.client import QueryRuntimeException
 
 
 @pytest.fixture(scope="module")

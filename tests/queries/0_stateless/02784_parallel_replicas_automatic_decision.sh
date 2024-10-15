@@ -50,7 +50,7 @@ function run_query_with_pure_parallel_replicas () {
         --query_id "${1}_pure" \
         --max_parallel_replicas 3 \
         --cluster_for_parallel_replicas "parallel_replicas" \
-        --allow_experimental_parallel_reading_from_replicas 1 \
+        --enable_parallel_replicas 1 \
         --parallel_replicas_for_non_replicated_merge_tree 1 \
         --parallel_replicas_min_number_of_rows_per_replica "$2" \
         --max_threads 5 \

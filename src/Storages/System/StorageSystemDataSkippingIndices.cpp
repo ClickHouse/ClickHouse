@@ -197,7 +197,7 @@ public:
         std::vector<UInt8> columns_mask_,
         size_t max_block_size_)
         : SourceStepWithFilter(
-            DataStream{.header = std::move(sample_block)},
+            std::move(sample_block),
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -282,7 +282,7 @@ void ReadFromSystemDataSkippingIndices::initializePipeline(QueryPipelineBuilder 
 
     ColumnPtr & filtered_databases = block.getByPosition(0).column;
     pipeline.init(Pipe(std::make_shared<DataSkippingIndicesSource>(
-        std::move(columns_mask), getOutputStream().header, max_block_size, std::move(filtered_databases), context)));
+        std::move(columns_mask), getOutputHeader(), max_block_size, std::move(filtered_databases), context)));
 }
 
 }

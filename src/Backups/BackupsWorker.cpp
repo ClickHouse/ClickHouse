@@ -43,6 +43,15 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 backup_restore_batch_size_for_keeper_multiread;
+    extern const SettingsUInt64 backup_restore_keeper_max_retries;
+    extern const SettingsUInt64 backup_restore_keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 backup_restore_keeper_retry_max_backoff_ms;
+    extern const SettingsUInt64 backup_restore_keeper_fault_injection_seed;
+    extern const SettingsFloat backup_restore_keeper_fault_injection_probability;
+}
 
 namespace ErrorCodes
 {
@@ -81,10 +90,8 @@ namespace
                 backup_settings.internal,
                 context->getProcessListElement());
         }
-        else
-        {
-            return std::make_shared<BackupCoordinationLocal>(!backup_settings.deduplicate_files);
-        }
+
+        return std::make_shared<BackupCoordinationLocal>(!backup_settings.deduplicate_files);
     }
 
     std::shared_ptr<IRestoreCoordination>
@@ -98,12 +105,12 @@ namespace
 
             RestoreCoordinationRemote::RestoreKeeperSettings keeper_settings
             {
-                .keeper_max_retries = context->getSettingsRef().backup_restore_keeper_max_retries,
-                .keeper_retry_initial_backoff_ms = context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,
-                .keeper_retry_max_backoff_ms = context->getSettingsRef().backup_restore_keeper_retry_max_backoff_ms,
-                .batch_size_for_keeper_multiread = context->getSettingsRef().backup_restore_batch_size_for_keeper_multiread,
-                .keeper_fault_injection_probability = context->getSettingsRef().backup_restore_keeper_fault_injection_probability,
-                .keeper_fault_injection_seed = context->getSettingsRef().backup_restore_keeper_fault_injection_seed
+                .keeper_max_retries = context->getSettingsRef()[Setting::backup_restore_keeper_max_retries],
+                .keeper_retry_initial_backoff_ms = context->getSettingsRef()[Setting::backup_restore_keeper_retry_initial_backoff_ms],
+                .keeper_retry_max_backoff_ms = context->getSettingsRef()[Setting::backup_restore_keeper_retry_max_backoff_ms],
+                .batch_size_for_keeper_multiread = context->getSettingsRef()[Setting::backup_restore_batch_size_for_keeper_multiread],
+                .keeper_fault_injection_probability = context->getSettingsRef()[Setting::backup_restore_keeper_fault_injection_probability],
+                .keeper_fault_injection_seed = context->getSettingsRef()[Setting::backup_restore_keeper_fault_injection_seed]
             };
 
             auto all_hosts = BackupSettings::Util::filterHostIDs(
@@ -119,10 +126,8 @@ namespace
                 restore_settings.internal,
                 context->getProcessListElement());
         }
-        else
-        {
-            return std::make_shared<RestoreCoordinationLocal>();
-        }
+
+        return std::make_shared<RestoreCoordinationLocal>();
     }
 
     /// Sends information about an exception to IBackupCoordination or IRestoreCoordination.
@@ -191,16 +196,14 @@ namespace
     {
         if (getCurrentExceptionCode() == ErrorCodes::QUERY_WAS_CANCELLED)
             return BackupStatus::BACKUP_CANCELLED;
-        else
-            return BackupStatus::BACKUP_FAILED;
+        return BackupStatus::BACKUP_FAILED;
     }
 
     BackupStatus getRestoreStatusFromCurrentException()
     {
         if (getCurrentExceptionCode() == ErrorCodes::QUERY_WAS_CANCELLED)
             return BackupStatus::RESTORE_CANCELLED;
-        else
-            return BackupStatus::RESTORE_FAILED;
+        return BackupStatus::RESTORE_FAILED;
     }
 
     /// Used to change num_active_backups.
@@ -407,8 +410,7 @@ OperationID BackupsWorker::start(const ASTPtr & backup_or_restore_query, Context
     const ASTBackupQuery & backup_query = typeid_cast<const ASTBackupQuery &>(*backup_or_restore_query);
     if (backup_query.kind == ASTBackupQuery::Kind::BACKUP)
         return startMakingBackup(backup_or_restore_query, context);
-    else
-        return startRestoring(backup_or_restore_query, context);
+    return startRestoring(backup_or_restore_query, context);
 }
 
 
@@ -1068,8 +1070,7 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
     {
         if (throw_if_error)
            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown backup ID {}", id);
-        else
-            return;
+        return;
     }
 
     auto & extended_info = it->second;

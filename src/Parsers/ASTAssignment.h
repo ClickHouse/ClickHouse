@@ -30,7 +30,7 @@ protected:
     {
 
         settings.ostr << (settings.hilite ? hilite_identifier : "");
-        settings.writeIdentifier(column_name);
+        settings.writeIdentifier(column_name, /*ambiguous=*/false);
         settings.ostr << (settings.hilite ? hilite_none : "");
 
         settings.ostr << (settings.hilite ? hilite_operator : "") << " = " << (settings.hilite ? hilite_none : "");

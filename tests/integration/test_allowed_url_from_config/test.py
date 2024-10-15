@@ -1,4 +1,5 @@
 import pytest
+
 from helpers.cluster import ClickHouseCluster, is_arm
 
 cluster = ClickHouseCluster(__file__)

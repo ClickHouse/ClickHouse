@@ -86,7 +86,7 @@ The table below describes how different interval kinds of `Interval` data type a
 
 ### Aggregate function parameter binary encoding
 
-The table below describes how parameters of `AggragateFunction` and `SimpleAggregateFunction` are encoded.
+The table below describes how parameters of `AggregateFunction` and `SimpleAggregateFunction` are encoded.
 The encoding of a parameter consists of 1 byte indicating the type of the parameter and the value itself.
 
 | Parameter type           | Binary encoding                                                                                                                |
@@ -106,7 +106,7 @@ The encoding of a parameter consists of 1 byte indicating the type of the parame
 | `String`                 | `0x0C<var_uint_size><data>`                                                                                                    |
 | `Array`                  | `0x0D<var_uint_size><value_encoding_1>...<value_encoding_N>`                                                                   |
 | `Tuple`                  | `0x0E<var_uint_size><value_encoding_1>...<value_encoding_N>`                                                                   |
-| `Map`                    | `0x0F<var_uint_size><key_encoding_1><value_encoding_1>...<key_endoding_N><value_encoding_N>`                                   |
+| `Map`                    | `0x0F<var_uint_size><key_encoding_1><value_encoding_1>...<key_encoding_N><value_encoding_N>`                                   |
 | `IPv4`                   | `0x10<uint32_little_endian_value>`                                                                                             |
 | `IPv6`                   | `0x11<uint128_little_endian_value>`                                                                                            |
 | `UUID`                   | `0x12<uuid_value>`                                                                                                             |

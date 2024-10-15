@@ -293,7 +293,7 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
 
             return new_pos;
         }
-        else if (prefetch_future.valid())
+        if (prefetch_future.valid())
         {
             read_from_prefetch = true;
 

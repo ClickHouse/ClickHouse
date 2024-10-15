@@ -747,7 +747,7 @@ AggregateFunctionPtr createAggregateFunctionSequenceBase(
     WhichDataType which(argument_types.front().get());
     if (which.isDateTime())
         return std::make_shared<AggregateFunction<DataTypeDateTime::FieldType, Data<DataTypeDateTime::FieldType>>>(argument_types, params, pattern);
-    else if (which.isDate())
+    if (which.isDate())
         return std::make_shared<AggregateFunction<DataTypeDate::FieldType, Data<DataTypeDate::FieldType>>>(argument_types, params, pattern);
 
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,

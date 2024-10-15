@@ -35,7 +35,7 @@ inline void checkNoOldLeaders(LoggerPtr log, ZooKeeper & zookeeper, const String
         /// NOTE zookeeper_path/leader_election node must exist now, but maybe we will remove it in future versions.
         if (code == Coordination::Error::ZNONODE)
             return;
-        else if (code != Coordination::Error::ZOK)
+        if (code != Coordination::Error::ZOK)
             throw KeeperException::fromPath(code, path);
 
         Coordination::Requests ops;
@@ -79,7 +79,7 @@ inline void checkNoOldLeaders(LoggerPtr log, ZooKeeper & zookeeper, const String
         code = zookeeper.tryMulti(ops, res);
         if (code == Coordination::Error::ZOK)
             return;
-        else if (code == Coordination::Error::ZNOTEMPTY || code == Coordination::Error::ZNODEEXISTS || code == Coordination::Error::ZNONODE)
+        if (code == Coordination::Error::ZNOTEMPTY || code == Coordination::Error::ZNODEEXISTS || code == Coordination::Error::ZNONODE)
             LOG_INFO(log, "LeaderElection: leader suddenly changed or new node appeared, will retry");
         else
             KeeperMultiException::check(code, ops, res);

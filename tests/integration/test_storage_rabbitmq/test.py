@@ -1,17 +1,17 @@
-import pytest
-
 import json
+import logging
+import math
 import os.path as p
 import random
 import subprocess
 import threading
-import logging
 import time
 from random import randrange
-import math
 
 import pika
+import pytest
 from google.protobuf.internal.encoder import _VarintBytes
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, check_rabbitmq_is_available
 from helpers.test_tools import TSV

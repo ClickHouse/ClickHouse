@@ -22,8 +22,8 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-OffsetStep::OffsetStep(const DataStream & input_stream_, size_t offset_)
-    : ITransformingStep(input_stream_, input_stream_.header, getTraits())
+OffsetStep::OffsetStep(const Header & input_header_, size_t offset_)
+    : ITransformingStep(input_header_, input_header_, getTraits())
     , offset(offset_)
 {
 }

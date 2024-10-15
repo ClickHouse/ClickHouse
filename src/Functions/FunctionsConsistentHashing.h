@@ -59,10 +59,16 @@ public:
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeNumber<ResultType>>();
+    }
+
     bool useDefaultImplementationForConstants() const override
     {
         return true;
     }
+
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
         return {1};
@@ -72,9 +78,7 @@ public:
     {
         if (isColumnConst(*arguments[1].column))
             return executeConstBuckets(arguments);
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second argument of function {} (number of buckets) must be constant",
-                getName());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second argument of function {} (number of buckets) must be constant", getName());
     }
 
 private:

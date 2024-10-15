@@ -1,9 +1,10 @@
-import pytest
 import logging
 import time
+
+import pytest
+
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
-from helpers.test_tools import assert_eq_with_retry
+from helpers.test_tools import TSV, assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", stay_alive=True, with_zookeeper=True)

@@ -32,6 +32,9 @@ namespace BackupCoordinationStage
     /// Finding databases and tables in the backup which we're going to restore.
     constexpr const char * FINDING_TABLES_IN_BACKUP = "finding tables in backup";
 
+    /// Loading system access tables and then checking if the current user has enough access to restore.
+    constexpr const char * CHECKING_ACCESS_RIGHTS = "checking access rights";
+
     /// Creating databases or finding them and checking their definitions.
     constexpr const char * CREATING_DATABASES = "creating databases";
 

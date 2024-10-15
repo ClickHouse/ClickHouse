@@ -67,6 +67,7 @@
 #cmakedefine01 USE_LIBARCHIVE
 #cmakedefine01 USE_POCKETFFT
 #cmakedefine01 USE_PROMETHEUS_PROTOBUFS
+#cmakedefine01 USE_MONGODB
 #cmakedefine01 USE_NUMACTL
 
 /// This is needed for .incbin in assembly. For some reason, include paths don't work there in presence of LTO.

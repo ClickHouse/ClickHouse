@@ -123,7 +123,6 @@ namespace
                     return false;
 
                 String database_name, table_name, parameter;
-                bool any_database = false, any_table = false, any_parameter = false;
 
                 size_t is_global_with_parameter = 0;
                 for (const auto & elem : access_and_columns)
@@ -135,40 +134,35 @@ namespace
                 if (!ParserKeyword{Keyword::ON}.ignore(pos, expected))
                     return false;
 
+                bool wildcard = false;
+                bool default_database = false;
                 if (is_global_with_parameter && is_global_with_parameter == access_and_columns.size())
                 {
                     ASTPtr parameter_ast;
-                    if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
+                    if (!ParserToken{TokenType::Asterisk}.ignore(pos, expected))
                     {
-                        any_parameter = true;
+                        if (ParserIdentifier{}.parse(pos, parameter_ast, expected))
+                            parameter = getIdentifierName(parameter_ast);
+                        else
+                            return false;
                     }
-                    else if (ParserIdentifier{}.parse(pos, parameter_ast, expected))
-                    {
-                        any_parameter = false;
-                        parameter = getIdentifierName(parameter_ast);
-                    }
-                    else
-                        return false;
 
-                    any_database = any_table = true;
+                    if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
+                        wildcard = true;
                 }
-                else if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, any_database, table_name, any_table))
-                {
+                else if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, table_name, wildcard, default_database))
                     return false;
-                }
 
                 for (auto & [access_flags, columns] : access_and_columns)
                 {
                     AccessRightsElement element;
                     element.access_flags = access_flags;
-                    element.any_column = columns.empty();
                     element.columns = std::move(columns);
-                    element.any_database = any_database;
                     element.database = database_name;
-                    element.any_table = any_table;
-                    element.any_parameter = any_parameter;
                     element.table = table_name;
                     element.parameter = parameter;
+                    element.wildcard = wildcard;
+                    element.default_database = default_database;
                     res_elements.emplace_back(std::move(element));
                 }
 
@@ -202,15 +196,15 @@ namespace
 
             String database_name;
             String table_name;
-            bool any_database = false;
-            bool any_table = false;
-            if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, any_database, table_name, any_table))
+            bool wildcard = false;
+            bool default_database = false;
+            if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, table_name, wildcard, default_database))
                 return false;
 
-            default_element.any_database = any_database;
             default_element.database = database_name;
-            default_element.any_table = any_table;
             default_element.table = table_name;
+            default_element.wildcard = wildcard;
+            default_element.default_database = default_database;
             elements.push_back(std::move(default_element));
         }
 
@@ -228,16 +222,16 @@ namespace
             if (!element.empty())
                 return false;
 
-            if (!element.any_column)
+            if (!element.anyColumn())
                 throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the column level", old_flags.toString());
-            else if (!element.any_table)
+            if (!element.anyTable())
                 throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the table level", old_flags.toString());
-            else if (!element.any_database)
+            if (!element.anyDatabase())
                 throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the database level", old_flags.toString());
-            else if (!element.any_parameter)
+            if (!element.anyParameter())
                 throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the global with parameter level", old_flags.toString());
-            else
-                throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted", old_flags.toString());
+
+            throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted", old_flags.toString());
         });
     }
 

@@ -1,87 +1,54 @@
 #pragma once
 
-#include <Poco/MongoDB/Element.h>
-#include <Poco/MongoDB/Array.h>
+#include "config.h"
 
-#include <Core/Block.h>
+#if USE_MONGODB
 #include <Processors/ISource.h>
-#include <Core/ExternalResultDescription.h>
+#include <Interpreters/Context.h>
+#include <Common/JSONBuilder.h>
 
-#include <Core/Field.h>
-
-
-namespace Poco
-{
-namespace MongoDB
-{
-    class Connection;
-    class Document;
-    class Cursor;
-    class OpMsgCursor;
-}
-}
+#include <mongocxx/client.hpp>
+#include <mongocxx/collection.hpp>
+#include <mongocxx/cursor.hpp>
+#include <mongocxx/database.hpp>
 
 namespace DB
 {
 
-struct MongoDBArrayInfo
-{
-    size_t num_dimensions;
-    Field default_value;
-    std::function<Field(const Poco::MongoDB::Element & value, const std::string & name)> parser;
-};
-
-void authenticate(Poco::MongoDB::Connection & connection, const std::string & database, const std::string & user, const std::string & password);
-
-bool isMongoDBWireProtocolOld(Poco::MongoDB::Connection & connection_, const std::string & database_name_);
-
-class MongoDBCursor
-{
-public:
-    MongoDBCursor(
-        const std::string & database,
-        const std::string & collection,
-        const Block & sample_block_to_select,
-        const Poco::MongoDB::Document & query,
-        Poco::MongoDB::Connection & connection);
-
-    Poco::MongoDB::Document::Vector nextDocuments(Poco::MongoDB::Connection & connection);
-
-    Int64 cursorID() const;
-
-private:
-    const bool is_wire_protocol_old;
-    std::unique_ptr<Poco::MongoDB::Cursor> old_cursor;
-    std::unique_ptr<Poco::MongoDB::OpMsgCursor> new_cursor;
-    Int64 cursor_id = 0;
-};
-
-/// Converts MongoDB Cursor to a stream of Blocks
+/// Creates MongoDB connection and cursor, converts it to a stream of blocks
 class MongoDBSource final : public ISource
 {
 public:
     MongoDBSource(
-        std::shared_ptr<Poco::MongoDB::Connection> & connection_,
-        const String & database_name_,
-        const String & collection_name_,
-        const Poco::MongoDB::Document & query_,
-        const Block & sample_block,
-        UInt64 max_block_size_);
+        const mongocxx::uri & uri,
+        const std::string & collection_name,
+        const bsoncxx::document::view_or_value & query,
+        const mongocxx::options::find & options,
+        const Block & sample_block_,
+        const UInt64 & max_block_size_);
 
     ~MongoDBSource() override;
 
     String getName() const override { return "MongoDB"; }
 
 private:
+    static void insertDefaultValue(IColumn & column, const IColumn & sample_column);
+    void insertValue(IColumn & column, const size_t & idx, const DataTypePtr & type, const std::string & name, const bsoncxx::document::element & value);
+
     Chunk generate() override;
 
-    std::shared_ptr<Poco::MongoDB::Connection> connection;
-    MongoDBCursor cursor;
-    const UInt64 max_block_size;
-    ExternalResultDescription description;
-    bool all_read = false;
+    mongocxx::client client;
+    mongocxx::database database;
+    mongocxx::collection collection;
+    mongocxx::cursor cursor;
 
-    std::unordered_map<size_t, MongoDBArrayInfo> array_info;
+    Block sample_block;
+    std::unordered_map<size_t, std::pair<size_t, std::pair<DataTypePtr, Field>>> arrays_info;
+    const UInt64 max_block_size;
+
+    JSONBuilder::FormatSettings json_format_settings = {{}, 0, true, true};
+    bool all_read = false;
 };
 
 }
+#endif

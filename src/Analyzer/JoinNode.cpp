@@ -23,11 +23,13 @@ JoinNode::JoinNode(QueryTreeNodePtr left_table_expression_,
     QueryTreeNodePtr join_expression_,
     JoinLocality locality_,
     JoinStrictness strictness_,
-    JoinKind kind_)
+    JoinKind kind_,
+    bool is_using_join_expression_)
     : IQueryTreeNode(children_size)
     , locality(locality_)
     , strictness(strictness_)
     , kind(kind_)
+    , is_using_join_expression(is_using_join_expression_)
 {
     children[left_table_expression_child_index] = std::move(left_table_expression_);
     children[right_table_expression_child_index] = std::move(right_table_expression_);
@@ -45,7 +47,7 @@ ASTPtr JoinNode::toASTTableJoin() const
     {
         auto join_expression_ast = children[join_expression_child_index]->toAST();
 
-        if (children[join_expression_child_index]->getNodeType() == QueryTreeNodeType::LIST)
+        if (is_using_join_expression)
             join_ast->using_expression_list = std::move(join_expression_ast);
         else
             join_ast->on_expression = std::move(join_expression_ast);
@@ -82,7 +84,8 @@ void JoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
 bool JoinNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const JoinNode &>(rhs);
-    return locality == rhs_typed.locality && strictness == rhs_typed.strictness && kind == rhs_typed.kind;
+    return locality == rhs_typed.locality && strictness == rhs_typed.strictness && kind == rhs_typed.kind &&
+        is_using_join_expression == rhs_typed.is_using_join_expression;
 }
 
 void JoinNode::updateTreeHashImpl(HashState & state, CompareOptions) const
@@ -90,11 +93,14 @@ void JoinNode::updateTreeHashImpl(HashState & state, CompareOptions) const
     state.update(locality);
     state.update(strictness);
     state.update(kind);
+    state.update(is_using_join_expression);
 }
 
 QueryTreeNodePtr JoinNode::cloneImpl() const
 {
-    return std::make_shared<JoinNode>(getLeftTableExpression(), getRightTableExpression(), getJoinExpression(), locality, strictness, kind);
+    return std::make_shared<JoinNode>(
+        getLeftTableExpression(), getRightTableExpression(), getJoinExpression(),
+        locality, strictness, kind, is_using_join_expression);
 }
 
 ASTPtr JoinNode::toASTImpl(const ConvertToASTOptions & options) const

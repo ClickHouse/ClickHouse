@@ -114,12 +114,10 @@ public:
             IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
             return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, default_mask).front();
         }
-        else
-        {
-            const ColumnPtr & default_values_column = std::get<RefDefault>(default_or_filter).get();
-            const Columns & columns= Columns({default_values_column});
-            return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, columns).front();
-        }
+
+        const ColumnPtr & default_values_column = std::get<RefDefault>(default_or_filter).get();
+        const Columns & columns = Columns({default_values_column});
+        return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, columns).front();
     }
 
     Columns getColumns(

@@ -163,18 +163,16 @@ void ExceptColumnTransformerNode::dumpTreeImpl(WriteBuffer & buffer, FormatState
         buffer << ", pattern: " << column_matcher->pattern();
         return;
     }
-    else
+
+    buffer << ", identifiers: ";
+
+    size_t except_column_names_size = except_column_names.size();
+    for (size_t i = 0; i < except_column_names_size; ++i)
     {
-        buffer << ", identifiers: ";
+        buffer << except_column_names[i];
 
-        size_t except_column_names_size = except_column_names.size();
-        for (size_t i = 0; i < except_column_names_size; ++i)
-        {
-            buffer << except_column_names[i];
-
-            if (i + 1 != except_column_names_size)
-                buffer << ", ";
-        }
+        if (i + 1 != except_column_names_size)
+            buffer << ", ";
     }
 }
 
@@ -190,9 +188,9 @@ bool ExceptColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs, Compar
 
     if (!column_matcher && !rhs_column_matcher)
         return true;
-    else if (column_matcher && !rhs_column_matcher)
+    if (column_matcher && !rhs_column_matcher)
         return false;
-    else if (!column_matcher && rhs_column_matcher)
+    if (!column_matcher && rhs_column_matcher)
         return false;
 
     return column_matcher->pattern() == rhs_column_matcher->pattern();

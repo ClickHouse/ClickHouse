@@ -45,12 +45,12 @@ public:
 
     bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child)
     {
-        if (auto * lambda_node = child->as<LambdaNode>())
+        if (auto * /*lambda_node*/ _ = child->as<LambdaNode>())
         {
             updateAliasesIfNeeded(child, true /*is_lambda_node*/);
             return false;
         }
-        else if (auto * query_tree_node = child->as<QueryNode>())
+        if (auto * query_tree_node = child->as<QueryNode>())
         {
             if (query_tree_node->isCTE())
                 return false;
@@ -58,7 +58,7 @@ public:
             updateAliasesIfNeeded(child, false /*is_lambda_node*/);
             return false;
         }
-        else if (auto * union_node = child->as<UnionNode>())
+        if (auto * union_node = child->as<UnionNode>())
         {
             if (union_node->isCTE())
                 return false;

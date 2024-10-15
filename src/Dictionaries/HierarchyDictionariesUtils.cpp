@@ -149,12 +149,10 @@ ColumnPtr getKeysDescendantsArray(
         auto elements_and_offsets = detail::getDescendants(requested_keys, parent_to_child_index, strategy, valid_keys);
         return detail::convertElementsAndOffsetsIntoArray(std::move(elements_and_offsets));
     }
-    else
-    {
-        detail::GetDescendantsAtSpecificLevelStrategy strategy { .level = level };
-        auto elements_and_offsets = detail::getDescendants(requested_keys, parent_to_child_index, strategy, valid_keys);
-        return detail::convertElementsAndOffsetsIntoArray(std::move(elements_and_offsets));
-    }
+
+    detail::GetDescendantsAtSpecificLevelStrategy strategy{.level = level};
+    auto elements_and_offsets = detail::getDescendants(requested_keys, parent_to_child_index, strategy, valid_keys);
+    return detail::convertElementsAndOffsetsIntoArray(std::move(elements_and_offsets));
 }
 
 ColumnPtr getKeysHierarchyDefaultImplementation(

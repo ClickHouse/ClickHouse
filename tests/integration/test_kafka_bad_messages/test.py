@@ -1,10 +1,11 @@
-import time
 import logging
+import time
+
 import pytest
+from kafka import BrokerConnection, KafkaAdminClient, KafkaConsumer, KafkaProducer
+from kafka.admin import NewTopic
 
 from helpers.cluster import ClickHouseCluster, is_arm
-from kafka import KafkaAdminClient, KafkaProducer, KafkaConsumer, BrokerConnection
-from kafka.admin import NewTopic
 
 if is_arm():
     pytestmark = pytest.mark.skip

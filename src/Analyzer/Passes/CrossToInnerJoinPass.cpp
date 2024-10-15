@@ -21,6 +21,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 cross_to_inner_join_rewrite;
+}
 
 namespace ErrorCodes
 {
@@ -30,7 +34,7 @@ namespace ErrorCodes
 namespace
 {
 
-void exctractJoinConditions(const QueryTreeNodePtr & node, QueryTreeNodes & equi_conditions, QueryTreeNodes & other)
+void extractJoinConditions(const QueryTreeNodePtr & node, QueryTreeNodes & equi_conditions, QueryTreeNodes & other)
 {
     auto * func = node->as<FunctionNode>();
     if (!func)
@@ -48,7 +52,7 @@ void exctractJoinConditions(const QueryTreeNodePtr & node, QueryTreeNodes & equi
     else if (func->getFunctionName() == "and")
     {
         for (const auto & arg : args)
-            exctractJoinConditions(arg, equi_conditions, other);
+            extractJoinConditions(arg, equi_conditions, other);
     }
     else
     {
@@ -114,7 +118,7 @@ public:
 
         QueryTreeNodes equi_conditions;
         QueryTreeNodes other_conditions;
-        exctractJoinConditions(where_condition, equi_conditions, other_conditions);
+        extractJoinConditions(where_condition, equi_conditions, other_conditions);
         bool can_convert_cross_to_inner = false;
         for (auto & condition : equi_conditions)
         {
@@ -193,17 +197,14 @@ public:
     }
 
 private:
-    bool isEnabled() const
-    {
-        return getSettings().cross_to_inner_join_rewrite;
-    }
+    bool isEnabled() const { return getSettings()[Setting::cross_to_inner_join_rewrite]; }
 
     bool forceRewrite(JoinKind kind) const
     {
         if (kind == JoinKind::Cross)
             return false;
         /// Comma join can be forced to rewrite
-        return getSettings().cross_to_inner_join_rewrite >= 2;
+        return getSettings()[Setting::cross_to_inner_join_rewrite] >= 2;
     }
 
     QueryTreeNodePtr makeConjunction(const QueryTreeNodes & nodes)

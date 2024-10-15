@@ -113,8 +113,7 @@ bool ReadBufferFromPocoSocketChunked::nextImpl()
             else
                 c_pos = pos + sizeof(next_chunk); // bypass chunk end marker
 
-            if (c_pos > data_end)
-                c_pos = data_end;
+            c_pos = std::min(c_pos, data_end);
 
             if (!loadNextChunk(c_pos))
                 return false;

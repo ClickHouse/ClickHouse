@@ -33,14 +33,10 @@ public:
         auto in = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
         {
             if (!path_from.has_value())
-            {
                 return std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
-            }
-            else
-            {
-                String relative_path_from = disk.getRelativeFromRoot(path_from.value());
-                return disk.getDisk()->readFile(relative_path_from);
-            }
+
+            String relative_path_from = disk.getRelativeFromRoot(path_from.value());
+            return disk.getDisk()->readFile(relative_path_from, getReadSettings());
         }();
 
         auto out = disk.getDisk()->writeFile(path_to);

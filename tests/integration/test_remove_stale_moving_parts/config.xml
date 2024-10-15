@@ -1,0 +1,46 @@
+<clickhouse>
+    <remote_servers>
+        <cluster>
+            <shard>
+                <replica>
+                    <host>ch1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </cluster>
+    </remote_servers>
+    <macros>
+        <shard>01</shard>
+    </macros>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+            </s3>
+        </disks>
+        <policies>
+            <s3>
+                <volumes>
+                    <default>
+                        <disk>default</disk>
+                        <perform_ttl_move_on_insert>False</perform_ttl_move_on_insert>
+                    </default>
+                    <s3>
+                        <disk>s3</disk>
+                        <perform_ttl_move_on_insert>False</perform_ttl_move_on_insert>
+                    </s3>
+                </volumes>
+                <move_factor>0.0</move_factor>
+            </s3>
+        </policies>
+    </storage_configuration>
+
+    <merge_tree>
+        <allow_remote_fs_zero_copy_replication>true</allow_remote_fs_zero_copy_replication>
+        <storage_policy>s3</storage_policy>
+    </merge_tree>
+    <allow_remove_stale_moving_parts>true</allow_remove_stale_moving_parts>
+</clickhouse>

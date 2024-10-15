@@ -18,4 +18,4 @@ set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --gcc-toolchain=${TOOLCHAIN_PATH}")
 set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} --gcc-toolchain=${TOOLCHAIN_PATH}")
 
 set (USE_MUSL 1)
-add_definitions(-DUSE_MUSL=1)
+add_definitions(-DUSE_MUSL=1 -D__MUSL__=1)

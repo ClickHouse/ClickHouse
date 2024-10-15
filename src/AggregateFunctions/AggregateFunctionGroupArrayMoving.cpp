@@ -65,8 +65,7 @@ struct MovingSumData : public MovingData<T>
     {
         if (idx < window_size)
             return this->value[idx];
-        else
-            return this->value[idx] - this->value[idx - window_size];
+        return this->value[idx] - this->value[idx - window_size];
     }
 };
 
@@ -79,8 +78,7 @@ struct MovingAvgData : public MovingData<T>
     {
         if (idx < window_size)
             return this->value[idx] / T(window_size);
-        else
-            return (this->value[idx] - this->value[idx - window_size]) / T(window_size);
+        return (this->value[idx] - this->value[idx - window_size]) / T(window_size);
     }
 };
 
@@ -285,16 +283,12 @@ AggregateFunctionPtr createAggregateFunctionMoving(
     {
         if (isDecimal(argument_type))
             return createAggregateFunctionMovingImpl<Function, std::false_type, std::true_type>(name, argument_type);
-        else
-            return createAggregateFunctionMovingImpl<Function, std::false_type, std::false_type>(name, argument_type);
+        return createAggregateFunctionMovingImpl<Function, std::false_type, std::false_type>(name, argument_type);
     }
-    else
-    {
-        if (isDecimal(argument_type))
-            return createAggregateFunctionMovingImpl<Function, std::true_type, std::true_type>(name, argument_type, max_elems);
-        else
-            return createAggregateFunctionMovingImpl<Function, std::true_type, std::false_type>(name, argument_type, max_elems);
-    }
+
+    if (isDecimal(argument_type))
+        return createAggregateFunctionMovingImpl<Function, std::true_type, std::true_type>(name, argument_type, max_elems);
+    return createAggregateFunctionMovingImpl<Function, std::true_type, std::false_type>(name, argument_type, max_elems);
 }
 
 }

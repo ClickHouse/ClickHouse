@@ -170,7 +170,7 @@ bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
     if (recursive_cte_table && rhs_typed.recursive_cte_table &&
         recursive_cte_table->getStorageID() != rhs_typed.recursive_cte_table->getStorageID())
         return false;
-    else if ((recursive_cte_table && !rhs_typed.recursive_cte_table) || (!recursive_cte_table && rhs_typed.recursive_cte_table))
+    if ((recursive_cte_table && !rhs_typed.recursive_cte_table) || (!recursive_cte_table && rhs_typed.recursive_cte_table))
         return false;
 
     return is_subquery == rhs_typed.is_subquery && is_cte == rhs_typed.is_cte && is_recursive_cte == rhs_typed.is_recursive_cte

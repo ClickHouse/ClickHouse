@@ -1,9 +1,9 @@
 import datetime
-
-import redis
-import pytest
-import sys
 import struct
+import sys
+
+import pytest
+import redis
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster

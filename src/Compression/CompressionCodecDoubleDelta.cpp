@@ -233,22 +233,20 @@ WriteSpec getDeltaWriteSpec(const T & value)
     {
         return WriteSpec{2, 0b10, 7};
     }
-    else if (value > -255 && value < 256)
+    if (value > -255 && value < 256)
     {
         return WriteSpec{3, 0b110, 9};
     }
-    else if (value > -2047 && value < 2048)
+    if (value > -2047 && value < 2048)
     {
         return WriteSpec{4, 0b1110, 12};
     }
-    else if (value > std::numeric_limits<Int32>::min() && value < std::numeric_limits<Int32>::max())
+    if (value > std::numeric_limits<Int32>::min() && value < std::numeric_limits<Int32>::max())
     {
         return WriteSpec{5, 0b11110, 32};
     }
-    else
-    {
-        return WriteSpec{5, 0b11111, 64};
-    }
+
+    return WriteSpec{5, 0b11111, 64};
 }
 
 WriteSpec getDeltaMaxWriteSpecByteSize(UInt8 data_bytes_size)
@@ -452,9 +450,10 @@ UInt8 getDataBytesSize(const IDataType * column_type)
     size_t max_size = column_type->getSizeOfValueInMemory();
     if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
         return static_cast<UInt8>(max_size);
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec DoubleDelta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
-            column_type->getName());
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Codec DoubleDelta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
+        column_type->getName());
 }
 
 }

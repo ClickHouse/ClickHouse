@@ -467,21 +467,21 @@ static void callOnGeometryDataType(DataTypePtr type, F && f)
 
     /// We should take the name into consideration to avoid ambiguity.
     /// Because for example both Ring and LineString are resolved to Array(Tuple(Point)).
-    else if (factory.get("LineString")->equals(*type) && type->getCustomName() && type->getCustomName()->getName() == "LineString")
+    if (factory.get("LineString")->equals(*type) && type->getCustomName() && type->getCustomName()->getName() == "LineString")
         return f(ConverterType<ColumnToLineStringsConverter<Point>>());
 
     /// We should take the name into consideration to avoid ambiguity.
     /// Because for example both MultiLineString and Polygon are resolved to Array(Array(Point)).
-    else if (factory.get("MultiLineString")->equals(*type) && type->getCustomName() && type->getCustomName()->getName() == "MultiLineString")
+    if (factory.get("MultiLineString")->equals(*type) && type->getCustomName() && type->getCustomName()->getName() == "MultiLineString")
         return f(ConverterType<ColumnToMultiLineStringsConverter<Point>>());
 
     /// For backward compatibility if we call this function not on a custom type, we will consider Array(Tuple(Point)) as type Ring.
-    else if (factory.get("Ring")->equals(*type))
+    if (factory.get("Ring")->equals(*type))
         return f(ConverterType<ColumnToRingsConverter<Point>>());
 
-    else if (factory.get("Polygon")->equals(*type))
+    if (factory.get("Polygon")->equals(*type))
         return f(ConverterType<ColumnToPolygonsConverter<Point>>());
-    else if (factory.get("MultiPolygon")->equals(*type))
+    if (factory.get("MultiPolygon")->equals(*type))
         return f(ConverterType<ColumnToMultiPolygonsConverter<Point>>());
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown geometry type {}", type->getName());
 }

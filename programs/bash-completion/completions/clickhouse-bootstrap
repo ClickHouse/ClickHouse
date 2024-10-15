@@ -155,7 +155,7 @@ function _clickhouse_quote()
 function _clickhouse_get_options()
 {
     # By default --help will not print all settings, this is done only under --verbose
-    "$@" --help --verbose 2>&1 | awk -F '[ ,=<>.]' '{ for (i=1; i <= NF; ++i) { if (substr($i, 1, 1) == "-" && length($i) > 1) print $i; } }' | sort -u
+    "$@" --help --verbose 2>&1 | LANG=c awk -F '[ ,=<>.]' '{ for (i=1; i <= NF; ++i) { if (substr($i, 1, 1) == "-" && length($i) > 1) print $i; } }' | sort -u
 }
 
 function _complete_for_clickhouse_generic_bin_impl()

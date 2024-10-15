@@ -1,4 +1,5 @@
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 DICTIONARY_FILES = ["configs/dictionaries/cache.xml"]

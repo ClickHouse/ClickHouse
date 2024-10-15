@@ -8,13 +8,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DISABLE_OPTIMIZATION="set optimize_distinct_in_order=0"
 ENABLE_OPTIMIZATION="set optimize_distinct_in_order=1"
-GREP_DISTINCT="grep 'DistinctSortedChunkTransform\|DistinctSortedStreamTransform\|DistinctSortedTransform\|DistinctTransform'"
+GREP_DISTINCT="grep 'DistinctSortedStreamTransform\|DistinctSortedTransform\|DistinctTransform'"
 TRIM_LEADING_SPACES="sed -e 's/^[ \t]*//'"
 REMOVE_NON_LETTERS="sed 's/[^a-zA-Z]//g'"
 FIND_DISTINCT="$GREP_DISTINCT | $TRIM_LEADING_SPACES | $REMOVE_NON_LETTERS"
 FIND_READING_IN_ORDER="grep -o 'algorithm: InOrder' | $TRIM_LEADING_SPACES"
 FIND_READING_DEFAULT="grep -o 'algorithm: Thread' | $TRIM_LEADING_SPACES"
-FIND_SORTING_PROPERTIES="grep 'Sorting (Stream)' | $TRIM_LEADING_SPACES"
+FIND_SORTING_PROPERTIES="grep 'Sorting:' | $TRIM_LEADING_SPACES"
 
 $CLICKHOUSE_CLIENT -q "drop table if exists distinct_in_order_explain sync"
 $CLICKHOUSE_CLIENT -q "create table distinct_in_order_explain (a int, b int, c int) engine=MergeTree() order by (a, b)"
@@ -74,7 +74,8 @@ $CLICKHOUSE_CLIENT --read_in_order_two_level_merge_threshold=2 -q "$ENABLE_OPTIM
 echo "-- enabled, distinct columns contains constant columns, non-const columns match prefix of sorting key"
 $CLICKHOUSE_CLIENT --read_in_order_two_level_merge_threshold=2 -q "$ENABLE_OPTIMIZATION;explain pipeline select distinct 1, b, a from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER
 echo "-- enabled, only part of distinct columns form prefix of sorting key"
-$CLICKHOUSE_CLIENT --max_threads=0 -q "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, c from distinct_in_order_explain" | eval $FIND_READING_DEFAULT
+
+$CLICKHOUSE_CLIENT --max_threads=0 -q "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, c from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER | tail -n 1
 
 echo "=== disable new analyzer ==="
 DISABLE_ANALYZER="set enable_analyzer=0"

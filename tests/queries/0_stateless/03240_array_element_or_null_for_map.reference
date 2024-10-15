@@ -1,0 +1,26 @@
+...const maps...
+\N
+2
+\N
+4
+\N
+\N
+2
+\N
+4
+\N
+4
+4
+...int keys...
+foo	bar	bar
+\N	foo	foo
+...string keys...
+foo	foo
+foo	foo
+foo	foo
+bar	bar
+\N
+...tuple values...
+(1,'foo')	(0,'')
+...map values...
+{1:'foo'}	{}

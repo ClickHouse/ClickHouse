@@ -818,6 +818,23 @@ Serializations Block::getSerializations() const
     return res;
 }
 
+Serializations Block::getSerializations(const SerializationInfoByName & hints) const
+{
+    Serializations res;
+    res.reserve(data.size());
+
+    for (const auto & column : data)
+    {
+        auto it = hints.find(column.name);
+        if (it == hints.end())
+            res.push_back(column.type->getDefaultSerialization());
+        else
+            res.push_back(column.type->getSerialization(*it->second));
+    }
+
+    return res;
+}
+
 void convertToFullIfSparse(Block & block)
 {
     for (auto & column : block)

@@ -1,7 +1,11 @@
 ### FIXME: merge reusable_test.yml and reusable_build.yml as they are almost identical
 #          and then merge reusable_build_stage.yml and reusable_test_stage.yml
 
+env:
+  PYTHONUNBUFFERED: 1
+
 name: BuildStageWF
+
 'on':
   workflow_call:
     inputs:

@@ -1,0 +1,1 @@
+WITH x -> toString(x) AS lambda_1 SELECT arrayMap(lambda_1 AS lambda_2, [1, 2, 3]), arrayMap(lambda_2, ['1', '2', '3']) WHERE lambda_2; -- { serverError UNEXPECTED_EXPRESSION }
