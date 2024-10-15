@@ -6,8 +6,7 @@
 #include <Columns/ColumnTuple.h>
 
 #include <Common/typeid_cast.h>
-#include <Columns/FilterDescription.h>
-#include <DataTypes/IDataType.h>
+#include <Columns/ColumnDecimal.h>
 
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -280,19 +279,95 @@ void Set::checkIsCreated() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to use set before it has been built.");
 }
 
-ColumnPtr returnColumnOrFilter(const ColumnPtr & first, const ColumnPtr & second)
+void Set::checkIsCreated() const
 {
-    ConstantFilterDescription second_const_descr(*second);
-    if (second_const_descr.always_true)
-        return nullptr;
+    if (!is_created.load())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to use set before it has been built.");
+}
 
-    if (second_const_descr.always_false)
-        return first;
+ColumnPtr checkDateTimePrecision(const ColumnPtr & column_to_cast, const ColumnPtr & column_after_cast, const size_t vec_res_size)
+{
+    /// Handle nullable columns
+    const ColumnNullable * original_nullable_column = typeid_cast<const ColumnNullable *>(column_to_cast.get());
+    const IColumn * original_nested_column = original_nullable_column ? &original_nullable_column->getNestedColumn() : column_to_cast.get();
 
-    FilterDescription filter_descr(*second);
-    if (!filter_descr.data)
-        return nullptr;
-    return first->filter(*filter_descr.data, 0);
+    const ColumnNullable * result_nullable_column = typeid_cast<const ColumnNullable *>(column_after_cast.get());
+
+    /// Check if the original column is of ColumnDecimal type
+    const auto * original_decimal_column = typeid_cast<const ColumnDecimal<DateTime64> *>(original_nested_column);
+
+    if (!original_decimal_column)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ColumnDecimal for DateTime64");
+
+    /// Get the data array from the original column
+    const auto & original_data = original_decimal_column->getData();
+
+    /// Prepare the final column
+    MutableColumnPtr final_column = column_after_cast->cloneEmpty();
+    final_column->reserve(vec_res_size);
+
+    /// Handle null maps
+    const NullMap * original_null_map = original_nullable_column ? &original_nullable_column->getNullMapData() : nullptr;
+    const NullMap * result_null_map = result_nullable_column ? &result_nullable_column->getNullMapData() : nullptr;
+
+    /// Create a combined null map if necessary
+    NullMap combined_null_map(vec_res_size, false);
+    if (original_null_map || result_null_map)
+    {
+        for (size_t row = 0; row < vec_res_size; ++row)
+        {
+            bool is_null = false;
+            if (original_null_map && (*original_null_map)[row])
+                is_null = true;
+            if (result_null_map && (*result_null_map)[row])
+                is_null = true;
+            combined_null_map[row] = is_null;
+        }
+    }
+
+    /// Decide which value to use for each row
+    for (size_t row = 0; row < vec_res_size; ++row)
+    {
+        bool is_null = combined_null_map.empty() ? false : combined_null_map[row];
+
+        if (is_null)
+            final_column->insertDefault();
+        else
+        {
+            Int64 value = original_data[row];
+
+            if (value % result_nullable_column->getInt(row) != 0)
+            {
+                /// Sub-second precision exists; use the original value
+                /// We need to convert the value to the data type of final_column
+
+                if (isDateTime64(result_nullable_column->getNestedColumn().getDataType()))
+                {
+                    final_column->insertData(reinterpret_cast<const char *>(&value), 0);
+                }
+                else if (isUInt32(result_nullable_column->getNestedColumn().getDataType()))
+                {
+                    final_column->insert(static_cast<UInt32>(value));
+                }
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported final column type");
+            }
+            else
+                final_column->insertFrom(*column_after_cast, row); /// Didn't lost precision, don't do anything
+        }
+    }
+
+    /// If the original column was nullable, make the final column nullable
+    if (original_nullable_column)
+    {
+        /// Create the null map column as MutableColumnPtr
+        auto null_map_column = ColumnUInt8::create();
+        null_map_column->getData().swap(combined_null_map);
+
+        /// Wrap the final column and null map into a ColumnNullable
+        final_column = ColumnNullable::create(std::move(final_column), std::move(null_map_column));
+    }
+    return final_column;
 }
 
 ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) const
@@ -348,17 +423,12 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
             result = castColumnAccurate(column_to_cast, data_types[i], cast_cache.get());
         }
 
-        ColumnPtr col_to_emplace; /// If we cast DateTime64 column to other type, we lose its precision. if we have this case, we should not let this cast happen
-        if (isDateTime64(column_before_cast.column->getDataType()))
-            col_to_emplace = returnColumnOrFilter(column_before_cast.column, res->getPtr());
-        else
-            col_to_emplace = result;
+        /// If the original column is DateTime64, check for sub-second precision
+        if (isDateTime64(column_to_cast.column->getDataType()))
+            result = checkDateTimePrecision(column_to_cast.column, result, vec_res.size());
 
-        if (!col_to_emplace)
-            col_to_emplace = column_before_cast.column;
-
-        materialized_columns.emplace_back() = col_to_emplace;
-        key_columns.emplace_back() = materialized_columns.back().get();
+        materialized_columns.emplace_back(result);
+        key_columns.emplace_back(materialized_columns.back().get());
     }
 
     /// We will check existence in Set only for keys whose components do not contain any NULL value.
