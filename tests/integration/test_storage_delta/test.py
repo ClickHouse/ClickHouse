@@ -30,6 +30,7 @@ from minio.deleteobjects import DeleteObject
 import pyarrow as pa
 import pyarrow.parquet as pq
 from deltalake.writer import write_deltalake
+from uuid import uuid4
 
 from helpers.s3_tools import (
     prepare_s3_bucket,
@@ -776,7 +777,7 @@ def test_complex_types(started_cluster):
     endpoint_url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}"
     aws_access_key_id = "minio"
     aws_secret_access_key = "minio123"
-    table_name = randomize_table_name("test_complex_types")
+    table_name = f"test_complex_types_{uuid4.hex}"
 
     storage_options = {
         "AWS_ENDPOINT_URL": endpoint_url,
