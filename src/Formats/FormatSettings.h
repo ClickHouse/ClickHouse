@@ -126,6 +126,8 @@ struct FormatSettings
         UInt64 max_binary_array_size = 1_GiB;
         bool encode_types_in_binary_format = false;
         bool decode_types_in_binary_format = false;
+        bool read_json_as_string = false;
+        bool write_json_as_string = false;
     } binary{};
 
     struct
@@ -474,6 +476,7 @@ struct FormatSettings
         bool allow_types_conversion = true;
         bool encode_types_in_binary_format = false;
         bool decode_types_in_binary_format = false;
+        bool write_json_as_string = false;
     } native{};
 
     struct
