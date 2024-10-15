@@ -70,7 +70,7 @@ uint64_t test(uint8_t * dst, uint8_t * src, size_t size, size_t iterations, size
                     iteration % 2 ? &dst[begin] : &src[begin],
                     end - begin,
                     [rng = RNG(), &generator]() mutable { return generator(rng); },
-                    std::forward<MemcpyImpl>(impl));
+                    std::forward<MemcpyImpl>(impl));  /// NOLINT(bugprone-use-after-move)
             }
         });
     }
