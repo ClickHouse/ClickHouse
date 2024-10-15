@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # $2 - query
 function execute_query()
 {
-  ${CLICKHOUSE_CLIENT} --opentelemetry_start_trace_probability=1 --query_id $1 -q "
+  ${CLICKHOUSE_CLIENT} --opentelemetry_start_trace_probability=1 --query_id $1 -nq "
       ${2}
   "
 }
@@ -18,7 +18,7 @@ function execute_query()
 # so we only to check the db.statement only
 function check_query_span_query_only()
 {
-${CLICKHOUSE_CLIENT} -q "
+${CLICKHOUSE_CLIENT} -nq "
     SYSTEM FLUSH LOGS;
     SELECT attribute['db.statement']       as query
     FROM system.opentelemetry_span_log
@@ -31,7 +31,7 @@ ${CLICKHOUSE_CLIENT} -q "
 
 function check_query_span()
 {
-${CLICKHOUSE_CLIENT} -q "
+${CLICKHOUSE_CLIENT} -nq "
     SYSTEM FLUSH LOGS;
     SELECT attribute['db.statement']             as query,
            attribute['clickhouse.read_rows']     as read_rows,
@@ -47,7 +47,7 @@ ${CLICKHOUSE_CLIENT} -q "
 #
 # Set up
 #
-${CLICKHOUSE_CLIENT} -q "
+${CLICKHOUSE_CLIENT} -nq "
 DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.opentelemetry_test;
 CREATE TABLE ${CLICKHOUSE_DATABASE}.opentelemetry_test (id UInt64) Engine=MergeTree Order By id;
 "

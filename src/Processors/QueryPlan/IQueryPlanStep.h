@@ -28,6 +28,34 @@ class DataStream
 public:
     Block header;
 
+    /// QueryPipeline has single port. Totals or extremes ports are not counted.
+    bool has_single_port = false;
+
+    /// Sorting scope. Please keep the mutual order (more strong mode should have greater value).
+    enum class SortScope
+    {
+        None   = 0,
+        Chunk  = 1, /// Separate chunks are sorted
+        Stream = 2, /// Each data steam is sorted
+        Global = 3, /// Data is globally sorted
+    };
+
+    /// It is not guaranteed that header has columns from sort_description.
+    SortDescription sort_description = {};
+    SortScope sort_scope = SortScope::None;
+
+    /// Things which may be added:
+    /// * limit
+    /// * estimated rows number
+    /// * memory allocation context
+
+    bool hasEqualPropertiesWith(const DataStream & other) const
+    {
+        return has_single_port == other.has_single_port
+            && sort_description == other.sort_description
+            && (sort_description.empty() || sort_scope == other.sort_scope);
+    }
+
     bool hasEqualHeaderWith(const DataStream & other) const
     {
         return blocksHaveEqualStructure(header, other.header);
@@ -63,8 +91,6 @@ public:
     /// Methods to describe what this step is needed for.
     const std::string & getStepDescription() const { return step_description; }
     void setStepDescription(std::string description) { step_description = std::move(description); }
-
-    virtual const SortDescription & getSortDescription() const;
 
     struct FormatSettings
     {

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Dictionaries/IDictionary.h>
-#include <Dictionaries/DictionaryHelpers.h>
 #include <Common/CurrentThread.h>
 #include <Common/iota.h>
 #include <Common/scope_guard_safe.h>
@@ -63,40 +62,28 @@ public:
         for (size_t shard = 0; shard < shards; ++shard)
         {
             shards_queues[shard].emplace(backlog);
-
-            try
+            pool.scheduleOrThrowOnError([this, shard, thread_group = CurrentThread::getGroup()]
             {
-                pool.scheduleOrThrowOnError([this, shard, thread_group = CurrentThread::getGroup()]
-                {
-                    WorkerStatistic statistic;
-                    SCOPE_EXIT_SAFE(
-                        LOG_TRACE(dictionary.log, "Finished worker for dictionary {} shard {}, processed {} blocks, {} rows, total time {}ms",
-                            dictionary_name, shard, statistic.total_blocks, statistic.total_rows, statistic.total_elapsed_ms);
-
-                        if (thread_group)
-                            CurrentThread::detachFromGroupIfNotDetached();
-                    );
-
-                    /// Do not account memory that was occupied by the dictionaries for the query/user context.
-                    MemoryTrackerBlockerInThread memory_blocker;
+                WorkerStatistic statistic;
+                SCOPE_EXIT_SAFE(
+                    LOG_TRACE(dictionary.log, "Finished worker for dictionary {} shard {}, processed {} blocks, {} rows, total time {}ms",
+                        dictionary_name, shard, statistic.total_blocks, statistic.total_rows, statistic.total_elapsed_ms);
 
                     if (thread_group)
-                        CurrentThread::attachToGroupIfDetached(thread_group);
-                    setThreadName("HashedDictLoad");
+                        CurrentThread::detachFromGroupIfNotDetached();
+                );
 
-                    LOG_TRACE(dictionary.log, "Starting worker for dictionary {}, shard {}", dictionary_name, shard);
+                /// Do not account memory that was occupied by the dictionaries for the query/user context.
+                MemoryTrackerBlockerInThread memory_blocker;
 
-                    threadWorker(shard, statistic);
-                });
-            }
-            catch (...)
-            {
-                for (size_t shard_to_finish = 0; shard_to_finish < shard; ++shard_to_finish)
-                    shards_queues[shard_to_finish]->clearAndFinish();
+                if (thread_group)
+                    CurrentThread::attachToGroupIfDetached(thread_group);
+                setThreadName("HashedDictLoad");
 
-                pool.wait();
-                throw;
-            }
+                LOG_TRACE(dictionary.log, "Starting worker for dictionary {}, shard {}", dictionary_name, shard);
+
+                threadWorker(shard, statistic);
+            });
         }
     }
 

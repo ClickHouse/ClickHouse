@@ -168,7 +168,7 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
     }
 
     /// Choose data structure to use for the set.
-    data.init(SetVariants::chooseMethod(key_columns, key_sizes));
+    data.init(data.chooseMethod(key_columns, key_sizes));
 }
 
 void Set::fillSetElements()
@@ -576,7 +576,8 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
             lhs.get(row, f);
             if (f.isNull())
                 return 0; // +Inf == +Inf
-            return -1;
+            else
+                return -1;
         }
         return lhs.compareAt(row, 0, *rhs.column, 1);
     };
@@ -642,19 +643,20 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
         /// Check if it's an empty range
         if (!left_included || !right_included)
             return {false, true};
-        if (left_lower != indices.end() && equals(*left_lower, left_point))
+        else if (left_lower != indices.end() && equals(*left_lower, left_point))
             return {true, false};
-        return {false, true};
+        else
+            return {false, true};
     }
 
     /// If there are more than one element in the range, it can always be false. Thus we only need to check if it may be true or not.
     /// Given left_lower >= left_point, right_lower >= right_point, find if there may be a match in between left_lower and right_lower.
     if (left_lower + 1 < right_lower)
     {
-        /// There is a point in between: left_lower + 1
+        /// There is an point in between: left_lower + 1
         return {true, true};
     }
-    if (left_lower + 1 == right_lower)
+    else if (left_lower + 1 == right_lower)
     {
         /// Need to check if left_lower is a valid match, as left_point <= left_lower < right_point <= right_lower.
         /// Note: left_lower is valid.
@@ -665,10 +667,12 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
         /// Check if there is a match at the right boundary.
         return {right_included && right_lower != indices.end() && equals(*right_lower, right_point), true};
     }
-    // left_lower == right_lower
-    /// Need to check if right_point is a valid match, as left_point < right_point <= left_lower = right_lower.
-    /// Check if there is a match at the left boundary.
-    return {right_included && right_lower != indices.end() && equals(*right_lower, right_point), true};
+    else // left_lower == right_lower
+    {
+        /// Need to check if right_point is a valid match, as left_point < right_point <= left_lower = right_lower.
+        /// Check if there is a match at the left boundary.
+        return {right_included && right_lower != indices.end() && equals(*right_lower, right_point), true};
+    }
 }
 
 bool MergeTreeSetIndex::hasMonotonicFunctionsChain() const

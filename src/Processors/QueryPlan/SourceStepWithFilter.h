@@ -8,9 +8,8 @@
 namespace DB
 {
 
-/** Source step that can use filters and limit for more efficient pipeline initialization.
+/** Source step that can use filters for more efficient pipeline initialization.
   * Filters must be added before pipeline initialization.
-  * Limit must be set before pipeline initialization.
   */
 class SourceStepWithFilter : public ISourceStep
 {
@@ -33,8 +32,7 @@ public:
     {
     }
 
-    const std::optional<ActionsDAG> & getFilterActionsDAG() const { return filter_actions_dag; }
-    std::optional<ActionsDAG> detachFilterActionsDAG() { return std::move(filter_actions_dag); }
+    const ActionsDAGPtr & getFilterActionsDAG() const { return filter_actions_dag; }
 
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
     const PrewhereInfoPtr & getPrewhereInfo() const { return prewhere_info; }
@@ -45,22 +43,17 @@ public:
 
     const Names & requiredSourceColumns() const { return required_source_columns; }
 
-    void addFilter(ActionsDAG filter_dag, std::string column_name)
+    void addFilter(ActionsDAGPtr filter_dag, std::string column_name)
     {
-        filter_nodes.nodes.push_back(&filter_dag.findInOutputs(column_name));
+        filter_nodes.nodes.push_back(&filter_dag->findInOutputs(column_name));
         filter_dags.push_back(std::move(filter_dag));
-    }
-
-    void setLimit(size_t limit_value)
-    {
-        limit = limit_value;
     }
 
     /// Apply filters that can optimize reading from storage.
     void applyFilters()
     {
         applyFilters(std::move(filter_nodes));
-        filter_dags.clear();
+        filter_dags = {};
     }
 
     virtual void applyFilters(ActionDAGNodes added_filter_nodes);
@@ -79,14 +72,13 @@ protected:
     PrewhereInfoPtr prewhere_info;
     StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
-    std::optional<size_t> limit;
 
-    std::optional<ActionsDAG> filter_actions_dag;
+    ActionsDAGPtr filter_actions_dag;
 
 private:
     /// Will be cleared after applyFilters() is called.
     ActionDAGNodes filter_nodes;
-    std::vector<ActionsDAG> filter_dags;
+    std::vector<ActionsDAGPtr> filter_dags;
 };
 
 }

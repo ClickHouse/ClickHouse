@@ -272,7 +272,8 @@ bool Repeat::convertImpl(String & out, IParser::Pos & pos)
 
     if (count.empty())
         throw Exception(ErrorCodes::SYNTAX_ERROR, "number of arguments do not match in function: {}", function_name);
-    out = "if(" + count + " < 0, [NULL], " + std::format("arrayWithConstant(abs({1}), {0}))", value, count);
+    else
+        out = "if(" + count + " < 0, [NULL], " + std::format("arrayWithConstant(abs({1}), {0}))", value, count);
 
     return true;
 }

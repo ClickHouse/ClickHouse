@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/quantileexact
-sidebar_position: 173
+sidebar_position: 202
 ---
 
 # quantileExact Functions

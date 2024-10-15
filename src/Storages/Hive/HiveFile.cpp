@@ -44,16 +44,18 @@ Range createRangeFromOrcStatistics(const StatisticsType * stats)
     {
         return Range(FieldType(stats->getMinimum()), true, FieldType(stats->getMaximum()), true);
     }
-    if (stats->hasMinimum())
+    else if (stats->hasMinimum())
     {
         return Range::createLeftBounded(FieldType(stats->getMinimum()), true);
     }
-    if (stats->hasMaximum())
+    else if (stats->hasMaximum())
     {
         return Range::createRightBounded(FieldType(stats->getMaximum()), true);
     }
-
-    return Range::createWholeUniverseWithoutNull();
+    else
+    {
+        return Range::createWholeUniverseWithoutNull();
+    }
 }
 
 template <class FieldType, class StatisticsType>
@@ -120,15 +122,15 @@ Range HiveORCFile::buildRange(const orc::ColumnStatistics * col_stats)
     {
         return createRangeFromOrcStatistics<Int64>(int_stats);
     }
-    if (const auto * double_stats = dynamic_cast<const orc::DoubleColumnStatistics *>(col_stats))
+    else if (const auto * double_stats = dynamic_cast<const orc::DoubleColumnStatistics *>(col_stats))
     {
         return createRangeFromOrcStatistics<Float64>(double_stats);
     }
-    if (const auto * string_stats = dynamic_cast<const orc::StringColumnStatistics *>(col_stats))
+    else if (const auto * string_stats = dynamic_cast<const orc::StringColumnStatistics *>(col_stats))
     {
         return createRangeFromOrcStatistics<String>(string_stats);
     }
-    if (const auto * bool_stats = dynamic_cast<const orc::BooleanColumnStatistics *>(col_stats))
+    else if (const auto * bool_stats = dynamic_cast<const orc::BooleanColumnStatistics *>(col_stats))
     {
         auto false_cnt = bool_stats->getFalseCount();
         auto true_cnt = bool_stats->getTrueCount();
@@ -136,11 +138,11 @@ Range HiveORCFile::buildRange(const orc::ColumnStatistics * col_stats)
         {
             return Range(UInt8(0), true, UInt8(1), true);
         }
-        if (false_cnt)
+        else if (false_cnt)
         {
             return Range::createLeftBounded(UInt8(0), true);
         }
-        if (true_cnt)
+        else if (true_cnt)
         {
             return Range::createRightBounded(UInt8(1), true);
         }
@@ -161,7 +163,7 @@ void HiveORCFile::prepareReader()
     in = std::make_unique<ReadBufferFromHDFS>(namenode_url, path, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
     auto format_settings = getFormatSettings(getContext());
     std::atomic<int> is_stopped{0};
-    auto result = arrow::adapters::orc::ORCFileReader::Open(asArrowFile(*in, format_settings, is_stopped, "ORC", ORC_MAGIC_BYTES), ArrowMemoryPool::instance());
+    auto result = arrow::adapters::orc::ORCFileReader::Open(asArrowFile(*in, format_settings, is_stopped, "ORC", ORC_MAGIC_BYTES), arrow::default_memory_pool());
     THROW_ARROW_NOT_OK(result.status());
     reader = std::move(result).ValueOrDie();
 }
@@ -280,7 +282,7 @@ void HiveParquetFile::prepareReader()
     in = std::make_unique<ReadBufferFromHDFS>(namenode_url, path, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
     auto format_settings = getFormatSettings(getContext());
     std::atomic<int> is_stopped{0};
-    THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), ArrowMemoryPool::instance(), &reader));
+    THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), arrow::default_memory_pool(), &reader));
 }
 
 void HiveParquetFile::loadSplitMinMaxIndexesImpl()

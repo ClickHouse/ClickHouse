@@ -24,7 +24,7 @@
 #include <Access/SettingsProfile.h>
 #include <Access/User.h>
 #include <Columns/ColumnString.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
@@ -64,10 +64,8 @@ namespace
                 query->default_roles = user.default_roles.toASTWithNames(*access_control);
         }
 
-        for (const auto & authentication_method : user.authentication_methods)
-        {
-            query->authentication_methods.push_back(authentication_method.toAST());
-        }
+        if (user.auth_data.getType() != AuthenticationType::NO_PASSWORD)
+            query->auth_data = user.auth_data.toAST();
 
         if (user.valid_until)
         {

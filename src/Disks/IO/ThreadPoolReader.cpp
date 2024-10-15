@@ -36,8 +36,6 @@
         #define SYS_preadv2 380
     #elif defined(__riscv)
         #define SYS_preadv2 286
-    #elif defined(__loongarch64)
-        #define SYS_preadv2 286
     #else
         #error "Unsupported architecture"
     #endif
@@ -164,25 +162,29 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
                     has_pread_nowait_support.store(false, std::memory_order_relaxed);
                     break;
                 }
-                if (errno == EAGAIN)
+                else if (errno == EAGAIN)
                 {
                     /// Data is not available in page cache. Will hand off to thread pool.
                     break;
                 }
-                if (errno == EINTR)
+                else if (errno == EINTR)
                 {
                     /// Interrupted by a signal.
                     continue;
                 }
-
-                ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-                promise.set_exception(
-                    std::make_exception_ptr(ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd)));
-                return future;
+                else
+                {
+                    ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+                    promise.set_exception(std::make_exception_ptr(
+                        ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd)));
+                    return future;
+                }
             }
-
-            bytes_read += res;
-            __msan_unpoison(request.buf, res);
+            else
+            {
+                bytes_read += res;
+                __msan_unpoison(request.buf, res);
+            }
         }
 
         if (bytes_read)
@@ -201,7 +203,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
     ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMiss);
 
-    auto schedule = threadPoolCallbackRunnerUnsafe<Result>(*pool, "ThreadPoolRead");
+    auto schedule = threadPoolCallbackRunner<Result>(*pool, "ThreadPoolRead");
 
     return schedule([request, fd]() -> Result
     {

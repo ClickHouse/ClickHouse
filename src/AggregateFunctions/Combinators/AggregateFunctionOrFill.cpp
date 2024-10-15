@@ -7,7 +7,7 @@ namespace DB
 namespace
 {
 
-enum class Kind : uint8_t
+enum class Kind
 {
     OrNull,
     OrDefault
@@ -37,7 +37,8 @@ public:
     {
         if (kind == Kind::OrNull)
             return std::make_shared<AggregateFunctionOrFill<true>>(nested_function, arguments, params);
-        return std::make_shared<AggregateFunctionOrFill<false>>(nested_function, arguments, params);
+        else
+            return std::make_shared<AggregateFunctionOrFill<false>>(nested_function, arguments, params);
     }
 };
 

@@ -24,7 +24,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
-#include <Core/Settings.h>
 
 #include <filesystem>
 
@@ -34,12 +33,6 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_deprecated_database_ordinary;
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
-}
 
 namespace ErrorCodes
 {
@@ -66,13 +59,8 @@ static void executeCreateQuery(
     const Settings & settings = context->getSettingsRef();
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(
-        parser,
-        query.data(),
-        query.data() + query.size(),
-        "in file " + file_name,
-        0,
-        settings[Setting::max_parser_depth],
-        settings[Setting::max_parser_backtracks]);
+        parser, query.data(), query.data() + query.size(), "in file " + file_name,
+        0, settings.max_parser_depth, settings.max_parser_backtracks);
 
     auto & ast_create_query = ast->as<ASTCreateQuery &>();
     ast_create_query.setDatabase(database);
@@ -270,13 +258,15 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
         // Do NOT wait, just return tasks for continuation or later wait.
         return joinTasks(load_tasks, startup_tasks);
     }
-
-    // NOTE: some tables can still be started up in the "loading" phase if they are required by dependencies during loading of other tables
-    LOG_INFO(log, "Start synchronous loading of databases");
-    waitLoad(TablesLoaderForegroundPoolId, load_tasks); // First prioritize, schedule and wait all the load table tasks
-    LOG_INFO(log, "Start synchronous startup of databases");
-    waitLoad(TablesLoaderForegroundPoolId, startup_tasks); // Only then prioritize, schedule and wait all the startup tasks
-    return {};
+    else
+    {
+        // NOTE: some tables can still be started up in the "loading" phase if they are required by dependencies during loading of other tables
+        LOG_INFO(log, "Start synchronous loading of databases");
+        waitLoad(TablesLoaderForegroundPoolId, load_tasks); // First prioritize, schedule and wait all the load table tasks
+        LOG_INFO(log, "Start synchronous startup of databases");
+        waitLoad(TablesLoaderForegroundPoolId, startup_tasks); // Only then prioritize, schedule and wait all the startup tasks
+        return {};
+    }
 }
 
 static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & database_name, const String & default_engine)
@@ -394,7 +384,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
     if (database->getEngineName() != "Ordinary")
         return;
 
-    const Strings permanently_detached_tables = database->getNamesOfPermanentlyDetachedTables();
+    Strings permanently_detached_tables = database->getNamesOfPermanentlyDetachedTables();
     if (!permanently_detached_tables.empty())
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot automatically convert database {} from Ordinary to Atomic, "
@@ -483,7 +473,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
 void maybeConvertSystemDatabase(ContextMutablePtr context, LoadTaskPtrs & system_startup_tasks)
 {
     /// TODO remove this check, convert system database unconditionally
-    if (context->getSettingsRef()[Setting::allow_deprecated_database_ordinary])
+    if (context->getSettingsRef().allow_deprecated_database_ordinary)
         return;
 
     maybeConvertOrdinaryDatabaseToAtomic(context, DatabaseCatalog::SYSTEM_DATABASE, &system_startup_tasks);
