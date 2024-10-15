@@ -607,32 +607,61 @@ public:
         }
         else if constexpr (is_division && is_decimal_b)
         {
-            processWithRightNullmapImpl<op_case>(a, b, c, size, right_nullmap, res_nullmap, [&scale_a](const auto & left, const auto & right)
+            if (res_nullmap)
             {
-                return applyScaledDiv<is_decimal_a>(
-                    static_cast<NativeResultType>(left), right, scale_a);
-            });
+                if (right_nullmap)
+                    res_nullmap->assign(*right_nullmap);
+
+                processWithRightNullmapImpl<true, op_case>(a, b, c, size, res_nullmap, [&scale_a](const auto & left, const auto & right)
+                {
+                    return applyScaledDiv<is_decimal_a>(
+                        static_cast<NativeResultType>(left), right, scale_a);
+                });
+            }
+            else
+                processWithRightNullmapImpl<false, op_case>(a, b, c, size, right_nullmap, [&scale_a](const auto & left, const auto & right)
+                {
+                    return applyScaledDiv<is_decimal_a>(
+                        static_cast<NativeResultType>(left), right, scale_a);
+                });
+
             return;
         }
 
-        processWithRightNullmapImpl<op_case>(
-            a, b, c, size, right_nullmap, res_nullmap,
-            [](const auto & left, const auto & right)
-            {
-                return apply(
-                    static_cast<NativeResultType>(left),
-                    static_cast<NativeResultType>(right));
-            });
+        if (res_nullmap)
+        {
+            if (right_nullmap)
+                res_nullmap->assign(*right_nullmap);
+
+            processWithRightNullmapImpl<true, op_case>(
+                a, b, c, size, res_nullmap,
+                [](const auto & left, const auto & right)
+                {
+                    return apply(
+                        static_cast<NativeResultType>(left),
+                        static_cast<NativeResultType>(right));
+                });
+        }
+        else
+            processWithRightNullmapImpl<false, op_case>(
+                a, b, c, size, right_nullmap,
+                [](const auto & left, const auto & right)
+                {
+                    return apply(
+                        static_cast<NativeResultType>(left),
+                        static_cast<NativeResultType>(right));
+                });
     }
 
     template <bool is_decimal_a, bool is_decimal_b, class A, class B>
-    static ResultType process(A a, B b, NativeResultType scale_a, NativeResultType scale_b, NullMap * res_nullmap)
+    static ResultType process(A a, B b, NativeResultType scale_a, NativeResultType scale_b, NullMap * m)
         requires(!is_decimal<A> && !is_decimal<B>)
     {
         try
         {
+            ResultType res{};
             if constexpr (is_division && is_decimal_b)
-                return applyScaledDiv<is_decimal_a>(a, b, scale_a);
+                res = applyScaledDiv<is_decimal_a>(a, b, scale_a);
             else if constexpr (is_plus_minus_compare)
             {
                 if (scale_a != 1)
@@ -640,19 +669,17 @@ public:
                 if (scale_b != 1)
                     return applyScaled<false>(a, b, scale_b);
             }
-
-            ResultType res = apply(a, b);
+            else
+                res = apply(a, b);
             if constexpr (std::is_floating_point_v<ResultType>)
-            {
-                if (unlikely(!std::isfinite(res)) && res_nullmap)
-                    (*res_nullmap)[0] = 1;
-            }
+                if (unlikely(!std::isfinite(res)) && m)
+                    (*m)[0] = 1;
             return res;
         }
         catch (const std::exception&)
         {
-            if (res_nullmap)
-                (*res_nullmap)[0] = 1;
+            if (m)
+                (*m)[0] = 1;
             else
                 throw;
             return ResultType(); /// Unreachable to disable compiler error.
@@ -660,14 +687,14 @@ public:
     }
 
 private:
-    template <OpCase op_case, typename ApplyFunc>
-    static void processWithRightNullmapImpl(const auto & a, const auto & b, ResultContainerType & c, size_t size, const NullMap * right_nullmap, NullMap * res_nullmap, ApplyFunc apply_func)
+    template <bool may_gen_null, OpCase op_case, typename ApplyFunc>
+    static void processWithRightNullmapImpl(const auto & a, const auto & b, ResultContainerType & c, size_t size, std::conditional_t<may_gen_null, NullMap *, const NullMap *> res_nullmap, ApplyFunc apply_func)
     {
-        if (right_nullmap)
+        if (res_nullmap)
         {
             if constexpr (op_case == OpCase::RightConstant)
             {
-                if ((*right_nullmap)[0])
+                if ((*res_nullmap)[0])
                 {
                     for (size_t i = 0; i < size; ++i)
                         c[i] = ResultType();
@@ -676,73 +703,71 @@ private:
 
                 for (size_t i = 0; i < size; ++i)
                 {
-                    try
-                    {
-                        c[i] = apply_func(undec(a[i]), undec(b));
-                        if constexpr (std::is_floating_point_v<ResultContainerType>)
-                        {
-                            if (unlikely(!std::isfinite(c[i])) && res_nullmap)
-                                (*res_nullmap)[i] = 1;
-                        }
-                    }
-                    catch (const std::exception&)
-                    {
-                        if (res_nullmap)
-                            (*res_nullmap)[i] = 1;
-                        else
-                            throw;
-                    }
-                }
-            }
-            else
-            {
-                for (size_t i = 0; i < size; ++i)
-                {
-                    if ((*right_nullmap)[i])
-                        c[i] = ResultType();
-                    else
+                    if constexpr (may_gen_null)
                     {
                         try
                         {
-                            c[i] = apply_func(unwrap<op_case, OpCase::LeftConstant>(a, i), undec(b[i]));
+                            c[i] = apply_func(undec(a[i]), undec(b));
                             if constexpr (std::is_floating_point_v<ResultContainerType>)
-                            {
-                                if (unlikely(!std::isfinite(c[i])) && res_nullmap)
+                                if (unlikely(!std::isfinite(c[i])))
                                     (*res_nullmap)[i] = 1;
-                            }
                         }
                         catch (const std::exception&)
                         {
-                            if (res_nullmap)
-                                (*res_nullmap)[i] = 1;
-                            else
-                                throw;
+                            (*res_nullmap)[i] = 1;
                         }
                     }
+                    else
+                        c[i] = apply_func(undec(a[i]), undec(b));
                 }
             }
+            else
+                for (size_t i = 0; i < size; ++i)
+                {
+                    if ((*res_nullmap)[i])
+                        c[i] = ResultType();
+                    else
+                    {
+                        if constexpr (may_gen_null)
+                        {
+                            try
+                            {
+                                c[i] = apply_func(unwrap<op_case, OpCase::LeftConstant>(a, i), undec(b[i]));
+                                if constexpr (std::is_floating_point_v<ResultContainerType>)
+                                    if (unlikely(!std::isfinite(c[i])))
+                                        (*res_nullmap)[i] = 1;
+                            }
+                            catch (const std::exception&)
+                            {
+                                (*res_nullmap)[i] = 1;
+                            }
+                        }
+                        else
+                            c[i] = apply_func(unwrap<op_case, OpCase::LeftConstant>(a, i), undec(b[i]));
+                    }
+                }
+
+            return;
         }
-        else
+        /// res_nullmap is nullptr
+        for (size_t i = 0; i < size; ++i)
         {
-            for (size_t i = 0; i < size; ++i)
+            if constexpr (may_gen_null)
             {
                 try
                 {
                     c[i] = apply_func(unwrap<op_case, OpCase::LeftConstant>(a, i), unwrap<op_case, OpCase::RightConstant>(b, i));
                     if constexpr (std::is_floating_point_v<ResultContainerType>)
-                    {
-                        if (unlikely(!std::isfinite(c[i])) && res_nullmap)
+                        if (unlikely(!std::isfinite(c[i])))
                             (*res_nullmap)[i] = 1;
-                    }
                 }
                 catch (const std::exception&)
                 {
-                    if (res_nullmap)
-                        (*res_nullmap)[i] = 1;
-                    else
-                        throw;
+                    (*res_nullmap)[i] = 1;
                 }
             }
+            else
+                c[i] = apply_func(unwrap<op_case, OpCase::LeftConstant>(a, i), unwrap<op_case, OpCase::RightConstant>(b, i));
         }
     }
 
