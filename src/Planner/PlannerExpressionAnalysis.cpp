@@ -1,3 +1,4 @@
+#include <memory>
 #include <Planner/PlannerExpressionAnalysis.h>
 
 #include <Columns/ColumnNullable.h>
@@ -60,6 +61,56 @@ std::optional<FilterAnalysisResult> analyzeFilter(const QueryTreeNodePtr & filte
 
     result.filter_column_name = output->result_name;
     actions_chain.addStep(std::make_unique<ActionsChainStep>(result.filter_actions));
+    return result;
+}
+
+/** Construct limit inrange analysis result for filter expression nodes (from, to).
+  * Actions before are merged and added into into actions chain.
+  * It is client responsibility to update limit inrange analysis result if filter column must be removed after chain is finalized.
+  */
+LimitInRangeAnalysisResult analyzeLimitInRange(
+    const QueryTreeNodePtr & from_filter_expression_node,
+    const QueryTreeNodePtr & to_filter_expression_node,
+    const ColumnsWithTypeAndName & input_columns,
+    const PlannerContextPtr & planner_context,
+    ActionsChain & actions_chain)
+{
+    LimitInRangeAnalysisResult result;
+
+    if (from_filter_expression_node && to_filter_expression_node)
+    {
+        auto first_dag = buildActionsDAGFromExpressionNode(from_filter_expression_node, input_columns, planner_context);
+        auto second_dag = buildActionsDAGFromExpressionNode(to_filter_expression_node, input_columns, planner_context);
+        result.from_filter_column_name = first_dag.getOutputs().at(0)->result_name;
+        result.to_filter_column_name = second_dag.getOutputs().at(0)->result_name;
+
+        auto last_node_name = second_dag.getNodes().back().result_name;
+        first_dag.mergeNodes(std::move(second_dag));
+
+        for (const auto & node : first_dag.getNodes())
+            if (last_node_name == node.result_name)
+                first_dag.addOrReplaceInOutputs(node);
+
+        result.combined_limit_inrange_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+        result.combined_limit_inrange_actions->dag = std::move(first_dag);
+    }
+    else if (from_filter_expression_node)
+    {
+        result.combined_limit_inrange_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+        result.combined_limit_inrange_actions->dag
+            = buildActionsDAGFromExpressionNode(from_filter_expression_node, input_columns, planner_context);
+
+        result.from_filter_column_name = result.combined_limit_inrange_actions->dag.getOutputs().at(0)->result_name;
+    }
+    else if (to_filter_expression_node)
+    {
+        result.combined_limit_inrange_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+        result.combined_limit_inrange_actions->dag
+            = buildActionsDAGFromExpressionNode(to_filter_expression_node, input_columns, planner_context);
+        result.to_filter_column_name = result.combined_limit_inrange_actions->dag.getOutputs().at(0)->result_name;
+    }
+
+    actions_chain.addStep(std::make_unique<ActionsChainStep>(result.combined_limit_inrange_actions));
 
     return result;
 }
@@ -634,6 +685,15 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
         current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
     }
 
+    std::optional<LimitInRangeAnalysisResult> limit_inrange_analysis_result_optional;
+
+    if (query_node.hasLimitInrangeFrom() || query_node.hasLimitInrangeTo())
+    {
+        limit_inrange_analysis_result_optional = analyzeLimitInRange(
+            query_node.getLimitInrangeFrom(), query_node.getLimitInrangeTo(), current_output_columns, planner_context, actions_chain);
+        current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+    }
+
     const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
     auto project_names_input = chain_available_output_columns ? *chain_available_output_columns : current_output_columns;
 
@@ -725,6 +785,9 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
 
     if (limit_by_analysis_result_optional)
         expressions_analysis_result.addLimitBy(std::move(*limit_by_analysis_result_optional));
+
+    if (limit_inrange_analysis_result_optional)
+        expressions_analysis_result.addLimitLimitInRange(std::move(*limit_inrange_analysis_result_optional));
 
     return expressions_analysis_result;
 }

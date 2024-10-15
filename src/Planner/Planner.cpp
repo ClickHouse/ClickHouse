@@ -34,6 +34,7 @@
 #include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/LimitInRangeStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/ReadFromRecursiveCTEStep.h>
@@ -408,6 +409,17 @@ void addFilterStep(QueryPlan & query_plan,
     appendSetsFromActionsDAG(where_step->getExpression(), useful_sets);
     where_step->setStepDescription(step_description);
     query_plan.addStep(std::move(where_step));
+}
+
+void addLimitInRangeStep(QueryPlan & query_plan, const LimitInRangeAnalysisResult & limit_inrange_analysis_result, const std::string & step_description)
+{
+    auto limit_inrange_step = std::make_unique<LimitInRangeStep>(
+        query_plan.getCurrentDataStream(),
+        limit_inrange_analysis_result.from_filter_column_name,
+        limit_inrange_analysis_result.to_filter_column_name,
+        limit_inrange_analysis_result.remove_filter_column);
+    limit_inrange_step->setStepDescription(step_description);
+    query_plan.addStep(std::move(limit_inrange_step));
 }
 
 Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context,
@@ -1784,6 +1796,17 @@ void Planner::buildPlanForQueryNode()
             addWithFillStepIfNeeded(query_plan, query_analysis_result, planner_context, query_node);
 
         bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+
+        if (query_node.hasLimitInrangeFrom() || query_node.hasLimitInrangeTo())
+        {
+            auto & limit_inrange_analysis_result = expression_analysis_result.getLimitInRange();
+            addExpressionStep(
+                query_plan,
+                limit_inrange_analysis_result.combined_limit_inrange_actions,
+                "LIMIT INRANGE expressions",
+                useful_sets);
+            addLimitInRangeStep(query_plan, limit_inrange_analysis_result, "LIMIT INRANGE");
+        }
 
         if (query_node.hasLimit() && query_node.isLimitWithTies() && apply_offset)
             addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
