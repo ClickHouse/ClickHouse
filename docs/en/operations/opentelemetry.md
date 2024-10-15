@@ -31,6 +31,10 @@ The table must be enabled in the server configuration, see the `opentelemetry_sp
 
 The tags or attributes are saved as two parallel arrays, containing the keys and values. Use [ARRAY JOIN](../sql-reference/statements/select/array-join.md) to work with them.
 
+## Log-query-settings
+
+ClickHouse allows you to log changes to query settings during query execution. When enabled, any modifications made to query settings will be recorded in the OpenTelemetry span log. This feature is particularly useful in production environments for tracking configuration changes that may affect query performance.
+
 ## Integration with monitoring systems
 
 At the moment, there is no ready tool that can export the tracing data from ClickHouse to a monitoring system.
