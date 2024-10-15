@@ -54,6 +54,8 @@ class WriteBuffer;
     M(CLASS_NAME, DefaultDatabaseEngine) \
     M(CLASS_NAME, DefaultTableEngine) \
     M(CLASS_NAME, Dialect) \
+    M(CLASS_NAME, DistributedCacheLogMode) /* Cloud only */ \
+    M(CLASS_NAME, DistributedCachePoolBehaviourOnLimit) /* Cloud only */ \
     M(CLASS_NAME, DistributedDDLOutputMode) \
     M(CLASS_NAME, DistributedProductMode) \
     M(CLASS_NAME, Double) \
@@ -132,6 +134,7 @@ struct Settings
     std::vector<std::string_view> getAllRegisteredNames() const;
     std::vector<std::string_view> getChangedAndObsoleteNames() const;
     std::vector<std::string_view> getUnchangedNames() const;
+    std::vector<std::string_view> getChangedNames() const;
 
     void dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToMapColumn(IColumn * column, bool changed_only = true) const;

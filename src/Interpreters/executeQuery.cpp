@@ -5,6 +5,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/FailPoint.h>
+#include <Common/FieldVisitorToString.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryCache.h>
@@ -16,6 +17,7 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
+#include <Processors/Formats/Impl/NullFormat.h>
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -154,6 +156,7 @@ namespace Setting
     extern const SettingsBool use_query_cache;
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
+    extern const SettingsBool enforce_strict_identifier_format;
 }
 
 namespace ErrorCodes
@@ -563,6 +566,25 @@ void logQueryFinish(
         query_span->addAttributeIfNotZero("clickhouse.written_rows", elem.written_rows);
         query_span->addAttributeIfNotZero("clickhouse.written_bytes", elem.written_bytes);
         query_span->addAttributeIfNotZero("clickhouse.memory_usage", elem.memory_usage);
+
+        if (context)
+        {
+            std::string user_name = context->getUserName();
+            query_span->addAttribute("clickhouse.user", user_name);
+        }
+
+        if (settings[Setting::log_query_settings])
+        {
+            auto changed_settings_names = settings.getChangedNames();
+            for (const auto & name : changed_settings_names)
+            {
+                Field value = settings.get(name);
+                String value_str = convertFieldToString(value);
+
+                query_span->addAttribute(fmt::format("clickhouse.setting.{}", name), value_str);
+
+            }
+        }
         query_span->finish();
     }
 }
@@ -876,8 +898,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}",
                         formatted1, std::string_view(begin, end-begin));
-                else
-                    throw;
+
+                throw;
             }
 
             chassert(ast2);
@@ -996,6 +1018,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// to allow settings to take effect.
         InterpreterSetQuery::applySettingsFromQuery(ast, context);
         validateAnalyzerSettings(ast, settings[Setting::allow_experimental_analyzer]);
+
+        if (settings[Setting::enforce_strict_identifier_format])
+        {
+            WriteBufferFromOwnString buf;
+            IAST::FormatSettings enforce_strict_identifier_format_settings(buf, true);
+            enforce_strict_identifier_format_settings.enforce_strict_identifier_format = true;
+            ast->format(enforce_strict_identifier_format_settings);
+        }
 
         if (auto * insert_query = ast->as<ASTInsertQuery>())
             insert_query->tail = istr;
@@ -1157,6 +1187,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     auto timeout = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
                     auto source = std::make_shared<WaitForAsyncInsertSource>(std::move(result.future), timeout);
                     res.pipeline = QueryPipeline(Pipe(std::move(source)));
+                    res.pipeline.complete(std::make_shared<NullOutputFormat>(Block()));
                 }
 
                 const auto & table_id = insert_query->table_id;

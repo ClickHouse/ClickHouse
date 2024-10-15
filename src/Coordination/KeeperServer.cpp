@@ -26,7 +26,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 
 #if USE_SSL
 #    include <Server/CertificateReloader.h>
@@ -444,7 +444,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     /// At least 16 threads for network communication in asio.
     /// asio is async framework, so even with 1 thread it should be ok, but
     /// still as safeguard it's better to have some redundant capacity here
-    asio_opts.thread_pool_size_ = std::max(16U, getNumberOfPhysicalCPUCores());
+    asio_opts.thread_pool_size_ = std::max(16U, getNumberOfCPUCoresToUse());
 
     if (state_manager->isSecure())
     {
@@ -506,6 +506,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
 
     nuraft::raft_server::limits raft_limits;
     raft_limits.reconnect_limit_ = getValueOrMaxInt32AndLogWarning(coordination_settings->raft_limits_reconnect_limit, "raft_limits_reconnect_limit", log);
+    raft_limits.response_limit_ = getValueOrMaxInt32AndLogWarning(coordination_settings->raft_limits_response_limit, "response_limit", log);
     raft_instance->set_raft_limits(raft_limits);
 
     raft_instance->start_server(init_options.skip_initial_election_timeout_);
@@ -1018,7 +1019,7 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
         resp->get();
         return resp->get_accepted() ? Accepted : Declined;
     }
-    else if (const auto * remove = std::get_if<RemoveRaftServer>(&action))
+    if (const auto * remove = std::get_if<RemoveRaftServer>(&action))
     {
         // This corner case is the most problematic. Issue follows: if we agree on a number
         // of commands but don't commit them on leader, and then issue a leadership change via
@@ -1048,16 +1049,16 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
         resp->get();
         return resp->get_accepted() ? Accepted : Declined;
     }
-    else if (const auto * update = std::get_if<UpdateRaftServerPriority>(&action))
+    if (const auto * update = std::get_if<UpdateRaftServerPriority>(&action))
     {
-        if (auto ptr = raft_instance->get_srv_config(update->id); ptr == nullptr)
-            throw Exception(ErrorCodes::RAFT_ERROR,
-                "Attempt to apply {} but server is not present in Raft",
-                action);
-        else if (ptr->get_priority() == update->priority)
+        auto ptr = raft_instance->get_srv_config(update->id);
+
+        if (ptr == nullptr)
+            throw Exception(ErrorCodes::RAFT_ERROR, "Attempt to apply {} but server is not present in Raft", action);
+        if (ptr->get_priority() == update->priority)
             return Accepted;
 
-        raft_instance->set_priority(update->id, update->priority, /*broadcast on live leader*/true);
+        raft_instance->set_priority(update->id, update->priority, /*broadcast on live leader*/ true);
         return Accepted;
     }
     std::unreachable();
@@ -1079,7 +1080,7 @@ ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::Ab
 
 void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateAction& action)
 {
-    std::lock_guard _{server_write_mutex};
+    std::unique_lock server_write_lock{server_write_mutex};
     if (is_recovering) return;
     constexpr auto sleep_time = 500ms;
 
@@ -1090,7 +1091,9 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
     auto backoff_on_refusal = [&](size_t i)
     {
         LOG_INFO(log, "Update was not accepted (try {}), backing off for {}", i + 1, sleep_time * (i + 1));
+        server_write_lock.unlock();
         std::this_thread::sleep_for(sleep_time * (i + 1));
+        server_write_lock.lock();
     };
 
     const auto & coordination_settings = keeper_context->getCoordinationSettings();
