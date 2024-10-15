@@ -523,6 +523,12 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 		sql_query_grammar::SetValue *sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 		sv->set_property("allow_nullable_key");
 		sv->set_value("1");
+
+		if (next.is_shared_engine) {
+			sql_query_grammar::SetValue *sv2 = svs->add_other_values();
+			sv2->set_property("storage_policy");
+			sv2->set_value("'s3_with_keeper'");
+		}
 	}
 	te->set_shared(next.is_shared_engine);
 	assert(!next.is_shared_engine || next.IsMergeTreeFamily());

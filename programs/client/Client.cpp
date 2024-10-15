@@ -1022,16 +1022,20 @@ bool Client::chFuzz()
 
         GOOGLE_PROTOBUF_VERIFY_VERSION;
 
-        processTextAsSingleQuery("DROP TABLE IF EXISTS fuzztest;");
-        processTextAsSingleQuery("CREATE TABLE fuzztest (c0 Int) Engine=SharedMergeTree() ORDER BY tuple();");
+        outf << "--Session seed: " << rg.GetSeed() << std::endl;
+        ProcessQueryAndLog(outf, "DROP DATABASE IF EXISTS s0;");
+        processTextAsSingleQuery("CREATE DATABASE s0 Engine=Replicated('/test/db', 's1', 'r1');");
+        ProcessQueryAndLog(outf, "USE s0;");
+        processTextAsSingleQuery("CREATE TABLE fuzztest (c0 Int) Engine=SharedMergeTree() ORDER BY tuple() SETTINGS storage_policy = 's3_with_keeper';");
         has_cloud_features |= !have_error;
         std::cout << "Cloud features " << (has_cloud_features ? "" : "not ") << "detected" << std::endl;
         processTextAsSingleQuery("DROP TABLE IF EXISTS fuzztest;");
-
-        outf << "--Session seed: " << rg.GetSeed() << std::endl;
-        ProcessQueryAndLog(outf, "DROP DATABASE IF EXISTS s0;");
-        ProcessQueryAndLog(outf, "CREATE DATABASE s0;");
-        ProcessQueryAndLog(outf, "USE s0;");
+        if (!has_cloud_features) {
+            ProcessQueryAndLog(outf, "USE default;");
+            ProcessQueryAndLog(outf, "DROP DATABASE IF EXISTS s0;");
+            processTextAsSingleQuery("CREATE DATABASE s0;");
+            ProcessQueryAndLog(outf, "USE s0;");
+        }
         ProcessQueryAndLog(outf, "SET engine_file_truncate_on_insert = 1;");
 
         full_query2.reserve(8192);
