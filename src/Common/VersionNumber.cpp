@@ -40,7 +40,7 @@ int VersionNumber::compare(const VersionNumber & rhs) const
     {
         return components[min] >= 0 ? 1 : -1;
     }
-    else if (rhs.components.size() > min)
+    if (rhs.components.size() > min)
     {
         return -rhs.components[min] > 0 ? 1 : -1;
     }

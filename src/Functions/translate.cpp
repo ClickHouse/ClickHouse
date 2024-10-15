@@ -305,12 +305,10 @@ public:
 
         if (isString(arguments[0]))
             return std::make_shared<DataTypeString>();
-        else
-        {
-            const auto * ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
-            chassert(ptr);
-            return std::make_shared<DataTypeFixedString>(ptr->getN());
-        }
+
+        const auto * ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
+        chassert(ptr);
+        return std::make_shared<DataTypeFixedString>(ptr->getN());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -335,15 +333,14 @@ public:
             Impl::vector(col->getChars(), col->getOffsets(), map_from, map_to, col_res->getChars(), col_res->getOffsets(), input_rows_count);
             return col_res;
         }
-        else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_src.get()))
+        if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_src.get()))
         {
             auto col_res = ColumnFixedString::create(col_fixed->getN());
             Impl::vectorFixed(col_fixed->getChars(), col_fixed->getN(), map_from, map_to, col_res->getChars());
             return col_res;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
     }
 };
 
