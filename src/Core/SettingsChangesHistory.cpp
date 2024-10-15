@@ -94,6 +94,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"distributed_cache_read_alignment", 0, 0, "A setting for ClickHouse Cloud"},
             {"distributed_cache_max_unacked_inflight_packets", 10, 10, "A setting for ClickHouse Cloud"},
             {"distributed_cache_data_packet_ack_window", 5, 5, "A setting for ClickHouse Cloud"},
+            {"compile_expressions", false, true, "Compile some scalar functions and operators to native code. Due to a bug in the LLVM compiler infrastructure, on AArch64 machines, it is known to lead to a nullptr dereference and, consequently, server crash. Do not enable this setting."},
+            {"min_count_to_compile_expression", 3, 1, "Minimum count of executing same expression before it is get compiled."},
         }
     },
     {"24.9",
