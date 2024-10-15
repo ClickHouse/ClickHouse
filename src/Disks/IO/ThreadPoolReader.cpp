@@ -111,7 +111,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
     /// RWF_NOWAIT flag may return 0 even when not at end of file.
     /// It can't be distinguished from the real eof, so we have to
     /// disable pread with nowait.
-    static bool has_pread_nowait_support = !hasBugInPreadV2();
+    static const bool has_pread_nowait_support = !hasBugInPreadV2();
 
     if (has_pread_nowait_support)
     {
@@ -165,13 +165,11 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
                     /// fallback to the thread pool.
                     break;
                 }
-
                 if (errno == EAGAIN)
                 {
                     /// Data is not available in page cache. Will hand off to thread pool.
                     break;
                 }
-
                 if (errno == EINTR)
                 {
                     /// Interrupted by a signal.
@@ -179,15 +177,13 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
                 }
 
                 ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-                promise.set_exception(std::make_exception_ptr(
-                    ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd)));
+                promise.set_exception(
+                    std::make_exception_ptr(ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd)));
                 return future;
             }
-            else
-            {
-                bytes_read += res;
-                __msan_unpoison(request.buf, res);
-            }
+
+            bytes_read += res;
+            __msan_unpoison(request.buf, res);
         }
 
         if (bytes_read)
