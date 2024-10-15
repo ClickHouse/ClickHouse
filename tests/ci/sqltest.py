@@ -86,17 +86,18 @@ def main():
                 logging.info("Run failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
+    report_file_path = workspace_path / "report.html"
 
     paths = {
         "run.log": run_log_path,
         "server.log.zst": workspace_path / "server.log.zst",
         "server.err.log.zst": workspace_path / "server.err.log.zst",
-        "report.html": workspace_path / "report.html",
+        "report.html": report_file_path,
         "test.log": workspace_path / "test.log",
     }
     status = SUCCESS
     description = "See the report"
-    test_results = [TestResult(description, "OK")]
+    test_results = [TestResult(description, "OK", log_files=[report_file_path])]
 
     JobReport(
         description=description,
