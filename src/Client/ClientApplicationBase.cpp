@@ -171,8 +171,6 @@ void ClientApplicationBase::init(int argc, char ** argv)
 
         ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
         ("progress", po::value<ProgressOption>()->implicit_value(ProgressOption::TTY, "tty")->default_value(ProgressOption::DEFAULT, "default"), "Print progress of queries execution - to TTY: tty|on|1|true|yes; to STDERR non-interactive mode: err; OFF: off|0|false|no; DEFAULT - interactive to TTY, non-interactive is off")
-        ("progress-table", po::value<ProgressOption>()->implicit_value(ProgressOption::TTY, "tty")->default_value(ProgressOption::DEFAULT, "default"), "Print a progress table with changing metrics during query execution - to TTY: tty|on|1|true|yes; to STDERR non-interactive mode: err; OFF: off|0|false|no; DEFAULT - interactive to TTY, non-interactive is off.")
-        ("enable-progress-table-toggle", po::value<bool>()->default_value(true), "Enable toggling of the progress table by pressing the control key (Space). Only applicable in interactive mode with the progress table enabled.")
 
         ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
         ("wait_for_suggestions_to_load", "Load suggestion data synchonously.")
@@ -318,26 +316,6 @@ void ClientApplicationBase::init(int argc, char ** argv)
                 break;
         }
     }
-    if (options.count("progress-table"))
-    {
-        switch (options["progress-table"].as<ProgressOption>())
-        {
-            case DEFAULT:
-                config().setString("progress-table", "default");
-                break;
-            case OFF:
-                config().setString("progress-table", "off");
-                break;
-            case TTY:
-                config().setString("progress-table", "tty");
-                break;
-            case ERR:
-                config().setString("progress-table", "err");
-                break;
-        }
-    }
-    if (options.count("enable-progress-table-toggle"))
-        getClientConfiguration().setBool("enable-progress-table-toggle", options["enable-progress-table-toggle"].as<bool>());
     if (options.count("echo"))
         getClientConfiguration().setBool("echo", true);
     if (options.count("disable_suggestion"))

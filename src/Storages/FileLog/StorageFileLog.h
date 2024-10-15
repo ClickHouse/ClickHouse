@@ -120,7 +120,8 @@ public:
     {
         if (auto it = map.find(key); it != map.end())
             return it->second;
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The key {} doesn't exist.", key);
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The key {} doesn't exist.", key);
     }
 
     void increaseStreams();

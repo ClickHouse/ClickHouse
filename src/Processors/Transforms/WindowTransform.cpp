@@ -23,7 +23,6 @@
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 
-#include <algorithm>
 #include <limits>
 
 
@@ -113,13 +112,18 @@ static int compareValuesWithOffset(const IColumn * _compared_column,
             // We know that because offset is >= 0.
             return 1;
         }
-
-        // Overflow to the positive, [compared] must be less.
-        return -1;
+        else
+        {
+            // Overflow to the positive, [compared] must be less.
+            return -1;
+        }
     }
-
-    // No overflow, compare normally.
-    return compared_value < reference_value ? -1 : compared_value == reference_value ? 0 : 1;
+    else
+    {
+        // No overflow, compare normally.
+        return compared_value < reference_value ? -1
+            : compared_value == reference_value ? 0 : 1;
+    }
 }
 
 // A specialization of compareValuesWithOffset for floats.
@@ -212,11 +216,11 @@ static int compareValuesWithOffsetNullable(const IColumn * _compared_column,
     {
         return -1;
     }
-    if (compared_column->isNullAt(compared_row) && reference_column->isNullAt(reference_row))
+    else if (compared_column->isNullAt(compared_row) && reference_column->isNullAt(reference_row))
     {
         return 0;
     }
-    if (!compared_column->isNullAt(compared_row) && reference_column->isNullAt(reference_row))
+    else if (!compared_column->isNullAt(compared_row) && reference_column->isNullAt(reference_row))
     {
         return 1;
     }
@@ -1480,7 +1484,8 @@ void WindowTransform::work()
     // that the frame start can be further than current row for some frame specs
     // (e.g. EXCLUDE CURRENT ROW), so we have to check both.
     assert(prev_frame_start <= frame_start);
-    const auto first_used_block = std::min({next_output_block_number, prev_frame_start.block, current_row.block});
+    const auto first_used_block = std::min(next_output_block_number,
+        std::min(prev_frame_start.block, current_row.block));
     if (first_block_number < first_used_block)
     {
         blocks.erase(blocks.begin(),
@@ -1495,11 +1500,10 @@ void WindowTransform::work()
     }
 }
 
-struct WindowFunctionRank final : public WindowFunction
+struct WindowFunctionRank final : public StatelessWindowFunction
 {
-    WindowFunctionRank(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
+    WindowFunctionRank(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
+        : StatelessWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
     {}
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -1514,11 +1518,10 @@ struct WindowFunctionRank final : public WindowFunction
     }
 };
 
-struct WindowFunctionDenseRank final : public WindowFunction
+struct WindowFunctionDenseRank final : public StatelessWindowFunction
 {
-    WindowFunctionDenseRank(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
+    WindowFunctionDenseRank(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
+        : StatelessWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
     {}
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -1716,7 +1719,7 @@ struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunc
         const Float64 decay_length;
 };
 
-struct WindowFunctionExponentialTimeDecayedMax final : public WindowFunction
+struct WindowFunctionExponentialTimeDecayedMax final : public StatelessWindowFunction
 {
     static constexpr size_t ARGUMENT_VALUE = 0;
     static constexpr size_t ARGUMENT_TIME = 1;
@@ -1731,9 +1734,8 @@ struct WindowFunctionExponentialTimeDecayedMax final : public WindowFunction
         return applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
     }
 
-    WindowFunctionExponentialTimeDecayedMax(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
+    WindowFunctionExponentialTimeDecayedMax(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
+        : StatelessWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
         , decay_length(getDecayLength(parameters_, name_))
     {
         if (argument_types.size() != 2)
@@ -1991,11 +1993,10 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
         const Float64 decay_length;
 };
 
-struct WindowFunctionRowNumber final : public WindowFunction
+struct WindowFunctionRowNumber final : public StatelessWindowFunction
 {
-    WindowFunctionRowNumber(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
+    WindowFunctionRowNumber(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
+        : StatelessWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
     {}
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -2273,13 +2274,12 @@ public:
 
 // ClickHouse-specific variant of lag/lead that respects the window frame.
 template <bool is_lead>
-struct WindowFunctionLagLeadInFrame final : public WindowFunction
+struct WindowFunctionLagLeadInFrame final : public StatelessWindowFunction
 {
     FunctionBasePtr func_cast = nullptr;
 
-    WindowFunctionLagLeadInFrame(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_, createResultType(argument_types_, name_))
+    WindowFunctionLagLeadInFrame(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
+        : StatelessWindowFunction(name_, argument_types_, parameters_, createResultType(argument_types_, name_))
     {
         if (!parameters.empty())
         {
@@ -2427,11 +2427,10 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
     }
 };
 
-struct WindowFunctionNthValue final : public WindowFunction
+struct WindowFunctionNthValue final : public StatelessWindowFunction
 {
-    WindowFunctionNthValue(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_, createResultType(name_, argument_types_))
+    WindowFunctionNthValue(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
+        : StatelessWindowFunction(name_, argument_types_, parameters_, createResultType(name_, argument_types_))
     {
         if (!parameters.empty())
         {

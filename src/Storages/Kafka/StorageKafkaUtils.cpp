@@ -28,7 +28,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
@@ -104,6 +104,7 @@ void registerStorageKafka(StorageFactory & factory)
     { \
         /* The same argument is given in two places */ \
         if (has_settings && kafka_settings->PAR_NAME.changed) \
+        { \
             throw Exception( \
                 ErrorCodes::BAD_ARGUMENTS, \
                 "The argument №{} of storage Kafka " \
@@ -111,17 +112,21 @@ void registerStorageKafka(StorageFactory & factory)
                 "in SETTINGS cannot be specified at the same time", \
                 #ARG_NUM, \
                 #PAR_NAME); \
+        } \
         /* move engine args to settings */ \
-        if constexpr ((EVAL) == 1) \
+        else \
         { \
-            engine_args[(ARG_NUM)-1] = evaluateConstantExpressionAsLiteral(engine_args[(ARG_NUM)-1], args.getLocalContext()); \
+            if constexpr ((EVAL) == 1) \
+            { \
+                engine_args[(ARG_NUM)-1] = evaluateConstantExpressionAsLiteral(engine_args[(ARG_NUM)-1], args.getLocalContext()); \
+            } \
+            if constexpr ((EVAL) == 2) \
+            { \
+                engine_args[(ARG_NUM)-1] \
+                    = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[(ARG_NUM)-1], args.getLocalContext()); \
+            } \
+            kafka_settings->PAR_NAME = engine_args[(ARG_NUM)-1]->as<ASTLiteral &>().value; \
         } \
-        if constexpr ((EVAL) == 2) \
-        { \
-            engine_args[(ARG_NUM)-1] \
-                = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[(ARG_NUM)-1], args.getLocalContext()); \
-        } \
-        kafka_settings->PAR_NAME = engine_args[(ARG_NUM)-1]->as<ASTLiteral &>().value; \
     }
 
         /** Arguments of engine is following:
@@ -163,7 +168,7 @@ void registerStorageKafka(StorageFactory & factory)
 #undef CHECK_KAFKA_STORAGE_ARGUMENT
 
         auto num_consumers = kafka_settings->kafka_num_consumers.value;
-        auto max_consumers = std::max<uint32_t>(getNumberOfCPUCoresToUse(), 16);
+        auto max_consumers = std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
 
         if (!args.getLocalContext()->getSettingsRef()[Setting::kafka_disable_num_consumers_limit] && num_consumers > max_consumers)
         {
@@ -180,7 +185,7 @@ void registerStorageKafka(StorageFactory & factory)
                 "See also https://clickhouse.com/docs/integrations/kafka/kafka-table-engine#tuning-performance",
                 max_consumers);
         }
-        if (num_consumers < 1)
+        else if (num_consumers < 1)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of consumers can not be lower than 1");
         }
@@ -327,9 +332,11 @@ void drainConsumer(
             {
                 break;
             }
-
-            LOG_ERROR(log, "Error during draining: {}", error);
-            error_handler(error);
+            else
+            {
+                LOG_ERROR(log, "Error during draining: {}", error);
+                error_handler(error);
+            }
         }
 
         // i don't stop draining on first error,

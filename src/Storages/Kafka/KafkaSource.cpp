@@ -135,14 +135,13 @@ Chunk KafkaSource::generateImpl()
 
             return 1;
         }
-
-        e.addMessage(
-            "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
-            consumer->currentTopic(),
-            consumer->currentPartition(),
-            consumer->currentOffset());
-        consumer->setExceptionInfo(e.message());
-        throw std::move(e);
+        else
+        {
+            e.addMessage("while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
+                consumer->currentTopic(), consumer->currentPartition(), consumer->currentOffset());
+            consumer->setExceptionInfo(e.message());
+            throw std::move(e);
+        }
     };
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
@@ -256,7 +255,7 @@ Chunk KafkaSource::generateImpl()
     {
         return {};
     }
-    if (consumer->polledDataUnusable())
+    else if (consumer->polledDataUnusable())
     {
         // the rows were counted already before by KafkaRowsRead,
         // so let's count the rows we ignore separately

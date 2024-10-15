@@ -23,6 +23,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <filesystem>
@@ -298,7 +299,7 @@ void StorageObjectStorageQueue::read(
     }
 
     auto this_ptr = std::static_pointer_cast<StorageObjectStorageQueue>(shared_from_this());
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context));
 
     auto reading = std::make_unique<ReadFromObjectStorageQueue>(
         column_names,
@@ -459,7 +460,6 @@ bool StorageObjectStorageQueue::streamToViews()
         auto read_from_format_info = prepareReadingFromFormat(
             block_io.pipeline.getHeader().getNames(),
             storage_snapshot,
-            queue_context,
             supportsSubsetOfColumns(queue_context));
 
         Pipes pipes;

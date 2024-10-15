@@ -635,37 +635,39 @@ XMLDocumentPtr ConfigProcessor::parseConfig(const std::string & config_path)
 
     if (extension == ".xml")
         return dom_parser.parse(config_path);
-    if (extension == ".yaml" || extension == ".yml")
+    else if (extension == ".yaml" || extension == ".yml")
         return YAMLParser::parse(config_path);
-
-    /// Suppose non regular file parsed as XML, such as pipe: /dev/fd/X (regardless it has .xml extension or not)
-    if (!fs::is_regular_file(config_path))
-        return dom_parser.parse(config_path);
-
-    /// If the regular file begins with < it might be XML, otherwise it might be YAML.
-    bool maybe_xml = false;
+    else
     {
-        std::ifstream file(config_path);
-        if (!file.is_open())
-            throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "Unknown format of '{}' config", config_path);
+        /// Suppose non regular file parsed as XML, such as pipe: /dev/fd/X (regardless it has .xml extension or not)
+        if (!fs::is_regular_file(config_path))
+            return dom_parser.parse(config_path);
 
-        std::string line;
-        while (std::getline(file, line))
+        /// If the regular file begins with < it might be XML, otherwise it might be YAML.
+        bool maybe_xml = false;
         {
-            const size_t pos = firstNonWhitespacePos(line);
+            std::ifstream file(config_path);
+            if (!file.is_open())
+                throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "Unknown format of '{}' config", config_path);
 
-            if (pos < line.size() && '<' == line[pos])
+            std::string line;
+            while (std::getline(file, line))
             {
-                maybe_xml = true;
-                break;
+                const size_t pos = firstNonWhitespacePos(line);
+
+                if (pos < line.size() && '<' == line[pos])
+                {
+                    maybe_xml = true;
+                    break;
+                }
+                else if (pos != std::string::npos)
+                    break;
             }
-            if (pos != std::string::npos)
-                break;
         }
+        if (maybe_xml)
+            return dom_parser.parse(config_path);
+        return YAMLParser::parse(config_path);
     }
-    if (maybe_xml)
-        return dom_parser.parse(config_path);
-    return YAMLParser::parse(config_path);
 }
 
 XMLDocumentPtr ConfigProcessor::processConfig(

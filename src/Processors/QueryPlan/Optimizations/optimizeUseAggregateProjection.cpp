@@ -552,7 +552,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
 static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
 {
     IQueryPlanStep * step = node.step.get();
-    if (auto * /*reading*/ _ = typeid_cast<ReadFromMergeTree *>(step))
+    if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
         return &node;
 
     if (node.children.size() != 1)

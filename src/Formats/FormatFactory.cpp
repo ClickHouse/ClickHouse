@@ -307,16 +307,13 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.binary.max_binary_array_size = settings[Setting::format_binary_max_array_size];
     format_settings.binary.encode_types_in_binary_format = settings[Setting::output_format_binary_encode_types_in_binary_format];
     format_settings.binary.decode_types_in_binary_format = settings[Setting::input_format_binary_decode_types_in_binary_format];
-    format_settings.binary.write_json_as_string = settings[Setting::output_format_binary_write_json_as_string];
-    format_settings.binary.read_json_as_string = settings[Setting::input_format_binary_read_json_as_string];
     format_settings.native.allow_types_conversion = settings[Setting::input_format_native_allow_types_conversion];
     format_settings.native.encode_types_in_binary_format = settings[Setting::output_format_native_encode_types_in_binary_format];
     format_settings.native.decode_types_in_binary_format = settings[Setting::input_format_native_decode_types_in_binary_format];
-    format_settings.native.write_json_as_string = settings[Setting::output_format_native_write_json_as_string];
-    format_settings.max_parser_depth = settings[Setting::max_parser_depth];
+    format_settings.max_parser_depth = context->getSettingsRef()[Setting::max_parser_depth];
+    format_settings.client_protocol_version = context->getClientProtocolVersion();
     format_settings.date_time_overflow_behavior = settings[Setting::date_time_overflow_behavior];
     format_settings.try_infer_variant = settings[Setting::input_format_try_infer_variants];
-    format_settings.client_protocol_version = context->getClientProtocolVersion();
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)

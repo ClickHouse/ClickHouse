@@ -172,7 +172,7 @@ namespace Setting
     extern const SettingsBool optimize_uniq_to_count;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsString parallel_replicas_custom_key;
-    extern const SettingsParallelReplicasMode parallel_replicas_mode;
+    extern const SettingsParallelReplicasCustomKeyFilterType parallel_replicas_custom_key_filter_type;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_upper;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
@@ -607,7 +607,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     /// Check support for parallel replicas for non-replicated storage (plain MergeTree)
     bool is_plain_merge_tree = storage && storage->isMergeTree() && !storage->supportsReplication();
     if (is_plain_merge_tree && settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
-        && !settings[Setting::allow_experimental_parallel_reading_from_replicas])
+        && !settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
     {
         if (settings[Setting::allow_experimental_parallel_reading_from_replicas] == 1)
         {
@@ -688,7 +688,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     settings[Setting::parallel_replicas_count],
                     settings[Setting::parallel_replica_offset],
                     std::move(custom_key_ast),
-                    {settings[Setting::parallel_replicas_mode],
+                    {settings[Setting::parallel_replicas_custom_key_filter_type],
                      settings[Setting::parallel_replicas_custom_key_range_lower],
                      settings[Setting::parallel_replicas_custom_key_range_upper]},
                     storage->getInMemoryMetadataPtr()->columns,
@@ -816,22 +816,24 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                         ErrorCodes::SAMPLING_NOT_SUPPORTED,
                         "Storage {} doesn't support sampling",
                         storage->getStorageID().getNameForLogs());
-                throw Exception(
-                    ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: sampling is only allowed with the table engines that support it");
+                else
+                    throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: sampling is only allowed with the table engines that support it");
             }
 
             if (query.final() && (input_pipe || !storage || !storage->supportsFinal()))
             {
                 if (!input_pipe && storage)
                     throw Exception(ErrorCodes::ILLEGAL_FINAL, "Storage {} doesn't support FINAL", storage->getName());
-                throw Exception(ErrorCodes::ILLEGAL_FINAL, "Illegal FINAL");
+                else
+                    throw Exception(ErrorCodes::ILLEGAL_FINAL, "Illegal FINAL");
             }
 
             if (query.prewhere() && (input_pipe || !storage || !storage->supportsPrewhere()))
             {
                 if (!input_pipe && storage)
                     throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "Storage {} doesn't support PREWHERE", storage->getName());
-                throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "Illegal PREWHERE");
+                else
+                    throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "Illegal PREWHERE");
             }
 
             /// Save the new temporary tables in the query context
@@ -1073,7 +1075,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
         LOG_DEBUG(log, "Disabling parallel replicas because there aren't enough rows to read");
         return true;
     }
-    if (number_of_replicas_to_use < settings[Setting::max_parallel_replicas])
+    else if (number_of_replicas_to_use < settings[Setting::max_parallel_replicas])
     {
         context->setSetting("max_parallel_replicas", number_of_replicas_to_use);
         LOG_DEBUG(log, "Reducing the number of replicas to use to {}", number_of_replicas_to_use);
@@ -1799,7 +1801,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     if (!joined_plan)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no joined plan for query");
 
-                    auto add_sorting = [this] (QueryPlan & plan, const Names & key_names, JoinTableSide join_pos)
+                    auto add_sorting = [&settings, this] (QueryPlan & plan, const Names & key_names, JoinTableSide join_pos)
                     {
                         SortDescription order_descr;
                         order_descr.reserve(key_names.size());
@@ -1811,7 +1813,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         auto sorting_step = std::make_unique<SortingStep>(
                             plan.getCurrentDataStream(),
                             std::move(order_descr),
-                            0 /* LIMIT */, sort_settings);
+                            0 /* LIMIT */,
+                            sort_settings,
+                            settings[Setting::optimize_sorting_by_input_stream_properties]);
                         sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_pos));
                         plan.addStep(std::move(sorting_step));
                     };
@@ -2123,7 +2127,8 @@ static void executeMergeAggregatedImpl(
     const NamesAndTypesList & aggregation_keys,
     const NamesAndTypesLists & aggregation_keys_list,
     const AggregateDescriptions & aggregates,
-    bool should_produce_results_in_order_of_bucket_number)
+    bool should_produce_results_in_order_of_bucket_number,
+    SortDescription group_by_sort_description)
 {
     auto keys = aggregation_keys.getNames();
 
@@ -2163,6 +2168,7 @@ static void executeMergeAggregatedImpl(
         should_produce_results_in_order_of_bucket_number,
         settings[Setting::max_block_size],
         settings[Setting::aggregation_in_order_max_block_bytes],
+        std::move(group_by_sort_description),
         settings[Setting::enable_memory_bound_merging_of_aggregation_results]);
 
     query_plan.addStep(std::move(merging_aggregated));
@@ -2413,12 +2419,12 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
 }
 
 /// Based on the query analysis, check if using a trivial count (storage or partition metadata) is possible
-std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_experimental_parallel_reading_from_replicas)
+std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 max_parallel_replicas)
 {
     const Settings & settings = context->getSettingsRef();
     bool optimize_trivial_count =
         syntax_analyzer_result->optimize_trivial_count
-        && (allow_experimental_parallel_reading_from_replicas == 0)
+        && (max_parallel_replicas <= 1)
         && !settings[Setting::allow_experimental_query_deduplication]
         && !settings[Setting::empty_result_for_aggregation_by_empty_set]
         && storage
@@ -2440,27 +2446,29 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
         query_info.optimize_trivial_count = optimize_trivial_count;
         return storage->totalRows(settings);
     }
-
-    // It's possible to optimize count() given only partition predicates
-    ActionsDAG::NodeRawConstPtrs filter_nodes;
-    if (analysis_result.hasPrewhere())
+    else
     {
-        auto & prewhere_info = analysis_result.prewhere_info;
-        filter_nodes.push_back(&prewhere_info->prewhere_actions.findInOutputs(prewhere_info->prewhere_column_name));
+        // It's possible to optimize count() given only partition predicates
+        ActionsDAG::NodeRawConstPtrs filter_nodes;
+        if (analysis_result.hasPrewhere())
+        {
+            auto & prewhere_info = analysis_result.prewhere_info;
+            filter_nodes.push_back(&prewhere_info->prewhere_actions.findInOutputs(prewhere_info->prewhere_column_name));
 
-        if (prewhere_info->row_level_filter)
-            filter_nodes.push_back(&prewhere_info->row_level_filter->findInOutputs(prewhere_info->row_level_column_name));
+            if (prewhere_info->row_level_filter)
+                filter_nodes.push_back(&prewhere_info->row_level_filter->findInOutputs(prewhere_info->row_level_column_name));
+        }
+        if (analysis_result.hasWhere())
+        {
+            filter_nodes.push_back(&analysis_result.before_where->dag.findInOutputs(analysis_result.where_column_name));
+        }
+
+        auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes);
+        if (!filter_actions_dag)
+            return {};
+
+        return storage->totalRowsByPartitionPredicate(*filter_actions_dag, context);
     }
-    if (analysis_result.hasWhere())
-    {
-        filter_nodes.push_back(&analysis_result.before_where->dag.findInOutputs(analysis_result.where_column_name));
-    }
-
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes);
-    if (!filter_actions_dag)
-        return {};
-
-    return storage->totalRowsByPartitionPredicate(*filter_actions_dag, context);
 }
 
 /** Optimization - if not specified DISTINCT, WHERE, GROUP, HAVING, ORDER, JOIN, LIMIT BY, WITH TIES
@@ -2500,7 +2508,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     std::optional<UInt64> num_rows;
 
     /// Optimization for trivial query like SELECT count() FROM table.
-    if (processing_stage == QueryProcessingStage::FetchColumns && (num_rows = getTrivialCount(settings[Setting::allow_experimental_parallel_reading_from_replicas])))
+    if (processing_stage == QueryProcessingStage::FetchColumns && (num_rows = getTrivialCount(settings[Setting::max_parallel_replicas])))
     {
         const auto & desc = query_analyzer->aggregates()[0];
         const auto & func = desc.function;
@@ -2848,6 +2856,10 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
 {
     const Settings & settings = context->getSettingsRef();
 
+    /// Used to determine if we should use memory bound merging strategy.
+    auto group_by_sort_description
+        = !query_analyzer->useGroupingSetKey() ? getSortDescriptionFromGroupBy(getSelectQuery()) : SortDescription{};
+
     const bool should_produce_results_in_order_of_bucket_number = options.to_stage == QueryProcessingStage::WithMergeableState
         && (settings[Setting::distributed_aggregation_memory_efficient] || settings[Setting::enable_memory_bound_merging_of_aggregation_results]);
     const bool parallel_replicas_from_merge_tree = storage->isMergeTree() && context->canUseParallelReplicasOnInitiator();
@@ -2862,7 +2874,8 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
         query_analyzer->aggregationKeys(),
         query_analyzer->aggregationKeysList(),
         query_analyzer->aggregates(),
-        should_produce_results_in_order_of_bucket_number);
+        should_produce_results_in_order_of_bucket_number,
+        std::move(group_by_sort_description));
 }
 
 
@@ -2959,15 +2972,15 @@ static bool windowDescriptionComparator(const WindowDescription * _left, const W
     {
         if (left[i].column_name < right[i].column_name)
             return true;
-        if (left[i].column_name > right[i].column_name)
+        else if (left[i].column_name > right[i].column_name)
             return false;
-        if (left[i].direction < right[i].direction)
+        else if (left[i].direction < right[i].direction)
             return true;
-        if (left[i].direction > right[i].direction)
+        else if (left[i].direction > right[i].direction)
             return false;
-        if (left[i].nulls_direction < right[i].nulls_direction)
+        else if (left[i].nulls_direction < right[i].nulls_direction)
             return true;
-        if (left[i].nulls_direction > right[i].nulls_direction)
+        else if (left[i].nulls_direction > right[i].nulls_direction)
             return false;
 
         assert(left[i] == right[i]);
@@ -3032,7 +3045,8 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
                 window.full_sort_description,
                 window.partition_by,
                 0 /* LIMIT */,
-                sort_settings);
+                sort_settings,
+                settings[Setting::optimize_sorting_by_input_stream_properties]);
             sorting_step->setStepDescription("Sorting for window '" + window.window_name + "'");
             query_plan.addStep(std::move(sorting_step));
         }
@@ -3082,6 +3096,8 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
         return;
     }
 
+    const Settings & settings = context->getSettingsRef();
+
     SortingStep::Settings sort_settings(*context);
 
     /// Merge the sorted blocks.
@@ -3089,7 +3105,8 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
         query_plan.getCurrentDataStream(),
         output_order_descr,
         limit,
-        sort_settings);
+        sort_settings,
+        settings[Setting::optimize_sorting_by_input_stream_properties]);
 
     sorting_step->setStepDescription("Sorting for ORDER BY");
     query_plan.addStep(std::move(sorting_step));
@@ -3144,7 +3161,8 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
             limits,
             limit_for_distinct,
             columns,
-            pre_distinct);
+            pre_distinct,
+            settings[Setting::optimize_distinct_in_order]);
 
         if (pre_distinct)
             distinct_step->setStepDescription("Preliminary DISTINCT");

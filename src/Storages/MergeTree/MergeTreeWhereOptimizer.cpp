@@ -236,12 +236,12 @@ static bool isConditionGood(const RPNBuilderTreeNode & condition, const NameSet 
         const auto value = output_value.safeGet<UInt64>();
         return value > threshold;
     }
-    if (type == Field::Types::Int64)
+    else if (type == Field::Types::Int64)
     {
         const auto value = output_value.safeGet<Int64>();
         return value < -threshold || threshold < value;
     }
-    if (type == Field::Types::Float64)
+    else if (type == Field::Types::Float64)
     {
         const auto value = output_value.safeGet<Float64>();
         return value < -threshold || threshold < value;

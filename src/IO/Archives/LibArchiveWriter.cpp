@@ -114,7 +114,8 @@ private:
     {
         if (size)
             return size;
-        return offset();
+        else
+            return offset();
     }
 
     void closeFile(bool throw_if_error)

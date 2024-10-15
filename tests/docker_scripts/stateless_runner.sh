@@ -62,14 +62,20 @@ source /repo/tests/docker_scripts/utils.lib
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
 if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then
-    sudo sed -i "/<use_xid_64>1<\/use_xid_64>/d" /etc/clickhouse-server/config.d/zookeeper.xml
+    sudo sed -i "/<use_compression>1<\/use_compression>/d" /etc/clickhouse-server/config.d/zookeeper.xml
+
+    # it contains some new settings, but we can safely remove it
+    rm /etc/clickhouse-server/config.d/handlers.yaml
+    rm /etc/clickhouse-server/users.d/s3_cache_new.xml
+    rm /etc/clickhouse-server/config.d/zero_copy_destructive_operations.xml
 
     function remove_keeper_config()
     {
         sudo sed -i "/<$1>$2<\/$1>/d" /etc/clickhouse-server/config.d/keeper_port.xml
     }
-
-    remove_keeper_config "remove_recursive" "[[:digit:]]\+"
+    # commit_logs_cache_size_threshold setting doesn't exist on some older versions
+    remove_keeper_config "commit_logs_cache_size_threshold" "[[:digit:]]\+"
+    remove_keeper_config "latest_logs_cache_size_threshold" "[[:digit:]]\+"
 fi
 
 export IS_FLAKY_CHECK=0
@@ -174,24 +180,26 @@ setup_logs_replication
 attach_gdb_to_clickhouse
 
 # create tables for minio log webhooks
-clickhouse-client --allow_experimental_json_type=1 --query "CREATE TABLE minio_audit_logs
+clickhouse-client --query "CREATE TABLE minio_audit_logs
 (
-    log JSON(time DateTime64(9))
+    log String,
+    event_time DateTime64(9) MATERIALIZED parseDateTime64BestEffortOrZero(trim(BOTH '\"' FROM JSONExtractRaw(log, 'time')), 9, 'UTC')
 )
 ENGINE = MergeTree
 ORDER BY tuple()"
 
-clickhouse-client --allow_experimental_json_type=1 --query "CREATE TABLE minio_server_logs
+clickhouse-client --query "CREATE TABLE minio_server_logs
 (
-    log JSON(time DateTime64(9))
+    log String,
+    event_time DateTime64(9) MATERIALIZED parseDateTime64BestEffortOrZero(trim(BOTH '\"' FROM JSONExtractRaw(log, 'time')), 9, 'UTC')
 )
 ENGINE = MergeTree
 ORDER BY tuple()"
 
 # create minio log webhooks for both audit and server logs
 # use async inserts to avoid creating too many parts
-./mc admin config set clickminio logger_webhook:ch_server_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&date_time_input_format=best_effort&query=INSERT%20INTO%20minio_server_logs%20FORMAT%20JSONAsObject" queue_size=1000000 batch_size=500
-./mc admin config set clickminio audit_webhook:ch_audit_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&date_time_input_format=best_effort&query=INSERT%20INTO%20minio_audit_logs%20FORMAT%20JSONAsObject" queue_size=1000000 batch_size=500
+./mc admin config set clickminio logger_webhook:ch_server_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&query=INSERT%20INTO%20minio_server_logs%20FORMAT%20LineAsString" queue_size=1000000 batch_size=500
+./mc admin config set clickminio audit_webhook:ch_audit_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&query=INSERT%20INTO%20minio_audit_logs%20FORMAT%20LineAsString" queue_size=1000000 batch_size=500
 
 max_retries=100
 retry=1
@@ -376,9 +384,9 @@ done
 # collect minio audit and server logs
 # wait for minio to flush its batch if it has any
 sleep 1
-clickhouse-client -q "SYSTEM FLUSH ASYNC INSERT QUEUE" ||:
-clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_audit_logs ORDER BY log.time INTO OUTFILE '/test_output/minio_audit_logs.jsonl.zst' FORMAT JSONEachRow" ||:
-clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_server_logs ORDER BY log.time INTO OUTFILE '/test_output/minio_server_logs.jsonl.zst' FORMAT JSONEachRow" ||:
+clickhouse-client -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
+clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_audit_logs ORDER BY event_time INTO OUTFILE '/test_output/minio_audit_logs.jsonl.zst' FORMAT JSONEachRow"
+clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_server_logs ORDER BY event_time INTO OUTFILE '/test_output/minio_server_logs.jsonl.zst' FORMAT JSONEachRow"
 
 # Stop server so we can safely read data with clickhouse-local.
 # Why do we read data with clickhouse-local?

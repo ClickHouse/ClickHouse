@@ -71,7 +71,6 @@ namespace Setting
     extern const SettingsBool use_concurrency_control;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 parallel_distributed_insert_select;
-    extern const SettingsBool enable_parsing_to_custom_serialization;
 }
 
 namespace ErrorCodes
@@ -163,9 +162,10 @@ Block InterpreterInsertQuery::getSampleBlock(
     {
         if (auto * window_view = dynamic_cast<StorageWindowView *>(table.get()))
             return window_view->getInputHeader();
-        if (no_destination)
+        else if (no_destination)
             return metadata_snapshot->getSampleBlockWithVirtuals(table->getVirtualsList());
-        return metadata_snapshot->getSampleBlockNonMaterialized();
+        else
+            return metadata_snapshot->getSampleBlockNonMaterialized();
     }
 
     /// Form the block based on the column names from the query
@@ -217,7 +217,7 @@ Block InterpreterInsertQuery::getSampleBlockImpl(
     for (const auto & current_name : names)
     {
         if (res.has(current_name))
-            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column {} in table {} specified more than once", current_name, table->getStorageID().getNameForLogs());
+            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column {} specified more than once", current_name);
 
         /// Column is not ordinary or ephemeral
         if (!table_sample_insertable.has(current_name))
@@ -563,10 +563,11 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         return std::make_shared<ExpressionTransform>(in_header, actions);
     });
 
-    /// We need to convert Sparse columns to full if the destination storage doesn't support them.
+    /// We need to convert Sparse columns to full, because it's destination storage
+    /// may not support it or may have different settings for applying Sparse serialization.
     pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
     {
-        return std::make_shared<MaterializingTransform>(in_header, !table->supportsSparseSerialization());
+        return std::make_shared<MaterializingTransform>(in_header);
     });
 
     pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
@@ -736,13 +737,10 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     if (query.hasInlinedData() && !async_insert)
     {
+        /// can execute without additional data
         auto format = getInputFormatFromASTInsertQuery(query_ptr, true, query_sample_block, getContext(), nullptr);
-
-        for (auto & buffer : owned_buffers)
+        for (auto && buffer : owned_buffers)
             format->addBuffer(std::move(buffer));
-
-        if (settings[Setting::enable_parsing_to_custom_serialization])
-            format->setSerializationHints(table->getSerializationHints());
 
         auto pipe = getSourceFromInputFormat(query_ptr, std::move(format), getContext(), nullptr);
         pipeline.complete(std::move(pipe));

@@ -174,7 +174,8 @@ String StorageNATS::getTableBasedName(String name, const StorageID & table_id)
 {
     if (name.empty())
         return fmt::format("{}_{}", table_id.database_name, table_id.table_name);
-    return fmt::format("{}_{}_{}", name, table_id.database_name, table_id.table_name);
+    else
+        return fmt::format("{}_{}_{}", name, table_id.database_name, table_id.table_name);
 }
 
 
@@ -399,8 +400,10 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
                             "This NATS engine reads from multiple subjects. "
                             "You must specify `stream_like_engine_insert_queue` to choose the subject to write to");
         }
-
-        subject = subjects[0];
+        else
+        {
+            subject = subjects[0];
+        }
     }
 
     auto pos = subject.find('*');
@@ -730,9 +733,10 @@ bool StorageNATS::streamToViews()
         LOG_TRACE(log, "Reschedule streaming. Queues are empty.");
         return true;
     }
-
-    startLoop();
-
+    else
+    {
+        startLoop();
+    }
 
     /// Do not reschedule, do not stop event loop.
     return false;

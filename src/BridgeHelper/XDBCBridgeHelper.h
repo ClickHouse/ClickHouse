@@ -242,8 +242,7 @@ protected:
             if (character.length() > 1)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Failed to parse quoting style from '{}' for service {}",
                     character, BridgeHelperMixin::serviceAlias());
-
-            if (character.empty())
+            else if (character.empty())
                 quote_style = IdentifierQuotingStyle::Backticks;
             else if (character[0] == '`')
                 quote_style = IdentifierQuotingStyle::Backticks;

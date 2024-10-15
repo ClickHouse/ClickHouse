@@ -119,8 +119,6 @@ public:
 
     void resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context);
 
-    void resolveConstantExpression(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context);
-
 private:
     /// Utility functions
 

@@ -235,10 +235,12 @@ namespace
                 /// tuple(windowID(timestamp, toIntervalSecond('5')))
                 return;
             }
-
-            /// windowID(timestamp, toIntervalSecond('5')) -> identifier.
-            /// and other...
-            node_ptr = std::make_shared<ASTIdentifier>(node.getColumnName());
+            else
+            {
+                /// windowID(timestamp, toIntervalSecond('5')) -> identifier.
+                /// and other...
+                node_ptr = std::make_shared<ASTIdentifier>(node.getColumnName());
+            }
         }
 
         static void visit(const ASTIdentifier & node, ASTPtr & node_ptr, Data & data)
@@ -407,11 +409,13 @@ UInt32 StorageWindowView::getCleanupBound()
         return 0;
     if (is_proctime)
         return max_fired_watermark;
-
-    auto w_bound = max_fired_watermark;
-    if (allowed_lateness)
-        w_bound = addTime(w_bound, lateness_kind, -lateness_num_units, *time_zone);
-    return getWindowLowerBound(w_bound);
+    else
+    {
+        auto w_bound = max_fired_watermark;
+        if (allowed_lateness)
+            w_bound = addTime(w_bound, lateness_kind, -lateness_num_units, *time_zone);
+        return getWindowLowerBound(w_bound);
+    }
 }
 
 ASTPtr StorageWindowView::getCleanupQuery()
@@ -922,9 +926,12 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
     { \
         if (is_tumble) \
             return ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, window_num_units, *time_zone); \
-        UInt32 w_start = ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, hop_num_units, *time_zone); \
-        UInt32 w_end = AddTime<IntervalKind::Kind::KIND>::execute(w_start, hop_num_units, *time_zone);\
-        return AddTime<IntervalKind::Kind::KIND>::execute(w_end, -window_num_units, *time_zone);\
+        else \
+        {\
+            UInt32 w_start = ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, hop_num_units, *time_zone); \
+            UInt32 w_end = AddTime<IntervalKind::Kind::KIND>::execute(w_start, hop_num_units, *time_zone);\
+            return AddTime<IntervalKind::Kind::KIND>::execute(w_end, -window_num_units, *time_zone);\
+        }\
     }
         CASE_WINDOW_KIND(Second)
         CASE_WINDOW_KIND(Minute)

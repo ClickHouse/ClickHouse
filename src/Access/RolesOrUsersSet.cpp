@@ -80,13 +80,15 @@ void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControl *
                 return *id;
             return access_control->getID<Role>(name);
         }
-        if (ast.allow_users)
+        else if (ast.allow_users)
         {
             return access_control->getID<User>(name);
         }
-
-        assert(ast.allow_roles);
-        return access_control->getID<Role>(name);
+        else
+        {
+            assert(ast.allow_roles);
+            return access_control->getID<Role>(name);
+        }
     };
 
     if (!ast.names.empty() && !all)
