@@ -116,8 +116,7 @@ public:
         bool allow_missing_columns_,
         bool null_as_default_,
         bool case_insensitive_matching_ = false,
-        bool dictionary_as_low_cardinality_ = false,
-        std::unique_ptr<orc::StripeInformation> stripe_info_ = {});
+        bool dictionary_as_low_cardinality_ = false);
 
     void orcTableToCHChunk(
         Chunk & res,
@@ -143,7 +142,6 @@ private:
     bool null_as_default;
     bool case_insensitive_matching;
     bool dictionary_as_low_cardinality;
-    std::unique_ptr<orc::StripeInformation> stripe_info;
 };
 }
 #endif
