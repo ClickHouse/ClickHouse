@@ -5461,6 +5461,10 @@ Only available in ClickHouse Cloud. Number of background threads for speculative
     M(Int64, ignore_cold_parts_seconds, 0, R"(
 Only available in ClickHouse Cloud. Exclude new data parts from SELECT queries until they're either pre-warmed (see cache_populated_by_fetch) or this many seconds old. Only for Replicated-/SharedMergeTree.
 )", 0) \
+    M(Bool, short_circuit_default_implementation_for_nulls, true, R"(
+Setting for short-circuit default implementations for null in function with useDefaultImplementationForNulls() = true.
+If true, function will not actually evaluate for rows in which there are at least one argument with null value.
+)", 0) \
     M(Int64, prefer_warmed_unmerged_parts_seconds, 0, R"(
 Only available in ClickHouse Cloud. If a merged part is less than this many seconds old and is not pre-warmed (see cache_populated_by_fetch), but all its source parts are available and pre-warmed, SELECT queries will read from those parts instead. Only for ReplicatedMergeTree. Note that this only checks whether CacheWarmer processed the part; if the part was fetched into cache by something else, it'll still be considered cold until CacheWarmer gets to it; if it was warmed, then evicted from cache, it'll still be considered warm.
 )", 0) \
