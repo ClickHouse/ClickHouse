@@ -95,7 +95,7 @@ int QueryOracle::DumpTableContent(const SQLTable &t, sql_query_grammar::SQLQuery
 	sql_query_grammar::OrderByList *obs = sel->mutable_orderby()->mutable_olist();
 	sql_query_grammar::ExprSchemaTable *est = jt->mutable_est();
 
-	est->mutable_database()->set_database("s" + std::to_string(t.db->dname));
+	est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
 	est->mutable_table()->set_table("t" + std::to_string(t.tname));
 	jt->set_final(t.SupportsFinal());
 	for (const auto &col : t.cols) {
@@ -218,7 +218,7 @@ int QueryOracle::GenerateExportQuery(RandomGenerator &rg, const SQLTable &t, sql
 	sql_query_grammar::JoinedTable *jt = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
 	sql_query_grammar::ExprSchemaTable *est = jt->mutable_est();
 
-	est->mutable_database()->set_database("s" + std::to_string(t.db->dname));
+	est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
 	est->mutable_table()->set_table("t" + std::to_string(t.tname));
 	jt->set_final(t.SupportsFinal());
 	return 0;
@@ -228,7 +228,7 @@ int QueryOracle::GenerateClearQuery(const SQLTable &t, sql_query_grammar::SQLQue
 	sql_query_grammar::Truncate *trunc = sq3.mutable_inner_query()->mutable_trunc();
 	sql_query_grammar::ExprSchemaTable *est = trunc->mutable_est();
 
-	est->mutable_database()->set_database("s" + std::to_string(t.db->dname));
+	est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
 	est->mutable_table()->set_table("t" + std::to_string(t.tname));
 	return 0;
 }
@@ -241,7 +241,7 @@ int QueryOracle::GenerateImportQuery(const SQLTable &t, const sql_query_grammar:
 	const sql_query_grammar::FileFunc &ff = sq2.inner_query().insert().tfunction().file();
 	sql_query_grammar::ExprSchemaTable *est = iit->mutable_est();
 
-	est->mutable_database()->set_database("s" + std::to_string(t.db->dname));
+	est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
 	est->mutable_table()->set_table("t" + std::to_string(t.tname));
 	for (const auto &entry : t.cols) {
 		if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
