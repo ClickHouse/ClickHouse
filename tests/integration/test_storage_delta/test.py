@@ -911,6 +911,7 @@ def test_replicated_database_and_unavailable_s3(started_cluster):
     node1 = started_cluster.instances["node1"]
     node2 = started_cluster.instances["node2"]
 
+    DB_NAME = randomize_table_name("db")
     TABLE_NAME = randomize_table_name("test_replicated_database_and_unavailable_s3")
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_restricted_bucket
@@ -919,10 +920,10 @@ def test_replicated_database_and_unavailable_s3(started_cluster):
         minio_client.make_bucket(bucket)
 
     node1.query(
-        "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node1')"
+        f"CREATE DATABASE {DB_NAME} ENGINE=Replicated('/clickhouse/databases/{DB_NAME}', 'shard1', 'node1')"
     )
     node2.query(
-        "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node2')"
+        f"CREATE DATABASE {DB_NAME} ENGINE=Replicated('/clickhouse/databases/{DB_NAME}', 'shard1', 'node2')"
     )
 
     parquet_data_path = create_initial_data_file(
@@ -975,20 +976,20 @@ def test_replicated_database_and_unavailable_s3(started_cluster):
 
         node1.query(
             f"""
-            DROP TABLE IF EXISTS r.{TABLE_NAME};
-            CREATE TABLE r.{TABLE_NAME}
+            DROP TABLE IF EXISTS {DB_NAME}.{TABLE_NAME};
+            CREATE TABLE {DB_NAME}.{TABLE_NAME}
             AS deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{TABLE_NAME}' , 'minio', 'minio123')
             """
         )
 
         assert TABLE_NAME in node1.query(
-            f"select name from system.tables where database = 'r'"
+            f"select name from system.tables where database = '{DB_NAME}'"
         )
         assert TABLE_NAME in node2.query(
-            f"select name from system.tables where database = 'r'"
+            f"select name from system.tables where database = '{DB_NAME}'"
         )
 
-        replica_path = "/clickhouse/databases/replicateddb/replicas/shard1|node2"
+        replica_path = f"/clickhouse/databases/{DB_NAME}/replicas/shard1|node2"
         zk = started_cluster.get_kazoo_client("zoo1")
         zk.set(replica_path + "/digest", "123456".encode())
 
