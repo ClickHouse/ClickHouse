@@ -56,8 +56,15 @@ public:
 	uint32_t iname = 0;
 };
 
+struct SQLDatabase {
+public:
+	uint32_t dname = 0;
+	sql_query_grammar::DatabaseEngineValues deng;
+};
+
 struct SQLBase {
 public:
+	std::shared_ptr<SQLDatabase> db;
 	bool attached = true, is_shared_engine = false;
 	sql_query_grammar::TableEngineValues teng;
 

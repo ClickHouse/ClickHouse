@@ -81,7 +81,8 @@ private:
 
 	std::string buf;
 	bool in_transaction = false, inside_projection = false, allow_not_deterministic = true;
-	uint32_t table_counter = 0, current_level = 0;
+	uint32_t table_counter = 0, database_counter = 0, current_level = 0;
+	std::map<uint32_t, std::shared_ptr<SQLDatabase>> staged_databases, databases;
 	std::map<uint32_t, SQLTable> staged_tables, tables;
 	std::map<uint32_t, SQLView> staged_views, views;
 
@@ -89,7 +90,7 @@ private:
 	std::vector<InsertEntry> entries;
 	std::vector<std::reference_wrapper<const SQLTable>> filtered_tables;
 	std::vector<std::reference_wrapper<const SQLView>> filtered_views;
-	uint32_t depth = 0, width = 0, max_depth = 3, max_width = 3, max_tables = 10, max_views = 5;
+	uint32_t depth = 0, width = 0, max_depth = 3, max_width = 3, max_databases = 4, max_tables = 10, max_views = 5;
 
 	std::map<uint32_t, std::map<std::string, SQLRelation>> ctes;
 	std::map<uint32_t, QueryLevel> levels;
@@ -253,6 +254,7 @@ public:
 	}
 
 	int GenerateNextCreateTable(RandomGenerator &rg, sql_query_grammar::CreateTable *sq);
+	int GenerateNextCreateDatabase(RandomGenerator &rg, sql_query_grammar::CreateDatabase *cd);
 	int GenerateNextStatement(RandomGenerator &rg, sql_query_grammar::SQLQuery &sq);
 
 	void UpdateGenerator(const sql_query_grammar::SQLQuery &sq, const bool success);

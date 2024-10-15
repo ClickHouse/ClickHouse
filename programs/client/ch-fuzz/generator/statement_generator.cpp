@@ -43,6 +43,20 @@ int StatementGenerator::GenerateSettingList(RandomGenerator &rg,
 	return 0;
 }
 
+int StatementGenerator::GenerateNextCreateDatabase(RandomGenerator &rg, sql_query_grammar::CreateDatabase *cd) {
+	SQLDatabase next;
+	const uint32_t dname = this->database_counter++;
+	sql_query_grammar::DatabaseEngineValues val = rg.NextBool() ?
+		sql_query_grammar::DatabaseEngineValues::Atomic : sql_query_grammar::DatabaseEngineValues::Replicated;
+
+	next.deng = val;
+	cd->set_engine(val);
+	next.dname = dname;
+	cd->mutable_database()->set_database("d" + std::to_string(dname));
+	this->staged_databases[dname] = std::make_shared<SQLDatabase>(std::move(next));
+	return 0;
+}
+
 void StatementGenerator::AddTableRelation(RandomGenerator &rg, const bool allow_internal_cols, const std::string &rel_name, const SQLTable &t) {
 	NestedType *ntp = nullptr;
 	SQLRelation rel(rel_name);
@@ -1215,6 +1229,7 @@ int StatementGenerator::GenerateNextQuery(RandomGenerator &rg, sql_query_grammar
 													  CollectionHas<SQLView>(detached_views)),
 				   dettach = 2 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables) ||
 													   CollectionHas<SQLView>(attached_views)),
+				   create_database = 2 * static_cast<uint32_t>(databases.size() < this->max_databases),
 				   select_query = 300,
 				   prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table +
 								check_table + desc_table + exchange_tables + alter_table + set_values + attach +
@@ -1257,6 +1272,9 @@ int StatementGenerator::GenerateNextQuery(RandomGenerator &rg, sql_query_grammar
 	} else if (dettach && nopt < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table +
 								  desc_table + exchange_tables + alter_table + set_values + attach + dettach + 1)) {
 		return GenerateDetach(rg, sq->mutable_detach());
+	} else if (create_database && nopt < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table +
+										  desc_table + exchange_tables + alter_table + set_values + attach + dettach + create_database + 1)) {
+		return GenerateNextCreateDatabase(rg, sq->mutable_create_database());
 	}
 	return GenerateTopSelect(rg, sq->mutable_select());
 }
@@ -1436,6 +1454,13 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery &sq, 
 		} else {
 			this->tables[tname].attached = false;
 		}
+	} else if (sq.has_inner_query() && query.has_create_database()) {
+		const uint32_t dname = static_cast<uint32_t>(std::stoul(query.create_database().database().database().substr(1)));
+
+		if (success) {
+			this->databases[dname] = std::move(this->staged_databases[dname]);
+		}
+		this->staged_databases.erase(dname);
 	}
 }
 
