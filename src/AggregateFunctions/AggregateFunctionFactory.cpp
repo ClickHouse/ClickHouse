@@ -205,12 +205,14 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             query_context->addQueryFactoriesInfo(
                 Context::QueryLogFactories::AggregateFunction, is_case_insensitive ? case_insensitive_name : name);
 
+        const Settings * settings = query_context ? &query_context->getSettingsRef() : nullptr;
+        auto func_ptr = found.creator(name, argument_types, parameters, settings);
+
         /// The case when aggregate function should return NULL on NULL arguments. This case is handled in "get" method.
         if (!out_properties.returns_default_when_only_null && has_null_arguments)
             return nullptr;
 
-        const Settings * settings = query_context ? &query_context->getSettingsRef() : nullptr;
-        return found.creator(name, argument_types, parameters, settings);
+        return func_ptr;
     }
 
     /// Combinators of aggregate functions.
