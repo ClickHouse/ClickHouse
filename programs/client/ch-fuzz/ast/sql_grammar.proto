@@ -2364,9 +2364,14 @@ enum DatabaseEngineValues {
   Replicated = 3;
 }
 
+message DatabaseEngine {
+  required DatabaseEngineValues engine = 2;
+  optional uint32 zoo_path = 4;
+}
+
 message CreateDatabase {
   required Database database = 1;
-  required DatabaseEngineValues engine = 2;
+  required DatabaseEngine dengine = 2;
 }
 
 message Decimal {

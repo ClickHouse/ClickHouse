@@ -46,11 +46,15 @@ int StatementGenerator::GenerateSettingList(RandomGenerator &rg,
 int StatementGenerator::GenerateNextCreateDatabase(RandomGenerator &rg, sql_query_grammar::CreateDatabase *cd) {
 	SQLDatabase next;
 	const uint32_t dname = this->database_counter++;
+	sql_query_grammar::DatabaseEngine *deng = cd->mutable_dengine();
 	sql_query_grammar::DatabaseEngineValues val = rg.NextBool() ?
 		sql_query_grammar::DatabaseEngineValues::Atomic : sql_query_grammar::DatabaseEngineValues::Replicated;
 
 	next.deng = val;
-	cd->set_engine(val);
+	deng->set_engine(val);
+	if (val == sql_query_grammar::DatabaseEngineValues::Replicated) {
+		deng->set_zoo_path(this->zoo_path_counter++);
+	}
 	next.dname = dname;
 	cd->mutable_database()->set_database("d" + std::to_string(dname));
 	this->staged_databases[dname] = std::make_shared<SQLDatabase>(std::move(next));
@@ -1422,7 +1426,7 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery &sq, 
 		} else if (drp.sobject() == sql_query_grammar::SQLObject::VIEW) {
 			this->views.erase(static_cast<uint32_t>(std::stoul(drp.object().est().table().table().substr(1))));
 		} else if (drp.sobject() == sql_query_grammar::SQLObject::DATABASE) {
-			const uint32_t dname = static_cast<uint32_t>(std::stoul(drp.object().est().database().database().substr(1)));
+			const uint32_t dname = static_cast<uint32_t>(std::stoul(drp.object().database().database().substr(1)));
 
 			for (auto it = this->tables.cbegin(); it != this->tables.cend();) {
 				if (it->second.db->dname == dname) {

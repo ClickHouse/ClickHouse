@@ -1650,16 +1650,22 @@ CONV_FN(SettingValues, setv) {
   }
 }
 
-CONV_FN(CreateDatabase, create_database) {
-  const sql_query_grammar::DatabaseEngineValues dengine = create_database.engine();
+CONV_FN(DatabaseEngine, deng) {
+  const sql_query_grammar::DatabaseEngineValues dengine = deng.engine();
 
+  ret += DatabaseEngineValues_Name(dengine);
+  if (dengine == sql_query_grammar::DatabaseEngineValues::Replicated) {
+    ret += "('/test/db";
+    ret += std::to_string(deng.zoo_path());
+    ret += "(', 's1', 'r1')";
+  }
+}
+
+CONV_FN(CreateDatabase, create_database) {
   ret += "CREATE DATABASE ";
   DatabaseToString(ret, create_database.database());
   ret += " ENGINE = ";
-  ret += DatabaseEngineValues_Name(dengine);
-  if (dengine == sql_query_grammar::DatabaseEngineValues::Replicated) {
-    ret += "('/test/db', 's1', 'r1')";
-  }
+  DatabaseEngineToString(ret, create_database.dengine());
 }
 
 CONV_FN(ColumnDef, cdf) {
