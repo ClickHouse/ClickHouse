@@ -11,6 +11,7 @@ RUN apt-get update \
         curl \
         default-jre \
         g++ \
+        gdb \
         iproute2 \
         krb5-user \
         libicu-dev \
@@ -72,6 +73,3 @@ maxClientCnxns=80' > /opt/zookeeper/conf/zoo.cfg && \
 
 ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
-
-COPY --from=clickhouse/cctools:0d6b90a7a490 /opt/gdb /opt/gdb
-ENV PATH="/opt/gdb/bin:${PATH}"

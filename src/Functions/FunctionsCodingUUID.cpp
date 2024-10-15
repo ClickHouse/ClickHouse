@@ -40,7 +40,7 @@ std::pair<int, int> determineBinaryStartIndexWithIncrement(ptrdiff_t num_bytes, 
 {
     if (representation == Representation::BigEndian)
         return {0, 1};
-    if (representation == Representation::LittleEndian)
+    else if (representation == Representation::LittleEndian)
         return {num_bytes - 1, -1};
 
     throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "{} is not handled yet", magic_enum::enum_name(representation));
@@ -174,15 +174,10 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
-
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const ColumnWithTypeAndName & col_type_name = arguments[0];
         const ColumnPtr & column = col_type_name.column;
@@ -194,20 +189,21 @@ public:
                                 "Illegal type {} of column {} argument of function {}, expected FixedString({})",
                                 col_type_name.type->getName(), col_in->getName(), getName(), uuid_bytes_length);
 
+            const auto size = col_in->size();
             const auto & vec_in = col_in->getChars();
 
             auto col_res = ColumnString::create();
 
             ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
-            vec_res.resize(input_rows_count * (uuid_text_length + 1));
-            offsets_res.resize(input_rows_count);
+            vec_res.resize(size * (uuid_text_length + 1));
+            offsets_res.resize(size);
 
             size_t src_offset = 0;
             size_t dst_offset = 0;
 
             const UUIDSerializer uuid_serializer(variant);
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < size; ++i)
             {
                 uuid_serializer.deserialize(&vec_in[src_offset], &vec_res[dst_offset]);
                 src_offset += uuid_bytes_length;
@@ -219,8 +215,9 @@ public:
 
             return col_res;
         }
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                            arguments[0].column->getName(), getName());
     }
 };
 
@@ -259,7 +256,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const ColumnWithTypeAndName & col_type_name = arguments[0];
         const ColumnPtr & column = col_type_name.column;
@@ -269,16 +266,17 @@ public:
         {
             const auto & vec_in = col_in->getChars();
             const auto & offsets_in = col_in->getOffsets();
+            const size_t size = offsets_in.size();
 
             auto col_res = ColumnFixedString::create(uuid_bytes_length);
 
             ColumnString::Chars & vec_res = col_res->getChars();
-            vec_res.resize(input_rows_count * uuid_bytes_length);
+            vec_res.resize(size * uuid_bytes_length);
 
             size_t src_offset = 0;
             size_t dst_offset = 0;
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < size; ++i)
             {
                 /// If string has incorrect length - then return zero UUID.
                 /// If string has correct length but contains something not like UUID - implementation specific behaviour.
@@ -295,28 +293,25 @@ public:
 
             return col_res;
         }
-        if (const auto * col_in_fixed = checkAndGetColumn<ColumnFixedString>(column.get()))
+        else if (const auto * col_in_fixed = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             if (col_in_fixed->getN() != uuid_text_length)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of column {} argument of function {}, expected FixedString({})",
-                    col_type_name.type->getName(),
-                    col_in_fixed->getName(),
-                    getName(),
-                    uuid_text_length);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Illegal type {} of column {} argument of function {}, expected FixedString({})",
+                                col_type_name.type->getName(), col_in_fixed->getName(), getName(), uuid_text_length);
 
+            const auto size = col_in_fixed->size();
             const auto & vec_in = col_in_fixed->getChars();
 
             auto col_res = ColumnFixedString::create(uuid_bytes_length);
 
             ColumnString::Chars & vec_res = col_res->getChars();
-            vec_res.resize(input_rows_count * uuid_bytes_length);
+            vec_res.resize(size * uuid_bytes_length);
 
             size_t src_offset = 0;
             size_t dst_offset = 0;
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < size; ++i)
             {
                 uuid_serializer.serialize(&vec_in[src_offset], &vec_res[dst_offset]);
                 src_offset += uuid_text_length;
@@ -325,8 +320,9 @@ public:
 
             return col_res;
         }
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                            arguments[0].column->getName(), getName());
     }
 };
 
@@ -363,7 +359,7 @@ public:
         return std::make_shared<DataTypeFixedString>(uuid_bytes_length);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const ColumnWithTypeAndName & col_type_name = arguments[0];
         const ColumnPtr & column = col_type_name.column;
@@ -374,15 +370,16 @@ public:
         {
             const auto & vec_in = col_in->getData();
             const UUID * uuids = vec_in.data();
+            const size_t size = vec_in.size();
 
             auto col_res = ColumnFixedString::create(uuid_bytes_length);
 
             ColumnString::Chars & vec_res = col_res->getChars();
-            vec_res.resize(input_rows_count * uuid_bytes_length);
+            vec_res.resize(size * uuid_bytes_length);
 
             size_t dst_offset = 0;
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < size; ++i)
             {
                 uint64_t hiBytes = DB::UUIDHelpers::getHighBytes(uuids[i]);
                 uint64_t loBytes = DB::UUIDHelpers::getLowBytes(uuids[i]);
@@ -400,8 +397,9 @@ public:
 
             return col_res;
         }
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
+        else
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 };
 
@@ -450,7 +448,7 @@ public:
         return std::make_shared<DataTypeDateTime64>(datetime_scale, timezone);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const ColumnWithTypeAndName & col_type_name = arguments[0];
         const ColumnPtr & column = col_type_name.column;
@@ -459,11 +457,12 @@ public:
         {
             const auto & vec_in = col_in->getData();
             const UUID * uuids = vec_in.data();
+            const size_t size = vec_in.size();
 
-            auto col_res = ColumnDateTime64::create(input_rows_count, datetime_scale);
+            auto col_res = ColumnDateTime64::create(size, datetime_scale);
             auto & vec_res = col_res->getData();
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < size; ++i)
             {
                 const uint64_t hiBytes = DB::UUIDHelpers::getHighBytes(uuids[i]);
                 const uint64_t ms = ((hiBytes & 0xf000) == 0x7000) ? (hiBytes >> 16) : 0;
@@ -473,8 +472,9 @@ public:
 
             return col_res;
         }
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
+        else
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 };
 

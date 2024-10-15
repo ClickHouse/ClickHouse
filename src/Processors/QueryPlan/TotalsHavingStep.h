@@ -1,10 +1,12 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/Transforms/finalizeChunk.h>
-#include <Interpreters/ActionsDAG.h>
 
 namespace DB
 {
+
+class ActionsDAG;
+using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
 enum class TotalsMode : uint8_t;
 
@@ -16,7 +18,7 @@ public:
         const DataStream & input_stream_,
         const AggregateDescriptions & aggregates_,
         bool overflow_row_,
-        std::optional<ActionsDAG> actions_dag_,
+        const ActionsDAGPtr & actions_dag_,
         const std::string & filter_column_,
         bool remove_filter_,
         TotalsMode totals_mode_,
@@ -30,7 +32,7 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    const ActionsDAG * getActions() const { return actions_dag ? &*actions_dag : nullptr; }
+    const ActionsDAGPtr & getActions() const { return actions_dag; }
 
 private:
     void updateOutputStream() override;
@@ -38,7 +40,7 @@ private:
     const AggregateDescriptions aggregates;
 
     bool overflow_row;
-    std::optional<ActionsDAG> actions_dag;
+    ActionsDAGPtr actions_dag;
     String filter_column_name;
     bool remove_filter;
     TotalsMode totals_mode;

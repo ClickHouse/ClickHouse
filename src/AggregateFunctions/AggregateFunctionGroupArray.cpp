@@ -90,7 +90,8 @@ struct GroupArraySamplerData
         /// With a large number of values, we will generate random numbers several times slower.
         if (lim <= static_cast<UInt64>(pcg32_fast::max()))
             return rng() % lim;
-        return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(pcg32::max()) + 1ULL) + static_cast<UInt64>(rng())) % lim;
+        else
+            return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(pcg32::max()) + 1ULL) + static_cast<UInt64>(rng())) % lim;
     }
 
     void randomShuffle()
@@ -779,12 +780,12 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
-        if ((type == Field::Types::Int64 && parameters[0].safeGet<Int64>() < 0) ||
-            (type == Field::Types::UInt64 && parameters[0].safeGet<UInt64>() == 0))
+        if ((type == Field::Types::Int64 && parameters[0].get<Int64>() < 0) ||
+            (type == Field::Types::UInt64 && parameters[0].get<UInt64>() == 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
         has_limit = true;
-        max_elems = parameters[0].safeGet<UInt64>();
+        max_elems = parameters[0].get<UInt64>();
     }
     else
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -796,8 +797,8 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "groupArrayLast make sense only with max_elems (groupArrayLast(max_elems)())");
         return createAggregateFunctionGroupArrayImpl<GroupArrayTrait</* Thas_limit= */ false, Tlast, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters, max_elems, std::nullopt);
     }
-    return createAggregateFunctionGroupArrayImpl<GroupArrayTrait</* Thas_limit= */ true, Tlast, /* Tsampler= */ Sampler::NONE>>(
-        argument_types[0], parameters, max_elems, std::nullopt);
+    else
+        return createAggregateFunctionGroupArrayImpl<GroupArrayTrait</* Thas_limit= */ true, Tlast, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters, max_elems, std::nullopt);
 }
 
 AggregateFunctionPtr createAggregateFunctionGroupArraySample(
@@ -815,11 +816,11 @@ AggregateFunctionPtr createAggregateFunctionGroupArraySample(
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
-        if ((type == Field::Types::Int64 && parameters[i].safeGet<Int64>() < 0) ||
-                (type == Field::Types::UInt64 && parameters[i].safeGet<UInt64>() == 0))
+        if ((type == Field::Types::Int64 && parameters[i].get<Int64>() < 0) ||
+                (type == Field::Types::UInt64 && parameters[i].get<UInt64>() == 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
-        return parameters[i].safeGet<UInt64>();
+        return parameters[i].get<UInt64>();
     };
 
     UInt64 max_elems = get_parameter(0);

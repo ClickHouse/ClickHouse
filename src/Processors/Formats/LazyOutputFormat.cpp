@@ -45,8 +45,4 @@ void LazyOutputFormat::setRowsBeforeLimit(size_t rows_before_limit)
     info.setRowsBeforeLimit(rows_before_limit);
 }
 
-void LazyOutputFormat::setRowsBeforeAggregation(size_t rows_before_aggregation)
-{
-    info.setRowsBeforeAggregation(rows_before_aggregation);
-}
 }

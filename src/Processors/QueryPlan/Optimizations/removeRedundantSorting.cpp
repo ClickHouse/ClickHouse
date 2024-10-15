@@ -181,7 +181,7 @@ private:
             return true;
         }
         /// (2) sorting
-        if (const auto * next_sorting = typeid_cast<const SortingStep *>(step_affect_order); next_sorting)
+        else if (const auto * next_sorting = typeid_cast<const SortingStep *>(step_affect_order); next_sorting)
         {
             if (next_sorting->getType() == SortingStep::Type::Full)
                 return true;
@@ -215,12 +215,12 @@ private:
             logStep("checking for stateful function", node);
             if (const auto * expr = typeid_cast<const ExpressionStep *>(step); expr)
             {
-                if (expr->getExpression().hasStatefulFunctions())
+                if (expr->getExpression()->hasStatefulFunctions())
                     return false;
             }
             else if (const auto * filter = typeid_cast<const FilterStep *>(step); filter)
             {
-                if (filter->getExpression().hasStatefulFunctions())
+                if (filter->getExpression()->hasStatefulFunctions())
                     return false;
             }
             else

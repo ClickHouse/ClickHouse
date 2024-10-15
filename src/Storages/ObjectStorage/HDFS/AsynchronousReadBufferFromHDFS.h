@@ -35,7 +35,7 @@ public:
 
     void prefetch(Priority priority) override;
 
-    std::optional<size_t> tryGetFileSize() override;
+    size_t getFileSize() override;
 
     String getFileName() const override;
 

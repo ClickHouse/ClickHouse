@@ -22,14 +22,14 @@ public:
         const ExecutableSettings & settings,
         const std::vector<ASTPtr> & input_queries,
         const ColumnsDescription & columns,
-        const ConstraintsDescription & constraints,
-        const String & comment);
+        const ConstraintsDescription & constraints);
 
     String getName() const override
     {
         if (settings.is_executable_pool)
             return "ExecutablePool";
-        return "Executable";
+        else
+            return "Executable";
     }
 
     void read(

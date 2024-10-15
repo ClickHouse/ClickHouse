@@ -6,10 +6,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool stream_like_engine_allow_direct_select;
-}
 
 namespace ErrorCodes
 {
@@ -29,7 +25,7 @@ ReadFromStreamLikeEngine::ReadFromStreamLikeEngine(
 
 void ReadFromStreamLikeEngine::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    if (!getContext()->getSettingsRef()[Setting::stream_like_engine_allow_direct_select])
+    if (!getContext()->getSettingsRef().stream_like_engine_allow_direct_select)
         throw Exception(
             ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
 

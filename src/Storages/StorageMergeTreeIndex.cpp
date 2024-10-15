@@ -275,7 +275,7 @@ public:
 private:
     std::shared_ptr<StorageMergeTreeIndex> storage;
     Poco::Logger * log;
-    ExpressionActionsPtr virtual_columns_filter;
+    ActionsDAGPtr virtual_columns_filter;
 };
 
 void ReadFromMergeTreeIndex::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -289,9 +289,10 @@ void ReadFromMergeTreeIndex::applyFilters(ActionDAGNodes added_filter_nodes)
             { {}, std::make_shared<DataTypeString>(), StorageMergeTreeIndex::part_name_column.name },
         };
 
-        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
-        if (dag)
-            virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
+        virtual_columns_filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
+
+        if (virtual_columns_filter)
+            VirtualColumnUtils::buildSetsForDAG(*virtual_columns_filter, context);
     }
 }
 
@@ -344,7 +345,7 @@ void StorageMergeTreeIndex::read(
 
 void ReadFromMergeTreeIndex::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto filtered_parts = storage->getFilteredDataParts(virtual_columns_filter);
+    auto filtered_parts = storage->getFilteredDataParts(virtual_columns_filter, context);
 
     LOG_DEBUG(log, "Reading index{}from {} parts of table {}",
         storage->with_marks ? " with marks " : " ",
@@ -354,7 +355,7 @@ void ReadFromMergeTreeIndex::initializePipeline(QueryPipelineBuilder & pipeline,
     pipeline.init(Pipe(std::make_shared<MergeTreeIndexSource>(getOutputStream().header, storage->key_sample_block, std::move(filtered_parts), context, storage->with_marks)));
 }
 
-MergeTreeData::DataPartsVector StorageMergeTreeIndex::getFilteredDataParts(const ExpressionActionsPtr & virtual_columns_filter) const
+MergeTreeData::DataPartsVector StorageMergeTreeIndex::getFilteredDataParts(ActionsDAGPtr virtual_columns_filter, const ContextPtr & context) const
 {
     if (!virtual_columns_filter)
         return data_parts;
@@ -364,7 +365,7 @@ MergeTreeData::DataPartsVector StorageMergeTreeIndex::getFilteredDataParts(const
         all_part_names->insert(part->name);
 
     Block filtered_block{{std::move(all_part_names), std::make_shared<DataTypeString>(), part_name_column.name}};
-    VirtualColumnUtils::filterBlockWithExpression(virtual_columns_filter, filtered_block);
+    VirtualColumnUtils::filterBlockWithDAG(virtual_columns_filter, filtered_block, context);
 
     if (!filtered_block.rows())
         return {};

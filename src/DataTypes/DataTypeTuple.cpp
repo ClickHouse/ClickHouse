@@ -11,7 +11,7 @@
 #include <DataTypes/Serializations/SerializationTuple.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
-#include <DataTypes/Serializations/SerializationWrapper.h>
+#include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <DataTypes/NestedUtils.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -192,12 +192,17 @@ MutableColumnPtr DataTypeTuple::createColumn() const
 
 MutableColumnPtr DataTypeTuple::createColumn(const ISerialization & serialization) const
 {
-    /// If we read subcolumn of nested Tuple or this Tuple is a subcolumn, it may be wrapped to SerializationWrapper
+    /// If we read Tuple as Variant subcolumn, it may be wrapped to SerializationVariantElement.
+    /// Here we don't need it, so we drop this wrapper.
+    const auto * current_serialization = &serialization;
+    while (const auto * serialization_variant_element = typeid_cast<const SerializationVariantElement *>(current_serialization))
+        current_serialization = serialization_variant_element->getNested().get();
+
+    /// If we read subcolumn of nested Tuple, it may be wrapped to SerializationNamed
     /// several times to allow to reconstruct the substream path name.
     /// Here we don't need substream path name, so we drop first several wrapper serializations.
-    const auto * current_serialization = &serialization;
-    while (const auto * serialization_wrapper = dynamic_cast<const SerializationWrapper *>(current_serialization))
-        current_serialization = serialization_wrapper->getNested().get();
+    while (const auto * serialization_named = typeid_cast<const SerializationNamed *>(current_serialization))
+        current_serialization = serialization_named->getNested().get();
 
     const auto * serialization_tuple = typeid_cast<const SerializationTuple *>(current_serialization);
     if (!serialization_tuple)
@@ -415,9 +420,10 @@ static DataTypePtr create(const ASTPtr & arguments)
 
     if (names.empty())
         return std::make_shared<DataTypeTuple>(nested_types);
-    if (names.size() != nested_types.size())
+    else if (names.size() != nested_types.size())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Names are specified not for all elements of Tuple type");
-    return std::make_shared<DataTypeTuple>(nested_types, names);
+    else
+        return std::make_shared<DataTypeTuple>(nested_types, names);
 }
 
 

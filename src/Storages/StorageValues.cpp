@@ -48,14 +48,14 @@ Pipe StorageValues::read(
 
     if (!prepared_pipe.empty())
     {
-        ActionsDAG dag(prepared_pipe.getHeader().getColumnsWithTypeAndName());
+        auto dag = std::make_shared<ActionsDAG>(prepared_pipe.getHeader().getColumnsWithTypeAndName());
         ActionsDAG::NodeRawConstPtrs outputs;
         outputs.reserve(column_names.size());
         for (const auto & name : column_names)
-            outputs.push_back(dag.getOutputs()[prepared_pipe.getHeader().getPositionByName(name)]);
+            outputs.push_back(dag->getOutputs()[prepared_pipe.getHeader().getPositionByName(name)]);
 
-        dag.getOutputs().swap(outputs);
-        auto expression = std::make_shared<ExpressionActions>(std::move(dag));
+        dag->getOutputs().swap(outputs);
+        auto expression = std::make_shared<ExpressionActions>(dag);
 
         prepared_pipe.addSimpleTransform([&](const Block & header)
         {

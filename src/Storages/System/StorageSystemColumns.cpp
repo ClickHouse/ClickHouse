@@ -25,18 +25,12 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsSeconds lock_acquire_timeout;
-}
+
 
 StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
-
-    /// NOTE: when changing the list of columns, take care of the ColumnsSource::generate method,
-    /// when they are referenced by their numeric positions.
     storage_metadata.setColumns(ColumnsDescription(
     {
         { "database",           std::make_shared<DataTypeString>(), "Database name."},
@@ -89,16 +83,11 @@ public:
         Storages storages_,
         ContextPtr context)
         : ISource(header_)
-        , columns_mask(std::move(columns_mask_))
-        , max_block_size(max_block_size_)
-        , databases(std::move(databases_))
-        , tables(std::move(tables_))
-        , storages(std::move(storages_))
+        , columns_mask(std::move(columns_mask_)), max_block_size(max_block_size_)
+        , databases(std::move(databases_)), tables(std::move(tables_)), storages(std::move(storages_))
         , client_info_interface(context->getClientInfo().interface)
-        , total_tables(tables->size())
-        , access(context->getAccess())
-        , query_id(context->getCurrentQueryId())
-        , lock_acquire_timeout(context->getSettingsRef()[Setting::lock_acquire_timeout])
+        , total_tables(tables->size()), access(context->getAccess())
+        , query_id(context->getCurrentQueryId()), lock_acquire_timeout(context->getSettingsRef().lock_acquire_timeout)
     {
         need_to_check_access_for_tables = !access->isGranted(AccessType::SHOW_COLUMNS);
     }
@@ -116,8 +105,8 @@ protected:
 
         while (rows_count < max_block_size && db_table_num < total_tables)
         {
-            const std::string database_name = (*databases)[db_table_num].safeGet<std::string>();
-            const std::string table_name = (*tables)[db_table_num].safeGet<std::string>();
+            const std::string database_name = (*databases)[db_table_num].get<std::string>();
+            const std::string table_name = (*tables)[db_table_num].get<std::string>();
             ++db_table_num;
 
             ColumnsDescription columns;
@@ -129,7 +118,9 @@ protected:
 
             {
                 StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
-                TableLockHolder table_lock = storage->tryLockForShare(query_id, lock_acquire_timeout);
+                TableLockHolder table_lock;
+
+                table_lock = storage->tryLockForShare(query_id, lock_acquire_timeout);
 
                 if (table_lock == nullptr)
                 {
@@ -140,18 +131,11 @@ protected:
                 auto metadata_snapshot = storage->getInMemoryMetadataPtr();
                 columns = metadata_snapshot->getColumns();
 
-                /// Certain information about a table - should be calculated only when the corresponding columns are queried.
-                if (columns_mask[7] || columns_mask[8] || columns_mask[9])
-                    column_sizes = storage->getColumnSizes();
-
-                if (columns_mask[11])
-                    cols_required_for_partition_key = metadata_snapshot->getColumnsRequiredForPartitionKey();
-                if (columns_mask[12])
-                    cols_required_for_sorting_key = metadata_snapshot->getColumnsRequiredForSortingKey();
-                if (columns_mask[13])
-                    cols_required_for_primary_key = metadata_snapshot->getColumnsRequiredForPrimaryKey();
-                if (columns_mask[14])
-                    cols_required_for_sampling = metadata_snapshot->getColumnsRequiredForSampling();
+                cols_required_for_partition_key = metadata_snapshot->getColumnsRequiredForPartitionKey();
+                cols_required_for_sorting_key = metadata_snapshot->getColumnsRequiredForSortingKey();
+                cols_required_for_primary_key = metadata_snapshot->getColumnsRequiredForPrimaryKey();
+                cols_required_for_sampling = metadata_snapshot->getColumnsRequiredForSampling();
+                column_sizes = storage->getColumnSizes();
             }
 
             /// A shortcut: if we don't allow to list this table in SHOW TABLES, also exclude it from system.columns.
@@ -354,7 +338,7 @@ private:
     std::shared_ptr<StorageSystemColumns> storage;
     std::vector<UInt8> columns_mask;
     const size_t max_block_size;
-    std::optional<ActionsDAG> virtual_columns_filter;
+    ActionsDAGPtr virtual_columns_filter;
 };
 
 void ReadFromSystemColumns::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -453,7 +437,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
 
         for (size_t i = 0; i < num_databases; ++i)
         {
-            const std::string database_name = (*database_column)[i].safeGet<std::string>();
+            const std::string database_name = (*database_column)[i].get<std::string>();
             if (database_name.empty())
             {
                 for (auto & [table_name, table] : external_tables)
@@ -484,7 +468,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
 
     /// Filter block with `database` and `table` columns.
     if (virtual_columns_filter)
-        VirtualColumnUtils::filterBlockWithPredicate(virtual_columns_filter->getOutputs().at(0), block_to_filter, context);
+        VirtualColumnUtils::filterBlockWithDAG(virtual_columns_filter, block_to_filter, context);
 
     if (!block_to_filter.rows())
     {

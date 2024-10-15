@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2120
 
+# Don't check for ODR violation, since we may test shared build with ASAN
+export ASAN_OPTIONS=detect_odr_violation=0
+
 # If ClickHouse was built with coverage - dump the coverage information at exit
 # (in other cases this environment variable has no effect)
 export CLICKHOUSE_WRITE_COVERAGE="coverage"
@@ -129,7 +132,7 @@ export CLICKHOUSE_URL_INTERSERVER=${CLICKHOUSE_URL_INTERSERVER:="${CLICKHOUSE_PO
 export CLICKHOUSE_CURL_COMMAND=${CLICKHOUSE_CURL_COMMAND:="curl"}
 # The queries in CI are prone to sudden delays, and we often don't check for curl
 # errors, so it makes sense to set a relatively generous timeout.
-export CLICKHOUSE_CURL_TIMEOUT=${CLICKHOUSE_CURL_TIMEOUT:="120"}
+export CLICKHOUSE_CURL_TIMEOUT=${CLICKHOUSE_CURL_TIMEOUT:="60"}
 export CLICKHOUSE_CURL=${CLICKHOUSE_CURL:="${CLICKHOUSE_CURL_COMMAND} -q -s --max-time ${CLICKHOUSE_CURL_TIMEOUT}"}
 export CLICKHOUSE_TMP=${CLICKHOUSE_TMP:="."}
 mkdir -p ${CLICKHOUSE_TMP}
