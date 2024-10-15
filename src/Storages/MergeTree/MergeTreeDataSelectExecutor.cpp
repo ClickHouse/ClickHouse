@@ -811,7 +811,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 auto & part = parts[part_index];
                 const auto & index = part->getIndex();
 
-                if (!index->size())
+                if (index->empty())
                     continue;
 
                 auto ranges = parts_with_ranges[part_index];
