@@ -24,7 +24,7 @@ const std::function<void(RandomGenerator&,std::string&)> ZeroToThree = [](Random
 const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> ServerSettings = {
 	{"aggregate_functions_null_for_empty", TrueOrFalse},
 	{"aggregation_in_order_max_block_bytes", [](RandomGenerator &rg, std::string &ret) {
-		ret += std::to_string(rg.RandomInt<uint32_t>(0, 50000000));
+		ret += std::to_string(rg.RandomInt<uint32_t>(0, 500000));
 	}},
 	{"allow_experimental_parallel_reading_from_replicas", ZeroOneTwo},
 	{"allow_nullable_key", TrueOrFalse},
@@ -99,10 +99,10 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 		ret += "'";
 	}},
 	{"group_by_two_level_threshold", [](RandomGenerator &rg, std::string &ret) {
-		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.2, 1, 1000000));
+		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.2, 1, 100000));
 	}},
 	{"group_by_two_level_threshold_bytes", [](RandomGenerator &rg, std::string &ret) {
-		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.2, 1, 50000000));
+		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.2, 1, 500000));
 	}},
 	{"group_by_use_nulls", TrueOrFalse},
 	{"http_response_buffer_size", [](RandomGenerator &rg, std::string &ret) {
@@ -152,7 +152,7 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.5, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
 	}},
 	{"max_bytes_before_remerge_sort", [](RandomGenerator &rg, std::string &ret) {
-		ret += std::to_string(rg.RandomInt<uint32_t>(1, 3000000000));
+		ret += std::to_string(rg.RandomInt<uint32_t>(1, 300000));
 	}},
 	{"max_compress_block_size", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.RandomInt<uint32_t>(1, 1048576 * 3));
@@ -303,6 +303,7 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 		ret += "'";
 	}},
 	{"detach_not_byte_identical_parts", TrueOrFalse},
+	{"enable_vertical_merge_algorithm", TrueOrFalse},
 	{"exclude_deleted_rows_for_part_size_in_merge", TrueOrFalse},
 	{"index_granularity", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 18));
@@ -353,11 +354,14 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	{"replace_long_file_name_to_hash", TrueOrFalse},
 	{"use_async_block_ids_cache", TrueOrFalse},
 	{"use_compact_variant_discriminators_serialization", TrueOrFalse},
+	{"vertical_merge_algorithm_min_bytes_to_activate", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.4, 0.4, 1, 10000));
+	}},
 	{"vertical_merge_algorithm_min_columns_to_activate", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.4, 0.4, 1, 100));
 	}},
 	{"vertical_merge_algorithm_min_rows_to_activate", [](RandomGenerator &rg, std::string &ret) {
-		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.4, 0.4, 1, 1000000));
+		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.4, 0.4, 1, 10000));
 	}}
 };
 
