@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 QUERY_ID="${CLICKHOUSE_DATABASE}_test_02585_query_to_kill_id_1"
 
-$CLICKHOUSE_CLIENT --query_id="$QUERY_ID" --max_rows_to_read 0 -n -q "
+$CLICKHOUSE_CLIENT --query_id="$QUERY_ID" --max_rows_to_read 0 -q "
 create temporary table tmp as select * from numbers(100000000);
 select * from remote('127.0.0.2', 'system.numbers_mt') where number in (select * from tmp);" &> /dev/null &
 

@@ -338,11 +338,8 @@ size_t HashJoin::getTotalRowCount() const
     return res;
 }
 
-size_t HashJoin::getTotalByteCount() const
+void HashJoin::doDebugAsserts() const
 {
-    if (!data)
-        return 0;
-
 #ifndef NDEBUG
     size_t debug_blocks_allocated_size = 0;
     for (const auto & block : data->blocks)
@@ -360,6 +357,14 @@ size_t HashJoin::getTotalByteCount() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "data->blocks_nullmaps_allocated_size != debug_blocks_nullmaps_allocated_size ({} != {})",
                         data->blocks_nullmaps_allocated_size, debug_blocks_nullmaps_allocated_size);
 #endif
+}
+
+size_t HashJoin::getTotalByteCount() const
+{
+    if (!data)
+        return 0;
+
+    doDebugAsserts();
 
     size_t res = 0;
 
@@ -544,9 +549,11 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
             have_compressed = true;
         }
 
+        doDebugAsserts();
         data->blocks_allocated_size += block_to_save.allocatedBytes();
         data->blocks.emplace_back(std::move(block_to_save));
         Block * stored_block = &data->blocks.back();
+        doDebugAsserts();
 
         if (rows)
             data->empty = false;
@@ -634,9 +641,11 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
 
             if (!flag_per_row && !is_inserted)
             {
+                doDebugAsserts();
                 LOG_TRACE(log, "Skipping inserting block with {} rows", rows);
                 data->blocks_allocated_size -= stored_block->allocatedBytes();
                 data->blocks.pop_back();
+                doDebugAsserts();
             }
 
             if (!check_limits)
@@ -683,6 +692,8 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
 
     for (auto & stored_block : data->blocks)
     {
+        doDebugAsserts();
+
         size_t old_size = stored_block.allocatedBytes();
         stored_block = stored_block.shrinkToFit();
         size_t new_size = stored_block.allocatedBytes();
@@ -700,6 +711,8 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
         else
             /// Sometimes after clone resized block can be bigger than original
             data->blocks_allocated_size += new_size - old_size;
+
+        doDebugAsserts();
     }
 
     auto new_total_bytes_in_join = getTotalByteCount();
@@ -1416,7 +1429,13 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
         };
         BlocksList sorted_blocks;
         visit_rows_map(sorted_blocks, map);
+        doDebugAsserts();
         data->blocks.swap(sorted_blocks);
+        size_t new_blocks_allocated_size = 0;
+        for (const auto & block : data->blocks)
+            new_blocks_allocated_size += block.allocatedBytes();
+        data->blocks_allocated_size = new_blocks_allocated_size;
+        doDebugAsserts();
     }
 }
 

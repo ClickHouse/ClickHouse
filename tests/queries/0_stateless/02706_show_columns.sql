@@ -55,6 +55,11 @@ CREATE TABLE NULL (c String) ENGINE = MergeTree ORDER BY c;
 SHOW COLUMNS FROM NULL;
 DROP TABLE NULL;
 
+DROP TABLE IF EXISTS `tab.with.dots`;
+CREATE TABLE `tab.with.dots` (c String) ENGINE = MergeTree ORDER BY c;
+SHOW COLUMNS FROM `tab.with.dots`;
+DROP TABLE `tab.with.dots`;
+
 DROP DATABASE IF EXISTS `'`;
 CREATE DATABASE `'`;
 CREATE TABLE `'`.`'` (c String) ENGINE = MergeTree ORDER BY c;
@@ -90,18 +95,3 @@ SHOW COLUMNS FROM database_123456789abcde.tab;
 DROP DATABASE database_123456789abcde;
 
 DROP TABLE tab;
-
-DROP TABLE IF EXISTS `tab.with.dots`;
-CREATE TABLE `tab.with.dots`
-(
-    `uint64` UInt64,
-    `int32` Nullable(Int32) COMMENT 'example comment',
-    `str` String,
-    INDEX idx str TYPE set(1000)
-)
-ENGINE = MergeTree
-PRIMARY KEY (uint64)
-ORDER BY (uint64, str);
-SELECT '--- SHOW COLUMNS FROM table with dots';
-SHOW COLUMNS FROM `tab.with.dots`;
-DROP TABLE `tab.with.dots`;

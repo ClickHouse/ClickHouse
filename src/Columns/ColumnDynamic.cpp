@@ -816,6 +816,22 @@ void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
         return;
     }
 
+    /// If it's not null we update hash with the type name and the actual value.
+
+    /// If value in this row is in shared variant, deserialize type and value and
+    /// update hash with it.
+    if (discr == getSharedVariantDiscriminator())
+    {
+        auto value = getSharedVariant().getDataAt(variant_col.offsetAt(n));
+        ReadBufferFromMemory buf(value.data, value.size);
+        auto type = decodeDataType(buf);
+        hash.update(type->getName());
+        auto tmp_column = type->createColumn();
+        type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, getFormatSettings());
+        tmp_column->updateHashWithValue(0, hash);
+        return;
+    }
+
     hash.update(variant_info.variant_names[discr]);
     variant_col.getVariantByGlobalDiscriminator(discr).updateHashWithValue(variant_col.offsetAt(n), hash);
 }
@@ -838,9 +854,9 @@ int ColumnDynamic::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_
     /// Check if we have NULLs and return result based on nan_direction_hint.
     if (left_discr == ColumnVariant::NULL_DISCRIMINATOR && right_discr == ColumnVariant::NULL_DISCRIMINATOR)
         return 0;
-    else if (left_discr == ColumnVariant::NULL_DISCRIMINATOR)
+    if (left_discr == ColumnVariant::NULL_DISCRIMINATOR)
         return nan_direction_hint;
-    else if (right_discr == ColumnVariant::NULL_DISCRIMINATOR)
+    if (right_discr == ColumnVariant::NULL_DISCRIMINATOR)
         return -nan_direction_hint;
 
     /// Check if both values are in shared variant.
@@ -875,7 +891,7 @@ int ColumnDynamic::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_
         return tmp_column->compareAt(0, 1, *tmp_column, nan_direction_hint);
     }
     /// Check if only left value is in shared data.
-    else if (left_discr == left_shared_variant_discr)
+    if (left_discr == left_shared_variant_discr)
     {
         /// Extract left type name from the value.
         auto left_value = getSharedVariant().getDataAt(left_variant.offsetAt(n));
@@ -892,10 +908,11 @@ int ColumnDynamic::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_
         /// create temporary column, insert the value into it and compare.
         auto tmp_column = left_data_type->createColumn();
         left_data_type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf_left, getFormatSettings());
-        return tmp_column->compareAt(0, right_variant.offsetAt(m), right_variant.getVariantByGlobalDiscriminator(right_discr), nan_direction_hint);
+        return tmp_column->compareAt(
+            0, right_variant.offsetAt(m), right_variant.getVariantByGlobalDiscriminator(right_discr), nan_direction_hint);
     }
     /// Check if only right value is in shared data.
-    else if (right_discr == right_shared_variant_discr)
+    if (right_discr == right_shared_variant_discr)
     {
         /// Extract right type name from the value.
         auto right_value = right_dynamic.getSharedVariant().getDataAt(right_variant.offsetAt(m));
@@ -912,18 +929,22 @@ int ColumnDynamic::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_
         /// create temporary column, insert the value into it and compare.
         auto tmp_column = right_data_type->createColumn();
         right_data_type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf_right, getFormatSettings());
-        return left_variant.getVariantByGlobalDiscriminator(left_discr).compareAt(left_variant.offsetAt(n), 0, *tmp_column, nan_direction_hint);
+        return left_variant.getVariantByGlobalDiscriminator(left_discr)
+            .compareAt(left_variant.offsetAt(n), 0, *tmp_column, nan_direction_hint);
     }
     /// Otherwise both values are regular variants.
-    else
-    {
-        /// If rows have different types, we compare type names.
-        if (variant_info.variant_names[left_discr] != right_dynamic.variant_info.variant_names[right_discr])
-            return variant_info.variant_names[left_discr] < right_dynamic.variant_info.variant_names[right_discr] ? -1 : 1;
 
-        /// If rows have the same types, compare actual values from corresponding variants.
-        return left_variant.getVariantByGlobalDiscriminator(left_discr).compareAt(left_variant.offsetAt(n), right_variant.offsetAt(m), right_variant.getVariantByGlobalDiscriminator(right_discr), nan_direction_hint);
-    }
+    /// If rows have different types, we compare type names.
+    if (variant_info.variant_names[left_discr] != right_dynamic.variant_info.variant_names[right_discr])
+        return variant_info.variant_names[left_discr] < right_dynamic.variant_info.variant_names[right_discr] ? -1 : 1;
+
+    /// If rows have the same types, compare actual values from corresponding variants.
+    return left_variant.getVariantByGlobalDiscriminator(left_discr)
+        .compareAt(
+            left_variant.offsetAt(n),
+            right_variant.offsetAt(m),
+            right_variant.getVariantByGlobalDiscriminator(right_discr),
+            nan_direction_hint);
 }
 
 struct ColumnDynamic::ComparatorBase

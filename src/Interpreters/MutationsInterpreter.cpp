@@ -47,6 +47,19 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_nondeterministic_mutations;
+    extern const SettingsUInt64 max_block_size;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsUInt64 index_granularity_bytes;
+    extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
+    extern const MergeTreeSettingsBool ttl_only_drop_parts;
+}
 
 namespace ErrorCodes
 {
@@ -189,7 +202,7 @@ bool isStorageTouchedByMutations(
     std::optional<InterpreterSelectQuery> interpreter_select_query;
     BlockIO io;
 
-    if (context->getSettingsRef().allow_experimental_analyzer)
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         auto select_query_tree = prepareQueryAffectedQueryTree(commands, storage_from_part, context);
         InterpreterSelectQueryAnalyzer interpreter(select_query_tree, context, SelectQueryOptions().ignoreLimits());
@@ -214,7 +227,7 @@ bool isStorageTouchedByMutations(
 
     if (!block.rows())
         return false;
-    else if (block.rows() != 1)
+    if (block.rows() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "count() expression returned {} rows, not 1", block.rows());
 
     Block tmp_block;
@@ -252,8 +265,7 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
 
     if (command.predicate && command.partition)
         return makeASTFunction("and", command.predicate->clone(), std::move(partition_predicate_as_ast_func));
-    else
-        return command.predicate ? command.predicate->clone() : partition_predicate_as_ast_func;
+    return command.predicate ? command.predicate->clone() : partition_predicate_as_ast_func;
 }
 
 
@@ -336,7 +348,7 @@ bool MutationsInterpreter::Source::hasLightweightDeleteMask() const
 
 bool MutationsInterpreter::Source::materializeTTLRecalculateOnly() const
 {
-    return data && data->getSettings()->materialize_ttl_recalculate_only;
+    return data && (*data->getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only];
 }
 
 bool MutationsInterpreter::Source::hasSecondaryIndex(const String & name) const
@@ -421,7 +433,7 @@ MutationsInterpreter::MutationsInterpreter(
     , logger(getLogger("MutationsInterpreter(" + source.getStorage()->getStorageID().getFullTableName() + ")"))
 {
     auto new_context = Context::createCopy(context_);
-    if (new_context->getSettingsRef().allow_experimental_analyzer)
+    if (new_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         new_context->setSetting("allow_experimental_analyzer", false);
         LOG_DEBUG(logger, "Will use old analyzer to prepare mutation");
@@ -506,12 +518,6 @@ static void validateUpdateColumns(
             {
                 throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table", backQuote(column_name));
             }
-        }
-        else if (storage_columns.getColumn(GetColumnsOptions::Ordinary, column_name).type->hasDynamicSubcolumns())
-        {
-            throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
-                            "Cannot update column {} with type {}: updates of columns with dynamic subcolumns are not supported",
-                            backQuote(column_name), storage_columns.getColumn(GetColumnsOptions::Ordinary, column_name).type->getName());
         }
     }
 }
@@ -771,7 +777,7 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             /// If the part is compact and adaptive index granularity is enabled, modify data in one column via ALTER UPDATE can change
             /// the part granularity, so we need to rebuild indexes
-            if (source.isCompactPart() && source.getMergeTreeData() && source.getMergeTreeData()->getSettings()->index_granularity_bytes > 0)
+            if (source.isCompactPart() && source.getMergeTreeData() && (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::index_granularity_bytes] > 0)
                 need_rebuild_indexes = true;
         }
         else if (command.type == MutationCommand::MATERIALIZE_COLUMN)
@@ -857,7 +863,10 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
-            if (materialize_ttl_recalculate_only)
+            bool suitable_for_ttl_optimization = (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::ttl_only_drop_parts]
+                && metadata_snapshot->hasOnlyRowsTTL();
+
+            if (materialize_ttl_recalculate_only || suitable_for_ttl_optimization)
             {
                 // just recalculate ttl_infos without remove expired data
                 auto all_columns_vec = all_columns.getNames();
@@ -1270,7 +1279,7 @@ void MutationsInterpreter::Source::read(
         SelectQueryInfo query_info;
         query_info.query = std::move(select);
 
-        size_t max_block_size = context_->getSettingsRef().max_block_size;
+        size_t max_block_size = context_->getSettingsRef()[Setting::max_block_size];
         size_t max_streams = 1;
         storage->read(plan, required_columns, storage_snapshot, query_info, context_, QueryProcessingStage::FetchColumns, max_block_size, max_streams);
 
@@ -1304,17 +1313,17 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
             {
                 auto dag = step->actions()->dag.clone();
                 if (step->actions()->project_input)
-                    dag.appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
+                    dag.appendInputsForUnusedColumns(plan.getCurrentHeader());
                 /// Execute DELETEs.
-                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), std::move(dag), stage.filter_column_names[i], false));
+                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentHeader(), std::move(dag), stage.filter_column_names[i], false));
             }
             else
             {
                 auto dag = step->actions()->dag.clone();
                 if (step->actions()->project_input)
-                    dag.appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
+                    dag.appendInputsForUnusedColumns(plan.getCurrentHeader());
                 /// Execute UPDATE or final projection.
-                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), std::move(dag)));
+                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(dag)));
             }
         }
 
@@ -1340,7 +1349,7 @@ void MutationsInterpreter::validate()
 {
     /// For Replicated* storages mutations cannot employ non-deterministic functions
     /// because that produces inconsistencies between replicas
-    if (startsWith(source.getStorage()->getName(), "Replicated") && !context->getSettingsRef().allow_nondeterministic_mutations)
+    if (startsWith(source.getStorage()->getName(), "Replicated") && !context->getSettingsRef()[Setting::allow_nondeterministic_mutations])
     {
         for (const auto & command : commands)
         {
@@ -1353,6 +1362,21 @@ void MutationsInterpreter::validate()
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "The source storage is replicated so ALTER UPDATE/ALTER DELETE statements must use only deterministic functions. "
                     "Function '{}' is non-deterministic", *nondeterministic_func_data.nondeterministic_function_name);
+        }
+    }
+
+    const auto & storage_columns = source.getStorageSnapshot(metadata_snapshot, context)->metadata->getColumns();
+    for (const auto & command : commands)
+    {
+        for (const auto & [column_name, _] : command.column_to_update_expression)
+        {
+            auto column = storage_columns.tryGetColumn(GetColumnsOptions::Ordinary, column_name);
+            if (column && column->type->hasDynamicSubcolumns())
+            {
+                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                                "Cannot update column {} with type {}: updates of columns with dynamic subcolumns are not supported",
+                                backQuote(column_name), storage_columns.getColumn(GetColumnsOptions::Ordinary, column_name).type->getName());
+            }
         }
     }
 

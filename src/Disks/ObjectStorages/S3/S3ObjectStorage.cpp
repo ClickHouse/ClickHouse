@@ -45,6 +45,10 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool s3_validate_request_settings;
+}
 
 namespace ErrorCodes
 {
@@ -172,65 +176,6 @@ bool S3ObjectStorage::exists(const StoredObject & object) const
     return S3::objectExists(*client.get(), uri.bucket, object.remote_path, {});
 }
 
-std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
-    const StoredObjects & objects,
-    const ReadSettings & read_settings,
-    std::optional<size_t>,
-    std::optional<size_t>) const
-{
-    ReadSettings disk_read_settings = patchSettings(read_settings);
-    auto global_context = Context::getGlobalContextInstance();
-
-    auto settings_ptr = s3_settings.get();
-
-    auto read_buffer_creator =
-        [this, settings_ptr, disk_read_settings]
-        (bool restricted_seek, const StoredObject & object_) -> std::unique_ptr<ReadBufferFromFileBase>
-    {
-        return std::make_unique<ReadBufferFromS3>(
-            client.get(),
-            uri.bucket,
-            object_.remote_path,
-            uri.version_id,
-            settings_ptr->request_settings,
-            disk_read_settings,
-            /* use_external_buffer */true,
-            /* offset */0,
-            /* read_until_position */0,
-            restricted_seek);
-    };
-
-    switch (read_settings.remote_fs_method)
-    {
-        case RemoteFSReadMethod::read:
-        {
-            return std::make_unique<ReadBufferFromRemoteFSGather>(
-                std::move(read_buffer_creator),
-                objects,
-                "s3:" + uri.bucket + "/",
-                disk_read_settings,
-                global_context->getFilesystemCacheLog(),
-                /* use_external_buffer */false);
-        }
-        case RemoteFSReadMethod::threadpool:
-        {
-            auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
-                std::move(read_buffer_creator),
-                objects,
-                "s3:" + uri.bucket + "/",
-                disk_read_settings,
-                global_context->getFilesystemCacheLog(),
-                /* use_external_buffer */true);
-
-            auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-            return std::make_unique<AsynchronousBoundedReadBuffer>(
-                std::move(impl), reader, disk_read_settings,
-                global_context->getAsyncReadCounters(),
-                global_context->getFilesystemReadPrefetchesLog());
-        }
-    }
-}
-
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
@@ -244,7 +189,12 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
         object.remote_path,
         uri.version_id,
         settings_ptr->request_settings,
-        patchSettings(read_settings));
+        patchSettings(read_settings),
+        read_settings.remote_read_buffer_use_external_buffer,
+        /* offset */0,
+        /* read_until_position */0,
+        read_settings.remote_read_buffer_restrict_seek,
+        object.bytes_size ? std::optional<size_t>(object.bytes_size) : std::nullopt);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLINT
@@ -267,7 +217,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         query_context && !query_context->isBackgroundOperationContext())
     {
         const auto & settings = query_context->getSettingsRef();
-        request_settings.updateFromSettings(settings, /* if_changed */true, settings.s3_validate_request_settings);
+        request_settings.updateFromSettings(settings, /* if_changed */ true, settings[Setting::s3_validate_request_settings]);
     }
 
     ThreadPoolCallbackRunnerUnsafe<void> scheduler;
@@ -589,7 +539,8 @@ void S3ObjectStorage::applyNewSettings(
     ContextPtr context,
     const ApplyNewSettingsOptions & options)
 {
-    auto settings_from_config = getSettings(config, config_prefix, context, uri.uri_str, context->getSettingsRef().s3_validate_request_settings);
+    auto settings_from_config
+        = getSettings(config, config_prefix, context, uri.uri_str, context->getSettingsRef()[Setting::s3_validate_request_settings]);
     auto modified_settings = std::make_unique<S3ObjectStorageSettings>(*s3_settings.get());
     modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
     modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
@@ -617,7 +568,7 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
     ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
-    auto new_s3_settings = getSettings(config, config_prefix, context, uri.uri_str, settings.s3_validate_request_settings);
+    auto new_s3_settings = getSettings(config, config_prefix, context, uri.uri_str, settings[Setting::s3_validate_request_settings]);
     auto new_client = getClient(uri, *new_s3_settings, context, for_disk_s3);
 
     auto new_uri{uri};
