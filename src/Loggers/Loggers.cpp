@@ -411,20 +411,36 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
                     const std::string name(config.getString("logger.levels." + key + ".name"));
                     const std::string level(config.getString("logger.levels." + key + ".level"));
                     logger.root().get(name).setLevel(level);
-
-                    std::string pos_pattern = config.getRawString("logger.levels." + key + "message_regexp", global_pos_pattern);
-                    std::string neg_pattern = config.getRawString("logger.levels." + key + "message_regexp_negative", global_neg_pattern);
-
-                    if (auto * regexp_channel = dynamic_cast<DB::OwnFilteringChannel*>(logger.root().get(name).getChannel()))
-                        regexp_channel->setRegexpPatterns(pos_pattern, neg_pattern);
-                    else
-                        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Couldn't convert to OwnFilteringChannel.");
                 }
                 else
                 {
                     // Legacy syntax
                     const std::string level(config.getString("logger.levels." + key, "trace"));
                     logger.root().get(key).setLevel(level);
+                }
+            }
+        }
+    }
+
+    // Explicitly specified regexp patterns for filtering specific loggers
+    {
+        Poco::Util::AbstractConfiguration::Keys loggers_regexp;
+        config.keys("logger.message_regexps", loggers_regexp);
+
+        if (!loggers_regexp.empty())
+        {
+            for (const auto & key : loggers_regexp)
+            {
+                if (key == "logger" || key.starts_with("logger["))
+                {
+                    const std::string name(config.getString("logger.message_regexps." + key + ".name"));
+                    const std::string pos_pattern(config.getRawString("logger.message_regexps." + key + "message_regexp", global_pos_pattern));
+                    const std::string neg_pattern(config.getRawString("logger.message_regexps." + key + "message_regexp_negative", global_neg_pattern));
+
+                    if (auto * regexp_channel = dynamic_cast<DB::OwnFilteringChannel*>(logger.root().get(name).getChannel()))
+                        regexp_channel->setRegexpPatterns(pos_pattern, neg_pattern);
+                    else
+                        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Couldn't convert to OwnFilteringChannel.");
                 }
             }
         }

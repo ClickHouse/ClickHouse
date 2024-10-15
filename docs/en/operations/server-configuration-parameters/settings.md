@@ -1589,14 +1589,14 @@ The messages logged can be filtered using regular expressions using `message_reg
     <message_regexp>.*executeQuery.*</message_regexp>
     <message_regexp>.*ConfigReloader.*</message_regexp>
 
-    <levels>
+    <message_regexps>
         <logger>
             <name>RBAC</name>
             <!-- For logger 'RBAC', instead of matching for '.*executeQuery.*' and '.*ConfigReloader.*' match instead for '.*Application.*' and '.*Setting.*'. -->
             <message_regexp>.*Application.*</message_regexp>
             <message_regexp_negative>.*Setting.*</message_regexp_negative>
         </logger>
-    </levels>
+    </message_regexps>
 </logger>
 ```
 
