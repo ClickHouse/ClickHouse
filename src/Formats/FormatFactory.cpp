@@ -265,9 +265,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.orc.allow_missing_columns = settings[Setting::input_format_orc_allow_missing_columns];
     format_settings.orc.row_batch_size = settings[Setting::input_format_orc_row_batch_size];
     format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_orc_skip_columns_with_unsupported_types_in_schema_inference];
-    format_settings.orc.allow_missing_columns = settings[Setting::input_format_orc_allow_missing_columns];
-    format_settings.orc.row_batch_size = settings[Setting::input_format_orc_row_batch_size];
-    format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_orc_skip_columns_with_unsupported_types_in_schema_inference];
+    format_settings.orc.dictionary_as_low_cardinality = settings[Setting::input_format_orc_dictionary_as_low_cardinality];
     format_settings.orc.case_insensitive_column_matching = settings[Setting::input_format_orc_case_insensitive_column_matching];
     format_settings.orc.output_string_as_string = settings[Setting::output_format_orc_string_as_string];
     format_settings.orc.output_compression_method = settings[Setting::output_format_orc_compression_method];
