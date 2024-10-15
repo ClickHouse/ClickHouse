@@ -263,7 +263,7 @@ void addDefaultHandlersFactory(
 
     auto dynamic_creator = [&server] () -> std::unique_ptr<DynamicQueryHandler>
     {
-        return std::make_unique<DynamicQueryHandler>(server, "query");
+        return std::make_unique<DynamicQueryHandler>(server, HTTPHandlerConnectionConfig{}, "query");
     };
     auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(dynamic_creator));
     query_handler->addFilter([](const auto & request)
