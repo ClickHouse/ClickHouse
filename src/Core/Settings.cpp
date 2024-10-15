@@ -5154,7 +5154,7 @@ SELECT * FROM test_table
 Rewrite count distinct to subquery of group by
 )", 0) \
     M(Bool, throw_if_no_data_to_insert, true, R"(
-Allows or forbids empty INSERTs, enabled by default (throws an error on an empty insert)
+Allows or forbids empty INSERTs, enabled by default (throws an error on an empty insert). Only applies to INSERTs using [`clickhouse-client`](/docs/en/interfaces/cli) or using the [gRPC interface](/docs/en/interfaces/grpc).
 )", 0) \
     M(Bool, compatibility_ignore_auto_increment_in_create_table, false, R"(
 Ignore AUTO_INCREMENT keyword in column declaration if true, otherwise return error. It simplifies migration from MySQL
