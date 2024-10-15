@@ -2700,7 +2700,7 @@ The maximum read speed in bytes per second for particular backup on server. Zero
 Log query performance statistics into the query_log, query_thread_log and query_views_log.
 )", 0) \
     M(Bool, log_query_settings, true, R"(
-Log query settings into the query_log.
+Log query settings into the query_log and OpenTelemetry span log.
 )", 0) \
     M(Bool, log_query_threads, false, R"(
 Setting up query threads logging.
@@ -6196,6 +6196,16 @@ std::vector<std::string_view> Settings::getUnchangedNames() const
 {
     std::vector<std::string_view> setting_names;
     for (const auto & setting : impl->allUnchanged())
+    {
+        setting_names.emplace_back(setting.getName());
+    }
+    return setting_names;
+}
+
+std::vector<std::string_view> Settings::getChangedNames() const
+{
+    std::vector<std::string_view> setting_names;
+    for (const auto & setting : impl->allChanged())
     {
         setting_names.emplace_back(setting.getName());
     }
