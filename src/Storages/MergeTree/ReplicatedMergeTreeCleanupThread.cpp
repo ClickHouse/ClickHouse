@@ -425,7 +425,8 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
         throw Exception(ErrorCodes::ALL_REPLICAS_LOST, "All replicas are stale: we won't mark any replica as lost");
 
     std::vector<zkutil::ZooKeeper::FutureMulti> futures;
-    futures.resize(candidate_lost_replicas.size());
+    futures.reserve(candidate_lost_replicas.size());
+
     for (size_t i = 0; i < candidate_lost_replicas.size(); ++i)
         futures.emplace_back(zookeeper->asyncTryMultiNoThrow(requests[i]));
 
