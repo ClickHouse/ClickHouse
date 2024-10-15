@@ -349,16 +349,17 @@ std::unordered_set<std::size_t> ParquetBloomFilterCondition::getFilteringColumnK
  * and build a simplified RPN that holds hashes instead of values.
  *
  * `KeyCondition::RPNElement::FUNCTION_IN_RANGE` becomes:
- * `KeyCondition::RPNElement::FUNCTION_IN_SET` becomes
  *      `FUNCTION_IN`
  *      `FUNCTION_UNKNOWN` when range limits are different
+ * `KeyCondition::RPNElement::FUNCTION_IN_SET` becomes
+ *      `FUNCTION_IN`
  *
  * Complex types and structs are not supported.
  * There are two sources of data types being analyzed, and they need to be compatible: DB::Field type and parquet type.
  * This is determined by the `isColumnSupported` method.
  *
  * Some interesting examples:
- * 1. file(..., 'string_column UInt64') where str_column = '50'; Field.type == UInt64. Parquet type string. Not supported.
+ * 1. file(..., 'str_column UInt64') where str_column = 50; Field.type == UInt64. Parquet type string. Not supported.
  * 2. file(...) where str_column = 50; Field.type == String (conversion already taken care by `KeyCondition`). Parquet type string.
  * 3. file(...) where uint32_column = toIPv4(5). Field.type == IPv4. Incompatible column types, resolved by `KeyCondition` itself.
  * 4. file(...) where toIPv4(uint32_column) = toIPv4(5). Field.type == IPv4. We know it is safe to hash it using an int32 API.
