@@ -23,7 +23,7 @@ RefreshSet::Handle & RefreshSet::Handle::operator=(Handle && other) noexcept
     id = std::move(other.id);
     inner_table_id = std::move(other.inner_table_id);
     dependencies = std::move(other.dependencies);
-    iter = std::move(other.iter); /// NOLINT(performance-move-const-arg)
+    iter = std::move(other.iter);
     inner_table_iter = std::move(other.inner_table_iter);
     metric_increment = std::move(other.metric_increment);
     return *this;
