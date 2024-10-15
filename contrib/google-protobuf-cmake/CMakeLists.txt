@@ -5,6 +5,9 @@ if(NOT ENABLE_PROTOBUF)
   return()
 endif()
 
+# To avoid errors "'X' does not refer to a value" while using `offsetof` function.
+set(CMAKE_CXX_STANDARD 17)
+
 set(Protobuf_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src")
 if(OS_FREEBSD AND SANITIZE STREQUAL "address")
   # ../contrib/protobuf/src/google/protobuf/arena_impl.h:45:10: fatal error: 'sanitizer/asan_interface.h' file not found
