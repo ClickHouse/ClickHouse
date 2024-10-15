@@ -1,6 +1,8 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, long, no-asan, no-asan, no-ubsan, no-debug
+-- ^^ Disable test for slow builds: generating data takes time but a sufficiently large data set
+-- is necessary for different hnsw_candidate_list_size_for_search settings to make a difference
 
--- Tests vector search with setting 'ef_search'
+-- Tests vector search with setting 'hnsw_candidate_list_size_for_search'
 
 SET allow_experimental_vector_similarity_index = 1;
 SET enable_analyzer = 0;
@@ -30,7 +32,7 @@ INSERT INTO results
     SETTINGS hnsw_candidate_list_size_for_search = 1;
 
 -- Expect that matches are different
-SELECT count(distinct *) from results;
+SELECT count(distinct *) FROM results;
 
 DROP TABLE results;
 DROP TABLE tab;
