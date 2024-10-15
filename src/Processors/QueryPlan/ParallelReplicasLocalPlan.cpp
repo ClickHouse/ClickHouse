@@ -225,16 +225,29 @@ std::pair<std::unique_ptr<QueryPlan>, bool> createLocalPlanForParallelReplicas(
         /// it can happened if merge tree table is empty, - it'll be replaced with ReadFromPreparedSource
         return {std::move(query_plan), false};
 
-    MergeTreeAllRangesCallback all_ranges_cb = [coordinator](InitialAllRangesAnnouncement) {};
+    MergeTreeAllRangesCallback announcement_cb;
+    ReadFromMergeTree::AnalysisResultPtr analyzed_result_ptr;
+    if (analyzed_read_from_merge_tree.get())
+    {
+        auto * analyzed_merge_tree = typeid_cast<ReadFromMergeTree *>(analyzed_read_from_merge_tree.get());
+        chassert(analyzed_merge_tree);
+        analyzed_result_ptr = analyzed_merge_tree->getAnalyzedResult();
+
+        announcement_cb = [coordinator](InitialAllRangesAnnouncement) {};
+
+        initCoordinator(coordinator, analyzed_merge_tree, context->getSettingsRef(), replica_number);
+    }
+    else
+    {
+        announcement_cb = [coordinator](InitialAllRangesAnnouncement announcement)
+        { coordinator->handleInitialAllRangesAnnouncement(std::move(announcement)); };
+    }
 
     MergeTreeReadTaskCallback read_task_cb = [coordinator](ParallelReadRequest req) -> std::optional<ParallelReadResponse>
     { return coordinator->handleRequest(std::move(req)); };
 
-    auto * analyzed_merge_tree = typeid_cast<ReadFromMergeTree *>(analyzed_read_from_merge_tree.get());
-    chassert(analyzed_merge_tree);
-    initCoordinator(coordinator, analyzed_merge_tree, context->getSettingsRef(), replica_number);
     auto read_from_merge_tree_parallel_replicas = reading->createLocalParallelReplicasReadingStep(
-        analyzed_merge_tree->getAnalyzedResult(), std::move(all_ranges_cb), std::move(read_task_cb), replica_number);
+        std::move(analyzed_result_ptr), std::move(announcement_cb), std::move(read_task_cb), replica_number);
     node->step = std::move(read_from_merge_tree_parallel_replicas);
 
     addConvertingActions(*query_plan, header, /*has_missing_objects=*/false);
