@@ -390,7 +390,6 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/compute/kernels/vector_selection_internal.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_selection_filter_internal.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_selection_take_internal.cc"
-        "${LIBRARY_DIR}/compute/light_array.cc"
         "${LIBRARY_DIR}/compute/registry.cc"
         "${LIBRARY_DIR}/compute/expression.cc"
         "${LIBRARY_DIR}/compute/ordering.cc"
