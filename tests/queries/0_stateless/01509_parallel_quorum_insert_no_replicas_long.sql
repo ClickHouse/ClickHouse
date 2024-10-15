@@ -19,11 +19,11 @@ ORDER BY tuple();
 SET insert_quorum_parallel=1;
 
 SET insert_quorum=3;
-INSERT INTO r1 VALUES(1, '1'); --{serverError 285}
+INSERT INTO r1 VALUES(1, '1'); --{serverError TOO_FEW_LIVE_REPLICAS}
 
 -- retry should still fail despite the insert_deduplicate enabled
-INSERT INTO r1 VALUES(1, '1'); --{serverError 285}
-INSERT INTO r1 VALUES(1, '1'); --{serverError 285}
+INSERT INTO r1 VALUES(1, '1'); --{serverError TOO_FEW_LIVE_REPLICAS}
+INSERT INTO r1 VALUES(1, '1'); --{serverError TOO_FEW_LIVE_REPLICAS}
 
 SELECT 'insert to two replicas works';
 SET insert_quorum=2, insert_quorum_parallel=1;
@@ -35,11 +35,11 @@ SELECT COUNT() FROM r2;
 
 DETACH TABLE r2;
 
-INSERT INTO r1 VALUES(2, '2'); --{serverError 285}
+INSERT INTO r1 VALUES(2, '2'); --{serverError TOO_FEW_LIVE_REPLICAS}
 
 -- retry should fail despite the insert_deduplicate enabled
-INSERT INTO r1 VALUES(2, '2'); --{serverError 285}
-INSERT INTO r1 VALUES(2, '2'); --{serverError 285}
+INSERT INTO r1 VALUES(2, '2'); --{serverError TOO_FEW_LIVE_REPLICAS}
+INSERT INTO r1 VALUES(2, '2'); --{serverError TOO_FEW_LIVE_REPLICAS}
 
 SET insert_quorum=1, insert_quorum_parallel=1;
 SELECT 'insert to single replica works';
@@ -67,7 +67,7 @@ INSERT INTO r2 VALUES(3, '3');
 INSERT INTO r1 VALUES(3, '3');
 -- will start failing if we increase quorum
 SET insert_quorum=3, insert_quorum_parallel=1;
-INSERT INTO r1 VALUES(3, '3'); --{serverError 285}
+INSERT INTO r1 VALUES(3, '3'); --{serverError TOO_FEW_LIVE_REPLICAS}
 -- work back ok when quorum=2
 SET insert_quorum=2, insert_quorum_parallel=1;
 INSERT INTO r2 VALUES(3, '3');
@@ -79,11 +79,11 @@ SYSTEM STOP FETCHES r2;
 
 SET insert_quorum_timeout=0;
 
-INSERT INTO r1 SETTINGS insert_keeper_fault_injection_probability=0 VALUES (4, '4'); -- { serverError 319 }
+INSERT INTO r1 SETTINGS insert_keeper_fault_injection_probability=0 VALUES (4, '4'); -- { serverError UNKNOWN_STATUS_OF_INSERT }
 
 -- retry should fail despite the insert_deduplicate enabled
-INSERT INTO r1 SETTINGS insert_keeper_fault_injection_probability=0 VALUES (4, '4'); -- { serverError 319 }
-INSERT INTO r1 SETTINGS insert_keeper_fault_injection_probability=0 VALUES (4, '4'); -- { serverError 319 }
+INSERT INTO r1 SETTINGS insert_keeper_fault_injection_probability=0 VALUES (4, '4'); -- { serverError UNKNOWN_STATUS_OF_INSERT }
+INSERT INTO r1 SETTINGS insert_keeper_fault_injection_probability=0 VALUES (4, '4'); -- { serverError UNKNOWN_STATUS_OF_INSERT }
 SELECT * FROM r2 WHERE key=4;
 
 SYSTEM START FETCHES r2;

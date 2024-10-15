@@ -15,6 +15,7 @@
 #include <boost/algorithm/hex.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
 
+#include <Access/Common/SSLCertificateSubjects.h>
 #include "config.h"
 
 #if USE_SSL
@@ -31,6 +32,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int AUTHENTICATION_FAILED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
@@ -90,8 +92,10 @@ bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[m
 {
 #if USE_BCRYPT
     int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));
+    /// Before 24.6 we didn't validate hashes on creation, so it could be that the stored hash is invalid
+    /// and it could not be decoded by the library
     if (ret == -1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_checkpw returned {}", ret);
+        throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Internal failure decoding Bcrypt hash");
     return (ret == 0);
 #else
     throw Exception(
@@ -104,28 +108,35 @@ bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
 {
     return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash)
         && (lhs.ldap_server_name == rhs.ldap_server_name) && (lhs.kerberos_realm == rhs.kerberos_realm)
-        && (lhs.ssl_certificate_common_names == rhs.ssl_certificate_common_names)
-        && (lhs.ssh_keys == rhs.ssh_keys) && (lhs.http_auth_scheme == rhs.http_auth_scheme)
+        && (lhs.ssl_certificate_subjects == rhs.ssl_certificate_subjects)
+#if USE_SSH
+        && (lhs.ssh_keys == rhs.ssh_keys)
+#endif
+        && (lhs.http_auth_scheme == rhs.http_auth_scheme)
         && (lhs.http_auth_server_name == rhs.http_auth_server_name);
 }
 
 
-void AuthenticationData::setPassword(const String & password_)
+void AuthenticationData::setPassword(const String & password_, bool validate)
 {
     switch (type)
     {
         case AuthenticationType::PLAINTEXT_PASSWORD:
-            return setPasswordHashBinary(Util::stringToDigest(password_));
+            setPasswordHashBinary(Util::stringToDigest(password_), validate);
+            return;
 
         case AuthenticationType::SHA256_PASSWORD:
-            return setPasswordHashBinary(Util::encodeSHA256(password_));
+            setPasswordHashBinary(Util::encodeSHA256(password_), validate);
+            return;
 
         case AuthenticationType::DOUBLE_SHA1_PASSWORD:
-            return setPasswordHashBinary(Util::encodeDoubleSHA1(password_));
+            setPasswordHashBinary(Util::encodeDoubleSHA1(password_), validate);
+            return;
 
         case AuthenticationType::BCRYPT_PASSWORD:
         case AuthenticationType::NO_PASSWORD:
         case AuthenticationType::LDAP:
+        case AuthenticationType::JWT:
         case AuthenticationType::KERBEROS:
         case AuthenticationType::SSL_CERTIFICATE:
         case AuthenticationType::SSH_KEY:
@@ -138,12 +149,12 @@ void AuthenticationData::setPassword(const String & password_)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setPassword(): authentication type {} not supported", toString(type));
 }
 
-void AuthenticationData::setPasswordBcrypt(const String & password_, int workfactor_)
+void AuthenticationData::setPasswordBcrypt(const String & password_, int workfactor_, bool validate)
 {
     if (type != AuthenticationType::BCRYPT_PASSWORD)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify bcrypt password for authentication type {}", toString(type));
 
-    return setPasswordHashBinary(Util::encodeBcrypt(password_, workfactor_));
+    setPasswordHashBinary(Util::encodeBcrypt(password_, workfactor_), validate);
 }
 
 String AuthenticationData::getPassword() const
@@ -154,7 +165,7 @@ String AuthenticationData::getPassword() const
 }
 
 
-void AuthenticationData::setPasswordHashHex(const String & hash)
+void AuthenticationData::setPasswordHashHex(const String & hash, bool validate)
 {
     Digest digest;
     digest.resize(hash.size() / 2);
@@ -168,7 +179,7 @@ void AuthenticationData::setPasswordHashHex(const String & hash)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read password hash in hex, check for valid characters [0-9a-fA-F] and length");
     }
 
-    setPasswordHashBinary(digest);
+    setPasswordHashBinary(digest, validate);
 }
 
 
@@ -184,7 +195,7 @@ String AuthenticationData::getPasswordHashHex() const
 }
 
 
-void AuthenticationData::setPasswordHashBinary(const Digest & hash)
+void AuthenticationData::setPasswordHashBinary(const Digest & hash, bool validate)
 {
     switch (type)
     {
@@ -206,7 +217,7 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
 
         case AuthenticationType::DOUBLE_SHA1_PASSWORD:
         {
-            if (hash.size() != 20)
+            if (validate && hash.size() != 20)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Password hash for the 'DOUBLE_SHA1_PASSWORD' authentication type has length {} "
                                 "but must be exactly 20 bytes.", hash.size());
@@ -220,10 +231,24 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
             /// However the library we use to encode it requires hash string to be 64 characters long,
             ///  so we also allow the hash of this length.
 
-            if (hash.size() != 59 && hash.size() != 60 && hash.size() != 64)
+            if (validate && hash.size() != 59 && hash.size() != 60 && hash.size() != 64)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Password hash for the 'BCRYPT_PASSWORD' authentication type has length {} "
                                 "but must be 59 or 60 bytes.", hash.size());
+
+            auto resized = hash;
+            resized.resize(64);
+
+#if USE_BCRYPT
+            if (validate)
+            {
+                /// Verify that it is a valid hash
+                int ret = bcrypt_checkpw("", reinterpret_cast<const char *>(resized.data()));
+                if (ret == -1)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not decode the provided hash with 'bcrypt_hash'");
+            }
+#endif
+
             password_hash = hash;
             password_hash.resize(64);
             return;
@@ -231,6 +256,7 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
 
         case AuthenticationType::NO_PASSWORD:
         case AuthenticationType::LDAP:
+        case AuthenticationType::JWT:
         case AuthenticationType::KERBEROS:
         case AuthenticationType::SSL_CERTIFICATE:
         case AuthenticationType::SSH_KEY:
@@ -255,11 +281,16 @@ String AuthenticationData::getSalt() const
     return salt;
 }
 
-void AuthenticationData::setSSLCertificateCommonNames(boost::container::flat_set<String> common_names_)
+void AuthenticationData::setSSLCertificateSubjects(SSLCertificateSubjects && ssl_certificate_subjects_)
 {
-    if (common_names_.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'SSL CERTIFICATE' authentication type requires a non-empty list of common names.");
-    ssl_certificate_common_names = std::move(common_names_);
+    if (ssl_certificate_subjects_.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'SSL CERTIFICATE' authentication type requires a non-empty list of subjects.");
+    ssl_certificate_subjects = std::move(ssl_certificate_subjects_);
+}
+
+void AuthenticationData::addSSLCertificateSubject(SSLCertificateSubjects::Type type_, String && subject_)
+{
+    ssl_certificate_subjects.insert(type_, std::move(subject_));
 }
 
 std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
@@ -302,6 +333,10 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
             node->children.push_back(std::make_shared<ASTLiteral>(getLDAPServerName()));
             break;
         }
+        case AuthenticationType::JWT:
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is available only in ClickHouse Cloud");
+        }
         case AuthenticationType::KERBEROS:
         {
             const auto & realm = getKerberosRealm();
@@ -313,7 +348,14 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         }
         case AuthenticationType::SSL_CERTIFICATE:
         {
-            for (const auto & name : getSSLCertificateCommonNames())
+            using SSLCertificateSubjects::Type::CN;
+            using SSLCertificateSubjects::Type::SAN;
+
+            const auto &subjects = getSSLCertificateSubjects();
+            SSLCertificateSubjects::Type cert_subject_type = !subjects.at(SAN).empty() ? SAN : CN;
+
+            node->ssl_cert_subject_type = toString(cert_subject_type);
+            for (const auto & name : getSSLCertificateSubjects().at(cert_subject_type))
                 node->children.push_back(std::make_shared<ASTLiteral>(name));
 
             break;
@@ -326,7 +368,7 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
 
             break;
 #else
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
 #endif
         }
         case AuthenticationType::HTTP:
@@ -336,7 +378,8 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
             break;
         }
 
-        case AuthenticationType::NO_PASSWORD: [[fallthrough]];
+        case AuthenticationType::NO_PASSWORD:
+            break;
         case AuthenticationType::MAX:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "AST: Unexpected authentication type {}", toString(auth_type));
     }
@@ -345,7 +388,7 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
 }
 
 
-AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & query, ContextPtr context, bool check_password_rules)
+AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate)
 {
     if (query.type && query.type == AuthenticationType::NO_PASSWORD)
         return AuthenticationData();
@@ -355,7 +398,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
     {
 #if USE_SSH
         AuthenticationData auth_data(*query.type);
-        std::vector<ssh::SSHKey> keys;
+        std::vector<SSHKey> keys;
 
         size_t args_size = query.children.size();
         for (size_t i = 0; i < args_size; ++i)
@@ -366,7 +409,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 
             try
             {
-                keys.emplace_back(ssh::SSHKeyFactory::makePublicFromBase64(key_base64, type));
+                keys.emplace_back(SSHKeyFactory::makePublicKeyFromBase64(key_base64, type));
             }
             catch (const std::invalid_argument &)
             {
@@ -377,7 +420,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         auth_data.setSSHKeys(std::move(keys));
         return auth_data;
 #else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
 #endif
     }
 
@@ -391,7 +434,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         if (!query.type && !context)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get default password type without context");
 
-        if (check_password_rules && !context)
+        if (validate && !context)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot check password complexity rules without context");
 
         if (query.type == AuthenticationType::BCRYPT_PASSWORD && !context)
@@ -408,13 +451,13 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 
         AuthenticationData auth_data(current_type);
 
-        if (check_password_rules)
+        if (validate)
             context->getAccessControl().checkPasswordComplexityRules(value);
 
         if (query.type == AuthenticationType::BCRYPT_PASSWORD)
         {
             int workfactor = context->getAccessControl().getBcryptWorkfactor();
-            auth_data.setPasswordBcrypt(value, workfactor);
+            auth_data.setPasswordBcrypt(value, workfactor, validate);
             return auth_data;
         }
 
@@ -446,7 +489,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 #endif
         }
 
-        auth_data.setPassword(value);
+        auth_data.setPassword(value, validate);
         return auth_data;
     }
 
@@ -458,13 +501,12 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 
         if (query.type == AuthenticationType::BCRYPT_PASSWORD)
         {
-            auth_data.setPasswordHashBinary(AuthenticationData::Util::stringToDigest(value));
+            auth_data.setPasswordHashBinary(AuthenticationData::Util::stringToDigest(value), validate);
             return auth_data;
         }
-        else
-        {
-            auth_data.setPasswordHashHex(value);
-        }
+
+        auth_data.setPasswordHashHex(value, validate);
+
 
         if (query.type == AuthenticationType::SHA256_PASSWORD && args_size == 2)
         {
@@ -487,11 +529,9 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
     }
     else if (query.type == AuthenticationType::SSL_CERTIFICATE)
     {
-        boost::container::flat_set<String> common_names;
+        auto ssl_cert_subject_type = parseSSLCertificateSubjectType(*query.ssl_cert_subject_type);
         for (const auto & arg : args)
-            common_names.insert(checkAndGetLiteralArgument<String>(arg, "common_name"));
-
-        auth_data.setSSLCertificateCommonNames(std::move(common_names));
+            auth_data.addSSLCertificateSubject(ssl_cert_subject_type, checkAndGetLiteralArgument<String>(arg, "ssl_certificate_subject"));
     }
     else if (query.type == AuthenticationType::HTTP)
     {

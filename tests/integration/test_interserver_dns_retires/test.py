@@ -2,11 +2,12 @@
 This test makes sure interserver cluster queries handle invalid DNS
 records for replicas.
 """
+
+import multiprocessing.dummy
+from contextlib import contextmanager
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-
-from contextlib import contextmanager
-import multiprocessing.dummy
 
 
 def bootstrap(cluster: ClickHouseCluster):

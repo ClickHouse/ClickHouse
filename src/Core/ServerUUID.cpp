@@ -1,4 +1,5 @@
 #include <Core/ServerUUID.h>
+#include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -11,6 +12,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_CREATE_FILE;
+    extern const int LOGICAL_ERROR;
+}
+
+UUID ServerUUID::get()
+{
+    if (server_uuid == UUIDHelpers::Nil &&
+        (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER ||
+         Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::KEEPER))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ServerUUID is not initialized yet");
+    return server_uuid;
 }
 
 void ServerUUID::load(const fs::path & server_uuid_file, Poco::Logger * log)
@@ -55,6 +66,11 @@ UUID loadServerUUID(const fs::path & server_uuid_file, Poco::Logger * log)
         throw Exception(ErrorCodes::CANNOT_CREATE_FILE, "Caught Exception {} while writing the Server UUID file {}",
                         getCurrentExceptionMessage(false), server_uuid_file.string());
     }
+}
+
+void ServerUUID::setRandomForUnitTests()
+{
+    server_uuid = UUIDHelpers::generateV4();
 }
 
 }

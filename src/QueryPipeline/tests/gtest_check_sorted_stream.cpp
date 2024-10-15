@@ -133,7 +133,7 @@ TEST(CheckSortedTransform, CheckBadLastRow)
     EXPECT_NO_THROW(executor.pull(chunk));
     EXPECT_NO_THROW(executor.pull(chunk));
 
-#ifndef ABORT_ON_LOGICAL_ERROR
+#ifndef DEBUG_OR_SANITIZER_BUILD
     EXPECT_THROW(executor.pull(chunk), DB::Exception);
 #endif
 }
@@ -158,7 +158,7 @@ TEST(CheckSortedTransform, CheckUnsortedBlock1)
 
     Chunk chunk;
 
-#ifndef ABORT_ON_LOGICAL_ERROR
+#ifndef DEBUG_OR_SANITIZER_BUILD
     EXPECT_THROW(executor.pull(chunk), DB::Exception);
 #endif
 }
@@ -181,7 +181,7 @@ TEST(CheckSortedTransform, CheckUnsortedBlock2)
     PullingPipelineExecutor executor(pipeline);
 
     Chunk chunk;
-#ifndef ABORT_ON_LOGICAL_ERROR
+#ifndef DEBUG_OR_SANITIZER_BUILD
     EXPECT_THROW(executor.pull(chunk), DB::Exception);
 #endif
 }
@@ -204,7 +204,7 @@ TEST(CheckSortedTransform, CheckUnsortedBlock3)
     PullingPipelineExecutor executor(pipeline);
 
     Chunk chunk;
-#ifndef ABORT_ON_LOGICAL_ERROR
+#ifndef DEBUG_OR_SANITIZER_BUILD
     EXPECT_THROW(executor.pull(chunk), DB::Exception);
 #endif
 }

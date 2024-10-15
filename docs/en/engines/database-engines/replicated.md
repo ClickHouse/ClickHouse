@@ -4,7 +4,7 @@ sidebar_position: 30
 sidebar_label: Replicated
 ---
 
-# [experimental] Replicated
+# Replicated
 
 The engine is based on the [Atomic](../../engines/database-engines/atomic.md) engine. It supports replication of metadata via DDL log being written to ZooKeeper and executed on all of the replicas for a given database.
 

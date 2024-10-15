@@ -23,12 +23,12 @@ static ITransformingStep::Traits getTraits()
 }
 
 LimitStep::LimitStep(
-    const DataStream & input_stream_,
+    const Header & input_header_,
     size_t limit_, size_t offset_,
     bool always_read_till_end_,
     bool with_ties_,
     SortDescription description_)
-    : ITransformingStep(input_stream_, input_stream_.header, getTraits())
+    : ITransformingStep(input_header_, input_header_, getTraits())
     , limit(limit_), offset(offset_)
     , always_read_till_end(always_read_till_end_)
     , with_ties(with_ties_), description(std::move(description_))
@@ -53,7 +53,6 @@ void LimitStep::describeActions(FormatSettings & settings) const
     {
         settings.out << prefix;
 
-        String str;
         if (with_ties)
             settings.out << "WITH TIES";
 

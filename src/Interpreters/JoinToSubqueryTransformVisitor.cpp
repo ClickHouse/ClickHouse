@@ -15,11 +15,10 @@
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
-#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
-#include <IO/WriteHelpers.h>
 #include <Core/Defines.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
+#include <Common/re2.h>
 
 namespace DB
 {
@@ -30,6 +29,7 @@ namespace ErrorCodes
     extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_IDENTIFIER;
+    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 namespace
@@ -204,11 +204,17 @@ private:
             {
                 has_asterisks = true;
 
+                String pattern = columns_regexp_matcher->getPattern();
+                re2::RE2 regexp(pattern, re2::RE2::Quiet);
+                if (!regexp.ok())
+                    throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                        "COLUMNS pattern {} cannot be compiled: {}", pattern, regexp.error());
+
                 for (auto & table_name : data.tables_order)
                     data.addTableColumns(
                         table_name,
                         columns,
-                        [&](const String & column_name) { return columns_regexp_matcher->isColumnMatching(column_name); });
+                        [&](const String & column_name) { return re2::RE2::PartialMatch(column_name, regexp); });
 
                 if (columns_regexp_matcher->transformers)
                 {

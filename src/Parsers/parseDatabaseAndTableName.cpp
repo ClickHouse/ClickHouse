@@ -60,21 +60,6 @@ bool parseDatabaseAndTableAsAST(IParser::Pos & pos, Expected & expected, ASTPtr 
 }
 
 
-bool parseDatabase(IParser::Pos & pos, Expected & expected, String & database_str)
-{
-    ParserToken s_dot(TokenType::Dot);
-    ParserIdentifier identifier_parser;
-
-    ASTPtr database;
-    database_str = "";
-
-    if (!identifier_parser.parse(pos, database, expected))
-        return false;
-
-    tryGetIdentifierNameInto(database, database_str);
-    return true;
-}
-
 bool parseDatabaseAsAST(IParser::Pos & pos, Expected & expected, ASTPtr & database)
 {
     ParserIdentifier identifier_parser(/* allow_query_parameter */true);
@@ -82,7 +67,7 @@ bool parseDatabaseAsAST(IParser::Pos & pos, Expected & expected, ASTPtr & databa
 }
 
 
-bool parseDatabaseAndTableNameOrAsterisks(IParser::Pos & pos, Expected & expected, String & database, bool & any_database, String & table, bool & any_table)
+bool parseDatabaseAndTableNameOrAsterisks(IParser::Pos & pos, Expected & expected, String & database, String & table, bool & wildcard, bool & default_database)
 {
     return IParserBase::wrapParseImpl(pos, [&]
     {
@@ -93,19 +78,16 @@ bool parseDatabaseAndTableNameOrAsterisks(IParser::Pos & pos, Expected & expecte
                     && ParserToken{TokenType::Asterisk}.ignore(pos, expected))
             {
                 /// *.*
-                any_database = true;
                 database.clear();
-                any_table = true;
                 table.clear();
                 return true;
             }
 
             /// *
             pos = pos_before_dot;
-            any_database = false;
             database.clear();
-            any_table = true;
             table.clear();
+            default_database = true;
             return true;
         }
 
@@ -114,6 +96,9 @@ bool parseDatabaseAndTableNameOrAsterisks(IParser::Pos & pos, Expected & expecte
         if (identifier_parser.parse(pos, ast, expected))
         {
             String first_identifier = getIdentifierName(ast);
+            if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
+                wildcard = true;
+
             auto pos_before_dot = pos;
 
             if (ParserToken{TokenType::Dot}.ignore(pos, expected))
@@ -121,29 +106,31 @@ bool parseDatabaseAndTableNameOrAsterisks(IParser::Pos & pos, Expected & expecte
                 if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
                 {
                     /// db.*
-                    any_database = false;
                     database = std::move(first_identifier);
-                    any_table = true;
                     table.clear();
                     return true;
                 }
-                else if (identifier_parser.parse(pos, ast, expected))
+                if (identifier_parser.parse(pos, ast, expected))
                 {
                     /// db.table
-                    any_database = false;
                     database = std::move(first_identifier);
-                    any_table = false;
                     table = getIdentifierName(ast);
+                    if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
+                        wildcard = true;
+
                     return true;
                 }
             }
 
             /// table
             pos = pos_before_dot;
-            any_database = false;
             database.clear();
-            any_table = false;
             table = std::move(first_identifier);
+            default_database = true;
+
+            if (!wildcard && ParserToken{TokenType::Asterisk}.ignore(pos, expected))
+                wildcard = true;
+
             return true;
         }
 

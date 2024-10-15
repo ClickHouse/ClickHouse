@@ -1,11 +1,10 @@
 #include "ConnectionParameters.h"
-#include <fstream>
+
 #include <Core/Defines.h>
 #include <Core/Protocol.h>
 #include <Core/Types.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/SSH/Wrappers.h>
 #include <Common/Exception.h>
 #include <Common/isLocalAddress.h>
 #include <Common/DNSResolver.h>
@@ -53,7 +52,37 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     /// changed the default value to "default" to fix the issue when the user in the prompt is blank
     user = config.getString("user", "default");
 
-    if (!config.has("ssh-key-file"))
+    if (config.has("jwt"))
+    {
+        jwt = config.getString("jwt");
+    }
+    else if (config.has("ssh-key-file"))
+    {
+#if USE_SSH
+        std::string filename = config.getString("ssh-key-file");
+        std::string passphrase;
+        if (config.has("ssh-key-passphrase"))
+        {
+            passphrase = config.getString("ssh-key-passphrase");
+        }
+        else
+        {
+            std::string prompt{"Enter your SSH private key passphrase (leave empty for no passphrase): "};
+            char buf[1000] = {};
+            if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
+                passphrase = result;
+        }
+
+        SSHKey key = SSHKeyFactory::makePrivateKeyFromFile(filename, passphrase);
+        if (!key.isPrivate())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "File {} did not contain a private key (is it a public key?)", filename);
+
+        ssh_private_key = std::move(key);
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
+#endif
+    }
+    else
     {
         bool password_prompt = false;
         if (config.getBool("ask-password", false))
@@ -77,32 +106,9 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
                 password = result;
         }
     }
-    else
-    {
-#if USE_SSH
-        std::string filename = config.getString("ssh-key-file");
-        std::string passphrase;
-        if (config.has("ssh-key-passphrase"))
-        {
-            passphrase = config.getString("ssh-key-passphrase");
-        }
-        else
-        {
-            std::string prompt{"Enter your private key passphrase (leave empty for no passphrase): "};
-            char buf[1000] = {};
-            if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
-                passphrase = result;
-        }
 
-        ssh::SSHKey key = ssh::SSHKeyFactory::makePrivateFromFile(filename, passphrase);
-        if (!key.isPrivate())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Found public key in file: {} but expected private", filename);
-
-        ssh_private_key = std::move(key);
-#else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
-#endif
-    }
+    proto_send_chunked = config.getString("proto_caps.send", "notchunked");
+    proto_recv_chunked = config.getString("proto_caps.recv", "notchunked");
 
     quota_key = config.getString("quota_key", "");
 
@@ -140,7 +146,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
 }
 
 UInt16 ConnectionParameters::getPortFromConfig(const Poco::Util::AbstractConfiguration & config,
-                                               std::string connection_host)
+                                               const std::string & connection_host)
 {
     bool is_secure = enableSecureConnection(config, connection_host);
     return config.getInt("port",

@@ -33,7 +33,7 @@ struct MultiSearchAllPositionsImpl
         std::vector<std::string_view> needles;
         needles.reserve(needles_arr.size());
         for (const auto & needle : needles_arr)
-            needles.emplace_back(needle.get<String>());
+            needles.emplace_back(needle.safeGet<String>());
 
         auto res_callback = [](const UInt8 * start, const UInt8 * end) -> UInt64
         {
@@ -89,7 +89,7 @@ struct MultiSearchAllPositionsImpl
 
         offsets_res.reserve(haystack_offsets.size());
 
-        const ColumnString * needles_data_string = checkAndGetColumn<ColumnString>(&needles_data);
+        const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(needles_data);
 
         std::vector<std::string_view> needles;
 
@@ -99,7 +99,7 @@ struct MultiSearchAllPositionsImpl
 
             for (size_t j = prev_needles_offset; j < needles_offsets[i]; ++j)
             {
-                needles.emplace_back(needles_data_string->getDataAt(j).toView());
+                needles.emplace_back(needles_data_string.getDataAt(j).toView());
             }
 
             const size_t needles_size = needles.size();

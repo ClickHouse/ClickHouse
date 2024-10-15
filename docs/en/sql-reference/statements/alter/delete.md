@@ -4,7 +4,7 @@ sidebar_position: 39
 sidebar_label: DELETE
 ---
 
-# ALTER TABLE … DELETE Statement
+# ALTER TABLE ... DELETE Statement
 
 ``` sql
 ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr

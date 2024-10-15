@@ -75,6 +75,27 @@ void DataTypeArray::forEachChild(const ChildCallback & callback) const
     nested->forEachChild(callback);
 }
 
+std::unique_ptr<ISerialization::SubstreamData> DataTypeArray::getDynamicSubcolumnData(std::string_view subcolumn_name, const DB::IDataType::SubstreamData & data, bool throw_if_null) const
+{
+    auto nested_type = assert_cast<const DataTypeArray &>(*data.type).nested;
+    auto nested_data = std::make_unique<ISerialization::SubstreamData>(nested_type->getDefaultSerialization());
+    nested_data->type = nested_type;
+    nested_data->column = data.column ? assert_cast<const ColumnArray &>(*data.column).getDataPtr() : nullptr;
+
+    auto nested_subcolumn_data = nested_type->getSubcolumnData(subcolumn_name, *nested_data, throw_if_null);
+    if (!nested_subcolumn_data)
+        return nullptr;
+
+    auto creator = SerializationArray::SubcolumnCreator(data.column ? assert_cast<const ColumnArray &>(*data.column).getOffsetsPtr() : nullptr);
+    auto res = std::make_unique<ISerialization::SubstreamData>();
+    res->serialization = creator.create(nested_subcolumn_data->serialization);
+    res->type = creator.create(nested_subcolumn_data->type);
+    if (data.column)
+        res->column = creator.create(nested_subcolumn_data->column);
+
+    return res;
+}
+
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)

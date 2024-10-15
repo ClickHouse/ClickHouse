@@ -1,3 +1,4 @@
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -8,6 +9,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteIntText.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -25,13 +27,20 @@
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 
 #include <sys/stat.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_block_size;
+    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsMilliseconds stream_poll_timeout_ms;
+    extern const SettingsBool use_concurrency_control;
+}
 
 namespace ErrorCodes
 {
@@ -151,16 +160,13 @@ StorageFileLog::StorageFileLog(
 
     if (!fileOrSymlinkPathStartsWith(path, getContext()->getUserFilesPath()))
     {
-        if (LoadingStrictnessLevel::ATTACH <= mode)
+        if (LoadingStrictnessLevel::SECONDARY_CREATE <= mode)
         {
             LOG_ERROR(log, "The absolute data path should be inside `user_files_path`({})", getContext()->getUserFilesPath());
             return;
         }
-        else
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The absolute data path should be inside `user_files_path`({})",
-                getContext()->getUserFilesPath());
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "The absolute data path should be inside `user_files_path`({})", getContext()->getUserFilesPath());
     }
 
     bool created_metadata_directory = false;
@@ -415,7 +421,7 @@ void StorageFileLog::drop()
 {
     try
     {
-        std::filesystem::remove_all(metadata_base_path);
+        (void)std::filesystem::remove_all(metadata_base_path);
     }
     catch (...)
     {
@@ -466,7 +472,7 @@ void StorageFileLog::openFilesAndSetPos()
             auto & reader = file_ctx.reader.value();
             assertStreamGood(reader);
 
-            reader.seekg(0, reader.end);
+            reader.seekg(0, reader.end); /// NOLINT(readability-static-accessed-through-instance)
             assertStreamGood(reader);
 
             auto file_end = reader.tellg();
@@ -549,7 +555,9 @@ StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & f
             filename, metadata_base_path);
     }
 
-    auto in = disk->readFile(full_path);
+    auto read_settings = getReadSettings();
+    read_settings.local_fs_method = LocalFSReadMethod::pread;
+    auto in = disk->readFile(full_path, read_settings);
     FileMeta metadata;
     UInt64 inode, last_written_pos;
 
@@ -576,20 +584,20 @@ StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & f
 size_t StorageFileLog::getMaxBlockSize() const
 {
     return filelog_settings->max_block_size.changed ? filelog_settings->max_block_size.value
-                                                    : getContext()->getSettingsRef().max_insert_block_size.value;
+                                                    : getContext()->getSettingsRef()[Setting::max_insert_block_size].value;
 }
 
 size_t StorageFileLog::getPollMaxBatchSize() const
 {
     size_t batch_size = filelog_settings->poll_max_batch_size.changed ? filelog_settings->poll_max_batch_size.value
-                                                                      : getContext()->getSettingsRef().max_block_size.value;
+                                                                      : getContext()->getSettingsRef()[Setting::max_block_size].value;
     return std::min(batch_size, getMaxBlockSize());
 }
 
 size_t StorageFileLog::getPollTimeoutMillisecond() const
 {
     return filelog_settings->poll_timeout_ms.changed ? filelog_settings->poll_timeout_ms.totalMilliseconds()
-                                                     : getContext()->getSettingsRef().stream_poll_timeout_ms.totalMilliseconds();
+                                                     : getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds();
 }
 
 bool StorageFileLog::checkDependencies(const StorageID & table_id)
@@ -659,10 +667,9 @@ void StorageFileLog::threadFunc()
                         milliseconds_to_wait *= filelog_settings->poll_directory_watch_events_backoff_factor.value;
                     break;
                 }
-                else
-                {
-                    milliseconds_to_wait = filelog_settings->poll_directory_watch_events_backoff_init.totalMilliseconds();
-                }
+
+                milliseconds_to_wait = filelog_settings->poll_directory_watch_events_backoff_init.totalMilliseconds();
+
 
                 auto ts = std::chrono::steady_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts-start_time);
@@ -739,7 +746,14 @@ bool StorageFileLog::streamToViews()
 
     auto new_context = Context::createCopy(getContext());
 
-    InterpreterInsertQuery interpreter(insert, new_context, false, true, true);
+    InterpreterInsertQuery interpreter(
+        insert,
+        new_context,
+        /* allow_materialized */ false,
+        /* no_squash */ true,
+        /* no_destination */ true,
+        /* async_isnert */ false);
+
     auto block_io = interpreter.execute();
 
     /// Each stream responsible for closing it's files and store meta
@@ -769,7 +783,7 @@ bool StorageFileLog::streamToViews()
     {
         block_io.pipeline.complete(std::move(input));
         block_io.pipeline.setNumThreads(max_streams_number);
-        block_io.pipeline.setConcurrencyControl(new_context->getSettingsRef().use_concurrency_control);
+        block_io.pipeline.setConcurrencyControl(new_context->getSettingsRef()[Setting::use_concurrency_control]);
         block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
         CompletedPipelineExecutor executor(block_io.pipeline);
         executor.execute();
@@ -804,17 +818,17 @@ void registerStorageFileLog(StorageFactory & factory)
             filelog_settings->loadFromQuery(*args.storage_def);
         }
 
-        auto physical_cpu_cores = getNumberOfPhysicalCPUCores();
+        auto cpu_cores = getNumberOfCPUCoresToUse();
         auto num_threads = filelog_settings->max_threads.value;
 
         if (!num_threads) /// Default
         {
-            num_threads = std::max(1U, physical_cpu_cores / 4);
+            num_threads = std::max(1U, cpu_cores / 4);
             filelog_settings->set("max_threads", num_threads);
         }
-        else if (num_threads > physical_cpu_cores)
+        else if (num_threads > cpu_cores)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of threads to parse files can not be bigger than {}", physical_cpu_cores);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of threads to parse files can not be bigger than {}", cpu_cores);
         }
         else if (num_threads < 1)
         {
@@ -1008,7 +1022,7 @@ bool StorageFileLog::updateFileInfos()
                     file_infos.meta_by_inode.erase(meta);
 
                 if (std::filesystem::exists(getFullMetaPath(file_name)))
-                    std::filesystem::remove(getFullMetaPath(file_name));
+                    (void)std::filesystem::remove(getFullMetaPath(file_name));
                 file_infos.context_by_name.erase(it);
             }
             else

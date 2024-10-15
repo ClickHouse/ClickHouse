@@ -29,7 +29,7 @@ struct JumpConsistentHashImpl
     using BucketsType = ResultType;
     static constexpr auto max_buckets = static_cast<UInt64>(std::numeric_limits<BucketsType>::max());
 
-    static inline ResultType apply(UInt64 hash, BucketsType n)
+    static ResultType apply(UInt64 hash, BucketsType n)
     {
         return JumpConsistentHash(hash, n);
     }

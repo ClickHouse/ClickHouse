@@ -53,18 +53,23 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{{"time_series", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"}};
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArguments(*this, arguments, args);
 
+        return std::make_shared<DataTypeFloat64>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeFloat64>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr array_ptr = arguments[0].column;
-        const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
+        const ColumnArray & array = checkAndGetColumn<ColumnArray>(*array_ptr);
 
-        const IColumn & src_data = array->getData();
-        const ColumnArray::Offsets & offsets = array->getOffsets();
+        const IColumn & src_data = array.getData();
+        const ColumnArray::Offsets & offsets = array.getOffsets();
 
         auto res = ColumnFloat64::create(input_rows_count);
         auto & res_data = res->getData();
@@ -153,12 +158,8 @@ public:
             return true;
         }
 
-        std::vector<double> xfreq(spec_len);
         double step = 0.5 / (spec_len - 1);
-        for (size_t i = 0; i < spec_len; ++i)
-            xfreq[i] = i * step;
-
-        auto freq = xfreq[idx];
+        auto freq = idx * step;
 
         period = std::round(1 / freq);
         return true;

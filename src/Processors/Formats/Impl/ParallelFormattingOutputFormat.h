@@ -7,8 +7,8 @@
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <IO/WriteBufferFromString.h>
-#include <Formats/FormatFactory.h>
 #include <Poco/Event.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
@@ -26,6 +26,9 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+class IOutputFormat;
+using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
 namespace ErrorCodes
 {
@@ -92,7 +95,7 @@ public:
 
         /// Just heuristic. We need one thread for collecting, one thread for receiving chunks
         /// and n threads for formatting.
-        processing_units.resize(params.max_threads_for_parallel_formatting + 2);
+        processing_units.resize(std::min(params.max_threads_for_parallel_formatting + 2, size_t{1024}));
 
         /// Do not put any code that could throw an exception under this line.
         /// Because otherwise the destructor of this class won't be called and this thread won't be joined.
@@ -122,7 +125,7 @@ public:
         started_prefix = true;
     }
 
-    void onCancel() override
+    void onCancel() noexcept override
     {
         finishAndWait();
     }
@@ -205,7 +208,7 @@ private:
     };
 
     /// Some information about what methods to call from internal parser.
-    enum class ProcessingUnitType
+    enum class ProcessingUnitType : uint8_t
     {
         START,
         PLAIN,
@@ -268,7 +271,7 @@ private:
     bool collected_suffix = false;
     bool collected_finalize = false;
 
-    void finishAndWait();
+    void finishAndWait() noexcept;
 
     void onBackgroundException()
     {
@@ -312,6 +315,12 @@ private:
         std::lock_guard lock(statistics_mutex);
         statistics.rows_before_limit = rows_before_limit;
         statistics.applied_limit = true;
+    }
+    void setRowsBeforeAggregation(size_t rows_before_aggregation) override
+    {
+        std::lock_guard lock(statistics_mutex);
+        statistics.rows_before_aggregation = rows_before_aggregation;
+        statistics.applied_aggregation = true;
     }
 };
 

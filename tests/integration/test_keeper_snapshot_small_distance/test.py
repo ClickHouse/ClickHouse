@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-##!/usr/bin/env python3
-import pytest
-from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
-from multiprocessing.dummy import Pool
-from kazoo.client import KazooClient, KazooRetry
-from kazoo.handlers.threading import KazooTimeoutError
+
+import os
 import random
 import string
-import os
 import time
+from multiprocessing.dummy import Pool
+
+import pytest
+from kazoo.client import KazooClient, KazooRetry
+from kazoo.handlers.threading import KazooTimeoutError
+
+import helpers.keeper_utils as keeper_utils
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(

@@ -10,6 +10,7 @@
 #include <Access/ContextAccess.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
 
 namespace DB
@@ -106,6 +107,13 @@ ColumnsDescription StorageSystemDistributionQueue::getColumnsDescription()
     };
 }
 
+Block StorageSystemDistributionQueue::getFilterSampleBlock() const
+{
+    return {
+        { {}, std::make_shared<DataTypeString>(), "database" },
+        { {}, std::make_shared<DataTypeString>(), "table" },
+    };
+}
 
 void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
 {

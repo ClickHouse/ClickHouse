@@ -1,7 +1,7 @@
 -- Tags: no-fasttest
 
 SELECT regionToName(number::UInt32, 'en') FROM numbers(13);
-SELECT regionToName(number::UInt32, 'xy') FROM numbers(13); -- { serverError 1000 }
+SELECT regionToName(number::UInt32, 'xy') FROM numbers(13); -- { serverError POCO_EXCEPTION }
 
 SELECT regionToName(number::UInt32, 'en'), regionToCity(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);
 SELECT regionToName(number::UInt32, 'en'), regionToArea(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);

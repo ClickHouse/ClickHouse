@@ -1,7 +1,10 @@
+import concurrent
 import time
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
@@ -361,3 +364,81 @@ def test_insert_quorum_with_ttl(started_cluster):
     )
 
     zero.query("DROP TABLE IF EXISTS test_insert_quorum_with_ttl ON CLUSTER cluster")
+
+
+def test_insert_quorum_with_keeper_loss_connection():
+    zero.query(
+        "DROP TABLE IF EXISTS test_insert_quorum_with_keeper_fail ON CLUSTER cluster"
+    )
+    create_query = (
+        "CREATE TABLE test_insert_quorum_with_keeper_loss"
+        "(a Int8, d Date) "
+        "Engine = ReplicatedMergeTree('/clickhouse/tables/{table}', '{replica}') "
+        "ORDER BY a "
+    )
+
+    zero.query(create_query)
+    first.query(create_query)
+
+    first.query("SYSTEM STOP FETCHES test_insert_quorum_with_keeper_loss")
+
+    zero.query("SYSTEM ENABLE FAILPOINT replicated_merge_tree_commit_zk_fail_after_op")
+    zero.query("SYSTEM ENABLE FAILPOINT replicated_merge_tree_insert_retry_pause")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        insert_future = executor.submit(
+            lambda: zero.query(
+                "INSERT INTO test_insert_quorum_with_keeper_loss(a,d) VALUES(1, '2011-01-01')",
+                settings={"insert_quorum_timeout": 150000},
+            )
+        )
+
+        pm = PartitionManager()
+        pm.drop_instance_zk_connections(zero)
+
+        retries = 0
+        zk = cluster.get_kazoo_client("zoo1")
+        while True:
+            if (
+                zk.exists(
+                    "/clickhouse/tables/test_insert_quorum_with_keeper_loss/replicas/zero/is_active"
+                )
+                is None
+            ):
+                break
+            print("replica is still active")
+            time.sleep(1)
+            retries += 1
+            if retries == 120:
+                raise Exception("Can not wait cluster replica inactive")
+
+        first.query("SYSTEM ENABLE FAILPOINT finish_set_quorum_failed_parts")
+        quorum_fail_future = executor.submit(
+            lambda: first.query(
+                "SYSTEM WAIT FAILPOINT finish_set_quorum_failed_parts", timeout=300
+            )
+        )
+        first.query("SYSTEM START FETCHES test_insert_quorum_with_keeper_loss")
+
+        concurrent.futures.wait([quorum_fail_future])
+
+        assert quorum_fail_future.exception() is None
+
+        zero.query("SYSTEM ENABLE FAILPOINT finish_clean_quorum_failed_parts")
+        clean_quorum_fail_parts_future = executor.submit(
+            lambda: first.query(
+                "SYSTEM WAIT FAILPOINT finish_clean_quorum_failed_parts", timeout=300
+            )
+        )
+        pm.restore_instance_zk_connections(zero)
+        concurrent.futures.wait([clean_quorum_fail_parts_future])
+
+        assert clean_quorum_fail_parts_future.exception() is None
+
+        zero.query("SYSTEM DISABLE FAILPOINT replicated_merge_tree_insert_retry_pause")
+        concurrent.futures.wait([insert_future])
+        assert insert_future.exception() is not None
+        assert not zero.contains_in_log("LOGICAL_ERROR")
+        assert zero.contains_in_log(
+            "fails to commit and will not retry or clean garbage"
+        )

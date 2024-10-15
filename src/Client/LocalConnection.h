@@ -15,6 +15,8 @@ namespace DB
 class PullingAsyncPipelineExecutor;
 class PushingAsyncPipelineExecutor;
 class PushingPipelineExecutor;
+class QueryPipeline;
+class ReadBuffer;
 
 /// State of query processing.
 struct LocalQueryState
@@ -31,6 +33,10 @@ struct LocalQueryState
     std::unique_ptr<PullingAsyncPipelineExecutor> executor;
     std::unique_ptr<PushingPipelineExecutor> pushing_executor;
     std::unique_ptr<PushingAsyncPipelineExecutor> pushing_async_executor;
+    /// For sending data for input() function.
+    std::unique_ptr<QueryPipeline> input_pipeline;
+    std::unique_ptr<PullingAsyncPipelineExecutor> input_pipeline_executor;
+
     InternalProfileEventsQueuePtr profile_queue;
 
     std::unique_ptr<Exception> exception;
@@ -64,7 +70,11 @@ class LocalConnection : public IServerConnection, WithContext
 {
 public:
     explicit LocalConnection(
-        ContextPtr context_, bool send_progress_ = false, bool send_profile_events_ = false, const String & server_display_name_ = "");
+        ContextPtr context_,
+        ReadBuffer * in_,
+        bool send_progress_,
+        bool send_profile_events_,
+        const String & server_display_name_);
 
     ~LocalConnection() override;
 
@@ -73,6 +83,7 @@ public:
     static ServerConnectionPtr createConnection(
         const ConnectionParameters & connection_parameters,
         ContextPtr current_context,
+        ReadBuffer * in = nullptr,
         bool send_progress = false,
         bool send_profile_events = false,
         const String & server_display_name = "");
@@ -90,7 +101,7 @@ public:
     const String & getServerTimezone(const ConnectionTimeouts & timeouts) override;
     const String & getServerDisplayName(const ConnectionTimeouts & timeouts) override;
 
-    const String & getDescription() const override { return description; }
+    const String & getDescription([[maybe_unused]] bool with_extra = false) const override { return description; }  /// NOLINT
 
     std::vector<std::pair<String, String>> getPasswordComplexityRules() const override { return {}; }
 
@@ -132,14 +143,6 @@ public:
     void setThrottler(const ThrottlerPtr &) override {}
 
 private:
-    void initBlockInput();
-
-    void processOrdinaryQuery();
-
-    void processOrdinaryQueryWithProcessors();
-
-    void updateState();
-
     bool pullBlock(Block & block);
 
     void finishQuery();
@@ -148,7 +151,10 @@ private:
 
     void sendProfileEvents();
 
+    /// Returns true on executor timeout, meaning a retryable error.
     bool pollImpl();
+
+    bool needSendProgressOrMetrics();
 
     ContextMutablePtr query_context;
     Session session;
@@ -166,5 +172,8 @@ private:
     String current_database;
 
     ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;
+
+    ReadBuffer * in;
 };
+
 }

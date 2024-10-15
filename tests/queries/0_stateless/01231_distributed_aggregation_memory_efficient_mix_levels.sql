@@ -23,6 +23,8 @@ set max_bytes_before_external_group_by = 16;
 
 select x, count() from ma_dist group by x order by x;
 
+select arrayFilter(y -> y = x, [x]) as f from ma_dist order by f;
+
 drop table if exists shard_0.shard_01231_distributed_aggregation_memory_efficient;
 drop table if exists shard_1.shard_01231_distributed_aggregation_memory_efficient;
 

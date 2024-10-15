@@ -4,13 +4,14 @@
 #include <Storages/System/StorageSystemDroppedTablesParts.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <Interpreters/DatabaseCatalog.h>
 
 
 namespace DB
 {
 
 
-StoragesDroppedInfoStream::StoragesDroppedInfoStream(const ActionsDAG::Node * predicate, ContextPtr context)
+StoragesDroppedInfoStream::StoragesDroppedInfoStream(std::optional<ActionsDAG> filter, ContextPtr context)
         : StoragesInfoStreamBase(context)
 {
     /// Will apply WHERE to subset of columns and then add more columns.
@@ -73,7 +74,8 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(const ActionsDAG::Node * pr
     if (block_to_filter.rows())
     {
         /// Filter block_to_filter with columns 'database', 'table', 'engine', 'active'.
-        VirtualColumnUtils::filterBlockWithPredicate(predicate, block_to_filter, context);
+        if (filter)
+            VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*filter), context), block_to_filter);
         rows = block_to_filter.rows();
     }
 

@@ -27,6 +27,136 @@ namespace
     using DiskEncryptedPtr = std::shared_ptr<DiskEncrypted>;
     using namespace FileEncryption;
 
+    constexpr Algorithm DEFAULT_ENCRYPTION_ALGORITHM = Algorithm::AES_128_CTR;
+
+    String unhexKey(const String & hex)
+    {
+        try
+        {
+            return boost::algorithm::unhex(hex);
+        }
+        catch (const std::exception &)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read key_hex, check for valid characters [0-9a-fA-F] and length");
+        }
+    }
+
+    /// Reads encryption keys from the configuration.
+    void getKeysFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
+                           std::map<UInt64, String> & out_keys_by_id, Strings & out_keys_without_id)
+    {
+        Strings config_keys;
+        config.keys(config_prefix, config_keys);
+
+        for (const std::string & config_key : config_keys)
+        {
+            String key;
+            std::optional<UInt64> key_id;
+
+            if ((config_key == "key") || config_key.starts_with("key["))
+            {
+                String key_path = config_prefix + "." + config_key;
+                key = config.getString(key_path);
+                String key_id_path = key_path + "[@id]";
+                if (config.has(key_id_path))
+                    key_id = config.getUInt64(key_id_path);
+            }
+            else if ((config_key == "key_hex") || config_key.starts_with("key_hex["))
+            {
+                String key_path = config_prefix + "." + config_key;
+                key = unhexKey(config.getString(key_path));
+                String key_id_path = key_path + "[@id]";
+                if (config.has(key_id_path))
+                    key_id = config.getUInt64(key_id_path);
+            }
+            else
+                continue;
+
+            if (key_id)
+            {
+                if (!out_keys_by_id.contains(*key_id))
+                    out_keys_by_id[*key_id] = key;
+                else
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple keys specified for same ID {}", *key_id);
+            }
+            else
+                out_keys_without_id.push_back(key);
+        }
+
+        if (out_keys_by_id.empty() && out_keys_without_id.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No encryption keys found");
+
+        if (out_keys_by_id.empty() && (out_keys_without_id.size() == 1))
+        {
+            out_keys_by_id[0] = out_keys_without_id.front();
+            out_keys_without_id.clear();
+        }
+    }
+
+    /// Reads the current encryption key from the configuration.
+    String getCurrentKeyFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
+                                   const std::map<UInt64, String> & keys_by_id, const Strings & keys_without_id)
+    {
+        String key_path = config_prefix + ".current_key";
+        String key_hex_path = config_prefix + ".current_key_hex";
+        String key_id_path = config_prefix + ".current_key_id";
+
+        if (config.has(key_path) + config.has(key_hex_path) + config.has(key_id_path) > 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The current key is specified multiple times");
+
+        auto check_current_key_found = [&](const String & current_key_)
+        {
+            for (const auto & [_, key] : keys_by_id)
+            {
+                if (key == current_key_)
+                    return;
+            }
+            for (const auto & key : keys_without_id)
+            {
+                if (key == current_key_)
+                    return;
+            }
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The current key is not found in keys");
+        };
+
+        if (config.has(key_path))
+        {
+            String current_key = config.getString(key_path);
+            check_current_key_found(current_key);
+            return current_key;
+        }
+        if (config.has(key_hex_path))
+        {
+            String current_key = unhexKey(config.getString(key_hex_path));
+            check_current_key_found(current_key);
+            return current_key;
+        }
+        if (config.has(key_id_path))
+        {
+            UInt64 current_key_id = config.getUInt64(key_id_path);
+            auto it = keys_by_id.find(current_key_id);
+            if (it == keys_by_id.end())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found a key with the current ID {}", current_key_id);
+            return it->second;
+        }
+        if (keys_by_id.size() == 1 && keys_without_id.empty() && keys_by_id.begin()->first == 0)
+        {
+            /// There is only a single key defined with id=0, so we can choose it as current.
+            return keys_by_id.begin()->second;
+        }
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The current key is not specified");
+    }
+
+    /// Reads the current encryption algorithm from the configuration.
+    Algorithm getCurrentAlgorithmFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    {
+        String path = config_prefix + ".algorithm";
+        if (!config.has(path))
+            return DEFAULT_ENCRYPTION_ALGORITHM;
+        return parseAlgorithmFromString(config.getString(path));
+    }
+
     /// Reads the name of a wrapped disk & the path on the wrapped disk and then finds that disk in a disk map.
     void getDiskAndPathFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const DisksMap & map,
                                   DiskPtr & out_disk, String & out_path)
@@ -244,7 +374,7 @@ size_t DiskEncrypted::getFileSize(const String & path) const
 UInt128 DiskEncrypted::getEncryptedFileIV(const String & path) const
 {
     auto wrapped_path = wrappedPath(path);
-    auto read_buffer = delegate->readFile(wrapped_path, ReadSettings().adjustBufferSize(FileEncryption::Header::kSize));
+    auto read_buffer = delegate->readFile(wrapped_path, getReadSettings().adjustBufferSize(FileEncryption::Header::kSize));
     if (read_buffer->eof())
         return 0;
     auto header = readHeader(*read_buffer);

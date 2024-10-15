@@ -60,6 +60,11 @@ public:
         return std::make_shared<DataTypeUInt32>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeUInt32>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 
 private:
@@ -162,7 +167,7 @@ ColumnPtr FunctionArrayUniq::executeImpl(const ColumnsWithTypeAndName & argument
 
     for (size_t i = 0; i < num_arguments; ++i)
     {
-        if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(*data_columns[i]))
+        if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(data_columns[i]))
         {
             if (num_arguments == 1)
                 data_columns[i] = &nullable_col->getNestedColumn();

@@ -18,6 +18,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int TYPE_MISMATCH;
 }
 
 namespace
@@ -76,19 +77,16 @@ inline size_t JSONEachRowRowInputFormat::columnIndex(StringRef name, size_t key_
     {
         return prev_positions[key_index]->second;
     }
-    else
-    {
-        const auto it = name_map.find(name);
-        if (it != name_map.end())
-        {
-            if (key_index < prev_positions.size())
-                prev_positions[key_index] = it;
 
-            return it->second;
-        }
-        else
-            return UNKNOWN_FIELD;
+    const auto it = name_map.find(name);
+    if (it != name_map.end())
+    {
+        if (key_index < prev_positions.size())
+            prev_positions[key_index] = it;
+
+        return it->second;
     }
+    return UNKNOWN_FIELD;
 }
 
 /** Read the field name and convert it to column name
@@ -114,7 +112,7 @@ StringRef JSONEachRowRowInputFormat::readColumnName(ReadBuffer & buf)
     }
 
     current_column_name.resize(nested_prefix_length);
-    readJSONStringInto(current_column_name, buf);
+    readJSONStringInto(current_column_name, buf, format_settings.json);
     return current_column_name;
 }
 
@@ -123,7 +121,7 @@ void JSONEachRowRowInputFormat::skipUnknownField(StringRef name_ref)
     if (!format_settings.skip_unknown_fields)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing JSONEachRow format: {}", name_ref.toString());
 
-    skipJSONField(*in, name_ref);
+    skipJSONField(*in, name_ref, format_settings.json);
 }
 
 void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns)
@@ -132,6 +130,7 @@ void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns
         throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing JSONEachRow format: {}", columnName(index));
 
     seen_columns[index] = true;
+    seen_columns_count++;
     const auto & type = getPort().getHeader().getByPosition(index).type;
     const auto & serialization = serializations[index];
     read_columns[index] = JSONUtils::readField(*in, *columns[index], type, serialization, columnName(index), format_settings, yield_strings);
@@ -143,7 +142,7 @@ inline bool JSONEachRowRowInputFormat::advanceToNextKey(size_t key_index)
 
     if (in->eof())
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while parsing JSONEachRow format");
-    else if (*in->position() == '}')
+    if (*in->position() == '}')
     {
         ++in->position();
         return false;
@@ -161,6 +160,14 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
     for (size_t key_index = 0; advanceToNextKey(key_index); ++key_index)
     {
         StringRef name_ref = readColumnName(*in);
+        if (seen_columns_count >= total_columns && format_settings.json.ignore_unnecessary_fields)
+        {
+            // Keep parsing the remaining fields in case of the json is invalid.
+            // But not look up the name in the name_map since the cost cannot be ignored
+            JSONUtils::skipColon(*in);
+            skipUnknownField(name_ref);
+            continue;
+        }
         const size_t column_index = columnIndex(name_ref, key_index);
 
         if (unlikely(ssize_t(column_index) < 0))
@@ -210,6 +217,8 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         return false;
 
     size_t num_columns = columns.size();
+    total_columns = num_columns;
+    seen_columns_count = 0;
 
     read_columns.assign(num_columns, false);
     seen_columns.assign(num_columns, false);
@@ -222,7 +231,13 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     /// Fill non-visited columns with the default values.
     for (size_t i = 0; i < num_columns; ++i)
         if (!seen_columns[i])
-            header.getByPosition(i).type->insertDefaultInto(*columns[i]);
+        {
+            const auto & type = header.getByPosition(i).type;
+            if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(type))
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot insert NULL value into a column `{}` of type '{}'", columnName(i), type->getName());
+            type->insertDefaultInto(*columns[i]);
+        }
+
 
     /// Return info about defaults set.
     /// If defaults_for_omitted_fields is set to 0, we should just leave already inserted defaults.

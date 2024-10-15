@@ -37,7 +37,10 @@ public:
 
     QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
-    bool isRemote() const override { return true; }
+    bool isRemote() const final { return true; }
+    bool supportsSubcolumns() const override  { return true; }
+    bool supportsOptimizationToSubcolumns() const override { return false; }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
 protected:
     virtual void updateBeforeRead(const ContextPtr &) {}

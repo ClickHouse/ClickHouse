@@ -93,6 +93,7 @@ ColumnsDescription ZooKeeperLogElement::getColumnsDescription()
                 {"FilteredList",        static_cast<Int16>(Coordination::OpNum::FilteredList)},
                 {"CheckNotExists",      static_cast<Int16>(Coordination::OpNum::CheckNotExists)},
                 {"CreateIfNotExists",   static_cast<Int16>(Coordination::OpNum::CreateIfNotExists)},
+                {"RemoveRecursive",     static_cast<Int16>(Coordination::OpNum::RemoveRecursive)},
             });
 
     auto error_enum = getCoordinationErrorCodesEnumType();
@@ -131,9 +132,9 @@ ColumnsDescription ZooKeeperLogElement::getColumnsDescription()
         {"address", DataTypeFactory::instance().get("IPv6"), "IP address of ZooKeeper server that was used to make the request."},
         {"port", std::make_shared<DataTypeUInt16>(), "The port of ZooKeeper server that was used to make the request."},
         {"session_id", std::make_shared<DataTypeInt64>(), "The session ID that the ZooKeeper server sets for each connection."},
-        {"duration_ms", std::make_shared<DataTypeUInt64>(), "The time taken by ZooKeeper to execute the request."},
+        {"duration_microseconds", std::make_shared<DataTypeUInt64>(), "The time taken by ZooKeeper to execute the request."},
 
-        {"xid", std::make_shared<DataTypeInt32>(), "The ID of the request within the session. This is usually a sequential request number. It is the same for the request row and the paired response/finalize row."},
+        {"xid", std::make_shared<DataTypeInt64>(), "The ID of the request within the session. This is usually a sequential request number. It is the same for the request row and the paired response/finalize row."},
         {"has_watch", std::make_shared<DataTypeUInt8>(), "The request whether the watch has been set."},
         {"op_num", op_num_enum, "The type of request or response."},
         {"path", std::make_shared<DataTypeString>(), "The path to the ZooKeeper node specified in the request, or an empty string if the request not requires specifying a path."},
@@ -183,7 +184,7 @@ void ZooKeeperLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insertData(IPv6ToBinary(address.host()).data(), 16);
     columns[i++]->insert(address.port());
     columns[i++]->insert(session_id);
-    columns[i++]->insert(duration_ms);
+    columns[i++]->insert(duration_microseconds);
 
     columns[i++]->insert(xid);
     columns[i++]->insert(has_watch);

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: replica, no-replicated-database, no-parallel
+# Tags: replica, no-replicated-database, no-parallel, no-debug, no-random-settings
 # Tag no-replicated-database: Fails due to additional replicas or shards
 
 set -e
@@ -16,7 +16,7 @@ unset CLICKHOUSE_WRITE_COVERAGE
 NUM_REPLICAS=10
 
 for i in $(seq 1 $NUM_REPLICAS); do
-    $CLICKHOUSE_CLIENT -n -q "
+    $CLICKHOUSE_CLIENT -q "
         DROP TABLE IF EXISTS r$i SYNC;
         CREATE TABLE r$i (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/r', 'r$i') ORDER BY x;
     "
@@ -39,7 +39,7 @@ done
 wait
 
 for i in $(seq 1 $NUM_REPLICAS); do
-    $CLICKHOUSE_CLIENT -n -q "
+    $CLICKHOUSE_CLIENT -q "
         SYSTEM SYNC REPLICA r$i;
         SELECT count(), min(x), max(x), sum(x) FROM r$i;"
 done

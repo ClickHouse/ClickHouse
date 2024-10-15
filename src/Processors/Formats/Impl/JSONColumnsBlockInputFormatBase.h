@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/NamesAndTypes.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -51,7 +52,7 @@ public:
 
     void setReadBuffer(ReadBuffer & in_) override;
 
-    const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
+    const BlockMissingValues * getMissingValues() const override { return &block_missing_values; }
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 

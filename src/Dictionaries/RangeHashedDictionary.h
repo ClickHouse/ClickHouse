@@ -97,7 +97,7 @@ public:
 
     double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
 
-    std::shared_ptr<const IExternalLoadable> clone() const override
+    std::shared_ptr<IExternalLoadable> clone() const override
     {
         auto result = std::make_shared<RangeHashedDictionary>(
             getDictionaryID(),
@@ -245,7 +245,7 @@ private:
         DefaultValueExtractor & default_value_extractor) const;
 
     template <typename ValueType, bool is_nullable>
-    size_t getItemsShortCircuitImpl(
+    void getItemsShortCircuitImpl(
         const Attribute & attribute,
         const Columns & key_columns,
         ValueSetterFunc<ValueType> && set_value,
@@ -906,13 +906,13 @@ void RangeHashedDictionary<dictionary_key_type>::setAttributeValue(Attribute & a
 
         if constexpr (std::is_same_v<AttributeType, String>)
         {
-            const auto & string = value.get<String>();
+            const auto & string = value.safeGet<String>();
             StringRef string_ref = copyStringInArena(string_arena, string);
             value_to_insert = string_ref;
         }
         else
         {
-            value_to_insert = static_cast<ValueType>(value.get<ValueType>());
+            value_to_insert = static_cast<ValueType>(value.safeGet<ValueType>());
         }
 
         container.back() = value_to_insert;

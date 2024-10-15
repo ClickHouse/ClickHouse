@@ -151,6 +151,15 @@ Names NamesAndTypesList::getNames() const
     return res;
 }
 
+NameSet NamesAndTypesList::getNameSet() const
+{
+    NameSet res;
+    res.reserve(size());
+    for (const NameAndTypePair & column : *this)
+        res.insert(column.name);
+    return res;
+}
+
 DataTypes NamesAndTypesList::getTypes() const
 {
     DataTypes res;
@@ -187,6 +196,18 @@ NamesAndTypesList NamesAndTypesList::filter(const Names & names) const
 {
     return filter(NameSet(names.begin(), names.end()));
 }
+
+NamesAndTypesList NamesAndTypesList::eraseNames(const NameSet & names) const
+{
+    NamesAndTypesList res;
+    for (const auto & column : *this)
+    {
+        if (!names.contains(column.name))
+            res.push_back(column);
+    }
+    return res;
+}
+
 
 NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
 {

@@ -16,7 +16,7 @@ struct DivideFloatingImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static inline NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
+    static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
         return static_cast<Result>(a) / b;
     }
@@ -24,7 +24,7 @@ struct DivideFloatingImpl
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = true;
 
-    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
     {
         if (left->getType()->isIntegerTy())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "DivideFloatingImpl expected a floating-point type");

@@ -4,6 +4,7 @@
 
 #include <cassert>
 #include <string_view>
+#include <unordered_set>
 
 namespace DB
 {
@@ -13,7 +14,7 @@ namespace DB
     MR_MACROS(ADD_CONSTRAINT, "ADD CONSTRAINT") \
     MR_MACROS(ADD_INDEX, "ADD INDEX") \
     MR_MACROS(ADD_PROJECTION, "ADD PROJECTION") \
-    MR_MACROS(ADD_STATISTIC, "ADD STATISTIC") \
+    MR_MACROS(ADD_STATISTICS, "ADD STATISTICS") \
     MR_MACROS(ADD, "ADD") \
     MR_MACROS(ADMIN_OPTION_FOR, "ADMIN OPTION FOR") \
     MR_MACROS(AFTER, "AFTER") \
@@ -83,7 +84,8 @@ namespace DB
     MR_MACROS(CLEAR_COLUMN, "CLEAR COLUMN") \
     MR_MACROS(CLEAR_INDEX, "CLEAR INDEX") \
     MR_MACROS(CLEAR_PROJECTION, "CLEAR PROJECTION") \
-    MR_MACROS(CLEAR_STATISTIC, "CLEAR STATISTIC") \
+    MR_MACROS(CLEAR_STATISTICS, "CLEAR STATISTICS") \
+    MR_MACROS(CLONE_AS, "CLONE AS") \
     MR_MACROS(CLUSTER, "CLUSTER") \
     MR_MACROS(CLUSTERS, "CLUSTERS") \
     MR_MACROS(CN, "CN") \
@@ -116,6 +118,8 @@ namespace DB
     MR_MACROS(CURRENT_TRANSACTION, "CURRENT TRANSACTION") \
     MR_MACROS(CURRENTUSER, "CURRENTUSER") \
     MR_MACROS(D, "D") \
+    MR_MACROS(DATA, "DATA") \
+    MR_MACROS(DATA_INNER_UUID, "DATA INNER UUID") \
     MR_MACROS(DATABASE, "DATABASE") \
     MR_MACROS(DATABASES, "DATABASES") \
     MR_MACROS(DATE, "DATE") \
@@ -150,7 +154,7 @@ namespace DB
     MR_MACROS(DROP_PART, "DROP PART") \
     MR_MACROS(DROP_PARTITION, "DROP PARTITION") \
     MR_MACROS(DROP_PROJECTION, "DROP PROJECTION") \
-    MR_MACROS(DROP_STATISTIC, "DROP STATISTIC") \
+    MR_MACROS(DROP_STATISTICS, "DROP STATISTICS") \
     MR_MACROS(DROP_TABLE, "DROP TABLE") \
     MR_MACROS(DROP_TEMPORARY_TABLE, "DROP TEMPORARY TABLE") \
     MR_MACROS(DROP, "DROP") \
@@ -250,6 +254,7 @@ namespace DB
     MR_MACROS(IS_NOT_NULL, "IS NOT NULL") \
     MR_MACROS(IS_NULL, "IS NULL") \
     MR_MACROS(JOIN, "JOIN") \
+    MR_MACROS(JWT, "JWT") \
     MR_MACROS(KERBEROS, "KERBEROS") \
     MR_MACROS(KEY_BY, "KEY BY") \
     MR_MACROS(KEY, "KEY") \
@@ -279,7 +284,7 @@ namespace DB
     MR_MACROS(MATERIALIZE_COLUMN, "MATERIALIZE COLUMN") \
     MR_MACROS(MATERIALIZE_INDEX, "MATERIALIZE INDEX") \
     MR_MACROS(MATERIALIZE_PROJECTION, "MATERIALIZE PROJECTION") \
-    MR_MACROS(MATERIALIZE_STATISTIC, "MATERIALIZE STATISTIC") \
+    MR_MACROS(MATERIALIZE_STATISTICS, "MATERIALIZE STATISTICS") \
     MR_MACROS(MATERIALIZE_TTL, "MATERIALIZE TTL") \
     MR_MACROS(MATERIALIZE, "MATERIALIZE") \
     MR_MACROS(MATERIALIZED, "MATERIALIZED") \
@@ -287,6 +292,8 @@ namespace DB
     MR_MACROS(MCS, "MCS") \
     MR_MACROS(MEMORY, "MEMORY") \
     MR_MACROS(MERGES, "MERGES") \
+    MR_MACROS(METRICS, "METRICS") \
+    MR_MACROS(METRICS_INNER_UUID, "METRICS INNER UUID") \
     MR_MACROS(MI, "MI") \
     MR_MACROS(MICROSECOND, "MICROSECOND") \
     MR_MACROS(MICROSECONDS, "MICROSECONDS") \
@@ -299,10 +306,12 @@ namespace DB
     MR_MACROS(MOD, "MOD") \
     MR_MACROS(MODIFY_COLUMN, "MODIFY COLUMN") \
     MR_MACROS(MODIFY_COMMENT, "MODIFY COMMENT") \
+    MR_MACROS(MODIFY_DEFINER, "MODIFY DEFINER") \
     MR_MACROS(MODIFY_ORDER_BY, "MODIFY ORDER BY") \
     MR_MACROS(MODIFY_QUERY, "MODIFY QUERY") \
     MR_MACROS(MODIFY_REFRESH, "MODIFY REFRESH") \
     MR_MACROS(MODIFY_SAMPLE_BY, "MODIFY SAMPLE BY") \
+    MR_MACROS(MODIFY_STATISTICS, "MODIFY STATISTICS") \
     MR_MACROS(MODIFY_SETTING, "MODIFY SETTING") \
     MR_MACROS(MODIFY_SQL_SECURITY, "MODIFY SQL SECURITY") \
     MR_MACROS(MODIFY_TTL, "MODIFY TTL") \
@@ -364,6 +373,7 @@ namespace DB
     MR_MACROS(POPULATE, "POPULATE") \
     MR_MACROS(PRECEDING, "PRECEDING") \
     MR_MACROS(PRECISION, "PRECISION") \
+    MR_MACROS(PREFIX, "PREFIX") \
     MR_MACROS(PREWHERE, "PREWHERE") \
     MR_MACROS(PRIMARY_KEY, "PRIMARY KEY") \
     MR_MACROS(PRIMARY, "PRIMARY") \
@@ -399,6 +409,7 @@ namespace DB
     MR_MACROS(REPLACE_PARTITION, "REPLACE PARTITION") \
     MR_MACROS(REPLACE, "REPLACE") \
     MR_MACROS(RESET_SETTING, "RESET SETTING") \
+    MR_MACROS(RESET_AUTHENTICATION_METHODS_TO_NEW, "RESET AUTHENTICATION METHODS TO NEW") \
     MR_MACROS(RESPECT_NULLS, "RESPECT NULLS") \
     MR_MACROS(RESTORE, "RESTORE") \
     MR_MACROS(RESTRICT, "RESTRICT") \
@@ -415,6 +426,7 @@ namespace DB
     MR_MACROS(SALT, "SALT") \
     MR_MACROS(SAMPLE_BY, "SAMPLE BY") \
     MR_MACROS(SAMPLE, "SAMPLE") \
+    MR_MACROS(SAN, "SAN") \
     MR_MACROS(SCHEME, "SCHEME") \
     MR_MACROS(SECOND, "SECOND") \
     MR_MACROS(SECONDS, "SECONDS") \
@@ -441,11 +453,13 @@ namespace DB
     MR_MACROS(SHOW, "SHOW") \
     MR_MACROS(SIGNED, "SIGNED") \
     MR_MACROS(SIMPLE, "SIMPLE") \
+    MR_MACROS(SKIP, "SKIP") \
     MR_MACROS(SOURCE, "SOURCE") \
     MR_MACROS(SPATIAL, "SPATIAL") \
     MR_MACROS(SQL_SECURITY, "SQL SECURITY") \
     MR_MACROS(SS, "SS") \
-    MR_MACROS(STATISTIC, "STATISTIC") \
+    MR_MACROS(START_TRANSACTION, "START TRANSACTION") \
+    MR_MACROS(STATISTICS, "STATISTICS") \
     MR_MACROS(STEP, "STEP") \
     MR_MACROS(STORAGE, "STORAGE") \
     MR_MACROS(STRICT, "STRICT") \
@@ -459,6 +473,9 @@ namespace DB
     MR_MACROS(TABLE_OVERRIDE, "TABLE OVERRIDE") \
     MR_MACROS(TABLE, "TABLE") \
     MR_MACROS(TABLES, "TABLES") \
+    MR_MACROS(TAG, "TAG") \
+    MR_MACROS(TAGS, "TAGS") \
+    MR_MACROS(TAGS_INNER_UUID, "TAGS INNER UUID") \
     MR_MACROS(TEMPORARY_TABLE, "TEMPORARY TABLE") \
     MR_MACROS(TEMPORARY, "TEMPORARY") \
     MR_MACROS(TEST, "TEST") \
@@ -505,6 +522,7 @@ namespace DB
     MR_MACROS(WHEN, "WHEN") \
     MR_MACROS(WHERE, "WHERE") \
     MR_MACROS(WINDOW, "WINDOW") \
+    MR_MACROS(QUALIFY, "QUALIFY") \
     MR_MACROS(WITH_ADMIN_OPTION, "WITH ADMIN OPTION") \
     MR_MACROS(WITH_CHECK, "WITH CHECK") \
     MR_MACROS(WITH_FILL, "WITH FILL") \
@@ -512,7 +530,9 @@ namespace DB
     MR_MACROS(WITH_NAME, "WITH NAME") \
     MR_MACROS(WITH_REPLACE_OPTION, "WITH REPLACE OPTION") \
     MR_MACROS(WITH_TIES, "WITH TIES") \
+    MR_MACROS(WITH_IMPLICIT, "WITH IMPLICIT") \
     MR_MACROS(WITH, "WITH") \
+    MR_MACROS(RECURSIVE, "RECURSIVE") \
     MR_MACROS(WK, "WK") \
     MR_MACROS(WRITABLE, "WRITABLE") \
     MR_MACROS(WW, "WW") \
@@ -554,7 +574,7 @@ namespace DB
     MR_MACROS(SSH_KEY, "SSH_KEY") \
     MR_MACROS(SSL_CERTIFICATE, "SSL_CERTIFICATE") \
     MR_MACROS(STRICTLY_ASCENDING, "STRICTLY_ASCENDING") \
-    MR_MACROS(WITH_ITEMINDEX, "with_itemindex") \
+    MR_MACROS(WITH_ITEMINDEX, "WITH_ITEMINDEX") \
 
 enum class Keyword : size_t
 {
@@ -570,6 +590,8 @@ enum class Keyword : size_t
 std::string_view toStringView(Keyword type);
 
 const std::vector<String> & getAllKeyWords();
+
+const std::unordered_set<std::string> & getKeyWordSet();
 
 
 /** Parse specified keyword such as SELECT or compound keyword such as ORDER BY.
@@ -599,6 +621,8 @@ public:
 
     constexpr const char * getName() const override { return s.data(); }
 
+    Highlight highlight() const override { return Highlight::keyword; }
+
 protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
@@ -626,6 +650,32 @@ protected:
     }
 };
 
+class ParserTokenSequence : public IParserBase
+{
+private:
+    std::vector<TokenType> token_types;
+public:
+    ParserTokenSequence(const std::vector<TokenType> & token_types_) : token_types(token_types_) {} /// NOLINT
+
+protected:
+    const char * getName() const override { return "token sequence"; }
+
+    bool parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected) override
+    {
+        for (auto token_type : token_types)
+        {
+            if (pos->type != token_type)
+            {
+                expected.add(pos, getTokenName(token_type));
+                return false;
+            }
+
+            ++pos;
+        }
+
+        return true;
+    }
+};
 
 // Parser always returns true and do nothing.
 class ParserNothing : public IParserBase

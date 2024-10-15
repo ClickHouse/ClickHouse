@@ -1,3 +1,4 @@
+#include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/JSONAsStringRowInputFormat.h>
 #include <Formats/JSONUtils.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -15,29 +16,13 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-JSONAsRowInputFormat::JSONAsRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
-    : JSONAsRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_, format_settings_) {}
-
-JSONAsRowInputFormat::JSONAsRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & format_settings_) :
-    JSONEachRowRowInputFormat(*buf_, header_, std::move(params_), format_settings_, false), buf(std::move(buf_))
+JSONAsRowInputFormat::JSONAsRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_) :
+    JSONEachRowRowInputFormat(in_, header_, std::move(params_), format_settings_, false)
 {
     if (header_.columns() > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "This input format is only suitable for tables with a single column of type String or Object, but the number of columns is {}",
             header_.columns());
-}
-
-
-void JSONAsRowInputFormat::setReadBuffer(ReadBuffer & in_)
-{
-    buf = std::make_unique<PeekableReadBuffer>(in_);
-    JSONEachRowRowInputFormat::setReadBuffer(*buf);
-}
-
-void JSONAsRowInputFormat::resetReadBuffer()
-{
-    buf.reset();
-    JSONEachRowRowInputFormat::resetReadBuffer();
 }
 
 bool JSONAsRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
@@ -48,40 +33,58 @@ bool JSONAsRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
     if (!allow_new_rows)
         return false;
 
-    skipWhitespaceIfAny(*buf);
-    if (!buf->eof())
+    skipWhitespaceIfAny(*in);
+    if (!in->eof())
     {
-        if (!data_in_square_brackets && *buf->position() == ';')
+        if (!data_in_square_brackets && *in->position() == ';')
         {
             /// ';' means the end of query, but it cannot be before ']'.
             return allow_new_rows = false;
         }
-        else if (data_in_square_brackets && *buf->position() == ']')
+        if (data_in_square_brackets && *in->position() == ']')
         {
             /// ']' means the end of query.
             return allow_new_rows = false;
         }
     }
 
-    if (!buf->eof())
+    if (!in->eof())
         readJSONObject(*columns[0]);
 
-    skipWhitespaceIfAny(*buf);
-    if (!buf->eof() && *buf->position() == ',')
-        ++buf->position();
-    skipWhitespaceIfAny(*buf);
+    skipWhitespaceIfAny(*in);
+    if (!in->eof() && *in->position() == ',')
+        ++in->position();
+    skipWhitespaceIfAny(*in);
 
-    return !buf->eof();
+    return !in->eof();
 }
 
 JSONAsStringRowInputFormat::JSONAsStringRowInputFormat(
-    const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
-    : JSONAsRowInputFormat(header_, in_, params_, format_settings_)
+    const Block & header_, ReadBuffer & in_, IRowInputFormat::Params params_, const FormatSettings & format_settings_)
+    : JSONAsStringRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_, format_settings_)
+{
+}
+
+JSONAsStringRowInputFormat::JSONAsStringRowInputFormat(
+    const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & format_settings_)
+    : JSONAsRowInputFormat(header_, *buf_, params_, format_settings_), buf(std::move(buf_))
 {
     if (!isString(removeNullable(removeLowCardinality(header_.getByPosition(0).type))))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "This input format is only suitable for tables with a single column of type String but the column type is {}",
             header_.getByPosition(0).type->getName());
+}
+
+void JSONAsStringRowInputFormat::setReadBuffer(ReadBuffer & in_)
+{
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    JSONAsRowInputFormat::setReadBuffer(*buf);
+}
+
+void JSONAsStringRowInputFormat::resetReadBuffer()
+{
+    buf.reset();
+    JSONAsRowInputFormat::resetReadBuffer();
 }
 
 void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
@@ -166,15 +169,16 @@ JSONAsObjectRowInputFormat::JSONAsObjectRowInputFormat(
     const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : JSONAsRowInputFormat(header_, in_, params_, format_settings_)
 {
-    if (!isObject(header_.getByPosition(0).type))
+    const auto & type = header_.getByPosition(0).type;
+    if (!isObject(type) && !isObjectDeprecated(type))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Input format JSONAsObject is only suitable for tables with a single column of type Object but the column type is {}",
-            header_.getByPosition(0).type->getName());
+            "Input format JSONAsObject is only suitable for tables with a single column of type Object/JSON but the column type is {}",
+            type->getName());
 }
 
 void JSONAsObjectRowInputFormat::readJSONObject(IColumn & column)
 {
-    serializations[0]->deserializeTextJSON(column, *buf, format_settings);
+    serializations[0]->deserializeTextJSON(column, *in, format_settings);
 }
 
 Chunk JSONAsObjectRowInputFormat::getChunkForCount(size_t rows)
@@ -184,13 +188,13 @@ Chunk JSONAsObjectRowInputFormat::getChunkForCount(size_t rows)
     return Chunk({std::move(column)}, rows);
 }
 
-JSONAsObjectExternalSchemaReader::JSONAsObjectExternalSchemaReader(const FormatSettings & settings)
+JSONAsObjectExternalSchemaReader::JSONAsObjectExternalSchemaReader(const FormatSettings & settings_) : settings(settings_)
 {
-    if (!settings.json.allow_object_type)
+    if (!settings.json.allow_deprecated_object_type && !settings.json.allow_json_type)
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN,
-            "Cannot infer the data structure in JSONAsObject format because experimental Object type is not allowed. Set setting "
-            "allow_experimental_object_type = 1 in order to allow it");
+            "Cannot infer the data structure in JSONAsObject format because experimental Object/JSON type is not allowed. Set setting "
+            "allow_experimental_object_type = 1 or allow_experimental_json_type=1 in order to allow it");
 }
 
 void registerInputFormatJSONAsString(FormatFactory & factory)

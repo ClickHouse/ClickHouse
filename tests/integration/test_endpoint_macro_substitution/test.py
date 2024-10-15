@@ -1,7 +1,8 @@
 import pytest
-from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
 from pyhdfs import HdfsClient
+
+from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.test_tools import TSV
 
 disk_types = {
     "default": "Local",
@@ -9,6 +10,9 @@ disk_types = {
     "disk_hdfs": "HDFS",
     "disk_encrypted": "S3",
 }
+
+if is_arm():
+    pytestmark = pytest.mark.skip
 
 
 @pytest.fixture(scope="module")

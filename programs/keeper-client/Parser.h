@@ -11,7 +11,6 @@ namespace DB
 {
 
 bool parseKeeperArg(IParser::Pos & pos, Expected & expected, String & result);
-
 bool parseKeeperPath(IParser::Pos & pos, Expected & expected, String & path);
 
 

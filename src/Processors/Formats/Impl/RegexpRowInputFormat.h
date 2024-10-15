@@ -8,7 +8,6 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatFactory.h>
 #include <Formats/ParsedTemplateFormatString.h>
 #include <Formats/SchemaInferenceUtils.h>
 
@@ -31,6 +30,7 @@ public:
     size_t getNumberOfGroups() const { return regexp.NumberOfCapturingGroups(); }
 
 private:
+    String regexp_str;
     const re2::RE2 regexp;
     // The vector of fields extracted from line using regexp.
     std::vector<std::string_view> matched_fields;

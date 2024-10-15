@@ -6,6 +6,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <Common/MemorySanitizer.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <Common/safe_cast.h>
@@ -102,6 +103,8 @@ namespace
             if (!EVP_EncryptUpdate(evp_ctx, ciphertext, &ciphertext_size, &in[in_size], static_cast<int>(part_size)))
                 throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to encrypt: {}", ERR_get_error());
 
+            __msan_unpoison(ciphertext, ciphertext_size); /// OpenSSL uses assembly which evades msans analysis
+
             in_size += part_size;
             if (ciphertext_size)
             {
@@ -133,6 +136,7 @@ namespace
 
         uint8_t * ciphertext_begin = &ciphertext[pad_left];
         ciphertext_size -= pad_left;
+        __msan_unpoison(ciphertext_begin, ciphertext_size); /// OpenSSL uses assembly which evades msans analysis
         out.write(reinterpret_cast<const char *>(ciphertext_begin), ciphertext_size);
         return ciphertext_size;
     }
@@ -144,6 +148,7 @@ namespace
         if (!EVP_EncryptFinal_ex(evp_ctx,
                                  ciphertext, &ciphertext_size))
             throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to finalize encrypting: {}", ERR_get_error());
+        __msan_unpoison(ciphertext, ciphertext_size); /// OpenSSL uses assembly which evades msans analysis
         if (ciphertext_size)
             out.write(reinterpret_cast<const char *>(ciphertext), ciphertext_size);
         return ciphertext_size;
@@ -156,6 +161,7 @@ namespace
         int plaintext_size = 0;
         if (!EVP_DecryptUpdate(evp_ctx, plaintext, &plaintext_size, in, safe_cast<int>(size)))
             throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to decrypt: {}", ERR_get_error());
+        __msan_unpoison(plaintext, plaintext_size); /// OpenSSL uses assembly which evades msans analysis
         return plaintext_size;
     }
 
@@ -178,6 +184,7 @@ namespace
 
         const uint8_t * plaintext_begin = &plaintext[pad_left];
         plaintext_size -= pad_left;
+        __msan_unpoison(plaintext_begin, plaintext_size); /// OpenSSL uses assembly which evades msans analysis
         memcpy(out, plaintext_begin, plaintext_size);
         return plaintext_size;
     }
@@ -188,6 +195,7 @@ namespace
         int plaintext_size = 0;
         if (!EVP_DecryptFinal_ex(evp_ctx, plaintext, &plaintext_size))
             throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to finalize decrypting: {}", ERR_get_error());
+        __msan_unpoison(plaintext, plaintext_size); /// OpenSSL uses assembly which evades msans analysis
         if (plaintext_size)
             memcpy(out, plaintext, plaintext_size);
         return plaintext_size;
@@ -221,15 +229,14 @@ Algorithm parseAlgorithmFromString(const String & str)
 {
     if (boost::iequals(str, "aes_128_ctr"))
         return Algorithm::AES_128_CTR;
-    else if (boost::iequals(str, "aes_192_ctr"))
+    if (boost::iequals(str, "aes_192_ctr"))
         return Algorithm::AES_192_CTR;
-    else if (boost::iequals(str, "aes_256_ctr"))
+    if (boost::iequals(str, "aes_256_ctr"))
         return Algorithm::AES_256_CTR;
-    else
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Encryption algorithm '{}' is not supported, specify one of the following: aes_128_ctr, aes_192_ctr, aes_256_ctr",
-            str);
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Encryption algorithm '{}' is not supported, specify one of the following: aes_128_ctr, aes_192_ctr, aes_256_ctr",
+        str);
 }
 
 void checkKeySize(size_t key_size, Algorithm algorithm) { checkKeySize(getCipher(algorithm), key_size); }

@@ -16,6 +16,17 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 connections_with_failover_max_tries;
+    extern const SettingsBool distributed_insert_skip_read_only_replicas;
+    extern const SettingsUInt64 distributed_replica_max_ignored_errors;
+    extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
+    extern const SettingsLoadBalancing load_balancing;
+    extern const SettingsUInt64 load_balancing_first_offset;
+    extern const SettingsNonZeroUInt64 max_parallel_replicas;
+    extern const SettingsBool skip_unavailable_shards;
+}
 
 namespace ErrorCodes
 {
@@ -47,12 +58,12 @@ ConnectionPoolWithFailover::ConnectionPoolWithFailover(
 IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts & timeouts)
 {
     Settings settings;
-    settings.load_balancing = get_priority_load_balancing.load_balancing;
-    settings.load_balancing_first_offset = 0;
-    settings.distributed_replica_max_ignored_errors = 0;
-    settings.fallback_to_stale_replicas_for_distributed_queries = true;
+    settings[Setting::load_balancing] = get_priority_load_balancing.load_balancing;
+    settings[Setting::load_balancing_first_offset] = 0;
+    settings[Setting::distributed_replica_max_ignored_errors] = 0;
+    settings[Setting::fallback_to_stale_replicas_for_distributed_queries] = true;
 
-    return get(timeouts, settings, true);
+    return get(timeouts, settings, /* force_connected= */ true);
 }
 
 IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts & timeouts,
@@ -65,16 +76,15 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
 
     TryGetEntryFunc try_get_entry = [&](const NestedPoolPtr & pool, std::string & fail_message)
     {
-        return tryGetEntry(pool, timeouts, fail_message, settings, {});
+        return tryGetEntry(pool, timeouts, fail_message, settings);
     };
 
-    const size_t offset = settings.load_balancing_first_offset % nested_pools.size();
-    const LoadBalancing load_balancing = settings.load_balancing;
+    const size_t offset = settings[Setting::load_balancing_first_offset] % nested_pools.size();
 
-    GetPriorityFunc get_priority = get_priority_load_balancing.getPriorityFunc(load_balancing, offset, nested_pools.size());
+    GetPriorityFunc get_priority = get_priority_load_balancing.getPriorityFunc(settings[Setting::load_balancing], offset, nested_pools.size());
 
-    const UInt64 max_ignored_errors = settings.distributed_replica_max_ignored_errors;
-    const bool fallback_to_stale_replicas = settings.fallback_to_stale_replicas_for_distributed_queries;
+    const UInt64 max_ignored_errors = settings[Setting::distributed_replica_max_ignored_errors];
+    const bool fallback_to_stale_replicas = settings[Setting::fallback_to_stale_replicas_for_distributed_queries];
 
     return Base::get(max_ignored_errors, fallback_to_stale_replicas, try_get_entry, get_priority);
 }
@@ -158,12 +168,25 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
     return getManyImpl(settings, pool_mode, try_get_entry, skip_unavailable_endpoints, priority_func);
 }
 
+std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::getManyCheckedForInsert(
+    const ConnectionTimeouts & timeouts,
+    const Settings & settings,
+    PoolMode pool_mode,
+    const QualifiedTableName & table_to_check)
+{
+    TryGetEntryFunc try_get_entry = [&](const NestedPoolPtr & pool, std::string & fail_message)
+    { return tryGetEntry(pool, timeouts, fail_message, settings, &table_to_check, /*async_callback=*/ {}); };
+
+    return getManyImpl(settings, pool_mode, try_get_entry,
+        /*skip_unavailable_endpoints=*/ false, /// skip_unavailable_endpoints is used to get the min number of entries, and we need at least one
+        /*priority_func=*/ {},
+        settings[Setting::distributed_insert_skip_read_only_replicas]);
+}
+
 ConnectionPoolWithFailover::Base::GetPriorityFunc ConnectionPoolWithFailover::makeGetPriorityFunc(const Settings & settings)
 {
-    const size_t offset = settings.load_balancing_first_offset % nested_pools.size();
-    const LoadBalancing load_balancing = LoadBalancing(settings.load_balancing);
-
-    return get_priority_load_balancing.getPriorityFunc(load_balancing, offset, nested_pools.size());
+    const size_t offset = settings[Setting::load_balancing_first_offset] % nested_pools.size();
+    return get_priority_load_balancing.getPriorityFunc(settings[Setting::load_balancing], offset, nested_pools.size());
 }
 
 std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::getManyImpl(
@@ -171,7 +194,8 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
     PoolMode pool_mode,
     const TryGetEntryFunc & try_get_entry,
     std::optional<bool> skip_unavailable_endpoints,
-    GetPriorityForLoadBalancing::Func priority_func)
+    GetPriorityForLoadBalancing::Func priority_func,
+    bool skip_read_only_replicas)
 {
     if (nested_pools.empty())
         throw DB::Exception(
@@ -179,11 +203,11 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
             "Cannot get connection from ConnectionPoolWithFailover cause nested pools are empty");
 
     if (!skip_unavailable_endpoints.has_value())
-        skip_unavailable_endpoints = settings.skip_unavailable_shards;
+        skip_unavailable_endpoints = settings[Setting::skip_unavailable_shards];
 
     size_t min_entries = skip_unavailable_endpoints.value() ? 0 : 1;
 
-    size_t max_tries = settings.connections_with_failover_max_tries;
+    size_t max_tries = settings[Setting::connections_with_failover_max_tries];
     size_t max_entries;
     if (pool_mode == PoolMode::GET_ALL)
     {
@@ -191,19 +215,25 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
         max_entries = nested_pools.size();
     }
     else if (pool_mode == PoolMode::GET_ONE)
+    {
         max_entries = 1;
+    }
     else if (pool_mode == PoolMode::GET_MANY)
-        max_entries = settings.max_parallel_replicas;
+    {
+        max_entries = settings[Setting::max_parallel_replicas];
+    }
     else
+    {
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unknown pool allocation mode");
+    }
 
     if (!priority_func)
         priority_func = makeGetPriorityFunc(settings);
 
-    UInt64 max_ignored_errors = settings.distributed_replica_max_ignored_errors.value;
-    bool fallback_to_stale_replicas = settings.fallback_to_stale_replicas_for_distributed_queries.value;
+    UInt64 max_ignored_errors = settings[Setting::distributed_replica_max_ignored_errors].value;
+    bool fallback_to_stale_replicas = settings[Setting::fallback_to_stale_replicas_for_distributed_queries].value;
 
-    return Base::getMany(min_entries, max_entries, max_tries, max_ignored_errors, fallback_to_stale_replicas, try_get_entry, priority_func);
+    return Base::getMany(min_entries, max_entries, max_tries, max_ignored_errors, fallback_to_stale_replicas, skip_read_only_replicas, try_get_entry, priority_func);
 }
 
 ConnectionPoolWithFailover::TryResult
@@ -250,7 +280,7 @@ ConnectionPoolWithFailover::getShuffledPools(const Settings & settings, GetPrior
     if (!priority_func)
         priority_func = makeGetPriorityFunc(settings);
 
-    UInt64 max_ignored_errors = settings.distributed_replica_max_ignored_errors.value;
+    UInt64 max_ignored_errors = settings[Setting::distributed_replica_max_ignored_errors].value;
     return Base::getShuffledPools(max_ignored_errors, priority_func, use_slowdown_count);
 }
 

@@ -86,7 +86,7 @@ public:
 
     bool hasHierarchy() const override { return false; }
 
-    std::shared_ptr<const IExternalLoadable> clone() const override
+    std::shared_ptr<IExternalLoadable> clone() const override
     {
         return std::make_shared<RegExpTreeDictionary>(
             getDictionaryID(), structure, source_ptr->clone(), configuration, use_vectorscan, flag_case_insensitive, flag_dotall);
@@ -114,12 +114,10 @@ public:
             IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
             return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, default_mask).front();
         }
-        else
-        {
-            const ColumnPtr & default_values_column = std::get<RefDefault>(default_or_filter).get();
-            const Columns & columns= Columns({default_values_column});
-            return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, columns).front();
-        }
+
+        const ColumnPtr & default_values_column = std::get<RefDefault>(default_or_filter).get();
+        const Columns & columns = Columns({default_values_column});
+        return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, columns).front();
     }
 
     Columns getColumns(

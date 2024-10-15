@@ -1,2 +1,15 @@
-SELECT countIf(a = 1)
-FROM m
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(multiIf(equals(a, 1), 1, 0)) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: countIf, function_type: aggregate, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: equals, function_type: ordinary, result_type: UInt8
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  COLUMN id: 6, column_name: a, result_type: Int32, source_id: 7
+                  CONSTANT id: 8, constant_value: UInt64_1, constant_value_type: UInt8
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.m

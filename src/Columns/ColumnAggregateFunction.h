@@ -1,17 +1,9 @@
 #pragma once
 
-#include <AggregateFunctions/IAggregateFunction.h>
-
+#include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Columns/IColumn.h>
-#include <Common/PODArray.h>
-
 #include <Core/Field.h>
-
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
-
-#include <Functions/FunctionHelpers.h>
+#include <Common/PODArray.h>
 
 namespace DB
 {
@@ -25,6 +17,12 @@ class Arena;
 using ArenaPtr = std::shared_ptr<Arena>;
 using ConstArenaPtr = std::shared_ptr<const Arena>;
 using ConstArenas = std::vector<ConstArenaPtr>;
+
+class Context;
+using ContextPtr = std::shared_ptr<const Context>;
+
+struct ColumnWithTypeAndName;
+using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
 
 /** Column of states of aggregate functions.
@@ -121,7 +119,7 @@ public:
     /// This method is made static and receive MutableColumnPtr object to explicitly destroy it.
     static MutableColumnPtr convertToValues(MutableColumnPtr column);
 
-    std::string getName() const override { return "AggregateFunction(" + func->getName() + ")"; }
+    std::string getName() const override;
     const char * getFamilyName() const override { return "AggregateFunction"; }
     TypeIndex getDataType() const override { return TypeIndex::AggregateFunction; }
 
@@ -147,7 +145,14 @@ public:
 
     void insertData(const char * pos, size_t length) override;
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & from, size_t n) override;
+#else
+    using IColumn::insertFrom;
+
+    void doInsertFrom(const IColumn & from, size_t n) override;
+#endif
+
 
     void insertFrom(ConstAggregateDataPtr place);
 
@@ -172,7 +177,7 @@ public:
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
-    void updateWeakHash32(WeakHash32 & hash) const override;
+    WeakHash32 getWeakHash32() const override;
 
     void updateHashFast(SipHash & hash) const override;
 
@@ -184,7 +189,11 @@ public:
 
     void protect() override;
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & from, size_t start, size_t length) override;
+#else
+    void doInsertRangeFrom(const IColumn & from, size_t start, size_t length) override;
+#endif
 
     void popBack(size_t n) override;
 
@@ -203,7 +212,11 @@ public:
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t, size_t, const IColumn &, int) const override
+#else
+    int doCompareAt(size_t, size_t, const IColumn &, int) const override
+#endif
     {
         return 0;
     }

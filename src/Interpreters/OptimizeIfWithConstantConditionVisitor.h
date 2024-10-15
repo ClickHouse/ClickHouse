@@ -1,23 +1,24 @@
 #pragma once
 
 #include <Interpreters/Aliases.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 
 namespace DB
 {
-
-/// It removes Function_if node from AST if condition is constant.
-/// TODO: rewrite with InDepthNodeVisitor
-class OptimizeIfWithConstantConditionVisitor
+struct OptimizeIfWithConstantConditionVisitorData
 {
-public:
-    explicit OptimizeIfWithConstantConditionVisitor(Aliases & aliases_)
+    using TypeToVisit = ASTFunction;
+
+    explicit OptimizeIfWithConstantConditionVisitorData(Aliases & aliases_)
         : aliases(aliases_)
     {}
 
-    void visit(ASTPtr & ast);
-
+    void visit(ASTFunction & function_node, ASTPtr & ast);
 private:
     Aliases & aliases;
 };
+
+/// It removes Function_if node from AST if condition is constant.
+using OptimizeIfWithConstantConditionVisitor = InDepthNodeVisitor<OneTypeMatcher<OptimizeIfWithConstantConditionVisitorData>, false>;
 
 }

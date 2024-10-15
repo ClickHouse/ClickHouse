@@ -91,6 +91,21 @@ public:
         if (!returns_many && levels.size() > 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires one level parameter or less", getName());
 
+        if constexpr (has_second_arg)
+        {
+            assertBinary(Name::name, argument_types_);
+            if (!isUInt(argument_types_[1]))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Second argument (weight) for function {} must be unsigned integer, but it has type {}",
+                    Name::name,
+                    argument_types_[1]->getName());
+        }
+        else
+        {
+            assertUnary(Name::name, argument_types_);
+        }
+
         if constexpr (is_quantile_ddsketch)
         {
             if (params.empty())
@@ -102,7 +117,7 @@ public:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} requires relative accuracy parameter with Float64 type", getName());
 
-            relative_accuracy = relative_accuracy_field.get<Float64>();
+            relative_accuracy = relative_accuracy_field.safeGet<Float64>();
 
             if (relative_accuracy <= 0 || relative_accuracy >= 1 || isNaN(relative_accuracy))
                 throw Exception(
@@ -132,9 +147,9 @@ public:
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} requires accuracy parameter with integer type", getName());
 
             if (accuracy_field.getType() == Field::Types::Int64)
-                accuracy = accuracy_field.get<Int64>();
+                accuracy = accuracy_field.safeGet<Int64>();
             else
-                accuracy = accuracy_field.get<UInt64>();
+                accuracy = accuracy_field.safeGet<UInt64>();
 
             if (accuracy <= 0)
                 throw Exception(
@@ -271,22 +286,6 @@ public:
             else
                 static_cast<ColVecType &>(to).getData().push_back(data.get(level));
         }
-    }
-
-    static void assertSecondArg(const DataTypes & types)
-    {
-        if constexpr (has_second_arg)
-        {
-            assertBinary(Name::name, types);
-            if (!isUInt(types[1]))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Second argument (weight) for function {} must be unsigned integer, but it has type {}",
-                    Name::name,
-                    types[1]->getName());
-        }
-        else
-            assertUnary(Name::name, types);
     }
 };
 

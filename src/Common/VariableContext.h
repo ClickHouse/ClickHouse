@@ -1,8 +1,10 @@
 #pragma once
 
+#include <cstdint>
+
 /// Used in ProfileEvents and MemoryTracker to determine their hierarchy level
 /// The less value the higher level (zero level is the root)
-enum class VariableContext
+enum class VariableContext : uint8_t
 {
     Global = 0,
     User,           /// Group of processes

@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -13,6 +14,12 @@
 
 namespace DB
 {
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsUInt64 index_granularity;
+    extern const MergeTreeSettingsUInt64 index_granularity_bytes;
+}
 
 namespace ErrorCodes
 {
@@ -33,7 +40,7 @@ static String formattedASTNormalized(const ASTPtr & ast)
     if (!ast)
         return "";
     auto ast_normalized = ast->clone();
-    FunctionNameNormalizer().visit(ast_normalized.get());
+    FunctionNameNormalizer::visit(ast_normalized.get());
     WriteBufferFromOwnString buf;
     formatAST(*ast_normalized, buf, false, true);
     return buf.str();
@@ -43,13 +50,13 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
 {
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
-        auto minmax_idx_column_names = data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey());
+        auto minmax_idx_column_names = MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->getPartitionKey());
         date_column = minmax_idx_column_names[data.minmax_idx_date_column_pos];
     }
 
     const auto data_settings = data.getSettings();
     sampling_expression = formattedASTNormalized(metadata_snapshot->getSamplingKeyAST());
-    index_granularity = data_settings->index_granularity;
+    index_granularity = (*data_settings)[MergeTreeSetting::index_granularity];
     merging_params_mode = static_cast<int>(data.merging_params.mode);
     sign_column = data.merging_params.sign_column;
     is_deleted_column = data.merging_params.is_deleted_column;
@@ -95,7 +102,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     projections = metadata_snapshot->getProjections().toString();
 
     if (data.canUseAdaptiveGranularity())
-        index_granularity_bytes = data_settings->index_granularity_bytes;
+        index_granularity_bytes = (*data_settings)[MergeTreeSetting::index_granularity_bytes];
     else
         index_granularity_bytes = 0;
 

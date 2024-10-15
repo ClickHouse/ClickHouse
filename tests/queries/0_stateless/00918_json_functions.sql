@@ -326,3 +326,9 @@ SELECT JSONExtract('[]', JSONExtract('0', 'UInt256'), 'UInt256'); -- { serverErr
 
 SELECT '--show error: key of map type should be String';
 SELECT JSONExtract('{"a": [100.0, 200], "b": [-100, 200.0, 300]}', 'Map(Int64, Array(Float64))'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT JSONExtract(materialize(toLowCardinality('{"string_value":null}')), materialize('string_value'), 'LowCardinality(Nullable(String))');
+SELECT JSONExtract(materialize('{"string_value":null}'), materialize('string_value'), 'LowCardinality(Nullable(String))');
+SELECT JSONExtract(materialize('{"string_value":"Hello"}'), materialize('string_value'), 'LowCardinality(Nullable(String))') AS x;
+SELECT JSONExtract(materialize(toLowCardinality('{"string_value":"Hello"}')), materialize('string_value'), 'LowCardinality(Nullable(String))') AS x;
+SELECT JSONExtract(materialize('{"string_value":"Hello"}'), materialize(toLowCardinality('string_value')), 'LowCardinality(Nullable(String))') AS x;
+SELECT JSONExtract(materialize(toLowCardinality('{"string_value":"Hello"}')), materialize(toLowCardinality('string_value')), 'LowCardinality(Nullable(String))') AS x;

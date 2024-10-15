@@ -82,3 +82,46 @@ ORDER BY (date, file, pull_request_number, commit_sha, check_name);
 ///
 
 find "$INPUT_DIR" -type f -executable -or -name '*.o' -or -name '*.a' | grep -v cargo | xargs wc -c | grep -v 'total' > "${OUTPUT_DIR}/binary_sizes.txt"
+
+# Additionally, collect information about the symbols inside translation units
+true<<///
+CREATE TABLE binary_symbols
+(
+   -- Extra columns:
+   pull_request_number UInt32,
+   commit_sha String,
+   check_start_time DateTime,
+   check_name LowCardinality(String),
+   instance_type LowCardinality(String),
+   instance_id String,
+
+   -- Normal columns:
+   file LowCardinality(String),
+   library LowCardinality(String) DEFAULT extract(file, 'CMakeFiles/([^/]+)\.dir/'),
+   address UInt64,
+   size UInt64,
+   type FixedString(1),
+   symbol LowCardinality(String),
+   date Date DEFAULT toDate(time),
+   time DateTime64(6) DEFAULT now64()
+)
+ENGINE = MergeTree
+ORDER BY (date, file, symbol, pull_request_number, commit_sha, check_name);
+///
+
+# nm does not work with LTO
+if ! grep -q -- '-flto' compile_commands.json
+then
+    # Find the best alternative of nm
+    for name in llvm-nm-{30..18} llvm-nm nm
+    do
+        NM=$(command -v ${name})
+        [[ -n "${NM}" ]] && break
+    done
+
+    find "$INPUT_DIR" -type f -name '*.o' | grep -v cargo | find . -name '*.o' | xargs -P $(nproc) -I {} bash -c "
+      ${NM} --demangle --defined-only --print-size '{}' | grep -v -P '[0-9a-zA-Z] r ' | sed 's@^@{} @' > '{}.symbols'
+    "
+
+    find "$INPUT_DIR" -type f -name '*.o.symbols' | xargs cat > "${OUTPUT_DIR}/binary_symbols.txt"
+fi

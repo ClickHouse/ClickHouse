@@ -30,7 +30,7 @@
 namespace DB::GatherUtils
 {
 
-enum class ArraySearchType
+enum class ArraySearchType : uint8_t
 {
     Any, // Corresponds to the hasAny array function
     All, // Corresponds to the hasAll array function
@@ -91,4 +91,3 @@ void resizeDynamicSize(IArraySource & array_source, IValueSource & value_source,
 void resizeConstantSize(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, ssize_t size);
 
 }
-

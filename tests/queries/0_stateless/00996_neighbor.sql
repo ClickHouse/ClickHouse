@@ -1,3 +1,4 @@
+SET allow_deprecated_error_prone_window_functions = 1;
 SELECT number, neighbor(toString(number), 0) FROM numbers(10);
 
 SELECT number, neighbor(toString(number), 5) FROM numbers(10);

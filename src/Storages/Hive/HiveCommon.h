@@ -12,7 +12,7 @@
 #include <base/types.h>
 #include <Common/CacheBase.h>
 #include <Common/PoolBase.h>
-#include <Storages/HDFS/HDFSCommon.h>
+#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Storages/Hive/HiveFile.h>
 
 

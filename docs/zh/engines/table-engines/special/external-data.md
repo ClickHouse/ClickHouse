@@ -26,7 +26,7 @@ ClickHouse 允许向服务器发送处理查询所需的数据以及 SELECT 查�
 以下的参数是可选的：**–name** – 表的名称，如果省略，则采用 _data。
 **–format** – 文件中的数据格式。 如果省略，则使用 TabSeparated。
 
-以下的参数必选一个：**–types** – 逗号分隔列类型的列表。例如：`UInt64,String`。列将被命名为 _1，_2，…
+以下的参数必选一个：**–types** – 逗号分隔列类型的列表。例如：`UInt64,String`。列将被命名为 _1，_2，...
 **–structure**– 表结构的格式 `UserID UInt64`，`URL String`。定义列的名字以及类型。
 
 在 «file» 中指定的文件将由 «format» 中指定的格式解析，使用在 «types» 或 «structure» 中指定的数据类型。该表将被上传到服务器，并在作为名称为 «name»临时表。

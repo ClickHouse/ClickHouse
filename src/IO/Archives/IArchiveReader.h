@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 
+#include <Poco/Timestamp.h>
 
 namespace DB
 {
@@ -25,6 +26,7 @@ public:
     {
         UInt64 uncompressed_size;
         UInt64 compressed_size;
+        Poco::Timestamp last_modified;
         bool is_encrypted;
     };
 

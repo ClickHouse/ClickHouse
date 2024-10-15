@@ -25,14 +25,14 @@ std::shared_ptr<PartitionIdToMaxBlock> getMaxAddedBlocks(ReadFromMergeTree * rea
 /// Additionally, for all the Filter steps, we collect filter conditions into filter_nodes.
 struct QueryDAG
 {
-    ActionsDAGPtr dag;
+    std::optional<ActionsDAG> dag;
     const ActionsDAG::Node * filter_node = nullptr;
 
     bool build(QueryPlan::Node & node);
 
 private:
     bool buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & filter_nodes);
-    void appendExpression(const ActionsDAGPtr & expression);
+    void appendExpression(const ActionsDAG & expression);
 };
 
 struct ProjectionCandidate
@@ -60,6 +60,6 @@ bool analyzeProjectionCandidate(
     const SelectQueryInfo & query_info,
     const ContextPtr & context,
     const std::shared_ptr<PartitionIdToMaxBlock> & max_added_blocks,
-    const ActionsDAGPtr & dag);
+    const ActionsDAG * dag);
 
 }

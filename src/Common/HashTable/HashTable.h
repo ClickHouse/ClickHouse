@@ -844,7 +844,7 @@ public:
             return true;
         }
 
-        inline const value_type & get() const
+        const value_type & get() const
         {
             if (!is_initialized || is_eof)
                 throw DB::Exception(DB::ErrorCodes::NO_AVAILABLE_DATA, "No available data");
@@ -1166,10 +1166,8 @@ public:
                 this->clearHasZero();
                 return true;
             }
-            else
-            {
-                return false;
-            }
+
+            return false;
         }
 
         size_t erased_key_position = findCell(x, hash_value, grower.place(hash_value));

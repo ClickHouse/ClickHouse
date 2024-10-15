@@ -52,7 +52,7 @@ public:
         : string_to_string_regexp(settings_.avro.string_column_pattern)
     {
         if (!string_to_string_regexp.ok())
-            throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "Avro: cannot compile re2: {}, error: {}. "
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Avro: cannot compile re2: {}, error: {}. "
                 "Look at https://github.com/google/re2/wiki/Syntax for reference.",
                 settings_.avro.string_column_pattern, string_to_string_regexp.error());
     }
@@ -368,12 +368,13 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             {
                 return nested_mapping;
             }
-            else
-            {
-                avro::UnionSchema union_schema;
-                union_schema.addType(avro::NullSchema());
-                union_schema.addType(nested_mapping.schema);
-                return {union_schema, [nested_mapping](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+
+            avro::UnionSchema union_schema;
+            union_schema.addType(avro::NullSchema());
+            union_schema.addType(nested_mapping.schema);
+            return {
+                union_schema,
+                [nested_mapping](const IColumn & column, size_t row_num, avro::Encoder & encoder)
                 {
                     const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
                     if (!col.isNullAt(row_num))
@@ -387,7 +388,6 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
                         encoder.encodeNull();
                     }
                 }};
-            }
         }
         case TypeIndex::LowCardinality:
         {

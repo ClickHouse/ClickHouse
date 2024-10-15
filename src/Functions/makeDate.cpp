@@ -13,6 +13,7 @@
 #include <Interpreters/castColumn.h>
 
 #include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/typeid_cast.h>
 
 #include <array>
@@ -86,7 +87,7 @@ public:
                 {mandatory_argument_names_year_month_day[1], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
                 {mandatory_argument_names_year_month_day[2], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"}
             };
-            validateFunctionArgumentTypes(*this, arguments, args);
+            validateFunctionArguments(*this, arguments, args);
         }
         else
         {
@@ -94,7 +95,7 @@ public:
                 {mandatory_argument_names_year_dayofyear[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
                 {mandatory_argument_names_year_dayofyear[1], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"}
             };
-            validateFunctionArgumentTypes(*this, arguments, args);
+            validateFunctionArguments(*this, arguments, args);
         }
 
         return std::make_shared<typename Traits::ReturnDataType>();
@@ -192,7 +193,7 @@ public:
             {mandatory_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"}
         };
 
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArguments(*this, arguments, args);
 
         return std::make_shared<typename Traits::ReturnDataType>();
     }
@@ -356,7 +357,7 @@ public:
             {optional_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
         };
 
-        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         /// Optional timezone argument
         std::string timezone;
@@ -439,7 +440,7 @@ public:
             {optional_argument_names[2], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
         };
 
-        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
+            validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         if (arguments.size() >= mandatory_argument_names.size() + 1)
         {
@@ -571,7 +572,7 @@ public:
             {optional_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
         };
 
-        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         /// Optional timezone argument
         std::string timezone;
@@ -651,7 +652,7 @@ public:
             {optional_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
         };
 
-        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         /// Optional precision argument
         auto precision = DEFAULT_PRECISION;
@@ -678,7 +679,7 @@ public:
 
         Columns converted_arguments = convertMandatoryArguments<DataTypeFloat64>(arguments, mandatory_argument_names);
 
-        auto res_column = ColumnDateTime64::create(input_rows_count, static_cast<UInt32>(precision));
+        auto res_column = ColumnDateTime64::create(input_rows_count, precision);
         auto & result_data = res_column->getData();
 
         const auto & yyyymmddhhmmss_data = typeid_cast<const ColumnFloat64 &>(*converted_arguments[0]).getData();
@@ -723,7 +724,7 @@ public:
 
 REGISTER_FUNCTION(MakeDate)
 {
-    factory.registerFunction<FunctionMakeDate<DateTraits>>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionMakeDate<DateTraits>>({}, FunctionFactory::Case::Insensitive);
     factory.registerFunction<FunctionMakeDate<Date32Traits>>();
     factory.registerFunction<FunctionMakeDateTime>();
     factory.registerFunction<FunctionMakeDateTime64>();

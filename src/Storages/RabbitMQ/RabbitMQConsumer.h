@@ -39,6 +39,7 @@ public:
     {
         UInt64 delivery_tag = 0;
         String channel_id;
+        std::vector<UInt64> failed_delivery_tags;
     };
 
     struct MessageData
@@ -97,7 +98,7 @@ private:
     String channel_id;
     UInt64 channel_id_counter = 0;
 
-    enum class State
+    enum class State : uint8_t
     {
         NONE,
         INITIALIZING,
@@ -110,7 +111,7 @@ private:
     ConcurrentBoundedQueue<MessageData> received;
     MessageData current;
 
-    UInt64 last_commited_delivery_tag;
+    UInt64 last_commited_delivery_tag = 0;
 
     std::condition_variable cv;
     std::mutex mutex;

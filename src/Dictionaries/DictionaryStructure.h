@@ -41,33 +41,6 @@ enum class AttributeUnderlyingType : TypeIndexUnderlying
 
 #undef map_item
 
-
-#define CALL_FOR_ALL_DICTIONARY_ATTRIBUTE_TYPES(M) \
-    M(UInt8) \
-    M(UInt16) \
-    M(UInt32) \
-    M(UInt64) \
-    M(UInt128) \
-    M(UInt256) \
-    M(Int8) \
-    M(Int16) \
-    M(Int32) \
-    M(Int64) \
-    M(Int128) \
-    M(Int256) \
-    M(Decimal32) \
-    M(Decimal64) \
-    M(Decimal128) \
-    M(Decimal256) \
-    M(DateTime64) \
-    M(Float32) \
-    M(Float64) \
-    M(UUID) \
-    M(IPv4) \
-    M(IPv6) \
-    M(String) \
-    M(Array)
-
 /// Min and max lifetimes for a dictionary or its entry
 using DictionaryLifetime = ExternalLoadableLifetime;
 
@@ -116,14 +89,6 @@ constexpr void callOnDictionaryAttributeType(AttributeUnderlyingType type, F && 
     });
 }
 
-struct DictionarySpecialAttribute final
-{
-    const std::string name;
-    const std::string expression;
-
-    DictionarySpecialAttribute(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
-};
-
 struct DictionaryTypedSpecialAttribute final
 {
     const std::string name;
@@ -135,7 +100,7 @@ struct DictionaryTypedSpecialAttribute final
 /// Name of identifier plus list of attributes
 struct DictionaryStructure final
 {
-    std::optional<DictionarySpecialAttribute> id;
+    std::optional<DictionaryTypedSpecialAttribute> id;
     std::optional<std::vector<DictionaryAttribute>> key;
     std::vector<DictionaryAttribute> attributes;
     std::unordered_map<std::string, size_t> attribute_name_to_index;

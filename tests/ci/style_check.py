@@ -8,13 +8,23 @@ import subprocess
 import sys
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Union
+
+import magic
 
 from docker_images_helper import get_docker_image, pull_image
-from env_helper import CI, REPO_COPY, TEMP_PATH
+from env_helper import GITHUB_EVENT_PATH, IS_CI, REPO_COPY, TEMP_PATH
 from git_helper import GIT_PREFIX, git_runner
 from pr_info import PRInfo
-from report import ERROR, FAILURE, SUCCESS, JobReport, TestResults, read_test_results
+from report import (
+    ERROR,
+    FAIL,
+    FAILURE,
+    SUCCESS,
+    JobReport,
+    TestResults,
+    read_test_results,
+)
 from ssh import SSHKey
 from stopwatch import Stopwatch
 
@@ -67,26 +77,6 @@ def parse_args():
     return parser.parse_args()
 
 
-def checkout_head(pr_info: PRInfo) -> None:
-    # It works ONLY for PRs, and only over ssh, so either
-    # ROBOT_CLICKHOUSE_SSH_KEY should be set or ssh-agent should work
-    assert pr_info.number
-    if not pr_info.head_name == pr_info.base_name:
-        # We can't push to forks, sorry folks
-        return
-    remote_url = pr_info.event["pull_request"]["base"]["repo"]["ssh_url"]
-    fetch_cmd = (
-        f"{GIT_PREFIX} fetch --depth=1 "
-        f"{remote_url} {pr_info.head_ref}:head-{pr_info.head_ref}"
-    )
-    if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
-        with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
-            git_runner(fetch_cmd)
-    else:
-        git_runner(fetch_cmd)
-    git_runner(f"git checkout -f head-{pr_info.head_ref}")
-
-
 def commit_push_staged(pr_info: PRInfo) -> None:
     # It works ONLY for PRs, and only over ssh, so either
     # ROBOT_CLICKHOUSE_SSH_KEY should be set or ssh-agent should work
@@ -96,26 +86,60 @@ def commit_push_staged(pr_info: PRInfo) -> None:
         return
     git_staged = git_runner("git diff --cached --name-only")
     if not git_staged:
+        logging.info("No fixes are staged")
         return
-    remote_url = pr_info.event["pull_request"]["base"]["repo"]["ssh_url"]
-    git_runner(f"{GIT_PREFIX} commit -m 'Automatic style fix'")
-    push_cmd = (
-        f"{GIT_PREFIX} push {remote_url} head-{pr_info.head_ref}:{pr_info.head_ref}"
-    )
+
+    def push_fix() -> None:
+        """
+        Stash staged changes to commit them on the top of the PR's head.
+        `pull_request` event runs on top of a temporary merge_commit, we need to avoid
+        including it in the autofix
+        """
+        remote_url = pr_info.event["pull_request"]["base"]["repo"]["ssh_url"]
+        head = pr_info.sha
+        git_runner(f"{GIT_PREFIX} commit -m 'Automatic style fix'")
+        fix_commit = git_runner("git rev-parse HEAD")
+        logging.info(
+            "Fetching PR's head, check it out and cherry-pick autofix: %s", head
+        )
+        git_runner(
+            f"{GIT_PREFIX} fetch {remote_url} --no-recurse-submodules --depth=1 {head}"
+        )
+        git_runner(f"git reset --hard {head}")
+        git_runner(f"{GIT_PREFIX} cherry-pick {fix_commit}")
+        git_runner(f"{GIT_PREFIX} push {remote_url} HEAD:{pr_info.head_ref}")
+
     if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
         with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
-            git_runner(push_cmd)
-    else:
-        git_runner(push_cmd)
+            push_fix()
+            return
+
+    push_fix()
 
 
-def checkout_last_ref(pr_info: PRInfo) -> None:
-    # Checkout the merge commit back to avoid special effects
-    assert pr_info.number
-    if not pr_info.head_name == pr_info.base_name:
-        # We can't push to forks, sorry folks
-        return
-    git_runner("git checkout -f -")
+def _check_mime(file: Union[Path, str], mime: str) -> bool:
+    # WARNING: python-magic v2:0.4.24-2 is used in ubuntu 22.04,
+    # and `Support os.PathLike values in magic.from_file` is only from 0.4.25
+    try:
+        return bool(magic.from_file(os.path.join(REPO_COPY, file), mime=True) == mime)
+    except (IsADirectoryError, FileNotFoundError) as e:
+        # Process submodules and removed files w/o errors
+        logging.warning("Captured error on file '%s': %s", file, e)
+        return False
+
+
+def is_python(file: Union[Path, str]) -> bool:
+    """returns if the changed file in the repository is python script"""
+    return (
+        _check_mime(file, "text/x-script.python")
+        or str(file).endswith(".py")
+        or str(file) == "pyproject.toml"
+    )
+
+
+def is_shell(file: Union[Path, str]) -> bool:
+    """returns if the changed file in the repository is shell script"""
+    return _check_mime(file, "text/x-shellscript") or str(file).endswith(".sh")
 
 
 def main():
@@ -133,28 +157,32 @@ def main():
 
     pr_info = PRInfo()
 
+    if pr_info.is_merge_queue and args.push:
+        print("Auto style fix will be disabled for Merge Queue workflow")
+        args.push = False
+
+    run_cpp_check = True
+    run_shell_check = True
+    run_python_check = True
+    if IS_CI and pr_info.number > 0:
+        pr_info.fetch_changed_files()
+        run_cpp_check = any(
+            not (is_python(file) or is_shell(file)) for file in pr_info.changed_files
+        )
+        run_shell_check = any(is_shell(file) for file in pr_info.changed_files)
+        run_python_check = any(is_python(file) for file in pr_info.changed_files)
+
     IMAGE_NAME = "clickhouse/style-test"
     image = pull_image(get_docker_image(IMAGE_NAME))
-    cmd_cpp = (
+    docker_command = (
         f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
         f"--volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output "
-        f"--entrypoint= -w/ClickHouse/utils/check-style "
-        f"{image} ./check_cpp.sh"
+        f"--entrypoint= -w/ClickHouse/utils/check-style {image}"
     )
-
-    cmd_py = (
-        f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
-        f"--volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output "
-        f"--entrypoint= -w/ClickHouse/utils/check-style "
-        f"{image} ./check_py.sh"
-    )
-
-    cmd_docs = (
-        f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
-        f"--volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output "
-        f"--entrypoint= -w/ClickHouse/utils/check-style "
-        f"{image} ./check_docs.sh"
-    )
+    cmd_docs = f"{docker_command} ./check_docs.sh"
+    cmd_cpp = f"{docker_command} ./check_cpp.sh"
+    cmd_py = f"{docker_command} ./check_py.sh"
+    cmd_shell = f"{docker_command} ./check_shell.sh"
 
     with ProcessPoolExecutor(max_workers=2) as executor:
         logging.info("Run docs files check: %s", cmd_docs)
@@ -162,29 +190,19 @@ def main():
         # Parallelization  does not make it faster - run subsequently
         _ = future.result()
 
-        run_cppcheck = True
-        run_pycheck = True
-        if CI and pr_info.number > 0:
-            pr_info.fetch_changed_files()
-            if not any(file.endswith(".py") for file in pr_info.changed_files):
-                run_pycheck = False
-            if all(file.endswith(".py") for file in pr_info.changed_files):
-                run_cppcheck = False
-
-        if run_cppcheck:
+        if run_cpp_check:
             logging.info("Run source files check: %s", cmd_cpp)
-            future1 = executor.submit(subprocess.run, cmd_cpp, shell=True)
-            _ = future1.result()
+            future = executor.submit(subprocess.run, cmd_cpp, shell=True)
+            _ = future.result()
 
-        if run_pycheck:
-            if args.push:
-                checkout_head(pr_info)
+        if run_python_check:
             logging.info("Run py files check: %s", cmd_py)
-            future2 = executor.submit(subprocess.run, cmd_py, shell=True)
-            _ = future2.result()
-            if args.push:
-                commit_push_staged(pr_info)
-                checkout_last_ref(pr_info)
+            future = executor.submit(subprocess.run, cmd_py, shell=True)
+            _ = future.result()
+        if run_shell_check:
+            logging.info("Run shellcheck check: %s", cmd_shell)
+            future = executor.submit(subprocess.run, cmd_shell, shell=True)
+            _ = future.result()
 
     subprocess.check_call(
         f"python3 ../../utils/check-style/process_style_check_result.py --in-results-dir {temp_path} "
@@ -195,13 +213,29 @@ def main():
 
     state, description, test_results, additional_files = process_result(temp_path)
 
+    autofix_description = ""
+    push_fix = args.push
+    for result in test_results:
+        if result.status in (FAILURE, FAIL) and push_fix:
+            # do not autofix if something besides isort and black is failed
+            push_fix = any(result.name.endswith(check) for check in ("isort", "black"))
+
+    if push_fix:
+        try:
+            commit_push_staged(pr_info)
+        except subprocess.SubprocessError:
+            # do not fail the whole script if the autofix didn't work out
+            logging.error("Unable to push the autofix. Continue.")
+            autofix_description = "Failed to push autofix to the PR. "
+
     JobReport(
-        description=description,
+        description=f"{autofix_description}{description}",
         test_results=test_results,
         status=state,
         start_time=stopwatch.start_time_str,
         duration=stopwatch.duration_seconds,
-        additional_files=additional_files,
+        # add GITHUB_EVENT_PATH json file to have it in style check report. sometimes it's needed for debugging.
+        additional_files=additional_files + [Path(GITHUB_EVENT_PATH)],
     ).dump()
 
     if state in [ERROR, FAILURE]:

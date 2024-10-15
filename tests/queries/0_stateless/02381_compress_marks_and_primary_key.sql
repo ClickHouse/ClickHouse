@@ -1,5 +1,7 @@
 -- Tags: no-random-merge-tree-settings
 
+SET optimize_trivial_insert_select = 1;
+
 drop table if exists test_02381;
 create table test_02381(a UInt64, b UInt64) ENGINE = MergeTree order by (a, b) SETTINGS compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1;
 insert into test_02381 select number, number * 10 from system.numbers limit 1000000;

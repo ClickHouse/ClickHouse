@@ -180,7 +180,7 @@ namespace
         if (settings)
             changes = assert_cast<ASTSetQuery *>(settings.get())->changes;
 
-        boost::remove_erase_if(
+        std::erase_if(
             changes,
             [](const SettingChange & change)
             {

@@ -19,7 +19,14 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsPrewhere() const override { return true; }
+
+    std::optional<NameSet> supportedPrewhereColumns() const override
+    {
+        return original_storage_snapshot ? original_storage_snapshot->storage.supportedPrewhereColumns() : std::nullopt;
+    }
+
     bool supportsSubcolumns() const override { return true; }
+    bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
     bool canMoveConditionsToPrewhere() const override
     {

@@ -277,12 +277,12 @@ zkutil::ZooKeeper::MultiTryGetResponse ZooKeeperWithFaultInjection::tryGet(const
 
 void ZooKeeperWithFaultInjection::set(const String & path, const String & data, int32_t version, Coordination::Stat * stat)
 {
-    return executeWithFaultSync(__func__, path, [&]() { return keeper->set(path, data, version, stat); });
+    executeWithFaultSync(__func__, path, [&]() { keeper->set(path, data, version, stat); });
 }
 
 void ZooKeeperWithFaultInjection::remove(const String & path, int32_t version)
 {
-    return executeWithFaultSync(__func__, path, [&]() { return keeper->remove(path, version); });
+    executeWithFaultSync(__func__, path, [&]() { keeper->remove(path, version); });
 }
 
 bool ZooKeeperWithFaultInjection::exists(const std::string & path, Coordination::Stat * stat, const zkutil::EventPtr & watch)
@@ -352,18 +352,18 @@ Coordination::Responses ZooKeeperWithFaultInjection::multi(const Coordination::R
 
 void ZooKeeperWithFaultInjection::createIfNotExists(const std::string & path, const std::string & data)
 {
-    return executeWithFaultSync(__func__, path, [&]() { return keeper->createIfNotExists(path, data); });
+    executeWithFaultSync(__func__, path, [&]() { keeper->createIfNotExists(path, data); });
 }
 
 void ZooKeeperWithFaultInjection::createOrUpdate(const std::string & path, const std::string & data, int32_t mode)
 {
     chassert(mode != zkutil::CreateMode::EphemeralSequential && mode != zkutil::CreateMode::Ephemeral);
-    return executeWithFaultSync(__func__, path, [&]() { return keeper->createOrUpdate(path, data, mode); });
+    executeWithFaultSync(__func__, path, [&]() { keeper->createOrUpdate(path, data, mode); });
 }
 
 void ZooKeeperWithFaultInjection::createAncestors(const std::string & path)
 {
-    return executeWithFaultSync(__func__, path, [&]() { return keeper->createAncestors(path); });
+    executeWithFaultSync(__func__, path, [&]() { keeper->createAncestors(path); });
 }
 
 Coordination::Error ZooKeeperWithFaultInjection::tryRemove(const std::string & path, int32_t version)
@@ -373,17 +373,17 @@ Coordination::Error ZooKeeperWithFaultInjection::tryRemove(const std::string & p
 
 void ZooKeeperWithFaultInjection::removeRecursive(const std::string & path)
 {
-    return executeWithFaultSync(__func__, path, [&]() { return keeper->removeRecursive(path); });
+    executeWithFaultSync(__func__, path, [&]() { keeper->removeRecursive(path); });
 }
 
 void ZooKeeperWithFaultInjection::tryRemoveRecursive(const std::string & path)
 {
-    return executeWithFaultSync(__func__, path, [&]() { return keeper->tryRemoveRecursive(path); });
+    executeWithFaultSync(__func__, path, [&]() { keeper->tryRemoveRecursive(path); });
 }
 
 void ZooKeeperWithFaultInjection::removeChildren(const std::string & path)
 {
-    return executeWithFaultSync(__func__, path, [&]() { return keeper->removeChildren(path); });
+    executeWithFaultSync(__func__, path, [&]() { keeper->removeChildren(path); });
 }
 
 bool ZooKeeperWithFaultInjection::tryRemoveChildrenRecursive(
@@ -410,14 +410,14 @@ ZooKeeperWithFaultInjection::trySet(const std::string & path, const std::string 
 
 void ZooKeeperWithFaultInjection::checkExistsAndGetCreateAncestorsOps(const std::string & path, Coordination::Requests & requests)
 {
-    return executeWithFaultSync(__func__, path, [&]() { return keeper->checkExistsAndGetCreateAncestorsOps(path, requests); });
+    executeWithFaultSync(__func__, path, [&]() { keeper->checkExistsAndGetCreateAncestorsOps(path, requests); });
 }
 
 void ZooKeeperWithFaultInjection::deleteEphemeralNodeIfContentMatches(
     const std::string & path, const std::string & fast_delete_if_equal_value)
 {
-    return executeWithFaultSync(
-        __func__, path, [&]() { return keeper->deleteEphemeralNodeIfContentMatches(path, fast_delete_if_equal_value); });
+    executeWithFaultSync(
+        __func__, path, [&]() { keeper->deleteEphemeralNodeIfContentMatches(path, fast_delete_if_equal_value); });
 }
 
 Coordination::Error ZooKeeperWithFaultInjection::tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid)

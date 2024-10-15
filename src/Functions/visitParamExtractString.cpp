@@ -12,9 +12,11 @@ struct ExtractString
     {
         size_t old_size = res_data.size();
         ReadBufferFromMemory in(pos, end - pos);
-        if (!tryReadJSONStringInto(res_data, in))
+        if (!tryReadJSONStringInto(res_data, in, default_json_settings))
             res_data.resize(old_size);
     }
+
+    static const FormatSettings::JSON constexpr default_json_settings;
 };
 
 struct NameSimpleJSONExtractString { static constexpr auto name = "simpleJSONExtractString"; };

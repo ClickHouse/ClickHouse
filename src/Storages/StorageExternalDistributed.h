@@ -8,8 +8,6 @@
 namespace DB
 {
 
-struct ExternalDataSourceConfiguration;
-
 /// Storages MySQL and PostgreSQL use ConnectionPoolWithFailover and support multiple replicas.
 /// This class unites multiple storages with replicas into multiple shards with replicas.
 /// A query to external database is passed to one replica on each shard, the result is united.

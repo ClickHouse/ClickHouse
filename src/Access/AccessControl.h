@@ -53,6 +53,9 @@ public:
     AccessControl();
     ~AccessControl() override;
 
+    /// Shutdown the access control and stops all background activity.
+    void shutdown() override;
+
     /// Initializes access storage (user directories).
     void setUpFromMainConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_path_,
                              const zkutil::GetZooKeeper & get_zookeeper_function_);
@@ -121,7 +124,7 @@ public:
     AuthResult authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const String & forwarded_address) const;
 
     /// Makes a backup of access entities.
-    void restoreFromBackup(RestorerFromBackup & restorer) override;
+    void restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup) override;
 
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
 
@@ -182,6 +185,9 @@ public:
     void setSettingsConstraintsReplacePrevious(bool enable) { settings_constraints_replace_previous = enable; }
     bool doesSettingsConstraintsReplacePrevious() const { return settings_constraints_replace_previous; }
 
+    void setTableEnginesRequireGrant(bool enable) { table_engines_require_grant = enable; }
+    bool doesTableEnginesRequireGrant() const { return table_engines_require_grant; }
+
     std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params) const;
 
     std::shared_ptr<const EnabledRoles> getEnabledRoles(
@@ -237,7 +243,7 @@ private:
     class CustomSettingsPrefixes;
     class PasswordComplexityRules;
 
-    bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
+    bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id) override;
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
 
@@ -258,6 +264,7 @@ private:
     std::atomic_bool select_from_system_db_requires_grant = false;
     std::atomic_bool select_from_information_schema_requires_grant = false;
     std::atomic_bool settings_constraints_replace_previous = false;
+    std::atomic_bool table_engines_require_grant = false;
     std::atomic_int bcrypt_workfactor = 12;
     std::atomic<AuthenticationType> default_password_type = AuthenticationType::SHA256_PASSWORD;
 };

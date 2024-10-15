@@ -1,9 +1,12 @@
 #pragma once
 
-#include <base/types.h>
 #include <Columns/ColumnString.h>
+#include <Common/OptimizedRegularExpression.h>
 #include <Common/re2.h>
+#include <Functions/Regexps.h>
+#include <Functions/ReplaceStringImpl.h>
 #include <IO/WriteHelpers.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -16,7 +19,7 @@ namespace ErrorCodes
 
 struct ReplaceRegexpTraits
 {
-    enum class Replace
+    enum class Replace : uint8_t
     {
         First,
         All
@@ -48,43 +51,73 @@ struct ReplaceRegexpImpl
 
     static constexpr int max_captures = 10;
 
-    static Instructions createInstructions(std::string_view replacement, int num_captures)
+    /// The replacement string references must not contain non-existing capturing groups.
+    static void checkSubstitutions(std::string_view replacement, int num_captures)
     {
-        Instructions instructions;
-
-        String literals;
         for (size_t i = 0; i < replacement.size(); ++i)
         {
             if (replacement[i] == '\\' && i + 1 < replacement.size())
             {
-                if (isNumericASCII(replacement[i + 1])) /// Substitution
+                if (isNumericASCII(replacement[i + 1])) /// substitution
+                {
+                    int substitution_num = replacement[i + 1] - '0';
+                    if (substitution_num >= num_captures)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Substitution '\\{}' in replacement argument is invalid, regexp has only {} capturing groups", substitution_num, num_captures - 1);
+                }
+            }
+        }
+    }
+
+    static Instructions createInstructions(std::string_view replacement, int num_captures)
+    {
+        checkSubstitutions(replacement, num_captures);
+
+        Instructions instructions;
+
+        String literals;
+        literals.reserve(replacement.size());
+
+        for (size_t i = 0; i < replacement.size(); ++i)
+        {
+            if (replacement[i] == '\\' && i + 1 < replacement.size())
+            {
+                if (isNumericASCII(replacement[i + 1])) /// substitution
                 {
                     if (!literals.empty())
                     {
                         instructions.emplace_back(literals);
                         literals = "";
                     }
-                    instructions.emplace_back(replacement[i + 1] - '0');
+                    int substitution_num = replacement[i + 1] - '0';
+                    instructions.emplace_back(substitution_num);
                 }
                 else
-                    literals += replacement[i + 1]; /// Escaping
+                    literals += replacement[i + 1]; /// escaping
                 ++i;
             }
             else
-                literals += replacement[i]; /// Plain character
+                literals += replacement[i]; /// plain character
         }
 
         if (!literals.empty())
             instructions.emplace_back(literals);
 
-        for (const auto & instr : instructions)
-            if (instr.substitution_num >= num_captures)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Id {} in replacement string is an invalid substitution, regexp has only {} capturing groups",
-                    instr.substitution_num, num_captures - 1);
-
         return instructions;
+    }
+
+    static bool canFallbackToStringReplacement(const String & needle, const String & replacement, const re2::RE2 & searcher, int num_captures)
+    {
+        if (searcher.NumberOfCapturingGroups())
+            return false;
+
+        checkSubstitutions(replacement, num_captures);
+
+        String required_substring;
+        bool is_trivial;
+        bool required_substring_is_prefix;
+        std::vector<String> alternatives;
+        OptimizedRegularExpression::analyze(needle, required_substring, is_trivial, required_substring_is_prefix, alternatives);
+        return is_trivial && required_substring_is_prefix && required_substring == needle;
     }
 
     static void processString(
@@ -124,7 +157,7 @@ struct ReplaceRegexpImpl
                 {
                     std::string_view replacement;
                     if (instr.substitution_num >= 0)
-                        replacement = std::string_view(matches[instr.substitution_num].data(), matches[instr.substitution_num].size());
+                        replacement = {matches[instr.substitution_num].data(), matches[instr.substitution_num].size()};
                     else
                         replacement = instr.literal;
                     res_data.resize(res_data.size() + replacement.size());
@@ -168,31 +201,44 @@ struct ReplaceRegexpImpl
         const String & needle,
         const String & replacement,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         if (needle.empty())
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
 
         ColumnString::Offset res_offset = 0;
         res_data.reserve(haystack_data.size());
-        size_t haystack_size = haystack_offsets.size();
-        res_offsets.resize(haystack_size);
+        res_offsets.resize(input_rows_count);
 
         re2::RE2::Options regexp_options;
-        /// Don't write error messages to stderr.
-        regexp_options.set_log_errors(false);
+        regexp_options.set_log_errors(false); /// don't write error messages to stderr
 
         re2::RE2 searcher(needle, regexp_options);
-
         if (!searcher.ok())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", searcher.error());
 
         int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, max_captures);
 
+        /// Try to use non-regexp string replacement. This shortcut is implemented only for const-needles + const-replacement as
+        /// pattern analysis incurs some cost too.
+        if (canFallbackToStringReplacement(needle, replacement, searcher, num_captures))
+        {
+            auto convertTrait = [](ReplaceRegexpTraits::Replace first_or_all)
+            {
+                switch (first_or_all)
+                {
+                    case ReplaceRegexpTraits::Replace::First: return ReplaceStringTraits::Replace::First;
+                    case ReplaceRegexpTraits::Replace::All:   return ReplaceStringTraits::Replace::All;
+                }
+            };
+            ReplaceStringImpl<Name, convertTrait(replace)>::vectorConstantConstant(haystack_data, haystack_offsets, needle, replacement, res_data, res_offsets, input_rows_count);
+            return;
+        }
+
         Instructions instructions = createInstructions(replacement, num_captures);
 
-        /// Cannot perform search for whole columns. Will process each string separately.
-        for (size_t i = 0; i < haystack_size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             size_t from = i > 0 ? haystack_offsets[i - 1] : 0;
 
@@ -211,21 +257,19 @@ struct ReplaceRegexpImpl
         const ColumnString::Offsets & needle_offsets,
         const String & replacement,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         assert(haystack_offsets.size() == needle_offsets.size());
 
         ColumnString::Offset res_offset = 0;
         res_data.reserve(haystack_data.size());
-        size_t haystack_size = haystack_offsets.size();
-        res_offsets.resize(haystack_size);
+        res_offsets.resize(input_rows_count);
 
         re2::RE2::Options regexp_options;
-        /// Don't write error messages to stderr.
-        regexp_options.set_log_errors(false);
+        regexp_options.set_log_errors(false); /// don't write error messages to stderr
 
-        /// Cannot perform search for whole columns. Will process each string separately.
-        for (size_t i = 0; i < haystack_size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             size_t hs_from = i > 0 ? haystack_offsets[i - 1] : 0;
             const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + hs_from);
@@ -242,6 +286,7 @@ struct ReplaceRegexpImpl
             re2::RE2 searcher(needle, regexp_options);
             if (!searcher.ok())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", searcher.error());
+
             int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, max_captures);
             Instructions instructions = createInstructions(replacement, num_captures);
 
@@ -257,7 +302,8 @@ struct ReplaceRegexpImpl
         const ColumnString::Chars & replacement_data,
         const ColumnString::Offsets & replacement_offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         assert(haystack_offsets.size() == replacement_offsets.size());
 
@@ -266,22 +312,18 @@ struct ReplaceRegexpImpl
 
         ColumnString::Offset res_offset = 0;
         res_data.reserve(haystack_data.size());
-        size_t haystack_size = haystack_offsets.size();
-        res_offsets.resize(haystack_size);
+        res_offsets.resize(input_rows_count);
 
         re2::RE2::Options regexp_options;
-        /// Don't write error messages to stderr.
-        regexp_options.set_log_errors(false);
+        regexp_options.set_log_errors(false); /// don't write error messages to stderr
 
         re2::RE2 searcher(needle, regexp_options);
-
         if (!searcher.ok())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", searcher.error());
 
         int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, max_captures);
 
-        /// Cannot perform search for whole columns. Will process each string separately.
-        for (size_t i = 0; i < haystack_size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             size_t hs_from = i > 0 ? haystack_offsets[i - 1] : 0;
             const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + hs_from);
@@ -290,8 +332,9 @@ struct ReplaceRegexpImpl
             size_t repl_from = i > 0 ? replacement_offsets[i - 1] : 0;
             const char * repl_data = reinterpret_cast<const char *>(replacement_data.data() + repl_from);
             const size_t repl_length = static_cast<unsigned>(replacement_offsets[i] - repl_from - 1);
+            std::string_view replacement(repl_data, repl_length);
 
-            Instructions instructions = createInstructions(std::string_view(repl_data, repl_length), num_captures);
+            Instructions instructions = createInstructions(replacement, num_captures);
 
             processString(hs_data, hs_length, res_data, res_offset, searcher, num_captures, instructions);
             res_offsets[i] = res_offset;
@@ -306,22 +349,20 @@ struct ReplaceRegexpImpl
         const ColumnString::Chars & replacement_data,
         const ColumnString::Offsets & replacement_offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         assert(haystack_offsets.size() == needle_offsets.size());
         assert(needle_offsets.size() == replacement_offsets.size());
 
         ColumnString::Offset res_offset = 0;
         res_data.reserve(haystack_data.size());
-        size_t haystack_size = haystack_offsets.size();
-        res_offsets.resize(haystack_size);
+        res_offsets.resize(input_rows_count);
 
         re2::RE2::Options regexp_options;
-        /// Don't write error messages to stderr.
-        regexp_options.set_log_errors(false);
+        regexp_options.set_log_errors(false); /// don't write error messages to stderr
 
-        /// Cannot perform search for whole columns. Will process each string separately.
-        for (size_t i = 0; i < haystack_size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             size_t hs_from = i > 0 ? haystack_offsets[i - 1] : 0;
             const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + hs_from);
@@ -338,12 +379,14 @@ struct ReplaceRegexpImpl
             size_t repl_from = i > 0 ? replacement_offsets[i - 1] : 0;
             const char * repl_data = reinterpret_cast<const char *>(replacement_data.data() + repl_from);
             const size_t repl_length = static_cast<unsigned>(replacement_offsets[i] - repl_from - 1);
+            std::string_view replacement(repl_data, repl_length);
 
             re2::RE2 searcher(needle, regexp_options);
             if (!searcher.ok())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", searcher.error());
+
             int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, max_captures);
-            Instructions instructions = createInstructions(std::string_view(repl_data, repl_length), num_captures);
+            Instructions instructions = createInstructions(replacement, num_captures);
 
             processString(hs_data, hs_length, res_data, res_offset, searcher, num_captures, instructions);
             res_offsets[i] = res_offset;
@@ -356,30 +399,27 @@ struct ReplaceRegexpImpl
         const String & needle,
         const String & replacement,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         if (needle.empty())
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
 
         ColumnString::Offset res_offset = 0;
-        size_t haystack_size = haystack_data.size() / n;
         res_data.reserve(haystack_data.size());
-        res_offsets.resize(haystack_size);
+        res_offsets.resize(input_rows_count);
 
         re2::RE2::Options regexp_options;
-        /// Don't write error messages to stderr.
-        regexp_options.set_log_errors(false);
+        regexp_options.set_log_errors(false); /// don't write error messages to stderr
 
         re2::RE2 searcher(needle, regexp_options);
-
         if (!searcher.ok())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", searcher.error());
 
         int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, max_captures);
-
         Instructions instructions = createInstructions(replacement, num_captures);
 
-        for (size_t i = 0; i < haystack_size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             size_t from = i * n;
             const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + from);

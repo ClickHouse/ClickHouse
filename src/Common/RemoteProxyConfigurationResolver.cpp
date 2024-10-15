@@ -6,22 +6,48 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Common/logger_useful.h>
-#include <Common/DNSResolver.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+    extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
+}
+
+std::string RemoteProxyHostFetcherImpl::fetch(const Poco::URI & endpoint, const ConnectionTimeouts & timeouts)
+{
+    auto request = Poco::Net::HTTPRequest(Poco::Net::HTTPRequest::HTTP_GET, endpoint.getPath(), Poco::Net::HTTPRequest::HTTP_1_1);
+    auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, endpoint, timeouts);
+
+    session->sendRequest(request);
+
+    Poco::Net::HTTPResponse response;
+    auto & response_body_stream = session->receiveResponse(response);
+
+    if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
+        throw HTTPException(
+            ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+            endpoint.toString(),
+            response.getStatus(),
+            response.getReason(),
+            "");
+
+    std::string proxy_host;
+    Poco::StreamCopier::copyToString(response_body_stream, proxy_host);
+
+    return proxy_host;
 }
 
 RemoteProxyConfigurationResolver::RemoteProxyConfigurationResolver(
     const RemoteServerConfiguration & remote_server_configuration_,
     Protocol request_protocol_,
+    const std::string & no_proxy_hosts_,
+    std::shared_ptr<RemoteProxyHostFetcher> fetcher_,
     bool disable_tunneling_for_https_requests_over_http_proxy_
 )
-: ProxyConfigurationResolver(request_protocol_, disable_tunneling_for_https_requests_over_http_proxy_), remote_server_configuration(remote_server_configuration_)
+: ProxyConfigurationResolver(request_protocol_, disable_tunneling_for_https_requests_over_http_proxy_),
+    remote_server_configuration(remote_server_configuration_), no_proxy_hosts(no_proxy_hosts_), fetcher(fetcher_)
 {
 }
 
@@ -29,9 +55,7 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
 {
     auto logger = getLogger("RemoteProxyConfigurationResolver");
 
-    auto & [endpoint, proxy_protocol, proxy_port, cache_ttl_] = remote_server_configuration;
-
-    LOG_DEBUG(logger, "Obtain proxy using resolver: {}", endpoint.toString());
+    auto & [endpoint, proxy_protocol_string, proxy_port, cache_ttl] = remote_server_configuration;
 
     std::lock_guard lock(cache_mutex);
 
@@ -55,66 +79,27 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
         .withSendTimeout(1)
         .withReceiveTimeout(1);
 
-    try
-    {
-        /// It should be just empty GET request.
-        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, endpoint.getPath(), Poco::Net::HTTPRequest::HTTP_1_1);
+    const auto proxy_host = fetcher->fetch(endpoint, timeouts);
 
-        const auto & host = endpoint.getHost();
-        auto resolved_hosts = DNSResolver::instance().resolveHostAll(host);
+    LOG_DEBUG(logger, "Use proxy: {}://{}:{}", proxy_protocol_string, proxy_host, proxy_port);
 
-        HTTPSessionPtr session;
+    auto proxy_protocol = ProxyConfiguration::protocolFromString(proxy_protocol_string);
 
-        for (size_t i = 0; i < resolved_hosts.size(); ++i)
-        {
-            auto resolved_endpoint = endpoint;
-            resolved_endpoint.setHost(resolved_hosts[i].toString());
-            session = makeHTTPSession(HTTPConnectionGroupType::HTTP, resolved_endpoint, timeouts);
+    bool use_tunneling_for_https_requests_over_http_proxy = ProxyConfiguration::useTunneling(
+        request_protocol,
+        proxy_protocol,
+        disable_tunneling_for_https_requests_over_http_proxy);
 
-            try
-            {
-                session->sendRequest(request);
-                break;
-            }
-            catch (...)
-            {
-                if (i + 1 == resolved_hosts.size())
-                    throw;
-            }
-        }
+    cached_config.protocol = proxy_protocol;
+    cached_config.host = proxy_host;
+    cached_config.port = proxy_port;
+    cached_config.tunneling = use_tunneling_for_https_requests_over_http_proxy;
+    cached_config.original_request_protocol = request_protocol;
+    cached_config.no_proxy_hosts = no_proxy_hosts;
+    cache_timestamp = std::chrono::system_clock::now();
+    cache_valid = true;
 
-        Poco::Net::HTTPResponse response;
-        auto & response_body_stream = session->receiveResponse(response);
-
-        if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Proxy resolver returned not OK status: {}", response.getReason());
-
-        String proxy_host;
-        /// Read proxy host as string from response body.
-        Poco::StreamCopier::copyToString(response_body_stream, proxy_host);
-
-        LOG_DEBUG(logger, "Use proxy: {}://{}:{}", proxy_protocol, proxy_host, proxy_port);
-
-        bool use_tunneling_for_https_requests_over_http_proxy = useTunneling(
-            request_protocol,
-            cached_config.protocol,
-            disable_tunneling_for_https_requests_over_http_proxy);
-
-        cached_config.protocol = ProxyConfiguration::protocolFromString(proxy_protocol);
-        cached_config.host = proxy_host;
-        cached_config.port = proxy_port;
-        cached_config.tunneling = use_tunneling_for_https_requests_over_http_proxy;
-        cached_config.original_request_protocol = request_protocol;
-        cache_timestamp = std::chrono::system_clock::now();
-        cache_valid = true;
-
-        return cached_config;
-    }
-    catch (...)
-    {
-        tryLogCurrentException("RemoteProxyConfigurationResolver", "Failed to obtain proxy");
-        return {};
-    }
+    return cached_config;
 }
 
 void RemoteProxyConfigurationResolver::errorReport(const ProxyConfiguration & config)
@@ -124,7 +109,7 @@ void RemoteProxyConfigurationResolver::errorReport(const ProxyConfiguration & co
 
     std::lock_guard lock(cache_mutex);
 
-    if (!cache_ttl.count() || !cache_valid)
+    if (!remote_server_configuration.cache_ttl_.count() || !cache_valid)
         return;
 
     if (std::tie(cached_config.protocol, cached_config.host, cached_config.port)

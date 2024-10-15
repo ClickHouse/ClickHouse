@@ -1,9 +1,15 @@
-import pytest
-from helpers.cluster import ClickHouseCluster
-
-from helpers.network import PartitionManager
 import threading
 import time
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.network import PartitionManager
+
+# skip all tests in the module on ARM due to HDFS
+if is_arm():
+    pytestmark = pytest.mark.skip
+
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(

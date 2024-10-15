@@ -37,4 +37,4 @@ In this case overcommit ratio is computed as number of allocated bytes divided b
 
 If `memory_overcommit_ratio_denominator_for_user` for the query is equals to zero, overcommit tracker won't choose this query.
 
-Waiting timeout is set by `global_memory_usage_overcommit_max_wait_microseconds` parameter in the configuration file.
+Waiting timeout is set by `memory_usage_overcommit_max_wait_microseconds` parameter in the configuration file.

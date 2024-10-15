@@ -10,4 +10,4 @@ PRIMARY KEY id
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'does_not_exists'))
 LIFETIME(MIN 0 MAX 1000)
 LAYOUT(RANGE_HASHED())
-RANGE(MIN first MAX last) -- { serverError 489 }
+RANGE(MIN first MAX last) -- { serverError INCORRECT_DICTIONARY_DEFINITION }

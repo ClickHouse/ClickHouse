@@ -88,7 +88,18 @@ void HTTPServerConnection::run()
 					
 						pHandler->handleRequest(request, response);
 						session.setKeepAlive(_pParams->getKeepAlive() && response.getKeepAlive() && session.canKeepAlive());
-					}
+
+                        /// all that fuzz is all about to make session close with less timeout than 15s (set in HTTPServerParams c-tor)
+                        if (_pParams->getKeepAlive() && response.getKeepAlive() && session.canKeepAlive())
+                        {
+                            int value = response.getKeepAliveTimeout();
+                            if (value < 0)
+                                value = request.getKeepAliveTimeout();
+                            if (value > 0)
+                                session.setKeepAliveTimeout(Poco::Timespan(value, 0));
+                        }
+
+                    }
 					else sendErrorResponse(session, HTTPResponse::HTTP_NOT_IMPLEMENTED);
 				}
 				catch (Poco::Exception&)

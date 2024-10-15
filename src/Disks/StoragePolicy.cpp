@@ -327,8 +327,7 @@ VolumePtr StoragePolicy::getVolume(size_t index) const
 {
     if (index < volume_index_by_volume_name.size())
         return volumes[index];
-    else
-        throw Exception(ErrorCodes::UNKNOWN_VOLUME, "No volume with index {} in storage policy {}", std::to_string(index), backQuote(name));
+    throw Exception(ErrorCodes::UNKNOWN_VOLUME, "No volume with index {} in storage policy {}", std::to_string(index), backQuote(name));
 }
 
 
@@ -462,15 +461,18 @@ StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Uti
     /// First pass, check.
     for (const auto & [name, policy] : policies)
     {
-        if (name.starts_with(TMP_STORAGE_POLICY_PREFIX))
-            continue;
+        if (!name.starts_with(TMP_STORAGE_POLICY_PREFIX))
+        {
+            if (!result->policies.contains(name))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage policy {} is missing in new configuration", backQuote(name));
 
-        if (!result->policies.contains(name))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage policy {} is missing in new configuration", backQuote(name));
+            policy->checkCompatibleWith(result->policies[name]);
+        }
 
-        policy->checkCompatibleWith(result->policies[name]);
         for (const auto & disk : policy->getDisks())
+        {
             disks_before_reload.insert(disk->getName());
+        }
     }
 
     /// Second pass, load.

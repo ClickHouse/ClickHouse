@@ -1,7 +1,7 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
 from helpers.client import QueryRuntimeException
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
@@ -14,7 +14,6 @@ node_dist = cluster.add_instance(
     tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     stay_alive=True,
     with_installed_binary=True,
-    allow_analyzer=False,
 )
 
 

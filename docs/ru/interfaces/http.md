@@ -414,6 +414,8 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
     -   `content_type` — используется со всеми типами, возвращает [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
 
+    -   `http_response_headers` — используется со всеми типами чтобы добавить кастомные хедеры в ответ. Может использоваться в том числе для задания хедера `Content-Type` вместо `content_type`.
+
     -   `response_content` — используется с типом`static`, содержимое ответа, отправленное клиенту, при использовании префикса ‘file://’ or ‘config://’, находит содержимое из файла или конфигурации, отправленного клиенту.
 
 Далее приведены методы настройки для различных типов.
@@ -434,16 +436,18 @@ $ curl -v 'http://localhost:8123/predefined_query'
 ``` xml
 <http_handlers>
     <rule>
-        <url><![CDATA[regex:/query_param_with_url/\w+/(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></url>
+        <url><![CDATA[regex:/query_param_with_url/(?P<name_1>[^/]+)]]></url>
         <methods>GET</methods>
         <headers>
             <XXX>TEST_HEADER_VALUE</XXX>
-            <PARAMS_XXX><![CDATA[(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></PARAMS_XXX>
+            <PARAMS_XXX><![CDATA[regex:(?P<name_2>[^/]+)]]></PARAMS_XXX>
         </headers>
         <handler>
             <type>predefined_query_handler</type>
-            <query>SELECT value FROM system.settings WHERE name = {name_1:String}</query>
-            <query>SELECT name, value FROM system.settings WHERE name = {name_2:String}</query>
+            <query>
+                SELECT name, value FROM system.settings
+                WHERE name IN ({name_1:String}, {name_2:String})
+            </query>
         </handler>
     </rule>
     <defaults/>
@@ -451,13 +455,13 @@ $ curl -v 'http://localhost:8123/predefined_query'
 ```
 
 ``` bash
-$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:8123/query_param_with_url/1/max_threads/max_final_threads?max_threads=1&max_final_threads=2'
-1
-max_final_threads   2
+$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_final_threads' 'http://localhost:8123/query_param_with_url/max_threads?max_threads=1&max_final_threads=2'
+max_final_threads	2
+max_threads	1
 ```
 
 :::note Предупреждение
-В одном `predefined_query_handler` поддерживается только один запрос типа `INSERT`.
+В одном `predefined_query_handler` поддерживается только один запрос.
 :::
 ### dynamic_query_handler {#dynamic_query_handler}
 
@@ -507,6 +511,33 @@ max_final_threads   2
                 <type>static</type>
                 <status>402</status>
                 <content_type>text/html; charset=UTF-8</content_type>
+                <http_response_headers>
+                    <Content-Language>en</Content-Language>
+                    <X-My-Custom-Header>43</X-My-Custom-Header>
+                </http_response_headers>
+                <response_content>Say Hi!</response_content>
+            </handler>
+        </rule>
+        <defaults/>
+</http_handlers>
+```
+
+`http_response_headers` так же может использоваться для определения `Content-Type` вместо `content_type`.
+
+``` xml
+<http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/hi</url>
+            <handler>
+                <type>static</type>
+                <status>402</status>
+                <http_response_headers>
+                    <Content-Type>text/html; charset=UTF-8</Content-Type>
+                    <Content-Language>en</Content-Language>
+                    <X-My-Custom-Header>43</X-My-Custom-Header>
+                </http_response_headers>
                 <response_content>Say Hi!</response_content>
             </handler>
         </rule>
@@ -587,6 +618,9 @@ $ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
             <handler>
                 <type>static</type>
                 <content_type>text/html; charset=UTF-8</content_type>
+                <http_response_headers>
+                    <ETag>737060cd8c284d8af7ad3082f209582d</ETag>
+                </http_response_headers>
                 <response_content>file:///absolute_path_file.html</response_content>
             </handler>
         </rule>
@@ -597,6 +631,9 @@ $ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
             <handler>
                 <type>static</type>
                 <content_type>text/html; charset=UTF-8</content_type>
+                <http_response_headers>
+                    <ETag>737060cd8c284d8af7ad3082f209582d</ETag>
+                </http_response_headers>
                 <response_content>file://./relative_path_file.html</response_content>
             </handler>
         </rule>

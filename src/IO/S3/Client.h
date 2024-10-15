@@ -54,10 +54,7 @@ struct ClientCache
 {
     ClientCache() = default;
 
-    ClientCache(const ClientCache & other)
-        : region_for_bucket_cache(other.region_for_bucket_cache)
-        , uri_for_bucket_cache(other.uri_for_bucket_cache)
-    {}
+    ClientCache(const ClientCache & other);
 
     ClientCache(ClientCache && other) = delete;
 
@@ -66,11 +63,11 @@ struct ClientCache
 
     void clearCache();
 
-    std::mutex region_cache_mutex;
-    std::unordered_map<std::string, std::string> region_for_bucket_cache;
+    mutable std::mutex region_cache_mutex;
+    std::unordered_map<std::string, std::string> region_for_bucket_cache TSA_GUARDED_BY(region_cache_mutex);
 
-    std::mutex uri_cache_mutex;
-    std::unordered_map<std::string, URI> uri_for_bucket_cache;
+    mutable std::mutex uri_cache_mutex;
+    std::unordered_map<std::string, URI> uri_for_bucket_cache TSA_GUARDED_BY(uri_cache_mutex);
 };
 
 class ClientCacheRegistry
@@ -89,14 +86,16 @@ private:
     ClientCacheRegistry() = default;
 
     std::mutex clients_mutex;
-    std::unordered_map<ClientCache *, std::weak_ptr<ClientCache>> client_caches;
+    std::unordered_map<ClientCache *, std::weak_ptr<ClientCache>> client_caches TSA_GUARDED_BY(clients_mutex);
 };
+
+bool isS3ExpressEndpoint(const std::string & endpoint);
 
 struct ClientSettings
 {
-    bool use_virtual_addressing;
+    bool use_virtual_addressing = false;
     /// Disable checksum to avoid extra read of the input stream
-    bool disable_checksum;
+    bool disable_checksum = false;
     /// Should client send ComposeObject request after upload to GCS.
     ///
     /// Previously ComposeObject request was required to make Copy possible,
@@ -106,7 +105,8 @@ struct ClientSettings
     ///
     /// Ability to enable it preserved since likely it is required for old
     /// files.
-    bool gcs_issue_compose_request;
+    bool gcs_issue_compose_request = false;
+    bool is_s3express_bucket = false;
 };
 
 /// Client that improves the client from the AWS SDK
@@ -159,7 +159,7 @@ public:
     class RetryStrategy : public Aws::Client::RetryStrategy
     {
     public:
-        explicit RetryStrategy(uint32_t maxRetries_ = 10, uint32_t scaleFactor_ = 25, uint32_t maxDelayMs_ = 90000);
+        explicit RetryStrategy(uint32_t maxRetries_ = 10, uint32_t scaleFactor_ = 25, uint32_t maxDelayMs_ = 5000);
 
         /// NOLINTNEXTLINE(google-runtime-int)
         bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
@@ -208,6 +208,17 @@ public:
                           const std::shared_ptr<Aws::Http::HttpRequest>& httpRequest) const override;
 
     bool supportsMultiPartCopy() const;
+
+    bool isS3ExpressBucket() const { return client_settings.is_s3express_bucket; }
+
+    bool isClientForDisk() const
+    {
+        return client_configuration.for_disk_s3;
+    }
+
+    ThrottlerPtr getPutRequestThrottler() const { return client_configuration.put_request_throttler; }
+    ThrottlerPtr getGetRequestThrottler() const { return client_configuration.get_request_throttler; }
+
 private:
     friend struct ::MockS3::Client;
 
@@ -258,6 +269,9 @@ private:
 
     bool checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const;
     void insertRegionOverride(const std::string & bucket, const std::string & region) const;
+
+    template <typename RequestResult>
+    RequestResult processRequestResult(RequestResult && outcome) const;
 
     String initial_endpoint;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;

@@ -1,4 +1,4 @@
--- Tags: no-s3-storage, no-random-settings
+-- Tags: no-object-storage, no-random-settings, no-parallel
 
 SET use_uncompressed_cache = 0;
 
@@ -48,7 +48,6 @@ WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT n.null FROM %t
     AND current_database = currentDatabase();
 
 SELECT '====map====';
-SET allow_experimental_map_type = 1;
 DROP TABLE IF EXISTS t_map;
 CREATE TABLE t_map (m Map(String, UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
 INSERT INTO t_map VALUES (map('a', 1, 'b', 2)) (map('a', 3, 'c', 4)), (map('b', 5, 'c', 6));

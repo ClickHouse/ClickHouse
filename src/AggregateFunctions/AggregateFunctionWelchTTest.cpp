@@ -4,15 +4,15 @@
 #include <AggregateFunctions/Moments.h>
 
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
 namespace DB
 {
 struct Settings;
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+}
 
 namespace
 {
@@ -80,7 +80,7 @@ AggregateFunctionPtr createAggregateFunctionWelchTTest(
     assertBinary(name, argument_types);
 
     if (parameters.size() > 1)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires zero or one parameter.", name);
+        throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Aggregate function {} requires zero or one parameter.", name);
 
     if (!isNumber(argument_types[0]) || !isNumber(argument_types[1]))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} only supports numerical types", name);

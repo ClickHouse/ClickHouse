@@ -20,8 +20,6 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
 void registerDiskEncryptedOS(DiskFactory & factory, bool global_skip_access_check);
 #endif
 
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
-
 void registerDisks(bool global_skip_access_check)
 {
     auto & factory = DiskFactory::instance();
@@ -38,18 +36,5 @@ void registerDisks(bool global_skip_access_check)
 
     registerDiskEncryptedOS(factory, global_skip_access_check);
 }
-
-#else
-
-void registerDisks(bool global_skip_access_check)
-{
-    auto & factory = DiskFactory::instance();
-
-    registerDiskLocal(factory, global_skip_access_check);
-
-    registerDiskObjectStorage(factory, global_skip_access_check);
-}
-
-#endif
 
 }

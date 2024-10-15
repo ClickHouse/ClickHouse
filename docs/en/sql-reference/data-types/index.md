@@ -1,10 +1,10 @@
 ---
 slug: /en/sql-reference/data-types/
 sidebar_label: List of data types
-sidebar_position: 37
+sidebar_position: 1
 ---
 
-# ClickHouse Data Types
+# Data Types in ClickHouse
 
 ClickHouse can store various kinds of data in table cells. This section describes the supported data types and special considerations for using and/or implementing them if any.
 
@@ -19,7 +19,8 @@ ClickHouse data types include:
 - **Boolean**: ClickHouse has a [`Boolean` type](./boolean.md)
 - **Strings**: [`String`](./string.md) and [`FixedString`](./fixedstring.md)
 - **Dates**: use [`Date`](./date.md) and [`Date32`](./date32.md) for days, and [`DateTime`](./datetime.md) and [`DateTime64`](./datetime64.md) for instances in time
-- **JSON**: the [`JSON` object](./json.md) stores a JSON document in a single column
+- **Object**: the [`Object`](./json.md) stores a JSON document in a single column (deprecated)
+- **JSON**: the [`JSON` object](./newjson.md) stores a JSON document in a single column
 - **UUID**: a performant option for storing [`UUID` values](./uuid.md)
 - **Low cardinality types**: use an [`Enum`](./enum.md) when you have a handful of unique values, or use [`LowCardinality`](./lowcardinality.md) when you have up to 10,000 unique values of a column
 - **Arrays**: any column can be defined as an [`Array` of values](./array.md)

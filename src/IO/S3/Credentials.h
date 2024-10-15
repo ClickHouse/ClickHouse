@@ -13,21 +13,18 @@
 #    include <aws/core/auth/bearer-token-provider/SSOBearerTokenProvider.h>
 
 #    include <IO/S3/PocoHTTPClient.h>
+#    include <IO/S3Defines.h>
 
 
 namespace DB::S3
 {
-
-inline static constexpr uint64_t DEFAULT_EXPIRATION_WINDOW_SECONDS = 120;
-inline static constexpr uint64_t DEFAULT_CONNECT_TIMEOUT_MS = 1000;
-inline static constexpr uint64_t DEFAULT_REQUEST_TIMEOUT_MS = 30000;
-inline static constexpr uint64_t DEFAULT_MAX_CONNECTIONS = 100;
 
 /// In GCP metadata service can be accessed via DNS regardless of IPv4 or IPv6.
 static inline constexpr char GCP_METADATA_SERVICE_ENDPOINT[] = "http://metadata.google.internal";
 
 /// getRunningAvailabilityZone returns the availability zone of the underlying compute resources where the current process runs.
 std::string getRunningAvailabilityZone();
+std::string tryGetRunningAvailabilityZone();
 
 class AWSEC2MetadataClient : public Aws::Internal::AWSHttpResourceClient
 {
@@ -73,7 +70,7 @@ private:
     LoggerPtr logger;
 };
 
-std::shared_ptr<AWSEC2MetadataClient> InitEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration);
+std::shared_ptr<AWSEC2MetadataClient> createEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration);
 
 class AWSEC2InstanceProfileConfigLoader : public Aws::Config::AWSProfileConfigLoader
 {
@@ -199,6 +196,7 @@ namespace DB
 namespace S3
 {
 std::string getRunningAvailabilityZone();
+std::string tryGetRunningAvailabilityZone();
 }
 
 }

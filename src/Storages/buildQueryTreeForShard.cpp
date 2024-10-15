@@ -1,28 +1,39 @@
 
 #include <Storages/buildQueryTreeForShard.h>
 
-#include <Analyzer/createUniqueTableAliases.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/createUniqueTableAliases.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/TableNode.h>
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Planner/Utils.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/Transforms/SquashingTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
-#include <Planner/Utils.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Transforms/SquashingChunksTransform.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsDistributedProductMode distributed_product_mode;
+    extern const SettingsUInt64 min_external_table_block_size_rows;
+    extern const SettingsUInt64 min_external_table_block_size_bytes;
+    extern const SettingsBool parallel_replicas_prefer_local_join;
+    extern const SettingsBool prefer_global_in_and_join;
+}
 
 namespace ErrorCodes
 {
@@ -179,7 +190,7 @@ private:
         if (!distributed_valid_for_rewrite)
             return;
 
-        auto distributed_product_mode = getSettings().distributed_product_mode;
+        auto distributed_product_mode = getSettings()[Setting::distributed_product_mode];
 
         if (distributed_product_mode == DistributedProductMode::LOCAL)
         {
@@ -191,7 +202,7 @@ private:
             auto replacement_table_expression = std::make_shared<TableNode>(std::move(storage), getContext());
             replacement_map.emplace(table_node.get(), std::move(replacement_table_expression));
         }
-        else if ((distributed_product_mode == DistributedProductMode::GLOBAL || getSettings().prefer_global_in_and_join) &&
+        else if ((distributed_product_mode == DistributedProductMode::GLOBAL || getSettings()[Setting::prefer_global_in_and_join]) &&
             !in_function_or_join_stack.empty())
         {
             auto * in_or_join_node_to_modify = in_function_or_join_stack.back().query_node.get();
@@ -253,16 +264,16 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     InterpreterSelectQueryAnalyzer interpreter(subquery_node, context_copy, subquery_options);
     auto & query_plan = interpreter.getQueryPlan();
 
-    auto sample_block_with_unique_names = query_plan.getCurrentDataStream().header;
+    auto sample_block_with_unique_names = query_plan.getCurrentHeader();
     makeUniqueColumnNamesInBlock(sample_block_with_unique_names);
 
-    if (!blocksHaveEqualStructure(sample_block_with_unique_names, query_plan.getCurrentDataStream().header))
+    if (!blocksHaveEqualStructure(sample_block_with_unique_names, query_plan.getCurrentHeader()))
     {
         auto actions_dag = ActionsDAG::makeConvertingActions(
-            query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+            query_plan.getCurrentHeader().getColumnsWithTypeAndName(),
             sample_block_with_unique_names.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Position);
-        auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(actions_dag));
+        auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(actions_dag));
         query_plan.addStep(std::move(converting_step));
     }
 
@@ -286,8 +297,8 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     auto build_pipeline_settings = BuildQueryPipelineSettings::fromContext(mutable_context);
     auto builder = query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings);
 
-    size_t min_block_size_rows = mutable_context->getSettingsRef().min_external_table_block_size_rows;
-    size_t min_block_size_bytes = mutable_context->getSettingsRef().min_external_table_block_size_bytes;
+    size_t min_block_size_rows = mutable_context->getSettingsRef()[Setting::min_external_table_block_size_rows];
+    size_t min_block_size_bytes = mutable_context->getSettingsRef()[Setting::min_external_table_block_size_bytes];
     auto squashing = std::make_shared<SimpleSquashingChunksTransform>(builder->getHeader(), min_block_size_rows, min_block_size_bytes);
 
     builder->resize(1);
@@ -317,6 +328,8 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
 
     auto replacement_map = visitor.getReplacementMap();
     const auto & global_in_or_join_nodes = visitor.getGlobalInOrJoinNodes();
+
+    QueryTreeNodePtrWithHashMap<TableNodePtr> global_in_temporary_tables;
 
     for (const auto & global_in_or_join_node : global_in_or_join_nodes)
     {
@@ -355,22 +368,32 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
             replacement_map.emplace(join_right_table_expression.get(), std::move(temporary_table_expression_node));
             continue;
         }
-        else if (auto * in_function_node = global_in_or_join_node.query_node->as<FunctionNode>())
+        if (auto * in_function_node = global_in_or_join_node.query_node->as<FunctionNode>())
         {
             auto & in_function_subquery_node = in_function_node->getArguments().getNodes().at(1);
             auto in_function_node_type = in_function_subquery_node->getNodeType();
-            if (in_function_node_type != QueryTreeNodeType::QUERY && in_function_node_type != QueryTreeNodeType::UNION)
+            if (in_function_node_type != QueryTreeNodeType::QUERY && in_function_node_type != QueryTreeNodeType::UNION
+                && in_function_node_type != QueryTreeNodeType::TABLE)
                 continue;
 
-            auto temporary_table_expression_node = executeSubqueryNode(in_function_subquery_node,
-                planner_context->getMutableQueryContext(),
-                global_in_or_join_node.subquery_depth);
+            auto & temporary_table_expression_node = global_in_temporary_tables[in_function_subquery_node];
+            if (!temporary_table_expression_node)
+            {
+                auto subquery_to_execute = in_function_subquery_node;
+                if (subquery_to_execute->as<TableNode>())
+                    subquery_to_execute
+                        = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context->getQueryContext());
 
-            in_function_subquery_node = std::move(temporary_table_expression_node);
+                temporary_table_expression_node = executeSubqueryNode(
+                    subquery_to_execute, planner_context->getMutableQueryContext(), global_in_or_join_node.subquery_depth);
+            }
+
+            replacement_map.emplace(in_function_subquery_node.get(), temporary_table_expression_node);
         }
         else
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
                 "Expected global IN or JOIN query node. Actual {}",
                 global_in_or_join_node.query_node->formatASTForErrorMessage());
         }
@@ -382,6 +405,12 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     removeGroupingFunctionSpecializations(query_tree_to_modify);
 
     createUniqueTableAliases(query_tree_to_modify, nullptr, planner_context->getQueryContext());
+
+    // Get rid of the settings clause so we don't send them to remote. Thus newly non-important
+    // settings won't break any remote parser. It's also more reasonable since the query settings
+    // are written into the query context and will be sent by the query pipeline.
+    if (auto * query_node = query_tree_to_modify->as<QueryNode>())
+        query_node->clearSettingsChanges();
 
     return query_tree_to_modify;
 }
@@ -422,7 +451,7 @@ public:
     {
         if (auto * join_node = node->as<JoinNode>())
         {
-            bool prefer_local_join = getContext()->getSettingsRef().parallel_replicas_prefer_local_join;
+            bool prefer_local_join = getContext()->getSettingsRef()[Setting::parallel_replicas_prefer_local_join];
             bool should_use_global_join = !prefer_local_join || !allStoragesAreMergeTree(join_node->getRightTableExpression());
             if (should_use_global_join)
                 join_node->setLocality(JoinLocality::Global);

@@ -2,16 +2,15 @@
 
 /// Macros for convenient usage of Poco logger.
 #include <unistd.h>
+#include <fmt/args.h>
 #include <fmt/format.h>
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
-#include <Common/CurrentThread.h>
-#include <Common/ProfileEvents.h>
-#include <Common/LoggingFormatStringHelpers.h>
-#include <Common/Logger.h>
 #include <Common/AtomicLogger.h>
-
-namespace Poco { class Logger; }
+#include <Common/CurrentThreadHelpers.h>
+#include <Common/Logger.h>
+#include <Common/LoggingFormatStringHelpers.h>
+#include <Common/ProfileEvents.h>
 
 
 #define LogToStr(x, y) std::make_unique<LogToStrImpl>(x, y)
@@ -22,7 +21,7 @@ using LogSeriesLimiterPtr = std::shared_ptr<LogSeriesLimiter>;
 namespace impl
 {
     [[maybe_unused]] inline LoggerPtr getLoggerHelper(const LoggerPtr & logger) { return logger; }
-    [[maybe_unused]] inline LoggerPtr getLoggerHelper(const AtomicLogger & logger) { return logger.load(); }
+    [[maybe_unused]] inline LoggerPtr getLoggerHelper(const DB::AtomicLogger & logger) { return logger.load(); }
     [[maybe_unused]] inline const ::Poco::Logger * getLoggerHelper(const ::Poco::Logger * logger) { return logger; }
     [[maybe_unused]] inline std::unique_ptr<LogToStrImpl> getLoggerHelper(std::unique_ptr<LogToStrImpl> && logger) { return logger; }
     [[maybe_unused]] inline std::unique_ptr<LogFrequencyLimiterIml> getLoggerHelper(std::unique_ptr<LogFrequencyLimiterIml> && logger) { return logger; }
@@ -66,8 +65,7 @@ namespace impl
 #define LOG_IMPL(logger, priority, PRIORITY, ...) do                                                                \
 {                                                                                                                   \
     auto _logger = ::impl::getLoggerHelper(logger);                                                                 \
-    const bool _is_clients_log = (DB::CurrentThread::getGroup() != nullptr) &&                                      \
-        (DB::CurrentThread::get().getClientLogsLevel() >= (priority));                                              \
+    const bool _is_clients_log = DB::currentThreadHasGroup() && DB::currentThreadLogsLevel() >= (priority);         \
     if (!_is_clients_log && !_logger->is((PRIORITY)))                                                               \
         break;                                                                                                      \
                                                                                                                     \
@@ -83,6 +81,7 @@ namespace impl
                                                                                                                     \
         std::string_view _format_string;                                                                            \
         std::string _formatted_message;                                                                             \
+        std::vector<std::string> _format_string_args;                                                               \
                                                                                                                     \
         if constexpr (LogTypeInfo::is_static)                                                                       \
         {                                                                                                           \
@@ -94,18 +93,30 @@ namespace impl
         if constexpr (is_preformatted_message)                                                                      \
         {                                                                                                           \
             static_assert(_nargs == 1 || !is_preformatted_message);                                                 \
-            ConstexprIfsAreNotIfdefs<is_preformatted_message>::getPreformatted(LOG_IMPL_FIRST_ARG(__VA_ARGS__)).apply(_formatted_message, _format_string);  \
+            ConstexprIfsAreNotIfdefs<is_preformatted_message>::getPreformatted(LOG_IMPL_FIRST_ARG(__VA_ARGS__)).apply(_formatted_message, _format_string, _format_string_args);  \
         }                                                                                                           \
         else                                                                                                        \
         {                                                                                                           \
-             _formatted_message = _nargs == 1 ? firstArg(__VA_ARGS__) : fmt::format(__VA_ARGS__);                   \
+             _formatted_message = _nargs == 1 ? firstArg(__VA_ARGS__) : ConstexprIfsAreNotIfdefs<!is_preformatted_message>::getArgsAndFormat(_format_string_args, __VA_ARGS__); \
         }                                                                                                           \
                                                                                                                     \
         std::string _file_function = __FILE__ "; ";                                                                 \
         _file_function += __PRETTY_FUNCTION__;                                                                      \
         Poco::Message _poco_message(_logger->name(), std::move(_formatted_message),                                 \
-            (PRIORITY), _file_function.c_str(), __LINE__, _format_string);                                          \
+            (PRIORITY), _file_function.c_str(), __LINE__, _format_string, _format_string_args);                     \
         _channel->log(_poco_message);                                                                               \
+    }                                                                                                               \
+    catch (const Poco::Exception & logger_exception)                                                                \
+    {                                                                                                               \
+        ::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
+        const std::string & logger_exception_message = logger_exception.message();                                  \
+        ::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message.data()), logger_exception_message.size()); \
+    }                                                                                                               \
+    catch (const std::exception & logger_exception)                                                                 \
+    {                                                                                                               \
+        ::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
+        const char * logger_exception_message = logger_exception.what();                                            \
+        ::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message), strlen(logger_exception_message)); \
     }                                                                                                               \
     catch (...)                                                                                                     \
     {                                                                                                               \

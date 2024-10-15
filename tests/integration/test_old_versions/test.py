@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
@@ -10,7 +10,6 @@ node_oldest = cluster.add_instance(
     tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
     main_configs=["configs/config.d/test_cluster.xml"],
-    allow_analyzer=False,
 )
 old_nodes = [node_oldest]
 new_node = cluster.add_instance("node_new")

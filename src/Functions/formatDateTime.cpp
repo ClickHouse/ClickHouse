@@ -23,6 +23,7 @@
 #include <Common/DateLUTImpl.h>
 #include <base/find_symbols.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/Settings.h>
 
 #include <type_traits>
 #include <concepts>
@@ -30,6 +31,13 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool formatdatetime_format_without_leading_zeros;
+    extern const SettingsBool formatdatetime_f_prints_single_zero;
+    extern const SettingsBool formatdatetime_parsedatetime_m_is_month_name;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -43,13 +51,13 @@ namespace
 {
 using Pos = const char *;
 
-enum class SupportInteger
+enum class SupportInteger : uint8_t
 {
     Yes,
     No
 };
 
-enum class FormatSyntax
+enum class FormatSyntax : uint8_t
 {
     MySQL,
     Joda
@@ -62,8 +70,8 @@ template <> struct InstructionValueTypeMap<DataTypeInt16>      { using Instructi
 template <> struct InstructionValueTypeMap<DataTypeUInt16>     { using InstructionValueType = UInt32; };
 template <> struct InstructionValueTypeMap<DataTypeInt32>      { using InstructionValueType = UInt32; };
 template <> struct InstructionValueTypeMap<DataTypeUInt32>     { using InstructionValueType = UInt32; };
-template <> struct InstructionValueTypeMap<DataTypeInt64>      { using InstructionValueType = UInt32; };
-template <> struct InstructionValueTypeMap<DataTypeUInt64>     { using InstructionValueType = UInt32; };
+template <> struct InstructionValueTypeMap<DataTypeInt64>      { using InstructionValueType = Int64; };
+template <> struct InstructionValueTypeMap<DataTypeUInt64>     { using InstructionValueType = UInt64; };
 template <> struct InstructionValueTypeMap<DataTypeDate>       { using InstructionValueType = UInt16; };
 template <> struct InstructionValueTypeMap<DataTypeDate32>     { using InstructionValueType = Int32; };
 template <> struct InstructionValueTypeMap<DataTypeDateTime>   { using InstructionValueType = UInt32; };
@@ -205,13 +213,13 @@ private:
             return 4;
         }
 
-        /// Cast content from integer to string, and append result string to buffer.
-        /// Make sure digits number in result string is no less than total_digits by padding leading '0'
+        /// Casts val from integer to string, then appends result string to buffer.
+        /// Makes sure digits number in result string is no less than min_digits by padding leading '0'.
         /// Notice: '-' is not counted as digit.
         /// For example:
-        /// val = -123, total_digits = 2 => dest = "-123"
-        /// val = -123, total_digits = 3 => dest = "-123"
-        /// val = -123, total_digits = 4 => dest = "-0123"
+        /// val = -123, min_digits = 2 => dest = "-123"
+        /// val = -123, min_digits = 3 => dest = "-123"
+        /// val = -123, min_digits = 4 => dest = "-0123"
         static size_t writeNumberWithPadding(char * dest, std::integral auto val, size_t min_digits)
         {
             using T = decltype(val);
@@ -226,9 +234,10 @@ private:
                 ++digits;
             }
 
-            /// Possible sign
             size_t pos = 0;
             n = val;
+
+            /// Possible sign
             if constexpr (is_signed_v<T>)
                 if (val < 0)
                 {
@@ -245,16 +254,17 @@ private:
             }
 
             /// Digits
+            size_t digits_written = 0;
             while (w >= 100)
             {
                 w /= 100;
 
                 writeNumber2(dest + pos, n / w);
                 pos += 2;
-
+                digits_written += 2;
                 n = n % w;
             }
-            if (n)
+            if (digits_written < digits)
             {
                 dest[pos] = '0' + n;
                 ++pos;
@@ -330,8 +340,7 @@ private:
                 dest[0] = '0' + month;
                 return 1;
             }
-            else
-                return writeNumber2(dest, month);
+            return writeNumber2(dest, month);
         }
 
         static size_t monthOfYearText(char * dest, Time source, bool abbreviate, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -424,8 +433,7 @@ private:
                 dest[0] = '0' + hour;
                 return 1;
             }
-            else
-                return writeNumber2(dest, hour);
+            return writeNumber2(dest, hour);
         }
 
         size_t mysqlHour12(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -444,8 +452,7 @@ private:
                 dest[0] = '0' + hour;
                 return 1;
             }
-            else
-                return writeNumber2(dest, hour);
+            return writeNumber2(dest, hour);
         }
 
         size_t mysqlMinute(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -552,12 +559,12 @@ private:
 
         static size_t jodaEra(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
-            auto year = static_cast<Int32>(ToYearImpl::execute(source, timezone));
+            Int32 year = static_cast<Int32>(ToYearImpl::execute(source, timezone));
             String res;
             if (min_represent_digits <= 3)
-                res = static_cast<Int32>(year) > 0 ? "AD" : "BC";
+                res = year > 0 ? "AD" : "BC";
             else
-                res = static_cast<Int32>(year) > 0 ? "Anno Domini" : "Before Christ";
+                res = year > 0 ? "Anno Domini" : "Before Christ";
 
             memcpy(dest, res.data(), res.size());
             return res.size();
@@ -575,11 +582,9 @@ private:
             auto year = static_cast<Int32>(ToYearImpl::execute(source, timezone));
             if (min_represent_digits == 2)
                 return writeNumberWithPadding(dest, std::abs(year) % 100, 2);
-            else
-            {
-                year = year <= 0 ? std::abs(year - 1) : year;
-                return writeNumberWithPadding(dest, year, min_represent_digits);
-            }
+
+            year = year <= 0 ? std::abs(year - 1) : year;
+            return writeNumberWithPadding(dest, year, min_represent_digits);
         }
 
         static size_t jodaDayOfWeek1Based(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -603,8 +608,7 @@ private:
                 auto two_digit_year = year % 100;
                 return writeNumberWithPadding(dest, two_digit_year, 2);
             }
-            else
-                return writeNumberWithPadding(dest, year, min_represent_digits);
+            return writeNumberWithPadding(dest, year, min_represent_digits);
         }
 
         static size_t jodaWeekYear(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -689,8 +693,7 @@ private:
 
         static size_t jodaFractionOfSecond(size_t min_represent_digits, char * dest, Time /*source*/, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & /*timezone*/)
         {
-            if (min_represent_digits > 9)
-                min_represent_digits = 9;
+            min_represent_digits = std::min<size_t>(min_represent_digits, 9);
             if (fractional_second == 0)
             {
                 for (UInt64 i = 0; i < min_represent_digits; ++i)
@@ -781,9 +784,9 @@ public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionFormatDateTimeImpl>(context); }
 
     explicit FunctionFormatDateTimeImpl(ContextPtr context)
-        : mysql_M_is_month_name(context->getSettings().formatdatetime_parsedatetime_m_is_month_name)
-        , mysql_f_prints_single_zero(context->getSettings().formatdatetime_f_prints_single_zero)
-        , mysql_format_ckl_without_leading_zeros(context->getSettings().formatdatetime_format_without_leading_zeros)
+        : mysql_M_is_month_name(context->getSettingsRef()[Setting::formatdatetime_parsedatetime_m_is_month_name])
+        , mysql_f_prints_single_zero(context->getSettingsRef()[Setting::formatdatetime_f_prints_single_zero])
+        , mysql_format_ckl_without_leading_zeros(context->getSettingsRef()[Setting::formatdatetime_format_without_leading_zeros])
     {
     }
 
@@ -846,7 +849,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, [[maybe_unused]] size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnPtr res;
         if constexpr (support_integer == SupportInteger::Yes)
@@ -855,34 +858,38 @@ public:
             {
                 return castColumn(arguments[0], result_type);
             }
-            else
-            {
-                if (!castType(arguments[0].type.get(), [&](const auto & type)
+
+            if (!castType(
+                    arguments[0].type.get(),
+                    [&](const auto & type)
                     {
                         using FromDataType = std::decay_t<decltype(type)>;
-                        if (!(res = executeType<FromDataType>(arguments, result_type)))
-                            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                        if (!(res = executeType<FromDataType>(arguments, result_type, input_rows_count)))
+                            throw Exception(
+                                ErrorCodes::ILLEGAL_COLUMN,
                                 "Illegal column {} of function {}, must be Integer, Date, Date32, DateTime or DateTime64.",
-                                arguments[0].column->getName(), getName());
+                                arguments[0].column->getName(),
+                                getName());
                         return true;
                     }))
-                {
-                    if (!((res = executeType<DataTypeDate>(arguments, result_type))
-                        || (res = executeType<DataTypeDate32>(arguments, result_type))
-                        || (res = executeType<DataTypeDateTime>(arguments, result_type))
-                        || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
-                        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                            "Illegal column {} of function {}, must be Integer or DateTime.",
-                            arguments[0].column->getName(), getName());
-                }
+            {
+                if (!((res = executeType<DataTypeDate>(arguments, result_type, input_rows_count))
+                      || (res = executeType<DataTypeDate32>(arguments, result_type, input_rows_count))
+                      || (res = executeType<DataTypeDateTime>(arguments, result_type, input_rows_count))
+                      || (res = executeType<DataTypeDateTime64>(arguments, result_type, input_rows_count))))
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_COLUMN,
+                        "Illegal column {} of function {}, must be Integer or DateTime.",
+                        arguments[0].column->getName(),
+                        getName());
             }
         }
         else
         {
-            if (!((res = executeType<DataTypeDate>(arguments, result_type))
-                || (res = executeType<DataTypeDate32>(arguments, result_type))
-                || (res = executeType<DataTypeDateTime>(arguments, result_type))
-                || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
+            if (!((res = executeType<DataTypeDate>(arguments, result_type, input_rows_count))
+                || (res = executeType<DataTypeDate32>(arguments, result_type, input_rows_count))
+                || (res = executeType<DataTypeDateTime>(arguments, result_type, input_rows_count))
+                || (res = executeType<DataTypeDateTime64>(arguments, result_type, input_rows_count))))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Illegal column {} of function {}, must be Date or DateTime.",
                     arguments[0].column->getName(), getName());
@@ -892,7 +899,7 @@ public:
     }
 
     template <typename DataType>
-    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const
+    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
     {
         auto non_const_datetime = arguments[0].column->convertToFullColumnIfConst();
         auto * times = checkAndGetColumn<typename DataType::ColumnType>(non_const_datetime.get());
@@ -953,13 +960,11 @@ public:
         else
             time_zone = &DateLUT::instance();
 
-        const auto & vec = times->getData();
-
         auto col_res = ColumnString::create();
         auto & res_data = col_res->getChars();
         auto & res_offsets = col_res->getOffsets();
-        res_data.resize(vec.size() * (out_template_size + 1));
-        res_offsets.resize(vec.size());
+        res_data.resize(input_rows_count * (out_template_size + 1));
+        res_offsets.resize(input_rows_count);
 
         if constexpr (format_syntax == FormatSyntax::MySQL)
         {
@@ -988,9 +993,11 @@ public:
             }
         }
 
+        const auto & vec = times->getData();
+
         auto * begin = reinterpret_cast<char *>(res_data.data());
         auto * pos = begin;
-        for (size_t i = 0; i < vec.size(); ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             if (!const_time_zone_column && arguments.size() > 2)
             {
@@ -1017,7 +1024,7 @@ public:
             else
             {
                 for (auto & instruction : instructions)
-                    instruction.perform(pos, static_cast<UInt32>(vec[i]), 0, 0, *time_zone);
+                    instruction.perform(pos, static_cast<T>(vec[i]), 0, 0, *time_zone);
             }
             *pos++ = '\0';
 
@@ -1073,7 +1080,7 @@ public:
         {
             /// DateTime/DateTime64 --> insert instruction
             /// Other types cannot provide the requested data --> write out template
-            if constexpr (is_any_of<T, UInt32, Int64>)
+            if constexpr (is_any_of<T, UInt32, Int64, UInt64>)
             {
                 Instruction<T> instruction;
                 instruction.setMysqlFunc(std::move(func));
@@ -1539,7 +1546,7 @@ public:
         /// If the argument was DateTime, add instruction for printing. If it was date, just append default literal
         auto add_instruction = [&]([[maybe_unused]] typename Instruction<T>::FuncJoda && func, [[maybe_unused]] const String & default_literal)
         {
-            if constexpr (is_any_of<T, UInt32, Int64>)
+            if constexpr (is_any_of<T, UInt32, Int64, UInt64>)
             {
                 Instruction<T> instruction;
                 instruction.setJodaFunc(std::move(func));
@@ -1578,20 +1585,18 @@ public:
                     Int64 count = numLiteralChars(cur_token + 1, end);
                     if (count == -1)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "No closing single quote for literal");
-                    else
+
+                    for (Int64 i = 1; i <= count; i++)
                     {
-                        for (Int64 i = 1; i <= count; i++)
-                        {
-                            Instruction<T> instruction;
-                            std::string_view literal(cur_token + i, 1);
-                            instruction.setJodaFunc(std::bind_front(&Instruction<T>::template jodaLiteral<decltype(literal)>, literal));
-                            instructions.push_back(std::move(instruction));
-                            ++reserve_size;
-                            if (*(cur_token + i) == '\'')
-                                i += 1;
-                        }
-                        pos += count + 2;
+                        Instruction<T> instruction;
+                        std::string_view literal(cur_token + i, 1);
+                        instruction.setJodaFunc(std::bind_front(&Instruction<T>::template jodaLiteral<decltype(literal)>, literal));
+                        instructions.push_back(std::move(instruction));
+                        ++reserve_size;
+                        if (*(cur_token + i) == '\'')
+                            i += 1;
                     }
+                    pos += count + 2;
                 }
             }
             else
@@ -1832,10 +1837,10 @@ using FunctionFromUnixTimestampInJodaSyntax = FunctionFormatDateTimeImpl<NameFro
 REGISTER_FUNCTION(FormatDateTime)
 {
     factory.registerFunction<FunctionFormatDateTime>();
-    factory.registerAlias("DATE_FORMAT", FunctionFormatDateTime::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("DATE_FORMAT", FunctionFormatDateTime::name, FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<FunctionFromUnixTimestamp>();
-    factory.registerAlias("FROM_UNIXTIME", FunctionFromUnixTimestamp::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("FROM_UNIXTIME", FunctionFromUnixTimestamp::name, FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<FunctionFormatDateTimeInJodaSyntax>();
     factory.registerFunction<FunctionFromUnixTimestampInJodaSyntax>();

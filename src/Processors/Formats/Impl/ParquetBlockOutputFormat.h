@@ -112,7 +112,7 @@ private:
     void consume(Chunk) override;
     void finalizeImpl() override;
     void resetFormatterImpl() override;
-    void onCancel() override;
+    void onCancel() noexcept override;
 
     void writeRowGroup(std::vector<Chunk> chunks);
     void writeUsingArrow(std::vector<Chunk> chunks);

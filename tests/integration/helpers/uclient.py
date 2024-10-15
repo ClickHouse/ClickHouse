@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.join(CURDIR))
 
 from . import uexpect
 
-prompt = ":\) "
+prompt = ":\\) "
 end_of_block = r".*\r\n.*\r\n"
 
 
@@ -21,7 +21,7 @@ class client(object):
         self.client.eol("\r")
         self.client.logger(log, prefix=name)
         self.client.timeout(20)
-        self.client.expect("[#\$] ", timeout=2)
+        self.client.expect("[#\\$] ", timeout=2)
         self.client.send(command)
 
     def __enter__(self):

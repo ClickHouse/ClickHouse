@@ -16,6 +16,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
@@ -137,7 +138,9 @@ public:
     {
         if (other.count == 0)
             return;
-        else if (count == 0)
+
+        /// NOLINTBEGIN(readability-else-after-return)
+        if (count == 0)
         {
             compress_threshold = other.compress_threshold;
             relative_error = other.relative_error;
@@ -236,6 +239,7 @@ public:
             doCompress(2 * merged_relative_error * merged_count);
             compressed = true;
         }
+        /// NOLINTEND(readability-else-after-return)
     }
 
     void write(WriteBuffer & buf) const
@@ -291,12 +295,10 @@ private:
             Int64 max_rank = min_rank + curr_sample.delta;
             if (max_rank - target_error <= rank && rank <= min_rank + target_error)
                 return {i, min_rank, curr_sample.value};
-            else
-            {
-                ++i;
-                curr_sample = sampled[i];
-                min_rank += curr_sample.g;
-            }
+
+            ++i;
+            curr_sample = sampled[i];
+            min_rank += curr_sample.g;
         }
         return {sampled.size() - 1, 0, sampled.back().value};
     }
@@ -503,8 +505,8 @@ template <template <typename, bool> class Function>
 AggregateFunctionPtr createAggregateFunctionQuantile(
     const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
 {
-    /// Second argument type check doesn't depend on the type of the first one.
-    Function<void, true>::assertSecondArg(argument_types);
+    if (argument_types.empty())
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires at least one argument", name);
 
     const DataTypePtr & argument_type = argument_types[0];
     WhichDataType which(argument_type);

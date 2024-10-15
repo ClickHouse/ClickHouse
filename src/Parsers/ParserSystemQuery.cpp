@@ -4,6 +4,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -66,7 +67,7 @@ namespace ErrorCodes
     return true;
 }
 
-enum class SystemQueryTargetType
+enum class SystemQueryTargetType : uint8_t
 {
     Model,
     Function,
@@ -262,6 +263,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
+        case Type::WAIT_FAILPOINT:
         {
             ASTPtr ast;
             if (ParserIdentifier{}.parse(pos, ast, expected))
@@ -321,6 +323,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         /// START/STOP DISTRIBUTED SENDS does not require table
         case Type::STOP_DISTRIBUTED_SENDS:
         case Type::START_DISTRIBUTED_SENDS:
+        case Type::UNLOAD_PRIMARY_KEY:
         {
             if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ false, /* allow_string_literal = */ false))
                 return false;
@@ -328,6 +331,21 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
 
         case Type::FLUSH_DISTRIBUTED:
+        {
+            if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ true, /* allow_string_literal = */ false))
+                return false;
+
+            ParserKeyword s_settings(Keyword::SETTINGS);
+            if (s_settings.ignore(pos, expected))
+            {
+                ParserSetQuery parser_settings(/* parse_only_internals_= */ true);
+                if (!parser_settings.parse(pos, res->query_settings, expected))
+                    return false;
+            }
+
+            break;
+        }
+
         case Type::RESTORE_REPLICA:
         {
             if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ true, /* allow_string_literal = */ false))
@@ -403,6 +421,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
 
         case Type::REFRESH_VIEW:
+        case Type::WAIT_VIEW:
         case Type::START_VIEW:
         case Type::STOP_VIEW:
         case Type::CANCEL_VIEW:
@@ -427,7 +446,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ASTPtr ast;
             if (!ParserStringLiteral{}.parse(pos, ast, expected))
                 return false;
-            String time_str = ast->as<ASTLiteral &>().value.get<const String &>();
+            String time_str = ast->as<ASTLiteral &>().value.safeGet<const String &>();
             ReadBufferFromString buf(time_str);
             time_t time;
             readDateTimeText(time, buf);
@@ -449,7 +468,17 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             }
 
-            res->seconds = seconds->as<ASTLiteral>()->value.get<UInt64>();
+            res->seconds = seconds->as<ASTLiteral>()->value.safeGet<UInt64>();
+            break;
+        }
+        case Type::DROP_QUERY_CACHE:
+        {
+            ParserLiteral tag_parser;
+            ASTPtr ast;
+            if (ParserKeyword{Keyword::TAG}.ignore(pos, expected) && tag_parser.parse(pos, ast, expected))
+                res->query_cache_tag = std::make_optional<String>(ast->as<ASTLiteral>()->value.safeGet<String>());
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
             break;
         }
         case Type::DROP_FILESYSTEM_CACHE:
@@ -520,7 +549,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ASTPtr ast;
             if (ParserKeyword{Keyword::WITH_NAME}.ignore(pos, expected) && ParserStringLiteral{}.parse(pos, ast, expected))
             {
-                res->backup_name = ast->as<ASTLiteral &>().value.get<const String &>();
+                res->backup_name = ast->as<ASTLiteral &>().value.safeGet<const String &>();
             }
             else
             {
@@ -559,7 +588,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                     if (!ParserStringLiteral{}.parse(pos, ast, expected))
                         return false;
 
-                    custom_name = ast->as<ASTLiteral &>().value.get<const String &>();
+                    custom_name = ast->as<ASTLiteral &>().value.safeGet<const String &>();
                 }
 
                 return true;
@@ -616,6 +645,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         res->children.push_back(res->database);
     if (res->table)
         res->children.push_back(res->table);
+    if (res->query_settings)
+        res->children.push_back(res->query_settings);
 
     node = std::move(res);
     return true;

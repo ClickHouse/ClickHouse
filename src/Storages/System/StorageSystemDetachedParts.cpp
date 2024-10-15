@@ -1,13 +1,16 @@
 #include <Storages/System/StorageSystemDetachedParts.h>
 
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/System/StorageSystemPartsBase.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <IO/SharedThreadPools.h>
@@ -160,19 +163,9 @@ private:
             worker_state.tasks.push_back({part.disk, relative_path, &parts_sizes.at(p_id - begin)});
         }
 
-        std::vector<std::future<void>> futures;
-        SCOPE_EXIT_SAFE({
-            /// Cancel all workers
-            worker_state.next_task.store(worker_state.tasks.size());
-            /// Exceptions are not propagated
-            for (auto & future : futures)
-                if (future.valid())
-                    future.wait();
-            futures.clear();
-        });
-
         auto max_thread_to_run = std::max(size_t(1), std::min(support_threads, worker_state.tasks.size() / 10));
-        futures.reserve(max_thread_to_run);
+
+        ThreadPoolCallbackRunnerLocal<void> runner(getIOThreadPool().get(), "DP_BytesOnDisk");
 
         for (size_t i = 0; i < max_thread_to_run; ++i)
         {
@@ -189,16 +182,10 @@ private:
                 }
             };
 
-            futures.push_back(
-                        scheduleFromThreadPool<void>(
-                            std::move(worker),
-                            getIOThreadPool().get(),
-                            "DP_BytesOnDisk"));
+            runner(std::move(worker));
         }
 
-        /// Exceptions are propagated
-        for (auto & future : futures)
-            future.get();
+        runner.waitForAllToFinishAndRethrowFirstError();
     }
 
     void generateRows(MutableColumns & new_columns, size_t max_rows)
@@ -301,7 +288,7 @@ public:
         size_t max_block_size_,
         size_t num_streams_)
         : SourceStepWithFilter(
-            DataStream{.header = std::move(sample_block)},
+            std::move(sample_block),
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -320,16 +307,30 @@ protected:
     std::shared_ptr<StorageSystemDetachedParts> storage;
     std::vector<UInt8> columns_mask;
 
-    const ActionsDAG::Node * predicate = nullptr;
+    std::optional<ActionsDAG> filter;
     const size_t max_block_size;
     const size_t num_streams;
 };
 
 void ReadFromSystemDetachedParts::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
     if (filter_actions_dag)
-        predicate = filter_actions_dag->getOutputs().at(0);
+    {
+        const auto * predicate = filter_actions_dag->getOutputs().at(0);
+
+        Block block;
+        block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), "database"));
+        block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), "table"));
+        block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), "engine"));
+        block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUInt8>(), "active"));
+        block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUUID>(), "uuid"));
+
+        filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block);
+        if (filter)
+            VirtualColumnUtils::buildSetsForDAG(*filter, context);
+    }
 }
 
 void StorageSystemDetachedParts::read(
@@ -358,13 +359,13 @@ void StorageSystemDetachedParts::read(
 
 void ReadFromSystemDetachedParts::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto state = std::make_shared<SourceState>(StoragesInfoStream(predicate, context));
+    auto state = std::make_shared<SourceState>(StoragesInfoStream({}, std::move(filter), context));
 
     Pipe pipe;
 
     for (size_t i = 0; i < num_streams; ++i)
     {
-        auto source = std::make_shared<DetachedPartsSource>(getOutputStream().header, state, columns_mask, max_block_size);
+        auto source = std::make_shared<DetachedPartsSource>(getOutputHeader(), state, columns_mask, max_block_size);
         pipe.addSource(std::move(source));
     }
 

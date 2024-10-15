@@ -32,14 +32,14 @@ namespace ErrorCodes
 
 void SerializationString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const String & s = field.get<const String &>();
-    if (settings.max_binary_string_size && s.size() > settings.max_binary_string_size)
+    const String & s = field.safeGet<const String &>();
+    if (settings.binary.max_binary_string_size && s.size() > settings.binary.max_binary_string_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_STRING_SIZE,
             "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
             "format_binary_max_string_size",
             s.size(),
-            settings.max_binary_string_size);
+            settings.binary.max_binary_string_size);
 
     writeVarUInt(s.size(), ostr);
     writeString(s, ostr);
@@ -50,16 +50,16 @@ void SerializationString::deserializeBinary(Field & field, ReadBuffer & istr, co
 {
     UInt64 size;
     readVarUInt(size, istr);
-    if (settings.max_binary_string_size && size > settings.max_binary_string_size)
+    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_STRING_SIZE,
             "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
             "format_binary_max_string_size",
             size,
-            settings.max_binary_string_size);
+            settings.binary.max_binary_string_size);
 
     field = String();
-    String & s = field.get<String &>();
+    String & s = field.safeGet<String &>();
     s.resize(size);
     istr.readStrict(s.data(), size);
 }
@@ -68,13 +68,13 @@ void SerializationString::deserializeBinary(Field & field, ReadBuffer & istr, co
 void SerializationString::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const StringRef & s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
-    if (settings.max_binary_string_size && s.size > settings.max_binary_string_size)
+    if (settings.binary.max_binary_string_size && s.size > settings.binary.max_binary_string_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_STRING_SIZE,
             "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
             "format_binary_max_string_size",
             s.size,
-            settings.max_binary_string_size);
+            settings.binary.max_binary_string_size);
 
     writeVarUInt(s.size, ostr);
     writeString(s, ostr);
@@ -89,13 +89,13 @@ void SerializationString::deserializeBinary(IColumn & column, ReadBuffer & istr,
 
     UInt64 size;
     readVarUInt(size, istr);
-    if (settings.max_binary_string_size && size > settings.max_binary_string_size)
+    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_STRING_SIZE,
             "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
             "format_binary_max_string_size",
             size,
-            settings.max_binary_string_size);
+            settings.binary.max_binary_string_size);
 
     size_t old_chars_size = data.size();
     size_t offset = old_chars_size + size + 1;
@@ -146,7 +146,6 @@ void SerializationString::serializeBinaryBulk(const IColumn & column, WriteBuffe
         ostr.write(reinterpret_cast<const char *>(&data[offsets[i - 1]]), str_size);
     }
 }
-
 
 template <int UNROLL_TIMES>
 static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit)
@@ -324,14 +323,17 @@ bool SerializationString::tryDeserializeWholeText(IColumn & column, ReadBuffer &
     return read<bool>(column, [&](ColumnString::Chars & data) { readStringUntilEOFInto(data, istr); return true; });
 }
 
-void SerializationString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    read<void>(column, [&](ColumnString::Chars & data) { readEscapedStringInto(data, istr); });
+    read<void>(column, [&](ColumnString::Chars & data)
+    {
+        settings.tsv.crlf_end_of_line_input ? readEscapedStringInto<PaddedPODArray<UInt8>,true>(data, istr) : readEscapedStringInto<PaddedPODArray<UInt8>,false>(data, istr);
+    });
 }
 
 bool SerializationString::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    return read<bool>(column, [&](ColumnString::Chars & data) { readEscapedStringInto(data, istr); return true; });
+    return read<bool>(column, [&](ColumnString::Chars & data) { readEscapedStringInto<PaddedPODArray<UInt8>,true>(data, istr); return true; });
 }
 
 void SerializationString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -389,7 +391,7 @@ void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
     else if (settings.json.read_numbers_as_strings && !istr.eof() && *istr.position() != '"')
     {
         String field;
-        readJSONField(field, istr);
+        readJSONField(field, istr, settings.json);
         Float64 tmp;
         ReadBufferFromString buf(field);
         if (tryReadFloatText(tmp, buf) && buf.eof())
@@ -398,7 +400,7 @@ void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON String value here: {}", field);
     }
     else
-        read<void>(column, [&](ColumnString::Chars & data) { readJSONStringInto(data, istr); });
+        read<void>(column, [&](ColumnString::Chars & data) { readJSONStringInto(data, istr, settings.json); });
 }
 
 bool SerializationString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -432,7 +434,7 @@ bool SerializationString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
     if (settings.json.read_numbers_as_strings && !istr.eof() && *istr.position() != '"')
     {
         String field;
-        if (!tryReadJSONField(field, istr))
+        if (!tryReadJSONField(field, istr, settings.json))
             return false;
 
         Float64 tmp;
@@ -446,7 +448,7 @@ bool SerializationString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
         return false;
     }
 
-    return read<bool>(column, [&](ColumnString::Chars & data) { return tryReadJSONStringInto(data, istr); });
+    return read<bool>(column, [&](ColumnString::Chars & data) { return tryReadJSONStringInto(data, istr, settings.json); });
 }
 
 

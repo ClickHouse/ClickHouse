@@ -1,29 +1,31 @@
-import logging
-import pytest
-import os
 import json
-
-import helpers.client
-from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
-from helpers.s3_tools import prepare_s3_bucket, upload_directory, get_file_contents
+import logging
+import os
+from datetime import datetime
 
 import pyspark
-from pyspark.sql.types import (
-    StructType,
-    StructField,
-    StringType,
-    IntegerType,
-    DateType,
-    TimestampType,
-    BooleanType,
-    ArrayType,
+import pytest
+from pyspark.sql.functions import (
+    current_timestamp,
+    monotonically_increasing_id,
+    row_number,
 )
-from pyspark.sql.functions import current_timestamp
-from datetime import datetime
-from pyspark.sql.functions import monotonically_increasing_id, row_number
+from pyspark.sql.types import (
+    ArrayType,
+    BooleanType,
+    DateType,
+    IntegerType,
+    StringType,
+    StructField,
+    StructType,
+    TimestampType,
+)
 from pyspark.sql.window import Window
 
+import helpers.client
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.s3_tools import get_file_contents, prepare_s3_bucket, upload_directory
+from helpers.test_tools import TSV
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 

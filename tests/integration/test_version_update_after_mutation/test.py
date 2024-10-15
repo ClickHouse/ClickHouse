@@ -1,7 +1,8 @@
-import pytest
 import time
 
-from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
+import pytest
+
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 
 cluster = ClickHouseCluster(__file__)
@@ -16,7 +17,6 @@ node1 = cluster.add_instance(
     main_configs=[
         "configs/compat.xml",
     ],
-    allow_analyzer=False,
 )
 node2 = cluster.add_instance(
     "node2",
@@ -28,7 +28,6 @@ node2 = cluster.add_instance(
     main_configs=[
         "configs/compat.xml",
     ],
-    allow_analyzer=False,
 )
 node3 = cluster.add_instance(
     "node3",
@@ -40,7 +39,6 @@ node3 = cluster.add_instance(
     main_configs=[
         "configs/compat.xml",
     ],
-    allow_analyzer=False,
 )
 
 

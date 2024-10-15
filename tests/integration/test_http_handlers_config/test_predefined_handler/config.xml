@@ -19,6 +19,10 @@
                 <type>predefined_query_handler</type>
                 <query>SELECT name, value FROM system.settings WHERE name = {setting_name_1:String} OR name = {setting_name_2:String}</query>
                 <content_type>application/generic+one</content_type>
+                <http_response_headers>
+                  <X-Test-Http-Response-Headers-Works>it works</X-Test-Http-Response-Headers-Works>
+                  <X-Test-Http-Response-Headers-Even-Multiple>also works</X-Test-Http-Response-Headers-Even-Multiple>
+                </http_response_headers>
             </handler>
         </rule>
         <rule>
