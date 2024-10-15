@@ -664,7 +664,7 @@ private:
 
             return col_res;
         }
-        else if (auto col_right_const = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
+        if (auto col_right_const = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
         {
             auto col_res = ColumnUInt8::create();
 
@@ -691,10 +691,11 @@ private:
 
             return col_res;
         }
-        else if (auto col_right_const = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
+        if (auto col_right_const = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
         {
             UInt8 res = 0;
-            NumComparisonImpl<T0, T1, Op<T0, T1>>::constantConstant(col_left->template getValue<T0>(), col_right_const->template getValue<T1>(), res);
+            NumComparisonImpl<T0, T1, Op<T0, T1>>::constantConstant(
+                col_left->template getValue<T0>(), col_right_const->template getValue<T1>(), res);
 
             return DataTypeUInt8().createColumnConst(col_left->size(), toField(res));
         }
@@ -723,13 +724,12 @@ private:
                 || (res = executeNumRightType<T0, Float32>(col_left, col_right_untyped))
                 || (res = executeNumRightType<T0, Float64>(col_left, col_right_untyped)))
                 return res;
-            else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}",
-                    col_right_untyped->getName(), getName());
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}", col_right_untyped->getName(), getName());
         }
-        else if (auto col_left_const = checkAndGetColumnConst<ColumnVector<T0>>(col_left_untyped))
+        if (auto col_left_const = checkAndGetColumnConst<ColumnVector<T0>>(col_left_untyped))
         {
-            if (   (res = executeNumConstRightType<T0, UInt8>(col_left_const, col_right_untyped))
+            if ((res = executeNumConstRightType<T0, UInt8>(col_left_const, col_right_untyped))
                 || (res = executeNumConstRightType<T0, UInt16>(col_left_const, col_right_untyped))
                 || (res = executeNumConstRightType<T0, UInt32>(col_left_const, col_right_untyped))
                 || (res = executeNumConstRightType<T0, UInt64>(col_left_const, col_right_untyped))
@@ -744,9 +744,8 @@ private:
                 || (res = executeNumConstRightType<T0, Float32>(col_left_const, col_right_untyped))
                 || (res = executeNumConstRightType<T0, Float64>(col_left_const, col_right_untyped)))
                 return res;
-            else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}",
-                    col_right_untyped->getName(), getName());
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}", col_right_untyped->getName(), getName());
         }
 
         return nullptr;
@@ -766,8 +765,7 @@ private:
 
             if (check_decimal_overflow)
                 return (res = DecimalComparison<LeftDataType, RightDataType, Op, true>::apply(col_left, col_right)) != nullptr;
-            else
-                return (res = DecimalComparison<LeftDataType, RightDataType, Op, false>::apply(col_left, col_right)) != nullptr;
+            return (res = DecimalComparison<LeftDataType, RightDataType, Op, false>::apply(col_left, col_right)) != nullptr;
         };
 
         if (!callOnBasicTypes<true, false, true, true>(left_number, right_number, call))
@@ -843,58 +841,48 @@ private:
 
             return ColumnConst::create(res, c0_const->size());
         }
+
+        auto c_res = ColumnUInt8::create();
+        ColumnUInt8::Container & vec_res = c_res->getData();
+        vec_res.resize(c0->size());
+
+        if (c0_string && c1_string)
+            StringImpl::string_vector_string_vector(
+                c0_string->getChars(), c0_string->getOffsets(), c1_string->getChars(), c1_string->getOffsets(), c_res->getData());
+        else if (c0_string && c1_fixed_string)
+            StringImpl::string_vector_fixed_string_vector(
+                c0_string->getChars(), c0_string->getOffsets(), c1_fixed_string->getChars(), c1_fixed_string->getN(), c_res->getData());
+        else if (c0_string && c1_const)
+            StringImpl::string_vector_constant(
+                c0_string->getChars(), c0_string->getOffsets(), *c1_const_chars, c1_const_size, c_res->getData());
+        else if (c0_fixed_string && c1_string)
+            StringImpl::fixed_string_vector_string_vector(
+                c0_fixed_string->getChars(), c0_fixed_string->getN(), c1_string->getChars(), c1_string->getOffsets(), c_res->getData());
+        else if (c0_fixed_string && c1_fixed_string)
+            StringImpl::fixed_string_vector_fixed_string_vector(
+                c0_fixed_string->getChars(),
+                c0_fixed_string->getN(),
+                c1_fixed_string->getChars(),
+                c1_fixed_string->getN(),
+                c_res->getData());
+        else if (c0_fixed_string && c1_const)
+            StringImpl::fixed_string_vector_constant(
+                c0_fixed_string->getChars(), c0_fixed_string->getN(), *c1_const_chars, c1_const_size, c_res->getData());
+        else if (c0_const && c1_string)
+            StringImpl::constant_string_vector(
+                *c0_const_chars, c0_const_size, c1_string->getChars(), c1_string->getOffsets(), c_res->getData());
+        else if (c0_const && c1_fixed_string)
+            StringImpl::constant_fixed_string_vector(
+                *c0_const_chars, c0_const_size, c1_fixed_string->getChars(), c1_fixed_string->getN(), c_res->getData());
         else
-        {
-            auto c_res = ColumnUInt8::create();
-            ColumnUInt8::Container & vec_res = c_res->getData();
-            vec_res.resize(c0->size());
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal columns {} and {} of arguments of function {}",
+                c0->getName(),
+                c1->getName(),
+                getName());
 
-            if (c0_string && c1_string)
-                StringImpl::string_vector_string_vector(
-                    c0_string->getChars(), c0_string->getOffsets(),
-                    c1_string->getChars(), c1_string->getOffsets(),
-                    c_res->getData());
-            else if (c0_string && c1_fixed_string)
-                StringImpl::string_vector_fixed_string_vector(
-                    c0_string->getChars(), c0_string->getOffsets(),
-                    c1_fixed_string->getChars(), c1_fixed_string->getN(),
-                    c_res->getData());
-            else if (c0_string && c1_const)
-                StringImpl::string_vector_constant(
-                    c0_string->getChars(), c0_string->getOffsets(),
-                    *c1_const_chars, c1_const_size,
-                    c_res->getData());
-            else if (c0_fixed_string && c1_string)
-                StringImpl::fixed_string_vector_string_vector(
-                    c0_fixed_string->getChars(), c0_fixed_string->getN(),
-                    c1_string->getChars(), c1_string->getOffsets(),
-                    c_res->getData());
-            else if (c0_fixed_string && c1_fixed_string)
-                StringImpl::fixed_string_vector_fixed_string_vector(
-                    c0_fixed_string->getChars(), c0_fixed_string->getN(),
-                    c1_fixed_string->getChars(), c1_fixed_string->getN(),
-                    c_res->getData());
-            else if (c0_fixed_string && c1_const)
-                StringImpl::fixed_string_vector_constant(
-                    c0_fixed_string->getChars(), c0_fixed_string->getN(),
-                    *c1_const_chars, c1_const_size,
-                    c_res->getData());
-            else if (c0_const && c1_string)
-                StringImpl::constant_string_vector(
-                    *c0_const_chars, c0_const_size,
-                    c1_string->getChars(), c1_string->getOffsets(),
-                    c_res->getData());
-            else if (c0_const && c1_fixed_string)
-                StringImpl::constant_fixed_string_vector(
-                    *c0_const_chars, c0_const_size,
-                    c1_fixed_string->getChars(), c1_fixed_string->getN(),
-                    c_res->getData());
-            else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {} and {} of arguments of function {}",
-                    c0->getName(), c1->getName(), getName());
-
-            return c_res;
-        }
+        return c_res;
     }
 
     ColumnPtr executeWithConstString(
@@ -922,18 +910,15 @@ private:
         {
             return DataTypeUInt8().createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
         }
-        else
-        {
-            auto column_converted = type_to_compare->createColumnConst(input_rows_count, converted);
 
-            ColumnsWithTypeAndName tmp_columns
-            {
-                { left_const ? column_converted : col_left_untyped->getPtr(), type_to_compare, "" },
-                { !left_const ? column_converted : col_right_untyped->getPtr(), type_to_compare, "" },
-            };
+        auto column_converted = type_to_compare->createColumnConst(input_rows_count, converted);
 
-            return executeImpl(tmp_columns, result_type, input_rows_count);
-        }
+        ColumnsWithTypeAndName tmp_columns{
+            {left_const ? column_converted : col_left_untyped->getPtr(), type_to_compare, ""},
+            {!left_const ? column_converted : col_right_untyped->getPtr(), type_to_compare, ""},
+        };
+
+        return executeImpl(tmp_columns, result_type, input_rows_count);
     }
 
     ColumnPtr executeTuple(
@@ -1122,21 +1107,19 @@ private:
             GenericComparisonImpl<Op<int, int>>::constantConstant(*c0, *c1, res);
             return DataTypeUInt8().createColumnConst(c0->size(), toField(res));
         }
+
+        auto c_res = ColumnUInt8::create();
+        ColumnUInt8::Container & vec_res = c_res->getData();
+        vec_res.resize(c0->size());
+
+        if (c0_const)
+            GenericComparisonImpl<Op<int, int>>::constantVector(*c0, *c1, vec_res);
+        else if (c1_const)
+            GenericComparisonImpl<Op<int, int>>::vectorConstant(*c0, *c1, vec_res);
         else
-        {
-            auto c_res = ColumnUInt8::create();
-            ColumnUInt8::Container & vec_res = c_res->getData();
-            vec_res.resize(c0->size());
+            GenericComparisonImpl<Op<int, int>>::vectorVector(*c0, *c1, vec_res);
 
-            if (c0_const)
-                GenericComparisonImpl<Op<int, int>>::constantVector(*c0, *c1, vec_res);
-            else if (c1_const)
-                GenericComparisonImpl<Op<int, int>>::vectorConstant(*c0, *c1, vec_res);
-            else
-                GenericComparisonImpl<Op<int, int>>::vectorVector(*c0, *c1, vec_res);
-
-            return c_res;
-        }
+        return c_res;
     }
 
     ColumnPtr executeGeneric(const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1) const
@@ -1211,6 +1194,11 @@ public:
                 return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
         }
 
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeUInt8>();
     }
 
@@ -1308,37 +1296,31 @@ public:
 
             return res;
         }
-        else if (checkAndGetDataType<DataTypeTuple>(left_type.get())
-            && checkAndGetDataType<DataTypeTuple>(right_type.get()))
+        if (checkAndGetDataType<DataTypeTuple>(left_type.get()) && checkAndGetDataType<DataTypeTuple>(right_type.get()))
         {
             return executeTuple(result_type, col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
         }
-        else if (left_is_string && right_is_string && (res = executeString(col_left_untyped, col_right_untyped)))
+        if (left_is_string && right_is_string && (res = executeString(col_left_untyped, col_right_untyped)))
         {
             return res;
         }
-        else if ((res = executeWithConstString(
-                result_type, col_left_untyped, col_right_untyped,
-                left_type, right_type,
-                input_rows_count)))
+        if ((res = executeWithConstString(result_type, col_left_untyped, col_right_untyped, left_type, right_type, input_rows_count)))
         {
             return res;
         }
-        else if (
-            (((left_is_ipv6 && right_is_fixed_string) || (right_is_ipv6 && left_is_fixed_string)) && fixed_string_size == IPV6_BINARY_LENGTH)
-            || ((left_is_ipv4 || left_is_ipv6) && (right_is_ipv4 || right_is_ipv6))
-        )
+        if ((((left_is_ipv6 && right_is_fixed_string) || (right_is_ipv6 && left_is_fixed_string))
+             && fixed_string_size == IPV6_BINARY_LENGTH)
+            || ((left_is_ipv4 || left_is_ipv6) && (right_is_ipv4 || right_is_ipv6)))
         {
             /// Special treatment for FixedString(16) as a binary representation of IPv6 & for comparing IPv4 & IPv6 values -
             /// CAST is customized for this cases
-            ColumnPtr left_column = left_is_ipv6 ?
-                col_with_type_and_name_left.column : castColumn(col_with_type_and_name_left, right_type);
-            ColumnPtr right_column = right_is_ipv6 ?
-                col_with_type_and_name_right.column : castColumn(col_with_type_and_name_right, left_type);
+            ColumnPtr left_column = left_is_ipv6 ? col_with_type_and_name_left.column : castColumn(col_with_type_and_name_left, right_type);
+            ColumnPtr right_column
+                = right_is_ipv6 ? col_with_type_and_name_right.column : castColumn(col_with_type_and_name_right, left_type);
 
             return executeGenericIdenticalTypes(left_column.get(), right_column.get());
         }
-        else if ((isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type)))
+        if ((isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type)))
         {
             // Comparing Date/Date32 and DateTime64 requires implicit conversion,
             if (date_and_datetime && (isDateOrDate32(left_type) || isDateOrDate32(right_type)))
@@ -1348,29 +1330,30 @@ public:
                 ColumnPtr c1_converted = castColumn(col_with_type_and_name_right, common_type);
                 return executeDecimal({c0_converted, common_type, "left"}, {c1_converted, common_type, "right"});
             }
-            else
+
+            /// Check does another data type is comparable to Decimal, includes Int and Float.
+            if (!allowDecimalComparison(left_type, right_type) && !date_and_datetime)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "No operation {} between {} and {}",
+                    getName(),
+                    left_type->getName(),
+                    right_type->getName());
+            /// When Decimal comparing to Float32/64, we convert both of them into Float64.
+            /// Other systems like MySQL and Spark also do as this.
+            if (left_is_float || right_is_float)
             {
-                /// Check does another data type is comparable to Decimal, includes Int and Float.
-                if (!allowDecimalComparison(left_type, right_type) && !date_and_datetime)
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "No operation {} between {} and {}",
-                        getName(), left_type->getName(), right_type->getName());
-                /// When Decimal comparing to Float32/64, we convert both of them into Float64.
-                /// Other systems like MySQL and Spark also do as this.
-                if (left_is_float || right_is_float)
-                {
-                    const auto converted_type = std::make_shared<DataTypeFloat64>();
-                    ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, converted_type);
-                    ColumnPtr c1_converted = castColumn(col_with_type_and_name_right, converted_type);
+                const auto converted_type = std::make_shared<DataTypeFloat64>();
+                ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, converted_type);
+                ColumnPtr c1_converted = castColumn(col_with_type_and_name_right, converted_type);
 
-                    auto new_arguments
-                        = ColumnsWithTypeAndName{{c0_converted, converted_type, "left"}, {c1_converted, converted_type, "right"}};
-                    return executeImpl(new_arguments, result_type, input_rows_count);
-                }
-                return executeDecimal(col_with_type_and_name_left, col_with_type_and_name_right);
+                auto new_arguments
+                    = ColumnsWithTypeAndName{{c0_converted, converted_type, "left"}, {c1_converted, converted_type, "right"}};
+                return executeImpl(new_arguments, result_type, input_rows_count);
             }
-
+            return executeDecimal(col_with_type_and_name_left, col_with_type_and_name_right);
         }
-        else if (date_and_datetime)
+        if (date_and_datetime)
         {
             DataTypePtr common_type = getLeastSupertype(DataTypes{left_type, right_type});
             ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);
@@ -1382,14 +1365,12 @@ public:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Date related common types can only be UInt32/UInt64/Int32/Decimal");
             return res;
         }
-        else if (types_equal)
+        if (types_equal)
         {
             return executeGenericIdenticalTypes(col_left_untyped, col_right_untyped);
         }
-        else
-        {
-            return executeGeneric(col_with_type_and_name_left, col_with_type_and_name_right);
-        }
+
+        return executeGeneric(col_with_type_and_name_left, col_with_type_and_name_right);
     }
 };
 

@@ -53,8 +53,7 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     {
         if (input_function)
             throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "INSERT query requires format to be set");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "INSERT query requires format to be set");
     }
 
     /// Data could be in parsed (ast_insert_query.data) and in not parsed yet (input_buffer_tail_part) part of query.

@@ -102,10 +102,10 @@ USearchIndexWithSerialization::USearchIndexWithSerialization(
     unum::usearch::index_dense_config_t config(usearch_hnsw_params.m, usearch_hnsw_params.ef_construction, usearch_hnsw_params.ef_search);
     config.enable_key_lookups = false; /// we don't do row-to-vector lookups
 
-    if (auto result = USearchIndex::make(metric, config); !result)
+    auto result = USearchIndex::make(metric, config);
+    if (!result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not create vector similarity index. Error: {}", String(result.error.release()));
-    else
-        swap(result.index);
+    swap(result.index);
 }
 
 void USearchIndexWithSerialization::serialize(WriteBuffer & ostr) const
@@ -291,16 +291,15 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
             CurrentThread::attachToGroupIfDetached(thread_group);
 
         /// add is thread-safe
-        if (auto result = index->add(key, &column_array_data_float_data[column_array_offsets[row - 1]]); !result)
+        auto result = index->add(key, &column_array_data_float_data[column_array_offsets[row - 1]]);
+        if (!result)
         {
             throw Exception(ErrorCodes::INCORRECT_DATA, "Could not add data to vector similarity index. Error: {}", String(result.error.release()));
         }
-        else
-        {
-            ProfileEvents::increment(ProfileEvents::USearchAddCount);
-            ProfileEvents::increment(ProfileEvents::USearchAddVisitedMembers, result.visited_members);
-            ProfileEvents::increment(ProfileEvents::USearchAddComputedDistances, result.computed_distances);
-        }
+
+        ProfileEvents::increment(ProfileEvents::USearchAddCount);
+        ProfileEvents::increment(ProfileEvents::USearchAddVisitedMembers, result.visited_members);
+        ProfileEvents::increment(ProfileEvents::USearchAddComputedDistances, result.computed_distances);
     };
 
     size_t index_size = index->size();
@@ -400,7 +399,7 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
 
 bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexGranulePtr) const
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "mayBeTrueOnGranule is not supported for ANN skip indexes");
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "mayBeTrueOnGranule is not supported for vector similarity indexes");
 }
 
 bool MergeTreeIndexConditionVectorSimilarity::alwaysUnknownOrTrue() const
@@ -415,10 +414,9 @@ bool MergeTreeIndexConditionVectorSimilarity::alwaysUnknownOrTrue() const
     return vector_similarity_condition.alwaysUnknownOrTrue(index_distance_function);
 }
 
-std::vector<size_t> MergeTreeIndexConditionVectorSimilarity::getUsefulRanges(MergeTreeIndexGranulePtr granule_) const
+std::vector<UInt64> MergeTreeIndexConditionVectorSimilarity::calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule_) const
 {
     const UInt64 limit = vector_similarity_condition.getLimit();
-    const UInt64 index_granularity = vector_similarity_condition.getIndexGranularity();
 
     const auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleVectorSimilarity>(granule_);
     if (granule == nullptr)
@@ -437,23 +435,25 @@ std::vector<size_t> MergeTreeIndexConditionVectorSimilarity::getUsefulRanges(Mer
     if (!search_result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not search in vector similarity index. Error: {}", String(search_result.error.release()));
 
+    std::vector<USearchIndex::vector_key_t> neighbors(search_result.size()); /// indexes of vectors which were closest to the reference vector
+    search_result.dump_to(neighbors.data());
+
+    std::sort(neighbors.begin(), neighbors.end());
+
+    /// Duplicates should in theory not be possible but who knows ...
+    const bool has_duplicates = std::adjacent_find(neighbors.begin(), neighbors.end()) != neighbors.end();
+    if (has_duplicates)
+#ifndef NDEBUG
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Usearch returned duplicate row numbers");
+#else
+        neighbors.erase(std::unique(neighbors.begin(), neighbors.end()), neighbors.end());
+#endif
+
     ProfileEvents::increment(ProfileEvents::USearchSearchCount);
     ProfileEvents::increment(ProfileEvents::USearchSearchVisitedMembers, search_result.visited_members);
     ProfileEvents::increment(ProfileEvents::USearchSearchComputedDistances, search_result.computed_distances);
 
-    std::vector<USearchIndex::vector_key_t> neighbors(search_result.size()); /// indexes of vectors which were closest to the reference vector
-    search_result.dump_to(neighbors.data());
-
-    std::vector<size_t> granules;
-    granules.reserve(neighbors.size());
-    for (auto neighbor : neighbors)
-        granules.push_back(neighbor / index_granularity);
-
-    /// make unique
-    std::sort(granules.begin(), granules.end());
-    granules.erase(std::unique(granules.begin(), granules.end()), granules.end());
-
-    return granules;
+    return neighbors;
 }
 
 MergeTreeIndexVectorSimilarity::MergeTreeIndexVectorSimilarity(
@@ -485,7 +485,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(
 
 MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(const ActionsDAG *, ContextPtr) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeTreeIndexAnnoy cannot be created with ActionsDAG");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Vector similarity index cannot be created with ActionsDAG");
 }
 
 MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
