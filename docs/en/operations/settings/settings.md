@@ -9382,7 +9382,7 @@ Type: Bool
 
 Default value: 0
 
-Traverse shadow directory when query system.remote_data_paths
+Traverse frozen data (shadow directory) in addition to actual table data when query `system.remote_data_paths`.
 
 ## union_default_mode {#union_default_mode}
 

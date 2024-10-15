@@ -5379,7 +5379,7 @@ Result:
 If enabled, server will ignore all DROP table queries with specified probability (for Memory and JOIN engines it will replcase DROP to TRUNCATE). Used for testing purposes
 )", 0) \
     M(Bool, traverse_shadow_remote_data_paths, false, R"(
-Traverse shadow directory when query system.remote_data_paths
+Traverse frozen data (shadow directory) in addition to actual table data when query system.remote_data_paths
 )", 0) \
     M(Bool, geo_distance_returns_float64_on_float64_arguments, true, R"(
 If all four arguments to `geoDistance`, `greatCircleDistance`, `greatCircleAngle` functions are Float64, return Float64 and use double precision for internal calculations. In previous ClickHouse versions, the functions always returned Float32.
