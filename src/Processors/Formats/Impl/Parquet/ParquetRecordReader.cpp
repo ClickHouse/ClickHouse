@@ -211,7 +211,7 @@ std::unique_ptr<ParquetColumnReader> ColReaderFactory::fromFLBA()
             {
                 if (col_descriptor.type_length() <= static_cast<int>(sizeof(Decimal128)))
                     return makeDecimalLeafReader<Decimal128>();
-                if (col_descriptor.type_length() <= static_cast<int>(sizeof(Decimal256)))
+                else if (col_descriptor.type_length() <= static_cast<int>(sizeof(Decimal256)))
                     return makeDecimalLeafReader<Decimal256>();
             }
 
@@ -231,7 +231,8 @@ std::unique_ptr<ParquetColumnReader> ColReaderFactory::fromInt32INT(const parque
         {
             if (int_type.is_signed())
                 return makeLeafReader<DataTypeInt32>();
-            return makeLeafReader<DataTypeUInt32>();
+            else
+                return makeLeafReader<DataTypeUInt32>();
         }
         default:
             return throwUnsupported(PreformattedMessage::create(", bit width: {}", int_type.bit_width()));
@@ -246,7 +247,8 @@ std::unique_ptr<ParquetColumnReader> ColReaderFactory::fromInt64INT(const parque
         {
             if (int_type.is_signed())
                 return makeLeafReader<DataTypeInt64>();
-            return makeLeafReader<DataTypeUInt64>();
+            else
+                return makeLeafReader<DataTypeUInt64>();
         }
         default:
             return throwUnsupported(PreformattedMessage::create(", bit width: {}", int_type.bit_width()));

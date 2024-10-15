@@ -1,23 +1,24 @@
 import json
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, asdict
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Set, Union
+from typing import Dict, Optional, Any, Union, Sequence, List, Set
 
 from ci_config import CI
-from ci_utils import GH, Utils
+
+from ci_utils import is_hex, GHActions
 from commit_status_helper import CommitStatusData
-from digest_helper import JobDigester
 from env_helper import (
+    TEMP_PATH,
     CI_CONFIG_PATH,
+    S3_BUILDS_BUCKET,
     GITHUB_RUN_URL,
     REPORT_PATH,
-    S3_BUILDS_BUCKET,
-    TEMP_PATH,
 )
 from report import BuildResult
 from s3_helper import S3Helper
+from digest_helper import JobDigester
 
 
 @dataclass
@@ -239,7 +240,7 @@ class CiCache:
             int(job_properties[-1]),
         )
 
-        if not Utils.is_hex(job_digest):
+        if not is_hex(job_digest):
             print("ERROR: wrong record job digest")
             return None
 
@@ -257,15 +258,15 @@ class CiCache:
     def print_status(self):
         print(f"Cache enabled: [{self.enabled}]")
         for record_type in self.RecordType:
-            GH.print_in_group(
+            GHActions.print_in_group(
                 f"Cache records: [{record_type}]", list(self.records[record_type])
             )
-        GH.print_in_group(
+        GHActions.print_in_group(
             "Jobs to do:",
             list(self.jobs_to_do.items()),
         )
-        GH.print_in_group("Jobs to skip:", self.jobs_to_skip)
-        GH.print_in_group(
+        GHActions.print_in_group("Jobs to skip:", self.jobs_to_skip)
+        GHActions.print_in_group(
             "Jobs to wait:",
             list(self.jobs_to_wait.items()),
         )
@@ -386,7 +387,8 @@ class CiCache:
         res = record_key in self.records[record_type]
         if release_branch:
             return res and self.records[record_type][record_key].release_branch
-        return res
+        else:
+            return res
 
     def push(
         self,
@@ -729,8 +731,7 @@ class CiCache:
                     job_config=reference_config,
                 ):
                     remove_from_workflow.append(job_name)
-                    if job_name != CI.JobNames.DOCS_CHECK:
-                        has_test_jobs_to_skip = True
+                    has_test_jobs_to_skip = True
                 else:
                     required_builds += (
                         job_config.required_builds if job_config.required_builds else []
@@ -787,7 +788,7 @@ class CiCache:
 
         while round_cnt < MAX_ROUNDS_TO_WAIT:
             round_cnt += 1
-            GH.print_in_group(
+            GHActions.print_in_group(
                 f"Wait pending jobs, round [{round_cnt}/{MAX_ROUNDS_TO_WAIT}]:",
                 list(self.jobs_to_wait),
             )
@@ -852,7 +853,7 @@ class CiCache:
                     # make up for 2 iterations in dry_run
                     expired_sec += int(TIMEOUT / 2) + 1
 
-        GH.print_in_group(
+        GHActions.print_in_group(
             "Remaining jobs:",
             [list(self.jobs_to_wait)],
         )

@@ -31,7 +31,7 @@ public:
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
 
-    MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
+    const MergedData & getMergedData() const { return merged_data; }
 
 private:
     Block header;

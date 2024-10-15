@@ -296,9 +296,9 @@ namespace
 
             if (!max_part_number)
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_part_number must not be 0");
-            if (!min_upload_part_size)
+            else if (!min_upload_part_size)
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "min_upload_part_size must not be 0");
-            if (max_upload_part_size < min_upload_part_size)
+            else if (max_upload_part_size < min_upload_part_size)
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_upload_part_size must not be less than min_upload_part_size");
 
             size_t part_size = min_upload_part_size;
@@ -769,19 +769,21 @@ namespace
                         fallback_method();
                         break;
                     }
+                    else
+                    {
+                        // Can't come here with MinIO, MinIO allows single part upload for large objects.
+                        LOG_INFO(
+                            log,
+                            "Single operation copy failed with error {} for Bucket: {}, Key: {}, Object size: {}, will retry with multipart "
+                            "upload copy",
+                            outcome.GetError().GetExceptionName(),
+                            dest_bucket,
+                            dest_key,
+                            size);
 
-                    // Can't come here with MinIO, MinIO allows single part upload for large objects.
-                    LOG_INFO(
-                        log,
-                        "Single operation copy failed with error {} for Bucket: {}, Key: {}, Object size: {}, will retry with multipart "
-                        "upload copy",
-                        outcome.GetError().GetExceptionName(),
-                        dest_bucket,
-                        dest_key,
-                        size);
-
-                    performMultipartUploadCopy();
-                    break;
+                        performMultipartUploadCopy();
+                        break;
+                    }
                 }
 
                 if ((outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY) && (retries < max_retries))

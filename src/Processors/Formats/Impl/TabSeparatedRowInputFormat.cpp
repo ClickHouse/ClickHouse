@@ -277,8 +277,10 @@ void TabSeparatedFormatReader::checkNullValueForNonNullable(DataTypePtr type)
                 ++buf->position();
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected NULL value of not Nullable type {}", type->getName());
             }
-
-            --buf->position();
+            else
+            {
+                --buf->position();
+            }
         }
     }
 }
@@ -329,7 +331,7 @@ void TabSeparatedFormatReader::skipRow()
 
         if (istr.position() > istr.buffer().end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-        if (pos == istr.buffer().end())
+        else if (pos == istr.buffer().end())
             continue;
 
         if (!is_raw && *istr.position() == '\\')
@@ -347,7 +349,7 @@ void TabSeparatedFormatReader::skipRow()
                 ++istr.position();
             return;
         }
-        if (*istr.position() == '\r')
+        else if (*istr.position() == '\r')
         {
             ++istr.position();
             if (!istr.eof() && *istr.position() == '\n')
@@ -472,7 +474,7 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
 
         if (pos > in.buffer().end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-        if (pos == in.buffer().end())
+        else if (pos == in.buffer().end())
             continue;
 
         if (!is_raw && *pos == '\\')
