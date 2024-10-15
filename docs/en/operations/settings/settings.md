@@ -21,7 +21,7 @@ Write add http CORS header.
 
 Type: String
 
-Default value: 
+Default value:
 
 An additional filter expression to apply to the result of `SELECT` query.
 This setting is not applied to any subquery.
@@ -413,14 +413,6 @@ Default value: 0
 
 Experimental data deduplication for SELECT queries based on part UUIDs
 
-## allow_experimental_refreshable_materialized_view {#allow_experimental_refreshable_materialized_view}
-
-Type: Bool
-
-Default value: 0
-
-Allow refreshable materialized views (CREATE MATERIALIZED VIEW \\<name\\> REFRESH ...).
-
 ## allow_experimental_shared_set_join {#allow_experimental_shared_set_join}
 
 Type: Bool
@@ -539,6 +531,14 @@ Type: Bool
 Default value: 0
 
 Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*()
+
+## log_query_settings {#log-query-settings}
+
+Type: Bool
+
+Default value: 1
+
+Log query settings into the query_log and opentelemetry_span_log.
 
 ## allow_nondeterministic_mutations {#allow_nondeterministic_mutations}
 
@@ -1389,7 +1389,7 @@ The engine family allowed in Cloud. 0 - allow everything, 1 - rewrite DDLs to us
 
 Type: String
 
-Default value: 
+Default value:
 
 Cluster for a shard in which current server is located
 
@@ -1413,7 +1413,7 @@ Enable collecting hash table statistics to optimize memory allocation
 
 Type: String
 
-Default value: 
+Default value:
 
 The `compatibility` setting causes ClickHouse to use the default settings of a previous version of ClickHouse, where the previous version is provided as the setting.
 
@@ -3119,7 +3119,7 @@ The setting is used by the server itself to support distributed queries. Do not 
 
 Type: String
 
-Default value: 
+Default value:
 
 Disables query execution if passed data skipping indices wasn't used.
 
@@ -3183,7 +3183,7 @@ Possible values:
 
 Type: String
 
-Default value: 
+Default value:
 
 If it is set to a non-empty string, check that this projection is used in the query at least once.
 
@@ -3277,7 +3277,7 @@ It makes sense to disable it if the server has millions of tiny tables that are 
 
 Type: String
 
-Default value: 
+Default value:
 
 Choose function implementation for specific target or variant (experimental). If empty enable all of them.
 
@@ -3770,7 +3770,7 @@ Only available in ClickHouse Cloud. Exclude new data parts from SELECT queries u
 
 Type: String
 
-Default value: 
+Default value:
 
 Ignores the skipping indexes specified if used by the query.
 
@@ -3945,7 +3945,7 @@ For not replicated tables see [non_replicated_deduplication_window](merge-tree-s
 
 Type: String
 
-Default value: 
+Default value:
 
 The setting allows a user to provide own deduplication semantic in MergeTree/ReplicatedMergeTree
 For example, by providing a unique value for the setting in each INSERT statement,
@@ -4623,7 +4623,7 @@ Possible values:
 
 Type: String
 
-Default value: 
+Default value:
 
 Specifies the value for the `log_comment` field of the [system.query_log](../system-tables/query_log.md) table and comment text for the server log.
 
@@ -5533,6 +5533,12 @@ Default value: -1
 
 Limit the max number of partitions that can be accessed in one query. <= 0 means unlimited.
 
+## max_parts_to_move {#max_parts_to_move}
+
+Limit the number of parts that can be moved in one query. Zero means unlimited.
+
+Default value: `1000`.
+
 ## max_query_size {#max_query_size}
 
 Type: UInt64
@@ -6081,7 +6087,7 @@ If enabled, some of the perf events will be measured throughout queries' executi
 
 Type: String
 
-Default value: 
+Default value:
 
 Comma separated list of perf metrics that will be measured throughout queries' execution. Empty means all events. See PerfEventInfo in sources for the available events.
 
@@ -6371,7 +6377,7 @@ Possible values:
 
 Type: MySQLDataTypesSupport
 
-Default value: 
+Default value:
 
 Defines how MySQL types are converted to corresponding ClickHouse types. A comma separated list in any combination of `decimal`, `datetime64`, `date2Date32` or `date2String`.
 - `decimal`: convert `NUMERIC` and `DECIMAL` types to `Decimal` when precision allows it.
@@ -6725,7 +6731,7 @@ Type: UInt64
 
 Default value: 3
 
-The minimum length of the expression `expr = x1 OR ... expr = xN` for optimization 
+The minimum length of the expression `expr = x1 OR ... expr = xN` for optimization
 
 ## optimize_min_inequality_conjunction_chain_length {#optimize_min_inequality_conjunction_chain_length}
 
@@ -6733,7 +6739,7 @@ Type: UInt64
 
 Default value: 3
 
-The minimum length of the expression `expr <> x1 AND ... expr <> xN` for optimization 
+The minimum length of the expression `expr <> x1 AND ... expr <> xN` for optimization
 
 ## optimize_move_to_prewhere {#optimize_move_to_prewhere}
 
@@ -7245,7 +7251,7 @@ This is internal setting that should not be used directly and represents an impl
 
 Type: String
 
-Default value: 
+Default value:
 
 An arbitrary integer expression that can be used to split work between replicas for a specific table.
 The value can be any integer expression.
@@ -7592,7 +7598,7 @@ Limit on max column size in block while reading. Helps to decrease cache misses 
 
 Type: String
 
-Default value: 
+Default value:
 
 If it is set to a non-empty string, ClickHouse will try to apply specified projection in query.
 
@@ -7774,7 +7780,7 @@ Possible values:
 
 Type: String
 
-Default value: 
+Default value:
 
 A string which acts as a label for [query cache](../query-cache.md) entries.
 The same queries with different tags are considered different by the query cache.
@@ -8340,7 +8346,7 @@ Min bytes required for remote read (url, s3) to do seek, instead of read with ig
 
 Type: String
 
-Default value: 
+Default value:
 
 - **Type:** String
 
@@ -8827,7 +8833,7 @@ Send server text logs with specified minimum level to client. Valid values: 'tra
 
 Type: String
 
-Default value: 
+Default value:
 
 Send server text logs with specified regexp to match log source name. Empty means all sources.
 
@@ -8858,7 +8864,7 @@ Timeout for sending data to the network, in seconds. If a client needs to send s
 
 Type: Timezone
 
-Default value: 
+Default value:
 
 Sets the implicit time zone of the current session or query.
 The implicit time zone is the time zone applied to values of type DateTime/DateTime64 which have no explicitly specified time zone.
@@ -9111,7 +9117,7 @@ Allow direct SELECT query for Kafka, RabbitMQ, FileLog, Redis Streams, and NATS 
 
 Type: String
 
-Default value: 
+Default value:
 
 When stream-like engine reads from multiple queues, the user will need to select one queue to insert into when writing. Used by Redis Streams and NATS.
 
@@ -9382,7 +9388,7 @@ Traverse shadow directory when query system.remote_data_paths
 
 Type: SetOperationMode
 
-Default value: 
+Default value:
 
 Sets a mode for combining `SELECT` query results. The setting is only used when shared with [UNION](../../sql-reference/statements/select/union.md) without explicitly specifying the `UNION ALL` or `UNION DISTINCT`.
 
@@ -9723,6 +9729,10 @@ Default value: 15
 
 The heartbeat interval in seconds to indicate watch query is alive.
 
+## enforce_strict_identifier_format
+
+If enabled, only allow identifiers containing alphanumeric characters and underscores.
+
 ## workload {#workload}
 
 Type: String
@@ -9747,4 +9757,5 @@ Default value: 0
 
 Allows you to select the max window log of ZSTD (it will not be used for MergeTree family)
 
+Default value: `true`.
 

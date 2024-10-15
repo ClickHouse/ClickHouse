@@ -451,7 +451,6 @@ void KeeperTCPHandler::runImpl()
             using namespace std::chrono_literals;
 
             PollResult result = poll_wrapper->poll(session_timeout, *in);
-            log_long_operation("Polling socket");
             if (result.has_requests && !close_received)
             {
                 if (in->eof())
