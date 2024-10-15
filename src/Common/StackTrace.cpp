@@ -60,7 +60,7 @@ void StackTrace::setShowAddresses(bool show)
     show_addresses.store(show, std::memory_order_relaxed);
 }
 
-std::string SigsegvErrorString(const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
+static std::string SigsegvErrorString(const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
     using namespace std::string_literals;
     std::string address
@@ -99,7 +99,7 @@ std::string SigsegvErrorString(const siginfo_t & info, [[maybe_unused]] const uc
     return fmt::format("Address: {}. Access: {}. {}.", std::move(address), access, message);
 }
 
-constexpr std::string_view SigbusErrorString(int si_code)
+static constexpr std::string_view SigbusErrorString(int si_code)
 {
     switch (si_code)
     {
@@ -124,7 +124,7 @@ constexpr std::string_view SigbusErrorString(int si_code)
     }
 }
 
-constexpr std::string_view SigfpeErrorString(int si_code)
+static constexpr std::string_view SigfpeErrorString(int si_code)
 {
     switch (si_code)
     {
@@ -149,7 +149,7 @@ constexpr std::string_view SigfpeErrorString(int si_code)
     }
 }
 
-constexpr std::string_view SigillErrorString(int si_code)
+static constexpr std::string_view SigillErrorString(int si_code)
 {
     switch (si_code)
     {
@@ -389,7 +389,7 @@ constexpr std::pair<std::string_view, std::string_view> replacements[]
 // Demangle @c symbol_name if it's not from __functional header (as such functions don't provide any useful
 // information but pollute stack traces).
 // Replace parts from @c replacements with shorter aliases
-String demangleAndCollapseNames(std::optional<std::string_view> file, const char * const symbol_name)
+static String demangleAndCollapseNames(std::optional<std::string_view> file, const char * const symbol_name)
 {
     if (!symbol_name)
         return "?";
@@ -436,7 +436,7 @@ struct StackTraceTriple
 template <class T>
 concept MaybeRef = std::is_same_v<T, StackTraceTriple> || std::is_same_v<T, StackTraceRefTriple>;
 
-constexpr bool operator<(const MaybeRef auto & left, const MaybeRef auto & right)
+static constexpr bool operator<(const MaybeRef auto & left, const MaybeRef auto & right)
 {
     return std::tuple{left.pointers, left.size, left.offset} < std::tuple{right.pointers, right.size, right.offset};
 }
@@ -542,7 +542,7 @@ static StackTraceCache cache;
 
 static DB::SharedMutex stacktrace_cache_mutex;
 
-String toStringCached(const StackTrace::FramePointers & pointers, size_t offset, size_t size)
+static String toStringCached(const StackTrace::FramePointers & pointers, size_t offset, size_t size)
 {
     const StackTraceRefTriple key{pointers, offset, size};
 

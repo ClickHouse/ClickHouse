@@ -42,7 +42,7 @@ RUN sed -i '/_IMPORT_CHECK_FILES_FOR_\(mlir-\|llvm-bolt\|merge-fdata\|MLIR\)/ {s
 
 # LLVM changes paths for compiler-rt libraries. For some reason clang-18.1.8 cannot catch up libraries from default install path.
 # It's very dirty workaround, better to build compiler and LLVM ourself and use it. Details: https://github.com/llvm/llvm-project/issues/95792
-RUN test ! -d /usr/lib/llvm-18/lib/clang/18/lib/x86_64-pc-linux-gnu || ln -s /usr/lib/llvm-18/lib/clang/18/lib/x86_64-pc-linux-gnu /usr/lib/llvm-18/lib/clang/18/lib/x86_64-unknown-linux-gnu
+RUN test ! -d /usr/lib/llvm-19/lib/clang/19/lib/x86_64-pc-linux-gnu || ln -s /usr/lib/llvm-19/lib/clang/19/lib/x86_64-pc-linux-gnu /usr/lib/llvm-19/lib/clang/19/lib/x86_64-unknown-linux-gnu
 
 ARG CCACHE_VERSION=4.6.1
 RUN mkdir /tmp/ccache \
