@@ -26,6 +26,8 @@ public:
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
 
+    static bool canUseType(const DataTypePtr & type);
+
 private:
     void updateOutputStream() override;
 
