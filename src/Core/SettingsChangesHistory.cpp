@@ -79,7 +79,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"allow_materialized_view_with_bad_select", true, true, "Support (but not enable yet) stricter validation in CREATE MATERIALIZED VIEW"},
             {"parallel_replicas_mark_segment_size", 128, 0, "Value for this setting now determined automatically"},
             {"database_replicated_allow_replicated_engine_arguments", 1, 0, "Don't allow explicit arguments by default"},
-            {"database_replicated_allow_explicit_uuid", 0, 0, "Added a new setting to disallow explicitly specifying table UUID"},
+            {"database_replicated_allow_explicit_uuid", 1, 0, "Added a new setting to disallow explicitly specifying table UUID"},
             {"show_create_query_identifier_quoting_rule", "when_necessary", "when_necessary", "New setting."},
             {"show_create_query_identifier_quoting_style", "Backticks", "Backticks", "New setting."},
             {"parallel_replicas_local_plan", false, false, "Use local plan for local replica in a query with parallel replicas"},
