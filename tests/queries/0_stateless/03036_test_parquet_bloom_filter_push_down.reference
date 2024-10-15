@@ -227,32 +227,6 @@ Bloom filter for ipv4 column. BF is on. Specified in the schema
     "bytes_read": 4005
   }
 }
-Bloom filter for ipv4 column. Even though column is transformed, we know it is a safe transformation.
-{
-  "data": [
-    {
-      "json": "{\"key\":38, \"value\":\"NXONM\"}"
-    }
-  ],
-  "rows": 1,
-  "statistics": {
-    "rows_read": 72,
-    "bytes_read": 4005
-  }
-}
-Bloom filter for ipv4 column. Even though column is transformed, we know it is a safe transformation.
-{
-  "data": [
-    {
-      "json": "{\"key\":38, \"value\":\"NXONM\"}"
-    }
-  ],
-  "rows": 1,
-  "statistics": {
-    "rows_read": 72,
-    "bytes_read": 4005
-  }
-}
 Bloom filter on 64 bit column read as ipv4. We explicitly deny it, should read all rg
 {
   "data": [
@@ -353,6 +327,19 @@ Invalid column conversion with in operation. String type can not be hashed again
 {
   "data": [],
   "rows": 0,
+  "statistics": {
+    "rows_read": 1000,
+    "bytes_read": 47419
+  }
+}
+Transformations on key column shall not be allowed. Should read everything
+{
+  "data": [
+    {
+      "uint64_logical": "7711695863945021976"
+    }
+  ],
+  "rows": 1,
   "statistics": {
     "rows_read": 1000,
     "bytes_read": 47419

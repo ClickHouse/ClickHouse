@@ -376,6 +376,14 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
 
     for (const auto & rpn_element : rpn)
     {
+        // this would be a problem for `where negate(x) = -58`.
+        // It would perform a bf search on `-58`, and possibly miss row groups containing this data.
+        if (!rpn_element.monotonic_functions_chain.empty())
+        {
+            condition_elements.emplace_back(Function::FUNCTION_UNKNOWN);
+            continue;
+        }
+
         ParquetBloomFilterCondition::ConditionElement::HashesForColumns hashes;
 
         if (rpn_element.function == RPNElement::FUNCTION_IN_RANGE
