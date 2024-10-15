@@ -1584,20 +1584,20 @@ The messages logged can be filtered using regular expressions using `message_reg
 
 
 ```xml
-<logger>
-    <!-- Global: Only log messages that have 'executeQuery' in them and not 'ConfigReloader' -->
-    <message_regexp>.*executeQuery.*</message_regexp>
-    <message_regexp>.*ConfigReloader.*</message_regexp>
+    <logger>
+        <level>trace</level>
+        <!-- Global: Don't log and Trace messages -->
+        <message_regexp_negative>.*Trace.*</message_regexp_negative>
 
-    <message_regexps>
-        <logger>
-            <name>RBAC</name>
-            <!-- For logger 'RBAC', instead of matching for '.*executeQuery.*' and '.*ConfigReloader.*' match instead for '.*Application.*' and '.*Setting.*'. -->
-            <message_regexp>.*Application.*</message_regexp>
-            <message_regexp_negative>.*Setting.*</message_regexp_negative>
-        </logger>
-    </message_regexps>
-</logger>
+        <message_regexps>
+            <logger>
+                <!-- For the executeQuery logger, only log if message has "Read", but not "from" -->
+                <name>executeQuery</name>
+                <message_regexp>.*Read.*</message_regexp>
+                <message_regexp_negative>.*from.*</message_regexp_negative>
+            </logger>
+        </message_regexps>
+    </logger>
 ```
 
 ### syslog
