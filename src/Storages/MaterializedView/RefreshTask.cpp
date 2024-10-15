@@ -299,9 +299,11 @@ std::chrono::sys_seconds RefreshTask::getNextRefreshTimeslot() const
     return refresh_schedule.advance(coordination.root_znode.last_completed_timeslot);
 }
 
-void RefreshTask::notifyDependencyProgress()
+void RefreshTask::notify()
 {
     std::lock_guard guard(mutex);
+    if (view && view->getContext()->getRefreshSet().refreshesStopped())
+        interruptExecution();
     scheduling.dependencies_satisfied_until = std::chrono::sys_seconds(std::chrono::seconds(-1));
     refresh_task->schedule();
 }
@@ -367,7 +369,7 @@ void RefreshTask::refreshTask()
 
             chassert(lock.owns_lock());
 
-            if (scheduling.stop_requested || coordination.read_only)
+            if (scheduling.stop_requested || view->getContext()->getRefreshSet().refreshesStopped() || coordination.read_only)
             {
                 /// Exit the task and wait for the user to start or resume, which will schedule the task again.
                 setState(RefreshState::Disabled, lock);
