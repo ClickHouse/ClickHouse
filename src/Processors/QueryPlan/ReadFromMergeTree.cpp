@@ -177,12 +177,6 @@ namespace Setting
     extern const SettingsBool use_uncompressed_cache;
 }
 
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsUInt64 index_granularity;
-    extern const MergeTreeSettingsUInt64 index_granularity_bytes;
-}
-
 namespace ErrorCodes
 {
     extern const int INDEX_NOT_USED;
@@ -219,8 +213,8 @@ static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
 }
 
 /// build sort description for output stream
-static SortDescription getSortDescriptionForOutputStream(
-    const DataStream & output_stream, const Names & sorting_key_columns, const int sort_direction, InputOrderInfoPtr input_order_info, PrewhereInfoPtr prewhere_info, bool enable_vertical_final)
+static void updateSortDescriptionForOutputStream(
+    DataStream & output_stream, const Names & sorting_key_columns, const int sort_direction, InputOrderInfoPtr input_order_info, PrewhereInfoPtr prewhere_info, bool enable_vertical_final)
 {
     /// Updating sort description can be done after PREWHERE actions are applied to the header.
     /// Aftert PREWHERE actions are applied, column names in header can differ from storage column names due to aliases
@@ -264,17 +258,20 @@ static SortDescription getSortDescriptionForOutputStream(
         sort_description.emplace_back((header.begin() + column_pos)->name, sort_direction);
     }
 
-    if (input_order_info && !enable_vertical_final)
+    if (!sort_description.empty())
     {
-        // output_stream.sort_scope = DataStream::SortScope::Stream;
-        const size_t used_prefix_of_sorting_key_size = input_order_info->used_prefix_of_sorting_key_size;
-        if (sort_description.size() > used_prefix_of_sorting_key_size)
-            sort_description.resize(used_prefix_of_sorting_key_size);
-
-        return sort_description;
+        if (input_order_info && !enable_vertical_final)
+        {
+            output_stream.sort_scope = DataStream::SortScope::Stream;
+            const size_t used_prefix_of_sorting_key_size = input_order_info->used_prefix_of_sorting_key_size;
+            if (sort_description.size() > used_prefix_of_sorting_key_size)
+                sort_description.resize(used_prefix_of_sorting_key_size);
+        }
+        else
+            output_stream.sort_scope = DataStream::SortScope::Chunk;
     }
 
-    return {};
+    output_stream.sort_description = std::move(sort_description);
 }
 
 void ReadFromMergeTree::AnalysisResult::checkLimits(const Settings & settings, const SelectQueryInfo & query_info_) const
@@ -381,6 +378,14 @@ ReadFromMergeTree::ReadFromMergeTree(
     setStepDescription(data.getStorageID().getFullNameNotQuoted());
     enable_vertical_final = query_info.isFinal() && context->getSettingsRef()[Setting::enable_vertical_final]
         && data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
+
+    updateSortDescriptionForOutputStream(
+        *output_stream,
+        storage_snapshot->metadata->getSortingKeyColumns(),
+        getSortDirection(),
+        query_info.input_order_info,
+        prewhere_info,
+        enable_vertical_final);
 }
 
 std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplicasReadingStep(
@@ -486,7 +491,7 @@ Pipe ReadFromMergeTree::readFromPool(
     /// Maybe it will make sense to add settings `max_block_size_bytes`
     if (block_size.max_block_size_rows && !data.canUseAdaptiveGranularity())
     {
-        size_t fixed_index_granularity = (*data.getSettings())[MergeTreeSetting::index_granularity];
+        size_t fixed_index_granularity = data.getSettings()->index_granularity;
         pool_settings.min_marks_for_concurrent_read = (pool_settings.min_marks_for_concurrent_read * fixed_index_granularity + block_size.max_block_size_rows - 1)
             / block_size.max_block_size_rows * block_size.max_block_size_rows / fixed_index_granularity;
     }
@@ -773,12 +778,12 @@ struct PartRangesReadInfo
         }
 
         if (adaptive_parts > parts.size() / 2)
-            index_granularity_bytes = data_settings[MergeTreeSetting::index_granularity_bytes];
+            index_granularity_bytes = data_settings.index_granularity_bytes;
 
         max_marks_to_use_cache = MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
             settings[Setting::merge_tree_max_rows_to_use_cache],
             settings[Setting::merge_tree_max_bytes_to_use_cache],
-            data_settings[MergeTreeSetting::index_granularity],
+            data_settings.index_granularity,
             index_granularity_bytes);
 
         auto all_parts_on_remote_disk = checkAllPartsOnRemoteFS(parts);
@@ -798,7 +803,7 @@ struct PartRangesReadInfo
 
         min_marks_for_concurrent_read = MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
             min_rows_for_concurrent_read, min_bytes_for_concurrent_read,
-            data_settings[MergeTreeSetting::index_granularity], index_granularity_bytes, sum_marks);
+            data_settings.index_granularity, index_granularity_bytes, sum_marks);
 
         use_uncompressed_cache = settings[Setting::use_uncompressed_cache];
         if (sum_marks > max_marks_to_use_cache)
@@ -976,7 +981,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
     /// Let's split ranges to avoid reading much data.
     auto split_ranges
-        = [rows_granularity = (*data_settings)[MergeTreeSetting::index_granularity], my_max_block_size = block_size.max_block_size_rows]
+        = [rows_granularity = data_settings->index_granularity, my_max_block_size = block_size.max_block_size_rows]
         (const auto & ranges, int direction)
     {
         MarkRanges new_ranges;
@@ -1441,7 +1446,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             });
         return Pipe::unitePipes(std::move(pipes));
     }
-    return merging_pipes.empty() ? Pipe::unitePipes(std::move(no_merging_pipes)) : Pipe::unitePipes(std::move(merging_pipes));
+    else
+        return merging_pipes.empty() ? Pipe::unitePipes(std::move(no_merging_pipes)) : Pipe::unitePipes(std::move(merging_pipes));
 }
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool find_exact_ranges) const
@@ -1786,25 +1792,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     return std::make_shared<AnalysisResult>(std::move(result));
 }
 
-int ReadFromMergeTree::getSortDirection() const
-{
-    if (query_info.input_order_info)
-        return query_info.input_order_info->direction;
-
-    return 1;
-}
-
-void ReadFromMergeTree::updateSortDescription()
-{
-    result_sort_description = getSortDescriptionForOutputStream(
-        *output_stream,
-        storage_snapshot->metadata->getSortingKeyColumns(),
-        getSortDirection(),
-        query_info.input_order_info,
-        prewhere_info,
-        enable_vertical_final);
-}
-
 bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit)
 {
     /// if dirction is not set, use current one
@@ -1824,11 +1811,30 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     if (output_streams_limit)
         requested_num_streams = output_streams_limit;
 
+    /// update sort info for output stream
+    SortDescription sort_description;
+    const Names & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
+    const Block & header = output_stream->header;
+    const int sort_direction = getSortDirection();
+    for (const auto & column_name : sorting_key_columns)
+    {
+        if (std::find_if(header.begin(), header.end(), [&](ColumnWithTypeAndName const & col) { return col.name == column_name; })
+            == header.end())
+            break;
+        sort_description.emplace_back(column_name, sort_direction);
+    }
+    if (!sort_description.empty())
+    {
+        const size_t used_prefix_of_sorting_key_size = query_info.input_order_info->used_prefix_of_sorting_key_size;
+        if (sort_description.size() > used_prefix_of_sorting_key_size)
+            sort_description.resize(used_prefix_of_sorting_key_size);
+        output_stream->sort_description = std::move(sort_description);
+        output_stream->sort_scope = DataStream::SortScope::Stream;
+    }
+
     /// All *InOrder optimization rely on an assumption that output stream is sorted, but vertical FINAL breaks this rule
     /// Let prefer in-order optimization over vertical FINAL for now
     enable_vertical_final = false;
-
-    updateSortDescription();
 
     return true;
 }
@@ -1847,7 +1853,13 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
         storage_snapshot->getSampleBlockForColumns(all_column_names),
         prewhere_info_value)};
 
-    updateSortDescription();
+    updateSortDescriptionForOutputStream(
+        *output_stream,
+        storage_snapshot->metadata->getSortingKeyColumns(),
+        getSortDirection(),
+        query_info.input_order_info,
+        prewhere_info,
+        enable_vertical_final);
 }
 
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
@@ -1932,7 +1944,8 @@ bool ReadFromMergeTree::isQueryWithSampling() const
     const auto & select = query_info.query->as<ASTSelectQuery &>();
     if (query_info.table_expression_modifiers)
         return query_info.table_expression_modifiers->getSampleSizeRatio() != std::nullopt;
-    return select.sampleSize() != nullptr;
+    else
+        return select.sampleSize() != nullptr;
 }
 
 Pipe ReadFromMergeTree::spreadMarkRanges(
@@ -1986,13 +1999,15 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
 
         return spreadMarkRangesAmongStreamsFinal(std::move(parts_with_ranges), num_streams, result.column_names_to_read, column_names_to_read, result_projection);
     }
-    if (query_info.input_order_info)
+    else if (query_info.input_order_info)
     {
         return spreadMarkRangesAmongStreamsWithOrder(
             std::move(parts_with_ranges), num_streams, column_names_to_read, result_projection, query_info.input_order_info);
     }
-
-    return spreadMarkRangesAmongStreams(std::move(parts_with_ranges), num_streams, column_names_to_read);
+    else
+    {
+        return spreadMarkRangesAmongStreams(std::move(parts_with_ranges), num_streams, column_names_to_read);
+    }
 }
 
 Pipe ReadFromMergeTree::groupStreamsByPartition(AnalysisResult & result, std::optional<ActionsDAG> & result_projection)

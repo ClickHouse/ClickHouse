@@ -117,8 +117,7 @@ protected:
 
     /// Reads entry and check that the host belongs to host list of the task
     /// Returns non-empty DDLTaskPtr if entry parsed and the check is passed
-    /// If dry_run = false, the task will be processed right after this call.
-    virtual DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper, bool dry_run);
+    virtual DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper);
 
     void processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper);
     void updateMaxDDLEntryID(const String & entry_name);

@@ -77,7 +77,7 @@ public:
 
         for (size_t i = 0; i < function->getArguments().getNodes().size(); i++)
         {
-            if (const auto * /*func*/ _ = function->getArguments().getNodes()[i]->as<FunctionNode>())
+            if (const auto * func = function->getArguments().getNodes()[i]->as<FunctionNode>())
             {
                 func_id = i;
                 break;
@@ -165,26 +165,27 @@ private:
                 createFunctionNode("greaterOrEquals", column_node, std::make_shared<ConstantNode>(start_date_or_date_time)),
                 createFunctionNode("less", column_node, std::make_shared<ConstantNode>(end_date_or_date_time)));
         }
-        if (comparator == "notEquals")
+        else if (comparator == "notEquals")
         {
             return createFunctionNode(
                 "or",
                 createFunctionNode("less", column_node, std::make_shared<ConstantNode>(start_date_or_date_time)),
                 createFunctionNode("greaterOrEquals", column_node, std::make_shared<ConstantNode>(end_date_or_date_time)));
         }
-        if (comparator == "greater")
+        else if (comparator == "greater")
         {
             return createFunctionNode("greaterOrEquals", column_node, std::make_shared<ConstantNode>(end_date_or_date_time));
         }
-        if (comparator == "lessOrEquals")
+        else if (comparator == "lessOrEquals")
         {
             return createFunctionNode("less", column_node, std::make_shared<ConstantNode>(end_date_or_date_time));
         }
-        if (comparator == "less" || comparator == "greaterOrEquals")
+        else if (comparator == "less" || comparator == "greaterOrEquals")
         {
             return createFunctionNode(comparator, column_node, std::make_shared<ConstantNode>(start_date_or_date_time));
         }
-        [[unlikely]] {
+        else [[unlikely]]
+        {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Expected equals, notEquals, less, lessOrEquals, greater, greaterOrEquals. Actual {}",

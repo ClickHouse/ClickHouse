@@ -123,7 +123,7 @@ std::pair<String, StoragePtr> createTableFromAST(
         else
         {
             columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, mode);
-            constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints, columns, context);
+            constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints);
         }
     }
 
@@ -319,13 +319,14 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const Stri
         FS::createFile(detached_permanently_flag);
 
         std::lock_guard lock(mutex);
-        const auto it = snapshot_detached_tables.find(table_name);
-        if (it == snapshot_detached_tables.end())
+        if (const auto it = snapshot_detached_tables.find(table_name); it == snapshot_detached_tables.end())
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Snapshot doesn't contain info about detached table `{}`", table_name);
         }
-
-        it->second.is_permanently = true;
+        else
+        {
+            it->second.is_permanently = true;
+        }
     }
     catch (Exception & e)
     {
@@ -396,8 +397,9 @@ void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to
         if (fs::exists(detached_permanently_flag))
             throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached permanently)",
                             backQuote(database_name), backQuote(to_table_name));
-        throw Exception(
-            ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached)", backQuote(database_name), backQuote(to_table_name));
+        else
+            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached)",
+                            backQuote(database_name), backQuote(to_table_name));
     }
 }
 
@@ -528,7 +530,7 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, Contex
     {
         if (!has_table && e.code() == ErrorCodes::FILE_DOESNT_EXIST && throw_on_error)
             throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Table {} doesn't exist", backQuote(table_name));
-        if (!is_system_storage && throw_on_error)
+        else if (!is_system_storage && throw_on_error)
             throw;
     }
     if (!ast && is_system_storage)
@@ -615,7 +617,8 @@ time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_n
         {
             return static_cast<time_t>(0);
         }
-        throw;
+        else
+            throw;
     }
 }
 
@@ -760,7 +763,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
 
     if (!ast && throw_on_error)
         throw Exception::createDeprecated(error_message, ErrorCodes::SYNTAX_ERROR);
-    if (!ast)
+    else if (!ast)
         return nullptr;
 
     auto & create = ast->as<ASTCreateQuery &>();
@@ -803,7 +806,8 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
         if (throw_on_error)
             throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Cannot get metadata of {}.{}",
                             backQuote(getDatabaseName()), backQuote(table_name));
-        return nullptr;
+        else
+            return nullptr;
     }
 
     /// setup create table query storage info.

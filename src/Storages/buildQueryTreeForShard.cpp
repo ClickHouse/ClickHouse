@@ -368,12 +368,11 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
             replacement_map.emplace(join_right_table_expression.get(), std::move(temporary_table_expression_node));
             continue;
         }
-        if (auto * in_function_node = global_in_or_join_node.query_node->as<FunctionNode>())
+        else if (auto * in_function_node = global_in_or_join_node.query_node->as<FunctionNode>())
         {
             auto & in_function_subquery_node = in_function_node->getArguments().getNodes().at(1);
             auto in_function_node_type = in_function_subquery_node->getNodeType();
-            if (in_function_node_type != QueryTreeNodeType::QUERY && in_function_node_type != QueryTreeNodeType::UNION
-                && in_function_node_type != QueryTreeNodeType::TABLE)
+            if (in_function_node_type != QueryTreeNodeType::QUERY && in_function_node_type != QueryTreeNodeType::UNION && in_function_node_type != QueryTreeNodeType::TABLE)
                 continue;
 
             auto & temporary_table_expression_node = global_in_temporary_tables[in_function_subquery_node];
@@ -381,19 +380,18 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
             {
                 auto subquery_to_execute = in_function_subquery_node;
                 if (subquery_to_execute->as<TableNode>())
-                    subquery_to_execute
-                        = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context->getQueryContext());
+                    subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context->getQueryContext());
 
-                temporary_table_expression_node = executeSubqueryNode(
-                    subquery_to_execute, planner_context->getMutableQueryContext(), global_in_or_join_node.subquery_depth);
+                temporary_table_expression_node = executeSubqueryNode(subquery_to_execute,
+                    planner_context->getMutableQueryContext(),
+                    global_in_or_join_node.subquery_depth);
             }
 
             replacement_map.emplace(in_function_subquery_node.get(), temporary_table_expression_node);
         }
         else
         {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Expected global IN or JOIN query node. Actual {}",
                 global_in_or_join_node.query_node->formatASTForErrorMessage());
         }

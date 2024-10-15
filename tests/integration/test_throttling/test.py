@@ -16,7 +16,6 @@
 # - and that max_backup_bandwidth from the query will override setting from the user profile
 
 import time
-
 import pytest
 
 from helpers.cluster import ClickHouseCluster

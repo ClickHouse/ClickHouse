@@ -136,7 +136,7 @@ void MergeTreeDataPartWide::loadIndexGranularityImpl(
     }
     else
     {
-        auto marks_file = data_part_storage_.readFile(marks_file_path, getReadSettings().adjustBufferSize(marks_file_size), marks_file_size, std::nullopt);
+        auto marks_file = data_part_storage_.readFile(marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size, std::nullopt);
 
         std::unique_ptr<ReadBuffer> marks_reader;
         if (!index_granularity_info_.mark_type.compressed)

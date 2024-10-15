@@ -1151,7 +1151,7 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
     {
         if (dictionary_key_type == DictionaryKeyType::Simple && dict_struct.key)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is not supported for simple key hashed array dictionary");
-        if (dictionary_key_type == DictionaryKeyType::Complex && dict_struct.id)
+        else if (dictionary_key_type == DictionaryKeyType::Complex && dict_struct.id)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is not supported for complex key hashed array dictionary");
 
         if (dict_struct.range_min || dict_struct.range_max)
@@ -1195,12 +1195,12 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
                 return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Simple, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
             return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Simple, false>>(dict_id, dict_struct, std::move(source_ptr), configuration);
         }
-
-        if (shards > 1)
-            return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Complex, true>>(
-                dict_id, dict_struct, std::move(source_ptr), configuration);
-        return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Complex, false>>(
-            dict_id, dict_struct, std::move(source_ptr), configuration);
+        else
+        {
+            if (shards > 1)
+                return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Complex, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
+            return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Complex, false>>(dict_id, dict_struct, std::move(source_ptr), configuration);
+        }
     };
 
     factory.registerLayout("hashed_array",

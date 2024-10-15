@@ -12,14 +12,12 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Processors/QueryPlan/FilterStep.h>
-#include <Common/Logger.h>
 
 
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsString additional_result_filter;
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsUInt64 max_bytes_to_read_leaf;
@@ -49,13 +47,7 @@ IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(
     /// it's possible that new analyzer will be enabled in ::getQueryProcessingStage method
     /// of the underlying storage when all other parts of infrastructure are not ready for it
     /// (built with old analyzer).
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-    {
-        LOG_TRACE(getLogger("IInterpreterUnionOrSelectQuery"),
-            "The new analyzer is enabled, but the old interpreter is used. It can be a bug, please report it. Will disable 'allow_experimental_analyzer' setting (for query: {})",
-            query_ptr->formatForLogging());
-        context->setSetting("allow_experimental_analyzer", false);
-    }
+    context->setSetting("allow_experimental_analyzer", false);
 
     if (options.shard_num)
         context->addSpecialScalar(

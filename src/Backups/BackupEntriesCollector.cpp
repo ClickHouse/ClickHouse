@@ -182,15 +182,17 @@ Strings BackupEntriesCollector::setStage(const String & new_stage, const String 
     {
         return backup_coordination->waitForStage(new_stage, on_cluster_first_sync_timeout);
     }
-    if (new_stage.starts_with(Stage::GATHERING_METADATA))
+    else if (new_stage.starts_with(Stage::GATHERING_METADATA))
     {
         auto current_time = std::chrono::steady_clock::now();
         auto end_of_timeout = std::max(current_time, collect_metadata_end_time);
         return backup_coordination->waitForStage(
             new_stage, std::chrono::duration_cast<std::chrono::milliseconds>(end_of_timeout - current_time));
     }
-
-    return backup_coordination->waitForStage(new_stage);
+    else
+    {
+        return backup_coordination->waitForStage(new_stage);
+    }
 }
 
 void BackupEntriesCollector::checkIsQueryCancelled() const
@@ -714,20 +716,23 @@ bool BackupEntriesCollector::compareWithPrevious(String & mismatch_description)
         {
             if (mismatch->first == p_mismatch->first)
                 return {MismatchType::CHANGED, mismatch->first};
-            if (mismatch->first < p_mismatch->first)
+            else if (mismatch->first < p_mismatch->first)
                 return {MismatchType::ADDED, mismatch->first};
-            return {MismatchType::REMOVED, mismatch->first};
+            else
+                return {MismatchType::REMOVED, mismatch->first};
         }
-        if (mismatch != metadata.end())
+        else if (mismatch != metadata.end())
         {
             return {MismatchType::ADDED, mismatch->first};
         }
-        if (p_mismatch != previous_metadata.end())
+        else if (p_mismatch != previous_metadata.end())
         {
             return {MismatchType::REMOVED, p_mismatch->first};
         }
-
-        return {MismatchType::NONE, {}};
+        else
+        {
+            return {MismatchType::NONE, {}};
+        }
     };
 
     /// Databases must be the same as during the previous scan.

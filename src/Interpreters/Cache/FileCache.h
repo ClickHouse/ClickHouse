@@ -88,6 +88,8 @@ public:
 
     const String & getBasePath() const;
 
+    static Key createKeyForPath(const String & path);
+
     static const UserInfo & getCommonUser();
 
     static const UserInfo & getInternalUser();

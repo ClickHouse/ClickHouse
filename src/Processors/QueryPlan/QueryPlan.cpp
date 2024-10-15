@@ -238,7 +238,7 @@ static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map,
         step.describeIndexes(map);
 }
 
-JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) const
+JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options)
 {
     checkInitialized();
 
@@ -340,10 +340,14 @@ static void explainStep(
 
     if (options.sorting)
     {
-        if (const auto & sort_description = step.getSortDescription(); !sort_description.empty())
+        if (step.hasOutputStream())
         {
-            settings.out << prefix << "Sorting: ";
-            dumpSortDescription(sort_description, settings.out);
+            settings.out << prefix << "Sorting (" << step.getOutputStream().sort_scope << ")";
+            if (step.getOutputStream().sort_scope != DataStream::SortScope::None)
+            {
+                settings.out << ": ";
+                dumpSortDescription(step.getOutputStream().sort_description, settings.out);
+            }
             settings.out.write('\n');
         }
     }
@@ -364,7 +368,7 @@ std::string debugExplainStep(const IQueryPlanStep & step)
     return out.str();
 }
 
-void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent) const
+void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent)
 {
     checkInitialized();
 
@@ -418,7 +422,7 @@ static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSet
         settings.offset += settings.indent;
 }
 
-void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const
+void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options)
 {
     checkInitialized();
 
@@ -506,7 +510,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
     updateDataStreams(*root);
 }
 
-void QueryPlan::explainEstimate(MutableColumns & columns) const
+void QueryPlan::explainEstimate(MutableColumns & columns)
 {
     checkInitialized();
 

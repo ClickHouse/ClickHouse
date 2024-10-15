@@ -2,6 +2,7 @@
 
 #if defined(OS_LINUX)
 
+#include <cstddef>
 #include <cstdint>
 
 

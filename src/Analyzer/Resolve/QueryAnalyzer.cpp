@@ -218,28 +218,6 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
     }
 }
 
-void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context)
-{
-    IdentifierResolveScope scope(node, nullptr /*parent_scope*/);
-
-    if (!scope.context)
-        scope.context = context;
-
-    auto node_type = node->getNodeType();
-
-    if (table_expression && node_type != QueryTreeNodeType::QUERY && node_type != QueryTreeNodeType::UNION)
-    {
-        scope.expression_join_tree_node = table_expression;
-        validateTableExpressionModifiers(scope.expression_join_tree_node, scope);
-        initializeTableExpressionData(scope.expression_join_tree_node, scope);
-    }
-
-    if (node_type == QueryTreeNodeType::LIST)
-        resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-    else
-        resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-}
-
 std::optional<JoinTableSide> QueryAnalyzer::getColumnSideFromJoinTree(const QueryTreeNodePtr & resolved_identifier, const JoinNode & join_node)
 {
     if (resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
@@ -1219,10 +1197,9 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
                 scope,
                 identifier_resolve_settings.allow_to_check_join_tree /* can_be_not_found */);
         }
-        if (identifier_lookup.isFunctionLookup() || identifier_lookup.isTableExpressionLookup())
+        else if (identifier_lookup.isFunctionLookup() || identifier_lookup.isTableExpressionLookup())
         {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Compound identifier '{}' cannot be resolved as {}. In scope {}",
                 identifier_lookup.identifier.getFullName(),
                 identifier_lookup.isFunctionLookup() ? "function" : "table expression",
@@ -1308,7 +1285,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
             {
                 return lookup_result;
             }
-            if (auto * resolved_function = resolved_identifier->as<FunctionNode>())
+            else if (auto * resolved_function = resolved_identifier->as<FunctionNode>())
             {
                 /// Special case: scalar subquery was executed and replaced by __getScalar function.
                 /// Handle it as a constant.
@@ -1950,7 +1927,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
     {
         bool table_expression_in_resolve_process = nearest_query_scope->table_expressions_in_resolve_process.contains(table_expression.get());
 
-        if (table_expression->as<ArrayJoinNode>())
+        if (auto * array_join_node = table_expression->as<ArrayJoinNode>())
         {
             if (table_expressions_column_nodes_with_names_stack.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -3174,14 +3151,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             node = std::move(result_list);
             return result_projection_names;
         }
-        if (function_name == "grouping")
+        else if (function_name == "grouping")
         {
             /// It is responsibility of planner to perform additional handling of grouping function
             if (function_arguments_size == 0)
-                throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function GROUPING expects at least one argument");
-            if (function_arguments_size > 64)
-                throw Exception(
-                    ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
+                throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+                    "Function GROUPING expects at least one argument");
+            else if (function_arguments_size > 64)
+                throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
                     "Function GROUPING can have up to 64 arguments, but {} provided",
                     function_arguments_size);
             checkFunctionNodeHasEmptyNullsAction(function_node);
@@ -3745,11 +3722,11 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                 resolved_expression_it = resolved_expressions.find(node);
                 if (resolved_expression_it != resolved_expressions.end())
                     return resolved_expression_it->second;
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Identifier '{}' resolve into list node and list node projection names are not initialized. In scope {}",
-                    unresolved_identifier.getFullName(),
-                    scope.scope_node->formatASTForErrorMessage());
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Identifier '{}' resolve into list node and list node projection names are not initialized. In scope {}",
+                        unresolved_identifier.getFullName(),
+                        scope.scope_node->formatASTForErrorMessage());
             }
 
             if (result_projection_names.empty())
@@ -4213,7 +4190,7 @@ NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePt
 
     for (size_t i = 0; i < projection_nodes_size; ++i)
     {
-        const auto & projection_node = projection_nodes[i];
+        auto projection_node = projection_nodes[i];
 
         if (!IdentifierResolver::isExpressionNodeType(projection_node->getNodeType()))
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -4629,7 +4606,10 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 "Unknown table function {}. Maybe you meant: {}",
                 table_function_name,
                 DB::toString(hints));
-        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}", table_function_name);
+        else
+            throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
+                "Unknown table function {}",
+                table_function_name);
     }
 
     QueryTreeNodes result_table_function_arguments;
@@ -4665,7 +4645,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
             continue;
         }
-        if (auto * table_function_argument_function = table_function_argument->as<FunctionNode>())
+        else if (auto * table_function_argument_function = table_function_argument->as<FunctionNode>())
         {
             const auto & table_function_argument_function_name = table_function_argument_function->getFunctionName();
             if (TableFunctionFactory::instance().isTableFunctionName(table_function_argument_function_name))

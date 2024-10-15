@@ -180,9 +180,10 @@ private:
             {
                 if (first_event)
                     break;
-                continue;
+                else
+                    continue;
             }
-            if (event_idx == 0)
+            else if (event_idx == 0)
             {
                 events_timestamp[0] = std::make_pair(timestamp, timestamp);
                 first_event = true;
@@ -325,11 +326,10 @@ createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & 
     WhichDataType which(arguments.front().get());
     if (res)
         return res;
-    if (which.isDate())
+    else if (which.isDate())
         return std::make_shared<AggregateFunctionWindowFunnel<DataTypeDate::FieldType, Data<DataTypeDate::FieldType>>>(arguments, params);
-    if (which.isDateTime())
-        return std::make_shared<AggregateFunctionWindowFunnel<DataTypeDateTime::FieldType, Data<DataTypeDateTime::FieldType>>>(
-            arguments, params);
+    else if (which.isDateTime())
+        return std::make_shared<AggregateFunctionWindowFunnel<DataTypeDateTime::FieldType, Data<DataTypeDateTime::FieldType>>>(arguments, params);
 
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of first argument of aggregate function {}, must "
