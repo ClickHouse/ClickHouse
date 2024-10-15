@@ -557,6 +557,48 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
     return res;
 }
 
+bool MutationsInterpreter::isVirtualColumn(const String & column_name) const
+{
+    static const std::unordered_set<String> virtual_columns = {
+        "_part",
+        "_part_index",
+        "_part_offset",
+        "_partition_id",
+        // Add other virtual column names as necessary
+    };
+
+    return virtual_columns.count(column_name);
+}
+
+Names MutationsInterpreter::extractVirtualColumnsFromAST(const ASTPtr & ast) const
+{
+    Names virtual_columns;
+
+    std::function<void(const ASTPtr &)> collectIdentifiers = [&](const ASTPtr & node)
+    {
+        if (const auto * identifier = node->as<ASTIdentifier>())
+        {
+            if (isVirtualColumn(identifier->name()))
+            {
+                virtual_columns.push_back(identifier->name());
+            }
+        }
+
+        for (const auto & child : node->children)
+        {
+            collectIdentifiers(child);
+        }
+    };
+
+    collectIdentifiers(ast);
+
+    // Remove duplicates
+    std::sort(virtual_columns.begin(), virtual_columns.end());
+    virtual_columns.erase(std::unique(virtual_columns.begin(), virtual_columns.end()), virtual_columns.end());
+
+    return virtual_columns;
+}
+
 void MutationsInterpreter::prepare(bool dry_run)
 {
     if (is_prepared)
@@ -586,13 +628,28 @@ void MutationsInterpreter::prepare(bool dry_run)
     NameSet updated_columns;
     bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
 
+    /// Clear virtual columns_needed before filling
+    virtual_columns_needed.clear();
+
     for (auto & command : commands)
     {
         if (command.type == MutationCommand::Type::APPLY_DELETED_MASK)
             command = createCommandToApplyDeletedMask(command);
 
         if (command.type == MutationCommand::Type::UPDATE || command.type == MutationCommand::Type::DELETE)
+        {
             materialize_ttl_recalculate_only = false;
+
+            /// Extract virtual columns from the mutation condition
+            ASTPtr predicate_ast = getPartitionAndPredicateExpressionForMutationCommand(command);
+            if (predicate_ast)
+            {
+                Names virtual_columns_in_command = extractVirtualColumnsFromAST(predicate_ast);
+                virtual_columns_needed.insert(virtual_columns_needed.end(),
+                                              virtual_columns_in_command.begin(),
+                                              virtual_columns_in_command.end());
+            }
+        }
 
         for (const auto & [name, _] : command.column_to_update_expression)
         {
@@ -603,6 +660,14 @@ void MutationsInterpreter::prepare(bool dry_run)
             updated_columns.insert(name);
         }
     }
+
+    /// Remove duplicates from virtual_columns_needed
+    std::sort(virtual_columns_needed.begin(), virtual_columns_needed.end());
+    virtual_columns_needed.erase(std::unique(virtual_columns_needed.begin(), virtual_columns_needed.end()),
+                                 virtual_columns_needed.end());
+
+    // Store virtual_columns_needed as a member variable for later use
+    this->virtual_columns_needed = virtual_columns_needed;
 
     /// We need to know which columns affect which MATERIALIZED columns, data skipping indices
     /// and projections to recalculate them if dependencies are updated.
@@ -1195,7 +1260,8 @@ void MutationsInterpreter::Source::read(
     const StorageMetadataPtr & snapshot_,
     const ContextPtr & context_,
     bool apply_deleted_mask_,
-    bool can_execute_) const
+    bool can_execute_,
+    const Names & needed_virtual_columns) const
 {
     auto required_columns = first_stage.expressions_chain.steps.front()->getRequiredColumns().getNames();
     auto storage_snapshot = getStorageSnapshot(snapshot_, context_);
@@ -1245,7 +1311,8 @@ void MutationsInterpreter::Source::read(
             false,
             false,
             context_,
-            getLogger("MutationsInterpreter"));
+            getLogger("MutationsInterpreter"),
+            virtual_columns_needed);
     }
     else
     {
@@ -1295,7 +1362,7 @@ void MutationsInterpreter::Source::read(
 
 void MutationsInterpreter::initQueryPlan(Stage & first_stage, QueryPlan & plan)
 {
-    source.read(first_stage, plan, metadata_snapshot, context, settings.apply_deleted_mask, settings.can_execute);
+    source.read(first_stage, plan, metadata_snapshot, context, settings.apply_deleted_mask, settings.can_execute, virtual_columns_needed);
     addCreatingSetsStep(plan, first_stage.analyzer->getPreparedSets(), context);
 }
 

@@ -136,7 +136,8 @@ public:
             const StorageMetadataPtr & snapshot_,
             const ContextPtr & context_,
             bool apply_deleted_mask_,
-            bool can_execute_) const;
+            bool can_execute_,
+            const Names & needed_virtual_columns) const;
 
         explicit Source(StoragePtr storage_);
         Source(MergeTreeData & storage_, MergeTreeData::DataPartPtr source_part_, AlterConversionsPtr alter_conversions_);
@@ -159,6 +160,10 @@ private:
         ContextPtr context_,
         Settings settings_);
 
+    bool isVirtualColumn(const String & column_name) const;
+    Names extractVirtualColumnsFromAST(const ASTPtr & ast) const;
+
+
     void prepare(bool dry_run);
 
     void initQueryPlan(Stage & first_stage, QueryPlan & query_plan);
@@ -176,6 +181,8 @@ private:
     ContextPtr context;
     Settings settings;
     SelectQueryOptions select_limits;
+
+    Names virtual_columns_needed;
 
     LoggerPtr logger;
 
