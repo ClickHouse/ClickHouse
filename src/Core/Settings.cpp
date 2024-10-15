@@ -4728,7 +4728,7 @@ Method of reading data from storage file, one of: `read`, `pread`, `mmap`. The m
     M(String, local_filesystem_read_method, "pread_threadpool", R"(
 Method of reading data from local filesystem, one of: read, pread, mmap, io_uring, pread_threadpool. The 'io_uring' method is experimental and does not work for Log, TinyLog, StripeLog, File, Set and Join, and other tables with append-able files in presence of concurrent reads and writes.
 )", 0) \
-    M(String, remote_filesystem_read_method, "threadpool", R"(
+    M(String, remote_filesystem_read_method, "read", R"(
 Method of reading data from remote filesystem, one of: read, threadpool.
 )", 0) \
     M(Bool, local_filesystem_read_prefetch, false, R"(
