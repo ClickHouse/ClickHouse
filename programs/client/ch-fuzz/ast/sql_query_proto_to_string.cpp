@@ -1657,7 +1657,7 @@ CONV_FN(DatabaseEngine, deng) {
   if (dengine == sql_query_grammar::DatabaseEngineValues::Replicated) {
     ret += "('/test/db";
     ret += std::to_string(deng.zoo_path());
-    ret += "(', 's1', 'r1')";
+    ret += "', 's1', 'r1')";
   }
 }
 
