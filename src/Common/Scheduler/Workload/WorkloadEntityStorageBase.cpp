@@ -162,7 +162,8 @@ void topologicallySortedDependenciesImpl(
 }
 
 /// Returns nodes in topological order that respect `dependencies` (key is node name, value is set of dependencies)
-std::vector<String> topologicallySortedDependencies(const std::unordered_map<String, std::unordered_set<String>> & dependencies) {
+std::vector<String> topologicallySortedDependencies(const std::unordered_map<String, std::unordered_set<String>> & dependencies)
+{
     std::unordered_set<String> visited; // Set to track visited nodes
     std::vector<String> result; // Result to store nodes in topologically sorted order
 
