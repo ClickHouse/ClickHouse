@@ -9,9 +9,12 @@ SET enable_analyzer = 0;
 
 DROP TABLE IF EXISTS tab;
 
--- Generate some data set that is large enough 
 CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance')) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
-INSERT INTO tab SELECT number, [toFloat32(randCanonical(1)), toFloat32(randCanonical(2))] FROM numbers(500000); -- if the test fails sporadically, increase the table size, HNSW is non-deterministic ...
+
+-- Generate random values but with a fixed seed (conceptually), so that the data is deterministic.
+-- Unfortunately, no random functions in ClickHouse accepts a seed. Instead, abuse the numbers table + hash functions to provide
+-- deterministic randomness.
+INSERT INTO tab SELECT number, [sipHash64(number)/18446744073709551615, wyHash64(number)/18446744073709551615] FROM numbers(370000);
 
 DROP TABLE IF EXISTS results;
 CREATE TABLE results(id Int32) ENGINE = Memory;
