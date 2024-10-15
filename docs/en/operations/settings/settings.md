@@ -9499,6 +9499,10 @@ Default value: 0
 
 When enabled, `JSON` data type alias will be used to create an old [Object('json')](../../sql-reference/data-types/json.md) type instead of the new [JSON](../../sql-reference/data-types/newjson.md) type.
 
+## query_plan_join_inner_table_selection
+
+Select the side of the join to be the inner table in the query plan. Possible values: 'auto', 'left', 'right'. In `auto` mode, ClickHouse will try to choose the table with the smallest number of rows.
+
 ## use_local_cache_for_remote_storage {#use_local_cache_for_remote_storage}
 
 Type: Bool
