@@ -219,23 +219,26 @@ ColumnPtr FunctionArrayIntersect<Mode>::castRemoveNullable(const ColumnPtr & col
         }
         return castRemoveNullable(nested, data_type);
     }
-    else if (const auto * column_array = checkAndGetColumn<ColumnArray>(column.get()))
+    if (const auto * column_array = checkAndGetColumn<ColumnArray>(column.get()))
     {
         const auto * array_type = checkAndGetDataType<DataTypeArray>(data_type.get());
         if (!array_type)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot cast array column to column with type {} in function {}",
-                            data_type->getName(), getName());
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot cast array column to column with type {} in function {}",
+                data_type->getName(),
+                getName());
 
         auto casted_column = castRemoveNullable(column_array->getDataPtr(), array_type->getNestedType());
         return ColumnArray::create(casted_column, column_array->getOffsetsPtr());
     }
-    else if (const auto * column_tuple = checkAndGetColumn<ColumnTuple>(column.get()))
+    if (const auto * column_tuple = checkAndGetColumn<ColumnTuple>(column.get()))
     {
         const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(data_type.get());
 
         if (!tuple_type)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot cast tuple column to type {} in function {}",
-                            data_type->getName(), getName());
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Cannot cast tuple column to type {} in function {}", data_type->getName(), getName());
 
         auto columns_number = column_tuple->tupleSize();
         Columns columns(columns_number);
