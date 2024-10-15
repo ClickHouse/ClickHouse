@@ -94,7 +94,7 @@ int QueryOracle::DumpTableContent(const SQLTable &t, sql_query_grammar::SQLQuery
 	sql_query_grammar::JoinedTable *jt = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
 	sql_query_grammar::OrderByList *obs = sel->mutable_orderby()->mutable_olist();
 
-	jt->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
+	jt->mutable_est()->mutable_table()->set_table("t" + std::to_string(t.tname));
 	jt->set_final(t.SupportsFinal());
 	for (const auto &col : t.cols) {
 		sql_query_grammar::ExprOrderingTerm *eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
@@ -214,14 +214,14 @@ int QueryOracle::GenerateExportQuery(RandomGenerator &rg, const SQLTable &t, sql
 
 	//Set the table on select
 	sql_query_grammar::JoinedTable *jt = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
-	jt->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
+	jt->mutable_est()->mutable_table()->set_table("t" + std::to_string(t.tname));
 	jt->set_final(t.SupportsFinal());
 	return 0;
 }
 
 int QueryOracle::GenerateClearQuery(const SQLTable &t, sql_query_grammar::SQLQuery &sq3) {
 	sql_query_grammar::Truncate *trunc = sq3.mutable_inner_query()->mutable_trunc();
-	trunc->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
+	trunc->mutable_est()->mutable_table()->set_table("t" + std::to_string(t.tname));
 	return 0;
 }
 
@@ -232,7 +232,7 @@ int QueryOracle::GenerateImportQuery(const SQLTable &t, const sql_query_grammar:
 	sql_query_grammar::InsertFromFile *iff = ins->mutable_ffile();
 	const sql_query_grammar::FileFunc &ff = sq2.inner_query().insert().tfunction().file();
 
-	iit->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
+	iit->mutable_est()->mutable_table()->set_table("t" + std::to_string(t.tname));
 	for (const auto &entry : t.cols) {
 		if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
 			for (const auto &entry2 : ntp->subtypes) {

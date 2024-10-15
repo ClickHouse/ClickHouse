@@ -410,7 +410,7 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 	next.is_temp = rg.NextMediumNumber() < 22;
 	ct->set_replace(replace);
 	ct->set_is_temp(next.is_temp);
-	ct->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(next.tname));
+	ct->mutable_est()->mutable_table()->set_table("t" + std::to_string(next.tname));
 
 	if (!CollectionHas<SQLTable>(attached_tables) || rg.NextSmallNumber() < 9) {
 		//create table with definition
@@ -482,7 +482,7 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 		next.teng = val;
 		te->set_engine(val);
 		cta->set_clone(rg.NextBool());
-		cta->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
+		cta->mutable_est()->mutable_table()->set_table("t" + std::to_string(t.tname));
 		for (const auto &col : t.cols) {
 			next.cols[col.first] = col.second;
 		}
@@ -567,7 +567,7 @@ int StatementGenerator::GenerateNextCreateView(RandomGenerator &rg, sql_query_gr
 	next.is_materialized = rg.NextBool();
 	cv->set_materialized(next.is_materialized);
 	next.ncols = (rg.NextMediumNumber() % 5) + 1;
-	cv->mutable_est()->mutable_table_name()->set_table("v" + std::to_string(vname));
+	cv->mutable_est()->mutable_table()->set_table("v" + std::to_string(vname));
 	if (next.is_materialized) {
 		sql_query_grammar::TableEngine *te = cv->mutable_engine();
 		std::uniform_int_distribution<uint32_t> table_engine(1, sql_query_grammar::TableEngineValues_MAX);
@@ -589,7 +589,7 @@ int StatementGenerator::GenerateNextCreateView(RandomGenerator &rg, sql_query_gr
 		if (CollectionHas<SQLTable>(attached_tables) && rg.NextSmallNumber() < 5) {
 			const SQLTable &t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
 
-			cv->mutable_to_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
+			cv->mutable_to_est()->mutable_table()->set_table("t" + std::to_string(t.tname));
 		}
 		if ((next.is_refreshable = rg.NextBool())) {
 			GenerateNextRefreshableView(rg, cv->mutable_refresh());
@@ -607,7 +607,7 @@ int StatementGenerator::GenerateNextCreateView(RandomGenerator &rg, sql_query_gr
 }
 
 int StatementGenerator::GenerateNextDrop(RandomGenerator &rg, sql_query_grammar::Drop *dp) {
-	sql_query_grammar::Table *tab = dp->mutable_est()->mutable_table_name();
+	sql_query_grammar::Table *tab = dp->mutable_est()->mutable_table();
 	const bool has_tables = CollectionHas<SQLTable>(attached_tables),
 			   has_views = CollectionHas<SQLView>(attached_views);
 
@@ -664,7 +664,7 @@ int StatementGenerator::GenerateNextOptimizeTable(RandomGenerator &rg, sql_query
 		}
 	}
 	ot->set_final(t.SupportsFinal() && rg.NextSmallNumber() < 3);
-	ot->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
+	ot->mutable_est()->mutable_table()->set_table("t" + std::to_string(t.tname));
 	return 0;
 }
 
@@ -672,12 +672,12 @@ int StatementGenerator::GenerateNextCheckTable(RandomGenerator &rg, sql_query_gr
 	const SQLTable &t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
 
 	ct->set_single_result(rg.NextSmallNumber() < 4);
-	ct->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
+	ct->mutable_est()->mutable_table()->set_table("t" + std::to_string(t.tname));
 	return 0;
 }
 
 int StatementGenerator::GenerateNextDescTable(RandomGenerator &rg, sql_query_grammar::DescTable *dt) {
-	sql_query_grammar::Table *tab = dt->mutable_est()->mutable_table_name();
+	sql_query_grammar::Table *tab = dt->mutable_est()->mutable_table();
 	const bool has_tables = CollectionHas<SQLTable>(attached_tables),
 			   has_views = CollectionHas<SQLView>(attached_views);
 
@@ -714,7 +714,7 @@ int StatementGenerator::GenerateNextInsert(RandomGenerator &rg, sql_query_gramma
 	}
 	std::shuffle(this->entries.begin(), this->entries.end(), rg.gen);
 
-	iit->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
+	iit->mutable_est()->mutable_table()->set_table("t" + std::to_string(t.tname));
 	for (const auto &entry : this->entries) {
 		sql_query_grammar::ColumnPath *cp = iit->add_cols();
 
@@ -796,7 +796,7 @@ int StatementGenerator::GenerateUptDelWhere(RandomGenerator &rg, const SQLTable 
 int StatementGenerator::GenerateNextDelete(RandomGenerator &rg, sql_query_grammar::Delete *del) {
 	const SQLTable &t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
 
-	del->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
+	del->mutable_est()->mutable_table()->set_table("t" + std::to_string(t.tname));
 	GenerateUptDelWhere(rg, t, del->mutable_where()->mutable_expr()->mutable_expr());
 	return 0;
 }
@@ -804,7 +804,7 @@ int StatementGenerator::GenerateNextDelete(RandomGenerator &rg, sql_query_gramma
 int StatementGenerator::GenerateNextTruncate(RandomGenerator &rg, sql_query_grammar::Truncate *trunc) {
 	const SQLTable &t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
 
-	trunc->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
+	trunc->mutable_est()->mutable_table()->set_table("t" + std::to_string(t.tname));
 	return 0;
 }
 
@@ -815,14 +815,14 @@ int StatementGenerator::GenerateNextExchangeTables(RandomGenerator &rg, sql_quer
 		this->ids.push_back(entry.get().tname);
 	}
 	std::shuffle(this->ids.begin(), this->ids.end(), rg.gen);
-	et->mutable_est1()->mutable_table_name()->set_table("t" + std::to_string(this->ids[0]));
-	et->mutable_est2()->mutable_table_name()->set_table("t" + std::to_string(this->ids[1]));
+	et->mutable_est1()->mutable_table()->set_table("t" + std::to_string(this->ids[0]));
+	et->mutable_est2()->mutable_table()->set_table("t" + std::to_string(this->ids[1]));
 	this->ids.clear();
 	return 0;
 }
 
 int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_grammar::AlterTable *at) {
-	sql_query_grammar::Table *tab = at->mutable_est()->mutable_table_name();
+	sql_query_grammar::Table *tab = at->mutable_est()->mutable_table();
 	const uint32_t nalters = rg.NextBool() ? 1 : ((rg.NextMediumNumber() % 4) + 1);
 	const bool has_tables = CollectionHas<SQLTable>(attached_tables),
 			   has_views = CollectionHas<SQLView>(attached_views);
@@ -1152,7 +1152,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 }
 
 int StatementGenerator::GenerateAttach(RandomGenerator &rg, sql_query_grammar::Attach *att) {
-	sql_query_grammar::Table *tab = att->mutable_est()->mutable_table_name();
+	sql_query_grammar::Table *tab = att->mutable_est()->mutable_table();
 	const bool has_tables = CollectionHas<SQLTable>(detached_tables),
 			   has_views = CollectionHas<SQLView>(detached_views);
 
@@ -1173,7 +1173,7 @@ int StatementGenerator::GenerateAttach(RandomGenerator &rg, sql_query_grammar::A
 }
 
 int StatementGenerator::GenerateDetach(RandomGenerator &rg, sql_query_grammar::Detach *det) {
-	sql_query_grammar::Table *tab = det->mutable_est()->mutable_table_name();
+	sql_query_grammar::Table *tab = det->mutable_est()->mutable_table();
 	const bool has_tables = CollectionHas<SQLTable>(attached_tables),
 			   has_views = CollectionHas<SQLView>(attached_views);
 
@@ -1295,7 +1295,7 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery &sq, 
 	const sql_query_grammar::SQLQueryInner &query = sq.has_inner_query() ? sq.inner_query() : sq.explain().inner_query();
 
 	if (sq.has_inner_query() && query.has_create_table()) {
-		const uint32_t tname = static_cast<uint32_t>(std::stoul(query.create_table().est().table_name().table().substr(1)));
+		const uint32_t tname = static_cast<uint32_t>(std::stoul(query.create_table().est().table().table().substr(1)));
 
 		if (success) {
 			if (query.create_table().replace()) {
@@ -1305,7 +1305,7 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery &sq, 
 		}
 		this->staged_tables.erase(tname);
 	} else if (sq.has_inner_query() && query.has_create_view()) {
-		const uint32_t vname = static_cast<uint32_t>(std::stoul(query.create_view().est().table_name().table().substr(1)));
+		const uint32_t vname = static_cast<uint32_t>(std::stoul(query.create_view().est().table().table().substr(1)));
 
 		if (success) {
 			if (query.create_view().replace()) {
@@ -1316,7 +1316,7 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery &sq, 
 		this->staged_views.erase(vname);
 	} else if (sq.has_inner_query() && query.has_drop() && success) {
 		const sql_query_grammar::Drop &drp = query.drop();
-		const uint32_t tname = static_cast<uint32_t>(std::stoul(drp.est().table_name().table().substr(1)));
+		const uint32_t tname = static_cast<uint32_t>(std::stoul(drp.est().table().table().substr(1)));
 
 		if (drp.sobject() == sql_query_grammar::SQLObject::TABLE) {
 			this->tables.erase(tname);
@@ -1324,8 +1324,8 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery &sq, 
 			this->views.erase(tname);
 		}
 	} else if (sq.has_inner_query() && query.has_exchange() && success) {
-		const uint32_t tname1 = static_cast<uint32_t>(std::stoul(query.exchange().est1().table_name().table().substr(1))),
-					   tname2 = static_cast<uint32_t>(std::stoul(query.exchange().est2().table_name().table().substr(1)));
+		const uint32_t tname1 = static_cast<uint32_t>(std::stoul(query.exchange().est1().table().table().substr(1))),
+					   tname2 = static_cast<uint32_t>(std::stoul(query.exchange().est2().table().table().substr(1)));
 		SQLTable tx = std::move(this->tables[tname1]), ty = std::move(this->tables[tname2]);
 
 		tx.tname = tname2;
@@ -1334,8 +1334,8 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery &sq, 
 		this->tables[tname1] = std::move(ty);
 	} else if (sq.has_inner_query() && query.has_alter_table()) {
 		const sql_query_grammar::AlterTable &at = sq.inner_query().alter_table();
-		const bool isview = at.est().table_name().table()[0] == 'v';
-		const uint32_t tname = static_cast<uint32_t>(std::stoul(at.est().table_name().table().substr(1)));
+		const bool isview = at.est().table().table()[0] == 'v';
+		const uint32_t tname = static_cast<uint32_t>(std::stoul(at.est().table().table().substr(1)));
 
 		if (isview) {
 			SQLView &v = this->views[tname];
@@ -1418,8 +1418,8 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery &sq, 
 		}
 	} else if (sq.has_inner_query() && query.has_attach() && success) {
 		const sql_query_grammar::Attach &att = sq.inner_query().attach();
-		const bool isview = att.est().table_name().table()[0] == 'v';
-		const uint32_t tname = static_cast<uint32_t>(std::stoul(att.est().table_name().table().substr(1)));
+		const bool isview = att.est().table().table()[0] == 'v';
+		const uint32_t tname = static_cast<uint32_t>(std::stoul(att.est().table().table().substr(1)));
 
 		if (isview) {
 			this->views[tname].attached = true;
@@ -1428,8 +1428,8 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery &sq, 
 		}
 	} else if (sq.has_inner_query() && query.has_detach() && success) {
 		const sql_query_grammar::Detach &det = sq.inner_query().detach();
-		const bool isview = det.est().table_name().table()[0] == 'v';
-		const uint32_t tname = static_cast<uint32_t>(std::stoul(det.est().table_name().table().substr(1)));
+		const bool isview = det.est().table().table()[0] == 'v';
+		const uint32_t tname = static_cast<uint32_t>(std::stoul(det.est().table().table().substr(1)));
 
 		if (isview) {
 			this->views[tname].attached = false;

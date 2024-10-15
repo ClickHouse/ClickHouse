@@ -1520,6 +1520,10 @@ enum SQLFunc {
 
 }
 
+message Database {
+  required string database = 1;
+}
+
 message Table {
   required string table = 1;
 }
@@ -1664,9 +1668,9 @@ message ExprColumn {
 }
 
 message ExprSchemaTableColumn {
-  //optional Schema schema = 1;
-  optional Table table = 1;
-  required ExprColumn col = 2;
+  optional Database database = 1;
+  optional Table table = 2;
+  required ExprColumn col = 3;
 }
 
 enum UnaryOperator {
@@ -1996,7 +2000,8 @@ message ResultColumn {
 }
 
 message ExprSchemaTable {
-  required Table table_name = 1;
+  optional Database database = 1;
+  required Table table = 2;
 }
 
 message ExprColumnList {
@@ -2351,6 +2356,17 @@ message Select {
     SelectStatementCore select_core = 2;
     SetQuery set_query = 3;
   }
+}
+
+enum DatabaseEngineValues {
+  Atomic = 1;
+  Lazy = 2;
+  Replicated = 3;
+}
+
+message CreateDatabase {
+  required Database database = 1;
+  required DatabaseEngineValues engine = 2;
 }
 
 message Decimal {
@@ -2912,6 +2928,7 @@ message SQLQueryInner {
     CreateView create_view = 13;
     Attach attach = 14;
     Detach detach = 15;
+    CreateDatabase create_database = 16;
   }
 }
 

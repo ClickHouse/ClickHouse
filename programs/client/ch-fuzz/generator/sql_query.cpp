@@ -105,7 +105,7 @@ int StatementGenerator::GenerateFromElement(RandomGenerator &rg, const uint32_t 
 			sql_query_grammar::JoinedTable *jt = tos->mutable_joined_table();
 			const auto &next_cte = rg.PickValueRandomlyFromMap(rg.PickValueRandomlyFromMap(this->ctes));
 
-			jt->mutable_est()->mutable_table_name()->set_table(next_cte.name);
+			jt->mutable_est()->mutable_table()->set_table(next_cte.name);
 			for (const auto &entry : next_cte.cols) {
 				rel.cols.push_back(entry);
 			}
@@ -115,7 +115,7 @@ int StatementGenerator::GenerateFromElement(RandomGenerator &rg, const uint32_t 
 			sql_query_grammar::JoinedTable *jt = tos->mutable_joined_table();
 			const SQLTable &t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
 
-			jt->mutable_est()->mutable_table_name()->set_table("t" + std::to_string(t.tname));
+			jt->mutable_est()->mutable_table()->set_table("t" + std::to_string(t.tname));
 			jt->mutable_table_alias()->set_table(name);
 			jt->set_final(t.SupportsFinal() && rg.NextSmallNumber() < 3);
 			AddTableRelation(rg, true, name, t);
@@ -124,7 +124,7 @@ int StatementGenerator::GenerateFromElement(RandomGenerator &rg, const uint32_t 
 			sql_query_grammar::JoinedTable *jt = tos->mutable_joined_table();
 			const SQLView &v = rg.PickRandomlyFromVector(FilterCollection<SQLView>(attached_views));
 
-			jt->mutable_est()->mutable_table_name()->set_table("v" + std::to_string(v.vname));
+			jt->mutable_est()->mutable_table()->set_table("v" + std::to_string(v.vname));
 			jt->mutable_table_alias()->set_table(name);
 			jt->set_final(!v.is_materialized && rg.NextSmallNumber() < 3);
 			for (uint32_t i = 0 ; i < v.ncols; i++) {

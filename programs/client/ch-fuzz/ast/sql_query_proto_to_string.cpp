@@ -40,6 +40,10 @@ CONV_FN(Constraint, constr) {
   ret += constr.constraint();
 }
 
+CONV_FN(Database, db) {
+  ret += db.database();
+}
+
 CONV_FN(Table, table) {
   ret += table.table();
 }
@@ -120,11 +124,11 @@ void ConvertToSqlString(std::string &ret, const std::string& s) {
 }
 
 CONV_FN(ExprSchemaTable, st) {
-  /*if (st.has_schema_name()) {
-    ret += SchemaToString(st.schema_name());
+  if (st.has_database()) {
+    DatabaseToString(ret, st.database());
     ret += ".";
-  }*/
-  TableToString(ret, st.table_name());
+  }
+  TableToString(ret, st.table());
 }
 
 CONV_FN_QUOTE(TypeName, top);
@@ -208,10 +212,10 @@ CONV_FN(ExprColumn, ec) {
 }
 
 CONV_FN(ExprSchemaTableColumn, stc) {
-  /*if (stc.has_schema()) {
-    ret += SchemaToString(stc.schema());
+  if (stc.has_database()) {
+    DatabaseToString(ret, stc.database());
     ret += ".";
-  }*/
+  }
   if (stc.has_table()) {
     TableToString(ret, stc.table());
     ret += ".";
@@ -1646,6 +1650,18 @@ CONV_FN(SettingValues, setv) {
   }
 }
 
+CONV_FN(CreateDatabase, create_database) {
+  const sql_query_grammar::DatabaseEngineValues dengine = create_database.engine();
+
+  ret += "CREATE DATABASE ";
+  DatabaseToString(ret, create_database.database());
+  ret += " ENGINE = ";
+  ret += DatabaseEngineValues_Name(dengine);
+  if (dengine == sql_query_grammar::DatabaseEngineValues::Replicated) {
+    ret += "('/test/db', 's1', 'r1')";
+  }
+}
+
 CONV_FN(ColumnDef, cdf) {
   ColumnToString(ret, true, cdf.col());
   ret += " ";
@@ -2357,6 +2373,9 @@ CONV_FN(SQLQueryInner, query) {
       break;
     case QueryType::kDetach:
       DetachToString(ret, query.detach());
+      break;
+    case QueryType::kCreateDatabase:
+      CreateDatabaseToString(ret, query.create_database());
       break;
     default:
       ret += "SELECT 1";
