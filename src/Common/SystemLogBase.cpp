@@ -157,7 +157,8 @@ void SystemLogQueue<LogElement>::waitFlush(SystemLogQueue<LogElement>::Index exp
     {
         if (should_prepare_tables_anyway)
             return (flushed_index >= expected_flushed_index && prepared_tables >= requested_prepare_tables) || is_shutdown;
-        return (flushed_index >= expected_flushed_index) || is_shutdown;
+        else
+            return (flushed_index >= expected_flushed_index) || is_shutdown;
     });
 
     if (!result)

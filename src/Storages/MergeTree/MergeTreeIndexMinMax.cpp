@@ -207,7 +207,7 @@ MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const IDataPart
 {
     if (data_part_storage.exists(relative_path_prefix + ".idx2"))
         return {2, ".idx2"};
-    if (data_part_storage.exists(relative_path_prefix + ".idx"))
+    else if (data_part_storage.exists(relative_path_prefix + ".idx"))
         return {1, ".idx"};
     return {0 /* unknown */, ""};
 }

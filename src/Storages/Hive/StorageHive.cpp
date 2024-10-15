@@ -254,13 +254,14 @@ public:
                             return std::make_unique<AsynchronousReadBufferFromHDFS>(
                                 getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER), read_settings, std::move(buf));
                         }
-
-                        return std::make_unique<ReadBufferFromHDFS>(
-                            hdfs_namenode_url,
-                            current_path,
-                            getContext()->getGlobalContext()->getConfigRef(),
-                            getContext()->getReadSettings());
-
+                        else
+                        {
+                            return std::make_unique<ReadBufferFromHDFS>(
+                                hdfs_namenode_url,
+                                current_path,
+                                getContext()->getGlobalContext()->getConfigRef(),
+                                getContext()->getReadSettings());
+                        }
                     };
 
                     raw_read_buf = get_raw_read_buf();
@@ -556,11 +557,13 @@ ASTPtr StorageHive::extractKeyExpressionList(const ASTPtr & node)
         /// Primary key is specified in tuple, extract its arguments.
         return expr_func->arguments->clone();
     }
-
-    /// Primary key consists of one column.
-    auto res = std::make_shared<ASTExpressionList>();
-    res->children.push_back(node);
-    return res;
+    else
+    {
+        /// Primary key consists of one column.
+        auto res = std::make_shared<ASTExpressionList>();
+        res->children.push_back(node);
+        return res;
+    }
 }
 
 
@@ -871,7 +874,7 @@ void StorageHive::read(
     {
         if (format_name == "Parquet")
             return settings[Setting::input_format_parquet_case_insensitive_column_matching];
-        if (format_name == "ORC")
+        else if (format_name == "ORC")
             return settings[Setting::input_format_orc_case_insensitive_column_matching];
         return false;
     };

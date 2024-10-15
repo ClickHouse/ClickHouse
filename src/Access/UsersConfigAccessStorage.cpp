@@ -28,7 +28,6 @@
 #include <cstring>
 #include <filesystem>
 #include <base/FnTraits.h>
-#include <base/range.h>
 
 
 namespace DB
@@ -649,7 +648,8 @@ namespace
                 {
                     if (users_without_row_policies_can_read_rows)
                         continue;
-                    filter = "1";
+                    else
+                        filter = "1";
                 }
 
                 auto policy = std::make_shared<RowPolicy>();

@@ -12,7 +12,7 @@ class StatisticsMinMax : public IStatistics
 public:
     StatisticsMinMax(const SingleStatisticsDescription & statistics_description, const DataTypePtr & data_type_);
 
-    void build(const ColumnPtr & column) override;
+    void update(const ColumnPtr & column) override;
 
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf) override;

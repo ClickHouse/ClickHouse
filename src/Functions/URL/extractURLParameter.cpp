@@ -55,9 +55,11 @@ struct ExtractURLParameterImpl
                         param_begin += param_len;
                         continue;
                     }
-
-                    param_begin += param_len;
-                    break;
+                    else
+                    {
+                        param_begin += param_len;
+                        break;
+                    }
                 }
             }
 

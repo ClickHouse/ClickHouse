@@ -142,7 +142,8 @@ String ReadBufferIterator::getLastFilePath() const
 {
     if (current_object_info)
         return current_object_info->getPath();
-    return "";
+    else
+        return "";
 }
 
 std::unique_ptr<ReadBuffer> ReadBufferIterator::recreateLastReadBuffer()

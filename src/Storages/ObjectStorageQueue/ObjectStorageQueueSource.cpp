@@ -321,35 +321,43 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                 /// Bucket is already acquired, process the file.
                 return std::pair{object_info, current_bucket_holder->getBucketInfo()};
             }
-
-            auto acquired_bucket = metadata->tryAcquireBucket(bucket, current_processor);
-            if (acquired_bucket)
+            else
             {
-                bucket_holder_it->second.push_back(acquired_bucket);
-                current_bucket_holder = bucket_holder_it->second.back().get();
-
-                bucket_cache.processor = current_processor;
-                if (!bucket_cache.keys.empty())
+                auto acquired_bucket = metadata->tryAcquireBucket(bucket, current_processor);
+                if (acquired_bucket)
                 {
-                    /// We have to maintain ordering between keys,
-                    /// so if some keys are already in cache - start with them.
-                    bucket_cache.keys.emplace_back(object_info);
-                    object_info = bucket_cache.keys.front();
-                    bucket_cache.keys.pop_front();
+                    bucket_holder_it->second.push_back(acquired_bucket);
+                    current_bucket_holder = bucket_holder_it->second.back().get();
+
+                    bucket_cache.processor = current_processor;
+                    if (!bucket_cache.keys.empty())
+                    {
+                        /// We have to maintain ordering between keys,
+                        /// so if some keys are already in cache - start with them.
+                        bucket_cache.keys.emplace_back(object_info);
+                        object_info = bucket_cache.keys.front();
+                        bucket_cache.keys.pop_front();
+                    }
+                    return std::pair{object_info, current_bucket_holder->getBucketInfo()};
                 }
-                return std::pair{object_info, current_bucket_holder->getBucketInfo()};
+                else
+                {
+                    LOG_TEST(log, "Bucket {} is already locked for processing", bucket);
+                    bucket_cache.keys.emplace_back(object_info);
+                    continue;
+                }
             }
-
-            LOG_TEST(log, "Bucket {} is already locked for processing", bucket);
-            bucket_cache.keys.emplace_back(object_info);
-            continue;
         }
+        else
+        {
+            LOG_TEST(log, "Reached the end of file iterator");
+            iterator_finished = true;
 
-        LOG_TEST(log, "Reached the end of file iterator");
-        iterator_finished = true;
-
-        if (listed_keys_cache.empty())
-            return {};
+            if (listed_keys_cache.empty())
+                return {};
+            else
+                continue;
+        }
     }
 }
 
@@ -582,27 +590,20 @@ Chunk ObjectStorageQueueSource::generateImpl()
                       total_processed_rows, total_processed_bytes, processed_files.size());
             break;
         }
-        if (queue_settings.max_processed_bytes_before_commit && total_processed_bytes == queue_settings.max_processed_bytes_before_commit)
+        else if (queue_settings.max_processed_bytes_before_commit
+                 && total_processed_bytes == queue_settings.max_processed_bytes_before_commit)
         {
-            LOG_TRACE(
-                log,
-                "Number of max processed bytes before commit reached "
-                "(rows: {}, bytes: {}, files: {})",
-                total_processed_rows,
-                total_processed_bytes,
-                processed_files.size());
+            LOG_TRACE(log, "Number of max processed bytes before commit reached "
+                      "(rows: {}, bytes: {}, files: {})",
+                      total_processed_rows, total_processed_bytes, processed_files.size());
             break;
         }
-        if (queue_settings.max_processing_time_sec_before_commit
-            && total_stopwatch.elapsedSeconds() >= queue_settings.max_processing_time_sec_before_commit)
+        else if (queue_settings.max_processing_time_sec_before_commit
+                 && total_stopwatch.elapsedSeconds() >= queue_settings.max_processing_time_sec_before_commit)
         {
-            LOG_TRACE(
-                log,
-                "Max processing time before commit reached "
-                "(rows: {}, bytes: {}, files: {})",
-                total_processed_rows,
-                total_processed_bytes,
-                processed_files.size());
+            LOG_TRACE(log, "Max processing time before commit reached "
+                      "(rows: {}, bytes: {}, files: {})",
+                      total_processed_rows, total_processed_bytes, processed_files.size());
             break;
         }
     }

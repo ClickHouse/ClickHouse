@@ -222,7 +222,7 @@ class ClickHouseVersion:
         for part in ("major", "minor", "patch", "tweak"):
             if getattr(self, part) < getattr(other, part):
                 return True
-            if getattr(self, part) > getattr(other, part):
+            elif getattr(self, part) > getattr(other, part):
                 return False
 
         return False

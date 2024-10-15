@@ -80,15 +80,21 @@ SortingStep::SortingStep(
     const DataStream & input_stream,
     SortDescription description_,
     UInt64 limit_,
-    const Settings & settings_)
+    const Settings & settings_,
+    bool optimize_sorting_by_input_stream_properties_)
     : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
     , type(Type::Full)
     , result_description(std::move(description_))
     , limit(limit_)
     , sort_settings(settings_)
+    , optimize_sorting_by_input_stream_properties(optimize_sorting_by_input_stream_properties_)
 {
     if (sort_settings.max_bytes_before_external_sort && sort_settings.tmp_data == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage for external sorting is not provided");
+
+    /// TODO: check input_stream is partially sorted by the same description.
+    output_stream->sort_description = result_description;
+    output_stream->sort_scope = DataStream::SortScope::Global;
 }
 
 SortingStep::SortingStep(
@@ -96,10 +102,14 @@ SortingStep::SortingStep(
         const SortDescription & description_,
         const SortDescription & partition_by_description_,
         UInt64 limit_,
-        const Settings & settings_)
-    : SortingStep(input_stream, description_, limit_, settings_)
+        const Settings & settings_,
+        bool optimize_sorting_by_input_stream_properties_)
+    : SortingStep(input_stream, description_, limit_, settings_, optimize_sorting_by_input_stream_properties_)
 {
     partition_by_description = partition_by_description_;
+
+    output_stream->sort_description = result_description;
+    output_stream->sort_scope = DataStream::SortScope::Stream;
 }
 
 SortingStep::SortingStep(
@@ -115,6 +125,9 @@ SortingStep::SortingStep(
     , limit(limit_)
     , sort_settings(max_block_size_)
 {
+    /// TODO: check input_stream is sorted by prefix_description.
+    output_stream->sort_description = result_description;
+    output_stream->sort_scope = DataStream::SortScope::Global;
 }
 
 SortingStep::SortingStep(
@@ -131,11 +144,20 @@ SortingStep::SortingStep(
     , sort_settings(max_block_size_)
 {
     sort_settings.max_block_size = max_block_size_;
+    /// TODO: check input_stream is partially sorted (each port) by the same description.
+    output_stream->sort_description = result_description;
+    output_stream->sort_scope = DataStream::SortScope::Global;
 }
 
 void SortingStep::updateOutputStream()
 {
     output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
+    output_stream->sort_description = result_description;
+
+    if (partition_by_description.empty())
+        output_stream->sort_scope = DataStream::SortScope::Global;
+    else
+        output_stream->sort_scope = DataStream::SortScope::Stream;
 }
 
 void SortingStep::updateLimit(size_t limit_)
@@ -379,6 +401,39 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
             finishSorting(pipeline, prefix_description, result_description, limit);
 
         return;
+    }
+
+    const auto input_sort_mode = input_streams.front().sort_scope;
+    const SortDescription & input_sort_desc = input_streams.front().sort_description;
+    if (optimize_sorting_by_input_stream_properties)
+    {
+        /// skip sorting if stream is already sorted
+        if (input_sort_mode == DataStream::SortScope::Global && input_sort_desc.hasPrefix(result_description))
+        {
+            if (pipeline.getNumStreams() != 1)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "If input stream is globally sorted then there should be only 1 input stream at this stage. Number of input streams: "
+                    "{}",
+                    pipeline.getNumStreams());
+
+            return;
+        }
+
+        /// merge sorted
+        if (input_sort_mode == DataStream::SortScope::Stream && input_sort_desc.hasPrefix(result_description))
+        {
+            mergingSorted(pipeline, result_description, limit);
+            return;
+        }
+
+        /// if chunks already sorted according to result_sort_desc, then we can skip chunk sorting
+        if (input_sort_mode == DataStream::SortScope::Chunk && input_sort_desc.hasPrefix(result_description))
+        {
+            const bool skip_partial_sort = true;
+            fullSort(pipeline, result_description, limit, skip_partial_sort);
+            return;
+        }
     }
 
     fullSort(pipeline, result_description, limit);

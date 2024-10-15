@@ -427,9 +427,11 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
 
     if (outcome.IsSuccess())
         return outcome.GetResultWithOwnership();
-
-    const auto & error = outcome.GetError();
-    throw S3Exception(error.GetMessage(), error.GetErrorType());
+    else
+    {
+        const auto & error = outcome.GetError();
+        throw S3Exception(error.GetMessage(), error.GetErrorType());
+    }
 }
 
 }
