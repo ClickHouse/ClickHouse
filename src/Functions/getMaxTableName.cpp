@@ -31,9 +31,7 @@ public:
     }
 
     explicit FunctionGetMaxTableName(ContextPtr context_):WithContext(context_)
-    {
-
-    }
+    { }
 
     String getName() const override
     {
@@ -111,6 +109,7 @@ public:
 REGISTER_FUNCTION(getMaxTableName)
 {
     factory.registerFunction<FunctionGetMaxTableName>();
+    factory.registerAlias("getMaxTableName", "getMaxTableNameForDatabase", FunctionFactory::Case::Insensitive);
 }
 
 }
