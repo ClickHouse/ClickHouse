@@ -119,6 +119,9 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
 
     for (const auto & table_name : tables_to_replicate)
     {
+        if (shutdown_called)
+            return;
+
         /// Check nested ReplacingMergeTree table.
         auto storage = DatabaseAtomic::tryGetTable(table_name, getContext());
 

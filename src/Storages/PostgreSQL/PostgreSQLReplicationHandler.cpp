@@ -160,8 +160,8 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     LOG_INFO(log, "Using replication slot {} and publication {}", replication_slot, doubleQuoteString(publication_name));
 
     startup_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ checkConnectionAndStart(); });
-    consumer_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ consumerFunc(); });
-    cleanup_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ cleanupFunc(); });
+    consumer_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaConsume", [this]{ consumerFunc(); });
+    cleanup_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaCleanup", [this]{ cleanupFunc(); });
 }
 
 
@@ -228,6 +228,9 @@ void PostgreSQLReplicationHandler::checkConnectionAndStart()
         if (!is_attach)
             throw;
 
+        if (stop_synchronization)
+            return;
+
         LOG_ERROR(log, "Unable to set up connection. Reconnection attempt will continue. Error message: {}", pqxx_error.what());
         startup_task->scheduleAfter(milliseconds_to_wait);
     }
@@ -244,9 +247,17 @@ void PostgreSQLReplicationHandler::checkConnectionAndStart()
 void PostgreSQLReplicationHandler::shutdown()
 {
     stop_synchronization.store(true);
+
+    LOG_TRACE(log, "Deactivating startup task");
     startup_task->deactivate();
+
+    LOG_TRACE(log, "Deactivating consumer task");
     consumer_task->deactivate();
+
+    LOG_TRACE(log, "Deactivating cleanup task");
     cleanup_task->deactivate();
+
+    LOG_TRACE(log, "Resetting consumer");
     consumer.reset(); /// Clear shared pointers to inner storages.
 }
 
@@ -493,7 +504,9 @@ void PostgreSQLReplicationHandler::cleanupFunc()
         if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
             dropReplicationSlot(tx, /* temporary */true);
     });
-    cleanup_task->scheduleAfter(CLEANUP_RESCHEDULE_MS);
+
+    if (!stop_synchronization)
+        cleanup_task->scheduleAfter(CLEANUP_RESCHEDULE_MS);
 }
 
 PostgreSQLReplicationHandler::ConsumerPtr PostgreSQLReplicationHandler::getConsumer()
