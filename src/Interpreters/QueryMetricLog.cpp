@@ -103,7 +103,10 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_t
         auto current_time = std::chrono::system_clock::now();
         const auto query_info = process_list.getQueryInfo(query_id, false, true, false);
         if (!query_info)
+        {
+            LOG_TRACE(logger, "Query {} is not running anymore, so we couldn't get its QueryInfo", query_id);
             return;
+        }
 
         auto elem = createLogMetricElement(query_id, *query_info, current_time);
         if (elem)
@@ -158,11 +161,15 @@ void QueryMetricLog::finishQuery(const String & query_id, QueryStatusInfoPtr que
 std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint current_time, bool schedule_next)
 {
     std::lock_guard lock(queries_mutex);
+    LOG_DEBUG(logger, "Collecting query_metric_log for query {}. Schedule next: {}", query_id, schedule_next);
     auto query_status_it = queries.find(query_id);
 
     /// The query might have finished while the scheduled task is running.
     if (query_status_it == queries.end())
+    {
+        LOG_TRACE(logger, "Query {} finished already while this collecting task was running", query_id);
         return {};
+    }
 
     QueryMetricLogElement elem;
     elem.event_time = timeInSeconds(current_time);
