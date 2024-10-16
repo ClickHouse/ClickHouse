@@ -551,7 +551,7 @@ struct ColumnTuple::Less
                 res = column->compareAt(a, b, *column, nan_direction_hint);
             if (res < 0)
                 return positive;
-            else if (res > 0)
+            if (res > 0)
                 return !positive;
         }
         return false;
@@ -734,8 +734,7 @@ bool ColumnTuple::structureEquals(const IColumn & rhs) const
 
         return true;
     }
-    else
-        return false;
+    return false;
 }
 
 bool ColumnTuple::isCollationSupported() const
@@ -801,9 +800,11 @@ ColumnPtr ColumnTuple::compress() const
     return ColumnCompressed::create(size(), byte_size,
         [my_compressed = std::move(compressed)]() mutable
         {
-            for (auto & column : my_compressed)
-                column = column->decompress();
-            return ColumnTuple::create(my_compressed);
+            Columns decompressed;
+            decompressed.reserve(my_compressed.size());
+            for (const auto & column : my_compressed)
+                decompressed.push_back(column->decompress());
+            return ColumnTuple::create(decompressed);
         });
 }
 

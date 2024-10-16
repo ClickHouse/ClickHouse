@@ -11,7 +11,6 @@
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
-#include <Common/Jemalloc.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
@@ -25,6 +24,7 @@
 #include <base/Numa.h>
 #include <Common/PoolId.h>
 #include <Common/MemoryTracker.h>
+#include <Common/MemoryWorker.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
@@ -36,7 +36,7 @@
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/formatReadable.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/getExecutablePath.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Scheduler/IResourceManager.h>
@@ -69,6 +69,7 @@
 #include <Interpreters/registerInterpreters.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControl.h>
+#include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
@@ -111,6 +112,8 @@
 #include <filesystem>
 #include <unordered_set>
 
+#include <Common/Jemalloc.h>
+
 #include "config.h"
 #include <Common/config_version.h>
 
@@ -145,6 +148,23 @@
 #include <incbin.h>
 /// A minimal file used when the server is run without installation
 INCBIN(resource_embedded_xml, SOURCE_DIR "/programs/server/embedded.xml");
+
+namespace DB
+{
+namespace Setting
+{
+    extern const SettingsSeconds http_receive_timeout;
+    extern const SettingsSeconds http_send_timeout;
+    extern const SettingsSeconds receive_timeout;
+    extern const SettingsSeconds send_timeout;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
+}
+
+}
 
 namespace CurrentMetrics
 {
@@ -449,9 +469,12 @@ void checkForUsersNotInMainConfig(
     }
 }
 
+namespace
+{
+
 /// Unused in other builds
 #if defined(OS_LINUX)
-static String readLine(const String & path)
+String readLine(const String & path)
 {
     ReadBufferFromFile in(path);
     String contents;
@@ -459,7 +482,7 @@ static String readLine(const String & path)
     return contents;
 }
 
-static int readNumber(const String & path)
+int readNumber(const String & path)
 {
     ReadBufferFromFile in(path);
     int result;
@@ -469,7 +492,7 @@ static int readNumber(const String & path)
 
 #endif
 
-static void sanityChecks(Server & server)
+void sanityChecks(Server & server)
 {
     std::string data_path = getCanonicalPath(server.config().getString("path", DBMS_DEFAULT_PATH));
     std::string logs_path = server.config().getString("logger.log", "");
@@ -582,12 +605,14 @@ static void sanityChecks(Server & server)
     {
     }
 
-    if (server.context()->getMergeTreeSettings().allow_remote_fs_zero_copy_replication)
+    if (server.context()->getMergeTreeSettings()[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
     {
         server.context()->addWarningMessage("The setting 'allow_remote_fs_zero_copy_replication' is enabled for MergeTree tables."
             " But the feature of 'zero-copy replication' is under development and is not ready for production."
             " The usage of this feature can lead to data corruption and loss. The setting should be disabled in production.");
     }
+}
+
 }
 
 void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, ContextMutablePtr context, Poco::Logger * log)
@@ -609,7 +634,9 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
                 auto condition_write_buffer = WriteBufferFromOwnString();
 
                 LOG_DEBUG(log, "Checking startup query condition `{}`", condition);
-                executeQuery(condition_read_buffer, condition_write_buffer, true, context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
+                auto startup_context = Context::createCopy(context);
+                startup_context->makeQueryContext();
+                executeQuery(condition_read_buffer, condition_write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
 
                 auto result = condition_write_buffer.str();
 
@@ -629,7 +656,9 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
             auto write_buffer = WriteBufferFromOwnString();
 
             LOG_DEBUG(log, "Executing query `{}`", query);
-            executeQuery(read_buffer, write_buffer, true, context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
+            auto startup_context = Context::createCopy(context);
+            startup_context->makeQueryContext();
+            executeQuery(read_buffer, write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
     }
     catch (...)
@@ -765,10 +794,10 @@ try
     registerInterpreters();
     registerFunctions();
     registerAggregateFunctions();
-    registerTableFunctions();
+    registerTableFunctions(server_settings.use_legacy_mongodb_integration);
     registerDatabases();
-    registerStorages();
-    registerDictionaries();
+    registerStorages(server_settings.use_legacy_mongodb_integration);
+    registerDictionaries(server_settings.use_legacy_mongodb_integration);
     registerDisks(/* global_skip_access_check= */ false);
     registerFormats();
     registerRemoteFileMetadatas();
@@ -814,11 +843,13 @@ try
 
     const size_t physical_server_memory = getMemoryAmount();
 
-    LOG_INFO(log, "Available RAM: {}; logical cores: {}; used cores: {}.",
+    LOG_INFO(
+        log,
+        "Available RAM: {}; logical cores: {}; used cores: {}.",
         formatReadableSizeWithBinarySuffix(physical_server_memory),
         std::thread::hardware_concurrency(),
-        getNumberOfPhysicalCPUCores()  // on ARM processors it can show only enabled at current moment cores
-        );
+        getNumberOfCPUCoresToUse() // on ARM processors it can show only enabled at current moment cores
+    );
 
 #if defined(__x86_64__)
     String cpu_info;
@@ -906,6 +937,8 @@ try
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
 
+    MemoryWorker memory_worker(global_context->getServerSettings().memory_worker_period_ms);
+
     /// This object will periodically calculate some metrics.
     ServerAsynchronousMetrics async_metrics(
         global_context,
@@ -924,8 +957,9 @@ try
             for (const auto & server : servers)
                 metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
             return metrics;
-        }
-    );
+        },
+        /*update_jemalloc_epoch_=*/memory_worker.getSource() != MemoryWorker::MemoryUsageSource::Jemalloc,
+        /*update_rss_=*/memory_worker.getSource() == MemoryWorker::MemoryUsageSource::None);
 
     /// NOTE: global context should be destroyed *before* GlobalThreadPool::shutdown()
     /// Otherwise GlobalThreadPool::shutdown() will hang, since Context holds some threads.
@@ -1038,8 +1072,9 @@ try
         0, // We don't need any threads one all the parts will be deleted
         server_settings.max_parts_cleaning_thread_pool_size);
 
-    auto max_database_replicated_create_table_thread_pool_size = server_settings.max_database_replicated_create_table_thread_pool_size ?
-        server_settings.max_database_replicated_create_table_thread_pool_size : getNumberOfPhysicalCPUCores();
+    auto max_database_replicated_create_table_thread_pool_size = server_settings.max_database_replicated_create_table_thread_pool_size
+        ? server_settings.max_database_replicated_create_table_thread_pool_size
+        : getNumberOfCPUCoresToUse();
     getDatabaseReplicatedCreateTablesThreadPool().initialize(
         max_database_replicated_create_table_thread_pool_size,
         0, // We don't need any threads once all the tables will be created
@@ -1099,9 +1134,6 @@ try
 
     /// We need to reload server settings because config could be updated via zookeeper.
     server_settings.loadSettingsFromConfig(config());
-
-    /// NOTE: Do sanity checks after we loaded all possible substitutions (for the configuration) from ZK
-    sanityChecks(*this);
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
@@ -1203,6 +1235,8 @@ try
     }
 
     FailPointInjection::enableFromGlobalConfig(config());
+
+    memory_worker.start();
 
     int default_oom_score = 0;
 
@@ -1462,6 +1496,8 @@ try
 
     NamedCollectionFactory::instance().loadIfNot();
 
+    FileCacheFactory::instance().loadDefaultCaches(config());
+
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
 
@@ -1547,15 +1583,6 @@ try
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
-            if (cgroups_memory_usage_observer)
-            {
-                double hard_limit_ratio = new_server_settings.cgroup_memory_watcher_hard_limit_ratio;
-                double soft_limit_ratio = new_server_settings.cgroup_memory_watcher_soft_limit_ratio;
-                cgroups_memory_usage_observer->setMemoryUsageLimits(
-                    static_cast<uint64_t>(max_server_memory_usage * hard_limit_ratio),
-                    static_cast<uint64_t>(max_server_memory_usage * soft_limit_ratio));
-            }
-
             size_t merges_mutations_memory_usage_soft_limit = new_server_settings.merges_mutations_memory_usage_soft_limit;
 
             size_t default_merges_mutations_server_memory_usage = static_cast<size_t>(current_physical_server_memory * new_server_settings.merges_mutations_memory_usage_to_ram_ratio);
@@ -1583,8 +1610,6 @@ try
             background_memory_tracker.setSoftLimit(merges_mutations_memory_usage_soft_limit);
             background_memory_tracker.setDescription("(background)");
             background_memory_tracker.setMetric(CurrentMetrics::MergesMutationsMemoryTracking);
-
-            total_memory_tracker.setAllowUseJemallocMemory(new_server_settings.allow_use_jemalloc_memory);
 
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
             total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);
@@ -1625,7 +1650,7 @@ try
                 concurrent_threads_soft_limit = new_server_settings.concurrent_threads_soft_limit_num;
             if (new_server_settings.concurrent_threads_soft_limit_ratio_to_cores > 0)
             {
-                auto value = new_server_settings.concurrent_threads_soft_limit_ratio_to_cores * getNumberOfPhysicalCPUCores();
+                auto value = new_server_settings.concurrent_threads_soft_limit_ratio_to_cores * getNumberOfCPUCoresToUse();
                 if (value > 0 && value < concurrent_threads_soft_limit)
                     concurrent_threads_soft_limit = value;
             }
@@ -1830,10 +1855,13 @@ try
                         "Keeper (tcp): " + address.toString(),
                         std::make_unique<TCPServer>(
                             new KeeperTCPHandlerFactory(
-                                config_getter, global_context->getKeeperDispatcher(),
-                                global_context->getSettingsRef().receive_timeout.totalSeconds(),
-                                global_context->getSettingsRef().send_timeout.totalSeconds(),
-                                false), server_pool, socket));
+                                config_getter,
+                                global_context->getKeeperDispatcher(),
+                                global_context->getSettingsRef()[Setting::receive_timeout].totalSeconds(),
+                                global_context->getSettingsRef()[Setting::send_timeout].totalSeconds(),
+                                false),
+                            server_pool,
+                            socket));
                 });
 
             const char * secure_port_name = "keeper_server.tcp_port_secure";
@@ -1853,9 +1881,13 @@ try
                         "Keeper with secure protocol (tcp_secure): " + address.toString(),
                         std::make_unique<TCPServer>(
                             new KeeperTCPHandlerFactory(
-                                config_getter, global_context->getKeeperDispatcher(),
-                                global_context->getSettingsRef().receive_timeout.totalSeconds(),
-                                global_context->getSettingsRef().send_timeout.totalSeconds(), true), server_pool, socket));
+                                config_getter,
+                                global_context->getKeeperDispatcher(),
+                                global_context->getSettingsRef()[Setting::receive_timeout].totalSeconds(),
+                                global_context->getSettingsRef()[Setting::send_timeout].totalSeconds(),
+                                true),
+                            server_pool,
+                            socket));
 #else
                     UNUSED(port);
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
@@ -1996,6 +2028,11 @@ try
     if (!filesystem_caches_path.empty())
         global_context->setFilesystemCachesPath(filesystem_caches_path);
 
+    /// NOTE: Do sanity checks after we loaded all possible substitutions (for the configuration) from ZK
+    /// Additionally, making the check after the default profile is initialized.
+    /// It is important to initialize MergeTreeSettings after Settings, to support compatibility for MergeTreeSettings.
+    sanityChecks(*this);
+
     /// Check sanity of MergeTreeSettings on server startup
     {
         size_t background_pool_tasks = global_context->getMergeMutateExecutor()->getMaxTasksCount();
@@ -2049,6 +2086,12 @@ try
 
     try
     {
+        /// Don't run background queries until we loaded tables.
+        /// (In particular things would break if a background drop query happens before the
+        /// loadMarkedAsDroppedTables() call below - it'll see dropped table metadata and try to
+        /// drop the table a second time and throw an exception.)
+        global_context->getRefreshSet().setRefreshesStopped(true);
+
         auto & database_catalog = DatabaseCatalog::instance();
         /// We load temporary database first, because projections need it.
         database_catalog.initializeAndLoadTemporaryDatabase();
@@ -2088,6 +2131,8 @@ try
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
         global_context->getUserDefinedSQLObjectsStorage().loadObjects();
+
+        global_context->getRefreshSet().setRefreshesStopped(false);
     }
     catch (...)
     {
@@ -2429,7 +2474,7 @@ void Server::createServers(
     const Settings & settings = global_context->getSettingsRef();
 
     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
-    http_params->setTimeout(settings.http_receive_timeout);
+    http_params->setTimeout(settings[Setting::http_receive_timeout]);
     http_params->setKeepAliveTimeout(global_context->getServerSettings().keep_alive_timeout);
     http_params->setMaxKeepAliveRequests(static_cast<int>(global_context->getServerSettings().max_keep_alive_requests));
 
@@ -2468,8 +2513,8 @@ void Server::createServers(
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(config, socket, host, port, is_secure);
-                socket.setReceiveTimeout(settings.receive_timeout);
-                socket.setSendTimeout(settings.send_timeout);
+                socket.setReceiveTimeout(settings[Setting::receive_timeout]);
+                socket.setSendTimeout(settings[Setting::send_timeout]);
 
                 return ProtocolServerAdapter(
                     host,
@@ -2496,8 +2541,8 @@ void Server::createServers(
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(config, socket, listen_host, port);
-                socket.setReceiveTimeout(settings.http_receive_timeout);
-                socket.setSendTimeout(settings.http_send_timeout);
+                socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                socket.setSendTimeout(settings[Setting::http_send_timeout]);
 
                 return ProtocolServerAdapter(
                     listen_host,
@@ -2517,8 +2562,8 @@ void Server::createServers(
 #if USE_SSL
                 Poco::Net::SecureServerSocket socket;
                 auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ true);
-                socket.setReceiveTimeout(settings.http_receive_timeout);
-                socket.setSendTimeout(settings.http_send_timeout);
+                socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                socket.setSendTimeout(settings[Setting::http_send_timeout]);
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
@@ -2540,8 +2585,8 @@ void Server::createServers(
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(config, socket, listen_host, port);
-                socket.setReceiveTimeout(settings.receive_timeout);
-                socket.setSendTimeout(settings.send_timeout);
+                socket.setReceiveTimeout(settings[Setting::receive_timeout]);
+                socket.setSendTimeout(settings[Setting::send_timeout]);
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
@@ -2562,8 +2607,8 @@ void Server::createServers(
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(config, socket, listen_host, port);
-                socket.setReceiveTimeout(settings.receive_timeout);
-                socket.setSendTimeout(settings.send_timeout);
+                socket.setReceiveTimeout(settings[Setting::receive_timeout]);
+                socket.setSendTimeout(settings[Setting::send_timeout]);
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
@@ -2585,8 +2630,8 @@ void Server::createServers(
     #if USE_SSL
                 Poco::Net::SecureServerSocket socket;
                 auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ true);
-                socket.setReceiveTimeout(settings.receive_timeout);
-                socket.setSendTimeout(settings.send_timeout);
+                socket.setReceiveTimeout(settings[Setting::receive_timeout]);
+                socket.setSendTimeout(settings[Setting::send_timeout]);
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
@@ -2611,7 +2656,7 @@ void Server::createServers(
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(Poco::Timespan());
-                socket.setSendTimeout(settings.send_timeout);
+                socket.setSendTimeout(settings[Setting::send_timeout]);
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
@@ -2628,7 +2673,7 @@ void Server::createServers(
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(Poco::Timespan());
-                socket.setSendTimeout(settings.send_timeout);
+                socket.setSendTimeout(settings[Setting::send_timeout]);
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
@@ -2660,8 +2705,8 @@ void Server::createServers(
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(config, socket, listen_host, port);
-                socket.setReceiveTimeout(settings.http_receive_timeout);
-                socket.setSendTimeout(settings.http_send_timeout);
+                socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                socket.setSendTimeout(settings[Setting::http_send_timeout]);
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
@@ -2686,7 +2731,7 @@ void Server::createInterserverServers(
     const Settings & settings = global_context->getSettingsRef();
 
     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
-    http_params->setTimeout(settings.http_receive_timeout);
+    http_params->setTimeout(settings[Setting::http_receive_timeout]);
     http_params->setKeepAliveTimeout(global_context->getServerSettings().keep_alive_timeout);
 
     /// Now iterate over interserver_listen_hosts
@@ -2702,8 +2747,8 @@ void Server::createInterserverServers(
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(config, socket, interserver_listen_host, port);
-                socket.setReceiveTimeout(settings.http_receive_timeout);
-                socket.setSendTimeout(settings.http_send_timeout);
+                socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                socket.setSendTimeout(settings[Setting::http_send_timeout]);
                 return ProtocolServerAdapter(
                     interserver_listen_host,
                     port_name,
@@ -2727,8 +2772,8 @@ void Server::createInterserverServers(
 #if USE_SSL
                 Poco::Net::SecureServerSocket socket;
                 auto address = socketBindListen(config, socket, interserver_listen_host, port, /* secure = */ true);
-                socket.setReceiveTimeout(settings.http_receive_timeout);
-                socket.setSendTimeout(settings.http_send_timeout);
+                socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                socket.setSendTimeout(settings[Setting::http_send_timeout]);
                 return ProtocolServerAdapter(
                     interserver_listen_host,
                     port_name,

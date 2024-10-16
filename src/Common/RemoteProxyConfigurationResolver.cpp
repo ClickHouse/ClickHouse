@@ -31,7 +31,7 @@ std::string RemoteProxyHostFetcherImpl::fetch(const Poco::URI & endpoint, const 
             endpoint.toString(),
             response.getStatus(),
             response.getReason(),
-            "");
+            /* body_length = */ 0);
 
     std::string proxy_host;
     Poco::StreamCopier::copyToString(response_body_stream, proxy_host);

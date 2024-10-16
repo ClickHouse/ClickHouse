@@ -276,6 +276,9 @@ public:
 
         bool use_compact_variant_discriminators_serialization = false;
 
+        /// Serialize JSON column as single String column with serialized JSON values.
+        bool write_json_as_string = false;
+
         enum class ObjectAndDynamicStatisticsMode
         {
             NONE,   /// Don't write statistics.
@@ -456,6 +459,9 @@ public:
     /// Returns true if subcolumn doesn't actually stores any data in column and doesn't require a separate stream
     /// for writing/reading data. For example, it's a null-map subcolumn of Variant type (it's always constructed from discriminators);.
     static bool isEphemeralSubcolumn(const SubstreamPath & path, size_t prefix_len);
+
+    /// Returns true if stream with specified path corresponds to dynamic subcolumn.
+    static bool isDynamicSubcolumn(const SubstreamPath & path, size_t prefix_len);
 
 protected:
     template <typename State, typename StatePtr>

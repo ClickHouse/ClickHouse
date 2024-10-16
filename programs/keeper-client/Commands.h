@@ -184,7 +184,7 @@ class RMRCommand : public IKeeperClientCommand
 
     void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
 
-    String getHelpMessage() const override { return "{} <path> -- Recursively deletes path. Confirmation required"; }
+    String getHelpMessage() const override { return "{} <path> [limit] -- Recursively deletes path if the subtree size is smaller than the limit. Confirmation required (default limit = 100)"; }
 };
 
 class ReconfigCommand : public IKeeperClientCommand

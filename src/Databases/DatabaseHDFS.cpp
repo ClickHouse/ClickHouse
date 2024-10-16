@@ -15,6 +15,7 @@
 #include <Storages/IStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/re2.h>
+#include <Common/RemoteHostFilter.h>
 #include <Core/Settings.h>
 
 #include <Poco/URI.h>
@@ -25,6 +26,11 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 namespace ErrorCodes
 {
@@ -184,7 +190,8 @@ ASTPtr DatabaseHDFS::getCreateDatabaseQuery() const
     ParserCreateQuery parser;
 
     const String query = fmt::format("CREATE DATABASE {} ENGINE = HDFS('{}')", backQuoteIfNeed(getDatabaseName()), source);
-    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth, settings.max_parser_backtracks);
+    ASTPtr ast
+        = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
     {
@@ -253,7 +260,7 @@ void registerDatabaseHDFS(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseHDFS>(args.database_name, source_url, args.context);
     };
-    factory.registerDatabase("HDFS", create_fn);
+    factory.registerDatabase("HDFS", create_fn, {.supports_arguments = true});
 }
 } // DB
 

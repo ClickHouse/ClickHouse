@@ -95,7 +95,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     std::optional<std::map<String, String>> object_metadata_,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_,
     const WriteSettings & write_settings_)
-    : WriteBufferFromFileBase(buf_size_, nullptr, 0)
+    : WriteBufferFromFileBase(std::min(buf_size_, static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE)), nullptr, 0)
     , bucket(bucket_)
     , key(key_)
     , request_settings(request_settings_)
@@ -351,21 +351,21 @@ void WriteBufferFromS3::allocateBuffer()
     buffer_allocation_policy->nextBuffer();
     chassert(0 == hidden_size);
 
+    /// First buffer was already allocated in BufferWithOwnMemory constructor with provided in constructor buffer size.
+    /// It will be reallocated in subsequent nextImpl calls up to the desired buffer size from buffer_allocation_policy.
     if (buffer_allocation_policy->getBufferNumber() == 1)
     {
-        allocateFirstBuffer();
+        /// Reduce memory size if initial size was larger then desired size from buffer_allocation_policy.
+        /// Usually it doesn't happen but we have it in unit tests.
+        if (memory.size() > buffer_allocation_policy->getBufferSize())
+        {
+            memory.resize(buffer_allocation_policy->getBufferSize());
+            WriteBuffer::set(memory.data(), memory.size());
+        }
         return;
     }
 
     memory = Memory(buffer_allocation_policy->getBufferSize());
-    WriteBuffer::set(memory.data(), memory.size());
-}
-
-void WriteBufferFromS3::allocateFirstBuffer()
-{
-    const auto max_first_buffer = buffer_allocation_policy->getBufferSize();
-    const auto size = std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), max_first_buffer);
-    memory = Memory(size);
     WriteBuffer::set(memory.data(), memory.size());
 }
 

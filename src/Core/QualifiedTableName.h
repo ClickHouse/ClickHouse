@@ -44,16 +44,14 @@ struct QualifiedTableName
     {
         if (database.empty())
             return {table};
-        else
-            return {database, table};
+        return {database, table};
     }
 
     std::string getFullName() const
     {
         if (database.empty())
             return table;
-        else
-            return database + '.' + table;
+        return database + '.' + table;
     }
 
     /// NOTE: It's different from compound identifier parsing and does not support escaping and dots in name.

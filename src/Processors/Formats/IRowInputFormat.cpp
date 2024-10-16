@@ -56,7 +56,10 @@ bool isParseError(int code)
 }
 
 IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
-    : IInputFormat(std::move(header), &in_), serializations(getPort().getHeader().getSerializations()), params(params_)
+    : IInputFormat(std::move(header), &in_)
+    , serializations(getPort().getHeader().getSerializations())
+    , params(params_)
+    , block_missing_values(getPort().getHeader().columns())
 {
 }
 
@@ -103,7 +106,10 @@ Chunk IRowInputFormat::read()
     const Block & header = getPort().getHeader();
 
     size_t num_columns = header.columns();
-    MutableColumns columns = header.cloneEmptyColumns();
+    MutableColumns columns(num_columns);
+
+    for (size_t i = 0; i < num_columns; ++i)
+        columns[i] = header.getByPosition(i).type->createColumn(*serializations[i]);
 
     ColumnCheckpoints checkpoints(columns.size());
     for (size_t column_idx = 0; column_idx < columns.size(); ++column_idx)
@@ -266,6 +272,12 @@ void IRowInputFormat::resetParser()
 size_t IRowInputFormat::countRows(size_t)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method countRows is not implemented for input format {}", getName());
+}
+
+void IRowInputFormat::setSerializationHints(const SerializationInfoByName & hints)
+{
+    if (supportsCustomSerializations())
+        serializations = getPort().getHeader().getSerializations(hints);
 }
 
 

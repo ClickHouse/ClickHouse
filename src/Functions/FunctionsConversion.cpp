@@ -75,6 +75,15 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool cast_ipv4_ipv6_default_on_conversion_error;
+    extern const SettingsBool cast_string_to_dynamic_use_inference;
+    extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
+    extern const SettingsBool input_format_ipv4_default_on_conversion_error;
+    extern const SettingsBool input_format_ipv6_default_on_conversion_error;
+    extern const SettingsBool precise_float_parsing;
+}
 
 namespace ErrorCodes
 {
@@ -967,7 +976,7 @@ struct ConvertThroughParsing
             const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
 
             if (query_context)
-                precise_float_parsing = query_context->getSettingsRef().precise_float_parsing;
+                precise_float_parsing = query_context->getSettingsRef()[Setting::precise_float_parsing];
         }
 
         for (size_t i = 0; i < size; ++i)
@@ -2217,7 +2226,7 @@ private:
         FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior;
 
         if (context)
-            date_time_overflow_behavior = context->getSettingsRef().date_time_overflow_behavior.value;
+            date_time_overflow_behavior = context->getSettingsRef()[Setting::date_time_overflow_behavior].value;
 
         auto call = [&](const auto & types, BehaviourOnErrorFromString from_string_tag) -> bool
         {
@@ -2354,7 +2363,7 @@ private:
             bool cast_ipv4_ipv6_default_on_conversion_error = false;
             if constexpr (is_any_of<ToDataType, DataTypeIPv4, DataTypeIPv6>)
             {
-                if (context && (cast_ipv4_ipv6_default_on_conversion_error = context->getSettingsRef().cast_ipv4_ipv6_default_on_conversion_error))
+                if (context && (cast_ipv4_ipv6_default_on_conversion_error = context->getSettingsRef()[Setting::cast_ipv4_ipv6_default_on_conversion_error]))
                     done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertReturnZeroOnErrorTag);
             }
 
@@ -3226,7 +3235,7 @@ private:
 
         FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior;
         if (context)
-            date_time_overflow_behavior = context->getSettingsRef().date_time_overflow_behavior;
+            date_time_overflow_behavior = context->getSettingsRef()[Setting::date_time_overflow_behavior];
 
         if (requested_result_is_nullable && checkAndGetDataType<DataTypeString>(from_type.get()))
         {
@@ -4134,6 +4143,29 @@ private:
         };
     }
 
+    /// Create wrapper only if we support this conversion.
+    WrapperType createWrapperIfCanConvert(const DataTypePtr & from, const DataTypePtr & to) const
+    {
+        try
+        {
+            /// We can avoid try/catch here if we will implement check that 2 types can be casted, but it
+            /// requires quite a lot of work. By now let's simply use try/catch.
+            /// First, check that we can create a wrapper.
+            WrapperType wrapper = prepareUnpackDictionaries(from, to);
+            /// Second, check if we can perform a conversion on column with default value.
+            /// (we cannot just check empty column as we do some checks only during iteration over rows).
+            auto test_col = from->createColumn();
+            test_col->insertDefault();
+            ColumnsWithTypeAndName column_from = {{test_col->getPtr(), from, "" }};
+            wrapper(column_from, to, nullptr, 1);
+            return wrapper;
+        }
+        catch (const Exception &)
+        {
+            return {};
+        }
+    }
+
     WrapperType createVariantToColumnWrapper(const DataTypeVariant & from_variant, const DataTypePtr & to_type) const
     {
         const auto & variant_types = from_variant.getVariants();
@@ -4142,7 +4174,19 @@ private:
 
         /// Create conversion wrapper for each variant.
         for (const auto & variant_type : variant_types)
-            variant_wrappers.push_back(prepareUnpackDictionaries(variant_type, to_type));
+        {
+            WrapperType wrapper;
+            if (cast_type == CastType::accurateOrNull)
+            {
+                /// Create wrapper only if we support conversion from variant to the resulting type.
+                wrapper = createWrapperIfCanConvert(variant_type, to_type);
+            }
+            else
+            {
+                wrapper = prepareUnpackDictionaries(variant_type, to_type);
+            }
+            variant_wrappers.push_back(wrapper);
+        }
 
         return [variant_wrappers, variant_types, to_type]
                (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
@@ -4157,7 +4201,11 @@ private:
                 auto variant_col = column_variant.getVariantPtrByGlobalDiscriminator(i);
                 ColumnsWithTypeAndName variant = {{variant_col, variant_types[i], "" }};
                 const auto & variant_wrapper = variant_wrappers[i];
-                casted_variant_columns.push_back(variant_wrapper(variant, result_type, nullptr, variant_col->size()));
+                ColumnPtr casted_variant;
+                /// Check if we have wrapper for this variant.
+                if (variant_wrapper)
+                    casted_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
+                casted_variant_columns.push_back(std::move(casted_variant));
             }
 
             /// Second, construct resulting column from casted variant columns according to discriminators.
@@ -4167,7 +4215,7 @@ private:
             for (size_t i = 0; i != input_rows_count; ++i)
             {
                 auto global_discr = column_variant.globalDiscriminatorByLocal(local_discriminators[i]);
-                if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+                if (global_discr == ColumnVariant::NULL_DISCRIMINATOR || !casted_variant_columns[global_discr])
                     res->insertDefault();
                 else
                     res->insertFrom(*casted_variant_columns[global_discr], column_variant.offsetAt(i));
@@ -4357,10 +4405,27 @@ private:
             casted_variant_columns.reserve(variant_types.size());
             for (size_t i = 0; i != variant_types.size(); ++i)
             {
+                /// Skip shared variant, it will be processed later.
+                if (i == column_dynamic.getSharedVariantDiscriminator())
+                {
+                    casted_variant_columns.push_back(nullptr);
+                    continue;
+                }
+
                 const auto & variant_col = variant_column.getVariantPtrByGlobalDiscriminator(i);
                 ColumnsWithTypeAndName variant = {{variant_col, variant_types[i], ""}};
-                auto variant_wrapper = prepareUnpackDictionaries(variant_types[i], result_type);
-                casted_variant_columns.push_back(variant_wrapper(variant, result_type, nullptr, variant_col->size()));
+                WrapperType variant_wrapper;
+                if (cast_type == CastType::accurateOrNull)
+                    /// Create wrapper only if we support conversion from variant to the resulting type.
+                    variant_wrapper = createWrapperIfCanConvert(variant_types[i], result_type);
+                else
+                    variant_wrapper = prepareUnpackDictionaries(variant_types[i], result_type);
+
+                ColumnPtr casted_variant;
+                /// Check if we have wrapper for this variant.
+                if (variant_wrapper)
+                    casted_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
+                casted_variant_columns.push_back(casted_variant);
             }
 
             /// Second, collect all variants stored in shared variant and cast them to result type.
@@ -4416,8 +4481,18 @@ private:
             for (size_t i = 0; i != variant_types_from_shared_variant.size(); ++i)
             {
                 ColumnsWithTypeAndName variant = {{variant_columns_from_shared_variant[i]->getPtr(), variant_types_from_shared_variant[i], ""}};
-                auto variant_wrapper = prepareUnpackDictionaries(variant_types_from_shared_variant[i], result_type);
-                casted_shared_variant_columns.push_back(variant_wrapper(variant, result_type, nullptr, variant_columns_from_shared_variant[i]->size()));
+                WrapperType variant_wrapper;
+                if (cast_type == CastType::accurateOrNull)
+                    /// Create wrapper only if we support conversion from variant to the resulting type.
+                    variant_wrapper = createWrapperIfCanConvert(variant_types_from_shared_variant[i], result_type);
+                else
+                    variant_wrapper = prepareUnpackDictionaries(variant_types_from_shared_variant[i], result_type);
+
+                ColumnPtr casted_variant;
+                /// Check if we have wrapper for this variant.
+                if (variant_wrapper)
+                    casted_variant = variant_wrapper(variant, result_type, nullptr, variant_columns_from_shared_variant[i]->size());
+                casted_shared_variant_columns.push_back(casted_variant);
             }
 
             /// Construct result column from all casted variants.
@@ -4427,11 +4502,23 @@ private:
             {
                 auto global_discr = variant_column.globalDiscriminatorByLocal(local_discriminators[i]);
                 if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+                {
                     res->insertDefault();
+                }
                 else if (global_discr == shared_variant_discr)
-                    res->insertFrom(*casted_shared_variant_columns[shared_variant_indexes[i]], shared_variant_offsets[i]);
+                {
+                    if (casted_shared_variant_columns[shared_variant_indexes[i]])
+                        res->insertFrom(*casted_shared_variant_columns[shared_variant_indexes[i]], shared_variant_offsets[i]);
+                    else
+                        res->insertDefault();
+                }
                 else
-                    res->insertFrom(*casted_variant_columns[global_discr], offsets[i]);
+                {
+                    if (casted_variant_columns[global_discr])
+                        res->insertFrom(*casted_variant_columns[global_discr], offsets[i]);
+                    else
+                        res->insertDefault();
+                }
             }
 
             return res;
@@ -4492,7 +4579,7 @@ private:
         if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(from_type.get()))
             return createVariantToDynamicWrapper(*variant_type, dynamic_type);
 
-        if (context && context->getSettingsRef().cast_string_to_dynamic_use_inference && isStringOrFixedString(removeNullable(removeLowCardinality(from_type))))
+        if (context && context->getSettingsRef()[Setting::cast_string_to_dynamic_use_inference] && isStringOrFixedString(removeNullable(removeLowCardinality(from_type))))
             return createStringToDynamicThroughParsingWrapper();
 
         /// First, cast column to Variant with 2 variants - the type of the column we cast and shared variant type.
@@ -4521,26 +4608,124 @@ private:
             return [to_max_types]
                    (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t) -> ColumnPtr
             {
-                const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arguments[0].column);
+                const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*arguments[0].column);
                 /// We should use the same limit as already used in column and change only global limit.
                 /// It's needed because shared variant should contain values only when limit is exceeded,
                 /// so if there are already some data, we cannot increase the limit.
-                return ColumnDynamic::create(column_dynamic.getVariantColumnPtr(), column_dynamic.getVariantInfo(), column_dynamic.getMaxDynamicTypes(), to_max_types);
+                return ColumnDynamic::create(dynamic_column.getVariantColumnPtr(), dynamic_column.getVariantInfo(), dynamic_column.getMaxDynamicTypes(), to_max_types);
             };
         }
 
         return [to_max_types]
                (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t) -> ColumnPtr
         {
-            const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arguments[0].column);
+            const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*arguments[0].column);
             /// If real limit in the column is not greater than desired, just use the same variant column.
-            if (column_dynamic.getMaxDynamicTypes() <= to_max_types)
-                return ColumnDynamic::create(column_dynamic.getVariantColumnPtr(), column_dynamic.getVariantInfo(), column_dynamic.getMaxDynamicTypes(), to_max_types);
+            if (dynamic_column.getMaxDynamicTypes() <= to_max_types)
+                return ColumnDynamic::create(dynamic_column.getVariantColumnPtr(), dynamic_column.getVariantInfo(), dynamic_column.getMaxDynamicTypes(), to_max_types);
 
-            /// Otherwise some variants should go to the shared variant. In this case we can just insert all
-            /// the data into resulting column and it will do all the logic with shared variant.
-            auto result_dynamic_column = ColumnDynamic::create(to_max_types);
-            result_dynamic_column->insertRangeFrom(column_dynamic, 0, column_dynamic.size());
+            /// Otherwise some variants should go to the shared variant. We try to keep the most frequent variants.
+            const auto & variant_info = dynamic_column.getVariantInfo();
+            const auto & variants = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
+            const auto & statistics = dynamic_column.getStatistics();
+            const auto & variant_column = dynamic_column.getVariantColumn();
+            auto shared_variant_discr = dynamic_column.getSharedVariantDiscriminator();
+            std::vector<std::tuple<size_t, String, DataTypePtr>> variants_with_sizes;
+            variants_with_sizes.reserve(variant_info.variant_names.size());
+            for (const auto & [name, discr] : variant_info.variant_name_to_discriminator)
+            {
+                /// Don't include shared variant.
+                if (discr == shared_variant_discr)
+                    continue;
+
+                size_t size = variant_column.getVariantByGlobalDiscriminator(discr).size();
+                /// If column has statistics from the data part, use size from it for consistency.
+                /// It's important to keep the same dynamic structure of the result column during ALTER.
+                if (statistics)
+                {
+                    auto statistics_it = statistics->variants_statistics.find(name);
+                    if (statistics_it != statistics->variants_statistics.end())
+                        size = statistics_it->second;
+                }
+                variants_with_sizes.emplace_back(size, name, variants[discr]);
+            }
+
+            std::sort(variants_with_sizes.begin(), variants_with_sizes.end(), std::greater());
+            DataTypes result_variants;
+            result_variants.reserve(to_max_types + 1); /// +1 for shared variant.
+            /// Add new variants from sorted list until we reach to_max_types.
+            for (const auto & [size, name, type] : variants_with_sizes)
+            {
+                if (result_variants.size() < to_max_types)
+                    result_variants.push_back(type);
+                else
+                    break;
+            }
+
+            /// Add shared variant.
+            result_variants.push_back(ColumnDynamic::getSharedVariantDataType());
+            /// Create resulting Variant type and Dynamic column.
+            auto result_variant_type = std::make_shared<DataTypeVariant>(result_variants);
+            auto result_dynamic_column = ColumnDynamic::create(result_variant_type->createColumn(), result_variant_type, to_max_types, to_max_types);
+            const auto & result_variant_info = result_dynamic_column->getVariantInfo();
+            auto & result_variant_column = result_dynamic_column->getVariantColumn();
+            auto result_shared_variant_discr = result_dynamic_column->getSharedVariantDiscriminator();
+            /// Create mapping from old discriminators to the new ones.
+            std::vector<ColumnVariant::Discriminator> old_to_new_discriminators;
+            old_to_new_discriminators.resize(variant_info.variant_name_to_discriminator.size(), result_shared_variant_discr);
+            for (const auto & [name, discr] : result_variant_info.variant_name_to_discriminator)
+            {
+                auto old_discr = variant_info.variant_name_to_discriminator.at(name);
+                old_to_new_discriminators[old_discr] = discr;
+                /// Reuse old variant column if it's not shared variant.
+                if (discr != result_shared_variant_discr)
+                    result_variant_column.getVariantPtrByGlobalDiscriminator(discr) = variant_column.getVariantPtrByGlobalDiscriminator(old_discr);
+            }
+
+            const auto & local_discriminators = variant_column.getLocalDiscriminators();
+            const auto & offsets = variant_column.getOffsets();
+            const auto & shared_variant = dynamic_column.getSharedVariant();
+            auto & result_local_discriminators = result_variant_column.getLocalDiscriminators();
+            result_local_discriminators.reserve(local_discriminators.size());
+            auto & result_offsets = result_variant_column.getOffsets();
+            result_offsets.reserve(offsets.size());
+            auto & result_shared_variant = result_dynamic_column->getSharedVariant();
+            for (size_t i = 0; i != local_discriminators.size(); ++i)
+            {
+                auto global_discr = variant_column.globalDiscriminatorByLocal(local_discriminators[i]);
+                if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+                {
+                    result_local_discriminators.push_back(ColumnVariant::NULL_DISCRIMINATOR);
+                    result_offsets.emplace_back();
+                }
+                else if (global_discr == shared_variant_discr)
+                {
+                    result_local_discriminators.push_back(result_variant_column.localDiscriminatorByGlobal(result_shared_variant_discr));
+                    result_offsets.push_back(result_shared_variant.size());
+                    result_shared_variant.insertFrom(shared_variant, offsets[i]);
+                }
+                else
+                {
+                    auto result_global_discr = old_to_new_discriminators[global_discr];
+                    if (result_global_discr == result_shared_variant_discr)
+                    {
+                        result_local_discriminators.push_back(result_variant_column.localDiscriminatorByGlobal(result_shared_variant_discr));
+                        result_offsets.push_back(result_shared_variant.size());
+                        ColumnDynamic::serializeValueIntoSharedVariant(
+                            result_shared_variant,
+                            variant_column.getVariantByGlobalDiscriminator(global_discr),
+                            variants[global_discr],
+                            variants[global_discr]->getDefaultSerialization(),
+                            offsets[i]);
+                    }
+                    else
+                    {
+                        result_local_discriminators.push_back(result_variant_column.localDiscriminatorByGlobal(result_global_discr));
+                        result_offsets.push_back(offsets[i]);
+                    }
+                }
+            }
+
             return result_dynamic_column;
         };
     }
@@ -4991,9 +5176,9 @@ private:
             return false;
         };
 
-        bool cast_ipv4_ipv6_default_on_conversion_error_value = context && context->getSettingsRef().cast_ipv4_ipv6_default_on_conversion_error;
-        bool input_format_ipv4_default_on_conversion_error_value = context && context->getSettingsRef().input_format_ipv4_default_on_conversion_error;
-        bool input_format_ipv6_default_on_conversion_error_value = context && context->getSettingsRef().input_format_ipv6_default_on_conversion_error;
+        bool cast_ipv4_ipv6_default_on_conversion_error_value = context && context->getSettingsRef()[Setting::cast_ipv4_ipv6_default_on_conversion_error];
+        bool input_format_ipv4_default_on_conversion_error_value = context && context->getSettingsRef()[Setting::input_format_ipv4_default_on_conversion_error];
+        bool input_format_ipv6_default_on_conversion_error_value = context && context->getSettingsRef()[Setting::input_format_ipv6_default_on_conversion_error];
 
         auto make_custom_serialization_wrapper = [&, cast_ipv4_ipv6_default_on_conversion_error_value, input_format_ipv4_default_on_conversion_error_value, input_format_ipv6_default_on_conversion_error_value](const auto & types) -> bool
         {
