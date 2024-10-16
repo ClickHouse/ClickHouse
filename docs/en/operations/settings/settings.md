@@ -532,6 +532,14 @@ Default value: 0
 
 Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*()
 
+## log_query_settings {#log-query-settings}
+
+Type: Bool
+
+Default value: 1
+
+Log query settings into the query_log and opentelemetry_span_log.
+
 ## allow_nondeterministic_mutations {#allow_nondeterministic_mutations}
 
 Type: Bool
@@ -9374,7 +9382,7 @@ Type: Bool
 
 Default value: 0
 
-Traverse shadow directory when query system.remote_data_paths
+Traverse frozen data (shadow directory) in addition to actual table data when query `system.remote_data_paths`.
 
 ## union_default_mode {#union_default_mode}
 
