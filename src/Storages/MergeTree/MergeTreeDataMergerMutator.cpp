@@ -60,7 +60,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsInt64 merge_with_recompression_ttl_timeout;
     extern const MergeTreeSettingsInt64 merge_with_ttl_timeout;
     extern const MergeTreeSettingsUInt64 merge_selector_window_size;
-    extern const MergeTreeSettingsBool merge_selector_enable_stohastic_sliding;
+    extern const MergeTreeSettingsBool merge_selector_enable_stochastic_sliding;
     extern const MergeTreeSettingsBool min_age_to_force_merge_on_partition_only;
     extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_execute_optimize_entire_partition;
@@ -520,7 +520,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
         /// Override value from table settings
         merge_settings.max_parts_to_merge_at_once = (*data_settings)[MergeTreeSetting::max_parts_to_merge_at_once];
         merge_settings.window_size = (*data_settings)[MergeTreeSetting::merge_selector_window_size];
-        merge_settings.enable_stohastic_sliding = (*data_settings)[MergeTreeSetting::merge_selector_enable_stohastic_sliding];
+        merge_settings.enable_stochastic_sliding = (*data_settings)[MergeTreeSetting::merge_selector_enable_stochastic_sliding];
         if (!(*data_settings)[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
             merge_settings.min_age_to_force_merge = (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds];
 

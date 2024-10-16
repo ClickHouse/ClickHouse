@@ -106,7 +106,7 @@ public:
 
 
         size_t window_size = 1000;
-        bool enable_stohastic_sliding = false;
+        bool enable_stochastic_sliding = false;
 
         /** Base is lowered until 1 (effectively means "merge any two parts") depending on several variables:
           *
