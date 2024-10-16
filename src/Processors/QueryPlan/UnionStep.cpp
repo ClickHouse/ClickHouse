@@ -34,8 +34,8 @@ UnionStep::UnionStep(Headers input_headers_, size_t max_threads_)
 
 void UnionStep::updateOutputHeader()
 {
-    if (input_headers.size() == 1 || !output_header)
-        output_header = checkHeaders(input_headers);
+    //if (input_headers.size() == 1 || !output_header)
+    output_header = checkHeaders(input_headers);
 }
 
 QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
