@@ -31,14 +31,14 @@ WITH
 
 settings_from_cpp AS
 (
-    SELECT extract(line, 'M\(\w+, (\w+),') AS name
+    SELECT extract(line, 'M\\(\\w+, (\\w+),') AS name
     FROM file(cpp_file, LineAsString)
-    WHERE match(line, '^\s*M\(')
+    WHERE match(line, '^\\s*M\\(')
 ),
 
 main_content AS
 (
-    SELECT format('## {} {}\n\nType: {}\n\nDefault value: {}\n\n{}\n\n', name, '{#'||name||'}', type, default, trim(BOTH '\n' FROM description))
+    SELECT format('## {} {}\\n\\nType: {}\\n\\nDefault value: {}\\n\\n{}\\n\\n', name, '{#'||name||'}', type, default, trim(BOTH '\\n' FROM description))
     FROM system.settings WHERE name IN settings_from_cpp
     ORDER BY name
 ),
@@ -57,14 +57,14 @@ WITH
 
 settings_from_cpp AS
 (
-    SELECT extract(line, 'M\(\w+, (\w+),') AS name
+    SELECT extract(line, 'M\\(\\w+, (\\w+),') AS name
     FROM file(cpp_file, LineAsString)
-    WHERE match(line, '^\s*M\(')
+    WHERE match(line, '^\\s*M\\(')
 ),
 
 main_content AS
 (
-    SELECT format('## {} {}\n\nType: {}\n\nDefault value: {}\n\n{}\n\n', name, '{#'||name||'}', type, default, trim(BOTH '\n' FROM description))
+    SELECT format('## {} {}\\n\\nType: {}\\n\\nDefault value: {}\\n\\n{}\\n\\n', name, '{#'||name||'}', type, default, trim(BOTH '\\n' FROM description))
     FROM system.settings WHERE name IN settings_from_cpp
     ORDER BY name
 ),
