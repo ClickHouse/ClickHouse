@@ -64,6 +64,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Common/ThreadFuzzer.h>
+#include <IO/SharedThreadPools.h>
 #include <base/coverage.h>
 #include <csignal>
 #include <algorithm>
@@ -795,6 +796,10 @@ BlockIO InterpreterSystemQuery::execute()
             unloadPrimaryKeys();
             break;
         }
+        case Type::LOAD_PRIMARY_KEY: {
+            loadPrimaryKeys();
+            break;
+        }
 
 #if USE_JEMALLOC
         case Type::JEMALLOC_PURGE:
@@ -1183,6 +1188,59 @@ void InterpreterSystemQuery::waitLoadingParts()
     }
 }
 
+
+void InterpreterSystemQuery::loadPrimaryKeys()
+{
+    if (!table_id.empty())
+    {
+        getContext()->checkAccess(AccessType::SYSTEM_LOAD_PRIMARY_KEY, table_id.database_name, table_id.table_name);
+        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+
+        if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+        {
+            LOG_TRACE(log, "Loading primary keys for table {}", table_id.getFullTableName());
+            try
+            {
+                merge_tree->loadPrimaryKeys();
+            }
+            catch (const Exception & ex)
+            {
+                LOG_ERROR(log, "Failed to load primary keys for table {}: {}", table_id.getFullTableName(), ex.message());
+            }
+        }
+        else
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Command LOAD PRIMARY KEY is supported only for MergeTree tables, but got: {}", table->getName());
+        }
+    }
+    else
+    {
+        getContext()->checkAccess(AccessType::SYSTEM_LOAD_PRIMARY_KEY);
+
+        /// Process databases and tables sequentially, without thread pool concurrency at the table level
+        for (auto & database : DatabaseCatalog::instance().getDatabases())
+        {
+            for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
+            {
+                if (auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get()))
+                {
+                    try
+                    {
+                        /// Calls the improved loadPrimaryKeys in MergeTreeData
+                        merge_tree->loadPrimaryKeys();
+                    }
+                    catch (...)
+                    {
+                        LOG_ERROR(log, "Failed to load primary keys for table {}: {}", merge_tree->getStorageID().getFullTableName(), ex.message());
+                    }
+                }
+            }
+        }
+    }
+}
+
+
 void InterpreterSystemQuery::unloadPrimaryKeys()
 {
     if (!table_id.empty())
@@ -1531,6 +1589,14 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
             required_access.emplace_back(AccessType::SYSTEM_JEMALLOC);
+            break;
+        }
+        case Type::LOAD_PRIMARY_KEY:
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_LOAD_PRIMARY_KEY);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_LOAD_PRIMARY_KEY, query.getDatabase(), query.getTable());
             break;
         }
         case Type::UNLOAD_PRIMARY_KEY:
