@@ -14,13 +14,9 @@ updated_config = """
     <logger>
         <level>trace</level>
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
-
-        <!-- Global: Don't log and Trace messages -->
         <message_regexp_negative>.*Trace.*</message_regexp_negative>
-
         <message_regexps>
             <logger>
-                <!-- For the executeQuery logger, only log if message has "Read", but not "from" -->
                 <name>executeQuery</name>
                 <message_regexp>.*Read.*</message_regexp>
                 <message_regexp_negative>.*from.*</message_regexp_negative>
