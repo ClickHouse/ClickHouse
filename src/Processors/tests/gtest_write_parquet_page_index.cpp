@@ -41,7 +41,7 @@ std::shared_ptr<ISource> multiColumnsSource(const std::vector<DataTypePtr> & typ
         for (size_t j = 0; j < type.size(); ++j)
         {
             auto column = type[j]->createColumn();
-            for (const auto n : values[j])
+            for (const auto& n : values[j])
             {
                 if constexpr (std::is_same_v<T, UInt64>)
                     if (n == 0)
@@ -99,7 +99,7 @@ void validatePageIndex(
             ASSERT_TRUE(page_index_reader != nullptr);
             PARQUET_ASSIGN_OR_THROW(auto column_index_buffer, source->ReadAt(column_index_offsets[k], column_index_lengths[k]))
             PARQUET_ASSIGN_OR_THROW(auto offset_index_buffer, source->ReadAt(offset_index_offsets[k], offset_index_lengths[k]))
-            auto column_descr = metadata->schema()->Column(k);
+            const auto *column_descr = metadata->schema()->Column(k);
             std::unique_ptr<parquet::ColumnIndex> column_index = parquet::ColumnIndex::Make(
                 *column_descr, column_index_buffer->data(), static_cast<uint32_t>(column_index_buffer->size()), properties);
             std::unique_ptr<parquet::OffsetIndex> offset_index
@@ -171,6 +171,7 @@ TEST(Parquet, WriteParquetPageIndexParrelel)
 
     std::vector<std::vector<UInt64>> values;
     std::vector<UInt64> col;
+    col.reserve(1000);
     for (size_t i = 0; i < 1000; i++)
     {
         col.push_back(i % 10);
