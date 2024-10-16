@@ -7,8 +7,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Field.h>
-#include <filesystem>
-#include <Common/escapeForFileName.h>
+#include <Common/computeMaxTableNameLength.h>
 
 namespace DB
 {
@@ -19,6 +18,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int UNKNOWN_DATABASE;
 }
+
+
 
 class FunctionGetMaxTableName : public IFunction, WithContext
 {
@@ -63,22 +64,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        String suffix = ".sql.detached";
-        String create_directory_name = (std::filesystem::path(getContext()->getPath()) / "metadata").string();
-        auto max_create_length = pathconf(create_directory_name.data(), _PC_NAME_MAX);
-        String dropped_directory_name = (std::filesystem::path(getContext()->getPath()) / "metadata_dropped").string();
-        auto max_dropped_length = pathconf(dropped_directory_name.data(), _PC_NAME_MAX);
         size_t allowed_max_length;
-
-        if (max_dropped_length == -1)
-            max_dropped_length = NAME_MAX;
-
-        if (max_create_length == -1)
-            max_create_length = NAME_MAX;
-
-        // File name to drop is escaped_db_name.escaped_table_name.uuid.sql
-        // File name to create is table_name.sql
-        auto max_to_create = static_cast<size_t>(max_create_length) - suffix.length();
 
         if (!isColumnConst(*arguments[0].column.get()))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must be constant.", getName());
@@ -92,10 +78,7 @@ public:
         if (!DatabaseCatalog::instance().isDatabaseExist(database_name))
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist.", database_name);
 
-        // 48 is prepared for renaming table operation while dropping (UUID length and extra characters)
-        // max_to_drop = max_dropped_length - length_of(database_name) - length_of(uuid) - length_of('sql' + 3 dots)
-        auto max_to_drop = static_cast<size_t>(max_dropped_length) - escapeForFileName(database_name).length() - 48;
-        allowed_max_length = std::min(max_to_create, max_to_drop);
+        allowed_max_length = computeMaxTableNameLength(database_name, getContext());
         return DataTypeUInt64().createColumnConst(input_rows_count, allowed_max_length);
     }
 

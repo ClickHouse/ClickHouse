@@ -11,7 +11,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
-#include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -26,6 +25,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
+#include <Common/computeMaxTableNameLength.h>
 #include <Common/escapeForFileName.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
@@ -389,11 +389,8 @@ void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_n
 
 void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name) const
 {
-    String query = fmt::format("SELECT getMaxTableName('{}')", database_name);
-    auto mutable_context = std::const_pointer_cast<Context>(getContext());
-    const auto & res = executeQuery(query, mutable_context, QueryFlags{ .internal = true }).second;
-    const auto & res_col = res.pipeline.getHeader().getColumnsWithTypeAndName()[0].column;
-    const auto allowed_max_length = res_col->getUInt(0);
+    // Compute allowed max length directly
+    size_t allowed_max_length = computeMaxTableNameLength(database_name, getContext());
     String table_metadata_path = getObjectMetadataPath(to_table_name);
 
     if (escapeForFileName(to_table_name).length() > allowed_max_length)
@@ -409,8 +406,10 @@ void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to
             throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
                             "Table {}.{} already exists (detached permanently)",
                             backQuote(database_name), backQuote(to_table_name));
-        throw Exception(
-            ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached)", backQuote(database_name), backQuote(to_table_name));
+        else
+            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
+                            "Table {}.{} already exists (detached)",
+                            backQuote(database_name), backQuote(to_table_name));
     }
 }
 
