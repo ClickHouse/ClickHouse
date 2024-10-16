@@ -59,7 +59,8 @@ private:
     ThreadFromGlobalPool watching_thread;
     std::atomic<bool> watching_flag = false;
 
-    struct WatchEvent {
+    struct WatchEvent
+    {
         std::mutex mutex;
         std::condition_variable cv;
         UInt64 triggered = 0;
