@@ -1544,6 +1544,10 @@ message Constraint {
   required string constraint = 1;
 }
 
+message Function {
+  required string function = 1;
+}
+
 enum SpecialVal {
   VAL_NULL = 1;
   VAL_TRUE = 2;
@@ -2374,6 +2378,11 @@ message CreateDatabase {
   required DatabaseEngine dengine = 2;
 }
 
+message CreateFunction {
+  required Function func = 1;
+  required LambdaExpr lexpr = 2;
+}
+
 message Decimal {
   optional uint32 precision = 1;
   optional uint32 scale = 2;
@@ -2636,16 +2645,18 @@ message CreateTable {
 }
 
 enum SQLObject {
-  TABLE = 1;
-  VIEW = 2;
-  DICTIONARY = 3;
-  DATABASE = 4;
+  DATABASE = 1;
+  DICTIONARY = 2;
+  FUNCTION = 3;
+  TABLE = 4;
+  VIEW = 5;
 }
 
-message SchemaOrTable {
+message SQLObjectName {
   oneof drop_oneof {
     ExprSchemaTable est = 1;
     Database database = 2;
+    Function func = 3;
   }
 }
 
@@ -2654,8 +2665,8 @@ message Drop {
   required SQLObject sobject = 2;
   optional bool if_exists = 3;
   optional bool if_empty = 4;
-  required SchemaOrTable object = 5;
-  repeated SchemaOrTable other_objects = 6;
+  required SQLObjectName object = 5;
+  repeated SQLObjectName other_objects = 6;
   optional bool sync = 7;
 }
 
@@ -2918,12 +2929,12 @@ message AlterTable {
 
 message Attach {
   required SQLObject sobject = 1;
-  required SchemaOrTable object = 2;
+  required SQLObjectName object = 2;
 }
 
 message Detach {
   required SQLObject sobject = 1;
-  required SchemaOrTable object = 2;
+  required SQLObjectName object = 2;
   optional bool permanentely = 3;
   optional bool sync = 4;
 }
@@ -2946,6 +2957,7 @@ message SQLQueryInner {
     Attach attach = 14;
     Detach detach = 15;
     CreateDatabase create_database = 16;
+    CreateFunction create_function = 17;
   }
 }
 

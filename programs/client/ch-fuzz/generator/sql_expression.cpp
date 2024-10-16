@@ -360,6 +360,43 @@ int StatementGenerator::GeneratePredicate(RandomGenerator &rg, sql_query_grammar
 	return 0;
 }
 
+int StatementGenerator::GenerateLambdaCall(RandomGenerator &rg, const uint32_t nparams, sql_query_grammar::LambdaExpr *lexpr) {
+	SQLRelation rel("");
+	sql_query_grammar::ColumnList *cl = lexpr->mutable_args();
+	std::map<uint32_t, QueryLevel> levels_backup;
+	const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate,
+			   prev_allow_aggregates = this->levels[this->current_level].allow_aggregates,
+			   prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
+
+	for (const auto &entry : this->levels) {
+		levels_backup[entry.first] = std::move(entry.second);
+	}
+	this->levels.clear();
+	this->levels[this->current_level].inside_aggregate = false;
+	this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = true;
+
+	for (uint32_t i = 0 ; i < nparams ; i++) {
+		sql_query_grammar::Column *col = i == 0 ? cl->mutable_col() : cl->add_other_cols();
+
+		buf.resize(0);
+		buf += ('x' + i);
+		col->set_column(buf);
+		rel.cols.push_back(SQLRelationCol("", buf, std::nullopt));
+	}
+	this->levels[this->current_level].rels.push_back(std::move(rel));
+	this->GenerateExpression(rg, lexpr->mutable_expr());
+	this->width++;
+
+	this->levels.clear();
+	for (const auto &entry : levels_backup) {
+		this->levels[entry.first] = std::move(entry.second);
+	}
+	this->levels[this->current_level].inside_aggregate = prev_inside_aggregate;
+	this->levels[this->current_level].allow_aggregates = prev_allow_aggregates;
+	this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
+	return 0;
+}
+
 int StatementGenerator::GenerateFuncCall(RandomGenerator &rg, const bool allow_funcs, const bool allow_aggr, sql_query_grammar::SQLFuncCall *func_call) {
 	const size_t funcs_size = this->allow_not_deterministic ? CHFuncs.size() : (CHFuncs.size() - 35);
 	const uint32_t nfuncs = static_cast<uint32_t>((allow_funcs ? funcs_size : 0) + (allow_aggr ? CHAggrs.size() : 0));
@@ -449,43 +486,9 @@ int StatementGenerator::GenerateFuncCall(RandomGenerator &rg, const bool allow_f
 					   max_args = std::min(this->max_width - this->width, std::min(func.max_args, UINT32_C(5)));
 
 		if (n_lambda > 0) {
-			SQLRelation rel("");
-			sql_query_grammar::LambdaExpr *lexpr = func_call->add_args()->mutable_lambda();
-			sql_query_grammar::ColumnList *cl = lexpr->mutable_args();
-			const uint32_t nparams = (rg.NextSmallNumber() % 3) + 1;
-			std::map<uint32_t, QueryLevel> levels_backup;
-			const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate,
-					   prev_allow_aggregates = this->levels[this->current_level].allow_aggregates,
-					   prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
-
 			assert(n_lambda == 1);
-			for (const auto &entry : this->levels) {
-				levels_backup[entry.first] = std::move(entry.second);
-			}
-			this->levels.clear();
-			this->levels[this->current_level].inside_aggregate = false;
-			this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = true;
-
-			for (uint32_t i = 0 ; i < nparams ; i++) {
-				sql_query_grammar::Column *col = i == 0 ? cl->mutable_col() : cl->add_other_cols();
-
-				buf.resize(0);
-				buf += ('x' + i);
-				col->set_column(buf);
-				rel.cols.push_back(SQLRelationCol("", buf, std::nullopt));
-			}
-			this->levels[this->current_level].rels.push_back(std::move(rel));
-			this->GenerateExpression(rg, lexpr->mutable_expr());
-			this->width++;
 			generated_params++;
-
-			this->levels.clear();
-			for (const auto &entry : levels_backup) {
-				this->levels[entry.first] = std::move(entry.second);
-			}
-			this->levels[this->current_level].inside_aggregate = prev_inside_aggregate;
-			this->levels[this->current_level].allow_aggregates = prev_allow_aggregates;
-			this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
+			GenerateLambdaCall(rg, (rg.NextSmallNumber() % 3) + 1, func_call->add_args()->mutable_lambda());
 		}
 
 		if (max_args > 0 && max_args >= func.min_args) {

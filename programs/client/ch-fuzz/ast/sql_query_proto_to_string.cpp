@@ -44,13 +44,17 @@ CONV_FN(Database, db) {
   ret += db.database();
 }
 
-CONV_FN(Table, table) {
-  ret += table.table();
+CONV_FN(Table, tab) {
+  ret += tab.table();
 }
 
-CONV_FN(Window, window) {
+CONV_FN(Function, func) {
+  ret += func.function();
+}
+
+CONV_FN(Window, win) {
   ret += "w";
-  ret += std::to_string(window.window());
+  ret += std::to_string(win.window());
 }
 
 CONV_FN(ExprColAlias, eca) {
@@ -979,8 +983,9 @@ CONV_FN(ColumnList, cols) {
 }
 
 CONV_FN(LambdaExpr, lambda) {
+  ret += "(";
   ColumnListToString(ret, lambda.args());
-  ret += " -> ";
+  ret += ") -> ";
   ExprToString(ret, lambda.expr());
 }
 
@@ -1668,6 +1673,13 @@ CONV_FN(CreateDatabase, create_database) {
   DatabaseEngineToString(ret, create_database.dengine());
 }
 
+CONV_FN(CreateFunction, create_function) {
+  ret += "CREATE FUNCTION ";
+  FunctionToString(ret, create_function.func());
+  ret += " AS ";
+  LambdaExprToString(ret, create_function.lexpr());
+}
+
 CONV_FN(ColumnDef, cdf) {
   ColumnToString(ret, true, cdf.col());
   ret += " ";
@@ -1862,11 +1874,15 @@ CONV_FN(CreateTable, create_table) {
   }
 }
 
-CONV_FN(SchemaOrTable, dt) {
+CONV_FN(SQLObjectName, dt) {
   if (dt.has_est()) {
     ExprSchemaTableToString(ret, dt.est());
   } else if (dt.has_database()) {
     DatabaseToString(ret, dt.database());
+  } else if (dt.has_func()) {
+    FunctionToString(ret, dt.func());
+  } else {
+    ret += "t0";
   }
 }
 
@@ -1885,10 +1901,10 @@ CONV_FN(Drop, dt) {
     ret += " IF EMPTY";
   }
   ret += " ";
-  SchemaOrTableToString(ret, dt.object());
+  SQLObjectNameToString(ret, dt.object());
   for (int i = 0; i < dt.other_objects_size(); i++) {
     ret += ", ";
-    SchemaOrTableToString(ret, dt.other_objects(i));
+    SQLObjectNameToString(ret, dt.other_objects(i));
   }
   if (dt.sync()) {
     ret += " SYNC";
@@ -2291,14 +2307,14 @@ CONV_FN(Attach, at) {
   ret += "ATTACH ";
   ret += SQLObject_Name(at.sobject());
   ret += " ";
-  SchemaOrTableToString(ret, at.object());
+  SQLObjectNameToString(ret, at.object());
 }
 
 CONV_FN(Detach, dt) {
   ret += "DETACH ";
   ret += SQLObject_Name(dt.sobject());
   ret += " ";
-  SchemaOrTableToString(ret, dt.object());
+  SQLObjectNameToString(ret, dt.object());
   if (dt.permanentely()) {
     ret += " PERMANENTLY";
   }
@@ -2390,6 +2406,9 @@ CONV_FN(SQLQueryInner, query) {
       break;
     case QueryType::kCreateDatabase:
       CreateDatabaseToString(ret, query.create_database());
+      break;
+    case QueryType::kCreateFunction:
+      CreateFunctionToString(ret, query.create_function());
       break;
     default:
       ret += "SELECT 1";
