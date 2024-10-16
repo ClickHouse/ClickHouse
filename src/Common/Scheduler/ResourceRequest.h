@@ -17,7 +17,6 @@ class ISchedulerConstraint;
 using ResourceCost = Int64;
 constexpr ResourceCost ResourceCostMax = std::numeric_limits<int>::max();
 
-// TODO(serxa): validate hierarchy to avoid too many constraints
 /// Max number of constraints for a request to pass though (depth of constraints chain)
 constexpr size_t ResourceMaxConstraints = 8;
 
@@ -91,7 +90,8 @@ public:
     void finish();
 
     /// Is called from the scheduler thread to fill `constraints` chain
-    void addConstraint(ISchedulerConstraint * new_constraint);
+    /// Returns `true` iff constraint was added successfully
+    bool addConstraint(ISchedulerConstraint * new_constraint);
 };
 
 }
