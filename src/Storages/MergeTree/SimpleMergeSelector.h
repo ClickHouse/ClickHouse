@@ -104,6 +104,10 @@ public:
           */
         double base = 5;
 
+
+        size_t window_size = 1000;
+        bool enable_stohastic_sliding = false;
+
         /** Base is lowered until 1 (effectively means "merge any two parts") depending on several variables:
           *
           * 1. Total number of parts in partition. If too many - then base is lowered.
