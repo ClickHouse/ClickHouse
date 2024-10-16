@@ -194,6 +194,22 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     }
     else
     {
+        if (!filter_step->removesFilterColumn())
+        {
+            const auto * node = split_result.second.tryFindInOutputs(filter_step->getFilterColumnName());
+            if (node && !node->column)
+            {
+                ColumnWithTypeAndName column;
+                column.type = node->result_type;
+                column.name = node->result_name;
+                column.column = column.type->createColumnConst(0, 1u);
+                const auto * replaced_const = &split_result.second.addColumn(column);
+
+                for (auto & output : split_result.second.getOutputs())
+                    if (output == node)
+                        output = replaced_const;
+            }
+        }
         /// Have to keep this expression to change column names to column identifiers
         filter_node->step = std::make_unique<ExpressionStep>(
             source_step_with_filter->getOutputHeader(),
