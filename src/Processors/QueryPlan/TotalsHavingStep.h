@@ -13,7 +13,7 @@ class TotalsHavingStep : public ITransformingStep
 {
 public:
     TotalsHavingStep(
-        const DataStream & input_stream_,
+        const Header & input_header_,
         const AggregateDescriptions & aggregates_,
         bool overflow_row_,
         std::optional<ActionsDAG> actions_dag_,
@@ -38,7 +38,7 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     const AggregateDescriptions aggregates;
 

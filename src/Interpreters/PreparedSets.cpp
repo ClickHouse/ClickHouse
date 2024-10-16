@@ -149,7 +149,7 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     set_and_key->key = PreparedSets::toString(hash_, {});
 
     set_and_key->set = std::make_shared<Set>(size_limits, max_size_for_index, transform_null_in);
-    set_and_key->set->setHeader(source->getCurrentDataStream().header.getColumnsWithTypeAndName());
+    set_and_key->set->setHeader(source->getCurrentHeader().getColumnsWithTypeAndName());
 }
 
 FutureSetFromSubquery::FutureSetFromSubquery(
@@ -180,7 +180,7 @@ SetPtr FutureSetFromSubquery::getNotFilled() const { return set_and_key->set; }
 void FutureSetFromSubquery::setQueryPlan(std::unique_ptr<QueryPlan> source_)
 {
     source = std::move(source_);
-    set_and_key->set->setHeader(source->getCurrentDataStream().header.getColumnsWithTypeAndName());
+    set_and_key->set->setHeader(source->getCurrentHeader().getColumnsWithTypeAndName());
 }
 
 DataTypes FutureSetFromSubquery::getTypes() const
@@ -203,7 +203,7 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const ContextPtr & conte
         return nullptr;
 
     auto creating_set = std::make_unique<CreatingSetStep>(
-        plan->getCurrentDataStream(),
+        plan->getCurrentHeader(),
         set_and_key,
         external_table,
         SizeLimits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]),

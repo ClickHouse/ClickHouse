@@ -214,13 +214,13 @@ def main():
     state, description, test_results, additional_files = process_result(temp_path)
 
     autofix_description = ""
-    fail_cnt = 0
+    push_fix = args.push
     for result in test_results:
-        if result.status in (FAILURE, FAIL):
-            # do not autofix if not only black failed
-            fail_cnt += 1
+        if result.status in (FAILURE, FAIL) and push_fix:
+            # do not autofix if something besides isort and black is failed
+            push_fix = any(result.name.endswith(check) for check in ("isort", "black"))
 
-    if args.push and fail_cnt == 1:
+    if push_fix:
         try:
             commit_push_staged(pr_info)
         except subprocess.SubprocessError:

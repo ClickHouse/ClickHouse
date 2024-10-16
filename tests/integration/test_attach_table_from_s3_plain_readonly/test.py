@@ -1,11 +1,12 @@
-import re
-import os
 import logging
+import os
+import re
+from pathlib import Path
+
 import pytest
+from minio.error import S3Error
 
 from helpers.cluster import ClickHouseCluster
-from minio.error import S3Error
-from pathlib import Path
 
 cluster = ClickHouseCluster(__file__)
 

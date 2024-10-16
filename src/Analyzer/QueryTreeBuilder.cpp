@@ -678,7 +678,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
 
         result = std::move(query_node);
     }
-    else if (const auto * select_with_union_query = expression->as<ASTSelectWithUnionQuery>())
+    else if (const auto * /*select_with_union_query*/ _ = expression->as<ASTSelectWithUnionQuery>())
     {
         auto query_node = buildSelectWithUnionExpression(expression, false /*is_subquery*/, {} /*cte_name*/, context);
         result = std::move(query_node);
@@ -966,7 +966,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
                 std::move(join_expression),
                 table_join.locality,
                 result_join_strictness,
-                result_join_kind);
+                result_join_kind,
+                table_join.using_expression_list != nullptr);
+
             join_node->setOriginalAST(table_element.table_join);
 
             /** Original AST is not set because it will contain only join part and does

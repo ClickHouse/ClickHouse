@@ -1,7 +1,8 @@
+from pathlib import Path
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from pathlib import Path
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(

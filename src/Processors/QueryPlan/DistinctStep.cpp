@@ -36,14 +36,14 @@ static ITransformingStep::Traits getTraits(bool pre_distinct)
 }
 
 DistinctStep::DistinctStep(
-    const DataStream & input_stream_,
+    const Header & input_header_,
     const SizeLimits & set_size_limits_,
     UInt64 limit_hint_,
     const Names & columns_,
     bool pre_distinct_)
     : ITransformingStep(
-            input_stream_,
-            input_stream_.header,
+            input_header_,
+            input_header_,
             getTraits(pre_distinct_))
     , set_size_limits(set_size_limits_)
     , limit_hint(limit_hint_)
@@ -88,29 +88,14 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
                     });
                 return;
             }
+
             /// final distinct for sorted stream (sorting inside and among chunks)
-            else
+            if (pipeline.getNumStreams() != 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "DistinctStep with in-order expects single input");
+
+            if (distinct_sort_desc.size() < columns.size())
             {
-                if (pipeline.getNumStreams() != 1)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "DistinctStep with in-order expects single input");
-
-                if (distinct_sort_desc.size() < columns.size())
-                {
-                    if (DistinctSortedTransform::isApplicable(pipeline.getHeader(), distinct_sort_desc, columns))
-                    {
-                        pipeline.addSimpleTransform(
-                            [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-                            {
-                                if (stream_type != QueryPipelineBuilder::StreamType::Main)
-                                    return nullptr;
-
-                                return std::make_shared<DistinctSortedTransform>(
-                                    header, distinct_sort_desc, set_size_limits, limit_hint, columns);
-                            });
-                        return;
-                    }
-                }
-                else
+                if (DistinctSortedTransform::isApplicable(pipeline.getHeader(), distinct_sort_desc, columns))
                 {
                     pipeline.addSimpleTransform(
                         [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
@@ -118,11 +103,24 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
                             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                                 return nullptr;
 
-                            return std::make_shared<DistinctSortedStreamTransform>(
-                                header, set_size_limits, limit_hint, distinct_sort_desc, columns);
+                            return std::make_shared<DistinctSortedTransform>(
+                                header, distinct_sort_desc, set_size_limits, limit_hint, columns);
                         });
                     return;
                 }
+            }
+            else
+            {
+                pipeline.addSimpleTransform(
+                    [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+                    {
+                        if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                            return nullptr;
+
+                        return std::make_shared<DistinctSortedStreamTransform>(
+                            header, set_size_limits, limit_hint, distinct_sort_desc, columns);
+                    });
+                return;
             }
         }
     }
@@ -169,12 +167,9 @@ void DistinctStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Columns", std::move(columns_array));
 }
 
-void DistinctStep::updateOutputStream()
+void DistinctStep::updateOutputHeader()
 {
-    output_stream = createOutputStream(
-        input_streams.front(),
-        input_streams.front().header,
-        getTraits(pre_distinct).data_stream_traits);
+    output_header = input_headers.front();
 }
 
 void DistinctStep::serializeSettings(QueryPlanSerializationSettings & settings) const

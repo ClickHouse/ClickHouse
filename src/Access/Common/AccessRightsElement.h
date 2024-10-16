@@ -92,7 +92,6 @@ struct AccessRightsElement
     /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
     String toString() const;
     String toStringWithoutOptions() const;
-    String toStringForAccessTypeSource() const;
 
     void formatColumnNames(WriteBuffer & buffer) const;
     void formatONClause(WriteBuffer & buffer, bool hilite = false) const;

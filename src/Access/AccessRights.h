@@ -150,6 +150,9 @@ public:
     /// Makes an intersection of access rights.
     void makeIntersection(const AccessRights & other);
 
+    /// Makes a difference (relative complement) of access rights.
+    void makeDifference(const AccessRights & other);
+
     /// Traverse the tree and modify each access flags.
     using ModifyFlagsFunction = std::function<AccessFlags(
         const AccessFlags & flags,

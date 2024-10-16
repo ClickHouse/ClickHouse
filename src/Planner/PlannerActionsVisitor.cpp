@@ -619,9 +619,9 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     if (node_type == QueryTreeNodeType::COLUMN)
         return visitColumn(node);
-    else if (node_type == QueryTreeNodeType::CONSTANT)
+    if (node_type == QueryTreeNodeType::CONSTANT)
         return visitConstant(node);
-    else if (node_type == QueryTreeNodeType::FUNCTION)
+    if (node_type == QueryTreeNodeType::FUNCTION)
         return visitFunction(node);
 
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -690,19 +690,15 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         {
             return calculateActionNodeNameWithCastIfNeeded(constant_node);
         }
-        else
+
+        // Need to check if constant folded from QueryNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
+        if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
         {
-            // Need to check if constant folded from QueryNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
-            if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
-            {
-                if (constant_node.receivedFromInitiatorServer())
-                    return calculateActionNodeNameWithCastIfNeeded(constant_node);
-                else
-                    return action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression());
-            }
-            else
-                return calculateConstantActionNodeName(constant_literal, constant_type);
+            if (constant_node.receivedFromInitiatorServer())
+                return calculateActionNodeNameWithCastIfNeeded(constant_node);
+            return action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression());
         }
+        return calculateConstantActionNodeName(constant_literal, constant_type);
     }();
 
     ColumnWithTypeAndName column;

@@ -104,11 +104,9 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
         update_time = std::chrono::system_clock::now();
         return query_builder->composeUpdateQuery(configuration.update_field, str_time);
     }
-    else
-    {
-        update_time = std::chrono::system_clock::now();
-        return query_builder->composeLoadAllQuery();
-    }
+
+    update_time = std::chrono::system_clock::now();
+    return query_builder->composeLoadAllQuery();
 }
 
 QueryPipeline ClickHouseDictionarySource::loadAll()
@@ -195,14 +193,12 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
     {
         return readInvalidateQuery(executeQuery(request, nullptr, context_copy, QueryFlags{ .internal = true }).second.pipeline);
     }
-    else
-    {
-        /// We pass empty block to RemoteQueryExecutor, because we don't know the structure of the result.
-        Block invalidate_sample_block;
-        QueryPipeline pipeline(std::make_shared<RemoteSource>(
-            std::make_shared<RemoteQueryExecutor>(pool, request, invalidate_sample_block, context_copy), false, false, false));
-        return readInvalidateQuery(std::move(pipeline));
-    }
+
+    /// We pass empty block to RemoteQueryExecutor, because we don't know the structure of the result.
+    Block invalidate_sample_block;
+    QueryPipeline pipeline(std::make_shared<RemoteSource>(
+        std::make_shared<RemoteQueryExecutor>(pool, request, invalidate_sample_block, context_copy), false, false, false));
+    return readInvalidateQuery(std::move(pipeline));
 }
 
 void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)

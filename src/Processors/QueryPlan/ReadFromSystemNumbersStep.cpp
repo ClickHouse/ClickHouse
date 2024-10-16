@@ -380,18 +380,16 @@ void shrinkRanges(RangesWithStep & ranges, size_t size)
             size -= static_cast<UInt64>(range_size);
             continue;
         }
-        else if (range_size == size)
+        if (range_size == size)
         {
             last_range_idx = i;
             break;
         }
-        else
-        {
-            auto & range = ranges[i];
-            range.size = static_cast<UInt128>(size);
-            last_range_idx = i;
-            break;
-        }
+
+        auto & range = ranges[i];
+        range.size = static_cast<UInt128>(size);
+        last_range_idx = i;
+        break;
     }
 
     /// delete the additional ranges
@@ -422,7 +420,7 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
     size_t max_block_size_,
     size_t num_streams_)
     : SourceStepWithFilter(
-        DataStream{.header = storage_snapshot_->getSampleBlockForColumns(column_names_)},
+        storage_snapshot_->getSampleBlockForColumns(column_names_),
         column_names_,
         query_info_,
         storage_snapshot_,
@@ -449,8 +447,8 @@ void ReadFromSystemNumbersStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     if (pipe.empty())
     {
-        assert(output_stream != std::nullopt);
-        pipe = Pipe(std::make_shared<NullSource>(output_stream->header));
+        assert(output_header != std::nullopt);
+        pipe = Pipe(std::make_shared<NullSource>(*output_header));
     }
 
     /// Add storage limits.

@@ -14,7 +14,8 @@
 namespace DB
 {
 
-class DataStream;
+class Block;
+using Header = Block;
 
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
@@ -58,7 +59,7 @@ public:
 
     bool isInitialized() const { return root != nullptr; } /// Tree is not empty
     bool isCompleted() const; /// Tree is not empty and root hasOutputStream()
-    const DataStream & getCurrentDataStream() const; /// Checks that (isInitialized() && !isCompleted())
+    const Header & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
 
     void serialize(WriteBuffer & out) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context);
@@ -93,10 +94,10 @@ public:
         bool header = false;
     };
 
-    JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options);
-    void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent = 0);
-    void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options);
-    void explainEstimate(MutableColumns & columns);
+    JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options) const;
+    void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent = 0) const;
+    void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const;
+    void explainEstimate(MutableColumns & columns) const;
 
     /// Do not allow to change the table while the pipeline alive.
     void addTableLock(TableLockHolder lock) { resources.table_locks.emplace_back(std::move(lock)); }

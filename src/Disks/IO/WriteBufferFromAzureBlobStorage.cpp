@@ -152,10 +152,8 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
         detached_part_data.pop_front();
         return;
     }
-    else
-    {
-        writeMultipartUpload();
-    }
+
+    writeMultipartUpload();
 }
 
 void WriteBufferFromAzureBlobStorage::finalizeImpl()
