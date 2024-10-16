@@ -147,7 +147,7 @@ bool allow(
 }
 
 
-size_t calculateRangeWithStohasticSliding(size_t parts_count, size_t parts_threshold)
+size_t calculateRangeWithstochasticSliding(size_t parts_count, size_t parts_threshold)
 {
     auto mean = static_cast<double>(parts_count);
     std::normal_distribution<double> distribution{mean, mean / 3};
@@ -183,8 +183,8 @@ void selectWithinPartition(
     size_t begin = 0;
     if (parts_count >= parts_threshold)
     {
-        if (settings.enable_stohastic_sliding)
-            begin = calculateRangeWithStohasticSliding(parts_count, parts_threshold);
+        if (settings.enable_stochastic_sliding)
+            begin = calculateRangeWithstochasticSliding(parts_count, parts_threshold);
         else
             begin = parts_count - parts_threshold;
     }
