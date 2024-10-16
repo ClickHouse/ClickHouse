@@ -39,17 +39,6 @@ MergeSelectorPtr MergeSelectorFactory::get(const std::string & name, const std::
     return it->second(settings);
 }
 
-
-MergeSelectorPtr MergeSelectorFactory::get(const std::string & name) const
-{
-    return get(name, std::any{});
-}
-
-MergeSelectorPtr MergeSelectorFactory::get(MergeSelectorAlgorithm algorithm) const
-{
-    return get(algorithm, std::any{});
-}
-
 MergeSelectorPtr MergeSelectorFactory::get(MergeSelectorAlgorithm algorithm, const std::any & settings) const
 {
     auto it = enum_to_name_mapping.find(algorithm);

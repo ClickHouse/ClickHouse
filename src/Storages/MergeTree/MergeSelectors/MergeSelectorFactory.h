@@ -29,10 +29,8 @@ private:
 public:
     static MergeSelectorFactory & instance();
 
-    MergeSelectorPtr get(const std::string & name) const;
-    MergeSelectorPtr get(const std::string & name, const std::any & settings) const;
-    MergeSelectorPtr get(MergeSelectorAlgorithm algorithm) const;
-    MergeSelectorPtr get(MergeSelectorAlgorithm algorithm, const std::any & settings) const;
+    MergeSelectorPtr get(const std::string & name, const std::any & settings = {}) const;
+    MergeSelectorPtr get(MergeSelectorAlgorithm algorithm, const std::any & settings = {}) const;
 
     void registerPrivateSelector(std::string name, Creator && creator);
     void registerPublicSelector(std::string name, MergeSelectorAlgorithm enum_value, Creator && creator);
