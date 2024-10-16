@@ -79,9 +79,11 @@
 
 #include <Planner/Utils.h>
 
-#include <IO/ReadBufferFromString.h>
-#include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/S3/getObjectInfo.h>
+#include <IO/S3Common.h>
 
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -4225,6 +4227,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
     auto zookeeper = getZooKeeper();
 
     DataPartPtr broken_part;
+    bool cancel_fetch_for_broken = false;
     auto outdate_broken_part = [this, &broken_part]()
     {
         if (!broken_part)
@@ -4249,18 +4252,25 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
         if (!broken_part_info.contains(part->info))
             continue;
 
-        if (broken_part_info == part->info)
+        String prefix;
+
+        const bool part_info_equal_broken = broken_part_info == part->info;
+        if (part_info_equal_broken)
         {
             chassert(!broken_part);
             chassert(!storage_init);
             part->was_removed_as_broken = true;
-            part->makeCloneInDetached("broken", getInMemoryMetadataPtr(), /*disk_transaction*/ {});
+            prefix = "broken";
             broken_part = part;
         }
         else
         {
-            part->makeCloneInDetached("covered-by-broken", getInMemoryMetadataPtr(), /*disk_transaction*/ {});
+            prefix = "covered-by-broken";
         }
+
+        if (MakeClonePartInDetachedResult::NoFetchPart == makeClonePartInDetached(part, prefix))
+            cancel_fetch_for_broken = true;
+
         detached_parts.push_back(part->name);
     }
     LOG_WARNING(log, "Detached {} parts covered by broken part {}: {}", detached_parts.size(), part_name, fmt::join(detached_parts, ", "));
@@ -4333,6 +4343,13 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
             ops.emplace_back(zkutil::makeCheckRequest(fs::path(zookeeper_path) / "log", merge_pred.getVersion()));
         }
 
+        if (cancel_fetch_for_broken)
+        {
+            outdate_broken_part();
+            LOG_TRACE(log, "Cancel fetch for broken part {}", part_name);
+            return;
+        }
+
         LogEntryPtr log_entry = std::make_shared<LogEntry>();
         log_entry->type = LogEntry::GET_PART;
         log_entry->create_time = part_create_time;
@@ -4340,8 +4357,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
         log_entry->new_part_name = part_name;
 
         ops.emplace_back(zkutil::makeCreateRequest(
-            fs::path(replica_path) / "queue/queue-", log_entry->toString(),
-            zkutil::CreateMode::PersistentSequential));
+            fs::path(replica_path) / "queue/queue-", log_entry->toString(), zkutil::CreateMode::PersistentSequential));
 
         Coordination::Responses results;
         auto rc = zookeeper->tryMulti(ops, results, /* check_session_valid */ true);
@@ -4366,6 +4382,35 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
     }
 }
 
+auto StorageReplicatedMergeTree::makeClonePartInDetached(const DataPartPtr & part, const String & prefix) const -> MakeClonePartInDetachedResult
+{
+    MakeClonePartInDetachedResult result = MakeClonePartInDetachedResult::FetchPart;
+    const bool copy_instead_of_hardlink = part->isReplicatedZeroCopy();
+    try
+    {
+        part->makeCloneInDetached(prefix, getInMemoryMetadataPtr(), /*disk_transaction*/ {}, copy_instead_of_hardlink);
+    }
+#if USE_AWS_S3
+    catch (const S3Exception & ex)
+    {
+        // We have to check code NO_SUCH_KEY and RESOURCE_NOT_FOUND as well.
+        if (S3::isNotFoundError(ex.getS3ErrorCode()) && copy_instead_of_hardlink)
+        {
+            LOG_WARNING(
+                log, "Necessary key is absented in object storage. Trying to fix this by using hard links instead of the copy part.");
+            part->makeCloneInDetached(prefix, getInMemoryMetadataPtr(), /*disk_transaction*/ {}, false);
+            LOG_TRACE(log, "Repairing with copy hard links is finished successfully.");
+            return MakeClonePartInDetachedResult::NoFetchPart;
+        }
+        throw;
+    }
+#endif
+    catch (...)
+    {
+        throw;
+    }
+    return result;
+}
 
 void StorageReplicatedMergeTree::startBeingLeader()
 {

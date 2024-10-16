@@ -16,6 +16,8 @@
 #include <IO/HashingWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/S3Common.h>
+#include <IO/S3/getObjectInfo.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/TransactionLog.h>
@@ -84,7 +86,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
-
 
 void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const PartMetadataManagerPtr & manager)
 {
@@ -2047,8 +2048,19 @@ void IMergeTreeDataPart::renameToDetached(const String & prefix)
     part_is_probably_removed_from_disk = true;
 }
 
-DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/,
-                                                           const DiskTransactionPtr & disk_transaction) const
+DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(
+    const String & prefix,
+    const StorageMetadataPtr & metadata_snapshot,
+    const DiskTransactionPtr & disk_transaction) const
+{
+    return makeCloneInDetached(prefix, metadata_snapshot, disk_transaction, isReplicatedZeroCopy());
+}
+
+DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(
+    const String & prefix,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const DiskTransactionPtr & disk_transaction,
+    const bool copy_instead_of_hardlink) const
 {
     /// Avoid unneeded duplicates of broken parts if we try to detach the same broken part multiple times.
     /// Otherwise it may pollute detached/ with dirs with _tryN suffix and we will fail to remove broken part after 10 attempts.
@@ -2062,11 +2074,12 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
     auto storage_settings = storage.getSettings();
     IDataPartStorage::ClonePartParams params
     {
-        .copy_instead_of_hardlink = isStoredOnRemoteDiskWithZeroCopySupport() && storage.supportsReplication() && (*storage_settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication],
+        .copy_instead_of_hardlink = copy_instead_of_hardlink,
         .keep_metadata_version = prefix == "covered-by-broken",
         .make_source_readonly = true,
         .external_transaction = disk_transaction
     };
+
     return getDataPartStorage().freeze(
         storage.relative_data_path,
         *maybe_path_in_detached,
@@ -2074,6 +2087,12 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
         Context::getGlobalContextInstance()->getWriteSettings(),
         /* save_metadata_callback= */ {},
         params);
+}
+
+bool IMergeTreeDataPart::isReplicatedZeroCopy() const
+{
+    return isStoredOnRemoteDiskWithZeroCopySupport() && storage.supportsReplication()
+        && (*storage.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
 }
 
 MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(
