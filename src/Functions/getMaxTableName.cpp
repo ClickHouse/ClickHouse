@@ -19,8 +19,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
 }
 
-
-
 class FunctionGetMaxTableName : public IFunction, WithContext
 {
 public:
