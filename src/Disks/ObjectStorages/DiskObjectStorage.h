@@ -4,9 +4,9 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <IO/FileEncryptionCommon.h>
 #include <Common/re2.h>
 
-#include "Encrypted/EncryptedObjectStorage.h"
 #include "config.h"
 
 namespace CurrentMetrics
