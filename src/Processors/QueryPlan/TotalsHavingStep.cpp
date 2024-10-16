@@ -180,7 +180,7 @@ void TotalsHavingStep::serialize(Serialization & ctx) const
 
 std::unique_ptr<IQueryPlanStep> TotalsHavingStep::deserialize(Deserialization & ctx)
 {
-    if (ctx.input_streams.size() != 1)
+    if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "TotalsHaving must have one input stream");
 
     UInt8 flags;
@@ -204,7 +204,7 @@ std::unique_ptr<IQueryPlanStep> TotalsHavingStep::deserialize(Deserialization & 
     }
 
     return std::make_unique<TotalsHavingStep>(
-        ctx.input_streams.front(),
+        ctx.input_headers.front(),
         std::move(aggregates),
         overflow_row,
         std::move(actions_dag),

@@ -191,7 +191,7 @@ void DistinctStep::serialize(Serialization & ctx) const
 
 std::unique_ptr<IQueryPlanStep> DistinctStep::deserialize(Deserialization & ctx, bool pre_distinct_)
 {
-    if (ctx.input_streams.size() != 1)
+    if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "DistinctStep must have one input stream");
 
     size_t columns_size;
@@ -206,7 +206,7 @@ std::unique_ptr<IQueryPlanStep> DistinctStep::deserialize(Deserialization & ctx,
     size_limits.overflow_mode = ctx.settings.distinct_overflow_mode;
 
     return std::make_unique<DistinctStep>(
-        ctx.input_streams.front(), size_limits, 0, column_names, pre_distinct_);
+        ctx.input_headers.front(), size_limits, 0, column_names, pre_distinct_);
 }
 
 std::unique_ptr<IQueryPlanStep> DistinctStep::deserializeNormal(Deserialization & ctx)

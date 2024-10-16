@@ -130,6 +130,6 @@ void IQueryPlanStep::serialize(Serialization & /*ctx*/) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serialize is not implemented for {}", getName());
 }
 
-void IQueryPlanStep::updateOutputStream() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); }
+void IQueryPlanStep::updateOutputHeader() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); }
 
 }

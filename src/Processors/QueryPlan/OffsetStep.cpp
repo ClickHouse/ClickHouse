@@ -58,7 +58,7 @@ std::unique_ptr<IQueryPlanStep> OffsetStep::deserialize(Deserialization & ctx)
     UInt64 offset;
     readVarUInt(offset, ctx.in);
 
-    return std::make_unique<OffsetStep>(ctx.input_streams.front(), offset);
+    return std::make_unique<OffsetStep>(ctx.input_headers.front(), offset);
 }
 
 void registerOffsetStep(QueryPlanStepRegistry & registry)

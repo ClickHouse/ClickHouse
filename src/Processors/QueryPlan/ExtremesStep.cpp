@@ -38,7 +38,7 @@ void ExtremesStep::serialize(Serialization & ctx) const
 
 std::unique_ptr<IQueryPlanStep> ExtremesStep::deserialize(Deserialization & ctx)
 {
-    return std::make_unique<ExtremesStep>(ctx.input_streams.front());
+    return std::make_unique<ExtremesStep>(ctx.input_headers.front());
 }
 
 void registerExtremesStep(QueryPlanStepRegistry & registry)

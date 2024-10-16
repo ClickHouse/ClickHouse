@@ -775,7 +775,7 @@ void AggregatingStep::serialize(Serialization & ctx) const
 
 std::unique_ptr<IQueryPlanStep> AggregatingStep::deserialize(Deserialization & ctx)
 {
-    if (ctx.input_streams.size() != 1)
+    if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "AggregatingStep must have one input stream");
 
     UInt8 flags;
@@ -837,7 +837,7 @@ std::unique_ptr<IQueryPlanStep> AggregatingStep::deserialize(Deserialization & c
     GroupingSetsParamsList grouping_sets_params;
 
     auto aggregating_step = std::make_unique<AggregatingStep>(
-        ctx.input_streams.front(),
+        ctx.input_headers.front(),
         std::move(params),
         std::move(grouping_sets_params),
         final,

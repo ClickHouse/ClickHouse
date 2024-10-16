@@ -120,7 +120,7 @@ std::unique_ptr<IQueryPlanStep> ArrayJoinStep::deserialize(Deserialization & ctx
     for (auto & column : array_join.columns)
         readStringBinary(column, ctx.in);
 
-    return std::make_unique<ArrayJoinStep>(ctx.input_streams.front(), std::move(array_join), is_unaligned, ctx.settings.max_block_size);
+    return std::make_unique<ArrayJoinStep>(ctx.input_headers.front(), std::move(array_join), is_unaligned, ctx.settings.max_block_size);
 }
 
 void registerArrayJoinStep(QueryPlanStepRegistry & registry)

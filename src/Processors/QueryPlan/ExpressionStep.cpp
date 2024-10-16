@@ -91,10 +91,10 @@ void ExpressionStep::serialize(Serialization & ctx) const
 std::unique_ptr<IQueryPlanStep> ExpressionStep::deserialize(Deserialization & ctx)
 {
     ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
-    if (ctx.input_streams.size() != 1)
+    if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "ExpressionStep must have one input stream");
 
-    return std::make_unique<ExpressionStep>(ctx.input_streams.front(), std::move(actions_dag));
+    return std::make_unique<ExpressionStep>(ctx.input_headers.front(), std::move(actions_dag));
 }
 
 void registerExpressionStep(QueryPlanStepRegistry & registry)

@@ -185,7 +185,7 @@ void SelectStreamFactory::createForShardImpl(
             query_plan = createLocalPlan(
                 query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, has_missing_objects, true, shard_info.default_database);
 
-            shard_header = query_plan->getCurrentDataStream().header;
+            shard_header = query_plan->getCurrentHeader();
         }
         else
         {

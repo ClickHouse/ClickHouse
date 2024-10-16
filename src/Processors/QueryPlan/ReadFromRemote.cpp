@@ -125,7 +125,7 @@ static void enforceAggregationInOrder(
         if (!shard.query_plan)
             continue;
 
-        auto sorting = std::make_unique<SortingStep>(shard.query_plan->getCurrentDataStream(), sort_description, 0, SortingStep::Settings(context));
+        auto sorting = std::make_unique<SortingStep>(shard.query_plan->getCurrentHeader(), sort_description, 0, SortingStep::Settings(context));
         sorting->setStepDescription("Enforce aggregation in order");
         shard.query_plan->addStep(std::move(sorting));
     }
@@ -251,13 +251,13 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         for (auto & try_result : try_results)
             connections.emplace_back(std::move(try_result.entry));
 
-            String query_string = formattedAST(query);
-            auto stage_to_use = my_shard.query_plan ? QueryProcessingStage::QueryPlan : my_stage;
+        String query_string = formattedAST(query);
+        auto stage_to_use = my_shard.query_plan ? QueryProcessingStage::QueryPlan : my_stage;
 
-            my_scalars["_shard_num"] = Block{
-                {DataTypeUInt32().createColumnConst(1, my_shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
-            auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use, my_shard.query_plan);
+        my_scalars["_shard_num"] = Block{
+            {DataTypeUInt32().createColumnConst(1, my_shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
+        auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+            std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use, my_shard.query_plan);
 
         auto pipe = createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending);
         QueryPipelineBuilder builder;

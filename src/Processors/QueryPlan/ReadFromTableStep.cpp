@@ -13,10 +13,10 @@ namespace ErrorCodes
 }
 
 ReadFromTableStep::ReadFromTableStep(
-    Block output_header,
+    Block header,
     String table_name_,
     TableExpressionModifiers table_expression_modifiers_)
-    : ISourceStep(DataStream{.header = std::move(output_header)})
+    : ISourceStep(std::move(header))
     , table_name(std::move(table_name_))
     , table_expression_modifiers(std::move(table_expression_modifiers_))
 {
@@ -83,7 +83,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromTableStep::deserialize(Deserialization &
         sample_offset_ratio = deserializeRational(ctx.in);
 
     TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);
-    return std::make_unique<ReadFromTableStep>(ctx.output_stream->header, table_name, table_expression_modifiers);
+    return std::make_unique<ReadFromTableStep>(*ctx.output_header, table_name, table_expression_modifiers);
 }
 
 void registerReadFromTableStep(QueryPlanStepRegistry & registry)

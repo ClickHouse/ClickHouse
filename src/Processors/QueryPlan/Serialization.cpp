@@ -280,8 +280,8 @@ void QueryPlan::serialize(WriteBuffer & out) const
         writeStringBinary(node->step->getSerializationName(), out);
         writeStringBinary(node->step->getStepDescription(), out);
 
-        if (node->step->hasOutputStream())
-            serializeHeader(node->step->getOutputStream().header, out);
+        if (node->step->hasOutputHeader())
+            serializeHeader(node->step->getOutputHeader(), out);
         else
             serializeHeader({}, out);
 
@@ -338,29 +338,28 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         readStringBinary(step_name, in);
         readStringBinary(step_description, in);
 
-        DataStream output_stream;
-        output_stream.header = deserializeHeader(in);
+        Header output_header  = deserializeHeader(in);
 
         QueryPlanSerializationSettings settings;
         settings.readBinary(in);
 
-        DataStreams input_streams;
-        input_streams.reserve(frame.children.size());
+        Headers input_headers;
+        input_headers.reserve(frame.children.size());
         for (const auto & child : frame.children)
-            input_streams.push_back(child->step->getOutputStream());
+            input_headers.push_back(child->step->getOutputHeader());
 
-        IQueryPlanStep::Deserialization ctx{in, sets_registry, context, input_streams, &output_stream, settings};
+        IQueryPlanStep::Deserialization ctx{in, sets_registry, context, input_headers, &output_header, settings};
         auto step = step_registry.createStep(step_name, ctx);
 
-        if (step->hasOutputStream())
+        if (step->hasOutputHeader())
         {
-            assertCompatibleHeader(step->getOutputStream().header, output_stream.header,
+            assertCompatibleHeader(step->getOutputHeader(), output_header,
                  fmt::format("deserialization of query plan {} step", step_name));
         }
-        else if (output_stream.header.columns())
+        else if (output_header.columns())
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Deserialized step {} has no output stream, but deserialized header is not empty : {}",
-                step_name, output_stream.header.dumpStructure());
+                step_name, output_header.dumpStructure());
 
         auto & node = plan.nodes.emplace_back(std::move(step), std::move(frame.children));
         frame.to_fill = &node;
@@ -466,7 +465,7 @@ static void makeSetsFromSubqueries(QueryPlan & plan, std::list<QueryPlanAndSets:
     }
 
     auto step = std::make_unique<DelayedCreatingSetsStep>(
-        plan.getCurrentDataStream(),
+        plan.getCurrentHeader(),
         std::move(subqueries),
         context);
 
@@ -510,7 +509,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     if (!reading_from_table && !reading_from_table_function)
         return {};
 
-    const auto & header = node.step->getOutputStream().header;
+    const auto & header = node.step->getOutputHeader();
     auto column_names = header.getNames();
 
     StoragePtr storage;
@@ -632,11 +631,11 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     }
 
     auto converting_actions = ActionsDAG::makeConvertingActions(
-        reading_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+        reading_plan.getCurrentHeader().getColumnsWithTypeAndName(),
         header.getColumnsWithTypeAndName(),
         ActionsDAG::MatchColumnsMode::Name);
 
-    node.step = std::make_unique<ExpressionStep>(reading_plan.getCurrentDataStream(), std::move(converting_actions));
+    node.step = std::make_unique<ExpressionStep>(reading_plan.getCurrentHeader(), std::move(converting_actions));
     node.children = {reading_plan.getRootNode()};
 
     auto nodes_and_resource = QueryPlan::detachNodesAndResources(std::move(reading_plan));

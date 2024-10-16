@@ -113,7 +113,7 @@ std::unique_ptr<IQueryPlanStep> LimitStep::deserialize(Deserialization & ctx)
     if (with_ties)
         deserializeSortDescription(description, ctx.in);
 
-    return std::make_unique<LimitStep>(ctx.input_streams.front(), limit, offset, always_read_till_end, with_ties, std::move(description));
+    return std::make_unique<LimitStep>(ctx.input_headers.front(), limit, offset, always_read_till_end, with_ties, std::move(description));
 }
 
 void registerLimitStep(QueryPlanStepRegistry & registry)

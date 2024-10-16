@@ -110,7 +110,7 @@ std::unique_ptr<IQueryPlanStep> LimitByStep::deserialize(Deserialization & ctx)
     for (auto & column : columns)
         readStringBinary(column, ctx.in);
 
-    return std::make_unique<LimitByStep>(ctx.input_streams.front(), group_length, group_offset, std::move(columns));
+    return std::make_unique<LimitByStep>(ctx.input_headers.front(), group_length, group_offset, std::move(columns));
 }
 
 void registerLimitByStep(QueryPlanStepRegistry & registry)
