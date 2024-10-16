@@ -35,12 +35,13 @@ public:
         {
             if (!path_from.has_value())
                 return std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
-        String relative_path_from = disk.getRelativeFromRoot(path_from.value());
-        auto res = disk.getDisk()->readFileIfExists(relative_path_from, getReadSettings());
-        if (res)
-            return res;
-        /// For backward compatibility.
-        return std::make_unique<ReadBufferFromEmptyFile>();
+
+            String relative_path_from = disk.getRelativeFromRoot(path_from.value());
+            auto res = disk.getDisk()->readFileIfExists(relative_path_from, getReadSettings());
+            if (res)
+                return res;
+            /// For backward compatibility.
+            return std::make_unique<ReadBufferFromEmptyFile>();
         }();
 
         auto out = disk.getDisk()->writeFile(path_to);
