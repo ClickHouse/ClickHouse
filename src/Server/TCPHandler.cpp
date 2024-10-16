@@ -26,6 +26,7 @@
 #include <Interpreters/Squashing.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/TLSLog.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Server/TCPServer.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
@@ -1593,6 +1594,8 @@ void TCPHandler::receiveHello()
         Poco::Net::SecureStreamSocket secure_socket(socket());
         if (secure_socket.havePeerCertificate())
         {
+            if (auto tls_log = server.context()->getTLSLog(); tls_log != nullptr)
+                tls_log->logTLSConnection(secure_socket.peerCertificate(), user);
             try
             {
                 session->authenticate(

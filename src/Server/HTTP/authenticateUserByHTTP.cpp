@@ -11,6 +11,7 @@
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Session.h>
+#include <Interpreters/TLSLog.h>
 
 #include <Poco/Net/HTTPBasicCredentials.h>
 
@@ -94,7 +95,11 @@ bool authenticateUserByHTTP(
             throwMultipleAuthenticationMethods("SSL certificate authentication", "authentication via parameters");
 
         if (request.havePeerCertificate())
+        {
             certificate_subjects = extractSSLCertificateSubjects(request.peerCertificate());
+            if (auto tls_log = global_context->getTLSLog(); tls_log != nullptr)
+                tls_log->logTLSConnection(request.peerCertificate(), user);
+        }
 
         if (certificate_subjects.empty())
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED,

@@ -13,6 +13,8 @@
 #include <Poco/Net/NetException.h>
 
 #include <Common/logger_useful.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/TLSLog.h>
 
 #if USE_SSL
 #include <Poco/Net/SecureStreamSocketImpl.h>

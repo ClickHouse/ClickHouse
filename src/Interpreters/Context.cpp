@@ -84,6 +84,7 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/TraceCollector.h>
+#include <Interpreters/TLSLog.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/UncompressedCache.h>
@@ -4323,6 +4324,15 @@ std::shared_ptr<SessionLog> Context::getSessionLog() const
     return shared->system_logs->session_log;
 }
 
+std::shared_ptr<TLSLog> Context::getTLSLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->tls_log;
+}
 
 std::shared_ptr<ZooKeeperLog> Context::getZooKeeperLog() const
 {

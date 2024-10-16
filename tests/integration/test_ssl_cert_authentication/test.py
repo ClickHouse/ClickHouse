@@ -1,3 +1,4 @@
+import json
 import logging
 import os.path
 import ssl
@@ -416,3 +417,59 @@ def test_x509_san_wildcard_support():
     )
 
     instance.query("DROP USER brian")
+
+
+@pytest.mark.parametrize("protocol", ["tcp", "https"])
+@pytest.mark.parametrize(
+    "user,cert_name,expected",
+    [
+        (
+            "john",
+            "client1",
+            {
+                "type": "success",
+                "user": "john",
+                "subject": "CN:client1",
+                "certificate_not_before": "2024-06-26 10:25:04",
+                "certificate_not_after": "2034-06-24 10:25:04",
+                "certificate_serial": "05F10C67567FE30795D77AF2540F6AC8D4CF246D",
+                "certificate_issuer": "/C=RU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=ca",
+            },
+        ),
+        (
+            "john",
+            "wrong",
+            {
+                "type": "failure",
+                "user": "",  # can't extract user name when TLS handshake fails
+                "subject": "CN:client",
+                "certificate_not_before": "2024-06-26 10:25:05",
+                "certificate_not_after": "2034-06-24 10:25:05",
+                "certificate_serial": "31C5F647C2361FCBCDB404878B4128B9F2205845",
+                "certificate_issuer": "/C=RU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=client",
+            },
+        ),
+    ],
+)
+def test_tls_log(protocol, user, cert_name, expected):
+    instance.query("SYSTEM FLUSH LOGS")
+    instance.query("DELETE FROM system.tls_log where 1 = 1")
+    try:
+        if protocol == "https":
+            execute_query_https("SELECT currentUser()", user=user, cert_name=cert_name)
+        else:
+            execute_query_native(
+                instance, "SELECT currentUser()", user=user, cert_name=cert_name
+            )
+    except Exception:
+        pass
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    assert instance.query("select count() from system.tls_log") == "1\n"
+    response = json.loads(
+        instance.query(
+            "select type, user, certificate_subjects[1] as subject, certificate_not_before, certificate_not_after, certificate_serial, certificate_issuer from system.tls_log FORMAT JSONEachRow"
+        )
+    )
+    assert expected == response

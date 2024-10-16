@@ -8,6 +8,7 @@
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/SessionLog.h>
+#include <Interpreters/TLSLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/FilesystemCacheLog.h>

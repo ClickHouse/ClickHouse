@@ -111,6 +111,7 @@ class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
 class SessionLog;
+class TLSLog;
 class BackupsWorker;
 class TransactionsInfoLog;
 class ProcessorsProfileLog;
@@ -1165,6 +1166,7 @@ public:
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
     std::shared_ptr<ZooKeeperLog> getZooKeeperLog() const;
     std::shared_ptr<SessionLog> getSessionLog() const;
+    std::shared_ptr<TLSLog> getTLSLog() const;
     std::shared_ptr<TransactionsInfoLog> getTransactionsInfoLog() const;
     std::shared_ptr<ProcessorsProfileLog> getProcessorsProfileLog() const;
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
