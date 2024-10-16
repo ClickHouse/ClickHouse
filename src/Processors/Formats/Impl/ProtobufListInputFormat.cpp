@@ -23,7 +23,7 @@ ProtobufListInputFormat::ProtobufListInputFormat(
           header_.getNames(),
           header_.getDataTypes(),
           missing_column_indices,
-          *ProtobufSchemas::instance().getMessageTypeForFormatSchema(
+          ProtobufSchemas::instance().getMessageTypeForFormatSchema(
               schema_info_.getSchemaInfo(), ProtobufSchemas::WithEnvelope::Yes, google_protos_path),
           /* with_length_delimiter = */ true,
           /* with_envelope = */ true,
@@ -93,9 +93,9 @@ ProtobufListSchemaReader::ProtobufListSchemaReader(const FormatSettings & format
 
 NamesAndTypesList ProtobufListSchemaReader::readSchema()
 {
-    const auto * message_descriptor
-        = ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info, ProtobufSchemas::WithEnvelope::Yes, google_protos_path);
-    return protobufSchemaToCHSchema(message_descriptor, skip_unsupported_fields);
+    auto descriptor = ProtobufSchemas::instance().getMessageTypeForFormatSchema(
+        schema_info, ProtobufSchemas::WithEnvelope::Yes, google_protos_path);
+    return protobufSchemaToCHSchema(descriptor.message_descriptor, skip_unsupported_fields);
 }
 
 void registerInputFormatProtobufList(FormatFactory & factory)

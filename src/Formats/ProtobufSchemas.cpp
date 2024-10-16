@@ -112,7 +112,7 @@ private:
 };
 
 
-const google::protobuf::Descriptor *
+ProtobufSchemas::DescriptorHolder
 ProtobufSchemas::getMessageTypeForFormatSchema(const FormatSchemaInfo & info, WithEnvelope with_envelope, const String & google_protos_path)
 {
     std::lock_guard lock(mutex);
@@ -121,10 +121,10 @@ ProtobufSchemas::getMessageTypeForFormatSchema(const FormatSchemaInfo & info, Wi
         it = importers
                  .emplace(
                      info.schemaDirectory(),
-                     std::make_unique<ImporterWithSourceTree>(info.schemaDirectory(), google_protos_path, with_envelope))
+                     std::make_shared<ImporterWithSourceTree>(info.schemaDirectory(), google_protos_path, with_envelope))
                  .first;
     auto * importer = it->second.get();
-    return importer->import(info.schemaPath(), info.messageName());
+    return DescriptorHolder(it->second, importer->import(info.schemaPath(), info.messageName()));
 }
 
 }

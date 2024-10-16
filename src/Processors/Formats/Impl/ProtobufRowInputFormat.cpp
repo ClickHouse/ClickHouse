@@ -19,7 +19,7 @@ ProtobufRowInputFormat::ProtobufRowInputFormat(
     bool flatten_google_wrappers_,
     const String & google_protos_path)
     : IRowInputFormat(header_, in_, params_)
-    , message_descriptor(ProtobufSchemas::instance().getMessageTypeForFormatSchema(
+    , descriptor(ProtobufSchemas::instance().getMessageTypeForFormatSchema(
           schema_info_.getSchemaInfo(), ProtobufSchemas::WithEnvelope::No, google_protos_path))
     , with_length_delimiter(with_length_delimiter_)
     , flatten_google_wrappers(flatten_google_wrappers_)
@@ -33,7 +33,7 @@ void ProtobufRowInputFormat::createReaderAndSerializer()
         getPort().getHeader().getNames(),
         getPort().getHeader().getDataTypes(),
         missing_column_indices,
-        *message_descriptor,
+        descriptor,
         with_length_delimiter,
         /* with_envelope = */ false,
         flatten_google_wrappers,
@@ -132,9 +132,9 @@ ProtobufSchemaReader::ProtobufSchemaReader(const FormatSettings & format_setting
 
 NamesAndTypesList ProtobufSchemaReader::readSchema()
 {
-    const auto * message_descriptor
-        = ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info, ProtobufSchemas::WithEnvelope::No, google_protos_path);
-    return protobufSchemaToCHSchema(message_descriptor, skip_unsupported_fields);
+    auto descriptor = ProtobufSchemas::instance().getMessageTypeForFormatSchema(
+        schema_info, ProtobufSchemas::WithEnvelope::No, google_protos_path);
+    return protobufSchemaToCHSchema(descriptor.message_descriptor, skip_unsupported_fields);
 }
 
 void registerProtobufSchemaReader(FormatFactory & factory)
