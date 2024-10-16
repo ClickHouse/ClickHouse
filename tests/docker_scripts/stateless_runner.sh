@@ -75,7 +75,7 @@ fi
 cache_policy=""
 if [ $((RANDOM % 3)) -eq 0 ]; then
     cache_policy="SLRU"
-else if [ $((RANDOM % 3)) -eq 1 ]; then
+elif [ $((RANDOM % 3)) -eq 1 ]; then
     cache_policy="LRU"
 else
     cache_policy="SIEVE"
