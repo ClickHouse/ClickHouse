@@ -1,4 +1,6 @@
--- Tags: long, no-tsan, no-msan, no-asan, no-ubsan, no-debug, no-s3-storage
+-- Tags: long, no-tsan, no-msan, no-asan, no-ubsan, no-debug, no-object-storage
+
+SET max_rows_to_read = '101M';
 
 DROP TABLE IF EXISTS t_2354_dist_with_external_aggr;
 
@@ -23,6 +25,6 @@ select a, b, c, sum(a) as s
 from remote('127.0.0.{2,3}', currentDatabase(), t_2354_dist_with_external_aggr)
 group by a, b, c
 format Null
-settings max_memory_usage = '5Gi';
+settings max_memory_usage = '5Gi', max_result_rows = 0, max_result_bytes = 0;
 
 DROP TABLE t_2354_dist_with_external_aggr;

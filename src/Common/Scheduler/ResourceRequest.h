@@ -45,7 +45,7 @@ constexpr ResourceCost ResourceCostMax = std::numeric_limits<int>::max();
 class ResourceRequest : public boost::intrusive::list_base_hook<>
 {
 public:
-    /// Cost of request execution; should be filled before request enqueueing.
+    /// Cost of request execution; should be filled before request enqueueing and remain constant until `finish()`.
     /// NOTE: If cost is not known in advance, ResourceBudget should be used (note that every ISchedulerQueue has it)
     ResourceCost cost;
 

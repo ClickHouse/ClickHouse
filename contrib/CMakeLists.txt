@@ -71,7 +71,6 @@ add_contrib (zlib-ng-cmake zlib-ng)
 add_contrib (bzip2-cmake bzip2)
 add_contrib (minizip-ng-cmake minizip-ng)
 add_contrib (snappy-cmake snappy)
-add_contrib (rocksdb-cmake rocksdb)
 add_contrib (thrift-cmake thrift)
 # parquet/arrow/orc
 add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion
@@ -146,14 +145,26 @@ add_contrib (isa-l-cmake isa-l)
 add_contrib (libhdfs3-cmake libhdfs3) # requires: google-protobuf, krb5, isa-l
 add_contrib (hive-metastore-cmake hive-metastore) # requires: thrift, avro, arrow, libhdfs3
 add_contrib (cppkafka-cmake cppkafka)
-add_contrib (libpqxx-cmake libpqxx)
-add_contrib (libpq-cmake libpq)
+
+option(ENABLE_LIBPQXX "Enable PostgreSQL" ${ENABLE_LIBRARIES})
+if (ENABLE_LIBPQXX)
+    add_contrib (postgres-cmake postgres)
+    add_contrib (libpqxx-cmake libpqxx)
+endif()
+
+add_contrib (rocksdb-cmake rocksdb) # requires: jemalloc, snappy, zlib, lz4, zstd, liburing
 add_contrib (nuraft-cmake NuRaft)
 add_contrib (fast_float-cmake fast_float)
 add_contrib (idna-cmake idna)
 add_contrib (datasketches-cpp-cmake datasketches-cpp)
 add_contrib (incbin-cmake incbin)
 add_contrib (sqids-cpp-cmake sqids-cpp)
+
+option(USE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})
+if (USE_MONGODB)
+    add_contrib (mongo-c-driver-cmake mongo-c-driver) # requires: zlib
+    add_contrib (mongo-cxx-driver-cmake mongo-cxx-driver) # requires: libmongoc, libbson
+endif()
 
 option(ENABLE_NLP "Enable NLP functions support" ${ENABLE_LIBRARIES})
 if (ENABLE_NLP)
@@ -179,7 +190,7 @@ else()
     message(STATUS "Not using QPL")
 endif ()
 
-if (OS_LINUX AND ARCH_AMD64)
+if (OS_LINUX AND ARCH_AMD64 AND NOT NO_SSE3_OR_HIGHER)
     option (ENABLE_QATLIB "Enable Intel® QuickAssist Technology Library (QATlib)" ${ENABLE_LIBRARIES})
 elseif(ENABLE_QATLIB)
     message (${RECONFIGURE_MESSAGE_LEVEL} "QATLib is only supported on x86_64")
@@ -205,14 +216,12 @@ add_contrib (morton-nd-cmake morton-nd)
 if (ARCH_S390X)
     add_contrib(crc32-s390x-cmake crc32-s390x)
 endif()
-add_contrib (annoy-cmake annoy)
 
-option(ENABLE_USEARCH "Enable USearch (Approximate Neighborhood Search, HNSW) support" ${ENABLE_LIBRARIES})
+option(ENABLE_USEARCH "Enable USearch" ${ENABLE_LIBRARIES})
 if (ENABLE_USEARCH)
     add_contrib (FP16-cmake FP16)
-    add_contrib (robin-map-cmake robin-map)
     add_contrib (SimSIMD-cmake SimSIMD)
-    add_contrib (usearch-cmake usearch) # requires: FP16, robin-map, SimdSIMD
+    add_contrib (usearch-cmake usearch) # requires: FP16, SimdSIMD
 else ()
     message(STATUS "Not using USearch")
 endif ()
@@ -227,6 +236,10 @@ add_contrib (google-benchmark-cmake google-benchmark)
 add_contrib (ulid-c-cmake ulid-c)
 
 add_contrib (libssh-cmake libssh)
+
+add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobufs-gogo)
+
+add_contrib(numactl-cmake numactl)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

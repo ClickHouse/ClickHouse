@@ -1,4 +1,5 @@
 #include <Common/SharedMutex.h>
+#include <base/getThreadId.h>
 
 #ifdef OS_LINUX /// Because of futex
 
@@ -12,6 +13,7 @@ namespace DB
 SharedMutex::SharedMutex()
     : state(0)
     , waiters(0)
+    , writer_thread_id(0)
 {}
 
 void SharedMutex::lock()
@@ -29,6 +31,10 @@ void SharedMutex::lock()
             break;
     }
 
+    /// The first step of acquiring the exclusive ownership is finished.
+    /// Now we just wait until all readers release the shared ownership.
+    writer_thread_id.store(getThreadId());
+
     value |= writers;
     while (value & readers)
         futexWaitLowerFetch(state, value);
@@ -37,11 +43,15 @@ void SharedMutex::lock()
 bool SharedMutex::try_lock()
 {
     UInt64 value = 0;
-    return state.compare_exchange_strong(value, writers);
+    bool success = state.compare_exchange_strong(value, writers);
+    if (success)
+        writer_thread_id.store(getThreadId());
+    return success;
 }
 
 void SharedMutex::unlock()
 {
+    writer_thread_id.store(0);
     state.store(0);
     if (waiters)
         futexWakeUpperAll(state);

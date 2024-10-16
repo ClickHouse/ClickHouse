@@ -13,7 +13,7 @@ using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 
 struct SelectQueryOptions;
 
-/// Find a qury which can be executed with parallel replicas up to WithMergableStage.
+/// Find a query which can be executed with parallel replicas up to WithMergableStage.
 /// Returned query will always contain some (>1) subqueries, possibly with joins.
 const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tree_node, SelectQueryOptions & select_query_options);
 

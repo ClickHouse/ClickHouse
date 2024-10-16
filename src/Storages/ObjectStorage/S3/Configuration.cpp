@@ -1,6 +1,8 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 
 #if USE_AWS_S3
+#include <Common/HTTPHeaderFilter.h>
+#include <Core/Settings.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageURL.h>
@@ -17,9 +19,24 @@
 
 #include <boost/algorithm/string.hpp>
 #include <filesystem>
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_archive_path_syntax;
+    extern const SettingsBool s3_create_new_file_on_insert;
+    extern const SettingsBool s3_ignore_file_doesnt_exist;
+    extern const SettingsUInt64 s3_list_object_keys_size;
+    extern const SettingsBool s3_skip_empty_files;
+    extern const SettingsBool s3_truncate_on_insert;
+    extern const SettingsBool s3_throw_on_zero_files_match;
+    extern const SettingsBool s3_validate_request_settings;
+    extern const SettingsSchemaInferenceMode schema_inference_mode;
+    extern const SettingsBool schema_inference_use_cache_for_s3;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -89,14 +106,14 @@ StorageObjectStorage::QuerySettings StorageS3Configuration::getQuerySettings(con
 {
     const auto & settings = context->getSettingsRef();
     return StorageObjectStorage::QuerySettings{
-        .truncate_on_insert = settings.s3_truncate_on_insert,
-        .create_new_file_on_insert = settings.s3_create_new_file_on_insert,
-        .schema_inference_use_cache = settings.schema_inference_use_cache_for_s3,
-        .schema_inference_mode = settings.schema_inference_mode,
-        .skip_empty_files = settings.s3_skip_empty_files,
-        .list_object_keys_size = settings.s3_list_object_keys_size,
-        .throw_on_zero_files_match = settings.s3_throw_on_zero_files_match,
-        .ignore_non_existent_file = settings.s3_ignore_file_doesnt_exist,
+        .truncate_on_insert = settings[Setting::s3_truncate_on_insert],
+        .create_new_file_on_insert = settings[Setting::s3_create_new_file_on_insert],
+        .schema_inference_use_cache = settings[Setting::schema_inference_use_cache_for_s3],
+        .schema_inference_mode = settings[Setting::schema_inference_mode],
+        .skip_empty_files = settings[Setting::s3_skip_empty_files],
+        .list_object_keys_size = settings[Setting::s3_list_object_keys_size],
+        .throw_on_zero_files_match = settings[Setting::s3_throw_on_zero_files_match],
+        .ignore_non_existent_file = settings[Setting::s3_ignore_file_doesnt_exist],
     };
 }
 
@@ -107,8 +124,7 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
     const auto & config = context->getConfigRef();
     const auto & settings = context->getSettingsRef();
 
-    auto s3_settings = getSettings(
-        config, "s3"/* config_prefix */, context, url.uri_str, settings.s3_validate_request_settings);
+    auto s3_settings = getSettings(config, "s3" /* config_prefix */, context, url.uri_str, settings[Setting::s3_validate_request_settings]);
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
     {
@@ -141,14 +157,14 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
 
 void StorageS3Configuration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
-    const auto settings = context->getSettingsRef();
+    const auto & settings = context->getSettingsRef();
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
 
     auto filename = collection.getOrDefault<String>("filename", "");
     if (!filename.empty())
-        url = S3::URI(std::filesystem::path(collection.get<String>("url")) / filename);
+        url = S3::URI(std::filesystem::path(collection.get<String>("url")) / filename, settings[Setting::allow_archive_path_syntax]);
     else
-        url = S3::URI(collection.get<String>("url"));
+        url = S3::URI(collection.get<String>("url"), settings[Setting::allow_archive_path_syntax]);
 
     auth_settings.access_key_id = collection.getOrDefault<String>("access_key_id", "");
     auth_settings.secret_access_key = collection.getOrDefault<String>("secret_access_key", "");
@@ -169,21 +185,20 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
 
 void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
-    /// Supported signatures: S3('url') S3('url', 'format') S3('url', 'format', 'compression') S3('url', NOSIGN) S3('url', NOSIGN, 'format') S3('url', NOSIGN, 'format', 'compression') S3('url', 'aws_access_key_id', 'aws_secret_access_key') S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'session_token') S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format') S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'session_token', 'format') S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'compression')
-    /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'session_token', 'format', 'compression')
-    /// with optional headers() function
-
     size_t count = StorageURL::evalArgsAndCollectHeaders(args, headers_from_ast, context);
 
-    if (count == 0 || count > (with_structure ? 7 : 6))
+    if (count == 0 || count > getMaxNumberOfArguments(with_structure))
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Storage S3 requires 1 to 5 arguments: "
-                        "url, [NOSIGN | access_key_id, secret_access_key], name of used format and [compression_method]");
+            "Storage S3 requires 1 to {} arguments. All supported signatures:\n{}",
+            getMaxNumberOfArguments(with_structure),
+            getSignatures(with_structure));
 
     std::unordered_map<std::string_view, size_t> engine_args_to_idx;
     bool no_sign_request = false;
 
-    /// For 2 arguments we support 2 possible variants:
+    /// When adding new arguments in the signature don't forget to update addStructureAndFormatToArgsIfNeeded as well.
+
+    /// For 2 arguments we support:
     /// - s3(source, format)
     /// - s3(source, NOSIGN)
     /// We can distinguish them by looking at the 2-nd argument: check if it's NOSIGN or not.
@@ -195,10 +210,15 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
         else
             engine_args_to_idx = {{"format", 1}};
     }
-    /// For 3 arguments we support 2 possible variants:
+    /// For 3 arguments we support:
+    /// if with_structure == 0:
+    /// - s3(source, NOSIGN, format)
     /// - s3(source, format, compression_method)
     /// - s3(source, access_key_id, secret_access_key)
+    /// if with_structure == 1:
     /// - s3(source, NOSIGN, format)
+    /// - s3(source, format, structure)
+    /// - s3(source, access_key_id, secret_access_key)
     /// We can distinguish them by looking at the 2-nd argument: check if it's NOSIGN or format name.
     else if (count == 3)
     {
@@ -218,7 +238,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
         else
             engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}};
     }
-    /// For 4 arguments we support 3 possible variants:
+    /// For 4 arguments we support:
     /// if with_structure == 0:
     /// - s3(source, access_key_id, secret_access_key, session_token)
     /// - s3(source, access_key_id, secret_access_key, format)
@@ -228,7 +248,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     /// - s3(source, access_key_id, secret_access_key, format),
     /// - s3(source, access_key_id, secret_access_key, session_token)
     /// - s3(source, NOSIGN, format, structure)
-    /// We can distinguish them by looking at the 2-nd argument: check if it's a NOSIGN or not.
+    /// We can distinguish them by looking at the 2-nd argument: check if it's a NOSIGN, format name of something else.
     else if (count == 4)
     {
         auto second_arg = checkAndGetLiteralArgument<String>(args[1], "access_key_id/NOSIGN");
@@ -257,7 +277,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
             }
         }
     }
-    /// For 5 arguments we support 2 possible variants:
+    /// For 5 arguments we support:
     /// if with_structure == 0:
     /// - s3(source, access_key_id, secret_access_key, session_token, format)
     /// - s3(source, access_key_id, secret_access_key, format, compression)
@@ -301,13 +321,16 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
             }
         }
     }
+    /// For 6 arguments we support:
+    /// if with_structure == 0:
+    /// - s3(source, access_key_id, secret_access_key, session_token, format, compression_method)
+    /// if with_structure == 1:
+    /// - s3(source, access_key_id, secret_access_key, format, structure, compression_method)
+    /// - s3(source, access_key_id, secret_access_key, session_token, format, structure)
     else if (count == 6)
     {
         if (with_structure)
         {
-            /// - s3(source, access_key_id, secret_access_key, format, structure, compression_method)
-            /// - s3(source, access_key_id, secret_access_key, session_token, format, structure)
-            /// We can distinguish them by looking at the 4-th argument: check if it's a format name or not
             auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/session_token");
             if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
             {
@@ -323,13 +346,14 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
             engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"compression_method", 5}};
         }
     }
+    /// s3(source, access_key_id, secret_access_key, session_token, format, structure, compression_method)
     else if (with_structure && count == 7)
     {
         engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"compression_method", 6}};
     }
 
     /// This argument is always the first
-    url = S3::URI(checkAndGetLiteralArgument<String>(args[0], "url"));
+    url = S3::URI(checkAndGetLiteralArgument<String>(args[0], "url"), context->getSettingsRef()[Setting::allow_archive_path_syntax]);
 
     if (engine_args_to_idx.contains("format"))
     {
@@ -364,24 +388,33 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     keys = {url.key};
 }
 
-void StorageS3Configuration::addStructureAndFormatToArgs(
+void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
     ASTs & args, const String & structure_, const String & format_, ContextPtr context)
 {
-    if (tryGetNamedCollectionWithOverrides(args, context))
+    if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
     {
-        /// In case of named collection, just add key-value pair "structure='...'"
-        /// at the end of arguments to override existed structure.
-        ASTs equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
-        auto equal_func = makeASTFunction("equals", std::move(equal_func_args));
-        args.push_back(equal_func);
+        /// In case of named collection, just add key-value pairs "format='...', structure='...'"
+        /// at the end of arguments to override existed format and structure with "auto" values.
+        if (collection->getOrDefault<String>("format", "auto") == "auto")
+        {
+            ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format_)};
+            auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
+            args.push_back(format_equal_func);
+        }
+        if (collection->getOrDefault<String>("structure", "auto") == "auto")
+        {
+            ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
+            auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
+            args.push_back(structure_equal_func);
+        }
     }
     else
     {
         HTTPHeaderEntries tmp_headers;
         size_t count = StorageURL::evalArgsAndCollectHeaders(args, tmp_headers, context);
 
-        if (count == 0 || count > 6)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 to 6 arguments in table function, got {}", count);
+        if (count == 0 || count > getMaxNumberOfArguments())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function s3, got {}", getMaxNumberOfArguments(), count);
 
         auto format_literal = std::make_shared<ASTLiteral>(format_);
         auto structure_literal = std::make_shared<ASTLiteral>(structure_);
@@ -393,14 +426,18 @@ void StorageS3Configuration::addStructureAndFormatToArgs(
             args.push_back(std::make_shared<ASTLiteral>("auto"));
             args.push_back(structure_literal);
         }
-        /// s3(s3_url, format) or s3(s3_url, NOSIGN)
+        /// s3(s3_url, format) or
+        /// s3(s3_url, NOSIGN)
         /// We can distinguish them by looking at the 2-nd argument: check if it's NOSIGN or not.
         else if (count == 2)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
             /// If there is NOSIGN, add format=auto before structure.
             if (boost::iequals(second_arg, "NOSIGN"))
-                args.push_back(std::make_shared<ASTLiteral>("auto"));
+                args.push_back(format_literal);
+            else if (checkAndGetLiteralArgument<String>(args[1], "format") == "auto")
+                args[1] = format_literal;
+
             args.push_back(structure_literal);
         }
         /// s3(source, format, structure) or
@@ -412,21 +449,27 @@ void StorageS3Configuration::addStructureAndFormatToArgs(
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
             if (boost::iequals(second_arg, "NOSIGN"))
             {
+                if (checkAndGetLiteralArgument<String>(args[2], "format") == "auto")
+                    args[2] = format_literal;
                 args.push_back(structure_literal);
             }
             else if (second_arg == "auto" || FormatFactory::instance().exists(second_arg))
             {
-                args[count - 1] = structure_literal;
+                if (second_arg == "auto")
+                    args[1] = format_literal;
+                if (checkAndGetLiteralArgument<String>(args[2], "structure") == "auto")
+                    args[2] = structure_literal;
             }
             else
             {
-                /// Add format=auto before structure argument.
-                args.push_back(std::make_shared<ASTLiteral>("auto"));
+                /// Add format and structure arguments.
+                args.push_back(format_literal);
                 args.push_back(structure_literal);
             }
         }
         /// s3(source, format, structure, compression_method) or
         /// s3(source, access_key_id, secret_access_key, format) or
+        /// s3(source, access_key_id, secret_access_key, session_token) or
         /// s3(source, NOSIGN, format, structure)
         /// We can distinguish them by looking at the 2-nd argument: check if it's NOSIGN, format name or neither.
         else if (count == 4)
@@ -434,36 +477,93 @@ void StorageS3Configuration::addStructureAndFormatToArgs(
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
             if (boost::iequals(second_arg, "NOSIGN"))
             {
-                args[count - 1] = structure_literal;
+                if (checkAndGetLiteralArgument<String>(args[2], "format") == "auto")
+                    args[2] = format_literal;
+                if (checkAndGetLiteralArgument<String>(args[3], "structure") == "auto")
+                    args[3] = structure_literal;
             }
             else if (second_arg == "auto" || FormatFactory::instance().exists(second_arg))
             {
-                args[count - 2] = structure_literal;
+                if (second_arg == "auto")
+                    args[1] = format_literal;
+                if (checkAndGetLiteralArgument<String>(args[2], "structure") == "auto")
+                    args[2] = structure_literal;
             }
             else
             {
-                args.push_back(structure_literal);
+                auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/session_token");
+                if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
+                {
+                    if (checkAndGetLiteralArgument<String>(args[3], "format") == "auto")
+                        args[3] = format_literal;
+                    args.push_back(structure_literal);
+                }
+                else
+                {
+                    args.push_back(format_literal);
+                    args.push_back(structure_literal);
+                }
             }
         }
         /// s3(source, access_key_id, secret_access_key, format, structure) or
+        /// s3(source, access_key_id, secret_access_key, session_token, format) or
         /// s3(source, NOSIGN, format, structure, compression_method)
         /// We can distinguish them by looking at the 2-nd argument: check if it's a NOSIGN keyword name or not.
         else if (count == 5)
         {
-            auto sedond_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
-            if (boost::iequals(sedond_arg, "NOSIGN"))
+            auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
+            if (boost::iequals(second_arg, "NOSIGN"))
             {
-                args[count - 2] = structure_literal;
+                if (checkAndGetLiteralArgument<String>(args[2], "format") == "auto")
+                    args[2] = format_literal;
+                if (checkAndGetLiteralArgument<String>(args[2], "structure") == "auto")
+                    args[3] = structure_literal;
             }
             else
             {
-                args[count - 1] = structure_literal;
+                auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/session_token");
+                if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
+                {
+                    if (checkAndGetLiteralArgument<String>(args[3], "format") == "auto")
+                        args[3] = format_literal;
+                    if (checkAndGetLiteralArgument<String>(args[4], "structure") == "auto")
+                        args[4] = structure_literal;
+                }
+                else
+                {
+                    if (checkAndGetLiteralArgument<String>(args[4], "format") == "auto")
+                        args[4] = format_literal;
+                    args.push_back(structure_literal);
+                }
             }
         }
-        /// s3(source, access_key_id, secret_access_key, format, structure, compression)
+        /// s3(source, access_key_id, secret_access_key, format, structure, compression) or
+        /// s3(source, access_key_id, secret_access_key, session_token, format, structure)
         else if (count == 6)
         {
-            args[count - 2] = structure_literal;
+            auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/session_token");
+            if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
+            {
+                if (checkAndGetLiteralArgument<String>(args[3], "format") == "auto")
+                    args[3] = format_literal;
+                if (checkAndGetLiteralArgument<String>(args[4], "structure") == "auto")
+                    args[4] = structure_literal;
+            }
+            else
+            {
+                if (checkAndGetLiteralArgument<String>(args[4], "format") == "auto")
+                    args[4] = format_literal;
+                if (checkAndGetLiteralArgument<String>(args[5], "format") == "auto")
+                    args[5] = structure_literal;
+            }
+        }
+        /// s3(source, access_key_id, secret_access_key, session_token, format, structure, compression_method)
+        else if (count == 7)
+        {
+            if (checkAndGetLiteralArgument<String>(args[4], "format") == "auto")
+                args[4] = format_literal;
+            if (checkAndGetLiteralArgument<String>(args[5], "format") == "auto")
+                args[5] = structure_literal;
         }
     }
 }

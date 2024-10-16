@@ -572,7 +572,7 @@ public:
                         scale_a);
                 return;
             }
-            else if (scale_b != 1)
+            if (scale_b != 1)
             {
                 for (size_t i = 0; i < size; ++i)
                     c[i] = applyScaled<false>(
@@ -593,7 +593,7 @@ public:
                         scale_a);
                 return;
             }
-            else if (scale_b != 1)
+            if (scale_b != 1)
             {
                 for (size_t i = 0; i < size; ++i)
                     c[i] = applyScaled<false, false>(
@@ -602,7 +602,6 @@ public:
                         scale_b);
                 return;
             }
-
         }
         else if constexpr (is_division && is_decimal_b)
         {
@@ -1117,8 +1116,7 @@ class FunctionBinaryArithmetic : public IFunction
 
         if (agg_state_is_const)
             return ColumnConst::create(std::move(column_to), input_rows_count);
-        else
-            return column_to;
+        return column_to;
     }
 
     /// Merge two aggregation states together.
@@ -1150,8 +1148,7 @@ class FunctionBinaryArithmetic : public IFunction
 
         if (lhs_is_const && rhs_is_const)
             return ColumnConst::create(std::move(column_to), input_rows_count);
-        else
-            return column_to;
+        return column_to;
     }
 
     ColumnPtr executeDateTimeIntervalPlusMinus(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
@@ -1280,7 +1277,7 @@ class FunctionBinaryArithmetic : public IFunction
             new_arguments[1] = {right_const->convertToFullColumnIfConst(), arguments[1].type, arguments[1].name};
             return executeImpl(new_arguments, result_type, input_rows_count);
         }
-        else if (left_const && !is_swapped)
+        if (left_const && !is_swapped)
         {
             new_arguments[0] = {left_const->convertToFullColumnIfConst(), arguments[0].type, arguments[0].name};
             new_arguments[1] = {arguments[1].column.get()->getPtr(), arguments[1].type, arguments[1].name};
@@ -1703,7 +1700,7 @@ public:
                     {
                         if constexpr (is_division)
                         {
-                            if (context->getSettingsRef().decimal_check_overflow)
+                            if (decimalCheckArithmeticOverflow(context))
                             {
                                 /// Check overflow by using operands scale (based on big decimal division implementation details):
                                 /// big decimal arithmetic is based on big integers, decimal operands are converted to big integers
@@ -1984,11 +1981,12 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
             return ColumnConst::create(std::move(col_res), col_left_const->size());
         }
-        else if (!col_left_const && !col_right_const && col_right)
+        if (!col_left_const && !col_right_const && col_right)
         {
             if constexpr (std::is_same_v<LeftDataType, DataTypeFixedString>)
             {
-                OpImpl::template processFixedString<OpCase::Vector>(in_vec.data(), col_left->getN(), col_right->getData().data(), out_vec, col_left->size());
+                OpImpl::template processFixedString<OpCase::Vector>(
+                    in_vec.data(), col_left->getN(), col_right->getData().data(), out_vec, col_left->size());
             }
             else
             {
@@ -2018,7 +2016,8 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             const T1 value = col_right_const->template getValue<T1>();
             if constexpr (std::is_same_v<LeftDataType, DataTypeFixedString>)
             {
-                OpImpl::template processFixedString<OpCase::RightConstant>(in_vec.data(), col_left->getN(), &value, out_vec, col_left->size());
+                OpImpl::template processFixedString<OpCase::RightConstant>(
+                    in_vec.data(), col_left->getN(), &value, out_vec, col_left->size());
             }
             else
             {
@@ -2448,16 +2447,14 @@ public:
 
             return Base::executeImpl(columns_with_constant, result_type, input_rows_count);
         }
-        else if (right.column && isColumnConst(*right.column) && arguments.size() == 1)
+        if (right.column && isColumnConst(*right.column) && arguments.size() == 1)
         {
             ColumnsWithTypeAndName columns_with_constant
-                = {arguments[0],
-                   {right.column->cloneResized(input_rows_count), right.type, right.name}};
+                = {arguments[0], {right.column->cloneResized(input_rows_count), right.type, right.name}};
 
             return Base::executeImpl(columns_with_constant, result_type, input_rows_count);
         }
-        else
-            return Base::executeImpl(arguments, result_type, input_rows_count);
+        return Base::executeImpl(arguments, result_type, input_rows_count);
     }
 
     bool hasInformationAboutMonotonicity() const override
@@ -2526,20 +2523,16 @@ public:
                     // Check if there is an overflow
                     if (is_positive_monotonicity)
                         return {true, true, false, true};
-                    else
-                        return {false, true, false, false};
+                    return {false, true, false, false};
                 }
-                else
-                {
-                    // Check if there is an overflow
-                    if (!is_positive_monotonicity)
-                        return {true, false, false, true};
-                    else
-                        return {false, false, false, false};
-                }
+
+                // Check if there is an overflow
+                if (!is_positive_monotonicity)
+                    return {true, false, false, true};
+                return {false, false, false, false};
             }
             // variable +|- constant
-            else if (right.column && isColumnConst(*right.column))
+            if (right.column && isColumnConst(*right.column))
             {
                 auto left_type = removeNullable(removeLowCardinality(left.type));
                 auto right_type = removeNullable(removeLowCardinality(right.type));
@@ -2561,8 +2554,7 @@ public:
                 if (applyVisitor(FieldVisitorAccurateLess(), left_point, right_point)
                     == applyVisitor(FieldVisitorAccurateLess(), transform(left_point), transform(right_point)))
                     return {true, true, false, true};
-                else
-                    return {false, true, false, false};
+                return {false, true, false, false};
             }
         }
         if (name_view == "divide" || name_view == "intDiv")
@@ -2582,8 +2574,7 @@ public:
                 {
                     return {true, is_constant_positive, false, is_strict};
                 }
-                else if (
-                    applyVisitor(FieldVisitorAccurateLess(), Field(0), left_point)
+                if (applyVisitor(FieldVisitorAccurateLess(), Field(0), left_point)
                     && applyVisitor(FieldVisitorAccurateLess(), Field(0), right_point))
                 {
                     return {true, !is_constant_positive, false, is_strict};

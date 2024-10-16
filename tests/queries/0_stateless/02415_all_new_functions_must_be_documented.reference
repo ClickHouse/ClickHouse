@@ -101,7 +101,6 @@ arrayCumSumNonNegative
 arrayDifference
 arrayDistinct
 arrayDotProduct
-arrayElement
 arrayEnumerate
 arrayEnumerateDense
 arrayEnumerateDenseRanked
@@ -141,9 +140,9 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
+arrayUnion
 arrayUniq
 arrayWithConstant
-arrayZip
 asinh
 assumeNotNull
 atan
@@ -322,7 +321,6 @@ geohashesInBox
 getMacro
 getOSKernelVersion
 getServerPort
-getSetting
 getSizeOfEnumType
 getTypeSerializationStreams
 globalIn
@@ -416,7 +414,6 @@ logTrace
 lowCardinalityIndices
 lowCardinalityKeys
 lower
-lowerUTF8
 makeDate
 makeDate32
 makeDateTime
@@ -876,7 +873,6 @@ tryBase58Decode
 tumble
 tumbleEnd
 tumbleStart
-tuple
 tupleConcat
 tupleDivide
 tupleDivideByNumber
@@ -897,7 +893,6 @@ tupleToNameValuePairs
 unbin
 unhex
 upper
-upperUTF8
 uptime
 validateNestedArraySizes
 version

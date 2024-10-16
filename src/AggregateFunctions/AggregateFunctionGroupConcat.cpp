@@ -116,15 +116,17 @@ class GroupConcatImpl final
     SerializationPtr serialization;
     UInt64 limit;
     const String delimiter;
+    const DataTypePtr type;
 
 public:
     GroupConcatImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 limit_, const String & delimiter_)
         : IAggregateFunctionDataHelper<GroupConcatData<has_limit>, GroupConcatImpl<has_limit>>(
             {data_type_}, parameters_, std::make_shared<DataTypeString>())
-        , serialization(this->argument_types[0]->getDefaultSerialization())
         , limit(limit_)
         , delimiter(delimiter_)
+        , type(data_type_)
     {
+        serialization = isFixedString(type) ? std::make_shared<DataTypeString>()->getDefaultSerialization() : this->argument_types[0]->getDefaultSerialization();
     }
 
     String getName() const override { return name; }
@@ -140,7 +142,14 @@ public:
         if (cur_data.data_size != 0)
             cur_data.insertChar(delimiter.c_str(), delimiter.size(), arena);
 
-        cur_data.insert(columns[0], serialization, row_num, arena);
+        if (isFixedString(type))
+        {
+            ColumnWithTypeAndName col = {columns[0]->getPtr(), type, "column"};
+            const auto & col_str = castColumn(col, std::make_shared<DataTypeString>());
+            cur_data.insert(col_str.get(), serialization, row_num, arena);
+        }
+        else
+            cur_data.insert(columns[0], serialization, row_num, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -247,7 +256,7 @@ AggregateFunctionPtr createAggregateFunctionGroupConcat(
         if (type != Field::Types::String)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First parameter for aggregate function {} should be string", name);
 
-        delimiter = parameters[0].get<String>();
+        delimiter = parameters[0].safeGet<String>();
     }
     if (parameters.size() == 2)
     {
@@ -256,18 +265,17 @@ AggregateFunctionPtr createAggregateFunctionGroupConcat(
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second parameter for aggregate function {} should be a positive number", name);
 
-        if ((type == Field::Types::Int64 && parameters[1].get<Int64>() <= 0) ||
-            (type == Field::Types::UInt64 && parameters[1].get<UInt64>() == 0))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second parameter for aggregate function {} should be a positive number, got: {}", name, parameters[1].get<Int64>());
+        if ((type == Field::Types::Int64 && parameters[1].safeGet<Int64>() <= 0) ||
+            (type == Field::Types::UInt64 && parameters[1].safeGet<UInt64>() == 0))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second parameter for aggregate function {} should be a positive number, got: {}", name, parameters[1].safeGet<Int64>());
 
         has_limit = true;
-        limit = parameters[1].get<UInt64>();
+        limit = parameters[1].safeGet<UInt64>();
     }
 
     if (has_limit)
         return std::make_shared<GroupConcatImpl</* has_limit= */ true>>(argument_types[0], parameters, limit, delimiter);
-    else
-        return std::make_shared<GroupConcatImpl</* has_limit= */ false>>(argument_types[0], parameters, limit, delimiter);
+    return std::make_shared<GroupConcatImpl</* has_limit= */ false>>(argument_types[0], parameters, limit, delimiter);
 }
 
 }
@@ -277,7 +285,7 @@ void registerAggregateFunctionGroupConcat(AggregateFunctionFactory & factory)
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
     factory.registerFunction("groupConcat", { createAggregateFunctionGroupConcat, properties });
-    factory.registerAlias("group_concat", "groupConcat", AggregateFunctionFactory::CaseInsensitive);
+    factory.registerAlias("group_concat", "groupConcat", AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

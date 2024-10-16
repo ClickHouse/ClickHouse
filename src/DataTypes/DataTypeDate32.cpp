@@ -24,7 +24,7 @@ Field DataTypeDate32::getDefault() const
 void registerDataTypeDate32(DataTypeFactory & factory)
 {
     factory.registerSimpleDataType(
-        "Date32", [] { return DataTypePtr(std::make_shared<DataTypeDate32>()); }, DataTypeFactory::CaseInsensitive);
+        "Date32", [] { return DataTypePtr(std::make_shared<DataTypeDate32>()); }, DataTypeFactory::Case::Insensitive);
 }
 
 }

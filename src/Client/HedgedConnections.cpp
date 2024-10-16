@@ -3,6 +3,7 @@
 
 #include <Client/HedgedConnections.h>
 #include <Common/ProfileEvents.h>
+#include <Core/Settings.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 
@@ -13,6 +14,21 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_changing_replica_until_first_data_packet;
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsUInt64 connections_with_failover_max_tries;
+    extern const SettingsDialect dialect;
+    extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
+    extern const SettingsUInt64 group_by_two_level_threshold;
+    extern const SettingsUInt64 group_by_two_level_threshold_bytes;
+    extern const SettingsNonZeroUInt64 max_parallel_replicas;
+    extern const SettingsUInt64 parallel_replicas_count;
+    extern const SettingsUInt64 parallel_replica_offset;
+    extern const SettingsBool skip_unavailable_shards;
+}
+
 namespace ErrorCodes
 {
     extern const int MISMATCH_REPLICAS_DATA_SOURCES;
@@ -31,15 +47,15 @@ HedgedConnections::HedgedConnections(
     AsyncCallback async_callback,
     GetPriorityForLoadBalancing::Func priority_func)
     : hedged_connections_factory(
-        pool_,
-        context_->getSettingsRef(),
-        timeouts_,
-        context_->getSettingsRef().connections_with_failover_max_tries.value,
-        context_->getSettingsRef().fallback_to_stale_replicas_for_distributed_queries.value,
-        context_->getSettingsRef().max_parallel_replicas.value,
-        context_->getSettingsRef().skip_unavailable_shards.value,
-        table_to_check_,
-        priority_func)
+          pool_,
+          context_->getSettingsRef(),
+          timeouts_,
+          context_->getSettingsRef()[Setting::connections_with_failover_max_tries].value,
+          context_->getSettingsRef()[Setting::fallback_to_stale_replicas_for_distributed_queries].value,
+          context_->getSettingsRef()[Setting::max_parallel_replicas].value,
+          context_->getSettingsRef()[Setting::skip_unavailable_shards].value,
+          table_to_check_,
+          priority_func)
     , context(std::move(context_))
     , settings(context->getSettingsRef())
     , throttler(throttler_)
@@ -177,25 +193,32 @@ void HedgedConnections::sendQuery(
         Settings modified_settings = settings;
 
         /// Queries in foreign languages are transformed to ClickHouse-SQL. Ensure the setting before sending.
-        modified_settings.dialect = Dialect::clickhouse;
-        modified_settings.dialect.changed = false;
+        modified_settings[Setting::dialect] = Dialect::clickhouse;
+        modified_settings[Setting::dialect].changed = false;
 
         if (disable_two_level_aggregation)
         {
             /// Disable two-level aggregation due to version incompatibility.
-            modified_settings.group_by_two_level_threshold = 0;
-            modified_settings.group_by_two_level_threshold_bytes = 0;
+            modified_settings[Setting::group_by_two_level_threshold] = 0;
+            modified_settings[Setting::group_by_two_level_threshold_bytes] = 0;
         }
 
-        const bool enable_sample_offset_parallel_processing = settings.max_parallel_replicas > 1 && settings.allow_experimental_parallel_reading_from_replicas == 0;
+        const bool enable_offset_parallel_processing = context->canUseOffsetParallelReplicas();
 
-        if (offset_states.size() > 1 && enable_sample_offset_parallel_processing)
+        if (offset_states.size() > 1 && enable_offset_parallel_processing)
         {
-            modified_settings.parallel_replicas_count = offset_states.size();
-            modified_settings.parallel_replica_offset = fd_to_replica_location[replica.packet_receiver->getFileDescriptor()].offset;
+            modified_settings[Setting::parallel_replicas_count] = offset_states.size();
+            modified_settings[Setting::parallel_replica_offset] = fd_to_replica_location[replica.packet_receiver->getFileDescriptor()].offset;
         }
 
-        replica.connection->sendQuery(timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, {});
+        /// FIXME: Remove once we will make `allow_experimental_analyzer` obsolete setting.
+        /// Make the analyzer being set, so it will be effectively applied on the remote server.
+        /// In other words, the initiator always controls whether the analyzer enabled or not for
+        /// all servers involved in the distributed query processing.
+        modified_settings.set("allow_experimental_analyzer", static_cast<bool>(modified_settings[Setting::allow_experimental_analyzer]));
+
+        replica.connection->sendQuery(
+            timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, {});
         replica.change_replica_timeout.setRelative(timeouts.receive_data_timeout);
         replica.packet_receiver->setTimeout(hedged_connections_factory.getConnectionTimeouts().receive_timeout);
     };
@@ -382,7 +405,7 @@ bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLoc
         last_received_packet = replica_state.packet_receiver->getPacket();
         return true;
     }
-    else if (replica_state.packet_receiver->isTimeoutExpired())
+    if (replica_state.packet_receiver->isTimeoutExpired())
     {
         const String & description = replica_state.connection->getDescription();
         finishProcessReplica(replica_state, true);
@@ -438,7 +461,7 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
             {
                 /// If we are allowed to change replica until the first data packet,
                 /// just restart timeout (if it hasn't expired yet). Otherwise disable changing replica with this offset.
-                if (settings.allow_changing_replica_until_first_data_packet && !replica.is_change_replica_timeout_expired)
+                if (settings[Setting::allow_changing_replica_until_first_data_packet] && !replica.is_change_replica_timeout_expired)
                     replica.change_replica_timeout.setRelative(hedged_connections_factory.getConnectionTimeouts().receive_data_timeout);
                 else
                     disableChangingReplica(replica_location);

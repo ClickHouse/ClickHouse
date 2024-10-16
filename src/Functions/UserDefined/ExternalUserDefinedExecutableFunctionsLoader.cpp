@@ -2,6 +2,7 @@
 
 #include <boost/algorithm/string/split.hpp>
 #include <Common/StringUtils.h>
+#include <Core/Settings.h>
 
 #include <DataTypes/DataTypeFactory.h>
 
@@ -13,6 +14,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds max_execution_time;
+}
 
 namespace ErrorCodes
 {
@@ -49,7 +54,7 @@ namespace
             auto semicolon_pos = command_value.find(':', start_parameter_pos);
             if (semicolon_pos == std::string::npos)
                 break;
-            else if (semicolon_pos > end_parameter_pos)
+            if (semicolon_pos > end_parameter_pos)
                 continue;
 
             std::string parameter_name(command_value.data() + start_parameter_pos + 1, command_value.data() + semicolon_pos);
@@ -184,7 +189,7 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
         pool_size = config.getUInt64(key_in_config + ".pool_size", 16);
         max_command_execution_time = config.getUInt64(key_in_config + ".max_command_execution_time", 10);
 
-        size_t max_execution_time_seconds = static_cast<size_t>(getContext()->getSettings().max_execution_time.totalSeconds());
+        size_t max_execution_time_seconds = static_cast<size_t>(getContext()->getSettingsRef()[Setting::max_execution_time].totalSeconds());
         if (max_execution_time_seconds != 0 && max_command_execution_time > max_execution_time_seconds)
             max_command_execution_time = max_execution_time_seconds;
     }

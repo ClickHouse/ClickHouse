@@ -42,9 +42,11 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, Writ
             case static_cast<size_t>(ResultsetPart::TimeElapsed):
             case static_cast<size_t>(ResultsetPart::RowsRead):
             case static_cast<size_t>(ResultsetPart::BytesRead):
+            case static_cast<size_t>(ResultsetPart::RowsBeforeAggregation):
                 if (format.escaping_rules[i] == EscapingRule::None)
-                    format.throwInvalidFormat("Serialization type for output part rows, rows_before_limit, time, "
-                                              "rows_read or bytes_read is not specified", i);
+                    format.throwInvalidFormat(
+                        "Serialization type for output part rows, rows, time, "
+                        "rows_read or bytes_read is not specified", i);
                 break;
             default:
                 format.throwInvalidFormat("Invalid output part", i);
@@ -72,24 +74,25 @@ TemplateBlockOutputFormat::ResultsetPart TemplateBlockOutputFormat::stringToResu
 {
     if (part == "data")
         return ResultsetPart::Data;
-    else if (part == "totals")
+    if (part == "totals")
         return ResultsetPart::Totals;
-    else if (part == "min")
+    if (part == "min")
         return ResultsetPart::ExtremesMin;
-    else if (part == "max")
+    if (part == "max")
         return ResultsetPart::ExtremesMax;
-    else if (part == "rows")
+    if (part == "rows")
         return ResultsetPart::Rows;
-    else if (part == "rows_before_limit")
+    if (part == "rows_before_limit")
         return ResultsetPart::RowsBeforeLimit;
-    else if (part == "time")
+    if (part == "time")
         return ResultsetPart::TimeElapsed;
-    else if (part == "rows_read")
+    if (part == "rows_read")
         return ResultsetPart::RowsRead;
-    else if (part == "bytes_read")
+    if (part == "bytes_read")
         return ResultsetPart::BytesRead;
-    else
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Unknown output part {}", part);
+    if (part == "rows_before_aggregation")
+        return ResultsetPart::RowsBeforeAggregation;
+    throw Exception(ErrorCodes::SYNTAX_ERROR, "Unknown output part {}", part);
 }
 
 void TemplateBlockOutputFormat::writeRow(const Chunk & chunk, size_t row_num)
@@ -172,6 +175,11 @@ void TemplateBlockOutputFormat::finalizeImpl()
                 break;
             case ResultsetPart::BytesRead:
                 writeValue<size_t, DataTypeUInt64>(statistics.progress.read_bytes.load(), format.escaping_rules[i]);
+                break;
+            case ResultsetPart::RowsBeforeAggregation:
+                if (!statistics.applied_aggregation)
+                    format.throwInvalidFormat("Cannot print rows_before_aggregation for this request", i);
+                writeValue<size_t, DataTypeUInt64>(statistics.rows_before_aggregation, format.escaping_rules[i]);
                 break;
             default:
                 break;

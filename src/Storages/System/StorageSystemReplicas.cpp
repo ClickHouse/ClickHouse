@@ -4,6 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeMap.h>
 #include <Storages/System/StorageSystemReplicas.h>
@@ -200,8 +201,8 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
     : IStorage(table_id_)
     , impl(std::make_unique<StorageSystemReplicasImpl>(128))
 {
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(ColumnsDescription({
+
+    ColumnsDescription description = {
         { "database",                             std::make_shared<DataTypeString>(),   "Database name."},
         { "table",                                std::make_shared<DataTypeString>(),   "Table name."},
         { "engine",                               std::make_shared<DataTypeString>(),   "Table engine name."},
@@ -212,6 +213,7 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
         { "can_become_leader",                    std::make_shared<DataTypeUInt8>(),    "Whether the replica can be a leader."},
         { "is_readonly",                          std::make_shared<DataTypeUInt8>(),    "Whether the replica is in read-only mode. This mode is turned on if the config does not have sections with ClickHouse Keeper, "
                                                                                           "if an unknown error occurred when reinitializing sessions in ClickHouse Keeper, and during session reinitialization in ClickHouse Keeper."},
+        { "readonly_start_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The timestamp when the replica transitioned into readonly mode. Null if the replica is not in readonly mode." },
         { "is_session_expired",                   std::make_shared<DataTypeUInt8>(),    "Whether the session with ClickHouse Keeper has expired. Basically the same as `is_readonly`."},
         { "future_parts",                         std::make_shared<DataTypeUInt32>(),   "The number of data parts that will appear as the result of INSERTs or merges that haven't been done yet."},
         { "parts_to_check",                       std::make_shared<DataTypeUInt32>(),   "The number of data parts in the queue for verification. A part is put in the verification queue if there is suspicion that it might be damaged."},
@@ -243,7 +245,14 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
         { "last_queue_update_exception",          std::make_shared<DataTypeString>(),   "When the queue contains broken entries. Especially important when ClickHouse breaks backward compatibility between versions and log entries written by newer versions aren't parseable by old versions."},
         { "zookeeper_exception",                  std::make_shared<DataTypeString>(),   "The last exception message, got if the error happened when fetching the info from ClickHouse Keeper."},
         { "replica_is_active",                    std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt8>()), "Map between replica name and is replica active."}
-    }));
+    };
+
+    description.setAliases({
+        {"readonly_duration", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "if(isNull(readonly_start_time), NULL, now() - readonly_start_time)"},
+    });
+
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(description);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -266,7 +275,7 @@ public:
         size_t max_block_size_,
         std::shared_ptr<StorageSystemReplicasImpl> impl_)
         : SourceStepWithFilter(
-            DataStream{.header = std::move(sample_block)},
+            std::move(sample_block),
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -285,7 +294,7 @@ private:
     const bool with_zk_fields;
     const size_t max_block_size;
     std::shared_ptr<StorageSystemReplicasImpl> impl;
-    const ActionsDAG::Node * predicate = nullptr;
+    ExpressionActionsPtr virtual_columns_filter;
 };
 
 void ReadFromSystemReplicas::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -293,7 +302,18 @@ void ReadFromSystemReplicas::applyFilters(ActionDAGNodes added_filter_nodes)
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
 
     if (filter_actions_dag)
-        predicate = filter_actions_dag->getOutputs().at(0);
+    {
+        Block block_to_filter
+        {
+            { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
+            { ColumnString::create(), std::make_shared<DataTypeString>(), "table" },
+            { ColumnString::create(), std::make_shared<DataTypeString>(), "engine" },
+        };
+
+        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
+        if (dag)
+            virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
+    }
 }
 
 void StorageSystemReplicas::read(
@@ -401,7 +421,7 @@ private:
 
 void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto header = getOutputStream().header;
+    auto header = getOutputHeader();
 
     MutableColumnPtr col_database_mut = ColumnString::create();
     MutableColumnPtr col_table_mut = ColumnString::create();
@@ -430,7 +450,8 @@ void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline,
             { col_engine, std::make_shared<DataTypeString>(), "engine" },
         };
 
-        VirtualColumnUtils::filterBlockWithPredicate(predicate, filtered_block, context);
+        if (virtual_columns_filter)
+            VirtualColumnUtils::filterBlockWithExpression(virtual_columns_filter, filtered_block);
 
         if (!filtered_block.rows())
         {
@@ -515,12 +536,16 @@ Chunk SystemReplicasSource::generate()
         res_columns[col_num++]->insert(status.is_leader);
         res_columns[col_num++]->insert(status.can_become_leader);
         res_columns[col_num++]->insert(status.is_readonly);
+        if (status.readonly_start_time != 0)
+            res_columns[col_num++]->insert(status.readonly_start_time);
+        else
+            res_columns[col_num++]->insertDefault();
         res_columns[col_num++]->insert(status.is_session_expired);
         res_columns[col_num++]->insert(status.queue.future_parts);
         res_columns[col_num++]->insert(status.parts_to_check);
-        res_columns[col_num++]->insert(status.zookeeper_name);
-        res_columns[col_num++]->insert(status.zookeeper_path);
-        res_columns[col_num++]->insert(status.replica_name);
+        res_columns[col_num++]->insert(status.zookeeper_info.zookeeper_name);
+        res_columns[col_num++]->insert(status.zookeeper_info.path);
+        res_columns[col_num++]->insert(status.zookeeper_info.replica_name);
         res_columns[col_num++]->insert(status.replica_path);
         res_columns[col_num++]->insert(status.columns_version);
         res_columns[col_num++]->insert(status.queue.queue_size);

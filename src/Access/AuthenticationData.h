@@ -2,13 +2,14 @@
 
 #include <Access/Common/AuthenticationType.h>
 #include <Access/Common/HTTPAuthenticationScheme.h>
+#include <Access/Common/SSLCertificateSubjects.h>
 #include <Common/SSHWrapper.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
 
 #include <vector>
 #include <base/types.h>
-#include <boost/container/flat_set.hpp>
+
 
 #include "config.h"
 
@@ -30,17 +31,17 @@ public:
     AuthenticationType getType() const { return type; }
 
     /// Sets the password and encrypt it using the authentication type set in the constructor.
-    void setPassword(const String & password_);
+    void setPassword(const String & password_, bool validate);
 
     /// Returns the password. Allowed to use only for Type::PLAINTEXT_PASSWORD.
     String getPassword() const;
 
     /// Sets the password as a string of hexadecimal digits.
-    void setPasswordHashHex(const String & hash);
+    void setPasswordHashHex(const String & hash, bool validate);
     String getPasswordHashHex() const;
 
     /// Sets the password in binary form.
-    void setPasswordHashBinary(const Digest & hash);
+    void setPasswordHashBinary(const Digest & hash, bool validate);
     const Digest & getPasswordHashBinary() const { return password_hash; }
 
     /// Sets the salt in String form.
@@ -48,7 +49,7 @@ public:
     String getSalt() const;
 
     /// Sets the password using bcrypt hash with specified workfactor
-    void setPasswordBcrypt(const String & password_, int workfactor_);
+    void setPasswordBcrypt(const String & password_, int workfactor_, bool validate);
 
     /// Sets the server name for authentication type LDAP.
     const String & getLDAPServerName() const { return ldap_server_name; }
@@ -58,8 +59,9 @@ public:
     const String & getKerberosRealm() const { return kerberos_realm; }
     void setKerberosRealm(const String & realm) { kerberos_realm = realm; }
 
-    const boost::container::flat_set<String> & getSSLCertificateCommonNames() const { return ssl_certificate_common_names; }
-    void setSSLCertificateCommonNames(boost::container::flat_set<String> common_names_);
+    const SSLCertificateSubjects & getSSLCertificateSubjects() const { return ssl_certificate_subjects; }
+    void setSSLCertificateSubjects(SSLCertificateSubjects && ssl_certificate_subjects_);
+    void addSSLCertificateSubject(SSLCertificateSubjects::Type type_, String && subject_);
 
 #if USE_SSH
     const std::vector<SSHKey> & getSSHKeys() const { return ssh_keys; }
@@ -75,7 +77,7 @@ public:
     friend bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs);
     friend bool operator !=(const AuthenticationData & lhs, const AuthenticationData & rhs) { return !(lhs == rhs); }
 
-    static AuthenticationData fromAST(const ASTAuthenticationData & query, ContextPtr context, bool check_password_rules);
+    static AuthenticationData fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate);
     std::shared_ptr<ASTAuthenticationData> toAST() const;
 
     struct Util
@@ -96,7 +98,7 @@ private:
     Digest password_hash;
     String ldap_server_name;
     String kerberos_realm;
-    boost::container::flat_set<String> ssl_certificate_common_names;
+    SSLCertificateSubjects ssl_certificate_subjects;
     String salt;
 #if USE_SSH
     std::vector<SSHKey> ssh_keys;

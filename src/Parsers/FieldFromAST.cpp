@@ -1,5 +1,4 @@
 #include <Parsers/FieldFromAST.h>
-#include <Disks/getOrCreateDiskFromAST.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>

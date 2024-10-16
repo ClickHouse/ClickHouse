@@ -43,6 +43,12 @@ size_t getCompoundTypeDepth(const IDataType & type)
             const auto & tuple_elements = assert_cast<const DataTypeTuple &>(*current_type).getElements();
             if (!tuple_elements.empty())
                 current_type = tuple_elements.at(0).get();
+            else
+            {
+                /// Special case: tuple with no element - tuple(). In this case, what's the compound type depth?
+                /// I'm not certain about the theoretical answer, but from experiment, 1 is the most reasonable choice.
+                return 1;
+            }
 
             ++result;
         }
@@ -93,7 +99,7 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes& 
                 "Invalid type in set. Expected tuple, got {}",
                 value.getTypeName());
 
-        const auto & tuple = value.template get<const Tuple &>();
+        const auto & tuple = value.template safeGet<const Tuple &>();
         const DataTypePtr & value_type = value_types[collection_index];
         const DataTypes & tuple_value_type = typeid_cast<const DataTypeTuple *>(value_type.get())->getElements();
 
@@ -169,15 +175,15 @@ Block getSetElementsForConstantValue(const DataTypePtr & expression_type, const 
         if (rhs_which_type.isArray())
         {
             const DataTypeArray * value_array_type = assert_cast<const DataTypeArray *>(value_type.get());
-            size_t value_array_size = value.get<const Array &>().size();
+            size_t value_array_size = value.safeGet<const Array &>().size();
             DataTypes value_types(value_array_size, value_array_type->getNestedType());
-            result_block = createBlockFromCollection(value.get<const Array &>(), value_types, set_element_types, transform_null_in);
+            result_block = createBlockFromCollection(value.safeGet<const Array &>(), value_types, set_element_types, transform_null_in);
         }
         else if (rhs_which_type.isTuple())
         {
             const DataTypeTuple * value_tuple_type = assert_cast<const DataTypeTuple *>(value_type.get());
             const DataTypes & value_types = value_tuple_type->getElements();
-            result_block = createBlockFromCollection(value.get<const Tuple &>(), value_types, set_element_types, transform_null_in);
+            result_block = createBlockFromCollection(value.safeGet<const Tuple &>(), value_types, set_element_types, transform_null_in);
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,

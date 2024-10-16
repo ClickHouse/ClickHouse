@@ -1,6 +1,7 @@
 #include <Analyzer/Passes/FuseFunctionsPass.h>
 
 #include <Common/iota.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -20,6 +21,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool optimize_syntax_fuse_functions;
+}
 
 namespace ErrorCodes
 {
@@ -43,7 +48,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_syntax_fuse_functions)
+        if (!getSettings()[Setting::optimize_syntax_fuse_functions])
             return;
 
         auto * function_node = node->as<FunctionNode>();
@@ -186,7 +191,7 @@ FunctionNodePtr createFusedQuantilesNode(std::vector<QueryTreeNodePtr *> & nodes
         /// Sort nodes and parameters in ascending order of quantile level
         std::vector<size_t> permutation(nodes.size());
         iota(permutation.data(), permutation.size(), size_t(0));
-        std::sort(permutation.begin(), permutation.end(), [&](size_t i, size_t j) { return parameters[i].get<Float64>() < parameters[j].get<Float64>(); });
+        std::sort(permutation.begin(), permutation.end(), [&](size_t i, size_t j) { return parameters[i].safeGet<Float64>() < parameters[j].safeGet<Float64>(); });
 
         std::vector<QueryTreeNodePtr *> new_nodes;
         new_nodes.reserve(permutation.size());

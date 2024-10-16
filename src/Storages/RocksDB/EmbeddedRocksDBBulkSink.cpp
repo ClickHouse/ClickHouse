@@ -1,23 +1,22 @@
-#include <atomic>
 #include <cstddef>
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <optional>
-#include <random>
-#include <stdatomic.h>
 #include <IO/WriteBufferFromString.h>
 #include <Storages/RocksDB/EmbeddedRocksDBBulkSink.h>
 #include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 
 #include <Columns/ColumnString.h>
 #include <Core/SortDescription.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <rocksdb/options.h>
 #include <rocksdb/slice.h>
 #include <rocksdb/status.h>
+#include <rocksdb/system_clock.h>
 #include <rocksdb/utilities/db_ttl.h>
 #include <Common/SipHash.h>
 #include <Common/getRandomASCIIString.h>
@@ -31,10 +30,15 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 min_insert_block_size_rows;
+}
 
 namespace ErrorCodes
 {
     extern const int ROCKSDB_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 static const IColumn::Permutation & getAscendingPermutation(const IColumn & column, IColumn::Permutation & perm)
@@ -86,7 +90,8 @@ EmbeddedRocksDBBulkSink::EmbeddedRocksDBBulkSink(
     }
 
     serializations = getHeader().getSerializations();
-    min_block_size_rows = std::max(storage.getSettings().bulk_insert_block_size, getContext()->getSettingsRef().min_insert_block_size_rows);
+    min_block_size_rows
+        = std::max(storage.getSettings().bulk_insert_block_size, getContext()->getSettingsRef()[Setting::min_insert_block_size_rows]);
 
     /// If max_insert_threads > 1 we may have multiple EmbeddedRocksDBBulkSink and getContext()->getCurrentQueryId() is not guarantee to
     /// to have a distinct path. Also we cannot use query id as directory name here, because it could be defined by user and not suitable
@@ -156,6 +161,7 @@ std::vector<Chunk> EmbeddedRocksDBBulkSink::squash(Chunk chunk)
     return {};
 }
 
+template<bool with_timestamp>
 std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::serializeChunks(std::vector<Chunk> && input_chunks) const
 {
     auto serialized_key_column = ColumnString::create();
@@ -169,14 +175,40 @@ std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::seriali
         WriteBufferFromVector<ColumnString::Chars> writer_key(serialized_key_data);
         WriteBufferFromVector<ColumnString::Chars> writer_value(serialized_value_data);
         FormatSettings format_settings; /// Format settings is 1.5KB, so it's not wise to create it for each row
+
+        /// TTL handling
+        [[maybe_unused]] auto get_rocksdb_ts = [this](String & ts_string)
+        {
+            Int64 curtime = -1;
+            auto * system_clock = storage.rocksdb_ptr->GetEnv()->GetSystemClock().get();
+            rocksdb::Status st = system_clock->GetCurrentTime(&curtime);
+            if (!st.ok())
+                throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB error: {}", st.ToString());
+            WriteBufferFromString buf(ts_string);
+            writeBinaryLittleEndian(static_cast<Int32>(curtime), buf);
+        };
+
         for (auto && chunk : input_chunks)
         {
+            [[maybe_unused]] String ts_string;
+            if constexpr (with_timestamp)
+                get_rocksdb_ts(ts_string);
+
             const auto & columns = chunk.getColumns();
             auto rows = chunk.getNumRows();
             for (size_t i = 0; i < rows; ++i)
             {
                 for (size_t idx = 0; idx < columns.size(); ++idx)
                     serializations[idx]->serializeBinary(*columns[idx], i, idx == primary_key_pos ? writer_key : writer_value, format_settings);
+
+                /// Append timestamp to end of value, see rocksdb::DBWithTTLImpl::AppendTS
+                if constexpr (with_timestamp)
+                {
+                    if (ts_string.size() != sizeof(Int32))
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid timestamp size: expect 4, got {}", ts_string.size());
+                    writeString(ts_string, writer_value);
+                }
+
                 /// String in ColumnString must be null-terminated
                 writeChar('\0', writer_key);
                 writeChar('\0', writer_value);
@@ -192,16 +224,18 @@ std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::seriali
     return {std::move(serialized_key_column), std::move(serialized_value_column)};
 }
 
-void EmbeddedRocksDBBulkSink::consume(Chunk chunk_)
+void EmbeddedRocksDBBulkSink::consume(Chunk & chunk_)
 {
     std::vector<Chunk> chunks_to_write = squash(std::move(chunk_));
 
     if (chunks_to_write.empty())
         return;
 
-    auto [serialized_key_column, serialized_value_column] = serializeChunks(std::move(chunks_to_write));
+    size_t num_chunks = chunks_to_write.size();
+    auto [serialized_key_column, serialized_value_column]
+        = storage.ttl > 0 ? serializeChunks<true>(std::move(chunks_to_write)) : serializeChunks<false>(std::move(chunks_to_write));
     auto sst_file_path = getTemporarySSTFilePath();
-    LOG_DEBUG(getLogger("EmbeddedRocksDBBulkSink"), "Writing {} rows to SST file {}", serialized_key_column->size(), sst_file_path);
+    LOG_DEBUG(getLogger("EmbeddedRocksDBBulkSink"), "Writing {} rows from {} chunks to SST file {}", serialized_key_column->size(), num_chunks, sst_file_path);
     if (auto status = buildSSTFile(sst_file_path, *serialized_key_column, *serialized_value_column); !status.ok())
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
 
@@ -220,7 +254,10 @@ void EmbeddedRocksDBBulkSink::onFinish()
 {
     /// If there is any data left, write it.
     if (!chunks.empty())
-        consume({});
+    {
+        Chunk empty;
+        consume(empty);
+    }
 }
 
 String EmbeddedRocksDBBulkSink::getTemporarySSTFilePath()

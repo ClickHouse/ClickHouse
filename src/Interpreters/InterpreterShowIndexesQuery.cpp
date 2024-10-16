@@ -33,12 +33,33 @@ String InterpreterShowIndexesQuery::getRewrittenQuery()
     String rewritten_query = fmt::format(R"(
 SELECT *
 FROM (
-        (SELECT
+        (WITH
+            t1 AS (
+                SELECT
+                    name,
+                    arrayJoin(splitByString(', ', primary_key)) AS pk_col
+                FROM
+                    system.tables
+                WHERE
+                    database = '{0}'
+                    AND name = '{1}'
+            ),
+            t2 AS (
+                SELECT
+                    name,
+                    pk_col,
+                    row_number() OVER (ORDER BY 1) AS row_num
+                FROM
+                    t1
+            )
+        SELECT
             name AS table,
             1 AS non_unique,
             'PRIMARY' AS key_name,
-            row_number() over (order by column_name) AS seq_in_index,
-            arrayJoin(splitByString(', ', primary_key)) AS column_name,
+            -- row_number() over (order by database) AS seq_in_index,
+            row_num AS seq_in_index,
+            -- arrayJoin(splitByString(', ', primary_key)) AS column_name,
+            pk_col,
             'A' AS collation,
             0 AS cardinality,
             NULL AS sub_part,
@@ -49,10 +70,9 @@ FROM (
             '' AS index_comment,
             'YES' AS visible,
             '' AS expression
-        FROM system.tables
-        WHERE
-            database = '{0}'
-            AND name = '{1}')
+        FROM
+            t2
+        )
     UNION ALL (
         SELECT
             table AS table,
@@ -70,12 +90,13 @@ FROM (
             '' AS index_comment,
             'YES' AS visible,
             expr AS expression
-        FROM system.data_skipping_indices
+        FROM
+            system.data_skipping_indices
         WHERE
             database = '{0}'
             AND table = '{1}'))
 {2}
-ORDER BY index_type, expression, column_name, seq_in_index;)", database, table, where_expression);
+ORDER BY index_type, expression, seq_in_index;)", database, table, where_expression);
 
     /// Sorting is strictly speaking not necessary but 1. it is convenient for users, 2. SQL currently does not allow to
     /// sort the output of SHOW INDEXES otherwise (SELECT * FROM (SHOW INDEXES ...) ORDER BY ...) is rejected) and 3. some

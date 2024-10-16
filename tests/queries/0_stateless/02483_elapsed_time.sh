@@ -17,7 +17,7 @@ EXCEPTION_BEFORE_START_QUERY="WITH
                                   FROM system.numbers
                                   WHERE number IN (sub)
                               )
-                              SETTINGS enable_global_with_statement = 0, allow_experimental_analyzer = 1"
+                              SETTINGS enable_global_with_statement = 0, enable_analyzer = 1"
 
 
 # For this query the system.query_log needs to show ExceptionBeforeStart and elapsed seconds <= 1.0

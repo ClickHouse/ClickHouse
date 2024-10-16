@@ -5,6 +5,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
+#include <Core/SettingsEnums.h>
 
 namespace DB
 {
@@ -25,28 +26,28 @@ static ITransformingStep::Traits getTraits(bool has_filter)
 }
 
 TotalsHavingStep::TotalsHavingStep(
-    const DataStream & input_stream_,
+    const Header & input_header_,
     const AggregateDescriptions & aggregates_,
     bool overflow_row_,
-    const ActionsDAGPtr & actions_dag_,
+    std::optional<ActionsDAG> actions_dag_,
     const std::string & filter_column_,
     bool remove_filter_,
     TotalsMode totals_mode_,
     double auto_include_threshold_,
     bool final_)
     : ITransformingStep(
-        input_stream_,
+        input_header_,
         TotalsHavingTransform::transformHeader(
-            input_stream_.header,
-            actions_dag_.get(),
+            input_header_,
+            actions_dag_ ? &*actions_dag_ : nullptr,
             filter_column_,
             remove_filter_,
             final_,
-            getAggregatesMask(input_stream_.header, aggregates_)),
+            getAggregatesMask(input_header_, aggregates_)),
         getTraits(!filter_column_.empty()))
     , aggregates(aggregates_)
     , overflow_row(overflow_row_)
-    , actions_dag(actions_dag_)
+    , actions_dag(std::move(actions_dag_))
     , filter_column_name(filter_column_)
     , remove_filter(remove_filter_)
     , totals_mode(totals_mode_)
@@ -57,7 +58,7 @@ TotalsHavingStep::TotalsHavingStep(
 
 void TotalsHavingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    auto expression_actions = actions_dag ? std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings()) : nullptr;
+    auto expression_actions = actions_dag ? std::make_shared<ExpressionActions>(std::move(*actions_dag), settings.getActionsSettings()) : nullptr;
 
     auto totals_having = std::make_shared<TotalsHavingTransform>(
         pipeline.getHeader(),
@@ -100,13 +101,16 @@ void TotalsHavingStep::describeActions(FormatSettings & settings) const
     if (actions_dag)
     {
         bool first = true;
-        auto expression = std::make_shared<ExpressionActions>(actions_dag);
-        for (const auto & action : expression->getActions())
+        if (actions_dag)
         {
-            settings.out << prefix << (first ? "Actions: "
-                                             : "         ");
-            first = false;
-            settings.out << action.toString() << '\n';
+            auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
+            for (const auto & action : expression->getActions())
+            {
+                settings.out << prefix << (first ? "Actions: "
+                                                : "         ");
+                first = false;
+                settings.out << action.toString() << '\n';
+            }
         }
     }
 }
@@ -117,23 +121,24 @@ void TotalsHavingStep::describeActions(JSONBuilder::JSONMap & map) const
     if (actions_dag)
     {
         map.add("Filter column", filter_column_name);
-        auto expression = std::make_shared<ExpressionActions>(actions_dag);
-        map.add("Expression", expression->toTree());
+        if (actions_dag)
+        {
+            auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
+            map.add("Expression", expression->toTree());
+        }
     }
 }
 
-void TotalsHavingStep::updateOutputStream()
+void TotalsHavingStep::updateOutputHeader()
 {
-    output_stream = createOutputStream(
-        input_streams.front(),
+    output_header =
         TotalsHavingTransform::transformHeader(
-            input_streams.front().header,
-            actions_dag.get(),
+            input_headers.front(),
+            getActions(),
             filter_column_name,
             remove_filter,
             final,
-            getAggregatesMask(input_streams.front().header, aggregates)),
-        getDataStreamTraits());
+            getAggregatesMask(input_headers.front(), aggregates));
 }
 
 

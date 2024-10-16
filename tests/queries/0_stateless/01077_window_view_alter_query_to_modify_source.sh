@@ -5,10 +5,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 opts=(
-    "--allow_experimental_analyzer=0"
+    "--enable_analyzer=0"
 )
 
-$CLICKHOUSE_CLIENT "${opts[@]}" --multiquery <<EOF
+$CLICKHOUSE_CLIENT "${opts[@]}" <<EOF
 SET allow_experimental_window_view = 1;
 DROP TABLE IF EXISTS mt;
 DROP TABLE IF EXISTS mt2;
@@ -35,7 +35,7 @@ done
 $CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT * FROM dst ORDER BY market, w_end;"
 $CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT '----ALTER TABLE...MODIFY QUERY----';"
 
-$CLICKHOUSE_CLIENT "${opts[@]}" --multiquery <<EOF
+$CLICKHOUSE_CLIENT "${opts[@]}" <<EOF
 ALTER TABLE wv MODIFY QUERY SELECT count(a) AS count, mt2.market * 2 as market, tumbleEnd(wid) AS w_end FROM mt2 GROUP BY tumble(timestamp, INTERVAL '5' SECOND, 'US/Samoa') AS wid, mt2.market;
 
 INSERT INTO mt2 VALUES (1, 6, '1990/01/01 12:00:10');

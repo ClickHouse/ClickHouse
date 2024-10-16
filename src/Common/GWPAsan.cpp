@@ -57,9 +57,12 @@ static bool guarded_alloc_initialized = []
         opts.MaxSimultaneousAllocations = 1024;
 
     if (!env_options_raw || !std::string_view{env_options_raw}.contains("SampleRate"))
-        opts.SampleRate = 50000;
+        opts.SampleRate = 10000;
 
-    opts.Backtrace = getBackTrace;
+    const char * collect_stacktraces = std::getenv("GWP_ASAN_COLLECT_STACKTRACES"); // NOLINT(concurrency-mt-unsafe)
+    if (collect_stacktraces && std::string_view{collect_stacktraces} == "1")
+        opts.Backtrace = getBackTrace;
+
     GuardedAlloc.init(opts);
 
     return true;
@@ -212,6 +215,13 @@ void printReport([[maybe_unused]] uintptr_t fault_address)
     const auto trace_length = __gwp_asan_get_allocation_trace(allocation_meta, trace.data(), maximum_stack_frames);
     StackTrace::toStringEveryLine(
         reinterpret_cast<void **>(trace.data()), 0, trace_length, [&](const auto line) { LOG_FATAL(logger, fmt::runtime(line)); });
+}
+
+std::atomic<bool> init_finished = false;
+
+void initFinished()
+{
+    init_finished.store(true, std::memory_order_relaxed);
 }
 
 std::atomic<double> force_sample_probability = 0.0;

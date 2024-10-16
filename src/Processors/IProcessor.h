@@ -21,8 +21,8 @@ class IQueryPlanStep;
 struct StorageLimits;
 using StorageLimitsList = std::list<StorageLimits>;
 
-class RowsBeforeLimitCounter;
-using RowsBeforeLimitCounterPtr = std::shared_ptr<RowsBeforeLimitCounter>;
+class RowsBeforeStepCounter;
+using RowsBeforeStepCounterPtr = std::shared_ptr<RowsBeforeStepCounter>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
@@ -162,7 +162,7 @@ public:
         ExpandPipeline,
     };
 
-    static std::string statusToName(Status status);
+    static std::string statusToName(std::optional<Status> status);
 
     /** Method 'prepare' is responsible for all cheap ("instantaneous": O(1) of data volume, no wait) calculations.
       *
@@ -221,6 +221,23 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'schedule' is not implemented for {} processor", getName());
     }
 
+    /* The method is called right after asynchronous job is done
+     * i.e. when file descriptor returned by schedule() is readable.
+     * The sequence of method calls:
+     * ... prepare() -> schedule() -> onAsyncJobReady() -> work() ...
+     * See also comment to schedule() method
+     *
+     * It allows doing some preprocessing immediately after asynchronous job is done.
+     * The implementation should return control quickly, to avoid blocking another asynchronous completed jobs
+     * created by the same pipeline.
+     *
+     * Example, scheduling tasks for remote workers (file descriptor in this case is a socket)
+     * When the remote worker asks for the next task, doing it in onAsyncJobReady() we can provide it immediately.
+     * Otherwise, the returning of the next task for the remote worker can be delayed by current work done in the pipeline
+     * (by other processors), which will create unnecessary latency in query processing by remote workers
+     */
+    virtual void onAsyncJobReady() {}
+
     /** You must call this method if 'prepare' returned ExpandPipeline.
       * This method cannot access any port, but it can create new ports for current processor.
       *
@@ -238,7 +255,7 @@ public:
     /// In case if query was cancelled executor will wait till all processors finish their jobs.
     /// Generally, there is no reason to check this flag. However, it may be reasonable for long operations (e.g. i/o).
     bool isCancelled() const { return is_cancelled.load(std::memory_order_acquire); }
-    void cancel();
+    void cancel() noexcept;
 
     /// Additional method which is called in case if ports were updated while work() method.
     /// May be used to stop execution in rare cases.
@@ -294,18 +311,16 @@ public:
     constexpr static size_t NO_STREAM = std::numeric_limits<size_t>::max();
 
     /// Step of QueryPlan from which processor was created.
-    void setQueryPlanStep(IQueryPlanStep * step, size_t group = 0)
-    {
-        query_plan_step = step;
-        query_plan_step_group = group;
-    }
+    void setQueryPlanStep(IQueryPlanStep * step, size_t group = 0);
 
     IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
     size_t getQueryPlanStepGroup() const { return query_plan_step_group; }
+    const String & getPlanStepName() const { return plan_step_name; }
+    const String & getPlanStepDescription() const { return plan_step_description; }
 
-    uint64_t getElapsedUs() const { return elapsed_us; }
-    uint64_t getInputWaitElapsedUs() const { return input_wait_elapsed_us; }
-    uint64_t getOutputWaitElapsedUs() const { return output_wait_elapsed_us; }
+    uint64_t getElapsedNs() const { return elapsed_ns; }
+    uint64_t getInputWaitElapsedNs() const { return input_wait_elapsed_ns; }
+    uint64_t getOutputWaitElapsedNs() const { return output_wait_elapsed_ns; }
 
     struct ProcessorDataStats
     {
@@ -350,45 +365,51 @@ public:
 
     /// Set limits for current storage.
     /// Different limits may be applied to different storages, we need to keep it per processor.
-    /// This method is need to be override only for sources.
+    /// This method needs to be overridden only for sources.
     virtual void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & /*storage_limits*/) {}
 
     /// This method is called for every processor without input ports.
-    /// Processor can return a new progress for the last read operation.
+    /// Processor can return new progress for the last read operation.
     /// You should zero internal counters in the call, in order to make in idempotent.
     virtual std::optional<ReadProgress> getReadProgress() { return std::nullopt; }
 
     /// Set rows_before_limit counter for current processor.
     /// This counter is used to calculate the number of rows right before any filtration of LimitTransform.
-    virtual void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr /* counter */) {}
+    virtual void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr /* counter */) { }
+
+    /// Set rows_before_aggregation counter for current processor.
+    /// This counter is used to calculate the number of rows right before AggregatingTransform.
+    virtual void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr /* counter */) { }
 
 protected:
-    virtual void onCancel() {}
+    virtual void onCancel() noexcept {}
 
     std::atomic<bool> is_cancelled{false};
 
 private:
     /// For:
-    /// - elapsed_us
+    /// - elapsed_ns
     friend class ExecutionThreadContext;
     /// For
-    /// - input_wait_elapsed_us
-    /// - output_wait_elapsed_us
+    /// - input_wait_elapsed_ns
+    /// - output_wait_elapsed_ns
     friend class ExecutingGraph;
 
     std::string processor_description;
 
     /// For processors_profile_log
-    uint64_t elapsed_us = 0;
+    uint64_t elapsed_ns = 0;
     Stopwatch input_wait_watch;
-    uint64_t input_wait_elapsed_us = 0;
+    uint64_t input_wait_elapsed_ns = 0;
     Stopwatch output_wait_watch;
-    uint64_t output_wait_elapsed_us = 0;
+    uint64_t output_wait_elapsed_ns = 0;
 
     size_t stream_number = NO_STREAM;
 
     IQueryPlanStep * query_plan_step = nullptr;
     size_t query_plan_step_group = 0;
+    String plan_step_name;
+    String plan_step_description;
 };
 
 

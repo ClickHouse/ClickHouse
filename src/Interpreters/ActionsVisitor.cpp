@@ -1,13 +1,13 @@
 #include <memory>
 
+#include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
-#include <Common/checkStackSize.h>
-#include <Common/assert_cast.h>
 
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Core/Settings.h>
 
 #include <Functions/grouping.h>
 #include <Functions/FunctionFactory.h>
@@ -41,18 +41,17 @@
 
 #include <Processors/QueryPlan/QueryPlan.h>
 
-#include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/misc.h>
-#include <Interpreters/ActionsVisitor.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/Set.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/convertFieldToType.h>
-#include <Interpreters/interpretSubquery.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Interpreters/IdentifierSemantic.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Interpreters/ActionsVisitor.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/Set.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/interpretSubquery.h>
+#include <Interpreters/misc.h>
 #include <Parsers/QueryParameterVisitor.h>
 
 #include <Analyzer/QueryNode.h>
@@ -62,6 +61,15 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_variant_type;
+    extern const SettingsBool force_grouping_standard_compatibility;
+    extern const SettingsUInt64 max_ast_elements;
+    extern const SettingsBool transform_null_in;
+    extern const SettingsBool use_variant_as_common_type;
+}
 
 namespace ErrorCodes
 {
@@ -92,7 +100,7 @@ static size_t getTypeDepth(const DataTypePtr & type)
 {
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
         return 1 + getTypeDepth(array_type->getNestedType());
-    else if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
         return 1 + (tuple_type->getElements().empty() ? 0 : getTypeDepth(tuple_type->getElements().at(0)));
 
     return 0;
@@ -130,7 +138,7 @@ static Block createBlockFromCollection(const Collection & collection, const Data
                 throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Invalid type in set. Expected tuple, got {}",
                     String(value.getTypeName()));
 
-            const auto & tuple = value.template get<const Tuple &>();
+            const auto & tuple = value.template safeGet<const Tuple &>();
             size_t tuple_size = tuple.size();
             if (tuple_size != columns_num)
                 throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect size of tuple in set: {} instead of {}",
@@ -173,13 +181,12 @@ static Field extractValueFromNode(const ASTPtr & node, const IDataType & type, C
     {
         return convertFieldToType(lit->value, type);
     }
-    else if (node->as<ASTFunction>())
+    if (node->as<ASTFunction>())
     {
         std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(node, context);
         return convertFieldToType(value_raw.first, type, value_raw.second.get());
     }
-    else
-        throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect element of set. Must be literal or constant expression.");
+    throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect element of set. Must be literal or constant expression.");
 }
 
 static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, ContextPtr context)
@@ -196,7 +203,7 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
     DataTypePtr tuple_type;
     Row tuple_values;
     const auto & list = node->as<ASTExpressionList &>();
-    bool transform_null_in = context->getSettingsRef().transform_null_in;
+    bool transform_null_in = context->getSettingsRef()[Setting::transform_null_in];
     for (const auto & elem : list.children)
     {
         if (num_columns == 1)
@@ -232,7 +239,7 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
                         "Invalid type of set. Expected tuple, got {}",
                         function_result.getTypeName());
 
-                tuple = &function_result.get<Tuple>();
+                tuple = &function_result.safeGet<Tuple>();
             }
 
             /// Tuple can be represented as a literal in AST.
@@ -245,7 +252,7 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
                         "Invalid type in set. Expected tuple, got {}",
                         literal->value.getTypeName());
 
-                tuple = &literal->value.get<Tuple>();
+                tuple = &literal->value.safeGet<Tuple>();
             }
 
             assert(tuple || func);
@@ -315,7 +322,7 @@ Block createBlockForSet(
     };
 
     Block block;
-    bool tranform_null_in = context->getSettingsRef().transform_null_in;
+    bool tranform_null_in = context->getSettingsRef()[Setting::transform_null_in];
 
     /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
     if (left_type_depth == right_type_depth)
@@ -331,14 +338,14 @@ Block createBlockForSet(
         if (type_index == TypeIndex::Tuple)
         {
             const DataTypes & value_types = assert_cast<const DataTypeTuple *>(right_arg_type.get())->getElements();
-            block = createBlockFromCollection(right_arg_value.get<const Tuple &>(), value_types, set_element_types, tranform_null_in);
+            block = createBlockFromCollection(right_arg_value.safeGet<const Tuple &>(), value_types, set_element_types, tranform_null_in);
         }
         else if (type_index == TypeIndex::Array)
         {
             const auto* right_arg_array_type =  assert_cast<const DataTypeArray *>(right_arg_type.get());
-            size_t right_arg_array_size = right_arg_value.get<const Array &>().size();
+            size_t right_arg_array_size = right_arg_value.safeGet<const Array &>().size();
             DataTypes value_types(right_arg_array_size, right_arg_array_type->getNestedType());
-            block = createBlockFromCollection(right_arg_value.get<const Array &>(), value_types, set_element_types, tranform_null_in);
+            block = createBlockFromCollection(right_arg_value.safeGet<const Array &>(), value_types, set_element_types, tranform_null_in);
         }
         else
             throw_unsupported_type(right_arg_type);
@@ -405,10 +412,6 @@ Block createBlockForSet(
 
 }
 
-ScopeStack::Level::Level() = default;
-ScopeStack::Level::~Level() = default;
-ScopeStack::Level::Level(Level &&) noexcept = default;
-
 FutureSetPtr makeExplicitSet(
     const ASTFunction * node, const ActionsDAG & actions, ContextPtr context, PreparedSets & prepared_sets)
 {
@@ -429,7 +432,7 @@ FutureSetPtr makeExplicitSet(
     if (left_tuple_type && left_tuple_type->getElements().size() != 1)
         set_element_types = left_tuple_type->getElements();
 
-    auto set_element_keys = Set::getElementTypes(set_element_types, context->getSettingsRef().transform_null_in);
+    auto set_element_keys = Set::getElementTypes(set_element_types, context->getSettingsRef()[Setting::transform_null_in]);
 
     auto set_key = right_arg->getTreeHash(/*ignore_aliases=*/ true);
     if (auto set = prepared_sets.findTuple(set_key, set_element_keys))
@@ -446,7 +449,7 @@ FutureSetPtr makeExplicitSet(
     else
         block = createBlockForSet(left_arg_type, right_arg, set_element_types, context);
 
-    return prepared_sets.addFromTuple(set_key, block, context->getSettings());
+    return prepared_sets.addFromTuple(set_key, block, context->getSettingsRef());
 }
 
 class ScopeStack::Index
@@ -462,6 +465,7 @@ public:
         for (const auto * node : index)
             map.emplace(node->result_name, node);
     }
+    ~Index() = default;
 
     void addNode(const ActionsDAG::Node * node)
     {
@@ -501,6 +505,10 @@ public:
         return result;
     }
 };
+
+ScopeStack::Level::Level() = default;
+ScopeStack::Level::~Level() = default;
+ScopeStack::Level::Level(Level &&) noexcept = default;
 
 ActionsMatcher::Data::Data(
     ContextPtr context_,
@@ -780,7 +788,7 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
         auto tuple_ast = function->arguments->children[0];
 
         /// This transformation can lead to exponential growth of AST size, let's check it.
-        tuple_ast->checkSize(data.getContext()->getSettingsRef().max_ast_elements);
+        tuple_ast->checkSize(data.getContext()->getSettingsRef()[Setting::max_ast_elements]);
 
         if (tid != 0)
             tuple_ast = tuple_ast->clone();
@@ -924,20 +932,20 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         {
             case GroupByKind::GROUPING_SETS:
             {
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForGroupingSets>(std::move(arguments_indexes), keys_info.grouping_set_keys, data.getContext()->getSettingsRef().force_grouping_standard_compatibility)), { "__grouping_set" }, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForGroupingSets>(std::move(arguments_indexes), keys_info.grouping_set_keys, data.getContext()->getSettingsRef()[Setting::force_grouping_standard_compatibility])), { "__grouping_set" }, column_name);
                 break;
             }
             case GroupByKind::ROLLUP:
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForRollup>(std::move(arguments_indexes), aggregation_keys_number, data.getContext()->getSettingsRef().force_grouping_standard_compatibility)), { "__grouping_set" }, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForRollup>(std::move(arguments_indexes), aggregation_keys_number, data.getContext()->getSettingsRef()[Setting::force_grouping_standard_compatibility])), { "__grouping_set" }, column_name);
                 break;
             case GroupByKind::CUBE:
             {
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForCube>(std::move(arguments_indexes), aggregation_keys_number, data.getContext()->getSettingsRef().force_grouping_standard_compatibility)), { "__grouping_set" }, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForCube>(std::move(arguments_indexes), aggregation_keys_number, data.getContext()->getSettingsRef()[Setting::force_grouping_standard_compatibility])), { "__grouping_set" }, column_name);
                 break;
             }
             case GroupByKind::ORDINARY:
             {
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingOrdinary>(std::move(arguments_indexes), data.getContext()->getSettingsRef().force_grouping_standard_compatibility)), {}, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingOrdinary>(std::move(arguments_indexes), data.getContext()->getSettingsRef()[Setting::force_grouping_standard_compatibility])), {}, column_name);
                 break;
             }
             default:
@@ -1022,7 +1030,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         dag.project(args);
 
         auto index_hint = std::make_shared<FunctionIndexHint>();
-        index_hint->setActions(std::make_shared<ActionsDAG>(std::move(dag)));
+        index_hint->setActions(std::move(dag));
 
         // Arguments are removed. We add function instead of constant column to avoid constant folding.
         data.addFunction(std::make_unique<FunctionToOverloadResolverAdaptor>(index_hint), {}, column_name);
@@ -1055,14 +1063,13 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         // aggregate functions.
         return;
     }
-    else if (node.compute_after_window_functions)
+    if (node.compute_after_window_functions)
     {
         if (!data.build_expression_with_window_functions)
         {
             for (const auto & arg : node.arguments->children)
             {
-                if (auto const * function = arg->as<ASTFunction>();
-                    function && function->name == "lambda")
+                if (auto const * function = arg->as<ASTFunction>(); function && function->name == "lambda")
                 {
                     // Lambda function is a special case. It shouldn't be visited here.
                     continue;
@@ -1285,7 +1292,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     lambda_dag.removeUnusedActions(Names(1, result_name));
 
                     auto lambda_actions = std::make_shared<ExpressionActions>(
-                        std::make_shared<ActionsDAG>(std::move(lambda_dag)),
+                        std::move(lambda_dag),
                         ExpressionActionsSettings::fromContext(data.getContext(), CompileExpressions::yes));
 
                     DataTypePtr result_type = lambda_actions->getSampleBlock().getByName(result_name).type;
@@ -1336,7 +1343,9 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     DataTypePtr type;
     if (literal.custom_type)
         type = literal.custom_type;
-    else if (data.getContext()->getSettingsRef().allow_experimental_variant_type && data.getContext()->getSettingsRef().use_variant_as_common_type)
+    else if (
+        data.getContext()->getSettingsRef()[Setting::allow_experimental_variant_type]
+        && data.getContext()->getSettingsRef()[Setting::use_variant_as_common_type])
         type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), literal.value);
     else
         type = applyVisitor(FieldToDataType(), literal.value);
@@ -1409,7 +1418,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             return {};
 
         PreparedSets::Hash set_key;
-        if (data.getContext()->getSettingsRef().allow_experimental_analyzer && !identifier)
+        if (data.getContext()->getSettingsRef()[Setting::allow_experimental_analyzer] && !identifier)
         {
             /// Here we can be only from mutation interpreter. Normal selects with analyzed use other interpreter.
             /// This is a hacky way to allow reusing cache for prepared sets.
@@ -1481,16 +1490,13 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
         return data.prepared_sets->addFromSubquery(
             set_key, std::move(source), nullptr, std::move(external_table_set), data.getContext()->getSettingsRef());
     }
-    else
-    {
-        const auto & last_actions = data.actions_stack.getLastActions();
-        const auto & index = data.actions_stack.getLastActionsIndex();
-        if (data.prepared_sets && index.contains(left_in_operand->getColumnName()))
-            /// An explicit enumeration of values in parentheses.
-            return makeExplicitSet(&node, last_actions, data.getContext(), *data.prepared_sets);
-        else
-            return {};
-    }
+
+    const auto & last_actions = data.actions_stack.getLastActions();
+    const auto & index = data.actions_stack.getLastActionsIndex();
+    if (data.prepared_sets && index.contains(left_in_operand->getColumnName()))
+        /// An explicit enumeration of values in parentheses.
+        return makeExplicitSet(&node, last_actions, data.getContext(), *data.prepared_sets);
+    return {};
 }
 
 }

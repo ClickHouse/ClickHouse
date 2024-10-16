@@ -89,6 +89,7 @@ public:
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
     bool supportsSubcolumns() const override { return true; }
+    bool supportsOptimizationToSubcolumns() const override { return false; }
 
     bool supportsDynamicSubcolumns() const override { return true; }
 
@@ -127,7 +128,7 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
 
-    static void parseFileSource(String source, String & filename, String & path_to_archive);
+    static void parseFileSource(String source, String & filename, String & path_to_archive, bool allow_archive_path_syntax);
 
     static ArchiveInfo getArchiveInfo(
         const std::string & path_to_archive,
@@ -265,7 +266,7 @@ private:
         return storage->getName();
     }
 
-    void setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_) override;
+    void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_) override;
 
     bool tryGetCountFromCache(const struct stat & file_stat);
 
@@ -295,6 +296,7 @@ private:
     NamesAndTypesList requested_columns;
     NamesAndTypesList requested_virtual_columns;
     Block block_for_format;
+    SerializationInfoByName serialization_hints;
 
     UInt64 max_block_size;
 

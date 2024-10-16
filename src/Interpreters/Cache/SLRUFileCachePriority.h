@@ -58,7 +58,7 @@ public:
         const UserID & user_id,
         const CachePriorityGuard::Lock &) override;
 
-    bool collectCandidatesForEviction(
+    CollectStatus collectCandidatesForEviction(
         size_t desired_size,
         size_t desired_elements_count,
         size_t max_candidates_to_evict,

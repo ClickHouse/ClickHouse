@@ -1,4 +1,4 @@
--- Tags: no-s3-storage, no-replicated-database
+-- Tags: no-object-storage, no-replicated-database
 
 DROP TABLE IF EXISTS test;
 

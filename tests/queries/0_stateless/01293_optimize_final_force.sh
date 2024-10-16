@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long, no-debug, no-s3-storage
+# Tags: no-fasttest, long, no-debug, no-object-storage
 # This test is too slow with S3 storage and debug modes.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -11,7 +11,7 @@ TIMELIMIT=31
 while [ $SECONDS -lt "$TIMELIMIT" ] && [ $it -lt 100 ];
 do
     it=$((it+1))
-    $CLICKHOUSE_CLIENT --multiquery --query "
+    $CLICKHOUSE_CLIENT --query "
         DROP TABLE IF EXISTS mt;
         CREATE TABLE mt (x UInt8, k UInt8 DEFAULT 0) ENGINE = SummingMergeTree ORDER BY k;
 

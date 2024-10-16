@@ -1,10 +1,10 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/BoolMask.h>
+#include <Core/PlainRanges.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/Utils.h>
@@ -17,30 +17,40 @@
 #include <Functions/indexHint.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
+#include <Functions/geometryConverters.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/HilbertUtils.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MortonUtils.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
+#include <Core/Settings.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Storages/MergeTree/MergeTreeIndexUtils.h>
 
 #include <algorithm>
 #include <cassert>
 #include <stack>
 #include <limits>
 
+#include <boost/geometry.hpp>
+#include <boost/geometry/geometries/polygon.hpp>
+#include <boost/geometry/geometries/multi_polygon.hpp>
+
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool analyze_index_with_space_filling_curves;
+}
 
 namespace ErrorCodes
 {
@@ -348,7 +358,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = extractFixedPrefixFromLikePattern(value.get<const String &>(), /*requires_perfect_prefix*/ false);
+            String prefix = extractFixedPrefixFromLikePattern(value.safeGet<const String &>(), /*requires_perfect_prefix*/ false);
             if (prefix.empty())
                 return false;
 
@@ -369,7 +379,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = extractFixedPrefixFromLikePattern(value.get<const String &>(), /*requires_perfect_prefix*/ true);
+            String prefix = extractFixedPrefixFromLikePattern(value.safeGet<const String &>(), /*requires_perfect_prefix*/ true);
             if (prefix.empty())
                 return false;
 
@@ -390,7 +400,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = value.get<const String &>();
+            String prefix = value.safeGet<const String &>();
             if (prefix.empty())
                 return false;
 
@@ -411,7 +421,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            const String & expression = value.get<const String &>();
+            const String & expression = value.safeGet<const String &>();
 
             /// This optimization can't process alternation - this would require
             /// a comprehensive parsing of regular expression.
@@ -453,12 +463,20 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             out.range = Range::createWholeUniverseWithoutNull();
             return true;
         }
+    },
+    {
+        "pointInPolygon",
+        [] (RPNElement & out, const Field &)
+        {
+            out.function = RPNElement::FUNCTION_POINT_IN_POLYGON;
+            return true;
+        }
     }
 };
 
 static const std::set<std::string_view> always_relaxed_atom_functions = {"match"};
 static const std::set<KeyCondition::RPNElement::Function> always_relaxed_atom_elements
-    = {KeyCondition::RPNElement::FUNCTION_UNKNOWN, KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE};
+    = {KeyCondition::RPNElement::FUNCTION_UNKNOWN, KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE, KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON};
 
 /// Functions with range inversion cannot be relaxed. It will become stricter instead.
 /// For example:
@@ -565,6 +583,7 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
     }
 
     const ActionsDAG::Node * res = nullptr;
+    bool handled_inversion = false;
 
     switch (node.type)
     {
@@ -581,7 +600,7 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                 /// Re-generate column name for constant.
                 /// DAG form query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
                 /// DAG from PK does not use it. This breaks matching by column name sometimes.
-                /// Ideally, we should not compare manes, but DAG subtrees instead.
+                /// Ideally, we should not compare names, but DAG subtrees instead.
                 name = ASTLiteral(column_const->getDataColumn()[0]).getColumnName();
             else
                 name = node.result_name;
@@ -592,9 +611,9 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
         case (ActionsDAG::ActionType::ALIAS):
         {
             /// Ignore aliases
-            const auto & alias = cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, need_inversion);
-            to_inverted[&node] = &alias;
-            return alias;
+            res = &cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, need_inversion);
+            handled_inversion = true;
+            break;
         }
         case (ActionsDAG::ActionType::ARRAY_JOIN):
         {
@@ -607,20 +626,10 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
             auto name = node.function_base->getName();
             if (name == "not")
             {
-                const auto & arg = cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, !need_inversion);
-                to_inverted[&node] = &arg;
-                return arg;
+                res = &cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, !need_inversion);
+                handled_inversion = true;
             }
-
-            if (name == "materialize")
-            {
-                /// Ignore materialize
-                const auto & arg = cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, need_inversion);
-                to_inverted[&node] = &arg;
-                return arg;
-            }
-
-            if (name == "indexHint")
+            else if (name == "indexHint")
             {
                 ActionsDAG::NodeRawConstPtrs children;
                 if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get()))
@@ -628,19 +637,17 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                     if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
                     {
                         const auto & index_hint_dag = index_hint->getActions();
-                        children = index_hint_dag->getOutputs();
+                        children = index_hint_dag.getOutputs();
 
                         for (auto & arg : children)
                             arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, to_inverted, context, need_inversion);
                     }
                 }
 
-                const auto & func = inverted_dag.addFunction(node.function_base, children, "");
-                to_inverted[&node] = &func;
-                return func;
+                res = &inverted_dag.addFunction(node.function_base, children, "");
+                handled_inversion = true;
             }
-
-            if (need_inversion && (name == "and" || name == "or"))
+            else if (need_inversion && (name == "and" || name == "or"))
             {
                 ActionsDAG::NodeRawConstPtrs children(node.children);
 
@@ -658,32 +665,56 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
 
                 /// We match columns by name, so it is important to fill name correctly.
                 /// So, use empty string to make it automatically.
-                const auto & func = inverted_dag.addFunction(function_builder, children, "");
-                to_inverted[&node] = &func;
-                return func;
+                res = &inverted_dag.addFunction(function_builder, children, "");
+                handled_inversion = true;
             }
-
-            ActionsDAG::NodeRawConstPtrs children(node.children);
-
-            for (auto & arg : children)
-                arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, to_inverted, context, false);
-
-            auto it = inverse_relations.find(name);
-            if (it != inverse_relations.end())
+            else
             {
-                const auto & func_name = need_inversion ? it->second : it->first;
-                auto function_builder = FunctionFactory::instance().get(func_name, context);
-                const auto & func = inverted_dag.addFunction(function_builder, children, "");
-                to_inverted[&node] = &func;
-                return func;
-            }
+                ActionsDAG::NodeRawConstPtrs children(node.children);
 
-            res = &inverted_dag.addFunction(node.function_base, children, "");
-            chassert(res->result_type == node.result_type);
+                for (auto & arg : children)
+                    arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, to_inverted, context, false);
+
+                auto it = inverse_relations.find(name);
+                if (it != inverse_relations.end())
+                {
+                    const auto & func_name = need_inversion ? it->second : it->first;
+                    auto function_builder = FunctionFactory::instance().get(func_name, context);
+                    res = &inverted_dag.addFunction(function_builder, children, "");
+                    handled_inversion = true;
+                }
+                else
+                {
+                    /// Argument types could change slightly because of our transformations, e.g.
+                    /// LowCardinality can be added because some subexpressions became constant
+                    /// (in particular, sets). If that happens, re-run function overload resolver.
+                    /// Otherwise don't re-run it because some functions may not be available
+                    /// through FunctionFactory::get(), e.g. FunctionCapture.
+                    bool types_changed = false;
+                    for (size_t i = 0; i < children.size(); ++i)
+                    {
+                        if (!node.children[i]->result_type->equals(*children[i]->result_type))
+                        {
+                            types_changed = true;
+                            break;
+                        }
+                    }
+
+                    if (types_changed)
+                    {
+                        auto function_builder = FunctionFactory::instance().get(name, context);
+                        res = &inverted_dag.addFunction(function_builder, children, "");
+                    }
+                    else
+                    {
+                        res = &inverted_dag.addFunction(node.function_base, children, "");
+                    }
+                }
+            }
         }
     }
 
-    if (need_inversion)
+    if (!handled_inversion && need_inversion)
         res = &inverted_dag.addFunction(FunctionFactory::instance().get("not", context), {res}, "");
 
     to_inverted[&node] = res;
@@ -695,22 +726,22 @@ const std::unordered_map<String, KeyCondition::SpaceFillingCurveType> KeyConditi
     {"hilbertEncode", SpaceFillingCurveType::Hilbert}
 };
 
-ActionsDAGPtr KeyCondition::cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context)
+ActionsDAG KeyCondition::cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context)
 {
-    auto res = std::make_shared<ActionsDAG>();
+    ActionsDAG res;
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> to_inverted;
 
     for (auto & node : nodes)
-        node = &DB::cloneASTWithInversionPushDown(*node, *res, to_inverted, context, false);
+        node = &DB::cloneASTWithInversionPushDown(*node, res, to_inverted, context, false);
 
     if (nodes.size() > 1)
     {
         auto function_builder = FunctionFactory::instance().get("and", context);
-        nodes = {&res->addFunction(function_builder, std::move(nodes), "")};
+        nodes = {&res.addFunction(function_builder, std::move(nodes), "")};
     }
 
-    res->getOutputs().swap(nodes);
+    res.getOutputs().swap(nodes);
 
     return res;
 }
@@ -729,7 +760,7 @@ Block KeyCondition::getBlockWithConstants(
     if (syntax_analyzer_result)
     {
         auto actions = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActionsDAG();
-        for (const auto & action_node : actions->getOutputs())
+        for (const auto & action_node : actions.getOutputs())
         {
             if (action_node->column)
                 result.insert(ColumnWithTypeAndName{action_node->column, action_node->result_type, action_node->result_name});
@@ -784,9 +815,9 @@ void KeyCondition::getAllSpaceFillingCurves()
 }
 
 KeyCondition::KeyCondition(
-    ActionsDAGPtr filter_dag,
+    const ActionsDAG * filter_dag,
     ContextPtr context,
-    const Names & key_column_names,
+    const Names & key_column_names_,
     const ExpressionActionsPtr & key_expr_,
     bool single_point_)
     : key_expr(key_expr_)
@@ -794,7 +825,7 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
 {
     size_t key_index = 0;
-    for (const auto & name : key_column_names)
+    for (const auto & name : key_column_names_)
     {
         if (!key_columns.contains(name))
         {
@@ -804,7 +835,7 @@ KeyCondition::KeyCondition(
         ++key_index;
     }
 
-    if (context->getSettingsRef().analyze_index_with_space_filling_curves)
+    if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
         getAllSpaceFillingCurves();
 
     if (!filter_dag)
@@ -825,9 +856,9 @@ KeyCondition::KeyCondition(
       * are pushed down and applied (when possible) to leaf nodes.
       */
     auto inverted_dag = cloneASTWithInversionPushDown({filter_dag->getOutputs().at(0)}, context);
-    assert(inverted_dag->getOutputs().size() == 1);
+    assert(inverted_dag.getOutputs().size() == 1);
 
-    const auto * inverted_dag_filter_node = inverted_dag->getOutputs()[0];
+    const auto * inverted_dag_filter_node = inverted_dag.getOutputs()[0];
 
     RPNBuilder<RPNElement> builder(inverted_dag_filter_node, context, [&](const RPNBuilderTreeNode & node, RPNElement & out)
     {
@@ -874,53 +905,22 @@ static Field applyFunctionForField(
     return (*col)[0];
 }
 
-/// The case when arguments may have types different than in the primary key.
-static std::pair<Field, DataTypePtr> applyFunctionForFieldOfUnknownType(
-    const FunctionBasePtr & func,
-    const DataTypePtr & arg_type,
-    const Field & arg_value)
-{
-    ColumnsWithTypeAndName arguments{{ arg_type->createColumnConst(1, arg_value), arg_type, "x" }};
-    DataTypePtr return_type = func->getResultType();
-
-    auto col = func->execute(arguments, return_type, 1);
-
-    Field result = (*col)[0];
-
-    return {std::move(result), std::move(return_type)};
-}
-
-
-/// Same as above but for binary operators
-static std::pair<Field, DataTypePtr> applyBinaryFunctionForFieldOfUnknownType(
-    const FunctionOverloadResolverPtr & func,
-    const DataTypePtr & arg_type,
-    const Field & arg_value,
-    const DataTypePtr & arg_type2,
-    const Field & arg_value2)
-{
-    ColumnsWithTypeAndName arguments{
-        {arg_type->createColumnConst(1, arg_value), arg_type, "x"}, {arg_type2->createColumnConst(1, arg_value2), arg_type2, "y"}};
-
-    FunctionBasePtr func_base = func->build(arguments);
-
-    DataTypePtr return_type = func_base->getResultType();
-
-    auto col = func_base->execute(arguments, return_type, 1);
-
-    Field result = (*col)[0];
-
-    return {std::move(result), std::move(return_type)};
-}
-
-
+/// applyFunction will execute the function with one `field` or the column which `field` refers to.
 static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
 {
+    chassert(func != nullptr);
     /// Fallback for fields without block reference.
     if (field.isExplicit())
         return applyFunctionForField(func, current_type, field);
 
-    String result_name = "_" + func->getName() + "_" + toString(field.column_idx);
+    /// We will cache the function result inside `field.columns`, because this function will call many times
+    /// from many fields from same column. When the column is huge, for example there are thousands of marks, we need a cache.
+    /// The cache key is like `_[function_pointer]_[param_column_id]` to identify a unique <function, param> pair.
+    WriteBufferFromOwnString buf;
+    writeText("_", buf);
+    writePointerHex(func.get(), buf);
+    writeText("_" + toString(field.column_idx), buf);
+    String result_name = buf.str();
     const auto & columns = field.columns;
     size_t result_idx = columns->size();
 
@@ -932,6 +932,7 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
 
     if (result_idx == columns->size())
     {
+        /// When cache is missed, we calculate the whole column where the field comes from. This will avoid repeated calculation.
         ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
         field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
         (*columns)[result_idx].column = func->execute(args, (*columns)[result_idx].type, columns->front().column->size());
@@ -940,164 +941,92 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     return {field.columns, field.row_idx, result_idx};
 }
 
-/** When table's key has expression with these functions from a column,
-  * and when a column in a query is compared with a constant, such as:
-  * CREATE TABLE (x String) ORDER BY toDate(x)
-  * SELECT ... WHERE x LIKE 'Hello%'
-  * we want to apply the function to the constant for index analysis,
-  * but should modify it to pass on un-parsable values.
-  */
-static std::set<std::string_view> date_time_parsing_functions = {
-    "toDate",
-    "toDate32",
-    "toDateTime",
-    "toDateTime64",
-    "parseDateTimeBestEffort",
-    "parseDateTimeBestEffortUS",
-    "parseDateTime32BestEffort",
-    "parseDateTime64BestEffort",
-    "parseDateTime",
-    "parseDateTimeInJodaSyntax",
-};
-
-/** The key functional expression constraint may be inferred from a plain column in the expression.
-  * For example, if the key contains `toStartOfHour(Timestamp)` and query contains `WHERE Timestamp >= now()`,
-  * it can be assumed that if `toStartOfHour()` is monotonic on [now(), inf), the `toStartOfHour(Timestamp) >= toStartOfHour(now())`
-  * condition also holds, so the index may be used to select only parts satisfying this condition.
-  *
-  * To check the assumption, we'd need to assert that the inverse function to this transformation is also monotonic, however the
-  * inversion isn't exported (or even viable for not strictly monotonic functions such as `toStartOfHour()`).
-  * Instead, we can qualify only functions that do not transform the range (for example rounding),
-  * which while not strictly monotonic, are monotonic everywhere on the input range.
-  */
-bool KeyCondition::transformConstantWithValidFunctions(
-    ContextPtr context,
-    const String & expr_name,
-    size_t & out_key_column_num,
-    DataTypePtr & out_key_column_type,
-    Field & out_value,
-    DataTypePtr & out_type,
-    std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const
+/// Sequentially applies functions to the column, returns `true`
+/// if all function arguments are compatible with functions
+/// signatures, and none of the functions produce `NULL` output.
+///
+/// After functions chain execution, fills result column and its type.
+bool applyFunctionChainToColumn(
+    const ColumnPtr & in_column,
+    const DataTypePtr & in_data_type,
+    const std::vector<FunctionBasePtr> & functions,
+    ColumnPtr & out_column,
+    DataTypePtr & out_data_type)
 {
-    const auto & sample_block = key_expr->getSampleBlock();
+    // Remove LowCardinality from input column, and convert it to regular one
+    auto result_column = in_column->convertToFullIfNeeded();
+    auto result_type = removeLowCardinality(in_data_type);
 
-    for (const auto & node : key_expr->getNodes())
+    // In case function sequence is empty, return full non-LowCardinality column
+    if (functions.empty())
     {
-        auto it = key_columns.find(node.result_name);
-        if (it != key_columns.end())
-        {
-            std::stack<const ActionsDAG::Node *> chain;
-
-            const auto * cur_node = &node;
-            bool is_valid_chain = true;
-
-            while (is_valid_chain)
-            {
-                if (cur_node->result_name == expr_name)
-                    break;
-
-                chain.push(cur_node);
-
-                if (cur_node->type == ActionsDAG::ActionType::FUNCTION && cur_node->children.size() <= 2)
-                {
-                    is_valid_chain = always_monotonic(*cur_node->function_base, *cur_node->result_type);
-
-                    const ActionsDAG::Node * next_node = nullptr;
-                    for (const auto * arg : cur_node->children)
-                    {
-                        if (arg->column && isColumnConst(*arg->column))
-                            continue;
-
-                        if (next_node)
-                            is_valid_chain = false;
-
-                        next_node = arg;
-                    }
-
-                    if (!next_node)
-                        is_valid_chain = false;
-
-                    cur_node = next_node;
-                }
-                else if (cur_node->type == ActionsDAG::ActionType::ALIAS)
-                    cur_node = cur_node->children.front();
-                else
-                    is_valid_chain = false;
-            }
-
-            if (is_valid_chain)
-            {
-                out_type = removeLowCardinality(out_type);
-                auto const_type = removeLowCardinality(cur_node->result_type);
-                auto const_column = out_type->createColumnConst(1, out_value);
-                auto const_value = (*castColumnAccurateOrNull({const_column, out_type, ""}, const_type))[0];
-
-                if (const_value.isNull())
-                    return false;
-
-                while (!chain.empty())
-                {
-                    const auto * func = chain.top();
-                    chain.pop();
-
-                    if (func->type != ActionsDAG::ActionType::FUNCTION)
-                        continue;
-
-                    const auto & func_name = func->function_base->getName();
-                    auto func_base = func->function_base;
-                    const auto & arg_types = func_base->getArgumentTypes();
-                    if (date_time_parsing_functions.contains(func_name) && !arg_types.empty() && isStringOrFixedString(arg_types[0]))
-                    {
-                        auto func_or_null = FunctionFactory::instance().get(func_name + "OrNull", context);
-                        ColumnsWithTypeAndName arguments;
-                        int i = 0;
-                        for (const auto & type : func->function_base->getArgumentTypes())
-                            arguments.push_back({nullptr, type, fmt::format("_{}", i++)});
-
-                        func_base = func_or_null->build(arguments);
-                    }
-
-                    if (func->children.size() == 1)
-                    {
-                        std::tie(const_value, const_type)
-                            = applyFunctionForFieldOfUnknownType(func_base, const_type, const_value);
-                    }
-                    else if (func->children.size() == 2)
-                    {
-                        const auto * left = func->children[0];
-                        const auto * right = func->children[1];
-                        if (left->column && isColumnConst(*left->column))
-                        {
-                            auto left_arg_type = left->result_type;
-                            auto left_arg_value = (*left->column)[0];
-                            std::tie(const_value, const_type) = applyBinaryFunctionForFieldOfUnknownType(
-                                FunctionFactory::instance().get(func_base->getName(), context),
-                                left_arg_type, left_arg_value, const_type, const_value);
-                        }
-                        else
-                        {
-                            auto right_arg_type = right->result_type;
-                            auto right_arg_value = (*right->column)[0];
-                            std::tie(const_value, const_type) = applyBinaryFunctionForFieldOfUnknownType(
-                                FunctionFactory::instance().get(func_base->getName(), context),
-                                const_type, const_value, right_arg_type, right_arg_value);
-                        }
-                    }
-
-                    if (const_value.isNull())
-                        return false;
-                }
-
-                out_key_column_num = it->second;
-                out_key_column_type = sample_block.getByName(it->first).type;
-                out_value = const_value;
-                out_type = const_type;
-                return true;
-            }
-        }
+        out_column = result_column;
+        out_data_type = result_type;
+        return true;
     }
 
-    return false;
+    // If first function arguments are empty, cannot transform input column
+    if (functions[0]->getArgumentTypes().empty())
+    {
+        return false;
+    }
+
+    // And cast it to the argument type of the first function in the chain
+    auto in_argument_type = functions[0]->getArgumentTypes()[0];
+    if (canBeSafelyCasted(result_type, in_argument_type))
+    {
+        result_column = castColumnAccurate({result_column, result_type, ""}, in_argument_type);
+        result_type = in_argument_type;
+    }
+    // If column cannot be casted accurate, casting with OrNull, and in case all
+    // values has been casted (no nulls), unpacking nested column from nullable.
+    // In case any further functions require Nullable input, they'll be able
+    // to cast it.
+    else
+    {
+        result_column = castColumnAccurateOrNull({result_column, result_type, ""}, in_argument_type);
+        const auto & result_column_nullable = assert_cast<const ColumnNullable &>(*result_column);
+        const auto & null_map_data = result_column_nullable.getNullMapData();
+        for (char8_t i : null_map_data)
+        {
+            if (i != 0)
+                return false;
+        }
+        result_column = result_column_nullable.getNestedColumnPtr();
+        result_type = removeNullable(in_argument_type);
+    }
+
+    for (const auto & func : functions)
+    {
+        if (func->getArgumentTypes().empty())
+            return false;
+
+        auto argument_type = func->getArgumentTypes()[0];
+        if (!canBeSafelyCasted(result_type, argument_type))
+            return false;
+
+        result_column = castColumnAccurate({result_column, result_type, ""}, argument_type);
+        result_column = func->execute({{result_column, argument_type, ""}}, func->getResultType(), result_column->size());
+        result_type = func->getResultType();
+
+        // Transforming nullable columns to the nested ones, in case no nulls found
+        if (result_column->isNullable())
+        {
+            const auto & result_column_nullable = assert_cast<const ColumnNullable &>(*result_column);
+            const auto & null_map_data = result_column_nullable.getNullMapData();
+            for (char8_t i : null_map_data)
+            {
+                if (i != 0)
+                    return false;
+            }
+            result_column = result_column_nullable.getNestedColumnPtr();
+            result_type = removeNullable(func->getResultType());
+        }
+    }
+    out_column = result_column;
+    out_data_type = result_type;
+
+    return true;
 }
 
 bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
@@ -1118,26 +1047,46 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     if (out_value.isNull())
         return false;
 
-    return transformConstantWithValidFunctions(
+    MonotonicFunctionsChain transform_functions;
+    auto can_transform_constant = extractMonotonicFunctionsChainFromKey(
         node.getTreeContext().getQueryContext(),
         expr_name,
         out_key_column_num,
         out_key_column_type,
-        out_value,
-        out_type,
+        transform_functions,
         [](const IFunctionBase & func, const IDataType & type)
         {
             if (!func.hasInformationAboutMonotonicity())
                 return false;
-            else
-            {
-                /// Range is irrelevant in this case.
-                auto monotonicity = func.getMonotonicityForRange(type, Field(), Field());
-                if (!monotonicity.is_always_monotonic)
-                    return false;
-            }
+
+            /// Range is irrelevant in this case.
+            auto monotonicity = func.getMonotonicityForRange(type, Field(), Field());
+            if (!monotonicity.is_always_monotonic)
+                return false;
+
             return true;
         });
+
+    if (!can_transform_constant)
+        return false;
+
+    auto const_column = out_type->createColumnConst(1, out_value);
+
+    ColumnPtr transformed_const_column;
+    DataTypePtr transformed_const_type;
+    bool constant_transformed = applyFunctionChainToColumn(
+        const_column,
+        out_type,
+        transform_functions,
+        transformed_const_column,
+        transformed_const_type);
+
+    if (!constant_transformed)
+        return false;
+
+    out_value = (*transformed_const_column)[0];
+    out_type = transformed_const_type;
+    return true;
 }
 
 /// Looking for possible transformation of `column = constant` into `partition_expr = function(constant)`
@@ -1173,28 +1122,48 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
     if (out_value.isNull())
         return false;
 
-    return transformConstantWithValidFunctions(
+    MonotonicFunctionsChain transform_functions;
+    auto can_transform_constant = extractMonotonicFunctionsChainFromKey(
         node.getTreeContext().getQueryContext(),
         expr_name,
         out_key_column_num,
         out_key_column_type,
-        out_value,
+        transform_functions,
+        [](const IFunctionBase & func, const IDataType &) { return func.isDeterministic(); });
+
+    if (!can_transform_constant)
+        return false;
+
+    auto const_column = out_type->createColumnConst(1, out_value);
+
+    ColumnPtr transformed_const_column;
+    DataTypePtr transformed_const_type;
+    bool constant_transformed = applyFunctionChainToColumn(
+        const_column,
         out_type,
-        [](const IFunctionBase & func, const IDataType &)
-        {
-            return func.isDeterministic();
-        });
+        transform_functions,
+        transformed_const_column,
+        transformed_const_type);
+
+    if (!constant_transformed)
+        return false;
+
+    out_value = (*transformed_const_column)[0];
+    out_type = transformed_const_type;
+    return true;
 }
 
 bool KeyCondition::tryPrepareSetIndex(
     const RPNBuilderFunctionTreeNode & func,
     RPNElement & out,
-    size_t & out_key_column_num)
+    size_t & out_key_column_num,
+    bool & is_constant_transformed)
 {
     const auto & left_arg = func.getArgumentAt(0);
 
     out_key_column_num = 0;
     std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
+    std::vector<MonotonicFunctionsChain> set_transforming_chains;
     DataTypes data_types;
 
     auto get_key_tuple_position_mapping = [&](const RPNBuilderTreeNode & node, size_t tuple_index)
@@ -1203,6 +1172,7 @@ bool KeyCondition::tryPrepareSetIndex(
         index_mapping.tuple_index = tuple_index;
         DataTypePtr data_type;
         std::optional<size_t> key_space_filling_curve_argument_pos;
+        MonotonicFunctionsChain set_transforming_chain;
         if (isKeyPossiblyWrappedByMonotonicFunctions(
                 node, index_mapping.key_index, key_space_filling_curve_argument_pos, data_type, index_mapping.functions)
             && !key_space_filling_curve_argument_pos) /// We don't support the analysis of space-filling curves and IN set.
@@ -1210,6 +1180,15 @@ bool KeyCondition::tryPrepareSetIndex(
             indexes_mapping.push_back(index_mapping);
             data_types.push_back(data_type);
             out_key_column_num = std::max(out_key_column_num, index_mapping.key_index);
+            set_transforming_chains.push_back(set_transforming_chain);
+        }
+        // For partition index, checking if set can be transformed to prune any partitions
+        else if (single_point && canSetValuesBeWrappedByFunctions(node, index_mapping.key_index, data_type, set_transforming_chain))
+        {
+            indexes_mapping.push_back(index_mapping);
+            data_types.push_back(data_type);
+            out_key_column_num = std::max(out_key_column_num, index_mapping.key_index);
+            set_transforming_chains.push_back(set_transforming_chain);
         }
     };
 
@@ -1244,14 +1223,6 @@ bool KeyCondition::tryPrepareSetIndex(
     if (!future_set)
         return false;
 
-    const auto set_types = future_set->getTypes();
-    size_t set_types_size = set_types.size();
-    size_t indexes_mapping_size = indexes_mapping.size();
-
-    for (auto & index_mapping : indexes_mapping)
-        if (index_mapping.tuple_index >= set_types_size)
-            return false;
-
     auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
     if (!prepared_set)
         return false;
@@ -1266,18 +1237,71 @@ bool KeyCondition::tryPrepareSetIndex(
       * we need to convert set column to primary key column.
       */
     auto set_columns = prepared_set->getSetElements();
+    auto set_types = future_set->getTypes();
+    {
+        Columns new_columns;
+        DataTypes new_types;
+        while (set_columns.size() < left_args_count) /// If we have an unpacked tuple inside, we unpack it
+        {
+            bool has_tuple = false;
+            for (size_t i = 0; i < set_columns.size(); ++i)
+            {
+                if (isTuple(set_types[i]))
+                {
+                    has_tuple = true;
+                    auto columns_tuple = assert_cast<const ColumnTuple*>(set_columns[i].get())->getColumns();
+                    auto subtypes = assert_cast<const DataTypeTuple&>(*set_types[i]).getElements();
+                    new_columns.insert(new_columns.end(), columns_tuple.begin(), columns_tuple.end());
+                    new_types.insert(new_types.end(), subtypes.begin(), subtypes.end());
+                }
+                else
+                {
+                    new_columns.push_back(set_columns[i]);
+                    new_types.push_back(set_types[i]);
+                }
+            }
+            if (!has_tuple)
+                return false;
+
+            set_columns.swap(new_columns);
+            set_types.swap(new_types);
+            new_columns.clear();
+            new_types.clear();
+        }
+    }
+    size_t set_types_size = set_types.size();
+    size_t indexes_mapping_size = indexes_mapping.size();
     assert(set_types_size == set_columns.size());
+
+    Columns transformed_set_columns = set_columns;
 
     for (size_t indexes_mapping_index = 0; indexes_mapping_index < indexes_mapping_size; ++indexes_mapping_index)
     {
         const auto & key_column_type = data_types[indexes_mapping_index];
         size_t set_element_index = indexes_mapping[indexes_mapping_index].tuple_index;
         auto set_element_type = set_types[set_element_index];
-        auto set_column = set_columns[set_element_index];
+        ColumnPtr set_column = set_columns[set_element_index];
+
+        if (!set_transforming_chains[indexes_mapping_index].empty())
+        {
+            ColumnPtr transformed_set_column;
+            DataTypePtr transformed_set_type;
+            if (!applyFunctionChainToColumn(
+                    set_column,
+                    set_element_type,
+                    set_transforming_chains[indexes_mapping_index],
+                    transformed_set_column,
+                    transformed_set_type))
+                return false;
+
+            set_column = transformed_set_column;
+            set_element_type = transformed_set_type;
+            is_constant_transformed = true;
+        }
 
         if (canBeSafelyCasted(set_element_type, key_column_type))
         {
-            set_columns[set_element_index] = castColumn({set_column, set_element_type, {}}, key_column_type);
+            transformed_set_columns[set_element_index] = castColumn({set_column, set_element_type, {}}, key_column_type);
             continue;
         }
 
@@ -1286,23 +1310,40 @@ bool KeyCondition::tryPrepareSetIndex(
 
         const NullMap * set_column_null_map = nullptr;
 
+        // Keep a reference to the original set_column to ensure the data remains valid
+        ColumnPtr original_set_column = set_column;
+
         if (isNullableOrLowCardinalityNullable(set_element_type))
         {
             if (WhichDataType(set_element_type).isLowCardinality())
             {
                 set_element_type = removeLowCardinality(set_element_type);
-                set_column = set_column->convertToFullColumnIfLowCardinality();
+                transformed_set_columns[set_element_index] = set_column->convertToFullColumnIfLowCardinality();
             }
 
             set_element_type = removeNullable(set_element_type);
-            const auto & set_column_nullable = assert_cast<const ColumnNullable &>(*set_column);
-            set_column_null_map = &set_column_nullable.getNullMapData();
-            set_column = set_column_nullable.getNestedColumnPtr();
+
+            // Obtain the nullable column without reassigning set_column immediately
+            const auto * set_column_nullable = typeid_cast<const ColumnNullable *>(transformed_set_columns[set_element_index].get());
+            if (!set_column_nullable)
+                return false;
+
+            const NullMap & null_map_data = set_column_nullable->getNullMapData();
+            if (!null_map_data.empty())
+                set_column_null_map = &null_map_data;
+
+            ColumnPtr nested_column = set_column_nullable->getNestedColumnPtr();
+
+            // Reassign set_column after we have obtained necessary references
+            set_column = nested_column;
         }
 
-        auto nullable_set_column = castColumnAccurateOrNull({set_column, set_element_type, {}}, key_column_type);
-        const auto & nullable_set_column_typed = assert_cast<const ColumnNullable &>(*nullable_set_column);
-        const auto & nullable_set_column_null_map = nullable_set_column_typed.getNullMapData();
+        ColumnPtr nullable_set_column = castColumnAccurateOrNull({set_column, set_element_type, {}}, key_column_type);
+        const auto * nullable_set_column_typed = typeid_cast<const ColumnNullable *>(nullable_set_column.get());
+        if (!nullable_set_column_typed)
+            return false;
+
+        const NullMap & nullable_set_column_null_map = nullable_set_column_typed->getNullMapData();
         size_t nullable_set_column_null_map_size = nullable_set_column_null_map.size();
 
         IColumn::Filter filter(nullable_set_column_null_map_size);
@@ -1310,20 +1351,27 @@ bool KeyCondition::tryPrepareSetIndex(
         if (set_column_null_map)
         {
             for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
-                filter[i] = (*set_column_null_map)[i] || !nullable_set_column_null_map[i];
+            {
+                if (nullable_set_column_null_map_size < set_column_null_map->size())
+                    filter[i] = (*set_column_null_map)[i] || !nullable_set_column_null_map[i];
+                else
+                    filter[i] = !nullable_set_column_null_map[i];
+            }
 
-            set_column = nullable_set_column_typed.filter(filter, 0);
+            set_column = nullable_set_column_typed->filter(filter, 0);
         }
         else
         {
             for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
                 filter[i] = !nullable_set_column_null_map[i];
 
-            set_column = nullable_set_column_typed.getNestedColumn().filter(filter, 0);
+            set_column = nullable_set_column_typed->getNestedColumn().filter(filter, 0);
         }
 
-        set_columns[set_element_index] = std::move(set_column);
+        transformed_set_columns[set_element_index] = std::move(set_column);
     }
+
+    set_columns = std::move(transformed_set_columns);
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
 
@@ -1378,15 +1426,14 @@ public:
                 new_arguments.push_back(arg);
             return func->prepare(new_arguments)->execute(new_arguments, result_type, input_rows_count, dry_run);
         }
-        else if (kind == Kind::RIGHT_CONST)
+        if (kind == Kind::RIGHT_CONST)
         {
             auto new_arguments = arguments;
             new_arguments.push_back(const_arg);
             new_arguments.back().column = new_arguments.back().column->cloneResized(input_rows_count);
             return func->prepare(new_arguments)->execute(new_arguments, result_type, input_rows_count, dry_run);
         }
-        else
-            return func->prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
+        return func->prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
     }
 
     bool isDeterministic() const override { return func->isDeterministic(); }
@@ -1571,6 +1618,191 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
     return false;
 }
 
+/** When table's key has expression with these functions from a column,
+  * and when a column in a query is compared with a constant, such as:
+  * CREATE TABLE (x String) ORDER BY toDate(x)
+  * SELECT ... WHERE x LIKE 'Hello%'
+  * we want to apply the function to the constant for index analysis,
+  * but should modify it to pass on un-parsable values.
+  */
+static std::set<std::string_view> date_time_parsing_functions = {
+    "toDate",
+    "toDate32",
+    "toDateTime",
+    "toDateTime64",
+    "parseDateTimeBestEffort",
+    "parseDateTimeBestEffortUS",
+    "parseDateTime32BestEffort",
+    "parseDateTime64BestEffort",
+    "parseDateTime",
+    "parseDateTimeInJodaSyntax",
+};
+
+/** The key functional expression constraint may be inferred from a plain column in the expression.
+  * For example, if the key contains `toStartOfHour(Timestamp)` and query contains `WHERE Timestamp >= now()`,
+  * it can be assumed that if `toStartOfHour()` is monotonic on [now(), inf), the `toStartOfHour(Timestamp) >= toStartOfHour(now())`
+  * condition also holds, so the index may be used to select only parts satisfying this condition.
+  *
+  * To check the assumption, we'd need to assert that the inverse function to this transformation is also monotonic, however the
+  * inversion isn't exported (or even viable for not strictly monotonic functions such as `toStartOfHour()`).
+  * Instead, we can qualify only functions that do not transform the range (for example rounding),
+  * which while not strictly monotonic, are monotonic everywhere on the input range.
+  */
+bool KeyCondition::extractMonotonicFunctionsChainFromKey(
+    ContextPtr context,
+    const String & expr_name,
+    size_t & out_key_column_num,
+    DataTypePtr & out_key_column_type,
+    MonotonicFunctionsChain & out_functions_chain,
+    std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const
+{
+    const auto & sample_block = key_expr->getSampleBlock();
+
+    for (const auto & node : key_expr->getNodes())
+    {
+        auto it = key_columns.find(node.result_name);
+        if (it != key_columns.end())
+        {
+            std::stack<const ActionsDAG::Node *> chain;
+
+            const auto * cur_node = &node;
+            bool is_valid_chain = true;
+
+            while (is_valid_chain)
+            {
+                if (cur_node->result_name == expr_name)
+                    break;
+
+                chain.push(cur_node);
+
+                if (cur_node->type == ActionsDAG::ActionType::FUNCTION && cur_node->children.size() <= 2)
+                {
+                    is_valid_chain = always_monotonic(*cur_node->function_base, *cur_node->result_type);
+
+                    const ActionsDAG::Node * next_node = nullptr;
+                    for (const auto * arg : cur_node->children)
+                    {
+                        if (arg->column && isColumnConst(*arg->column))
+                            continue;
+
+                        if (next_node)
+                            is_valid_chain = false;
+
+                        next_node = arg;
+                    }
+
+                    if (!next_node)
+                        is_valid_chain = false;
+
+                    cur_node = next_node;
+                }
+                else if (cur_node->type == ActionsDAG::ActionType::ALIAS)
+                    cur_node = cur_node->children.front();
+                else
+                    is_valid_chain = false;
+            }
+
+            if (is_valid_chain)
+            {
+                while (!chain.empty())
+                {
+                    const auto * func = chain.top();
+                    chain.pop();
+
+                    if (func->type != ActionsDAG::ActionType::FUNCTION)
+                        continue;
+
+                    auto func_name = func->function_base->getName();
+                    auto func_base = func->function_base;
+
+                    ColumnsWithTypeAndName arguments;
+                    ColumnWithTypeAndName const_arg;
+                    FunctionWithOptionalConstArg::Kind kind = FunctionWithOptionalConstArg::Kind::NO_CONST;
+
+                    if (date_time_parsing_functions.contains(func_name))
+                    {
+                        const auto & arg_types = func_base->getArgumentTypes();
+                        if (!arg_types.empty() && isStringOrFixedString(arg_types[0]))
+                        {
+                            func_name = func_name + "OrNull";
+                        }
+
+                    }
+
+                    auto func_builder = FunctionFactory::instance().tryGet(func_name, context);
+
+                    if (func->children.size() == 1)
+                    {
+                        arguments.push_back({nullptr, removeLowCardinality(func->children[0]->result_type), ""});
+                    }
+                    else if (func->children.size() == 2)
+                    {
+                        const auto * left = func->children[0];
+                        const auto * right = func->children[1];
+                        if (left->column && isColumnConst(*left->column))
+                        {
+                            const_arg = {left->result_type->createColumnConst(0, (*left->column)[0]), left->result_type, ""};
+                            arguments.push_back(const_arg);
+                            arguments.push_back({nullptr, removeLowCardinality(right->result_type), ""});
+                            kind = FunctionWithOptionalConstArg::Kind::LEFT_CONST;
+                        }
+                        else
+                        {
+                            const_arg = {right->result_type->createColumnConst(0, (*right->column)[0]), right->result_type, ""};
+                            arguments.push_back({nullptr, removeLowCardinality(left->result_type), ""});
+                            arguments.push_back(const_arg);
+                            kind = FunctionWithOptionalConstArg::Kind::RIGHT_CONST;
+                        }
+                    }
+
+                    auto out_func = func_builder->build(arguments);
+                    if (kind == FunctionWithOptionalConstArg::Kind::NO_CONST)
+                        out_functions_chain.push_back(out_func);
+                    else
+                        out_functions_chain.push_back(std::make_shared<FunctionWithOptionalConstArg>(out_func, const_arg, kind));
+                }
+
+                out_key_column_num = it->second;
+                out_key_column_type = sample_block.getByName(it->first).type;
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+bool KeyCondition::canSetValuesBeWrappedByFunctions(
+    const RPNBuilderTreeNode & node,
+    size_t & out_key_column_num,
+    DataTypePtr & out_key_res_column_type,
+    MonotonicFunctionsChain & out_functions_chain)
+{
+    // Checking if column name matches any of key subexpressions
+    String expr_name = node.getColumnName();
+
+    if (array_joined_column_names.contains(expr_name))
+        return false;
+
+    if (!key_subexpr_names.contains(expr_name))
+    {
+        expr_name = node.getColumnNameWithModuloLegacy();
+
+        if (!key_subexpr_names.contains(expr_name))
+            return false;
+    }
+
+    return extractMonotonicFunctionsChainFromKey(
+        node.getTreeContext().getQueryContext(),
+        expr_name,
+        out_key_column_num,
+        out_key_res_column_type,
+        out_functions_chain,
+        [](const IFunctionBase & func, const IDataType &)
+        {
+            return func.isDeterministic();
+        });
+}
 
 static void castValueToType(const DataTypePtr & desired_type, Field & src_value, const DataTypePtr & src_type, const String & node_column_name)
 {
@@ -1628,6 +1860,54 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
         if (atom_map.find(func_name) == std::end(atom_map))
             return false;
 
+        auto analyze_point_in_polygon = [&, this]() -> bool
+        {
+            /// pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)])
+            if (func.getArgumentAt(0).tryGetConstant(const_value, const_type))
+                return false;
+            if (!func.getArgumentAt(1).tryGetConstant(const_value, const_type))
+                return false;
+
+            const auto atom_it = atom_map.find(func_name);
+
+            /// Analyze (x, y)
+            RPNElement::MultiColumnsFunctionDescription column_desc;
+            column_desc.function_name = func_name;
+            auto first_argument = func.getArgumentAt(0).toFunctionNode();
+
+            if (first_argument.getArgumentsSize() != 2 || first_argument.getFunctionName() != "tuple")
+                return false;
+
+            for (size_t i = 0; i < 2; ++i)
+            {
+                auto name = first_argument.getArgumentAt(i).getColumnName();
+                auto it = key_columns.find(name);
+                if (it == key_columns.end())
+                    return false;
+                column_desc.key_columns.push_back(name);
+                column_desc.key_column_positions.push_back(key_columns[name]);
+            }
+            out.point_in_polygon_column_description = column_desc;
+
+            /// Analyze [(0, 0), (8, 4), (5, 8), (0, 2)]
+            chassert(WhichDataType(const_type).isArray());
+            for (const auto & elem : const_value.safeGet<Array>())
+            {
+                if (elem.getType() != Field::Types::Tuple)
+                    return false;
+
+                const auto & elem_tuple = elem.safeGet<Tuple>();
+                if (elem_tuple.size() != 2)
+                    return false;
+
+                auto x = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[0]);
+                auto y = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[1]);
+                out.polygon.outer().push_back({x, y});
+            }
+            boost::geometry::correct(out.polygon);
+            return atom_it->second(out, const_value);
+        };
+
         if (always_relaxed_atom_functions.contains(func_name))
             relaxed = true;
 
@@ -1649,13 +1929,18 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
             if (functionIsInOrGlobalInOperator(func_name))
             {
-                if (tryPrepareSetIndex(func, out, key_column_num))
+                if (tryPrepareSetIndex(func, out, key_column_num, is_constant_transformed))
                 {
                     key_arg_pos = 0;
                     is_set_const = true;
                 }
                 else
                     return false;
+            }
+            else if (func_name == "pointInPolygon")
+            {
+                /// Case1 no holes in polygon
+                return analyze_point_in_polygon();
             }
             else if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
             {
@@ -1801,11 +2086,8 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                         auto common_type_maybe_nullable = (key_expr_type_is_nullable && !common_type->isNullable())
                             ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type))
                             : common_type;
-                        ColumnsWithTypeAndName arguments{
-                            {nullptr, key_expr_type, ""},
-                            {DataTypeString().createColumnConst(1, common_type_maybe_nullable->getName()), common_type_maybe_nullable, ""}};
-                        FunctionOverloadResolverPtr func_builder_cast = createInternalCastOverloadResolver(CastType::nonAccurate, {});
-                        auto func_cast = func_builder_cast->build(arguments);
+
+                        auto func_cast = createInternalCast({key_expr_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {});
 
                         /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
                         if (!single_point && !func_cast->hasInformationAboutMonotonicity())
@@ -1828,7 +2110,15 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
         }
         else
+        {
+            if (func_name == "pointInPolygon")
+            {
+                /// Case2 has holes in polygon, when checking skip index, the hole will be ignored.
+                return analyze_point_in_polygon();
+            }
+
             return false;
+        }
 
         const auto atom_it = atom_map.find(func_name);
 
@@ -1838,7 +2128,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
         return atom_it->second(out, const_value);
     }
-    else if (node.tryGetConstant(const_value, const_type))
+    if (node.tryGetConstant(const_value, const_type))
     {
         /// For cases where it says, for example, `WHERE 0 AND something`
 
@@ -1847,12 +2137,12 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             out.function = const_value.safeGet<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
             return true;
         }
-        else if (const_value.getType() == Field::Types::Int64)
+        if (const_value.getType() == Field::Types::Int64)
         {
             out.function = const_value.safeGet<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
             return true;
         }
-        else if (const_value.getType() == Field::Types::Float64)
+        if (const_value.getType() == Field::Types::Float64)
         {
             out.function = const_value.safeGet<Float64>() != 0.0 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
             return true;
@@ -1912,7 +2202,7 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
             new_rpn.push_back(std::move(collapsed_elem));
             continue;
         }
-        else if (elem.function == RPNElement::FUNCTION_AND && new_rpn.size() >= 2)
+        if (elem.function == RPNElement::FUNCTION_AND && new_rpn.size() >= 2)
         {
             /// AND of two conditions
 
@@ -1921,18 +2211,16 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
 
             /// Related to the same column of the key, represented by a space-filling curve
 
-            if (cond1.key_column == cond2.key_column
-                && cond1.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE
+            if (cond1.key_column == cond2.key_column && cond1.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE
                 && cond2.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE)
             {
-                 /// Intersect these two conditions (applying AND)
+                /// Intersect these two conditions (applying AND)
 
                 RPNElement collapsed_elem;
                 collapsed_elem.function = RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE;
                 collapsed_elem.key_column = cond1.key_column;
-                collapsed_elem.space_filling_curve_args_hyperrectangle = intersect(
-                    cond1.space_filling_curve_args_hyperrectangle,
-                    cond2.space_filling_curve_args_hyperrectangle);
+                collapsed_elem.space_filling_curve_args_hyperrectangle
+                    = intersect(cond1.space_filling_curve_args_hyperrectangle, cond2.space_filling_curve_args_hyperrectangle);
 
                 /// Replace the AND operation with its arguments to the collapsed condition
 
@@ -2776,8 +3064,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 /// Let's support only the case of 2d, because I'm not confident in other cases.
                 if (num_dimensions == 2)
                 {
-                    UInt64 left = key_range.left.get<UInt64>();
-                    UInt64 right = key_range.right.get<UInt64>();
+                    UInt64 left = key_range.left.safeGet<UInt64>();
+                    UInt64 right = key_range.right.safeGet<UInt64>();
 
                     BoolMask mask(false, true);
                     auto hyperrectangle_intersection_callback = [&](std::array<std::pair<UInt64, UInt64>, 2> curve_hyperrectangle)
@@ -2839,6 +3127,46 @@ BoolMask KeyCondition::checkInHyperrectangle(
               * This approach is generalizable to any functions, that have preimage of interval
               * represented by a set of hyperrectangles.
               */
+        }
+        else if (element.function == RPNElement::FUNCTION_POINT_IN_POLYGON)
+        {
+            /** There are 2 kinds of polygons:
+              *   1. Polygon by minmax index
+              *   2. Polygons which is provided by user
+              *
+              * Polygon by minmax index:
+              *   For hyperactangle [1, 2] × [3, 4] we can create a polygon with 4 points: (1, 3), (1, 4), (2, 4), (2, 3)
+              *
+              * Algorithm:
+              *   Check whether there is any intersection of the 2 polygons. If true return {true, true}, else return {false, true}.
+              */
+            const auto & key_column_positions = element.point_in_polygon_column_description->key_column_positions;
+
+            Float64 x_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_column_positions[0]].left);
+            Float64 x_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_column_positions[0]].right);
+            Float64 y_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_column_positions[1]].left);
+            Float64 y_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_column_positions[1]].right);
+
+            if (unlikely(isNaN(x_min) || isNaN(x_max) || isNaN(y_min) || isNaN(y_max)))
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            using Point = boost::geometry::model::d2::point_xy<Float64>;
+            using Polygon = boost::geometry::model::polygon<Point>;
+            Polygon  polygon_by_minmax_index;
+            polygon_by_minmax_index.outer().emplace_back(x_min, y_min);
+            polygon_by_minmax_index.outer().emplace_back(x_min, y_max);
+            polygon_by_minmax_index.outer().emplace_back(x_max, y_max);
+            polygon_by_minmax_index.outer().emplace_back(x_max, y_min);
+
+            /// Close ring
+            boost::geometry::correct(polygon_by_minmax_index);
+
+            /// Because the polygon may have a hole so the "can_be_false" should always be true.
+            rpn_stack.emplace_back(
+                boost::geometry::intersects(polygon_by_minmax_index, element.polygon), true);
         }
         else if (
             element.function == RPNElement::FUNCTION_IS_NULL
@@ -2919,9 +3247,17 @@ bool KeyCondition::mayBeTrueInRange(
 String KeyCondition::RPNElement::toString() const
 {
     if (argument_num_of_space_filling_curve)
-        return toString(fmt::format("argument {} of column {}", *argument_num_of_space_filling_curve, key_column), true);
-    else
-        return toString(fmt::format("column {}", key_column), true);
+        return toString(fmt::format("argument {} of column {}", *argument_num_of_space_filling_curve, key_column), false);
+
+    if (point_in_polygon_column_description)
+        return toString(
+            fmt::format(
+                "column ({}, {})",
+                point_in_polygon_column_description->key_columns[0],
+                point_in_polygon_column_description->key_columns[1]),
+            false);
+
+    return toString(fmt::format("column {}", key_column), true);
 }
 
 String KeyCondition::RPNElement::toString(std::string_view column_name, bool print_constants) const
@@ -2999,6 +3335,23 @@ String KeyCondition::RPNElement::toString(std::string_view column_name, bool pri
             buf << ")";
             return buf.str();
         }
+        case FUNCTION_POINT_IN_POLYGON:
+        {
+            auto points_in_polygon = polygon.outer();
+            buf << "(";
+            print_wrapped_column(buf);
+            buf << " in ";
+            buf << "[";
+            for (size_t i = 0; i < points_in_polygon.size(); ++i)
+            {
+                if (i != 0)
+                    buf << ", ";
+                buf << "(" << points_in_polygon[i].x() << ", " << points_in_polygon[i].y() << ")";
+            }
+            buf << "]";
+            buf << ")";
+            return buf.str();
+        }
         case FUNCTION_IS_NULL:
         case FUNCTION_IS_NOT_NULL:
         {
@@ -3050,6 +3403,7 @@ bool KeyCondition::unknownOrAlwaysTrue(bool unknown_any) const
             || element.function == RPNElement::FUNCTION_IN_SET
             || element.function == RPNElement::FUNCTION_NOT_IN_SET
             || element.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE
+            || element.function == RPNElement::FUNCTION_POINT_IN_POLYGON
             || element.function == RPNElement::FUNCTION_IS_NULL
             || element.function == RPNElement::FUNCTION_IS_NOT_NULL
             || element.function == RPNElement::ALWAYS_FALSE)

@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 WITH x -> plus(lambda(1), x) AS lambda SELECT lambda(1048576); -- { serverError UNSUPPORTED_METHOD };
 

@@ -9,4 +9,4 @@ FROM (
     WHERE val_idx != 0
 )
 WHERE cast_res > 0
-SETTINGS allow_experimental_analyzer = 1;
+SETTINGS enable_analyzer = 1;

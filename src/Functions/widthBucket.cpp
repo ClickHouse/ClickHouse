@@ -3,6 +3,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Types.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NumberTraits.h>
@@ -15,6 +16,7 @@
 #include <Common/Exception.h>
 #include <Common/NaNUtils.h>
 #include <Common/register_objects.h>
+#include <base/range.h>
 
 #include <algorithm>
 #include <iterator>
@@ -97,7 +99,7 @@ class FunctionWidthBucket : public IFunction
         {
             return 0;
         }
-        else if (operand >= high)
+        if (operand >= high)
         {
             return count + 1;
         }
@@ -164,12 +166,12 @@ class FunctionWidthBucket : public IFunction
         result_column->reserve(1);
         auto & result_data = result_column->getData();
 
-        for (const auto row_index : collections::range(0, input_rows_count))
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const auto operand = getValue<Float64>(operands_col_const, operands_vec, row_index);
-            const auto low = getValue<Float64>(lows_col_const, lows_vec, row_index);
-            const auto high = getValue<Float64>(highs_col_const, highs_vec, row_index);
-            const auto count = getValue<TCountType>(counts_col_const, counts_vec, row_index);
+            const auto operand = getValue<Float64>(operands_col_const, operands_vec, row);
+            const auto low = getValue<Float64>(lows_col_const, lows_vec, row);
+            const auto high = getValue<Float64>(highs_col_const, highs_vec, row);
+            const auto count = getValue<TCountType>(counts_col_const, counts_vec, row);
             result_data.push_back(calculate<ResultType>(operand, low, high, count));
         }
 
@@ -285,7 +287,7 @@ Result:
         .categories{"Mathematical"},
     });
 
-    factory.registerAlias("width_bucket", "widthBucket", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("width_bucket", "widthBucket", FunctionFactory::Case::Insensitive);
 }
 
 }

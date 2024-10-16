@@ -1,5 +1,6 @@
 #include <Storages/System/StorageSystemDetachedParts.h>
 
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -287,7 +288,7 @@ public:
         size_t max_block_size_,
         size_t num_streams_)
         : SourceStepWithFilter(
-            DataStream{.header = std::move(sample_block)},
+            std::move(sample_block),
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -306,7 +307,7 @@ protected:
     std::shared_ptr<StorageSystemDetachedParts> storage;
     std::vector<UInt8> columns_mask;
 
-    ActionsDAGPtr filter;
+    std::optional<ActionsDAG> filter;
     const size_t max_block_size;
     const size_t num_streams;
 };
@@ -328,7 +329,7 @@ void ReadFromSystemDetachedParts::applyFilters(ActionDAGNodes added_filter_nodes
 
         filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block);
         if (filter)
-            VirtualColumnUtils::buildSetsForDAG(filter, context);
+            VirtualColumnUtils::buildSetsForDAG(*filter, context);
     }
 }
 
@@ -358,13 +359,13 @@ void StorageSystemDetachedParts::read(
 
 void ReadFromSystemDetachedParts::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto state = std::make_shared<SourceState>(StoragesInfoStream(nullptr, filter, context));
+    auto state = std::make_shared<SourceState>(StoragesInfoStream({}, std::move(filter), context));
 
     Pipe pipe;
 
     for (size_t i = 0; i < num_streams; ++i)
     {
-        auto source = std::make_shared<DetachedPartsSource>(getOutputStream().header, state, columns_mask, max_block_size);
+        auto source = std::make_shared<DetachedPartsSource>(getOutputHeader(), state, columns_mask, max_block_size);
         pipe.addSource(std::move(source));
     }
 

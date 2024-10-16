@@ -50,18 +50,16 @@ public:
 
         if (checkAndGetDataType<DataTypeDate>(&type))
         {
-            return Transform::FactorTransform::execute(UInt16(left.get<UInt64>()), date_lut)
-                    == Transform::FactorTransform::execute(UInt16(right.get<UInt64>()), date_lut)
+            return Transform::FactorTransform::execute(UInt16(left.safeGet<UInt64>()), date_lut)
+                    == Transform::FactorTransform::execute(UInt16(right.safeGet<UInt64>()), date_lut)
                 ? is_monotonic
                 : is_not_monotonic;
         }
-        else
-        {
-            return Transform::FactorTransform::execute(UInt32(left.get<UInt64>()), date_lut)
-                    == Transform::FactorTransform::execute(UInt32(right.get<UInt64>()), date_lut)
-                ? is_monotonic
-                : is_not_monotonic;
-        }
+
+        return Transform::FactorTransform::execute(UInt32(left.safeGet<UInt64>()), date_lut)
+                == Transform::FactorTransform::execute(UInt32(right.safeGet<UInt64>()), date_lut)
+            ? is_monotonic
+            : is_not_monotonic;
     }
 
 protected:

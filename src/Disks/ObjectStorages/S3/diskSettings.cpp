@@ -1,14 +1,14 @@
 #include <Disks/ObjectStorages/S3/diskSettings.h>
-#include <IO/S3/Client.h>
-#include <Common/Exception.h>
 
 #if USE_AWS_S3
 
+#include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/Macros.h>
 #include <Common/Throttler.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
+#include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -17,6 +17,7 @@
 #include <aws/core/client/DefaultRetryStrategy.h>
 #include <base/getFQDNOrHostName.h>
 #include <IO/S3Common.h>
+#include <IO/S3/Client.h>
 #include <IO/S3/Credentials.h>
 
 #include <IO/S3Settings.h>
@@ -25,6 +26,13 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool enable_s3_requests_logging;
+    extern const SettingsUInt64 s3_max_redirects;
+    extern const SettingsUInt64 s3_retry_attempts;
+}
+
 namespace ErrorCodes
 {
 extern const int NO_ELEMENTS_IN_CONFIG;
@@ -84,12 +92,26 @@ std::unique_ptr<S3::Client> getClient(
             "Region should be explicitly specified for directory buckets");
     }
 
+    const Settings & local_settings = context->getSettingsRef();
+
+    int s3_max_redirects = static_cast<int>(global_settings[Setting::s3_max_redirects]);
+    if (!for_disk_s3 && local_settings.isChanged("s3_max_redirects"))
+        s3_max_redirects = static_cast<int>(local_settings[Setting::s3_max_redirects]);
+
+    int s3_retry_attempts = static_cast<int>(global_settings[Setting::s3_retry_attempts]);
+    if (!for_disk_s3 && local_settings.isChanged("s3_retry_attempts"))
+        s3_retry_attempts = static_cast<int>(local_settings[Setting::s3_retry_attempts]);
+
+    bool enable_s3_requests_logging = global_settings[Setting::enable_s3_requests_logging];
+    if (!for_disk_s3 && local_settings.isChanged("enable_s3_requests_logging"))
+        enable_s3_requests_logging = local_settings[Setting::enable_s3_requests_logging];
+
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         auth_settings.region,
         context->getRemoteHostFilter(),
-        static_cast<int>(global_settings.s3_max_redirects),
-        static_cast<int>(global_settings.s3_retry_attempts),
-        global_settings.enable_s3_requests_logging,
+        s3_max_redirects,
+        s3_retry_attempts,
+        enable_s3_requests_logging,
         for_disk_s3,
         request_settings.get_request_throttler,
         request_settings.put_request_throttler,

@@ -1,9 +1,11 @@
-import pytest
-from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
-import time
 import csv
 import re
+import time
+
+import pytest
+
+import helpers.keeper_utils as keeper_utils
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -293,6 +295,16 @@ def test_cmd_conf(started_cluster):
         assert result["configuration_change_tries_count"] == "20"
 
         assert result["async_replication"] == "true"
+
+        assert result["latest_logs_cache_size_threshold"] == "1073741824"
+        assert result["commit_logs_cache_size_threshold"] == "524288000"
+
+        assert result["disk_move_retries_wait_ms"] == "1000"
+        assert result["disk_move_retries_during_init"] == "100"
+
+        assert result["log_slow_total_threshold_ms"] == "5000"
+        assert result["log_slow_cpu_threshold_ms"] == "100"
+        assert result["log_slow_connection_operation_threshold_ms"] == "1000"
     finally:
         close_keeper_socket(client)
 
@@ -332,7 +344,7 @@ def test_cmd_srvr(started_cluster):
         assert result["Received"] == "10"
         assert result["Sent"] == "10"
         assert int(result["Connections"]) == 1
-        assert int(result["Zxid"], 16) > 10
+        assert int(result["Zxid"], 16) >= 10
         assert result["Mode"] == "leader"
         assert result["Node count"] == "14"
 

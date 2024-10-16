@@ -1,5 +1,7 @@
 #include <Analyzer/Utils.h>
 
+#include <Core/Settings.h>
+
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSubquery.h>
@@ -34,6 +36,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool extremes;
+    extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsUInt64 max_result_rows;
+}
 
 namespace ErrorCodes
 {
@@ -148,19 +156,19 @@ std::string getGlobalInFunctionNameForLocalInFunctionName(const std::string & fu
 {
     if (function_name == "in")
         return "globalIn";
-    else if (function_name == "notIn")
+    if (function_name == "notIn")
         return "globalNotIn";
-    else if (function_name == "nullIn")
+    if (function_name == "nullIn")
         return "globalNullIn";
-    else if (function_name == "notNullIn")
+    if (function_name == "notNullIn")
         return "globalNotNullIn";
-    else if (function_name == "inIgnoreSet")
+    if (function_name == "inIgnoreSet")
         return "globalInIgnoreSet";
-    else if (function_name == "notInIgnoreSet")
+    if (function_name == "notInIgnoreSet")
         return "globalNotInIgnoreSet";
-    else if (function_name == "nullInIgnoreSet")
+    if (function_name == "nullInIgnoreSet")
         return "globalNullInIgnoreSet";
-    else if (function_name == "notNullInIgnoreSet")
+    if (function_name == "notNullInIgnoreSet")
         return "globalNotNullInIgnoreSet";
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid local IN function name {}", function_name);
@@ -636,16 +644,16 @@ private:
     bool has_function = false;
 };
 
-inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode * function_node)
+inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode & function_node, const String & function_name)
 {
     Array parameters;
-    for (const auto & param : function_node->getParameters())
+    for (const auto & param : function_node.getParameters())
     {
         auto * constant = param->as<ConstantNode>();
         parameters.push_back(constant->getValue());
     }
 
-    const auto & function_node_argument_nodes = function_node->getArguments().getNodes();
+    const auto & function_node_argument_nodes = function_node.getArguments().getNodes();
 
     DataTypes argument_types;
     argument_types.reserve(function_node_argument_nodes.size());
@@ -655,7 +663,7 @@ inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode * function_nod
 
     AggregateFunctionProperties properties;
     auto action = NullsAction::EMPTY;
-    return AggregateFunctionFactory::instance().get(function_node->getFunctionName(), action, argument_types, parameters, properties);
+    return AggregateFunctionFactory::instance().get(function_name, action, argument_types, parameters, properties);
 }
 
 }
@@ -736,11 +744,11 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
     {
         if (name == "nothing" || name == "nothingUInt64" || name == "nothingNull")
             return;
-        function_node->resolveAsAggregateFunction(resolveAggregateFunction(function_node));
+        function_node->resolveAsAggregateFunction(resolveAggregateFunction(*function_node, function_node->getFunctionName()));
     }
     else if (function_node->isWindowFunction())
     {
-        function_node->resolveAsWindowFunction(resolveAggregateFunction(function_node));
+        function_node->resolveAsWindowFunction(resolveAggregateFunction(*function_node, function_node->getFunctionName()));
     }
 }
 
@@ -791,6 +799,18 @@ QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_ty
     function_node->resolveAsFunction(cast_function->build(function_node->getArgumentColumns()));
 
     return function_node;
+}
+
+void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const String & function_name, const ContextPtr & context)
+{
+    auto function = FunctionFactory::instance().get(function_name, context);
+    function_node.resolveAsFunction(function->build(function_node.getArgumentColumns()));
+}
+
+void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name)
+{
+    auto aggregate_function = resolveAggregateFunction(function_node, function_name);
+    function_node.resolveAsAggregateFunction(std::move(aggregate_function));
 }
 
 /** Returns:
@@ -853,11 +873,11 @@ void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context)
       *  max_rows_in_join, max_bytes_in_join, join_overflow_mode,
       *  which are checked separately (in the Set, Join objects).
       */
-    Settings subquery_settings = mutable_context->getSettings();
-    subquery_settings.max_result_rows = 0;
-    subquery_settings.max_result_bytes = 0;
+    Settings subquery_settings = mutable_context->getSettingsCopy();
+    subquery_settings[Setting::max_result_rows] = 0;
+    subquery_settings[Setting::max_result_bytes] = 0;
     /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
-    subquery_settings.extremes = false;
+    subquery_settings[Setting::extremes] = false;
     mutable_context->setSettings(subquery_settings);
 }
 

@@ -1,7 +1,7 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster
 from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -39,8 +39,12 @@ node6 = cluster.add_instance(
 node7 = cluster.add_instance(
     "node7",
     user_configs=[
-        "configs/000-config_with_env_subst.xml",
+        "configs/000-users_with_env_subst.xml",
         "configs/010-env_subst_override.xml",
+    ],
+    main_configs=[
+        "configs/000-server_overrides.xml",
+        "configs/010-server_with_env_subst.xml",
     ],
     env_variables={
         # overridden with 424242
@@ -126,9 +130,9 @@ def test_config(start_cluster):
     )
 
 
-def test_config_invalid_overrides(start_cluster):
+def test_config_from_env_overrides(start_cluster):
     node7.replace_config(
-        "/etc/clickhouse-server/users.d/000-config_with_env_subst.xml",
+        "/etc/clickhouse-server/users.d/000-users_with_env_subst.xml",
         """
 <clickhouse>
   <profiles>
@@ -156,7 +160,7 @@ def test_config_invalid_overrides(start_cluster):
     ):
         node7.query("SYSTEM RELOAD CONFIG")
     node7.replace_config(
-        "/etc/clickhouse-server/users.d/000-config_with_env_subst.xml",
+        "/etc/clickhouse-server/users.d/000-users_with_env_subst.xml",
         """
 <clickhouse>
   <profiles>
@@ -175,6 +179,24 @@ def test_config_invalid_overrides(start_cluster):
       <include incl="users_1" />
       <include incl="users_2" />
   </users>
+</clickhouse>
+""",
+    )
+    node7.query("SYSTEM RELOAD CONFIG")
+
+
+def test_config_merge_from_env_overrides(start_cluster):
+    assert (
+        node7.query(
+            "SELECT value FROM system.server_settings WHERE name='max_thread_pool_size'"
+        )
+        == "10000\n"
+    )
+    node7.replace_config(
+        "/etc/clickhouse-server/config.d/010-server_with_env_subst.xml",
+        """
+<clickhouse>
+    <max_thread_pool_size from_env="CH_THREADS" replace="1">9000</max_thread_pool_size>
 </clickhouse>
 """,
     )

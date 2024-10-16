@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 0;
+SET enable_analyzer = 0;
 SET allow_experimental_window_view = 1;
 
 DROP TABLE IF EXISTS mt;

@@ -22,7 +22,7 @@ CREATE DICTIONARY test_dict
     `value` String
 )
 PRIMARY KEY key1, key2
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE `test.txt` PASSWORD '' DB currentDatabase()))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE `test.txt` PASSWORD '' DB currentDatabase()))
 LIFETIME(MIN 1 MAX 3600)
 LAYOUT(COMPLEX_KEY_HASHED());
 

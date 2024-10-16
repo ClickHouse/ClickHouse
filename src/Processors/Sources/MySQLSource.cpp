@@ -2,7 +2,9 @@
 
 #if USE_MYSQL
 #include <vector>
+
 #include <Core/MySQL/MySQLReplication.h>
+#include <Core/Settings.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -26,6 +28,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 external_storage_max_read_bytes;
+    extern const SettingsUInt64 external_storage_max_read_rows;
+    extern const SettingsUInt64 max_block_size;
+}
 
 namespace ErrorCodes
 {
@@ -34,8 +42,9 @@ namespace ErrorCodes
 }
 
 StreamSettings::StreamSettings(const Settings & settings, bool auto_close_, bool fetch_by_name_, size_t max_retry_)
-    : max_read_mysql_row_nums((settings.external_storage_max_read_rows) ? settings.external_storage_max_read_rows : settings.max_block_size)
-    , max_read_mysql_bytes_size(settings.external_storage_max_read_bytes)
+    : max_read_mysql_row_nums(
+          (settings[Setting::external_storage_max_read_rows]) ? settings[Setting::external_storage_max_read_rows] : settings[Setting::max_block_size])
+    , max_read_mysql_bytes_size(settings[Setting::external_storage_max_read_bytes])
     , auto_close(auto_close_)
     , fetch_by_name(fetch_by_name_)
     , default_num_tries_on_connection_loss(max_retry_)
@@ -217,11 +226,11 @@ namespace
                 read_bytes_size += 8;
                 break;
             case ValueType::vtEnum8:
-                assert_cast<ColumnInt8 &>(column).insertValue(assert_cast<const DataTypeEnum<Int8> &>(data_type).castToValue(value.data()).get<Int8>());
+                assert_cast<ColumnInt8 &>(column).insertValue(assert_cast<const DataTypeEnum<Int8> &>(data_type).castToValue(value.data()).safeGet<Int8>());
                 read_bytes_size += assert_cast<ColumnInt8 &>(column).byteSize();
                 break;
             case ValueType::vtEnum16:
-                assert_cast<ColumnInt16 &>(column).insertValue(assert_cast<const DataTypeEnum<Int16> &>(data_type).castToValue(value.data()).get<Int16>());
+                assert_cast<ColumnInt16 &>(column).insertValue(assert_cast<const DataTypeEnum<Int16> &>(data_type).castToValue(value.data()).safeGet<Int16>());
                 read_bytes_size += assert_cast<ColumnInt16 &>(column).byteSize();
                 break;
             case ValueType::vtString:

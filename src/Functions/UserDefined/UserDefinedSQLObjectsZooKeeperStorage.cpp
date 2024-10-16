@@ -14,10 +14,15 @@
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
-
+#include <Core/Settings.h>
 
 namespace DB
 {
+namespace Setting
+{
+extern const SettingsUInt64 max_parser_backtracks;
+extern const SettingsUInt64 max_parser_depth;
+}
 
 namespace ErrorCodes
 {
@@ -48,7 +53,7 @@ namespace
 
 UserDefinedSQLObjectsZooKeeperStorage::UserDefinedSQLObjectsZooKeeperStorage(
     const ContextPtr & global_context_, const String & zookeeper_path_)
-    : global_context{global_context_}
+    : UserDefinedSQLObjectsStorageBase(global_context_)
     , zookeeper_getter{[global_context_]() { return global_context_->getZooKeeper(); }}
     , zookeeper_path{zookeeper_path_}
     , watch_queue{std::make_shared<ConcurrentBoundedQueue<std::pair<UserDefinedSQLObjectType, String>>>(std::numeric_limits<size_t>::max())}
@@ -229,7 +234,7 @@ bool UserDefinedSQLObjectsZooKeeperStorage::storeObjectImpl(
         {
             if (throw_if_exists)
                 throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User-defined function '{}' already exists", object_name);
-            else if (!replace_if_exists)
+            if (!replace_if_exists)
                 return false;
 
             code = zookeeper->trySet(path, create_statement);
@@ -271,8 +276,7 @@ bool UserDefinedSQLObjectsZooKeeperStorage::removeObjectImpl(
     {
         if (throw_if_not_exists)
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "User-defined object '{}' doesn't exist", object_name);
-        else
-            return false;
+        return false;
     }
 
     LOG_DEBUG(log, "Object {} removed", backQuote(object_name));
@@ -312,8 +316,8 @@ ASTPtr UserDefinedSQLObjectsZooKeeperStorage::parseObjectData(const String & obj
                 object_data.data() + object_data.size(),
                 "",
                 0,
-                global_context->getSettingsRef().max_parser_depth,
-                global_context->getSettingsRef().max_parser_backtracks);
+                global_context->getSettingsRef()[Setting::max_parser_depth],
+                global_context->getSettingsRef()[Setting::max_parser_backtracks]);
             return ast;
         }
     }
@@ -406,7 +410,7 @@ void UserDefinedSQLObjectsZooKeeperStorage::syncObjects(const zkutil::ZooKeeperP
     LOG_DEBUG(log, "Syncing user-defined {} objects", object_type);
     Strings object_names = getObjectNamesAndSetWatch(zookeeper, object_type);
 
-    getLock();
+    auto lock = getLock();
 
     /// Remove stale objects
     removeAllObjectsExcept(object_names);

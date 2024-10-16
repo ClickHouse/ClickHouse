@@ -24,8 +24,8 @@ import subprocess
 from contextlib import contextmanager
 from typing import Any, Final, Iterator, List, Optional, Tuple
 
+from ci_config import Labels
 from git_helper import Git, commit, release_branch
-from lambda_shared_package.lambda_shared.pr import Labels
 from report import SUCCESS
 from version_helper import (
     FILE_WITH_VERSION_PATH,
@@ -689,4 +689,5 @@ def main():
 
 
 if __name__ == "__main__":
+    assert False, "Script Deprecated, ask ci team for help"
     main()

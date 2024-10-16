@@ -1,9 +1,9 @@
 import logging
+import random
+import threading
 import time
 
 import pytest
-import threading
-import random
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -34,6 +34,16 @@ def cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
+
+def drop_table(node, table_name, replicated):
+
+    create_table_statement = f"DROP TABLE {table_name} SYNC"
+
+    if replicated:
+        node.query_with_retry(create_table_statement)
+    else:
+        node.query(create_table_statement)
 
 
 def create_table(node, table_name, replicated, additional_settings):
@@ -158,6 +168,9 @@ def test_alter_moving(
 
     assert data_digest == "1000\n"
 
+    for node in nodes:
+        drop_table(node, table_name, replicated_engine)
+
 
 def test_delete_race_leftovers(cluster):
     """
@@ -248,3 +261,4 @@ def test_delete_race_leftovers(cluster):
 
     # Check that we have all data
     assert table_digest == node.query(table_digest_query)
+    drop_table(node, table_name, replicated=True)

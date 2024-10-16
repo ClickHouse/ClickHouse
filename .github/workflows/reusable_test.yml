@@ -102,6 +102,8 @@ jobs:
             --job-name '${{inputs.test_name}}' \
             --run \
             --run-command '''${{inputs.run_command}}'''
+          # shellcheck disable=SC2319
+          echo "JOB_EXIT_CODE=$?" >> "$GITHUB_ENV"
       - name: Post run
         if: ${{ !cancelled() }}
         run: |

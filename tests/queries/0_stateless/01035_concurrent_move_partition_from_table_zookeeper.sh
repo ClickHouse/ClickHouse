@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-fasttest
+# Tags: zookeeper, no-fasttest, long, no-parallel
 
 set -e
 
@@ -61,7 +61,7 @@ export -f thread3;
 export -f thread4;
 export -f thread5;
 
-TIMEOUT=30
+TIMEOUT=20
 
 timeout $TIMEOUT bash -c thread1 2> /dev/null &
 timeout $TIMEOUT bash -c thread2 2> /dev/null &

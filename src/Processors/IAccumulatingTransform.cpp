@@ -8,8 +8,9 @@ namespace ErrorCodes
 }
 
 IAccumulatingTransform::IAccumulatingTransform(Block input_header, Block output_header)
-    : IProcessor({std::move(input_header)}, {std::move(output_header)}),
-    input(inputs.front()), output(outputs.front())
+    : IProcessor({std::move(input_header)}, {std::move(output_header)})
+    , input(inputs.front())
+    , output(outputs.front())
 {
 }
 

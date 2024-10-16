@@ -65,6 +65,8 @@ public:
         zkutil::ZooKeeperNodeCache * zk_node_cache = nullptr,
         const zkutil::EventPtr & zk_changed_event = nullptr);
 
+    XMLDocumentPtr parseConfig(const std::string & config_path);
+
     /// These configurations will be used if there is no configuration file.
     static void registerEmbeddedConfig(std::string name, std::string_view content);
 
