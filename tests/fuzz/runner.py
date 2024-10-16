@@ -203,7 +203,6 @@ def main():
     if match:
         timeout += int(match.group(2))
 
-    stopwatch = Stopwatch()
     with Path() as current:
         for fuzzer in current.iterdir():
             if (current / fuzzer).is_file() and os.access(current / fuzzer, os.X_OK):
