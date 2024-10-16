@@ -198,7 +198,7 @@ Definitions of all workload and resource in form of `CREATE WORKLOAD` and `CREAT
 
 ## See also
  - [system.scheduler](/docs/en/operations/system-tables/scheduler.md)
- - [system.workloads](/docs/en/operations/system-tables/worklaods.md)
+ - [system.workloads](/docs/en/operations/system-tables/workloads.md)
  - [system.resources](/docs/en/operations/system-tables/resources.md)
  - [merge_workload](/docs/en/operations/settings/merge-tree-settings.md#merge_workload) merge tree setting
  - [merge_workload](/docs/en/operations/server-configuration-parameters/settings.md#merge_workload) global server setting

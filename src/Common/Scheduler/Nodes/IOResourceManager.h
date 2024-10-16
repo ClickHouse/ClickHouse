@@ -264,7 +264,7 @@ private:
     void createOrUpdateResource(const String & resource_name, const ASTPtr & ast);
     void deleteResource(const String & resource_name);
 
-    // Topological sorting of worklaods
+    // Topological sorting of workloads
     void topologicallySortedWorkloadsImpl(Workload * workload, std::unordered_set<Workload *> & visited, std::vector<Workload *> & sorted_workloads);
     std::vector<Workload *> topologicallySortedWorkloads();
 
