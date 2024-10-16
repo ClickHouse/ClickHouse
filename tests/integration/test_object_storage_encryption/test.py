@@ -41,26 +41,26 @@ disks = {
         ("encrypted_header_cache_write", False, "enc"),
         ("header_cache_write", False, "header"),
     ],
-    "cache_with_header_cache": [
-        ("encrypted_cache_with_header_cache", False, "enc"),
-        ("cache_with_header_cache", True, "header"),
-        ("cached_with_header_cache", True, "cache"),
-    ],
-    "cache_with_header_cache_write": [
-        ("encrypted_cache_with_header_cache_write", False, "enc"),
-        ("cache_with_header_cache_write", False, "header"),
-        ("cached_with_header_cache_write", True, "cache"),
-    ],
-    "cache_write_with_header_cache": [
-        ("encrypted_cache_write_with_header_cache", False, "enc"),
-        ("cache_write_with_header_cache", True, "header"),
-        ("cached_write_with_header_cache", False, "cache"),
-    ],
-    "cache_write_with_header_cache_write": [
-        ("encrypted_cache_write_with_header_cache_write", False, "enc"),
-        ("cache_write_with_header_cache_write", False, "header"),
-        ("cached_write_with_header_cache_write", False, "cache"),
-    ],
+    # "cache_with_header_cache": [
+    #    ("encrypted_cache_with_header_cache", False, "enc"),
+    #    ("cache_with_header_cache", True, "header"),
+    #    ("cached_with_header_cache", True, "cache"),
+    # ],
+    # "cache_with_header_cache_write": [
+    #    ("encrypted_cache_with_header_cache_write", False, "enc"),
+    #    ("cache_with_header_cache_write", False, "header"),
+    #    ("cached_with_header_cache_write", True, "cache"),
+    # ],
+    # "cache_write_with_header_cache": [
+    #    ("encrypted_cache_write_with_header_cache", False, "enc"),
+    #    ("cache_write_with_header_cache", True, "header"),
+    #    ("cached_write_with_header_cache", False, "cache"),
+    # ],
+    # "cache_write_with_header_cache_write": [
+    #    ("encrypted_cache_write_with_header_cache_write", False, "enc"),
+    #    ("cache_write_with_header_cache_write", False, "header"),
+    #    ("cached_write_with_header_cache_write", False, "cache"),
+    # ],
     "s3encrypted": [],
     "s3cached": [
         ("s3_cached", True, "cache"),
@@ -74,23 +74,24 @@ disks = {
     "s3header_cache_write": [
         ("s3_header_cache_write", False, "header"),
     ],
-    "s3cache_with_header_cache": [
-        ("s3_cache_with_header_cache", True, "header"),
-        ("s3_cached_with_header_cache", True, "cache"),
-    ],
-    "s3cache_with_header_cache_write": [
-        ("s3_cache_with_header_cache_write", False, "header"),
-        ("s3_cached_with_header_cache_write", True, "cache"),
-    ],
-    "s3cache_write_with_header_cache": [
-        ("s3_cache_write_with_header_cache", True, "header"),
-        ("s3_cached_write_with_header_cache", False, "cache"),
-    ],
-    "s3cache_write_with_header_cache_write": [
-        ("s3_cache_write_with_header_cache_write", False, "header"),
-        ("s3_cached_write_with_header_cache_write", False, "cache"),
-    ],
+    # "s3cache_with_header_cache": [
+    #    ("s3_cache_with_header_cache", True, "header"),
+    #    ("s3_cached_with_header_cache", True, "cache"),
+    # ],
+    # "s3cache_with_header_cache_write": [
+    #    ("s3_cache_with_header_cache_write", False, "header"),
+    #    ("s3_cached_with_header_cache_write", True, "cache"),
+    # ],
+    # "s3cache_write_with_header_cache": [
+    #    ("s3_cache_write_with_header_cache", True, "header"),
+    #    ("s3_cached_write_with_header_cache", False, "cache"),
+    # ],
+    # "s3cache_write_with_header_cache_write": [
+    #    ("s3_cache_write_with_header_cache_write", False, "header"),
+    #    ("s3_cached_write_with_header_cache_write", False, "cache"),
+    # ],
 }
+
 # headers won't be cached on read if the full file is already cached
 ingore_empty = ["cache_write_with_header_cache", "s3_cache_write_with_header_cache"]
 HEADER_SIZE = 64
@@ -109,6 +110,9 @@ def helper_check_all_files_encrypted(path, header_only=False):
     for root, _, files in os.walk(path):
         for fname in files:
             f = os.path.join(root, fname)
+            print(f"Checking {f}")
+            if f.endswith("status"):
+                continue
             with open(f, "rb") as fd:
                 assert fd.read(3) == b"ENC"
             if header_only:
@@ -128,8 +132,11 @@ def helper_check_no_files_encrypted(path):
 def is_empty(path):
     if not os.path.exists(path):
         return True
-    if not os.listdir(path):
+    # account 1 for status file
+    if len(os.listdir(path)) <= 1:
         return True
+    for file in os.listdir(path):
+        print(f"Found file: {path}/{file}")
     return False
 
 

@@ -4,7 +4,6 @@
 #include <IO/AsynchronousReader.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
-#include "IO/FileEncryptionCommon.h"
 #include "config.h"
 
 namespace Poco { class Logger; }

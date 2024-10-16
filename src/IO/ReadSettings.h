@@ -6,7 +6,6 @@
 #include <Common/Throttler_fwd.h>
 #include <Common/Priority.h>
 #include <Common/Scheduler/ResourceLink.h>
-#include <IO/FileEncryptionCommon.h>
 #include <IO/DistributedCacheSettings.h>
 #include <Interpreters/Cache/UserInfo.h>
 
@@ -120,8 +119,6 @@ struct ReadSettings
 
     bool remote_read_buffer_restrict_seek = false;
     bool remote_read_buffer_use_external_buffer = false;
-
-    EncryptedObjectStorageSettingsPtr encryption_settings;
 
     /// Bandwidth throttler to use during reading
     ThrottlerPtr remote_throttler;

@@ -2,14 +2,17 @@
 
 #if USE_SSL
 
-#    include <filesystem>
-#    include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
-#    include <IO/BoundedReadBuffer.h>
-#    include <IO/ReadBufferFromFileBase.h>
-#    include <IO/WriteBufferFromEncryptedFile.h>
-#    include <Interpreters/Context.h>
-#    include <Common/CurrentThread.h>
-#    include <Common/logger_useful.h>
+#include <filesystem>
+#include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
+#include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
+#include <IO/BoundedReadBuffer.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/WriteBufferFromEncryptedFile.h>
+#include <IO/ReadBufferFromEncryptedFile.h>
+#include <IO/ReadBufferFromString.h>
+#include <Interpreters/Context.h>
+#include <Common/CurrentThread.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -38,9 +41,7 @@ EncryptedObjectStorage::EncryptedObjectStorage(
 
 ReadSettings EncryptedObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
-    ReadSettings modified_settings{read_settings};
-    modified_settings.encryption_settings = enc_settings;
-    return object_storage->patchSettings(modified_settings);
+    return object_storage->patchSettings(read_settings);
 }
 
 void EncryptedObjectStorage::startup()
@@ -59,8 +60,52 @@ std::unique_ptr<ReadBufferFromFileBase> EncryptedObjectStorage::readObject( /// 
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
-    /// TODO
-    return object_storage->readObject(object, patchSettings(read_settings), read_hint, file_size);
+    auto modified_read_settings = patchSettings(read_settings);
+    modified_read_settings.remote_read_buffer_use_external_buffer = false;
+    modified_read_settings.remote_read_buffer_restrict_seek = false;
+
+    auto impl = object_storage->readObject(object, modified_read_settings, read_hint, file_size);
+    if (impl->eof())
+    {
+        /// File is empty, that's a normal case, see DiskEncrypted::truncateFile().
+        /// There is no header so we just return `ReadBufferFromString("")`.
+        return std::make_unique<ReadBufferFromFileDecorator>(
+            std::make_unique<ReadBufferFromString>(std::string_view{}), object.local_path);
+    }
+
+    FileEncryption::Header header;
+    if (enc_settings->header_cache && read_settings.enable_filesystem_cache)
+    {
+        LOG_TEST(log, "Using header cache: {}", enc_settings->header_cache->getBasePath());
+
+        auto read_buffer_creator = [&]()
+        {
+            return object_storage->readObject(object, modified_read_settings, read_hint, file_size);
+        };
+        CachedOnDiskReadBufferFromFile cached_buffer(
+            object.remote_path,
+            FileCacheKey::fromPath(object.remote_path),
+            enc_settings->header_cache,
+            FileCache::getCommonUser(),
+            read_buffer_creator,
+            modified_read_settings,
+            CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
+            FileEncryption::Header::kSize,
+            /* allow_seeks */ false,
+            /* use_external_buffer */ false,
+            /* read_until_position */FileEncryption::Header::kSize,
+            Context::getGlobalContextInstance()->getFilesystemCacheLog());
+
+        header = FileEncryption::readHeader(cached_buffer);
+    }
+    else
+    {
+        header = FileEncryption::readHeader(*impl);
+    }
+
+    const auto key = enc_settings->findKeyByFingerprint(header.key_fingerprint, object.local_path);
+    return std::make_unique<ReadBufferFromEncryptedFile>(
+        read_settings.remote_fs_buffer_size, std::move(impl), key, header, 0, true);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> EncryptedObjectStorage::writeObject( /// NOLINT
@@ -72,14 +117,21 @@ std::unique_ptr<WriteBufferFromFileBase> EncryptedObjectStorage::writeObject( //
 {
     auto modified_write_settings = IObjectStorage::patchSettings(write_settings);
     auto implementation_buffer = object_storage->writeObject(object, mode, attributes, buf_size, modified_write_settings);
+
     FileEncryption::Header header;
     header.algorithm = enc_settings->current_algorithm;
     header.key_fingerprint = enc_settings->current_key_fingerprint;
     header.init_vector = FileEncryption::InitVector::random();
+
     removeCacheIfExists(object.remote_path);
-    if (enc_settings->cache_header_on_write && enc_settings->header_cache
-        && modified_write_settings.enable_filesystem_cache_on_write_operations && fs::path(object.remote_path).extension() != ".tmp")
+
+    if (enc_settings->cache_header_on_write
+        && enc_settings->header_cache
+        && modified_write_settings.enable_filesystem_cache_on_write_operations
+        && fs::path(object.local_path).extension() != ".tmp")
     {
+        LOG_TEST(log, "Using header cache for write: {}", enc_settings->header_cache->getBasePath());
+
         auto cache_key = FileCacheKey::fromPath(object.remote_path);
         auto out = std::make_unique<WriteBufferFromOwnString>();
         CachedOnDiskWriteBufferFromFile cache(
@@ -89,8 +141,9 @@ std::unique_ptr<WriteBufferFromFileBase> EncryptedObjectStorage::writeObject( //
             cache_key,
             CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
             modified_write_settings,
-            {},
+            FileCache::getCommonUser(),
             Context::getGlobalContextInstance()->getFilesystemCacheLog());
+
         header.write(cache);
         cache.finalize();
     }

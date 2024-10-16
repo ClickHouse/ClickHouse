@@ -78,6 +78,7 @@ static EncryptedObjectStorageSettingsPtr parseDiskEncryptedOSSettings(
                 "Cannot wrap disk `{}` with encryption layer `{}`: encrypted_os disk is allowed only on top of object storage",
                 wrapped_disk_name,
                 disk_name);
+        ret->cache_header_on_write = config.getBool(config_prefix + ".cache_header_on_write", false);
 
         auto header_cache = config.getString(config_prefix + ".header_cache", "");
         if (!header_cache.empty())

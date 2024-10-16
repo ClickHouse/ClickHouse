@@ -55,13 +55,13 @@ public:
 
     FileCacheDataPtr getByName(const std::string & cache_name);
 
+    void loadDefaultCaches(const Poco::Util::AbstractConfiguration & config);
+
     void updateSettingsFromConfig(const Poco::Util::AbstractConfiguration & config);
 
     void remove(FileCachePtr cache);
 
     void clear();
-
-    void loadDefaultCaches(const Poco::Util::AbstractConfiguration & config);
 
 private:
     std::mutex mutex;

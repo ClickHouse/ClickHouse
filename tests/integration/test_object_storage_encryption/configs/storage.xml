@@ -4,10 +4,25 @@
     </backups>
     <filesystem_caches>
         <cache_for_header>
-            <path>cache_for_header/</path>
+            <path>/vardisks/header_cache/</path>
             <max_size>1Gi</max_size>
             <cache_on_write_operations>0</cache_on_write_operations>
         </cache_for_header>
+        <s3_cache_for_header>
+            <path>/vardisks/s3_header_cache/</path>
+            <max_size>1Gi</max_size>
+            <cache_on_write_operations>0</cache_on_write_operations>
+        </s3_cache_for_header>
+        <cache_for_header_write>
+            <path>/vardisks/header_cache_write/</path>
+            <max_size>1Gi</max_size>
+            <cache_on_write_operations>0</cache_on_write_operations>
+        </cache_for_header_write>
+        <s3_cache_for_header_write>
+            <path>/vardisks/s3_header_cache_write/</path>
+            <max_size>1Gi</max_size>
+            <cache_on_write_operations>0</cache_on_write_operations>
+        </s3_cache_for_header_write>
     </filesystem_caches>
     <storage_configuration>
         <disks>
@@ -82,7 +97,8 @@
                 <algorithm>AES_128_CTR</algorithm>
                 <key_hex id="0">41414141414141414141414141414141</key_hex>
                 <current_key_id>0</current_key_id>
-                <header_cache>cache_for_header</header_cache>
+                <cache_header_on_write>1</cache_header_on_write>
+                <header_cache>cache_for_header_write</header_cache>
             </encrypted_header_cache_write>
 
             <locobj_encrypted_cache_with_header_cache>
@@ -100,7 +116,7 @@
             <cached_with_header_cache>
                 <type>cache</type>
                 <disk>encrypted_cache_with_header_cache</disk>
-                <path>/vardisks/cached_with_header_cache/</path>
+                <path>/vardisks/cache_with_header_cache/</path>
                 <max_size>1Gi</max_size>
             </cached_with_header_cache>
 
@@ -240,7 +256,7 @@
                 <algorithm>AES_128_CTR</algorithm>
                 <key_hex id="0">41414141414141414141414141414141</key_hex>
                 <current_key_id>0</current_key_id>
-                <header_cache>cache_for_header</header_cache>
+                <header_cache>s3_cache_for_header</header_cache>
             </s3encrypted_header_cache>
 
             <s3obj_encrypted_header_cache_write>
@@ -255,7 +271,8 @@
                 <algorithm>AES_128_CTR</algorithm>
                 <key_hex id="0">41414141414141414141414141414141</key_hex>
                 <current_key_id>0</current_key_id>
-                <header_cache>cache_for_header</header_cache>
+                <header_cache>s3_cache_for_header_write</header_cache>
+                <cache_header_on_write>1</cache_header_on_write>
             </s3encrypted_header_cache_write>
 
             <s3obj_encrypted_cache_with_header_cache>
