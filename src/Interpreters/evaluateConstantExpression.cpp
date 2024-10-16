@@ -315,7 +315,7 @@ namespace
             --limit;
             return analyzeEquals(identifier, literal, expr);
         }
-        else if (fn->name == "in")
+        if (fn->name == "in")
         {
             const auto * left = fn->arguments->children.front().get();
             const auto * right = fn->arguments->children.back().get();
@@ -385,7 +385,7 @@ namespace
 
             return result;
         }
-        else if (fn->name == "or")
+        if (fn->name == "or")
         {
             const auto * args = fn->children.front()->as<ASTExpressionList>();
 
@@ -411,7 +411,7 @@ namespace
 
             return result;
         }
-        else if (fn->name == "and")
+        if (fn->name == "and")
         {
             const auto * args = fn->children.front()->as<ASTExpressionList>();
 
@@ -856,8 +856,7 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
         // Check if it's always true or false.
         if (literal->value.getType() == Field::Types::UInt64 && literal->value.safeGet<UInt64>() == 0)
             return {result};
-        else
-            return {};
+        return {};
     }
 
     return {result};
