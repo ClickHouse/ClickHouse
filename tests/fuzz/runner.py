@@ -8,6 +8,7 @@ import signal
 import subprocess
 from pathlib import Path
 from time import sleep
+from typing import List
 
 from botocore.exceptions import ClientError
 
@@ -26,7 +27,7 @@ def process_fuzzer_output(output: str):
     pass
 
 
-def process_error(error: str):
+def process_error(error: str) -> list:
     ERROR = r"^==\d+==\s?ERROR: (\S+): (.*)"
     error_source = ""
     error_reason = ""
@@ -52,6 +53,7 @@ def process_error(error: str):
             is_error = True
 
     report(error_source, error_reason, error_info, test_unit)
+    return error_info
 
 
 def kill_fuzzer(fuzzer: str):
@@ -64,7 +66,7 @@ def kill_fuzzer(fuzzer: str):
                 os.kill(pid, signal.SIGKILL)
 
 
-def run_fuzzer(fuzzer: str, timeout: int):
+def run_fuzzer(fuzzer: str, timeout: int) -> TestResult:
     s3 = S3Helper()
 
     logging.info("Running fuzzer %s...", fuzzer)
@@ -142,8 +144,9 @@ def run_fuzzer(fuzzer: str, timeout: int):
     cmd_line += " < /dev/null"
 
     logging.info("...will execute: %s", cmd_line)
-    # subprocess.check_call(cmd_line, shell=True)
 
+    test_result = TestResult(fuzzer, "OK")
+    stopwatch = Stopwatch()
     try:
         result = subprocess.run(
             cmd_line,
@@ -158,18 +161,35 @@ def run_fuzzer(fuzzer: str, timeout: int):
     except subprocess.CalledProcessError as e:
         # print("Command failed with error:", e)
         logging.info("Stderr output: %s", e.stderr)
-        process_error(e.stderr)
+        test_result = TestResult(
+            fuzzer,
+            "FAIL",
+            stopwatch.duration_seconds,
+            "",
+            "\n".join(process_error(e.stderr)),
+        )
     except subprocess.TimeoutExpired as e:
         logging.info("Timeout for %s", cmd_line)
         kill_fuzzer(fuzzer)
         sleep(10)
         process_fuzzer_output(e.stderr)
+        test_result = TestResult(
+            fuzzer,
+            "Timeout",
+            stopwatch.duration_seconds,
+            "",
+            "",
+        )
     else:
         process_fuzzer_output(result.stderr)
+        test_result.time = stopwatch.duration_seconds
 
     s3.upload_build_directory_to_s3(
         Path(new_corpus_dir), f"fuzzer/corpus/{fuzzer}", False
     )
+
+    logging.info("test_result: %s", test_result)
+    return test_result
 
 
 def main():
@@ -183,10 +203,17 @@ def main():
     if match:
         timeout += int(match.group(2))
 
+    test_results = []
+    stopwatch = Stopwatch()
     with Path() as current:
         for fuzzer in current.iterdir():
             if (current / fuzzer).is_file() and os.access(current / fuzzer, os.X_OK):
-                run_fuzzer(fuzzer.name, timeout)
+                test_results.append(run_fuzzer(fuzzer.name, timeout))
+
+    prepared_results = prepare_tests_results_for_clickhouse(PRInfo(), test_results, "failure", stopwatch.duration_seconds, stopwatch.start_time_str, "", "libFuzzer")
+    # ch_helper = ClickHouseHelper()
+    # ch_helper.insert_events_into(db="default", table="checks", events=prepared_results)
+    logging.info("prepared_results: %s", prepared_results)
 
 
 if __name__ == "__main__":
@@ -198,5 +225,12 @@ if __name__ == "__main__":
         S3_BUILDS_BUCKET,
     )
     from s3_helper import S3Helper  # pylint: disable=import-error,no-name-in-module
+    from clickhouse_helper import (  # pylint: disable=import-error,no-name-in-module
+        ClickHouseHelper,
+        prepare_tests_results_for_clickhouse,
+    )
+    from pr_info import PRInfo  # pylint: disable=import-error,no-name-in-module
+    from stopwatch import Stopwatch  # pylint: disable=import-error,no-name-in-module
+    from report import TestResult  # pylint: disable=import-error,no-name-in-module
 
     main()
