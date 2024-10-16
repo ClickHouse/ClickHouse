@@ -89,14 +89,14 @@ if [ "$file_cache_policy" = "SLRU" ]; then
     mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
 fi
 
-cache_policy="SIEVE" #TODO: uncomment above before merge
-#if [ $((RANDOM % 3)) -eq 0 ]; then
-#    cache_policy="SLRU"
-#else if [ $((RANDOM % 3)) -eq 1 ]; then
-#    cache_policy="LRU"
-#else
-#    cache_policy="SIEVE"
-#fi
+cache_policy=""
+if [ $((RANDOM % 3)) -eq 0 ]; then
+    cache_policy="SLRU"
+else if [ $((RANDOM % 3)) -eq 1 ]; then
+    cache_policy="LRU"
+else
+    cache_policy="SIEVE"
+fi
 echo "Using cache policy: $cache_policy"
 
 if [ "$cache_policy" = "LRU" ]; then

@@ -72,14 +72,14 @@ if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; th
     remove_keeper_config "remove_recursive" "[[:digit:]]\+"
 fi
 
-cache_policy="SIEVE" #TODO: uncomment above before merge
-#if [ $((RANDOM % 3)) -eq 0 ]; then
-#    cache_policy="SLRU"
-#else if [ $((RANDOM % 3)) -eq 1 ]; then
-#    cache_policy="LRU"
-#else
-#    cache_policy="SIEVE"
-#fi
+cache_policy=""
+if [ $((RANDOM % 3)) -eq 0 ]; then
+    cache_policy="SLRU"
+else if [ $((RANDOM % 3)) -eq 1 ]; then
+    cache_policy="LRU"
+else
+    cache_policy="SIEVE"
+fi
 echo "Using cache policy: $cache_policy"
 
 if [ "$cache_policy" = "LRU" ]; then
