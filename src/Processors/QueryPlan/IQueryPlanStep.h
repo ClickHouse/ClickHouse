@@ -16,11 +16,6 @@ using Processors = std::vector<ProcessorPtr>;
 
 namespace JSONBuilder { class JSONMap; }
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 class QueryPlan;
 using QueryPlanRawPtrs = std::list<QueryPlan *>;
 
