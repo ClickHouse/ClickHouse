@@ -35,8 +35,8 @@ WorkloadEntityKeeperStorage::WorkloadEntityKeeperStorage(
     , zookeeper_getter{[global_context_]() { return global_context_->getZooKeeper(); }}
     , zookeeper_path{zookeeper_path_}
     , watch_queue{std::make_shared<ConcurrentBoundedQueue<bool>>(std::numeric_limits<size_t>::max())}
-    , log{getLogger("WorkloadEntityKeeperStorage")}
 {
+    log = getLogger("WorkloadEntityKeeperStorage");
     if (zookeeper_path.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path must be non-empty");
 
@@ -237,9 +237,11 @@ void WorkloadEntityKeeperStorage::refreshAllEntities(const zkutil::ZooKeeperPtr 
 
 void WorkloadEntityKeeperStorage::refreshEntities(const zkutil::ZooKeeperPtr & zookeeper)
 {
-    LOG_DEBUG(log, "Refreshing workload entities");
     auto [data, version] = getDataAndSetWatch(zookeeper);
+    if (version == current_version)
+        return;
 
+    LOG_DEBUG(log, "Refreshing workload entities from keeper");
     ASTs queries;
     ParserCreateWorkloadEntity parser;
     const char * begin = data.data(); /// begin of current query
@@ -256,6 +258,7 @@ void WorkloadEntityKeeperStorage::refreshEntities(const zkutil::ZooKeeperPtr & z
     std::vector<std::pair<String, ASTPtr>> new_entities;
     for (const auto & query : queries)
     {
+        LOG_TRACE(log, "Read keeper entity definition: {}", serializeAST(*query));
         if (auto * create_workload_query = query->as<ASTCreateWorkloadQuery>())
             new_entities.emplace_back(create_workload_query->getWorkloadName(), query);
         else if (auto * create_resource_query = query->as<ASTCreateResourceQuery>())

@@ -63,8 +63,6 @@ private:
     std::atomic<bool> watching_flag = false;
 
     std::shared_ptr<ConcurrentBoundedQueue<bool>> watch_queue; // TODO(serxa): rework it into something that is not a queue
-
-    LoggerPtr log;
 };
 
 }
