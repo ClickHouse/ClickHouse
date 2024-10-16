@@ -122,7 +122,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
                 custom_libfuzzer_options = " ".join(
                     f"-{key}={value}"
                     for key, value in parser["libfuzzer"].items()
-                    if key not in ('jobs', 'exact_artifact_path')
+                    if key not in ("jobs", "exact_artifact_path")
                 )
 
             if parser.has_section("fuzzer_arguments"):
@@ -176,13 +176,13 @@ def run_fuzzer(fuzzer: str, timeout: int):
         kill_fuzzer(fuzzer)
         sleep(10)
         process_fuzzer_output(e.stderr)
-        with open(status_path,"wb") as status:
+        with open(status_path, "wb") as status:
             status.write(
                 f"Timeout\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
             )
     else:
         process_fuzzer_output(result.stderr)
-        with open(status_path,"wb") as status:
+        with open(status_path, "wb") as status:
             status.write(
                 f"OK\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
             )
