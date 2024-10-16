@@ -385,7 +385,6 @@ int StatementGenerator::GenerateLambdaCall(RandomGenerator &rg, const uint32_t n
 	}
 	this->levels[this->current_level].rels.push_back(std::move(rel));
 	this->GenerateExpression(rg, lexpr->mutable_expr());
-	this->width++;
 
 	this->levels.clear();
 	for (const auto &entry : levels_backup) {
@@ -484,7 +483,8 @@ int StatementGenerator::GenerateFuncCall(RandomGenerator &rg, const bool allow_f
 		uint32_t n_lambda = 0, min_args = 0, max_args = 0;
 		sql_query_grammar::SQLFuncName *sfn = func_call->mutable_func();
 
-		if ((this->allow_not_deterministic || CollectionHas<SQLFunction>([](const SQLFunction& f){return !f.not_deterministic;})) &&
+		if (!this->functions.empty() &&
+			(this->allow_not_deterministic || CollectionHas<SQLFunction>([](const SQLFunction& f){return !f.not_deterministic;})) &&
 			rg.NextSmallNumber() < 3) {
 			//use a function from the user
 			const std::reference_wrapper<const SQLFunction> &func = this->allow_not_deterministic ?
@@ -505,8 +505,9 @@ int StatementGenerator::GenerateFuncCall(RandomGenerator &rg, const bool allow_f
 
 		if (n_lambda > 0) {
 			assert(n_lambda == 1);
-			generated_params++;
 			GenerateLambdaCall(rg, (rg.NextSmallNumber() % 3) + 1, func_call->add_args()->mutable_lambda());
+			this->width++;
+			generated_params++;
 		}
 		if (max_args > 0 && max_args >= min_args) {
 			std::uniform_int_distribution<uint32_t> nparams(min_args, max_args);

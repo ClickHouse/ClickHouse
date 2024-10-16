@@ -70,6 +70,7 @@ int StatementGenerator::GenerateNextCreateFunction(RandomGenerator &rg, sql_quer
 	next.not_deterministic = rg.NextBool();
 	SetAllowNotDetermistic(next.not_deterministic); //if this function is later called by an oracle, then don't call it
 	GenerateLambdaCall(rg, next.nargs, cf->mutable_lexpr());
+	this->levels.clear();
 	SetAllowNotDetermistic(true);
 
 	cf->mutable_function()->set_function("f" + std::to_string(fname));
@@ -1410,8 +1411,8 @@ int StatementGenerator::GenerateNextExplain(RandomGenerator &rg, sql_query_gramm
 }
 
 int StatementGenerator::GenerateNextStatement(RandomGenerator &rg, sql_query_grammar::SQLQuery &sq) {
-	const uint32_t start_transaction = 5 * static_cast<uint32_t>(supports_cloud_features && !this->in_transaction),
-				   commit = 30 * static_cast<uint32_t>(supports_cloud_features && this->in_transaction),
+	const uint32_t start_transaction = 2 * static_cast<uint32_t>(supports_cloud_features && !this->in_transaction),
+				   commit = 50 * static_cast<uint32_t>(supports_cloud_features && this->in_transaction),
 				   explain_query = 10,
 				   run_query = 120,
 				   prob_space = start_transaction + commit + explain_query + run_query;
@@ -1420,15 +1421,13 @@ int StatementGenerator::GenerateNextStatement(RandomGenerator &rg, sql_query_gra
 
 	if (start_transaction && nopt < (start_transaction + 1)) {
 		sq.set_start_trans(true);
-		this->in_transaction = true;
 		return 0;
 	} else if (commit && nopt < (start_transaction + commit + 1)) {
-		if (rg.NextBool()) {
+		if (rg.NextSmallNumber() < 7) {
 			sq.set_commit_trans(true);
 		} else {
 			sq.set_rollback_trans(true);
 		}
-		this->in_transaction = false;
 		return 0;
 	} else if (explain_query && nopt < (start_transaction + commit + explain_query + 1)) {
 		return GenerateNextExplain(rg, sq.mutable_explain());
@@ -1624,6 +1623,10 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery &sq, 
 			this->functions[fname] = std::move(this->staged_functions[fname]);
 		}
 		this->staged_functions.erase(fname);
+	} else if (sq.has_start_trans() && success) {
+		this->in_transaction = true;
+	} else if ((sq.has_commit_trans() || sq.has_rollback_trans()) && success) {
+		this->in_transaction = false;
 	}
 }
 
