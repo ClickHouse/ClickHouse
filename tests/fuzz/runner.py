@@ -167,7 +167,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
     except subprocess.CalledProcessError as e:
         # print("Command failed with error:", e)
         logging.info("Stderr output: %s", e.stderr)
-        with open(status_path, "wb") as status:
+        with open(status_path, "w", encoding="utf-8") as status:
             status.write(
                 f"FAIL\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
             )
@@ -176,13 +176,13 @@ def run_fuzzer(fuzzer: str, timeout: int):
         kill_fuzzer(fuzzer)
         sleep(10)
         process_fuzzer_output(e.stderr)
-        with open(status_path, "wb") as status:
+        with open(status_path, "w", encoding="utf-8") as status:
             status.write(
                 f"Timeout\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
             )
     else:
         process_fuzzer_output(result.stderr)
-        with open(status_path, "wb") as status:
+        with open(status_path, "w", encoding="utf-8") as status:
             status.write(
                 f"OK\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
             )
