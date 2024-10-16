@@ -74,8 +74,6 @@ MergeTreeIndexReader::MergeTreeIndexReader(
     stream->seekToStart();
 }
 
-MergeTreeIndexReader::~MergeTreeIndexReader() = default;
-
 void MergeTreeIndexReader::seek(size_t mark)
 {
     stream->seekToMark(mark);

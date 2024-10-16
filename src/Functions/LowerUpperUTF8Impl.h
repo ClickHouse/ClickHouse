@@ -4,18 +4,22 @@
 
 #if USE_ICU
 
-#include <Columns/ColumnString.h>
-#include <Functions/LowerUpperImpl.h>
-#include <base/find_symbols.h>
-#include <unicode/unistr.h>
-#include <Common/StringUtils.h>
+#    include <Columns/ColumnString.h>
+#    include <Functions/LowerUpperImpl.h>
+#    include <base/scope_guard.h>
+#    include <unicode/ucasemap.h>
+#    include <unicode/unistr.h>
+#    include <unicode/urename.h>
+#    include <unicode/utypes.h>
+#    include <Common/StringUtils.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+extern const int BAD_ARGUMENTS;
+extern const int LOGICAL_ERROR;
 }
 
 template <char not_case_lower_bound, char not_case_upper_bound, bool upper>
@@ -28,7 +32,7 @@ struct LowerUpperUTF8Impl
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count)
     {
-        if (data.empty())
+        if (input_rows_count == 0)
             return;
 
         bool all_ascii = isAllASCII(data.data(), data.size());
@@ -39,37 +43,61 @@ struct LowerUpperUTF8Impl
         }
 
         res_data.resize(data.size());
-        res_offsets.resize_exact(offsets.size());
+        res_offsets.resize_exact(input_rows_count);
 
-        String output;
-        size_t curr_offset = 0;
-        for (size_t i = 0; i < offsets.size(); ++i)
+        UErrorCode error_code = U_ZERO_ERROR;
+        UCaseMap * case_map = ucasemap_open("", U_FOLD_CASE_DEFAULT, &error_code);
+        if (U_FAILURE(error_code))
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Error calling ucasemap_open: {}", u_errorName(error_code));
+
+        SCOPE_EXIT(
         {
-            const auto * data_start = reinterpret_cast<const char *>(&data[offsets[i - 1]]);
-            size_t size = offsets[i] - offsets[i - 1];
+            ucasemap_close(case_map);
+        });
 
-            icu::UnicodeString input(data_start, static_cast<int32_t>(size), "UTF-8");
+        size_t curr_offset = 0;
+        for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
+        {
+            const auto * src = reinterpret_cast<const char *>(&data[offsets[row_i - 1]]);
+            size_t src_size = offsets[row_i] - offsets[row_i - 1] - 1;
+
+            int32_t dst_size;
             if constexpr (upper)
-                input.toUpper();
+                dst_size = ucasemap_utf8ToUpper(
+                    case_map, reinterpret_cast<char *>(&res_data[curr_offset]), res_data.size() - curr_offset, src, src_size, &error_code);
             else
-                input.toLower();
+                dst_size = ucasemap_utf8ToLower(
+                    case_map, reinterpret_cast<char *>(&res_data[curr_offset]), res_data.size() - curr_offset, src, src_size, &error_code);
 
-            output.clear();
-            input.toUTF8String(output);
+            if (error_code == U_BUFFER_OVERFLOW_ERROR || error_code == U_STRING_NOT_TERMINATED_WARNING)
+            {
+                size_t new_size = curr_offset + dst_size + 1;
+                res_data.resize(new_size);
 
-            /// For valid UTF-8 input strings, ICU sometimes produces output with extra '\0's at the end. Only the data before the first
-            /// '\0' is valid. It the input is not valid UTF-8, then the behavior of lower/upperUTF8 is undefined by definition. In this
-            /// case, the behavior is also reasonable.
-            const char * res_end = find_last_not_symbols_or_null<'\0'>(output.data(), output.data() + output.size());
-            size_t valid_size = res_end ? res_end - output.data() + 1 : 0;
+                error_code = U_ZERO_ERROR;
+                if constexpr (upper)
+                    dst_size = ucasemap_utf8ToUpper(
+                        case_map, reinterpret_cast<char *>(&res_data[curr_offset]), res_data.size() - curr_offset, src, src_size, &error_code);
+                else
+                    dst_size = ucasemap_utf8ToLower(
+                        case_map, reinterpret_cast<char *>(&res_data[curr_offset]), res_data.size() - curr_offset, src, src_size, &error_code);
+            }
 
-            res_data.resize(curr_offset + valid_size + 1);
-            memcpy(&res_data[curr_offset], output.data(), valid_size);
-            res_data[curr_offset + valid_size] = 0;
+            if (error_code != U_ZERO_ERROR)
+                throw DB::Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Error calling {}: {} input: {} input_size: {}",
+                    upper ? "ucasemap_utf8ToUpper" : "ucasemap_utf8ToLower",
+                    u_errorName(error_code),
+                    std::string_view(src, src_size),
+                    src_size);
 
-            curr_offset += valid_size + 1;
-            res_offsets[i] = curr_offset;
+            res_data[curr_offset + dst_size] = 0;
+            curr_offset += dst_size + 1;
+            res_offsets[row_i] = curr_offset;
         }
+
+        res_data.resize(curr_offset);
     }
 
     static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)

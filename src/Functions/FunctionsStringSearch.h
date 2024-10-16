@@ -17,6 +17,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool function_locate_has_mysql_compatible_argument_order;
+}
+
 /** Search and replace functions in strings:
   * position(haystack, needle)     - the normal search for a substring in a string, returns the position (in bytes) of the found substring starting with 1, or 0 if no substring is found.
   * positionUTF8(haystack, needle) - the same, but the position is calculated at code points, provided that the string is encoded in UTF-8.
@@ -99,7 +104,7 @@ public:
     {
         if constexpr (haystack_needle_order_is_configurable == HaystackNeedleOrderIsConfigurable::Yes)
         {
-            if (context->getSettingsRef().function_locate_has_mysql_compatible_argument_order)
+            if (context->getSettingsRef()[Setting::function_locate_has_mysql_compatible_argument_order])
                 argument_order = ArgumentOrder::NeedleHaystack;
         }
     }
@@ -163,6 +168,11 @@ public:
         return return_type;
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnPtr & column_haystack = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[0].column : arguments[1].column;
@@ -216,8 +226,7 @@ public:
 
                 if (is_col_start_pos_const)
                     return result_type->createColumnConst(col_haystack_const->size(), toField(vec_res[0]));
-                else
-                    return col_res;
+                return col_res;
             }
         }
 

@@ -16,7 +16,7 @@ function test_table_comments()
     local ENGINE_NAME="$1"
     echo "engine : ${ENGINE_NAME}"
 
-    $CLICKHOUSE_CLIENT -nm <<EOF
+    $CLICKHOUSE_CLIENT -m <<EOF
     DROP TABLE IF EXISTS comment_test_table;
 
     CREATE TABLE comment_test_table

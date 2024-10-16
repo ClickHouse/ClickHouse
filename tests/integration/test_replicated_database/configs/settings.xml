@@ -5,6 +5,8 @@
             <allow_experimental_alter_materialized_view_structure>1</allow_experimental_alter_materialized_view_structure>
             <allow_experimental_object_type>0</allow_experimental_object_type>
             <allow_suspicious_codecs>0</allow_suspicious_codecs>
+            <database_replicated_allow_replicated_engine_arguments>3</database_replicated_allow_replicated_engine_arguments>
+            <database_replicated_allow_explicit_uuid>3</database_replicated_allow_explicit_uuid>
         </default>
     </profiles>
     <users>

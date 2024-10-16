@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 import logging
 import time
-import pytest
-from helpers.cluster import ClickHouseCluster
 from multiprocessing.dummy import Pool
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
@@ -13,7 +15,6 @@ node = cluster.add_instance(
         "configs/async_metrics_no.xml",
     ],
     mem_limit="4g",
-    env_variables={"MALLOC_CONF": "dirty_decay_ms:0"},
 )
 
 

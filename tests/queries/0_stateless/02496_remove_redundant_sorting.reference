@@ -395,9 +395,9 @@ Expression ((Projection + Before ORDER BY))
         Union
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
-          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
-          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
 -- execute
 Float64	9007199254740994
@@ -427,9 +427,9 @@ Expression ((Projection + Before ORDER BY))
         Union
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
-          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
-          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
 -- execute
 Nullable(Float64)	9007199254740994
@@ -459,9 +459,9 @@ Expression ((Projection + Before ORDER BY))
         Union
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
-          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
-          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
 -- execute
 Float64	9007199254740994

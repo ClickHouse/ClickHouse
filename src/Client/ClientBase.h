@@ -1,21 +1,22 @@
 #pragma once
 
 
+#include <Client/ProgressTable.h>
 #include <Client/Suggest.h>
-#include <Common/QueryFuzzer.h>
-#include <Common/DNSResolver.h>
-#include <Common/InterruptListener.h>
-#include <Common/ProgressIndication.h>
-#include <Common/ShellCommand.h>
-#include <Common/Stopwatch.h>
 #include <Core/ExternalTable.h>
 #include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/SimpleFileChannel.h>
 #include <Poco/SplitterChannel.h>
-#include <Interpreters/Context.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Poco/Util/Application.h>
+#include <Common/DNSResolver.h>
+#include <Common/InterruptListener.h>
+#include <Common/ProgressIndication.h>
+#include <Common/QueryFuzzer.h>
+#include <Common/ShellCommand.h>
+#include <Common/Stopwatch.h>
 
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/SelectQueryInfo.h>
@@ -68,6 +69,7 @@ ProgressOption toProgressOption(std::string progress);
 std::istream& operator>> (std::istream & in, ProgressOption & progress);
 
 class InternalTextLogs;
+class TerminalKeystrokeInterceptor;
 class WriteBufferFromFileDescriptor;
 
 /**
@@ -246,7 +248,8 @@ protected:
 
     void setDefaultFormatsAndCompressionFromConfiguration();
 
-    void initTTYBuffer(ProgressOption progress);
+    void initTTYBuffer(ProgressOption progress_option, ProgressOption progress_table_option);
+    void initKeystrokeInterceptor();
 
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
@@ -255,6 +258,8 @@ protected:
 
     /// Client context is a context used only by the client to parse queries, process query parameters and to connect to clickhouse-server.
     ContextMutablePtr client_context;
+
+    std::unique_ptr<TerminalKeystrokeInterceptor> keystroke_interceptor;
 
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool delayed_interactive = false;
@@ -333,7 +338,10 @@ protected:
     String server_display_name;
 
     ProgressIndication progress_indication;
+    ProgressTable progress_table;
     bool need_render_progress = true;
+    bool need_render_progress_table = true;
+    std::atomic_bool progress_table_toggle_on = false;
     bool need_render_profile_events = true;
     bool written_first_block = false;
     size_t processed_rows = 0; /// How many rows have been read or written.
