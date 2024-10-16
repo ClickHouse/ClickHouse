@@ -117,7 +117,7 @@ TEST_P(FileEncryptionCipherTest, Encryption)
     {
         WriteBufferFromOwnString buf;
         encryptor.setOffset(base_offset);
-        encryptor.encrypt(input.data(), i, buf);
+        encryptor.encrypt(input.data(), i, buf);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
         ASSERT_EQ(expected.substr(0, i), buf.str());
     }
 }
