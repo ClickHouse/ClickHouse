@@ -3,6 +3,7 @@
 #include <Common/Scheduler/Nodes/FifoQueue.h>
 #include <Common/Scheduler/Nodes/FairPolicy.h>
 
+#include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
@@ -245,6 +246,7 @@ String IOResourceManager::Workload::getParent() const
 
 IOResourceManager::IOResourceManager(IWorkloadEntityStorage & storage_)
     : storage(storage_)
+    , log{getLogger("IOResourceManager")}
 {
     subscription = storage.getAllEntitiesAndSubscribe(
         [this] (const std::vector<IWorkloadEntityStorage::Event> & events)
@@ -304,11 +306,8 @@ void IOResourceManager::deleteWorkload(const String & workload_name)
         // Note that we rely of the fact that workload entity storage will not drop workload that is used as a parent
         workloads.erase(workload_iter);
     }
-    else
-    {
-        // Workload to be deleted does not exist -- do nothing, throwing exceptions from a subscription is pointless
-        // TODO(serxa): add logging
-    }
+    else // Workload to be deleted does not exist -- do nothing, throwing exceptions from a subscription is pointless
+        LOG_ERROR(log, "Delete workload that doesn't exist: {}", workload_name);
 }
 
 void IOResourceManager::createOrUpdateResource(const String & resource_name, const ASTPtr & ast)
@@ -335,11 +334,8 @@ void IOResourceManager::deleteResource(const String & resource_name)
     {
         resources.erase(resource_iter);
     }
-    else
-    {
-        // Resource to be deleted does not exist -- do nothing, throwing exceptions from a subscription is pointless
-        // TODO(serxa): add logging
-    }
+    else // Resource to be deleted does not exist -- do nothing, throwing exceptions from a subscription is pointless
+        LOG_ERROR(log, "Delete resource that doesn't exist: {}", resource_name);
 }
 
 IOResourceManager::Classifier::~Classifier()
