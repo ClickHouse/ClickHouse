@@ -1256,6 +1256,10 @@ try
             /// We skip directories (for example, 'http_buffers' - it's used for buffering of the results) and all other file types.
         }
     }
+    else
+    {
+        fs::create_directories(path);
+    }
 }
 catch (...)
 {
