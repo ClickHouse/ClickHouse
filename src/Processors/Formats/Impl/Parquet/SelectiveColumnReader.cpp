@@ -2,12 +2,12 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <Processors/Formats/Impl/Parquet/ParquetReader.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Processors/Formats/Impl/Parquet/ParquetColumnReaderFactory.h>
+#include <Processors/Formats/Impl/Parquet/ParquetReader.h>
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -20,11 +20,11 @@ extern const int PARQUET_EXCEPTION;
 }
 
 template <typename T, typename S>
-static void decodeFixedValueInternal(PaddedPODArray<T> & data, const S* start, const OptionalRowSet & row_set, size_t rows_to_read)
+static void decodeFixedValueInternal(PaddedPODArray<T> & data, const S * start, const OptionalRowSet & row_set, size_t rows_to_read)
 {
     if (!row_set.has_value())
     {
-        if constexpr (std::is_same_v<T,S>)
+        if constexpr (std::is_same_v<T, S>)
             data.insert_assume_reserved(start, start + rows_to_read);
         else
         {
@@ -44,9 +44,10 @@ static void decodeFixedValueInternal(PaddedPODArray<T> & data, const S* start, c
 template <typename T, typename S>
 void PlainDecoder::decodeFixedValue(PaddedPODArray<T> & data, const OptionalRowSet & row_set, size_t rows_to_read)
 {
-    const S * start = reinterpret_cast<const S *>(buffer);
+    const S * start = reinterpret_cast<const S *>(page_data.buffer);
+    page_data.checkSize(rows_to_read * sizeof(S));
     decodeFixedValueInternal(data, start, row_set, rows_to_read);
-    buffer += rows_to_read * sizeof(S);
+    page_data.consume(rows_to_read * sizeof(S));
     remain_rows -= rows_to_read;
 }
 
@@ -70,12 +71,9 @@ bool SelectiveColumnReader::readPage()
     {
         auto dict_page = page_reader->nextPage();
         const parquet::DictionaryPage & dict_page1 = *std::static_pointer_cast<parquet::DictionaryPage>(dict_page);
-        if (unlikely(
-                dict_page1.encoding() != parquet::Encoding::PLAIN_DICTIONARY
-                && dict_page1.encoding() != parquet::Encoding::PLAIN))
+        if (unlikely(dict_page1.encoding() != parquet::Encoding::PLAIN_DICTIONARY && dict_page1.encoding() != parquet::Encoding::PLAIN))
         {
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED, "Unsupported dictionary page encoding {}", dict_page1.encoding());
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported dictionary page encoding {}", dict_page1.encoding());
         }
         readDictPage(static_cast<const parquet::DictionaryPage &>(*dict_page));
     }
@@ -97,30 +95,30 @@ void SelectiveColumnReader::readDataPageV1(const parquet::DataPageV1 & page)
     parquet::LevelDecoder decoder;
     auto max_size = page.size();
     state.remain_rows = page.num_values();
-    state.buffer = page.data();
+    state.data.buffer = page.data();
     auto max_rep_level = scan_spec.column_desc->max_repetition_level();
     auto max_def_level = scan_spec.column_desc->max_definition_level();
     state.def_levels.resize(0);
     state.rep_levels.resize(0);
     if (scan_spec.column_desc->max_repetition_level() > 0)
     {
-        auto rep_bytes
-            = decoder.SetData(page.repetition_level_encoding(), max_rep_level, static_cast<int>(state.remain_rows), state.buffer, max_size);
+        auto rep_bytes = decoder.SetData(
+            page.repetition_level_encoding(), max_rep_level, static_cast<int>(state.remain_rows), state.data.buffer, max_size);
         max_size -= rep_bytes;
-        state.buffer += rep_bytes;
+        state.data.buffer += rep_bytes;
         state.rep_levels.resize_fill(state.remain_rows);
         decoder.Decode(static_cast<int>(state.remain_rows), state.rep_levels.data());
     }
     if (scan_spec.column_desc->max_definition_level() > 0)
     {
-        auto def_bytes
-            = decoder.SetData(page.definition_level_encoding(), max_def_level, static_cast<int>(state.remain_rows), state.buffer, max_size);
+        auto def_bytes = decoder.SetData(
+            page.definition_level_encoding(), max_def_level, static_cast<int>(state.remain_rows), state.data.buffer, max_size);
         max_size -= def_bytes;
-        state.buffer += def_bytes;
+        state.data.buffer += def_bytes;
         state.def_levels.resize_fill(state.remain_rows);
         decoder.Decode(static_cast<int>(state.remain_rows), state.def_levels.data());
     }
-    state.buffer_size = max_size;
+    state.data.buffer_size = max_size;
     if (page.encoding() == parquet::Encoding::RLE_DICTIONARY || page.encoding() == parquet::Encoding::PLAIN_DICTIONARY)
     {
         initIndexDecoderIfNeeded();
@@ -134,7 +132,7 @@ void SelectiveColumnReader::readDataPageV1(const parquet::DataPageV1 & page)
             downgradeToPlain();
             plain = true;
         }
-        plain_decoder = std::make_unique<PlainDecoder>(state.buffer, state.remain_rows);
+        plain_decoder = std::make_unique<PlainDecoder>(state.data, state.remain_rows);
     }
     else
     {
@@ -198,12 +196,14 @@ void NumberColumnDirectReader<DataType, SerializedType>::computeRowSet(OptionalR
 {
     readAndDecodePage();
     chassert(rows_to_read <= state.remain_rows);
-    const SerializedType * start = reinterpret_cast<const SerializedType *>(state.buffer);
+    state.data.checkSize(sizeof(SerializedType) * rows_to_read);
+    const SerializedType * start = reinterpret_cast<const SerializedType *>(state.data.buffer);
     computeRowSetPlain(start, row_set, scan_spec.filter, rows_to_read);
 }
 
 template <typename DataType, typename SerializedType>
-void NumberColumnDirectReader<DataType, SerializedType>::read(MutableColumnPtr & column, const OptionalRowSet & row_set, size_t rows_to_read)
+void NumberColumnDirectReader<DataType, SerializedType>::read(
+    MutableColumnPtr & column, const OptionalRowSet & row_set, size_t rows_to_read)
 {
     readAndDecodePage();
     auto * number_column = static_cast<DataType::ColumnType *>(column.get());
@@ -218,7 +218,7 @@ size_t NumberColumnDirectReader<DataType, SerializedType>::skipValuesInCurrentPa
         return rows_to_skip;
     size_t skipped = std::min(state.remain_rows, rows_to_skip);
     state.remain_rows -= skipped;
-    state.buffer += skipped * sizeof(SerializedType);
+    state.data.consume(skipped * sizeof(SerializedType));
     return rows_to_skip - skipped;
 }
 
@@ -266,10 +266,11 @@ static void computeRowSetPlainSpace(
 }
 
 template <typename DataType, typename SerializedType>
-void NumberColumnDirectReader<DataType, SerializedType>::computeRowSetSpace(OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t, size_t rows_to_read)
+void NumberColumnDirectReader<DataType, SerializedType>::computeRowSetSpace(
+    OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t, size_t rows_to_read)
 {
     readAndDecodePage();
-    const SerializedType * start = reinterpret_cast<const SerializedType *>(state.buffer);
+    const SerializedType * start = reinterpret_cast<const SerializedType *>(state.data.buffer);
     computeRowSetPlainSpace(start, row_set, scan_spec.filter, null_map, rows_to_read);
 }
 
@@ -280,13 +281,15 @@ MutableColumnPtr NumberColumnDirectReader<DataType, SerializedType>::createColum
 }
 
 template <typename DataType, typename SerializedType>
-NumberColumnDirectReader<DataType, SerializedType>::NumberColumnDirectReader(std::unique_ptr<LazyPageReader> page_reader_, ScanSpec scan_spec_, DataTypePtr datatype_)
+NumberColumnDirectReader<DataType, SerializedType>::NumberColumnDirectReader(
+    std::unique_ptr<LazyPageReader> page_reader_, ScanSpec scan_spec_, DataTypePtr datatype_)
     : SelectiveColumnReader(std::move(page_reader_), scan_spec_), datatype(datatype_)
 {
 }
 
 template <typename DataType, typename SerializedType>
-NumberDictionaryReader<DataType, SerializedType>::NumberDictionaryReader(std::unique_ptr<LazyPageReader> page_reader_, ScanSpec scan_spec_, DataTypePtr datatype_)
+NumberDictionaryReader<DataType, SerializedType>::NumberDictionaryReader(
+    std::unique_ptr<LazyPageReader> page_reader_, ScanSpec scan_spec_, DataTypePtr datatype_)
     : SelectiveColumnReader(std::move(page_reader_), scan_spec_), datatype(datatype_)
 {
 }
@@ -297,7 +300,8 @@ void NumberDictionaryReader<DataType, SerializedType>::nextIdxBatchIfEmpty(size_
     if (!batch_buffer.empty() || plain)
         return;
     batch_buffer.resize(rows_to_read);
-    size_t count = idx_decoder.GetBatchWithDict(dict.data(), static_cast<Int32>(dict.size()), batch_buffer.data(), static_cast<int>(rows_to_read));
+    size_t count
+        = idx_decoder.GetBatchWithDict(dict.data(), static_cast<Int32>(dict.size()), batch_buffer.data(), static_cast<int>(rows_to_read));
     if (count != rows_to_read)
         throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "read full idx batch failed. read {} rows, expect {}", count, rows_to_read);
 }
@@ -305,12 +309,14 @@ void NumberDictionaryReader<DataType, SerializedType>::nextIdxBatchIfEmpty(size_
 template <typename DataType, typename SerializedType>
 void NumberDictionaryReader<DataType, SerializedType>::computeRowSet(OptionalRowSet & row_set, size_t rows_to_read)
 {
-    if (!scan_spec.filter || !row_set.has_value()) return;
+    if (!scan_spec.filter || !row_set.has_value())
+        return;
     readAndDecodePage();
     chassert(rows_to_read <= state.remain_rows);
     if (plain)
     {
-        const SerializedType * start = reinterpret_cast<const SerializedType *>(state.buffer);
+        const SerializedType * start = reinterpret_cast<const SerializedType *>(state.data.buffer);
+        state.data.checkSize(rows_to_read * sizeof(SerializedType));
         computeRowSetPlain(start, row_set, scan_spec.filter, rows_to_read);
         return;
     }
@@ -322,12 +328,13 @@ template <typename DataType, typename SerializedType>
 void NumberDictionaryReader<DataType, SerializedType>::computeRowSetSpace(
     OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read)
 {
-    if (!scan_spec.filter || !row_set.has_value()) return;
+    if (!scan_spec.filter || !row_set.has_value())
+        return;
     readAndDecodePage();
     chassert(rows_to_read <= state.remain_rows);
     if (plain)
     {
-        const SerializedType * start = reinterpret_cast<const SerializedType *>(state.buffer);
+        const SerializedType * start = reinterpret_cast<const SerializedType *>(state.data.buffer);
         computeRowSetPlainSpace(start, row_set, scan_spec.filter, null_map, rows_to_read);
         return;
     }
@@ -380,7 +387,8 @@ void NumberDictionaryReader<DataType, SerializedType>::read(MutableColumnPtr & c
         {
             auto old_size = data.size();
             data.resize(old_size + rows_to_read);
-            size_t count = idx_decoder.GetBatchWithDict(dict.data() , static_cast<Int32>(dict.size()), data.data() + old_size, static_cast<int>(rows_to_read));
+            size_t count = idx_decoder.GetBatchWithDict(
+                dict.data(), static_cast<Int32>(dict.size()), data.data() + old_size, static_cast<int>(rows_to_read));
             if (count != rows_to_read)
                 throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "read full idx batch failed. read {} rows, expect {}", count, rows_to_read);
         }
@@ -428,7 +436,7 @@ size_t NumberDictionaryReader<DataType, SerializedType>::skipValuesInCurrentPage
     state.remain_rows -= skipped;
     if (plain)
     {
-        state.buffer += skipped * sizeof(SerializedType);
+        state.data.checkAndConsume(sizeof(SerializedType) * skipped);
     }
     else
     {
@@ -655,8 +663,10 @@ void StringDictionaryReader::initIndexDecoderIfNeeded()
 {
     if (dict.empty())
         return;
-    uint8_t bit_width = *state.buffer;
-    idx_decoder = arrow::util::RleDecoder(++state.buffer, static_cast<int>(--state.buffer_size), bit_width);
+    state.data.checkSize(1);
+    uint8_t bit_width = *state.data.buffer;
+    state.data.consume(1);
+    idx_decoder = arrow::util::RleDecoder(state.data.buffer, static_cast<int>(state.data.buffer_size), bit_width);
 }
 
 void StringDictionaryReader::readDictPage(const parquet::DictionaryPage & page)
@@ -693,10 +703,10 @@ size_t StringDictionaryReader::skipValuesInCurrentPage(size_t rows_to_skip)
         size_t offset = 0;
         for (size_t i = 0; i < skipped; i++)
         {
-            auto len = loadLength(state.buffer + offset);
+            auto len = loadLength(state.data.buffer + offset);
             offset += 4 + len;
         }
-        state.buffer += offset;
+        state.data.checkAndConsume(offset);
     }
     else
     {
@@ -723,7 +733,7 @@ void StringDictionaryReader::readSpace(
     ColumnString * string_column = reinterpret_cast<ColumnString *>(column.get());
     if (plain)
     {
-        size_t total_size = plain_decoder->calculateStringTotalSizeSpace(state.buffer, row_set, null_map, rows_to_read);
+        size_t total_size = plain_decoder->calculateStringTotalSizeSpace(state.data, row_set, null_map, rows_to_read);
         string_column->getOffsets().reserve(string_column->getOffsets().size() + rows_to_read);
         string_column->getChars().reserve(string_column->getChars().size() + total_size);
         plain_decoder->decodeStringSpace(string_column->getChars(), string_column->getOffsets(), row_set, null_map, rows_to_read);
@@ -742,7 +752,7 @@ void StringDictionaryReader::read(MutableColumnPtr & column, const OptionalRowSe
     ColumnString * string_column = reinterpret_cast<ColumnString *>(column.get());
     if (plain)
     {
-        size_t total_size = plain_decoder->calculateStringTotalSize(state.buffer, row_set, rows_to_read);
+        size_t total_size = plain_decoder->calculateStringTotalSize(state.data, row_set, rows_to_read);
         string_column->getOffsets().reserve(string_column->getOffsets().size() + rows_to_read);
         string_column->getChars().reserve(string_column->getChars().size() + total_size);
         plain_decoder->decodeString(string_column->getChars(), string_column->getOffsets(), row_set, rows_to_read);
@@ -761,7 +771,7 @@ void StringDictionaryReader::computeRowSetSpace(
     chassert(rows_to_read <= state.remain_rows);
     if (plain)
     {
-        computeRowSetPlainStringSpace(state.buffer, row_set, scan_spec.filter, rows_to_read, null_map);
+        computeRowSetPlainStringSpace(state.data.buffer, row_set, scan_spec.filter, rows_to_read, null_map);
         return;
     }
     auto nonnull_count = rows_to_read - null_count;
@@ -802,7 +812,7 @@ void StringDictionaryReader::computeRowSet(OptionalRowSet & row_set, size_t rows
     chassert(rows_to_read <= state.remain_rows);
     if (plain)
     {
-        computeRowSetPlainString(state.buffer, row_set, scan_spec.filter, rows_to_read);
+        computeRowSetPlainString(state.data.buffer, row_set, scan_spec.filter, rows_to_read);
         return;
     }
     nextIdxBatchIfEmpty(rows_to_read);
@@ -834,19 +844,23 @@ size_t StringDirectReader::skipValuesInCurrentPage(size_t rows_to_skip)
     size_t offset = 0;
     for (size_t i = 0; i < skipped; i++)
     {
-        auto len = loadLength(state.buffer + offset);
+        auto len = loadLength(state.data.buffer + offset);
         offset += 4 + len;
     }
-    state.buffer += offset;
+    state.data.checkAndConsume(offset);
     return rows_to_skip - skipped;
 }
 
 void StringDirectReader::readSpace(
-    MutableColumnPtr & column, const OptionalRowSet & row_set, PaddedPODArray<UInt8, 4096> & null_map, size_t null_count, size_t rows_to_read)
+    MutableColumnPtr & column,
+    const OptionalRowSet & row_set,
+    PaddedPODArray<UInt8, 4096> & null_map,
+    size_t null_count,
+    size_t rows_to_read)
 {
     readAndDecodePage();
     ColumnString * string_column = reinterpret_cast<ColumnString *>(column.get());
-    size_t total_size = plain_decoder->calculateStringTotalSizeSpace(state.buffer, row_set, null_map, rows_to_read - null_count);
+    size_t total_size = plain_decoder->calculateStringTotalSizeSpace(state.data, row_set, null_map, rows_to_read - null_count);
     string_column->getOffsets().reserve(string_column->getOffsets().size() + rows_to_read);
     string_column->getChars().reserve(string_column->getChars().size() + total_size);
     plain_decoder->decodeStringSpace(string_column->getChars(), string_column->getOffsets(), row_set, null_map, rows_to_read);
@@ -856,7 +870,7 @@ void StringDirectReader::read(MutableColumnPtr & column, const OptionalRowSet & 
 {
     readAndDecodePage();
     ColumnString * string_column = reinterpret_cast<ColumnString *>(column.get());
-    size_t total_size = plain_decoder->calculateStringTotalSize(state.buffer, row_set, rows_to_read);
+    size_t total_size = plain_decoder->calculateStringTotalSize(state.data, row_set, rows_to_read);
     string_column->getOffsets().reserve(string_column->getOffsets().size() + rows_to_read);
     string_column->getChars().reserve(string_column->getChars().size() + total_size);
     plain_decoder->decodeString(string_column->getChars(), string_column->getOffsets(), row_set, rows_to_read);
@@ -865,18 +879,16 @@ void StringDirectReader::read(MutableColumnPtr & column, const OptionalRowSet & 
 void StringDirectReader::computeRowSetSpace(OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t, size_t rows_to_read)
 {
     readAndDecodePage();
-    computeRowSetPlainStringSpace(state.buffer, row_set, scan_spec.filter, rows_to_read, null_map);
+    computeRowSetPlainStringSpace(state.data.buffer, row_set, scan_spec.filter, rows_to_read, null_map);
 }
 
 void StringDirectReader::computeRowSet(OptionalRowSet & row_set, size_t rows_to_read)
 {
     readAndDecodePage();
-    computeRowSetPlainString(state.buffer, row_set, scan_spec.filter, rows_to_read);
+    computeRowSetPlainString(state.data.buffer, row_set, scan_spec.filter, rows_to_read);
 }
 
-static void appendString(ColumnString::Chars & chars,
-                         IColumn::Offsets & offsets,
-                         const String& value)
+static void appendString(ColumnString::Chars & chars, IColumn::Offsets & offsets, const String & value)
 {
     if (!value.empty())
     {
@@ -914,7 +926,7 @@ void DictDecoder::decodeStringSpace(
                 }
                 else
                 {
-                    const String& value = dict[idx_buffer[count]];
+                    const String & value = dict[idx_buffer[count]];
                     appendString(chars, offsets, value);
                 }
             }
@@ -934,7 +946,7 @@ void DictDecoder::decodeStringSpace(
             }
             else
             {
-                const String& value = dict[idx_buffer[count]];
+                const String & value = dict[idx_buffer[count]];
                 appendString(chars, offsets, value);
                 count++;
             }
@@ -978,10 +990,7 @@ void DictDecoder::decodeString(
 }
 template <class DictValueType>
 void DictDecoder::decodeFixedValue(
-    PaddedPODArray<DictValueType> & dict,
-    PaddedPODArray<DictValueType> & data,
-    const OptionalRowSet & row_set,
-    size_t rows_to_read)
+    PaddedPODArray<DictValueType> & dict, PaddedPODArray<DictValueType> & data, const OptionalRowSet & row_set, size_t rows_to_read)
 {
     if (row_set.has_value())
     {
@@ -1047,12 +1056,12 @@ void PlainDecoder::decodeString(
         const auto & sets = row_set.value();
         for (size_t i = 0; i < rows_to_read; i++)
         {
-            auto len = loadLength(buffer + offset);
+            auto len = loadLength(page_data.buffer + offset);
             offset += 4;
             if (sets.get(i))
             {
                 if (len)
-                    chars.insert_assume_reserved(buffer + offset, buffer + offset + len);
+                    chars.insert_assume_reserved(page_data.buffer + offset, page_data.buffer + offset + len);
                 chars.push_back(0);
                 offsets.push_back(chars.size());
                 offset += len;
@@ -1067,16 +1076,16 @@ void PlainDecoder::decodeString(
     {
         for (size_t i = 0; i < rows_to_read; i++)
         {
-            auto len = loadLength(buffer + offset);
+            auto len = loadLength(page_data.buffer + offset);
             offset += 4;
             if (len)
-                chars.insert_assume_reserved(buffer + offset, buffer + offset + len);
+                chars.insert_assume_reserved(page_data.buffer + offset, page_data.buffer + offset + len);
             chars.push_back(0);
             offsets.push_back(chars.size());
             offset += len;
         }
     }
-    buffer += offset;
+    page_data.checkAndConsume(offset);
     remain_rows -= rows_to_read;
 }
 
@@ -1103,12 +1112,12 @@ void PlainDecoder::decodeStringSpace(
                 }
                 continue;
             }
-            auto len = loadLength(buffer + offset);
+            auto len = loadLength(page_data.buffer + offset);
             offset += 4;
             if (sets.get(i))
             {
                 if (len)
-                    chars.insert_assume_reserved(buffer + offset, buffer + offset + len);
+                    chars.insert_assume_reserved(page_data.buffer + offset, page_data.buffer + offset + len);
                 chars.push_back(0);
                 offsets.push_back(chars.size());
                 offset += len;
@@ -1129,24 +1138,45 @@ void PlainDecoder::decodeStringSpace(
                 offsets.push_back(chars.size());
                 continue;
             }
-            auto len = loadLength(buffer + offset);
+            auto len = loadLength(page_data.buffer + offset);
             offset += 4;
             if (len)
-                chars.insert_assume_reserved(buffer + offset, buffer + offset + len);
+                chars.insert_assume_reserved(page_data.buffer + offset, page_data.buffer + offset + len);
             chars.push_back(0);
             offsets.push_back(chars.size());
             offset += len;
         }
     }
-    buffer += offset;
+    page_data.checkAndConsume(offset);
     remain_rows -= rows_to_read;
+}
+size_t PlainDecoder::calculateStringTotalSize(const ParquetData & data, const OptionalRowSet & row_set, const size_t rows_to_read)
+{
+    size_t offset = 0;
+    size_t total_size = 0;
+    for (size_t i = 0; i < rows_to_read; i++)
+    {
+        addOneString(false, data, offset, row_set, i, total_size);
+    }
+    return total_size;
+}
+size_t DB::PlainDecoder::calculateStringTotalSizeSpace(
+    const ParquetData & data, const DB::OptionalRowSet & row_set, DB::PaddedPODArray<UInt8, 4096> & null_map, const size_t rows_to_read)
+{
+    size_t offset = 0;
+    size_t total_size = 0;
+    for (size_t i = 0; i < rows_to_read; i++)
+    {
+        addOneString(null_map[i], data, offset, row_set, i, total_size);
+    }
+    return total_size;
 }
 template <typename T, typename S>
 void PlainDecoder::decodeFixedValueSpace(
     PaddedPODArray<T> & data, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read)
 {
     size_t rows_read = 0;
-    const S * start = reinterpret_cast<const S *>(buffer);
+    const S * start = reinterpret_cast<const S *>(page_data.buffer);
     size_t count = 0;
     if (!row_set.has_value())
     {
@@ -1183,7 +1213,7 @@ void PlainDecoder::decodeFixedValueSpace(
             rows_read++;
         }
     }
-    buffer += count * sizeof(S);
+    page_data.checkAndConsume(count * sizeof(S));
     remain_rows -= rows_to_read;
 }
 }

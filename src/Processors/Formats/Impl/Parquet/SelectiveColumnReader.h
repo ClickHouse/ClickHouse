@@ -67,20 +67,47 @@ private:
     bool value_null = false;
 };
 
+struct ParquetData
+{
+    // raw page data
+    const uint8_t * buffer = nullptr;
+    // size of raw page data
+    size_t buffer_size = 0;
+
+    void checkSize(size_t size) const
+    {
+        if (size > buffer_size) [[unlikely]]
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION , "ParquetData: buffer size is not enough, {} > {}", size, buffer_size);
+    }
+
+    // before consume, should check size first
+    void consume(size_t size)
+    {
+        buffer += size;
+        buffer_size -= size;
+    }
+
+    void checkAndConsume(size_t size)
+    {
+        checkSize(size);
+        consume(size);
+    }
+};
 
 struct ScanState
 {
     std::shared_ptr<parquet::Page> page;
     PaddedPODArray<Int16> def_levels;
     PaddedPODArray<Int16> rep_levels;
-    const uint8_t * buffer = nullptr;
-    size_t buffer_size = 0;
+    ParquetData data;
+    // rows should be skipped before read data
     size_t lazy_skip_rows = 0;
 
     // for dictionary encoding
     PaddedPODArray<Int32> idx_buffer;
     std::unique_ptr<FilterCache> filter_cache;
 
+    // current column chunk available rows
     size_t remain_rows = 0;
 };
 
@@ -90,7 +117,7 @@ Int32 loadLength(const uint8_t * data);
 class PlainDecoder
 {
 public:
-    PlainDecoder(const uint8_t *& buffer_, size_t & remain_rows_) : buffer(buffer_), remain_rows(remain_rows_) { }
+    PlainDecoder(ParquetData& data_, size_t & remain_rows_) : data(data_), remain_rows(remain_rows_) { }
 
     template <typename T, typename S>
     void decodeFixedValue(PaddedPODArray<T> & data, const OptionalRowSet & row_set, size_t rows_to_read);
@@ -107,31 +134,13 @@ public:
         PaddedPODArray<UInt8> & null_map,
         size_t rows_to_read);
 
-    size_t calculateStringTotalSize(const uint8_t * data, const OptionalRowSet & row_set, const size_t rows_to_read)
-    {
-        size_t offset = 0;
-        size_t total_size = 0;
-        for (size_t i = 0; i < rows_to_read; i++)
-        {
-            addOneString(false, data, offset, row_set, i, total_size);
-        }
-        return total_size;
-    }
+    size_t calculateStringTotalSize(const ParquetData& data, const OptionalRowSet & row_set, size_t rows_to_read);
 
     size_t
-    calculateStringTotalSizeSpace(const uint8_t * data, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, const size_t rows_to_read)
-    {
-        size_t offset = 0;
-        size_t total_size = 0;
-        for (size_t i = 0; i < rows_to_read; i++)
-        {
-            addOneString(null_map[i], data, offset, row_set, i, total_size);
-        }
-        return total_size;
-    }
+    calculateStringTotalSizeSpace(const ParquetData& data, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read);
 
 private:
-    void addOneString(bool null, const uint8_t * data, size_t & offset, const OptionalRowSet & row_set, size_t row, size_t & total_size)
+    void addOneString(bool null, const ParquetData& data, size_t & offset, const OptionalRowSet & row_set, size_t row, size_t & total_size)
     {
         if (row_set.has_value())
         {
@@ -142,8 +151,10 @@ private:
                     total_size++;
                 return;
             }
-            auto len = loadLength(data + offset);
+            data.checkSize(offset +4)
+            auto len = loadLength(data.buffer + offset);
             offset += 4 + len;
+            data.checkSize(offset);
             if (sets.get(row))
                 total_size += len + 1;
         }
@@ -154,13 +165,15 @@ private:
                 total_size++;
                 return;
             }
-            auto len = loadLength(data + offset);
+            data.checkSize(offset +4)
+            auto len = loadLength(data.buffer + offset);
             offset += 4 + len;
+            data.checkSize(offset);
             total_size += len + 1;
         }
     }
 
-    const uint8_t *& buffer;
+    ParquetData& page_data;
     size_t & remain_rows;
 };
 
@@ -297,8 +310,10 @@ protected:
     {
         if (dict.empty())
             return;
-        uint8_t bit_width = *state.buffer;
-        idx_decoder = arrow::util::RleDecoder(++state.buffer, static_cast<int>(--state.buffer_size), bit_width);
+        uint8_t bit_width = *state.data.buffer;
+        state.data.checkSize(1);
+        state.data.consume(1);
+        idx_decoder = arrow::util::RleDecoder(++state.data.buffer, static_cast<int>(--state.data.buffer_size), bit_width);
     }
     void nextIdxBatchIfEmpty(size_t rows_to_read);
 
