@@ -85,93 +85,77 @@ int StatementGenerator::GenerateFromElement(RandomGenerator &rg, const uint32_t 
 				   view = 20 * static_cast<uint32_t>(CollectionHas<SQLView>(attached_views)),
 				   tudf = 5,
 				   prob_space = derived_table + cte + table + view + tudf;
+	std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+	const uint32_t nopt = next_dist(rg.gen);
 
 	name += "t";
 	name += std::to_string(this->levels[this->current_level].rels.size());
 	name += "d";
 	name += std::to_string(this->current_level);
-	if (prob_space) {
-		std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-		const uint32_t nopt = next_dist(rg.gen);
 
-		if (derived_table && nopt < (derived_table + 1)) {
-			SQLRelation rel(name);
-			sql_query_grammar::JoinedDerivedQuery *jdq = tos->mutable_joined_derived_query();
+	if (derived_table && nopt < (derived_table + 1)) {
+		SQLRelation rel(name);
+		sql_query_grammar::JoinedDerivedQuery *jdq = tos->mutable_joined_derived_query();
 
-			GenerateDerivedTable(rg, rel, allowed_clauses, jdq->mutable_select());
-			jdq->mutable_table_alias()->set_table(name);
-			this->levels[this->current_level].rels.push_back(std::move(rel));
-		} else if (cte && nopt < (derived_table + cte + 1)) {
-			SQLRelation rel(name);
-			sql_query_grammar::JoinedTable *jt = tos->mutable_joined_table();
-			const auto &next_cte = rg.PickValueRandomlyFromMap(rg.PickValueRandomlyFromMap(this->ctes));
+		GenerateDerivedTable(rg, rel, allowed_clauses, jdq->mutable_select());
+		jdq->mutable_table_alias()->set_table(name);
+		this->levels[this->current_level].rels.push_back(std::move(rel));
+	} else if (cte && nopt < (derived_table + cte + 1)) {
+		SQLRelation rel(name);
+		sql_query_grammar::JoinedTable *jt = tos->mutable_joined_table();
+		const auto &next_cte = rg.PickValueRandomlyFromMap(rg.PickValueRandomlyFromMap(this->ctes));
 
-			jt->mutable_est()->mutable_table()->set_table(next_cte.name);
-			for (const auto &entry : next_cte.cols) {
-				rel.cols.push_back(entry);
-			}
-			jt->mutable_table_alias()->set_table(name);
-			this->levels[this->current_level].rels.push_back(std::move(rel));
-		} else if (table && nopt < (derived_table + cte + table + 1)) {
-			sql_query_grammar::JoinedTable *jt = tos->mutable_joined_table();
-			sql_query_grammar::ExprSchemaTable *est = jt->mutable_est();
-			const SQLTable &t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
+		jt->mutable_est()->mutable_table()->set_table(next_cte.name);
+		for (const auto &entry : next_cte.cols) {
+			rel.cols.push_back(entry);
+		}
+		jt->mutable_table_alias()->set_table(name);
+		this->levels[this->current_level].rels.push_back(std::move(rel));
+	} else if (table && nopt < (derived_table + cte + table + 1)) {
+		sql_query_grammar::JoinedTable *jt = tos->mutable_joined_table();
+		sql_query_grammar::ExprSchemaTable *est = jt->mutable_est();
+		const SQLTable &t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
 
-			est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
-			est->mutable_table()->set_table("t" + std::to_string(t.tname));
-			jt->mutable_table_alias()->set_table(name);
-			jt->set_final(t.SupportsFinal() && rg.NextSmallNumber() < 3);
-			AddTableRelation(rg, true, name, t);
-		} else if (view && nopt < (derived_table + cte + table + view + 1)) {
-			SQLRelation rel(name);
-			sql_query_grammar::JoinedTable *jt = tos->mutable_joined_table();
-			sql_query_grammar::ExprSchemaTable *est = jt->mutable_est();
-			const SQLView &v = rg.PickRandomlyFromVector(FilterCollection<SQLView>(attached_views));
+		est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
+		est->mutable_table()->set_table("t" + std::to_string(t.tname));
+		jt->mutable_table_alias()->set_table(name);
+		jt->set_final(t.SupportsFinal() && rg.NextSmallNumber() < 3);
+		AddTableRelation(rg, true, name, t);
+	} else if (view && nopt < (derived_table + cte + table + view + 1)) {
+		SQLRelation rel(name);
+		sql_query_grammar::JoinedTable *jt = tos->mutable_joined_table();
+		sql_query_grammar::ExprSchemaTable *est = jt->mutable_est();
+		const SQLView &v = rg.PickRandomlyFromVector(FilterCollection<SQLView>(attached_views));
 
-			est->mutable_database()->set_database("d" + std::to_string(v.db->dname));
-			est->mutable_table()->set_table("v" + std::to_string(v.vname));
-			jt->mutable_table_alias()->set_table(name);
-			jt->set_final(!v.is_materialized && rg.NextSmallNumber() < 3);
-			for (uint32_t i = 0 ; i < v.ncols; i++) {
-				rel.cols.push_back(SQLRelationCol(name, "c" + std::to_string(i), std::nullopt));
-			}
-			this->levels[this->current_level].rels.push_back(std::move(rel));
-		} else if (tudf) {
-			SQLRelation rel(name);
-			std::map<uint32_t, QueryLevel> levels_backup;
-			const uint32_t noption = rg.NextSmallNumber();
-			sql_query_grammar::Expr *limit = nullptr;
-			sql_query_grammar::JoinedTableFunction *jtf = tos->mutable_joined_table_function();
-			sql_query_grammar::TableFunction *tf = jtf->mutable_tfunc();
-			sql_query_grammar::GenerateSeriesFunc *gsf = tf->mutable_gseries();
-			sql_query_grammar::GenerateSeriesFunc_GSName val = static_cast<sql_query_grammar::GenerateSeriesFunc_GSName>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::GenerateSeriesFunc_GSName_GSName_MAX)) + 1);
+		est->mutable_database()->set_database("d" + std::to_string(v.db->dname));
+		est->mutable_table()->set_table("v" + std::to_string(v.vname));
+		jt->mutable_table_alias()->set_table(name);
+		jt->set_final(!v.is_materialized && rg.NextSmallNumber() < 3);
+		for (uint32_t i = 0 ; i < v.ncols; i++) {
+			rel.cols.push_back(SQLRelationCol(name, "c" + std::to_string(i), std::nullopt));
+		}
+		this->levels[this->current_level].rels.push_back(std::move(rel));
+	} else if (tudf) {
+		SQLRelation rel(name);
+		std::map<uint32_t, QueryLevel> levels_backup;
+		const uint32_t noption = rg.NextSmallNumber();
+		sql_query_grammar::Expr *limit = nullptr;
+		sql_query_grammar::JoinedTableFunction *jtf = tos->mutable_joined_table_function();
+		sql_query_grammar::TableFunction *tf = jtf->mutable_tfunc();
+		sql_query_grammar::GenerateSeriesFunc *gsf = tf->mutable_gseries();
+		sql_query_grammar::GenerateSeriesFunc_GSName val =
+			static_cast<sql_query_grammar::GenerateSeriesFunc_GSName>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::GenerateSeriesFunc_GSName_GSName_MAX)) + 1);
+		const std::string &cname = val == sql_query_grammar::GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_numbers ? "number" : "generate_series";
 
-			gsf->set_fname(val);
-			for (const auto &entry : this->levels) {
-				levels_backup[entry.first] = std::move(entry.second);
-			}
-			this->levels.clear();
-			if (val == sql_query_grammar::GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_numbers) {
-				if (noption < 4) {
-					//1 arg
-					limit = gsf->mutable_expr1();
-				} else {
-					//2 args
-					if (rg.NextBool()) {
-						gsf->mutable_expr1()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.NextRandomUInt64() % 10000);
-					} else {
-						GenerateExpression(rg, gsf->mutable_expr1());
-					}
-					limit = gsf->mutable_expr2();
-					if (noption >= 8) {
-						//3 args
-						if (rg.NextBool()) {
-							gsf->mutable_expr3()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.NextRandomUInt64() % 10000);
-						} else {
-							GenerateExpression(rg, gsf->mutable_expr3());
-						}
-					}
-				}
+		gsf->set_fname(val);
+		for (const auto &entry : this->levels) {
+			levels_backup[entry.first] = std::move(entry.second);
+		}
+		this->levels.clear();
+		if (val == sql_query_grammar::GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_numbers) {
+			if (noption < 4) {
+				//1 arg
+				limit = gsf->mutable_expr1();
 			} else {
 				//2 args
 				if (rg.NextBool()) {
@@ -180,7 +164,7 @@ int StatementGenerator::GenerateFromElement(RandomGenerator &rg, const uint32_t 
 					GenerateExpression(rg, gsf->mutable_expr1());
 				}
 				limit = gsf->mutable_expr2();
-				if (noption >= 6) {
+				if (noption >= 8) {
 					//3 args
 					if (rg.NextBool()) {
 						gsf->mutable_expr3()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.NextRandomUInt64() % 10000);
@@ -189,31 +173,34 @@ int StatementGenerator::GenerateFromElement(RandomGenerator &rg, const uint32_t 
 					}
 				}
 			}
-			for (const auto &entry : levels_backup) {
-				this->levels[entry.first] = std::move(entry.second);
-			}
-
-			limit->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.NextRandomUInt64() % 10000);
-			rel.cols.push_back(SQLRelationCol(name, val == sql_query_grammar::GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_numbers ? "number" : "generate_series", std::nullopt));
-
-			jtf->mutable_table_alias()->set_table(name);
-			this->levels[this->current_level].rels.push_back(std::move(rel));
 		} else {
-			assert(0);
+			//2 args
+			if (rg.NextBool()) {
+				gsf->mutable_expr1()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.NextRandomUInt64() % 10000);
+			} else {
+				GenerateExpression(rg, gsf->mutable_expr1());
+			}
+			limit = gsf->mutable_expr2();
+			if (noption >= 6) {
+				//3 args
+				if (rg.NextBool()) {
+					gsf->mutable_expr3()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.NextRandomUInt64() % 10000);
+				} else {
+					GenerateExpression(rg, gsf->mutable_expr3());
+				}
+			}
 		}
-	} else {
-		//fallback case
-		SQLRelation rel(name);
-		sql_query_grammar::JoinedDerivedQuery *jdq = tos->mutable_joined_derived_query();
-		sql_query_grammar::Select *sel = jdq->mutable_select();
-		sql_query_grammar::SelectStatementCore *ssc = sel->mutable_select_core();
-		sql_query_grammar::ExprColAlias *eca = ssc->add_result_columns()->mutable_eca();
+		for (const auto &entry : levels_backup) {
+			this->levels[entry.first] = std::move(entry.second);
+		}
 
-		GenerateLiteralValue(rg, eca->mutable_expr());
-		eca->mutable_col_alias()->set_column("c0");
-		rel.cols.push_back(SQLRelationCol(name, "c0", std::nullopt));
-		jdq->mutable_table_alias()->set_table(name);
+		limit->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.NextRandomUInt64() % 10000);
+		rel.cols.push_back(SQLRelationCol(name, cname, std::nullopt));
+
+		jtf->mutable_table_alias()->set_table(name);
 		this->levels[this->current_level].rels.push_back(std::move(rel));
+	} else {
+		assert(0);
 	}
 	return 0;
 }
