@@ -2238,7 +2238,7 @@ message FileFunc {
 
 message FormatFunc {
   required InFormat format = 1;
-  required string structure = 2;
+  optional string structure = 2;
   required string data = 3;
 }
 

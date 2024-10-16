@@ -138,14 +138,19 @@ int StatementGenerator::GenerateFromElement(RandomGenerator &rg, const uint32_t 
 			this->levels[this->current_level].rels.push_back(std::move(rel));
 		} else if (tudf) {
 			SQLRelation rel(name);
+			std::map<uint32_t, QueryLevel> levels_backup;
 			const uint32_t noption = rg.NextSmallNumber();
+			sql_query_grammar::Expr *limit = nullptr;
 			sql_query_grammar::JoinedTableFunction *jtf = tos->mutable_joined_table_function();
 			sql_query_grammar::TableFunction *tf = jtf->mutable_tfunc();
-			sql_query_grammar::Expr *limit = nullptr;
 			sql_query_grammar::GenerateSeriesFunc *gsf = tf->mutable_gseries();
 			sql_query_grammar::GenerateSeriesFunc_GSName val = static_cast<sql_query_grammar::GenerateSeriesFunc_GSName>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::GenerateSeriesFunc_GSName_GSName_MAX)) + 1);
 
 			gsf->set_fname(val);
+			for (const auto &entry : this->levels) {
+				levels_backup[entry.first] = std::move(entry.second);
+			}
+			this->levels.clear();
 			if (val == sql_query_grammar::GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_numbers) {
 				if (noption < 4) {
 					//1 arg
@@ -184,6 +189,10 @@ int StatementGenerator::GenerateFromElement(RandomGenerator &rg, const uint32_t 
 					}
 				}
 			}
+			for (const auto &entry : levels_backup) {
+				this->levels[entry.first] = std::move(entry.second);
+			}
+
 			limit->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.NextRandomUInt64() % 10000);
 			rel.cols.push_back(SQLRelationCol(name, val == sql_query_grammar::GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_numbers ? "number" : "generate_series", std::nullopt));
 
@@ -731,7 +740,7 @@ int StatementGenerator::GenerateSelect(RandomGenerator &rg, const bool top, cons
 
 		this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
 		if ((allowed_clauses & allow_prewhere) && this->depth < this->max_depth &&
-			ssc->has_from() && rg.NextSmallNumber() < 5) {
+			ssc->has_from() && rg.NextSmallNumber() < 2) {
 			GenerateWherePredicate(rg, ssc->mutable_pre_where()->mutable_expr()->mutable_expr());
 		}
 		if ((allowed_clauses & allow_where) && this->depth < this->max_depth &&

@@ -1046,7 +1046,8 @@ bool Client::chFuzz()
                 nsuccessfull_create_database += (have_error ? 0 : 1);
                 total_create_database_tries++;
             }
-            else if (total_create_table_tries < 30 && nsuccessfull_create_table < 10)
+            else if (gen.CollectionHas<std::shared_ptr<chfuzz::SQLDatabase>>(gen.attached_databases) &&
+                     total_create_table_tries < 30 && nsuccessfull_create_table < 10)
             {
                 (void) gen.GenerateNextCreateTable(rg, sq1.mutable_inner_query()->mutable_create_table());
                 chfuzz::SQLQueryToString(full_query, sq1);
