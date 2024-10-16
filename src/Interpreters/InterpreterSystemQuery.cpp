@@ -109,6 +109,7 @@ namespace ErrorCodes
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int ABORTED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 namespace ActionLocks
@@ -1138,8 +1139,18 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
 bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sync_replica_mode, const std::unordered_set<String> & src_replicas, ContextPtr context_)
  {
     auto table_id_ = table->getStorageID();
-    if (auto * storage_mv = dynamic_cast<StorageMaterializedView *>(table.get()))
-        table = storage_mv->getTargetTable();
+
+    /// If materialized view, sync its target table.
+    for (int i = 0;; ++i)
+    {
+        if (i >= 100)
+            throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "Materialized view targets form a cycle or a very long chain");
+
+        if (auto * storage_mv = dynamic_cast<StorageMaterializedView *>(table.get()))
+            table = storage_mv->getTargetTable();
+        else
+            break;
+    }
 
     if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
     {
