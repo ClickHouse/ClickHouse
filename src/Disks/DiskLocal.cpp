@@ -262,17 +262,17 @@ std::optional<UInt64> DiskLocal::getUnreservedSpace() const
     return available_space;
 }
 
-bool DiskLocal::exists(const String & path) const
+bool DiskLocal::existsFileOrDirectory(const String & path) const
 {
     return fs::exists(fs::path(disk_path) / path);
 }
 
-bool DiskLocal::isFile(const String & path) const
+bool DiskLocal::existsFile(const String & path) const
 {
     return fs::is_regular_file(fs::path(disk_path) / path);
 }
 
-bool DiskLocal::isDirectory(const String & path) const
+bool DiskLocal::existsDirectory(const String & path) const
 {
     return fs::is_directory(fs::path(disk_path) / path);
 }
@@ -369,8 +369,11 @@ void DiskLocal::removeFile(const String & path)
 void DiskLocal::removeFileIfExists(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
-    if (0 != unlink(fs_path.c_str()) && errno != ENOENT)
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, fs_path, "Cannot unlink file {}", fs_path);
+    if (0 != unlink(fs_path.c_str()))
+    {
+        if (errno != ENOENT)
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, fs_path, "Cannot unlink file {}", fs_path);
+    }
 }
 
 void DiskLocal::removeDirectory(const String & path)
@@ -638,7 +641,7 @@ void DiskLocal::setup()
 
     try
     {
-        if (exists(disk_checker_path))
+        if (existsFile(disk_checker_path))
         {
             auto magic_number = readDiskCheckerMagicNumber();
             if (magic_number)
