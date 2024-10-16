@@ -809,7 +809,6 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
     /// setup create table query storage info.
     auto ast_engine = std::make_shared<ASTFunction>();
     ast_engine->name = storage->getName();
-    ast_engine->no_empty_args = true;
     auto ast_storage = std::make_shared<ASTStorage>();
     ast_storage->set(ast_storage->engine, ast_engine);
 

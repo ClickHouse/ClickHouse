@@ -499,7 +499,7 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
     /// Add minmax skipping index for _version column.
     auto index_expr = std::make_shared<ASTIdentifier>(version_column_name);
     auto index_type = makeASTFunction("minmax");
-    index_type->no_empty_args = true;
+    index_type->clearEmptyArgs();
     auto version_index = std::make_shared<ASTIndexDeclaration>(index_expr, index_type, version_column_name);
     version_index->granularity = 1;
 
