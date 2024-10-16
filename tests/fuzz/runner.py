@@ -122,7 +122,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
                 custom_libfuzzer_options = " ".join(
                     f"-{key}={value}"
                     for key, value in parser["libfuzzer"].items()
-                    if key != "jobs" and key != "exact_artifact_path"
+                    if key not in ('jobs', 'exact_artifact_path')
                 )
 
             if parser.has_section("fuzzer_arguments"):
@@ -153,32 +153,39 @@ def run_fuzzer(fuzzer: str, timeout: int):
 
     stopwatch = Stopwatch()
     try:
-        result = subprocess.run(
-            cmd_line,
-            stderr=open(out_path, "w"),
-            stdout=subprocess.DEVNULL,
-            text=True,
-            check=True,
-            shell=True,
-            errors="replace",
-            timeout=timeout,
-        )
+        with open(out_path, "wb") as out:
+            result = subprocess.run(
+                cmd_line,
+                stderr=out,
+                stdout=subprocess.DEVNULL,
+                text=True,
+                check=True,
+                shell=True,
+                errors="replace",
+                timeout=timeout,
+            )
     except subprocess.CalledProcessError as e:
         # print("Command failed with error:", e)
         logging.info("Stderr output: %s", e.stderr)
-        with open(status_path, "w") as status:
-            status.write(f"FAIL\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n")
+        with open(status_path, "wb") as status:
+            status.write(
+                f"FAIL\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
+            )
     except subprocess.TimeoutExpired as e:
         logging.info("Timeout for %s", cmd_line)
         kill_fuzzer(fuzzer)
         sleep(10)
         process_fuzzer_output(e.stderr)
-        with open(status_path,"w") as status:
-            status.write(f"Timeout\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n")
+        with open(status_path,"wb") as status:
+            status.write(
+                f"Timeout\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
+            )
     else:
         process_fuzzer_output(result.stderr)
-        with open(status_path,"w") as status:
-            status.write(f"OK\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n")
+        with open(status_path,"wb") as status:
+            status.write(
+                f"OK\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
+            )
 
     s3.upload_build_directory_to_s3(
         Path(new_corpus_dir), f"fuzzer/corpus/{fuzzer}", False
