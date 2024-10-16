@@ -229,7 +229,8 @@ void ParquetBlockOutputFormat::finalizeImpl()
             base_offset = out.count();
             writeFileHeader(out);
         }
-        writePageIndex(column_indexes, offset_indexes, row_groups_complete, out, base_offset);
+        if (format_settings.parquet.write_page_index)
+            writePageIndex(column_indexes, offset_indexes, row_groups_complete, out, base_offset);
         writeFileFooter(std::move(row_groups_complete), schema, options, out);
     }
     else
@@ -265,6 +266,8 @@ void ParquetBlockOutputFormat::resetFormatterImpl()
     task_queue.clear();
     row_groups.clear();
     file_writer.reset();
+    column_indexes.clear();
+    offset_indexes.clear();
     row_groups_complete.clear();
     staging_chunks.clear();
     staging_rows = 0;
