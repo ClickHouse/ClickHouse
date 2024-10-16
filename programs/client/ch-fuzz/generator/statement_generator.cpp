@@ -62,12 +62,18 @@ int StatementGenerator::GenerateNextCreateDatabase(RandomGenerator &rg, sql_quer
 }
 
 int StatementGenerator::GenerateNextCreateFunction(RandomGenerator &rg, sql_query_grammar::CreateFunction *cf) {
-	const uint32_t fname = this->function_counter++,
-				   nargs = std::min(this->max_width - this->width, (rg.NextSmallNumber() % 4) + 1);
+	SQLfunction next;
+	const uint32_t fname = this->function_counter++;
+
+	next.fname = fname;
+	next.nargs = std::min(this->max_width - this->width, (rg.NextSmallNumber() % 4) + 1);
+	next.not_deterministic = rg.NextBool();
+	SetAllowNotDetermistic(next.not_deterministic); //if this function is later called by an oracle, then don't call it
+	GenerateLambdaCall(rg, next.nargs, cf->mutable_lexpr());
+	SetAllowNotDetermistic(true);
 
 	cf->mutable_function()->set_function("f" + std::to_string(fname));
-	GenerateLambdaCall(rg, nargs, cf->mutable_lexpr());
-	this->staged_functions[fname] = nargs;
+	this->staged_functions[fname] = std::move(next);
 	return 0;
 }
 
@@ -1607,7 +1613,7 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery &sq, 
 		const uint32_t fname = static_cast<uint32_t>(std::stoul(query.create_function().function().function().substr(1)));
 
 		if (success) {
-			this->functions[fname] = this->staged_functions[fname];
+			this->functions[fname] = std::move(this->staged_functions[fname]);
 		}
 		this->staged_functions.erase(fname);
 	}

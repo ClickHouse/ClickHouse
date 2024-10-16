@@ -989,8 +989,18 @@ CONV_FN(LambdaExpr, lambda) {
   ExprToString(ret, lambda.expr());
 }
 
+CONV_FN(SQLFuncName, sfn) {
+  if (sfn.has_catalog_func()) {
+    ret += SQLFunc_Name(sfn.catalog_func()).substr(4);
+  } else if (sfn.has_function()) {
+    FunctionToString(ret, sfn.function());
+  } else {
+    ret += "count";
+  }
+}
+
 CONV_FN(SQLFuncCall, sfc) {
-  ret += SQLFunc_Name(sfc.func()).substr(4);
+  SQLFuncNameToString(ret, sfc.func());
   for (int i = 0 ; i < sfc.combinators_size(); i++) {
     ret += SQLFuncCall_AggregateCombinator_Name(sfc.combinators(i));
   }
@@ -1675,7 +1685,7 @@ CONV_FN(CreateDatabase, create_database) {
 
 CONV_FN(CreateFunction, create_function) {
   ret += "CREATE FUNCTION ";
-  FunctionToString(ret, create_function.func());
+  FunctionToString(ret, create_function.function());
   ret += " AS ";
   LambdaExprToString(ret, create_function.lexpr());
 }
@@ -1879,8 +1889,8 @@ CONV_FN(SQLObjectName, dt) {
     ExprSchemaTableToString(ret, dt.est());
   } else if (dt.has_database()) {
     DatabaseToString(ret, dt.database());
-  } else if (dt.has_func()) {
-    FunctionToString(ret, dt.func());
+  } else if (dt.has_function()) {
+    FunctionToString(ret, dt.function());
   } else {
     ret += "t0";
   }

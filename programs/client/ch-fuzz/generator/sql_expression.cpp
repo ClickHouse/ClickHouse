@@ -478,21 +478,37 @@ int StatementGenerator::GenerateFuncCall(RandomGenerator &rg, const bool allow_f
 		if (agg.support_nulls_clause && rg.NextSmallNumber() < 7) {
 			func_call->set_fnulls(rg.NextBool() ? sql_query_grammar::FuncNulls::NRESPECT : sql_query_grammar::FuncNulls::NIGNORE);
 		}
-		func_call->set_func(static_cast<sql_query_grammar::SQLFunc>(agg.fnum));
+		func_call->mutable_func()->set_catalog_func(static_cast<sql_query_grammar::SQLFunc>(agg.fnum));
 	} else {
 		//function
-		const CHFunction &func = CHFuncs[nopt];
-		const uint32_t n_lambda = std::max(func.min_lambda_param, func.max_lambda_param > 0 ? (rg.NextSmallNumber() % func.max_lambda_param) : 0),
-					   max_args = std::min(this->max_width - this->width, std::min(func.max_args, UINT32_C(5)));
+		uint32_t n_lambda = 0, min_args = 0, max_args = 0;
+		sql_query_grammar::SQLFuncName *sfn = func_call->mutable_func();
+
+		if ((this->allow_not_deterministic || CollectionHas<SQLfunction>([](const SQLfunction& f){return !f.not_deterministic;})) &&
+			rg.NextSmallNumber() < 3) {
+			//use a function from the user
+			const SQLFunction &func = this->allow_not_deterministic ? rg.PickValueRandomlyFromMap(this->functions) :
+				rg.PickRandomlyFromVector(FilterCollection<SQLfunction>([](const SQLfunction& f){return !f.not_deterministic;}));
+
+			min_args = max_args = func.nargs;
+			sfn->mutable_function()->set_function("f" + std::to_string(func.fname));
+		} else {
+			//use a default catalog function
+			const CHFunction &func = CHFuncs[nopt];
+
+			n_lambda = std::max(func.min_lambda_param, func.max_lambda_param > 0 ? (rg.NextSmallNumber() % func.max_lambda_param) : 0),
+			min_args = func.min_args;
+			max_args = std::min(this->max_width - this->width, std::min(func.max_args, UINT32_C(5)));
+			sfn->set_catalog_func(static_cast<sql_query_grammar::SQLFunc>(func.fnum));
+		}
 
 		if (n_lambda > 0) {
 			assert(n_lambda == 1);
 			generated_params++;
 			GenerateLambdaCall(rg, (rg.NextSmallNumber() % 3) + 1, func_call->add_args()->mutable_lambda());
 		}
-
-		if (max_args > 0 && max_args >= func.min_args) {
-			std::uniform_int_distribution<uint32_t> nparams(func.min_args, max_args);
+		if (max_args > 0 && max_args >= min_args) {
+			std::uniform_int_distribution<uint32_t> nparams(min_args, max_args);
 			const uint32_t nfunc_args = nparams(rg.gen);
 
 			for (uint32_t i = 0 ; i < nfunc_args; i++) {
@@ -500,12 +516,11 @@ int StatementGenerator::GenerateFuncCall(RandomGenerator &rg, const bool allow_f
 				this->width++;
 				generated_params++;
 			}
-		} else if (func.min_args > 0) {
-			for (uint32_t i = 0 ; i < func.min_args; i++) {
+		} else if (min_args > 0) {
+			for (uint32_t i = 0 ; i < min_args; i++) {
 				GenerateLiteralValue(rg, func_call->add_args()->mutable_expr());
 			}
 		}
-		func_call->set_func(static_cast<sql_query_grammar::SQLFunc>(func.fnum));
 	}
 	this->width -= generated_params;
 	return 0;

@@ -1821,6 +1821,13 @@ enum FuncNulls {
   NIGNORE = 2;
 }
 
+message SQLFuncName {
+  oneof sqlfunc_arg_oneof {
+    SQLFunc catalog_func = 1;
+    Function function = 2;
+  }
+}
+
 message SQLFuncCall {
   enum AggregateCombinator {
     If = 1;
@@ -1837,7 +1844,7 @@ message SQLFuncCall {
     ArgMin = 12;
     ArgMax = 13;
   }
-  required SQLFunc func = 1;
+  required SQLFuncName func = 1;
   repeated AggregateCombinator combinators = 2;
   optional bool distinct = 3;
   repeated Expr params = 4;
@@ -2379,7 +2386,7 @@ message CreateDatabase {
 }
 
 message CreateFunction {
-  required Function func = 1;
+  required Function function = 1;
   required LambdaExpr lexpr = 2;
 }
 
@@ -2656,7 +2663,7 @@ message SQLObjectName {
   oneof drop_oneof {
     ExprSchemaTable est = 1;
     Database database = 2;
-    Function func = 3;
+    Function function = 3;
   }
 }
 

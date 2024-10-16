@@ -119,4 +119,10 @@ public:
 	uint32_t vname = 0, ncols = 1, staged_ncols = 1;
 };
 
+struct SQLfunction {
+public:
+	bool not_deterministic = false;
+	uint32_t fname = 0, nargs = 0;
+};
+
 }
