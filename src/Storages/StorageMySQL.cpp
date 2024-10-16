@@ -18,6 +18,7 @@
 #include <mysqlxx/Transaction.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
@@ -28,6 +29,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 glob_expansion_max_elements;
+    extern const SettingsMySQLDataTypesSupport mysql_datatypes_support_level;
+    extern const SettingsUInt64 mysql_max_rows_to_insert;
+}
 
 namespace ErrorCodes
 {
@@ -80,7 +87,7 @@ ColumnsDescription StorageMySQL::getTableStructureFromData(
     const ContextPtr & context_)
 {
     const auto & settings = context_->getSettingsRef();
-    const auto tables_and_columns = fetchTablesColumnsList(pool_, database, {table}, settings, settings.mysql_datatypes_support_level);
+    const auto tables_and_columns = fetchTablesColumnsList(pool_, database, {table}, settings, settings[Setting::mysql_datatypes_support_level]);
 
     const auto columns = tables_and_columns.find(table);
     if (columns == tables_and_columns.end())
@@ -253,7 +260,7 @@ SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMeta
         remote_database_name,
         remote_table_name,
         pool->get(),
-        local_context->getSettingsRef().mysql_max_rows_to_insert);
+        local_context->getSettingsRef()[Setting::mysql_max_rows_to_insert]);
 }
 
 StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
@@ -280,7 +287,7 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
     }
     else
     {
-        size_t max_addresses = context_->getSettingsRef().glob_expansion_max_elements;
+        size_t max_addresses = context_->getSettingsRef()[Setting::glob_expansion_max_elements];
         configuration.addresses = parseRemoteDescriptionForExternalDatabase(
             configuration.addresses_expr, max_addresses, 3306);
     }
@@ -321,7 +328,7 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, Con
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context_);
 
         configuration.addresses_expr = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
-        size_t max_addresses = context_->getSettingsRef().glob_expansion_max_elements;
+        size_t max_addresses = context_->getSettingsRef()[Setting::glob_expansion_max_elements];
 
         configuration.addresses = parseRemoteDescriptionForExternalDatabase(configuration.addresses_expr, max_addresses, 3306);
         configuration.database = checkAndGetLiteralArgument<String>(engine_args[1], "database");

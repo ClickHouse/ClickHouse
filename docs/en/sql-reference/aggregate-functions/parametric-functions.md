@@ -104,7 +104,7 @@ Events that occur at the same second may lay in the sequence in an undefined ord
 
 **Parameters**
 
-- `pattern` — Pattern string. See [Pattern syntax](#sequencematch).
+- `pattern` — Pattern string. See [Pattern syntax](#pattern-syntax).
 
 **Returned values**
 
@@ -113,8 +113,7 @@ Events that occur at the same second may lay in the sequence in an undefined ord
 
 Type: `UInt8`.
 
-<a name="sequence-function-pattern-syntax"></a>
-**Pattern syntax**
+#### Pattern syntax
 
 - `(?N)` — Matches the condition argument at position `N`. Conditions are numbered in the `[1, 32]` range. For example, `(?1)` matches the argument passed to the `cond1` parameter.
 
@@ -196,7 +195,7 @@ sequenceCount(pattern)(timestamp, cond1, cond2, ...)
 
 **Parameters**
 
-- `pattern` — Pattern string. See [Pattern syntax](#sequencematch).
+- `pattern` — Pattern string. See [Pattern syntax](#pattern-syntax).
 
 **Returned values**
 
@@ -262,9 +261,10 @@ windowFunnel(window, [mode, [mode, ... ]])(timestamp, cond1, cond2, ..., condN)
 
 - `window` — Length of the sliding window, it is the time interval between the first and the last condition. The unit of `window` depends on the `timestamp` itself and varies. Determined using the expression `timestamp of cond1 <= timestamp of cond2 <= ... <= timestamp of condN <= timestamp of cond1 + window`.
 - `mode` — It is an optional argument. One or more modes can be set.
-    - `'strict_deduplication'` — If the same condition holds for the sequence of events, then such repeating event interrupts further processing.
+    - `'strict_deduplication'` — If the same condition holds for the sequence of events, then such repeating event interrupts further processing. Note: it may work unexpectedly if several conditions hold for the same event.
     - `'strict_order'` — Don't allow interventions of other events. E.g. in the case of `A->B->D->C`, it stops finding `A->B->C` at the `D` and the max event level is 2.
     - `'strict_increase'` — Apply conditions only to events with strictly increasing timestamps.
+    - `'strict_once'` — Count each event only once in the chain even if it meets the condition several times
 
 **Returned value**
 
@@ -491,7 +491,7 @@ Where:
 
 ## uniqUpTo(N)(x)
 
-Calculates the number of different values of the argument up to a specified limit, `N`. If the number of different argument values is greater than `N`, this function returns `N` + 1, otherwise it calculates the exact value. 
+Calculates the number of different values of the argument up to a specified limit, `N`. If the number of different argument values is greater than `N`, this function returns `N` + 1, otherwise it calculates the exact value.
 
 Recommended for use with small `N`s, up to 10. The maximum value of `N` is 100.
 
@@ -523,7 +523,7 @@ This function behaves the same as [sumMap](../../sql-reference/aggregate-functio
 - `keys`: [Array](../data-types/array.md) of keys.
 - `values`: [Array](../data-types/array.md) of values.
 
-**Returned Value** 
+**Returned Value**
 
 - Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
 
@@ -540,10 +540,10 @@ CREATE TABLE sum_map
 )
 ENGINE = Log
 
-INSERT INTO sum_map VALUES 
-    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]), 
+INSERT INTO sum_map VALUES
+    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]),
     ('2000-01-01', '2000-01-01 00:00:00', [3, 4, 5], [10, 10, 10]),
-    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10]), 
+    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10]),
     ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10]);
 ```
 
@@ -573,7 +573,7 @@ This function behaves the same as [sumMap](../../sql-reference/aggregate-functio
 - `keys`: [Array](../data-types/array.md) of keys.
 - `values`: [Array](../data-types/array.md) of values.
 
-**Returned Value** 
+**Returned Value**
 
 - Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
 
@@ -592,10 +592,10 @@ CREATE TABLE sum_map
 )
 ENGINE = Log
 
-INSERT INTO sum_map VALUES 
-    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]), 
+INSERT INTO sum_map VALUES
+    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]),
     ('2000-01-01', '2000-01-01 00:00:00', [3, 4, 5], [10, 10, 10]),
-    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10]), 
+    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10]),
     ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10]);
 ```
 

@@ -11,10 +11,10 @@ clickhouse_add_executable (small_table small_table.cpp)
 target_link_libraries (small_table PRIVATE clickhouse_common_io clickhouse_common_config)
 
 clickhouse_add_executable (parallel_aggregation parallel_aggregation.cpp)
-target_link_libraries (parallel_aggregation PRIVATE dbms clickhouse_functions)
+target_link_libraries (parallel_aggregation PRIVATE dbms)
 
 clickhouse_add_executable (parallel_aggregation2 parallel_aggregation2.cpp)
-target_link_libraries (parallel_aggregation2 PRIVATE dbms clickhouse_functions)
+target_link_libraries (parallel_aggregation2 PRIVATE dbms)
 
 clickhouse_add_executable (int_hashes_perf int_hashes_perf.cpp)
 target_link_libraries (int_hashes_perf PRIVATE clickhouse_common_io clickhouse_common_config)
@@ -33,14 +33,14 @@ target_link_libraries (lru_hash_map_perf PRIVATE dbms)
 
 if (OS_LINUX)
     clickhouse_add_executable (thread_creation_latency thread_creation_latency.cpp)
-    target_link_libraries (thread_creation_latency PRIVATE clickhouse_common_io clickhouse_common_config)
+    target_link_libraries (thread_creation_latency PRIVATE dbms clickhouse_common_io clickhouse_common_config)
 endif()
 
 clickhouse_add_executable (array_cache array_cache.cpp)
 target_link_libraries (array_cache PRIVATE clickhouse_common_io clickhouse_common_config)
 
 clickhouse_add_executable (space_saving space_saving.cpp)
-target_link_libraries (space_saving PRIVATE clickhouse_common_io clickhouse_common_config)
+target_link_libraries (space_saving PRIVATE dbms clickhouse_common_io clickhouse_common_config)
 
 clickhouse_add_executable (integer_hash_tables_benchmark integer_hash_tables_benchmark.cpp)
 target_link_libraries (integer_hash_tables_benchmark PRIVATE dbms ch_contrib::abseil_swiss_tables ch_contrib::sparsehash)
@@ -69,7 +69,7 @@ clickhouse_add_executable (procfs_metrics_provider_perf procfs_metrics_provider_
 target_link_libraries (procfs_metrics_provider_perf PRIVATE clickhouse_common_io clickhouse_common_config)
 
 clickhouse_add_executable (average average.cpp)
-target_link_libraries (average PRIVATE clickhouse_common_io clickhouse_common_config)
+target_link_libraries (average PRIVATE dbms clickhouse_common_io clickhouse_common_config)
 
 clickhouse_add_executable (shell_command_inout shell_command_inout.cpp)
 target_link_libraries (shell_command_inout PRIVATE clickhouse_common_io clickhouse_common_config)
@@ -87,8 +87,13 @@ target_link_libraries (interval_tree PRIVATE dbms)
 
 if (ENABLE_SSL)
     clickhouse_add_executable (encrypt_decrypt encrypt_decrypt.cpp)
-    target_link_libraries (encrypt_decrypt PRIVATE dbms clickhouse_functions)
+    target_link_libraries (encrypt_decrypt PRIVATE dbms)
 endif()
 
 clickhouse_add_executable (check_pointer_valid check_pointer_valid.cpp)
 target_link_libraries (check_pointer_valid PRIVATE clickhouse_common_io clickhouse_common_config)
+
+if (TARGET ch_contrib::icu)
+    clickhouse_add_executable (utf8_upper_lower utf8_upper_lower.cpp)
+    target_link_libraries (utf8_upper_lower PRIVATE ch_contrib::icu)
+endif ()

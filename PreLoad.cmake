@@ -51,8 +51,14 @@ if (NOT "$ENV{CFLAGS}" STREQUAL ""
 endif()
 
 # Default toolchain - this is needed to avoid dependency on OS files.
-execute_process(COMMAND uname -s OUTPUT_VARIABLE OS)
-execute_process(COMMAND uname -m OUTPUT_VARIABLE ARCH)
+execute_process(COMMAND uname -s
+    OUTPUT_VARIABLE OS
+    COMMAND_ERROR_IS_FATAL ANY
+)
+execute_process(COMMAND uname -m
+    OUTPUT_VARIABLE ARCH
+    COMMAND_ERROR_IS_FATAL ANY
+)
 
 # By default, prefer clang on Linux
 # But note, that you still may change the compiler with -DCMAKE_C_COMPILER/-DCMAKE_CXX_COMPILER.

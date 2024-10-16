@@ -34,6 +34,23 @@ void AddedColumns<true>::buildOutput()
     {
         if (join_data_avg_perkey_rows < output_by_row_list_threshold)
             buildOutputFromBlocks<true>();
+        else if (join_data_sorted)
+        {
+            for (size_t i = 0; i < this->size(); ++i)
+            {
+                auto & col = columns[i];
+                for (auto row_ref_i : lazy_output.row_refs)
+                {
+                    if (row_ref_i)
+                    {
+                        const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
+                        col->insertRangeFrom(*row_ref_list->block->getByPosition(right_indexes[i]).column, row_ref_list->row_num, row_ref_list->rows);
+                    }
+                    else
+                        type_name[i].type->insertDefaultInto(*col);
+                }
+            }
+        }
         else
         {
             for (size_t i = 0; i < this->size(); ++i)

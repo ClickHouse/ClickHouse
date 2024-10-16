@@ -63,6 +63,13 @@ FROM tab
 ORDER BY cosineDistance(vec, reference_vec)
 LIMIT 3;
 
+EXPLAIN indexes = 1
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, vec, cosineDistance(vec, reference_vec)
+FROM tab
+ORDER BY cosineDistance(vec, reference_vec)
+LIMIT 3;
+
 SELECT '-- Setting "max_limit_for_ann_queries"';
 EXPLAIN indexes=1
 WITH [0.0, 2.0] as reference_vec
@@ -75,15 +82,32 @@ SETTINGS max_limit_for_ann_queries = 2; -- LIMIT 3 > 2 --> don't use the ann ind
 DROP TABLE tab;
 
 SELECT '-- Non-default quantization';
+CREATE TABLE tab_f64(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 'f64', 0, 0, 0) GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3;
 CREATE TABLE tab_f32(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 'f32', 0, 0, 0) GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3;
 CREATE TABLE tab_f16(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 'f16', 0, 0, 0) GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3;
+CREATE TABLE tab_bf16(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 'bf16', 0, 0, 0) GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3;
 CREATE TABLE tab_i8(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 'i8', 0, 0, 0) GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3;
+INSERT INTO tab_f64 VALUES (0, [4.6, 2.3]), (1, [2.0, 3.2]), (2, [4.2, 3.4]), (3, [5.3, 2.9]), (4, [2.4, 5.2]), (5, [5.3, 2.3]), (6, [1.0, 9.3]), (7, [5.5, 4.7]), (8, [6.4, 3.5]), (9, [5.3, 2.5]), (10, [6.4, 3.4]), (11, [6.4, 3.2]);
 INSERT INTO tab_f32 VALUES (0, [4.6, 2.3]), (1, [2.0, 3.2]), (2, [4.2, 3.4]), (3, [5.3, 2.9]), (4, [2.4, 5.2]), (5, [5.3, 2.3]), (6, [1.0, 9.3]), (7, [5.5, 4.7]), (8, [6.4, 3.5]), (9, [5.3, 2.5]), (10, [6.4, 3.4]), (11, [6.4, 3.2]);
 INSERT INTO tab_f16 VALUES (0, [4.6, 2.3]), (1, [2.0, 3.2]), (2, [4.2, 3.4]), (3, [5.3, 2.9]), (4, [2.4, 5.2]), (5, [5.3, 2.3]), (6, [1.0, 9.3]), (7, [5.5, 4.7]), (8, [6.4, 3.5]), (9, [5.3, 2.5]), (10, [6.4, 3.4]), (11, [6.4, 3.2]);
+INSERT INTO tab_bf16 VALUES (0, [4.6, 2.3]), (1, [2.0, 3.2]), (2, [4.2, 3.4]), (3, [5.3, 2.9]), (4, [2.4, 5.2]), (5, [5.3, 2.3]), (6, [1.0, 9.3]), (7, [5.5, 4.7]), (8, [6.4, 3.5]), (9, [5.3, 2.5]), (10, [6.4, 3.4]), (11, [6.4, 3.2]);
 INSERT INTO tab_i8 VALUES (0, [4.6, 2.3]), (1, [2.0, 3.2]), (2, [4.2, 3.4]), (3, [5.3, 2.9]), (4, [2.4, 5.2]), (5, [5.3, 2.3]), (6, [1.0, 9.3]), (7, [5.5, 4.7]), (8, [6.4, 3.5]), (9, [5.3, 2.5]), (10, [6.4, 3.4]), (11, [6.4, 3.2]);
 
 WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, L2Distance(vec, reference_vec)
+FROM tab_f64
+ORDER BY L2Distance(vec, reference_vec)
+LIMIT 3;
+
+EXPLAIN indexes = 1
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, vec, L2Distance(vec, reference_vec)
+FROM tab_f64
+ORDER BY L2Distance(vec, reference_vec)
+LIMIT 3;
+
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, vec, L2Distance(vec, reference_vec)
 FROM tab_f32
 ORDER BY L2Distance(vec, reference_vec)
 LIMIT 3;
@@ -110,6 +134,19 @@ LIMIT 3;
 
 WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, L2Distance(vec, reference_vec)
+FROM tab_bf16
+ORDER BY L2Distance(vec, reference_vec)
+LIMIT 3;
+
+EXPLAIN indexes = 1
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, vec, L2Distance(vec, reference_vec)
+FROM tab_bf16
+ORDER BY L2Distance(vec, reference_vec)
+LIMIT 3;
+
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, vec, L2Distance(vec, reference_vec)
 FROM tab_i8
 ORDER BY L2Distance(vec, reference_vec)
 LIMIT 3;
@@ -121,8 +158,10 @@ FROM tab_i8
 ORDER BY L2Distance(vec, reference_vec)
 LIMIT 3;
 
+DROP TABLE tab_f64;
 DROP TABLE tab_f32;
 DROP TABLE tab_f16;
+DROP TABLE tab_bf16;
 DROP TABLE tab_i8;
 
 SELECT '-- Index on Array(Float64) column';

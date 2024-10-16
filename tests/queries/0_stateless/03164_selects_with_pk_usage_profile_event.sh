@@ -33,7 +33,7 @@ $CLICKHOUSE_CLIENT -q "
 query_id="$(random_str 10)"
 $CLICKHOUSE_CLIENT --query_id "$query_id" -q "
     SELECT count(*) FROM table_$table_id FORMAT Null;"
-$CLICKHOUSE_CLIENT -mn -q "
+$CLICKHOUSE_CLIENT -m -q "
     SYSTEM FLUSH LOGS;
     SELECT
         ProfileEvents['SelectQueriesWithPrimaryKeyUsage'] AS selects_with_pk_usage
@@ -50,7 +50,7 @@ $CLICKHOUSE_CLIENT -mn -q "
 query_id="$(random_str 10)"
 $CLICKHOUSE_CLIENT --query_id "$query_id" -q "
     SELECT count(*) FROM table_$table_id WHERE col2 >= 50000 FORMAT Null;"
-$CLICKHOUSE_CLIENT -mn -q "
+$CLICKHOUSE_CLIENT -m -q "
     SYSTEM FLUSH LOGS;
     SELECT
         ProfileEvents['SelectQueriesWithPrimaryKeyUsage'] AS selects_with_pk_usage
@@ -67,7 +67,7 @@ $CLICKHOUSE_CLIENT -mn -q "
 query_id="$(random_str 10)"
 $CLICKHOUSE_CLIENT --query_id "$query_id" -q "
     SELECT count(*) FROM table_$table_id WHERE pk >= 50000 FORMAT Null;"
-$CLICKHOUSE_CLIENT -mn -q "
+$CLICKHOUSE_CLIENT -m -q "
     SYSTEM FLUSH LOGS;
     SELECT
         ProfileEvents['SelectQueriesWithPrimaryKeyUsage'] AS selects_with_pk_usage
@@ -84,7 +84,7 @@ $CLICKHOUSE_CLIENT -mn -q "
 query_id="$(random_str 10)"
 $CLICKHOUSE_CLIENT --query_id "$query_id" -q "
     SELECT count(*) FROM table_$table_id WHERE col1 >= 50000 FORMAT Null;"
-$CLICKHOUSE_CLIENT -mn -q "
+$CLICKHOUSE_CLIENT -m -q "
     SYSTEM FLUSH LOGS;
     SELECT
         ProfileEvents['SelectQueriesWithPrimaryKeyUsage'] AS selects_with_pk_usage

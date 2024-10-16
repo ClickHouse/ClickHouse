@@ -1,7 +1,7 @@
 import copy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Union, Iterable, Optional, Literal, Any
+from typing import Any, Iterable, List, Literal, Optional, Union
 
 from ci_utils import WithIter
 from integration_test_images import IMAGES
@@ -22,6 +22,7 @@ class Labels:
     PR_CHERRYPICK = "pr-cherrypick"
     PR_CI = "pr-ci"
     PR_FEATURE = "pr-feature"
+    PR_PERFORMANCE = "pr-performance"
     PR_SYNCED_TO_CLOUD = "pr-synced-to-cloud"
     PR_SYNC_UPSTREAM = "pr-sync-upstream"
     RELEASE = "release"
@@ -62,7 +63,6 @@ class Runners(metaclass=WithIter):
     STYLE_CHECKER_ARM = "style-checker-aarch64"
     FUNC_TESTER = "func-tester"
     FUNC_TESTER_ARM = "func-tester-aarch64"
-    STRESS_TESTER = "stress-tester"
     FUZZER_UNIT_TESTER = "fuzzer-unit-tester"
 
 
@@ -204,7 +204,7 @@ class JobNames(metaclass=WithIter):
     PERFORMANCE_TEST_AMD64 = "Performance Comparison (release)"
     PERFORMANCE_TEST_ARM64 = "Performance Comparison (aarch64)"
 
-    SQL_LOGIC_TEST = "Sqllogic test (release)"
+    # SQL_LOGIC_TEST = "Sqllogic test (release)"
 
     SQLANCER = "SQLancer (release)"
     SQLANCER_DEBUG = "SQLancer (debug)"
@@ -332,11 +332,11 @@ class JobConfig:
     # will be triggered for the job if omitted in CI workflow yml
     run_command: str = ""
     # job timeout, seconds
-    timeout: Optional[int] = None
+    timeout: int = 7200
     # sets number of batches for a multi-batch job
     num_batches: int = 1
     # label that enables job in CI, if set digest isn't used
-    run_by_label: str = ""
+    run_by_labels: List[str] = field(default_factory=list)
     # to run always regardless of the job digest or/and label
     run_always: bool = False
     # disables CI await for a given job
@@ -415,13 +415,13 @@ class CommonJobConfigs:
                 "./tests/clickhouse-test",
                 "./tests/config",
                 "./tests/*.txt",
+                "./tests/docker_scripts/",
             ],
             exclude_files=[".md"],
             docker=["clickhouse/stateless-test"],
         ),
         run_command='functional_test_check.py "$CHECK_NAME"',
         runner_type=Runners.FUNC_TESTER,
-        timeout=9000,
     )
     STATEFUL_TEST = JobConfig(
         job_name_keyword="stateful",
@@ -432,6 +432,7 @@ class CommonJobConfigs:
                 "./tests/clickhouse-test",
                 "./tests/config",
                 "./tests/*.txt",
+                "./tests/docker_scripts/",
             ],
             exclude_files=[".md"],
             docker=["clickhouse/stateful-test"],
@@ -449,23 +450,25 @@ class CommonJobConfigs:
                 "./tests/clickhouse-test",
                 "./tests/config",
                 "./tests/*.txt",
+                "./tests/docker_scripts/",
             ],
             exclude_files=[".md"],
             docker=["clickhouse/stress-test"],
         ),
         run_command="stress_check.py",
-        runner_type=Runners.STRESS_TESTER,
+        runner_type=Runners.FUNC_TESTER,
         timeout=9000,
     )
     UPGRADE_TEST = JobConfig(
         job_name_keyword="upgrade",
         digest=DigestConfig(
-            include_paths=["./tests/ci/upgrade_check.py"],
+            include_paths=["./tests/ci/upgrade_check.py", "./tests/docker_scripts/"],
             exclude_files=[".md"],
-            docker=["clickhouse/upgrade-check"],
+            docker=["clickhouse/stress-test"],
         ),
         run_command="upgrade_check.py",
-        runner_type=Runners.STRESS_TESTER,
+        runner_type=Runners.FUNC_TESTER,
+        timeout=3600,
     )
     INTEGRATION_TEST = JobConfig(
         job_name_keyword="integration",
@@ -479,7 +482,7 @@ class CommonJobConfigs:
             docker=IMAGES.copy(),
         ),
         run_command='integration_test_check.py "$CHECK_NAME"',
-        runner_type=Runners.STRESS_TESTER,
+        runner_type=Runners.FUNC_TESTER,
     )
     ASTFUZZER_TEST = JobConfig(
         job_name_keyword="ast",
@@ -514,7 +517,7 @@ class CommonJobConfigs:
             docker=["clickhouse/performance-comparison"],
         ),
         run_command="performance_comparison_check.py",
-        runner_type=Runners.STRESS_TESTER,
+        runner_type=Runners.FUNC_TESTER,
     )
     SQLLANCER_TEST = JobConfig(
         job_name_keyword="lancer",

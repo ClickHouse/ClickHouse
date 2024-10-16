@@ -49,7 +49,7 @@ Result:
 
 ## multiIf
 
-Allows to write the [CASE](../../sql-reference/operators/index.md#operator_case) operator more compactly in the query.
+Allows to write the [CASE](../../sql-reference/operators/index.md#conditional-expression) operator more compactly in the query.
 
 **Syntax**
 

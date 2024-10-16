@@ -127,68 +127,58 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
         }
         return getEmptyCompletion(command->command_name);
     }
-    else if (arguments.size() == 1)
+    if (arguments.size() == 1)
     {
         String command_prefix = arguments[0];
         return getCommandsToComplete(command_prefix);
     }
-    else
-    {
-        String last_token = arguments.back();
-        CommandPtr command;
-        try
-        {
-            command = getCommandByName(arguments[0]);
-        }
-        catch (...)
-        {
-            return {last_token};
-        }
-        std::vector<String> answer = {};
-        if (command->command_name == "help")
-        {
-            return getCommandsToComplete(last_token);
-        }
-        else
-        {
-            answer = [&]() -> std::vector<String>
-            {
-                if (multidisk_commands.contains(command->command_name))
-                {
-                    return client->getAllFilesByPatternFromAllDisks(last_token);
-                }
-                else
-                {
-                    return client->getCurrentDiskWithPath().getAllFilesByPattern(last_token);
-                }
-            }();
 
-            for (const auto & disk_name : client->getAllDiskNames())
-            {
-                if (disk_name.starts_with(last_token))
-                {
-                    answer.push_back(disk_name);
-                }
-            }
-            for (const auto & option : command->options_description.options())
-            {
-                String option_sign = "--" + option->long_name();
-                if (option_sign.starts_with(last_token))
-                {
-                    answer.push_back(option_sign);
-                }
-            }
-        }
-        if (!answer.empty())
+    String last_token = arguments.back();
+    CommandPtr command;
+    try
+    {
+        command = getCommandByName(arguments[0]);
+    }
+    catch (...)
+    {
+        return {last_token};
+    }
+
+    std::vector<String> answer = {};
+    if (command->command_name == "help")
+        return getCommandsToComplete(last_token);
+
+    answer = [&]() -> std::vector<String>
+    {
+        if (multidisk_commands.contains(command->command_name))
+            return client->getAllFilesByPatternFromAllDisks(last_token);
+
+        return client->getCurrentDiskWithPath().getAllFilesByPattern(last_token);
+    }();
+
+    for (const auto & disk_name : client->getAllDiskNames())
+    {
+        if (disk_name.starts_with(last_token))
         {
-            std::sort(answer.begin(), answer.end());
-            return answer;
-        }
-        else
-        {
-            return {last_token};
+            answer.push_back(disk_name);
         }
     }
+    for (const auto & option : command->options_description.options())
+    {
+        String option_sign = "--" + option->long_name();
+        if (option_sign.starts_with(last_token))
+        {
+            answer.push_back(option_sign);
+        }
+    }
+
+    if (!answer.empty())
+    {
+        std::sort(answer.begin(), answer.end());
+        return answer;
+    }
+
+    return {last_token};
 }
 
 bool DisksApp::processQueryText(const String & text)
@@ -210,11 +200,11 @@ bool DisksApp::processQueryText(const String & text)
     catch (DB::Exception & err)
     {
         int code = getCurrentExceptionCode();
+
         if (code == ErrorCodes::LOGICAL_ERROR)
-        {
             throw std::move(err);
-        }
-        else if (code == ErrorCodes::BAD_ARGUMENTS)
+
+        if (code == ErrorCodes::BAD_ARGUMENTS)
         {
             std::cerr << err.message() << "\n"
                       << "\n";
@@ -247,6 +237,7 @@ void DisksApp::runInteractiveReplxx()
         suggest,
         history_file,
         /* multiline= */ false,
+        /* ignore_shell_suspend= */ false,
         query_extenders,
         query_delimiters,
         word_break_characters.c_str(),

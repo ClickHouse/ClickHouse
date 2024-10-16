@@ -34,10 +34,8 @@ public:
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "cannot remove '{}': Is a directory", path);
             }
-            else
-            {
-                disk.getDisk()->removeRecursive(path);
-            }
+
+            disk.getDisk()->removeRecursive(path);
         }
         else if (disk.getDisk()->existsFile(path))
         {

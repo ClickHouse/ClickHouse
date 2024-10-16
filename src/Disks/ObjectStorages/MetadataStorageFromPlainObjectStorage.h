@@ -33,7 +33,7 @@ class MetadataStorageFromPlainObjectStorage : public IMetadataStorage
 {
 private:
     friend class MetadataStorageFromPlainObjectStorageTransaction;
-    mutable std::optional<CacheBase<String, size_t>> file_sizes_cache;
+    mutable std::optional<CacheBase<String, uint64_t>> file_sizes_cache;
 
 protected:
     ObjectStoragePtr object_storage;

@@ -9,6 +9,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 echo "
 DROP USER IF EXISTS postgresql_user;
 CREATE USER postgresql_user HOST IP '127.0.0.1' IDENTIFIED WITH no_password;
-" | $CLICKHOUSE_CLIENT -n
+" | $CLICKHOUSE_CLIENT
 
 psql --host localhost --port ${CLICKHOUSE_PORT_POSTGRESQL} ${CLICKHOUSE_DATABASE} --user postgresql_user -c "SELECT NULL;"

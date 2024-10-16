@@ -272,7 +272,7 @@ WriteFileOperation::WriteFileOperation(const std::string & path_, IDisk & disk_,
 
 void WriteFileOperation::execute(std::unique_lock<SharedMutex> &)
 {
-    if (auto buf = disk.readFileIfExists(path))
+    if (auto buf = disk.readFileIfExists(path, ReadSettings{}))
     {
         existed = true;
         readStringUntilEOF(prev_data, *buf);

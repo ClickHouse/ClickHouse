@@ -59,13 +59,13 @@ void MetadataStorageFromStaticFilesWebServer::assertExists(const std::string & p
 
 bool MetadataStorageFromStaticFilesWebServer::existsFile(const std::string & path) const
 {
-    auto file_info = object_storage.getFileInfo(path);
+    auto file_info = object_storage.tryGetFileInfo(path);
     return file_info && file_info->type == WebObjectStorage::FileType::File;
 }
 
 bool MetadataStorageFromStaticFilesWebServer::existsDirectory(const std::string & path) const
 {
-    auto file_info = object_storage.getFileInfo(path);
+    auto file_info = object_storage.tryGetFileInfo(path);
     return file_info && file_info->type == WebObjectStorage::FileType::Directory;
 }
 

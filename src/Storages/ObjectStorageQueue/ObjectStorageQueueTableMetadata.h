@@ -3,6 +3,8 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Poco/JSON/JSON.h>
+#include <Poco/JSON/Object.h>
 #include <base/types.h>
 
 namespace DB
@@ -16,29 +18,35 @@ class ReadBuffer;
  */
 struct ObjectStorageQueueTableMetadata
 {
-    String format_name;
-    String columns;
-    String after_processing;
-    String mode;
-    UInt64 tracked_files_limit = 0;
-    UInt64 tracked_file_ttl_sec = 0;
-    UInt64 buckets = 0;
-    UInt64 processing_threads_num = 1;
-    String last_processed_path;
+    const String format_name;
+    const String columns;
+    const String after_processing;
+    const String mode;
+    const UInt64 tracked_files_limit;
+    const UInt64 tracked_files_ttl_sec;
+    const UInt64 buckets;
+    const String last_processed_path;
+    const UInt64 loading_retries;
 
-    ObjectStorageQueueTableMetadata() = default;
+    UInt64 processing_threads_num; /// Can be changed from keeper.
+    bool processing_threads_num_changed = false;
+
     ObjectStorageQueueTableMetadata(
-        const StorageObjectStorage::Configuration & configuration,
         const ObjectStorageQueueSettings & engine_settings,
-        const StorageInMemoryMetadata & storage_metadata);
+        const ColumnsDescription & columns_,
+        const std::string & format_);
 
-    void read(const String & metadata_str);
+    explicit ObjectStorageQueueTableMetadata(const Poco::JSON::Object::Ptr & json);
+
     static ObjectStorageQueueTableMetadata parse(const String & metadata_str);
 
     String toString() const;
 
+    ObjectStorageQueueMode getMode() const;
+
+    void adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk);
+
     void checkEquals(const ObjectStorageQueueTableMetadata & from_zk) const;
-    static void checkEquals(const ObjectStorageQueueSettings & current, const ObjectStorageQueueSettings & expected);
 
 private:
     void checkImmutableFieldsEquals(const ObjectStorageQueueTableMetadata & from_zk) const;
