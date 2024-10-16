@@ -34,6 +34,6 @@ COPY run.sh /run.sh
 COPY --from=htmltest-builder /usr/bin/htmltest /usr/bin/htmltest
 
 # Install ClickHouse Local, which is used to auto-generate some doc pages.
-RUN curl https://clickhouse.com/
+RUN curl https://clickhouse.com/ | sh
 
 ENTRYPOINT ["/run.sh"]
