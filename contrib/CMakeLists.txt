@@ -145,8 +145,13 @@ add_contrib (isa-l-cmake isa-l)
 add_contrib (libhdfs3-cmake libhdfs3) # requires: google-protobuf, krb5, isa-l
 add_contrib (hive-metastore-cmake hive-metastore) # requires: thrift, avro, arrow, libhdfs3
 add_contrib (cppkafka-cmake cppkafka)
-add_contrib (libpqxx-cmake libpqxx)
-add_contrib (libpq-cmake libpq)
+
+option(ENABLE_LIBPQXX "Enable PostgreSQL" ${ENABLE_LIBRARIES})
+if (ENABLE_LIBPQXX)
+    add_contrib (postgres-cmake postgres)
+    add_contrib (libpqxx-cmake libpqxx)
+endif()
+
 add_contrib (rocksdb-cmake rocksdb) # requires: jemalloc, snappy, zlib, lz4, zstd, liburing
 add_contrib (nuraft-cmake NuRaft)
 add_contrib (fast_float-cmake fast_float)
@@ -154,6 +159,12 @@ add_contrib (idna-cmake idna)
 add_contrib (datasketches-cpp-cmake datasketches-cpp)
 add_contrib (incbin-cmake incbin)
 add_contrib (sqids-cpp-cmake sqids-cpp)
+
+option(USE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})
+if (USE_MONGODB)
+    add_contrib (mongo-c-driver-cmake mongo-c-driver) # requires: zlib
+    add_contrib (mongo-cxx-driver-cmake mongo-cxx-driver) # requires: libmongoc, libbson
+endif()
 
 option(ENABLE_NLP "Enable NLP functions support" ${ENABLE_LIBRARIES})
 if (ENABLE_NLP)

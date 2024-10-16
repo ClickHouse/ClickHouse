@@ -402,30 +402,11 @@ SystemLog<LogElement>::SystemLog(
 template <typename LogElement>
 void SystemLog<LogElement>::shutdown()
 {
-    stopFlushThread();
+    Base::stopFlushThread();
 
     auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
     if (table)
         table->flushAndShutdown();
-}
-
-template <typename LogElement>
-void SystemLog<LogElement>::stopFlushThread()
-{
-    {
-        std::lock_guard lock(thread_mutex);
-
-        if (!saving_thread || !saving_thread->joinable())
-            return;
-
-        if (is_shutdown)
-            return;
-
-        is_shutdown = true;
-        queue->shutdown();
-    }
-
-    saving_thread->join();
 }
 
 

@@ -78,10 +78,6 @@ static DataTypePtr create(const ASTPtr & arguments)
 void registerDataTypeObjectDeprecated(DataTypeFactory & factory)
 {
     factory.registerDataType("Object", create);
-    if (Context::getGlobalContextInstance()->getSettingsRef().use_json_alias_for_old_object_type)
-        factory.registerSimpleDataType("JSON",
-            [] { return std::make_shared<DataTypeObjectDeprecated>("JSON", false); },
-            DataTypeFactory::Case::Insensitive);
 }
 
 }

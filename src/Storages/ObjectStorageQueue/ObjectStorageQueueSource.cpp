@@ -5,6 +5,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
 #include <Common/getRandomASCIIString.h>
+#include <Core/Settings.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -17,6 +18,10 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsMaxThreads max_parsing_threads;
+}
 
 namespace ErrorCodes
 {
@@ -316,43 +321,35 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                 /// Bucket is already acquired, process the file.
                 return std::pair{object_info, current_bucket_holder->getBucketInfo()};
             }
-            else
+
+            auto acquired_bucket = metadata->tryAcquireBucket(bucket, current_processor);
+            if (acquired_bucket)
             {
-                auto acquired_bucket = metadata->tryAcquireBucket(bucket, current_processor);
-                if (acquired_bucket)
-                {
-                    bucket_holder_it->second.push_back(acquired_bucket);
-                    current_bucket_holder = bucket_holder_it->second.back().get();
+                bucket_holder_it->second.push_back(acquired_bucket);
+                current_bucket_holder = bucket_holder_it->second.back().get();
 
-                    bucket_cache.processor = current_processor;
-                    if (!bucket_cache.keys.empty())
-                    {
-                        /// We have to maintain ordering between keys,
-                        /// so if some keys are already in cache - start with them.
-                        bucket_cache.keys.emplace_back(object_info);
-                        object_info = bucket_cache.keys.front();
-                        bucket_cache.keys.pop_front();
-                    }
-                    return std::pair{object_info, current_bucket_holder->getBucketInfo()};
-                }
-                else
+                bucket_cache.processor = current_processor;
+                if (!bucket_cache.keys.empty())
                 {
-                    LOG_TEST(log, "Bucket {} is already locked for processing", bucket);
+                    /// We have to maintain ordering between keys,
+                    /// so if some keys are already in cache - start with them.
                     bucket_cache.keys.emplace_back(object_info);
-                    continue;
+                    object_info = bucket_cache.keys.front();
+                    bucket_cache.keys.pop_front();
                 }
+                return std::pair{object_info, current_bucket_holder->getBucketInfo()};
             }
-        }
-        else
-        {
-            LOG_TEST(log, "Reached the end of file iterator");
-            iterator_finished = true;
 
-            if (listed_keys_cache.empty())
-                return {};
-            else
-                continue;
+            LOG_TEST(log, "Bucket {} is already locked for processing", bucket);
+            bucket_cache.keys.emplace_back(object_info);
+            continue;
         }
+
+        LOG_TEST(log, "Reached the end of file iterator");
+        iterator_finished = true;
+
+        if (listed_keys_cache.empty())
+            return {};
     }
 }
 
@@ -436,9 +433,19 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
             const auto context = getContext();
             reader = StorageObjectStorageSource::createReader(
-                processor_id, file_iterator, configuration, object_storage, read_from_format_info,
-                format_settings, nullptr, context, nullptr, log, max_block_size,
-                context->getSettingsRef().max_parsing_threads.value, /* need_only_count */false);
+                processor_id,
+                file_iterator,
+                configuration,
+                object_storage,
+                read_from_format_info,
+                format_settings,
+                nullptr,
+                context,
+                nullptr,
+                log,
+                max_block_size,
+                context->getSettingsRef()[Setting::max_parsing_threads].value,
+                /* need_only_count */ false);
 
             if (!reader)
             {
@@ -524,7 +531,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                     {
                         .path = path,
                         .size = reader.getObjectInfo()->metadata->size_bytes
-                    }, getContext(), read_from_format_info.columns_description);
+                    }, getContext());
 
                 return chunk;
             }
@@ -575,20 +582,27 @@ Chunk ObjectStorageQueueSource::generateImpl()
                       total_processed_rows, total_processed_bytes, processed_files.size());
             break;
         }
-        else if (queue_settings.max_processed_bytes_before_commit
-                 && total_processed_bytes == queue_settings.max_processed_bytes_before_commit)
+        if (queue_settings.max_processed_bytes_before_commit && total_processed_bytes == queue_settings.max_processed_bytes_before_commit)
         {
-            LOG_TRACE(log, "Number of max processed bytes before commit reached "
-                      "(rows: {}, bytes: {}, files: {})",
-                      total_processed_rows, total_processed_bytes, processed_files.size());
+            LOG_TRACE(
+                log,
+                "Number of max processed bytes before commit reached "
+                "(rows: {}, bytes: {}, files: {})",
+                total_processed_rows,
+                total_processed_bytes,
+                processed_files.size());
             break;
         }
-        else if (queue_settings.max_processing_time_sec_before_commit
-                 && total_stopwatch.elapsedSeconds() >= queue_settings.max_processing_time_sec_before_commit)
+        if (queue_settings.max_processing_time_sec_before_commit
+            && total_stopwatch.elapsedSeconds() >= queue_settings.max_processing_time_sec_before_commit)
         {
-            LOG_TRACE(log, "Max processing time before commit reached "
-                      "(rows: {}, bytes: {}, files: {})",
-                      total_processed_rows, total_processed_bytes, processed_files.size());
+            LOG_TRACE(
+                log,
+                "Max processing time before commit reached "
+                "(rows: {}, bytes: {}, files: {})",
+                total_processed_rows,
+                total_processed_bytes,
+                processed_files.size());
             break;
         }
     }

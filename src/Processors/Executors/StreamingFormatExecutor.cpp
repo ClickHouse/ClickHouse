@@ -1,5 +1,6 @@
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 
 namespace DB
 {
@@ -30,6 +31,13 @@ MutableColumns StreamingFormatExecutor::getResultColumns()
     auto ret_columns = header.cloneEmptyColumns();
     std::swap(ret_columns, result_columns);
     return ret_columns;
+}
+
+void StreamingFormatExecutor::setQueryParameters(const NameToNameMap & parameters)
+{
+    /// Query parameters make sense only for format Values.
+    if (auto * values_format = typeid_cast<ValuesBlockInputFormat *>(format.get()))
+        values_format->setQueryParameters(parameters);
 }
 
 size_t StreamingFormatExecutor::execute(ReadBuffer & buffer)
