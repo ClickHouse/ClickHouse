@@ -167,6 +167,12 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
         digest_enabled = false; /// TODO: support digest
     }
     #endif
+
+    if (config.has("keeper_server.precommit_sleep_ms_for_testing"))
+        precommit_sleep_ms_for_testing = config.getInt64("keeper_server.precommit_sleep_ms_for_testing");
+
+    if (config.has("keeper_server.precommit_sleep_probability_for_testing"))
+        precommit_sleep_probability_for_testing = config.getDouble("keeper_server.precommit_sleep_probability_for_testing");
 }
 
 namespace
