@@ -453,8 +453,6 @@ private:
 
     void updateVariantInfoAndExpandVariantColumn(const DataTypePtr & new_variant_type);
 
-    static DataTypePtr popBackVariants(const VariantInfo & info, const std::vector<ColumnVariant::Discriminator> & local_to_global_discriminators, size_t n);
-
     WrappedPtr variant_column;
     /// Store and use pointer to ColumnVariant to avoid virtual calls.
     /// ColumnDynamic is widely used inside ColumnObject for each path and

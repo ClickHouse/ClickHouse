@@ -1024,32 +1024,6 @@ void ColumnDynamic::updateCheckpoint(ColumnCheckpoint & checkpoint) const
     checkpoint.size = size();
 }
 
-
-DataTypePtr ColumnDynamic::popBackVariants(const VariantInfo & info, const std::vector<ColumnVariant::Discriminator> & local_to_global_discriminators, size_t n)
-{
-    const auto & type_variant = assert_cast<const DataTypeVariant &>(*info.variant_type);
-
-    std::unordered_map<ColumnVariant::Discriminator, String> discriminator_to_name;
-    std::unordered_map<String, DataTypePtr> name_to_data_type;
-
-    for (const auto & [name, discriminator] : info.variant_name_to_discriminator)
-        discriminator_to_name.emplace(discriminator, name);
-
-    for (const auto & type : type_variant.getVariants())
-        name_to_data_type.emplace(type->getName(), type);
-
-    /// Remove last n variants according to global discriminators.
-    /// This code relies on invariant that new variants are always added to the end in ColumnVariant.
-    for (auto it = local_to_global_discriminators.rbegin(); it < local_to_global_discriminators.rbegin() + n; ++it)
-        discriminator_to_name.erase(*it);
-
-    DataTypes new_variants;
-    for (const auto & [d, name] : discriminator_to_name)
-        new_variants.push_back(name_to_data_type.at(name));
-
-    return std::make_shared<DataTypeVariant>(std::move(new_variants));
-}
-
 void ColumnDynamic::rollback(const ColumnCheckpoint & checkpoint)
 {
     const auto & nested = assert_cast<const ColumnCheckpointWithMultipleNested &>(checkpoint).nested;
@@ -1062,28 +1036,18 @@ void ColumnDynamic::rollback(const ColumnCheckpoint & checkpoint)
         return;
     }
 
-    auto new_subcolumns = variant_column_ptr->getVariants();
-    auto new_discriminators_map = variant_column_ptr->getLocalToGlobalDiscriminatorsMapping();
-    auto new_discriminators_column = variant_column_ptr->getLocalDiscriminatorsPtr();
-    auto new_offses_column = variant_column_ptr->getOffsetsPtr();
-
-    /// Remove new variants that were added since last checkpoint.
-    auto new_variant_type = popBackVariants(variant_info, new_discriminators_map, variant_column_ptr->getNumVariants() - nested.size());
-    createVariantInfo(new_variant_type);
-    variant_mappings_cache.clear();
-
-    new_subcolumns.resize(nested.size());
-    new_discriminators_map.resize(nested.size());
-
     /// Manually rollback internals of Variant column
-    new_discriminators_column->assumeMutable()->popBack(new_discriminators_column->size() - checkpoint.size);
-    new_offses_column->assumeMutable()->popBack(new_offses_column->size() - checkpoint.size);
+    variant_column_ptr->getOffsets().resize_assume_reserved(checkpoint.size);
+    variant_column_ptr->getLocalDiscriminators().resize_assume_reserved(checkpoint.size);
 
+    auto & variants = variant_column_ptr->getVariants();
     for (size_t i = 0; i < nested.size(); ++i)
-        new_subcolumns[i]->rollback(*nested[i]);
+        variants[i]->rollback(*nested[i]);
 
-    variant_column = ColumnVariant::create(new_discriminators_column, new_offses_column, Columns(new_subcolumns.begin(), new_subcolumns.end()), new_discriminators_map);
-    variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
+    /// Keep the structure of variant as is but rollback
+    /// to 0 variants that are not in the checkpoint.
+    for (size_t i = nested.size(); i < variants.size(); ++i)
+        variants[i] = variants[i]->cloneEmpty();
 }
 
 String ColumnDynamic::getTypeNameAt(size_t row_num) const

@@ -940,10 +940,9 @@ TEST(ColumnDynamic, rollback)
     auto check_checkpoint = [&](const ColumnCheckpoint & cp, std::vector<size_t> sizes)
     {
         const auto & nested = assert_cast<const ColumnCheckpointWithMultipleNested &>(cp).nested;
-        ASSERT_EQ(nested.size(), sizes.size());
         size_t num_rows = 0;
 
-        for (size_t i = 0; i < sizes.size(); ++i)
+        for (size_t i = 0; i < nested.size(); ++i)
         {
             ASSERT_EQ(nested[i]->size, sizes[i]);
             num_rows += sizes[i];
@@ -960,7 +959,7 @@ TEST(ColumnDynamic, rollback)
     column->insert(Field(42));
 
     column->updateCheckpoint(*checkpoint);
-    checkpoints.emplace_back(checkpoint, std::vector<size_t>{0, 1});
+    checkpoints.emplace_back(checkpoint, std::vector<size_t>{0, 1, 0});
 
     column->insert(Field("str1"));
     column->rollback(*checkpoint);

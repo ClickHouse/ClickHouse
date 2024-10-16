@@ -32,7 +32,7 @@ const std::shared_ptr<SerializationDynamic> & getDynamicSerialization()
 
 struct ColumnObjectCheckpoint : public ColumnCheckpoint
 {
-    using CheckpointsMap = std::unordered_map<String, ColumnCheckpointPtr>;
+    using CheckpointsMap = std::unordered_map<std::string_view, ColumnCheckpointPtr>;
 
     ColumnObjectCheckpoint(size_t size_, CheckpointsMap typed_paths_, CheckpointsMap dynamic_paths_, ColumnCheckpointPtr shared_data_)
         : ColumnCheckpoint(size_)
@@ -719,7 +719,7 @@ ColumnCheckpointPtr ColumnObject::getCheckpoint() const
 {
     auto get_checkpoints = [](const auto & columns)
     {
-        std::unordered_map<String, ColumnCheckpointPtr> checkpoints;
+        ColumnObjectCheckpoint::CheckpointsMap checkpoints;
         for (const auto & [name, column] : columns)
             checkpoints[name] = column->getCheckpoint();
 
