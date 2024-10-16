@@ -434,8 +434,8 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
                 if (key == "logger" || key.starts_with("logger["))
                 {
                     const std::string name(config.getString("logger.message_regexps." + key + ".name"));
-                    const std::string pos_pattern(config.getRawString("logger.message_regexps." + key + "message_regexp", global_pos_pattern));
-                    const std::string neg_pattern(config.getRawString("logger.message_regexps." + key + "message_regexp_negative", global_neg_pattern));
+                    const std::string pos_pattern(config.getRawString("logger.message_regexps." + key + ".message_regexp", global_pos_pattern));
+                    const std::string neg_pattern(config.getRawString("logger.message_regexps." + key + ".message_regexp_negative", global_neg_pattern));
 
                     if (auto * regexp_channel = dynamic_cast<DB::OwnFilteringChannel*>(logger.root().get(name).getChannel()))
                         regexp_channel->setRegexpPatterns(pos_pattern, neg_pattern);
