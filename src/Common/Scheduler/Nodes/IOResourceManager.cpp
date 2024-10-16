@@ -187,9 +187,6 @@ void IOResourceManager::Resource::updateCurrentVersion()
     if (previous_version)
     {
         previous_version->newer_version = current_version;
-        // TODO(serxa): Node activations might be in event queue on destruction. How to process them? should we just process all events in queue on important updates? add a separate queue for hierarchy modifications? Or maybe everything works as expected, we need unit tests for this.
-        // Looks like the problem of activations could be solved just by unliking activation from intrusive list on destruction, but we must make sure all destruction are done under event_queue::mutex (which seems impossible)
-        // Another possible solution is to remove activations from queue on detachChild. It is good because activations are created on attachChild.
         previous_version.reset(); // Destroys previous version nodes if there are no classifiers referencing it
     }
 }

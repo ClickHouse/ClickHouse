@@ -190,11 +190,6 @@ public:
         activate(Resource::get(child->info));
     }
 
-    void setParent(ISchedulerNode *) override
-    {
-        abort(); // scheduler must be the root and this function should not be called
-    }
-
 private:
     void activate(Resource * value)
     {
