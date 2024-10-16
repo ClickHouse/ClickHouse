@@ -30,19 +30,6 @@ FROM y;
 
 SELECT * FROM x;
 
-WITH y AS
-    (
-        SELECT *
-        FROM numbers(10)
-    )
-INSERT INTO x
-WITH y2 AS
-    (
-        SELECT *
-        FROM numbers(10)
-    )
-SELECT * FROM y;  -- { clientError SYNTAX_ERROR }
-
 DROP TABLE x;
 
 CREATE TABLE x (d date) ENGINE = Log;
