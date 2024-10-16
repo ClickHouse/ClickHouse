@@ -3,6 +3,7 @@
 #include <base/defines.h>
 #include <base/scope_guard.h>
 
+#include <Common/Logger.h>
 #include <Common/Scheduler/SchedulingSettings.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/SchedulerRoot.h>
@@ -273,6 +274,8 @@ private:
     mutable std::mutex mutex;
     std::unordered_map<String, WorkloadPtr> workloads; // TSA_GUARDED_BY(mutex);
     std::unordered_map<String, ResourcePtr> resources; // TSA_GUARDED_BY(mutex);
+
+    LoggerPtr log;
 };
 
 }
