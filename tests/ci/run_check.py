@@ -4,8 +4,7 @@ import re
 import sys
 from typing import Tuple
 
-from github import Github
-
+from build_download_helper import APIException
 from ci_config import CI
 from commit_status_helper import (
     create_ci_report,
@@ -17,6 +16,7 @@ from commit_status_helper import (
 )
 from env_helper import GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from get_robot_token import get_best_robot_token
+from github_helper import GitHub
 from pr_info import PRInfo
 from report import FAILURE, PENDING, SUCCESS, StatusType
 
@@ -205,11 +205,33 @@ def should_run_ci_for_pr(pr_info: PRInfo) -> Tuple[bool, str]:
 def main():
     logging.basicConfig(level=logging.INFO)
 
-    pr_info = PRInfo(need_orgs=True, pr_event_from_api=True, need_changed_files=True)
+    fail_early = False
+    try:
+        pr_info = PRInfo(
+            need_orgs=True, pr_event_from_api=True, need_changed_files=True
+        )
+    except APIException as e:
+        logging.exception(
+            "Failed to receive the PRInfo, backport to a simple case and exit with error",
+            exc_info=e,
+        )
+        pr_info = PRInfo()
+        fail_early = True
+
     # The case for special branches like backports and releases without created
     # PRs, like merged backport branches that are reset immediately after merge
-    if pr_info.number == 0:
+    if pr_info.number == 0 or fail_early:
         print("::notice ::Cannot run, no PR exists for the commit")
+        gh = GitHub(get_best_robot_token(), per_page=100)
+        commit = get_commit(gh, pr_info.sha)
+        post_commit_status(
+            commit,
+            FAILURE,
+            "",
+            "No PRs found for the commit, finished early",
+            CI.StatusNames.PR_CHECK,
+            pr_info,
+        )
         sys.exit(1)
 
     can_run, description = should_run_ci_for_pr(pr_info)
@@ -218,7 +240,7 @@ def main():
         sys.exit(0)
 
     description = format_description(description)
-    gh = Github(get_best_robot_token(), per_page=100)
+    gh = GitHub(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
     status = SUCCESS  # type: StatusType
 
