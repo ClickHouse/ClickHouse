@@ -103,22 +103,14 @@ namespace
 
         if (type == prometheus::LabelMatcher::EQ)
             return makeASTFunction("equals", makeASTLabelName(label_name, tags_table_id, column_name_by_tag_name), std::make_shared<ASTLiteral>(label_value));
-        if (type == prometheus::LabelMatcher::NEQ)
-            return makeASTFunction(
-                "notEquals",
-                makeASTLabelName(label_name, tags_table_id, column_name_by_tag_name),
-                std::make_shared<ASTLiteral>(label_value));
-        if (type == prometheus::LabelMatcher::RE)
-            return makeASTFunction(
-                "match", makeASTLabelName(label_name, tags_table_id, column_name_by_tag_name), std::make_shared<ASTLiteral>(label_value));
-        if (type == prometheus::LabelMatcher::NRE)
-            return makeASTFunction(
-                "not",
-                makeASTFunction(
-                    "match",
-                    makeASTLabelName(label_name, tags_table_id, column_name_by_tag_name),
-                    std::make_shared<ASTLiteral>(label_value)));
-        throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER, "Unexpected type of label matcher: {}", type);
+        else if (type == prometheus::LabelMatcher::NEQ)
+            return makeASTFunction("notEquals", makeASTLabelName(label_name, tags_table_id, column_name_by_tag_name), std::make_shared<ASTLiteral>(label_value));
+        else if (type == prometheus::LabelMatcher::RE)
+            return makeASTFunction("match", makeASTLabelName(label_name, tags_table_id, column_name_by_tag_name), std::make_shared<ASTLiteral>(label_value));
+        else if (type == prometheus::LabelMatcher::NRE)
+            return makeASTFunction("not", makeASTFunction("match", makeASTLabelName(label_name, tags_table_id, column_name_by_tag_name), std::make_shared<ASTLiteral>(label_value)));
+        else
+            throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER, "Unexpected type of label matcher: {}", type);
     }
 
     /// Makes an AST checking that tags match a specified label matcher and that timestamp is in range [min_timestamp_ms, max_timestamp_ms].

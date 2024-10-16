@@ -275,7 +275,7 @@ public:
         size_t max_block_size_,
         std::shared_ptr<StorageSystemReplicasImpl> impl_)
         : SourceStepWithFilter(
-            std::move(sample_block),
+            DataStream{.header = std::move(sample_block)},
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -421,7 +421,7 @@ private:
 
 void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto header = getOutputHeader();
+    auto header = getOutputStream().header;
 
     MutableColumnPtr col_database_mut = ColumnString::create();
     MutableColumnPtr col_table_mut = ColumnString::create();
@@ -543,9 +543,9 @@ Chunk SystemReplicasSource::generate()
         res_columns[col_num++]->insert(status.is_session_expired);
         res_columns[col_num++]->insert(status.queue.future_parts);
         res_columns[col_num++]->insert(status.parts_to_check);
-        res_columns[col_num++]->insert(status.zookeeper_info.zookeeper_name);
-        res_columns[col_num++]->insert(status.zookeeper_info.path);
-        res_columns[col_num++]->insert(status.zookeeper_info.replica_name);
+        res_columns[col_num++]->insert(status.zookeeper_name);
+        res_columns[col_num++]->insert(status.zookeeper_path);
+        res_columns[col_num++]->insert(status.replica_name);
         res_columns[col_num++]->insert(status.replica_path);
         res_columns[col_num++]->insert(status.columns_version);
         res_columns[col_num++]->insert(status.queue.queue_size);

@@ -39,6 +39,5 @@ namespace SettingsChangesHistory
 }
 
 const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> & getSettingsChangesHistory();
-const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> & getMergeTreeSettingsChangesHistory();
 
 }

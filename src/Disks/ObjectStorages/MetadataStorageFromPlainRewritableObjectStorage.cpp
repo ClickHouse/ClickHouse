@@ -51,7 +51,7 @@ std::shared_ptr<InMemoryPathMap> loadPathPrefixMap(const std::string & metadata_
 
     LoggerPtr log = getLogger("MetadataStorageFromPlainObjectStorage");
 
-    auto settings = getReadSettings();
+    ReadSettings settings;
     settings.enable_filesystem_cache = false;
     settings.remote_fs_method = RemoteFSReadMethod::read;
     settings.remote_fs_buffer_size = 1024;  /// These files are small.
@@ -232,7 +232,8 @@ bool MetadataStorageFromPlainRewritableObjectStorage::isDirectory(const std::str
         auto directory = std::filesystem::path(object_storage->generateObjectKeyForPath(path, getMetadataKeyPrefix()).serialize()) / "";
         return object_storage->existsOrHasAnyChild(directory);
     }
-    return MetadataStorageFromPlainObjectStorage::isDirectory(path);
+    else
+        return MetadataStorageFromPlainObjectStorage::isDirectory(path);
 }
 
 std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDirectory(const std::string & path) const

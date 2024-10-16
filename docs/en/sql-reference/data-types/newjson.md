@@ -70,7 +70,7 @@ SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON as json
 └────────────────────────────────────────────────┘
 ```
 
-CAST from `JSON`, named `Tuple`, `Map` and `Object('json')` to `JSON` type will be supported later.
+CAST from named `Tuple`, `Map` and `Object('json')` to `JSON` type will be supported later.
 
 ## Reading JSON paths as subcolumns
 
@@ -453,8 +453,8 @@ As we can see, after inserting paths `e` and `f.g` the limit was reached and we 
 
 ### During merges of data parts in MergeTree table engines
 
-During merge of several data parts in MergeTree table the `JSON` column in the resulting data part can reach the limit of dynamic paths and won't be able to store all paths from source parts as subcolumns.
-In this case ClickHouse chooses what paths will remain as subcolumns after merge and what paths will be stored in the shared data structure. In most cases ClickHouse tries to keep paths that contain
+During merge of several data parts in MergeTree table the `JSON` column in the resulting data part can reach the limit of dynamic paths won't be able to store all paths from source parts as subcolumns.
+In this case ClickHouse chooses what paths will remain as subcolumns after merge and what types will be stored in the shared data structure. In most cases ClickHouse tries to keep paths that contains
 the largest number of non-null values and move the rarest paths to the shared data structure, but it depends on the implementation.
 
 Let's see an example of such merge. First, let's create a table with `JSON` column, set the limit of dynamic paths to `3` and insert values with `5` different paths:
@@ -505,130 +505,7 @@ As we can see, ClickHouse kept the most frequent paths `a`, `b` and `c` and move
 
 ## Introspection functions
 
-There are several functions that can help to inspect the content of the JSON column: [JSONAllPaths](../functions/json-functions.md#jsonallpaths), [JSONAllPathsWithTypes](../functions/json-functions.md#jsonallpathswithtypes), [JSONDynamicPaths](../functions/json-functions.md#jsondynamicpaths), [JSONDynamicPathsWithTypes](../functions/json-functions.md#jsondynamicpathswithtypes), [JSONSharedDataPaths](../functions/json-functions.md#jsonshareddatapaths), [JSONSharedDataPathsWithTypes](../functions/json-functions.md#jsonshareddatapathswithtypes), [distinctDynamicTypes](../aggregate-functions/reference/distinctdynamictypes.md), [distinctJSONPaths and distinctJSONPathsAndTypes](../aggregate-functions/reference/distinctjsonpaths.md)
-
-**Examples**
-
-Let's investigate the content of [GH Archive](https://www.gharchive.org/) dataset for `2020-01-01` date:
-
-```sql
-SELECT arrayJoin(distinctJSONPaths(json)) FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', JSONAsObject) 
-```
-
-```text
-┌─arrayJoin(distinctJSONPaths(json))─────────────────────────┐
-│ actor.avatar_url                                           │
-│ actor.display_login                                        │
-│ actor.gravatar_id                                          │
-│ actor.id                                                   │
-│ actor.login                                                │
-│ actor.url                                                  │
-│ created_at                                                 │
-│ id                                                         │
-│ org.avatar_url                                             │
-│ org.gravatar_id                                            │
-│ org.id                                                     │
-│ org.login                                                  │
-│ org.url                                                    │
-│ payload.action                                             │
-│ payload.before                                             │
-│ payload.comment._links.html.href                           │
-│ payload.comment._links.pull_request.href                   │
-│ payload.comment._links.self.href                           │
-│ payload.comment.author_association                         │
-│ payload.comment.body                                       │
-│ payload.comment.commit_id                                  │
-│ payload.comment.created_at                                 │
-│ payload.comment.diff_hunk                                  │
-│ payload.comment.html_url                                   │
-│ payload.comment.id                                         │
-│ payload.comment.in_reply_to_id                             │
-│ payload.comment.issue_url                                  │
-│ payload.comment.line                                       │
-│ payload.comment.node_id                                    │
-│ payload.comment.original_commit_id                         │
-│ payload.comment.original_position                          │
-│ payload.comment.path                                       │
-│ payload.comment.position                                   │
-│ payload.comment.pull_request_review_id                     │
-...
-│ payload.release.node_id                                    │
-│ payload.release.prerelease                                 │
-│ payload.release.published_at                               │
-│ payload.release.tag_name                                   │
-│ payload.release.tarball_url                                │
-│ payload.release.target_commitish                           │
-│ payload.release.upload_url                                 │
-│ payload.release.url                                        │
-│ payload.release.zipball_url                                │
-│ payload.size                                               │
-│ public                                                     │
-│ repo.id                                                    │
-│ repo.name                                                  │
-│ repo.url                                                   │
-│ type                                                       │
-└─arrayJoin(distinctJSONPaths(json))─────────────────────────┘
-```
-
-```sql
-SELECT arrayJoin(distinctJSONPathsAndTypes(json)) FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', JSONAsObject) SETTINGS date_time_input_format='best_effort'
-```
-
-
-```text
-┌─arrayJoin(distinctJSONPathsAndTypes(json))──────────────────┐
-│ ('actor.avatar_url',['String'])                             │
-│ ('actor.display_login',['String'])                          │
-│ ('actor.gravatar_id',['String'])                            │
-│ ('actor.id',['Int64'])                                      │
-│ ('actor.login',['String'])                                  │
-│ ('actor.url',['String'])                                    │
-│ ('created_at',['DateTime'])                                 │
-│ ('id',['String'])                                           │
-│ ('org.avatar_url',['String'])                               │
-│ ('org.gravatar_id',['String'])                              │
-│ ('org.id',['Int64'])                                        │
-│ ('org.login',['String'])                                    │
-│ ('org.url',['String'])                                      │
-│ ('payload.action',['String'])                               │
-│ ('payload.before',['String'])                               │
-│ ('payload.comment._links.html.href',['String'])             │
-│ ('payload.comment._links.pull_request.href',['String'])     │
-│ ('payload.comment._links.self.href',['String'])             │
-│ ('payload.comment.author_association',['String'])           │
-│ ('payload.comment.body',['String'])                         │
-│ ('payload.comment.commit_id',['String'])                    │
-│ ('payload.comment.created_at',['DateTime'])                 │
-│ ('payload.comment.diff_hunk',['String'])                    │
-│ ('payload.comment.html_url',['String'])                     │
-│ ('payload.comment.id',['Int64'])                            │
-│ ('payload.comment.in_reply_to_id',['Int64'])                │
-│ ('payload.comment.issue_url',['String'])                    │
-│ ('payload.comment.line',['Int64'])                          │
-│ ('payload.comment.node_id',['String'])                      │
-│ ('payload.comment.original_commit_id',['String'])           │
-│ ('payload.comment.original_position',['Int64'])             │
-│ ('payload.comment.path',['String'])                         │
-│ ('payload.comment.position',['Int64'])                      │
-│ ('payload.comment.pull_request_review_id',['Int64'])        │
-...
-│ ('payload.release.node_id',['String'])                      │
-│ ('payload.release.prerelease',['Bool'])                     │
-│ ('payload.release.published_at',['DateTime'])               │
-│ ('payload.release.tag_name',['String'])                     │
-│ ('payload.release.tarball_url',['String'])                  │
-│ ('payload.release.target_commitish',['String'])             │
-│ ('payload.release.upload_url',['String'])                   │
-│ ('payload.release.url',['String'])                          │
-│ ('payload.release.zipball_url',['String'])                  │
-│ ('payload.size',['Int64'])                                  │
-│ ('public',['Bool'])                                         │
-│ ('repo.id',['Int64'])                                       │
-│ ('repo.name',['String'])                                    │
-│ ('repo.url',['String'])                                     │
-│ ('type',['String'])                                         │
-└─arrayJoin(distinctJSONPathsAndTypes(json))──────────────────┘
-```
+There are several functions that can help to inspect the content of the JSON column: [JSONAllPaths](../functions/json-functions.md#jsonallpaths), [JSONAllPathsWithTypes](../functions/json-functions.md#jsonallpathswithtypes), [JSONDynamicPaths](../functions/json-functions.md#jsondynamicpaths), [JSONDynamicPathsWithTypes](../functions/json-functions.md#jsondynamicpathswithtypes), [JSONSharedDataPaths](../functions/json-functions.md#jsonshareddatapaths), [JSONSharedDataPathsWithTypes](../functions/json-functions.md#jsonshareddatapathswithtypes).
 
 ## Tips for better usage of the JSON type
 
