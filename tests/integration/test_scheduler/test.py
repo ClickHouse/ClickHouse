@@ -10,11 +10,26 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
+    stay_alive=True,
+    main_configs=[
+        "configs/storage_configuration.xml",
+        "configs/resources.xml",
+        "configs/resources.xml.default",
+        "configs/workloads.xml",
+        "configs/workloads.xml.default",
+    ],
+    with_minio=True,
+    with_zookeeper=True,
+)
+
+node2 = cluster.add_instance(
+    "node2",
     stay_alive=True,
     main_configs=[
         "configs/storage_configuration.xml",
@@ -809,3 +824,109 @@ def test_resource_read_and_write():
         )
         == "1\n"
     )
+
+
+def test_workload_entity_keeper_storage():
+    node.query("create resource io_write (write disk s3_no_resource);")
+    node.query("create resource io_read (read disk s3_no_resource);")
+    queries = [
+        "create workload all;",
+        "create workload X in all settings priority = 0;",
+        "create workload Y in all settings priority = 1;",
+        "create workload A1 in X settings priority = -1;",
+        "create workload B1 in X settings priority = 1;",
+        "create workload C1 in Y settings priority = -1;",
+        "create workload D1 in Y settings priority = 1;",
+        "create workload A2 in X settings priority = -1;",
+        "create workload B2 in X settings priority = 1;",
+        "create workload C2 in Y settings priority = -1;",
+        "create workload D2 in Y settings priority = 1;",
+        "drop workload A1;",
+        "drop workload A2;",
+        "drop workload B1;",
+        "drop workload B2;",
+        "drop workload C1;",
+        "drop workload C2;",
+        "drop workload D1;",
+        "drop workload D2;",
+        "create workload Z in all;",
+        "create workload A1 in Z settings priority = -1;",
+        "create workload A2 in Z settings priority = -1;",
+        "create workload A3 in Z settings priority = -1;",
+        "create workload B1 in Z settings priority = 1;",
+        "create workload B2 in Z settings priority = 1;",
+        "create workload B3 in Z settings priority = 1;",
+        "create workload C1 in X settings priority = -1;",
+        "create workload C2 in X settings priority = -1;",
+        "create workload C3 in X settings priority = -1;",
+        "create workload D1 in X settings priority = 1;",
+        "create workload D2 in X settings priority = 1;",
+        "create workload D3 in X settings priority = 1;",
+        "drop workload A1;",
+        "drop workload B1;",
+        "drop workload C1;",
+        "drop workload D1;",
+        "drop workload A2;",
+        "drop workload B2;",
+        "drop workload C2;",
+        "drop workload D2;",
+        "drop workload A3;",
+        "drop workload B3;",
+        "drop workload C3;",
+        "drop workload D3;",
+        "drop workload X;",
+        "drop workload Y;",
+        "drop workload Z;",
+        "drop workload all;",
+    ]
+
+    def check_consistency():
+        checks = [
+            "select name, create_query from system.workloads order by all",
+            "select name, create_query from system.resources order by all",
+            "select resource, path, type, weight, priority, max_requests, max_cost, max_speed, max_burst from system.scheduler where resource not in ['network_read', 'network_write'] order by all",
+        ]
+        attempts = 10
+        value1 = ""
+        value2 = ""
+        error_query = ""
+        for attempt in range(attempts):
+            for query in checks:
+                value1 = node.query(query)
+                value2 = node2.query(query)
+                if value1 != value2:
+                    error_query = query
+                    break # error
+            else:
+                break # success
+            time.sleep(0.5)
+        else:
+            raise Exception(
+                f"query '{error_query}' gives different results after {attempts} attempts:\n=== leader node ===\n{value1}\n=== follower node ===\n{value2}"
+            )
+
+
+    for iteration in range(3):
+        split_idx_1 = random.randint(1, len(queries) - 3)
+        split_idx_2 = random.randint(split_idx_1 + 1, len(queries) - 2)
+
+        with PartitionManager() as pm:
+            pm.drop_instance_zk_connections(node2)
+            for query_idx in range(0, split_idx_1):
+                node.query(queries[query_idx])
+
+        check_consistency()
+
+        with PartitionManager() as pm:
+            pm.drop_instance_zk_connections(node2)
+            for query_idx in range(split_idx_1, split_idx_2):
+                node.query(queries[query_idx])
+
+        check_consistency()
+
+        with PartitionManager() as pm:
+            pm.drop_instance_zk_connections(node2)
+            for query_idx in range(split_idx_2, len(queries)):
+                node.query(queries[query_idx])
+
+        check_consistency()
