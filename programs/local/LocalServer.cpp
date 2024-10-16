@@ -161,6 +161,14 @@ void LocalServer::initialize(Poco::Util::Application & self)
 
     getOutdatedPartsLoadingThreadPool().setMaxTurboThreads(active_parts_loading_threads);
 
+    const size_t unexpected_parts_loading_threads = config().getUInt("max_unexpected_parts_loading_thread_pool_size", 32);
+    getUnexpectedPartsLoadingThreadPool().initialize(
+        unexpected_parts_loading_threads,
+        0, // We don't need any threads one all the parts will be loaded
+        unexpected_parts_loading_threads);
+
+    getUnexpectedPartsLoadingThreadPool().setMaxTurboThreads(active_parts_loading_threads);
+
     const size_t cleanup_threads = config().getUInt("max_parts_cleaning_thread_pool_size", 128);
     getPartsCleaningThreadPool().initialize(
         cleanup_threads,

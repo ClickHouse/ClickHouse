@@ -183,6 +183,8 @@ public:
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
     void appendFilesOfColumnsChecksumsIndexes(Strings & files, bool include_projection = false) const;
 
+    void loadRowsCountFileForUnexpectedPart();
+
     String getMarksFileExtension() const { return index_granularity_info.mark_type.getFileExtension(); }
 
     /// Generate the new name for this part according to `new_part_info` and min/max dates from the old name.
