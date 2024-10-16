@@ -149,7 +149,6 @@ void traverse(const ParserImpl::Element & e, std::shared_ptr<JSONNode> node)
 
 std::shared_ptr<JSONNode> parseJSON(const String & json)
 {
-    std::string_view view{json.begin(), json.end()};
     ParserImpl::Element document;
     ParserImpl p;
 
