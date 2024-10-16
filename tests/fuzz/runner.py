@@ -65,7 +65,7 @@ def kill_fuzzer(fuzzer: str):
                 os.kill(pid, signal.SIGKILL)
 
 
-def run_fuzzer(fuzzer: str, timeout: int) -> TestResult:
+def run_fuzzer(fuzzer: str, timeout: int):
     s3 = S3Helper()
 
     logging.info("Running fuzzer %s...", fuzzer)
