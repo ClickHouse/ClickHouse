@@ -3,10 +3,11 @@
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
-#include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/ZooKeeperCachingGetter.h>
 
+#include <condition_variable>
+#include <mutex>
 
 namespace DB
 {
@@ -48,10 +49,7 @@ private:
     void stopWatchingThread();
 
     void createRootNodes(const zkutil::ZooKeeperPtr & zookeeper);
-
     std::pair<String, Int32> getDataAndSetWatch(const zkutil::ZooKeeperPtr & zookeeper);
-
-    void refreshAllEntities(const zkutil::ZooKeeperPtr & zookeeper); // TODO(serxa): get rid of it
     void refreshEntities(const zkutil::ZooKeeperPtr & zookeeper);
 
     zkutil::ZooKeeperCachingGetter zookeeper_getter;
@@ -59,10 +57,14 @@ private:
     Int32 current_version = 0;
 
     ThreadFromGlobalPool watching_thread;
-    std::atomic<bool> entities_loaded = false;
     std::atomic<bool> watching_flag = false;
 
-    std::shared_ptr<ConcurrentBoundedQueue<bool>> watch_queue; // TODO(serxa): rework it into something that is not a queue
+    struct WatchEvent {
+        std::mutex mutex;
+        std::condition_variable cv;
+        UInt64 triggered = 0;
+    };
+    std::shared_ptr<WatchEvent> watch;
 };
 
 }

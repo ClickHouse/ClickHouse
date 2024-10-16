@@ -34,7 +34,7 @@ WorkloadEntityKeeperStorage::WorkloadEntityKeeperStorage(
     : WorkloadEntityStorageBase(global_context_)
     , zookeeper_getter{[global_context_]() { return global_context_->getZooKeeper(); }}
     , zookeeper_path{zookeeper_path_}
-    , watch_queue{std::make_shared<ConcurrentBoundedQueue<bool>>(std::numeric_limits<size_t>::max())}
+    , watch{std::make_shared<WatchEvent>()}
 {
     log = getLogger("WorkloadEntityKeeperStorage");
     if (zookeeper_path.empty())
@@ -63,7 +63,7 @@ void WorkloadEntityKeeperStorage::stopWatchingThread()
 {
     if (watching_flag.exchange(false))
     {
-        watch_queue->finish();
+        watch->cv.notify_one();
         if (watching_thread.joinable())
             watching_thread.join();
     }
@@ -80,7 +80,7 @@ zkutil::ZooKeeperPtr WorkloadEntityKeeperStorage::getZooKeeper()
         zookeeper->sync(zookeeper_path);
 
         createRootNodes(zookeeper);
-        refreshAllEntities(zookeeper);
+        refreshEntities(zookeeper);
     }
 
     return zookeeper;
@@ -90,17 +90,14 @@ void WorkloadEntityKeeperStorage::loadEntities()
 {
     /// loadEntities() is called at start from Server::main(), so it's better not to stop here on no connection to ZooKeeper or any other error.
     /// However the watching thread must be started anyway in case the connection will be established later.
-    if (!entities_loaded)
+    try
     {
-        try
-        {
-            refreshAllEntities(getZooKeeper());
-            startWatchingThread();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Failed to load workload entities");
-        }
+        refreshEntities(getZooKeeper());
+        startWatchingThread();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to load workload entities");
     }
     startWatchingThread();
 }
@@ -111,6 +108,7 @@ void WorkloadEntityKeeperStorage::processWatchQueue()
     LOG_DEBUG(log, "Started watching thread");
     setThreadName("WrkldEntWatch");
 
+    UInt64 handled = 0;
     while (watching_flag)
     {
         try
@@ -118,11 +116,14 @@ void WorkloadEntityKeeperStorage::processWatchQueue()
             /// Re-initialize ZooKeeper session if expired
             getZooKeeper();
 
-            bool queued = false;
-            if (!watch_queue->tryPop(queued, /* timeout_ms: */ 10000))
-                continue;
+            {
+                std::unique_lock lock{watch->mutex};
+                if (!watch->cv.wait_for(lock, std::chrono::seconds(10), [&] { return !watching_flag || handled != watch->triggered; }))
+                    continue;
+                handled = watch->triggered;
+            }
 
-            refreshAllEntities(getZooKeeper());
+            refreshEntities(getZooKeeper());
         }
         catch (...)
         {
@@ -166,7 +167,7 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityKeeperStorage::storeEnt
     auto code = zookeeper->trySet(zookeeper_path, new_data, current_version, &stat);
     if (code != Coordination::Error::ZOK)
     {
-        refreshAllEntities(zookeeper);
+        refreshEntities(zookeeper);
         return OperationResult::Retry;
     }
 
@@ -193,7 +194,7 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityKeeperStorage::removeEn
     auto code = zookeeper->trySet(zookeeper_path, new_data, current_version, &stat);
     if (code != Coordination::Error::ZOK)
     {
-        refreshAllEntities(zookeeper);
+        refreshEntities(zookeeper);
         return OperationResult::Retry;
     }
 
@@ -206,12 +207,13 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityKeeperStorage::removeEn
 
 std::pair<String, Int32> WorkloadEntityKeeperStorage::getDataAndSetWatch(const zkutil::ZooKeeperPtr & zookeeper)
 {
-    const auto data_watcher = [my_watch_queue = watch_queue](const Coordination::WatchResponse & response)
+    const auto data_watcher = [my_watch = watch](const Coordination::WatchResponse & response)
     {
         if (response.type == Coordination::Event::CHANGED)
         {
-            [[maybe_unused]] bool inserted = my_watch_queue->emplace(true);
-            /// `inserted` can be false if `watch_queue` was already finalized (which happens when stopWatching() is called).
+            std::unique_lock lock{my_watch->mutex};
+            my_watch->triggered++;
+            my_watch->cv.notify_one();
         }
     };
 
@@ -224,15 +226,6 @@ std::pair<String, Int32> WorkloadEntityKeeperStorage::getDataAndSetWatch(const z
         data = zookeeper->getWatch(zookeeper_path, &stat, data_watcher);
     }
     return {data, stat.version};
-}
-
-void WorkloadEntityKeeperStorage::refreshAllEntities(const zkutil::ZooKeeperPtr & zookeeper)
-{
-    /// It doesn't make sense to keep the old watch events because we will reread everything in this function.
-    watch_queue->clear();
-
-    refreshEntities(zookeeper);
-    entities_loaded = true;
 }
 
 void WorkloadEntityKeeperStorage::refreshEntities(const zkutil::ZooKeeperPtr & zookeeper)
@@ -254,7 +247,7 @@ void WorkloadEntityKeeperStorage::refreshEntities(const zkutil::ZooKeeperPtr & z
             ++pos;
     }
 
-    /// Read & parse all SQL entities from data we just read from ZooKeeper
+    /// Read and parse all SQL entities from data we just read from ZooKeeper
     std::vector<std::pair<String, ASTPtr>> new_entities;
     for (const auto & query : queries)
     {
