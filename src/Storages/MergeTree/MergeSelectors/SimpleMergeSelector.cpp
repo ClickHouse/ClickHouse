@@ -142,10 +142,10 @@ bool allow(
     double lowered_base = interpolateLinear(settings.base, 2.0, combined_ratio);
     if (settings.use_blurry_base)
     {
-        double partition_fill_factor = partition_size / settings.parts_to_throw_insert;
+        double partition_fill_factor = std::max(0., 1 - partition_size / settings.parts_to_throw_insert);
         /// Scale factor controls when (relativelty to the number of parts in partition)
         /// do we activate our special algorithm.
-        /// With standard parameters the logic kicks in starting from 80% fill factor.
+        /// With standard parameters the logic kicks in starting from 80% empty factor.
         /// The division by 2 is due to the fact that for normal distribution nearly 95.4%
         /// of all observations fall within two standard deviations.
         double scaling_factor = std::pow(partition_fill_factor, settings.blurry_base_scale_factor) / 2;
