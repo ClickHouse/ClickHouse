@@ -87,7 +87,6 @@ StorageNATS::StorageNATS(
         .token = nats_token.empty() ? getContext()->getConfigRef().getString("nats.token", "") : nats_token,
         .credential_file = nats_credential_file.empty() ? getContext()->getConfigRef().getString("nats.credential_file", "") : nats_credential_file,
         .max_connect_tries = nats_settings->nats_startup_connect_tries,
-        .max_reconnect = static_cast<int>(nats_settings->nats_max_reconnect.value),
         .reconnect_wait = static_cast<int>(nats_settings->nats_reconnect_wait.value),
         .secure = nats_settings->nats_secure.value
     };

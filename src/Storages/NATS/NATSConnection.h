@@ -21,7 +21,6 @@ struct NATSConfiguration
     String credential_file;
 
     UInt64 max_connect_tries;
-    int max_reconnect;
     int reconnect_wait;
 
     bool secure;
