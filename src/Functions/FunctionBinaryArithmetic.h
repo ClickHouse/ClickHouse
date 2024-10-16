@@ -2371,11 +2371,11 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 {
                     if constexpr (is_modulo)
                     {
-                        using PromotedType = std::conditional_t<
-                            std::is_floating_point_v<typename ResultDataType::FieldType>,
-                            Float64,
-                            NumberTraits::ResultOfIf<typename LeftDataType::FieldType, typename RightDataType::FieldType>>;
-                        return std::is_integral_v<PromotedType> || std::is_floating_point_v<PromotedType>;
+                        using LeftType = typename LeftDataType::FieldType;
+                        using RightType = typename RightDataType::FieldType;
+                        using PromotedType = NumberTraits::ResultOfModuloNativePromotion<LeftType, RightType>;
+                        if constexpr (std::is_arithmetic_v<PromotedType>)
+                            return true;
                     }
                     else
                         return true;
@@ -2406,25 +2406,31 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
                     if constexpr (is_modulo)
                     {
-                        using PromotedType = std::conditional_t<
-                            std::is_floating_point_v<typename ResultDataType::FieldType>,
-                            Float64,
-                            NumberTraits::ResultOfIf<typename LeftDataType::FieldType, typename RightDataType::FieldType>>;
-                        auto promoted_type = std::make_shared<DataTypeNumber<PromotedType>>();
-                        auto * lval = nativeCast(b, arguments[0], promoted_type);
-                        auto * rval = nativeCast(b, arguments[1], promoted_type);
-                        result = OpSpec::compile(b, lval, rval, std::is_signed_v<PromotedType>);
+                        using LeftType = typename LeftDataType::FieldType;
+                        using RightType = typename RightDataType::FieldType;
+                        using PromotedType = NumberTraits::ResultOfModuloNativePromotion<LeftType, RightType>;
+                        if constexpr (std::is_arithmetic_v<PromotedType>)
+                        {
+                            DataTypePtr promoted_type = std::make_shared<DataTypeNumber<PromotedType>>();
+                            if (result_type->isNullable())
+                                promoted_type = std::make_shared<DataTypeNullable>(promoted_type);
+
+                            auto * lval = nativeCast(b, arguments[0], promoted_type);
+                            auto * rval = nativeCast(b, arguments[1], promoted_type);
+                            result
+                                = nativeCast(b, promoted_type, OpSpec::compile(b, lval, rval, std::is_signed_v<PromotedType>), result_type);
+                            return true;
+                        }
                     }
                     else
                     {
                         auto * lval = nativeCast(b, arguments[0], result_type);
                         auto * rval = nativeCast(b, arguments[1], result_type);
                         result = OpSpec::compile(b, lval, rval, std::is_signed_v<typename ResultDataType::FieldType>);
+                        return true;
                     }
-                    return true;
                 }
             }
-
             return false;
         });
 

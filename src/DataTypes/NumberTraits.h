@@ -204,6 +204,38 @@ struct ResultOfIf
         std::conditional_t<!is_decimal<A> && !is_decimal<B>,
             ConstructedType, Error>>>;
 };
+/** Type casting for `modulo` function:
+    * UInt<x>,  UInt<y>   ->  UInt<max(x,y)>
+    * Int<x>,   Int<y>    ->  Int<max(x,y)>
+    * UInt<x>,  Int<y>    ->  Int<max(x*2, y)>
+    * UInt64,   Int<x>    ->  Error
+    * Float<x>, Float<y>  ->  Float64
+    * Float<x>, [U]Int<y> ->  Float64
+    */
+template <typename A, typename B>
+struct ResultOfModuloNativePromotion
+{
+    static_assert(std::is_arithmetic_v<A> && std::is_arithmetic_v<B>);
+
+    static constexpr bool has_float = std::is_floating_point_v<A> || std::is_floating_point_v<B>;
+    static constexpr bool has_integer = is_integer<A> || is_integer<B>;
+    static constexpr bool has_signed = is_signed_v<A> || is_signed_v<B>;
+    static constexpr bool has_unsigned = !is_signed_v<A> || !is_signed_v<B>;
+
+    static constexpr size_t max_size_of_unsigned_integer = max(is_signed_v<A> ? 0 : sizeof(A), is_signed_v<B> ? 0 : sizeof(B));
+    static constexpr size_t max_size_of_signed_integer = max(is_signed_v<A> ? sizeof(A) : 0, is_signed_v<B> ? sizeof(B) : 0);
+    static constexpr size_t max_size_of_integer = max(is_integer<A> ? sizeof(A) : 0, is_integer<B> ? sizeof(B) : 0);
+
+    using ConstructedType = typename Construct<
+        has_signed,
+        false,
+        (has_signed ^ has_unsigned) ? max(max_size_of_unsigned_integer * 2, max_size_of_signed_integer) : max(sizeof(A), sizeof(B))>::Type;
+
+    using Type = std::conditional_t<
+        std::is_same_v<A, B>,
+        A,
+        std::conditional_t<has_float, Float64, std::conditional_t<sizeof(ConstructedType) <= 8, ConstructedType, Error>>>;
+};
 
 /** Before applying operator `%` and bitwise operations, operands are casted to whole numbers. */
 template <typename A> struct ToInteger
