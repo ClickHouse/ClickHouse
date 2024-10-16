@@ -126,6 +126,9 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
 
 Chunk FinishAggregatingInOrderAlgorithm::prepareToMerge()
 {
+    total_merged_rows += accumulated_rows;
+    total_merged_bytes += accumulated_bytes;
+
     accumulated_rows = 0;
     accumulated_bytes = 0;
 

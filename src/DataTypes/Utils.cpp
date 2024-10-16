@@ -216,6 +216,7 @@ bool canBeSafelyCasted(const DataTypePtr & from_type, const DataTypePtr & to_typ
             return false;
         }
         case TypeIndex::String:
+        case TypeIndex::ObjectDeprecated:
         case TypeIndex::Object:
         case TypeIndex::Set:
         case TypeIndex::Interval:

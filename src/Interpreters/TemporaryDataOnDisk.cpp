@@ -65,12 +65,12 @@ TemporaryDataOnDisk::TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_, Cu
 
 std::unique_ptr<WriteBufferFromFileBase> TemporaryDataOnDisk::createRawStream(size_t max_file_size)
 {
-    if (file_cache)
+    if (file_cache && file_cache->isInitialized())
     {
         auto holder = createCacheFile(max_file_size);
         return std::make_unique<WriteBufferToFileSegment>(std::move(holder));
     }
-    else if (volume)
+    if (volume)
     {
         auto tmp_file = createRegularFile(max_file_size);
         return std::make_unique<WriteBufferFromTemporaryFile>(std::move(tmp_file));
@@ -81,7 +81,7 @@ std::unique_ptr<WriteBufferFromFileBase> TemporaryDataOnDisk::createRawStream(si
 
 TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, size_t max_file_size)
 {
-    if (file_cache)
+    if (file_cache && file_cache->isInitialized())
     {
         auto holder = createCacheFile(max_file_size);
 
@@ -89,11 +89,12 @@ TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, si
         TemporaryFileStreamPtr & tmp_stream = streams.emplace_back(std::make_unique<TemporaryFileStream>(std::move(holder), header, this));
         return *tmp_stream;
     }
-    else if (volume)
+    if (volume)
     {
         auto tmp_file = createRegularFile(max_file_size);
         std::lock_guard lock(mutex);
-        TemporaryFileStreamPtr & tmp_stream = streams.emplace_back(std::make_unique<TemporaryFileStream>(std::move(tmp_file), header, this));
+        TemporaryFileStreamPtr & tmp_stream
+            = streams.emplace_back(std::make_unique<TemporaryFileStream>(std::move(tmp_file), header, this));
         return *tmp_stream;
     }
 
@@ -110,7 +111,7 @@ FileSegmentsHolderPtr TemporaryDataOnDisk::createCacheFile(size_t max_file_size)
     const auto key = FileSegment::Key::random();
     auto holder = file_cache->set(
         key, 0, std::max(10_MiB, max_file_size),
-        CreateFileSegmentSettings(FileSegmentKind::Temporary, /* unbounded */ true), FileCache::getCommonUser());
+        CreateFileSegmentSettings(FileSegmentKind::Ephemeral), FileCache::getCommonUser());
 
     chassert(holder->size() == 1);
     holder->back().getKeyMetadata()->createBaseDirectory(/* throw_if_failed */true);

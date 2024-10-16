@@ -185,7 +185,6 @@ void MergeSortingTransform::consume(Chunk chunk)
 
         if (!external_merging_sorted)
         {
-            bool quiet = false;
             bool have_all_inputs = false;
             bool use_average_block_sizes = false;
 
@@ -199,7 +198,6 @@ void MergeSortingTransform::consume(Chunk chunk)
                     limit,
                     /*always_read_till_end_=*/ false,
                     nullptr,
-                    quiet,
                     use_average_block_sizes,
                     have_all_inputs);
 

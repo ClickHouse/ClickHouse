@@ -1,12 +1,26 @@
 #include "PrometheusMetricsWriter.h"
 
-#include <IO/WriteHelpers.h>
+#include <Common/AsynchronousMetrics.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/ErrorCodes.h>
 #include <Common/re2.h>
-
-#include <algorithm>
+#include <IO/WriteHelpers.h>
 
 #include "config.h"
+
+
+#if USE_NURAFT
+namespace ProfileEvents
+{
+    extern const std::vector<Event> keeper_profile_events;
+}
+
+namespace CurrentMetrics
+{
+    extern const std::vector<Metric> keeper_metrics;
+}
+#endif
+
 
 namespace
 {
@@ -107,100 +121,84 @@ void writeAsyncMetrics(DB::WriteBuffer & wb, const DB::AsynchronousMetricValues 
 
 }
 
-#if USE_NURAFT
-namespace ProfileEvents
-{
-    extern const std::vector<Event> keeper_profile_events;
-}
-
-namespace CurrentMetrics
-{
-    extern const std::vector<Metric> keeper_metrics;
-}
-#endif
-
 
 namespace DB
 {
 
-PrometheusMetricsWriter::PrometheusMetricsWriter(
-    const Poco::Util::AbstractConfiguration & config, const std::string & config_name,
-    const AsynchronousMetrics & async_metrics_)
-    : async_metrics(async_metrics_)
-    , send_events(config.getBool(config_name + ".events", true))
-    , send_metrics(config.getBool(config_name + ".metrics", true))
-    , send_asynchronous_metrics(config.getBool(config_name + ".asynchronous_metrics", true))
-    , send_errors(config.getBool(config_name + ".errors", true))
+void PrometheusMetricsWriter::writeEvents(WriteBuffer & wb) const
 {
+    for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
+        writeEvent(wb, i);
 }
 
-void PrometheusMetricsWriter::write(WriteBuffer & wb) const
+void PrometheusMetricsWriter::writeMetrics(WriteBuffer & wb) const
 {
-    if (send_events)
+    for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
+        writeMetric(wb, i);
+}
+
+void PrometheusMetricsWriter::writeAsynchronousMetrics(WriteBuffer & wb, const AsynchronousMetrics & async_metrics) const
+{
+    writeAsyncMetrics(wb, async_metrics.getValues());
+}
+
+void PrometheusMetricsWriter::writeErrors(WriteBuffer & wb) const
+{
+    size_t total_count = 0;
+
+    for (size_t i = 0, end = ErrorCodes::end(); i < end; ++i)
     {
-        for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
-            writeEvent(wb, i);
-    }
+        const auto & error = ErrorCodes::values[i].get();
+        std::string_view name = ErrorCodes::getName(static_cast<ErrorCodes::ErrorCode>(i));
 
-    if (send_metrics)
-    {
-        for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
-            writeMetric(wb, i);
-    }
+        if (name.empty())
+            continue;
 
-    if (send_asynchronous_metrics)
-        writeAsyncMetrics(wb, async_metrics.getValues());
+        std::string key{error_metrics_prefix + toString(name)};
+        std::string help = fmt::format("The number of {} errors since last server restart", name);
 
-    if (send_errors)
-    {
-        size_t total_count = 0;
-
-        for (size_t i = 0, end = ErrorCodes::end(); i < end; ++i)
-        {
-            const auto & error = ErrorCodes::values[i].get();
-            std::string_view name = ErrorCodes::getName(static_cast<ErrorCodes::ErrorCode>(i));
-
-            if (name.empty())
-                continue;
-
-            std::string key{error_metrics_prefix + toString(name)};
-            std::string help = fmt::format("The number of {} errors since last server restart", name);
-
-            writeOutLine(wb, "# HELP", key, help);
-            writeOutLine(wb, "# TYPE", key, "counter");
-            /// We are interested in errors which are happened only on this server.
-            writeOutLine(wb, key, error.local.count);
-
-            total_count += error.local.count;
-        }
-
-        /// Write the total number of errors as a separate metric
-        std::string key{error_metrics_prefix + toString("ALL")};
-        writeOutLine(wb, "# HELP", key, "The total number of errors since last server restart");
+        writeOutLine(wb, "# HELP", key, help);
         writeOutLine(wb, "# TYPE", key, "counter");
-        writeOutLine(wb, key, total_count);
+        /// We are interested in errors which are happened only on this server.
+        writeOutLine(wb, key, error.local.count);
+
+        total_count += error.local.count;
     }
 
+    /// Write the total number of errors as a separate metric
+    std::string key{error_metrics_prefix + toString("ALL")};
+    writeOutLine(wb, "# HELP", key, "The total number of errors since last server restart");
+    writeOutLine(wb, "# TYPE", key, "counter");
+    writeOutLine(wb, key, total_count);
 }
 
-void KeeperPrometheusMetricsWriter::write([[maybe_unused]] WriteBuffer & wb) const
+
+void KeeperPrometheusMetricsWriter::writeEvents([[maybe_unused]] WriteBuffer & wb) const
 {
 #if USE_NURAFT
-    if (send_events)
-    {
-        for (auto event : ProfileEvents::keeper_profile_events)
-            writeEvent(wb, event);
-    }
-
-    if (send_metrics)
-    {
-        for (auto metric : CurrentMetrics::keeper_metrics)
-            writeMetric(wb, metric);
-    }
-
-    if (send_asynchronous_metrics)
-        writeAsyncMetrics(wb, async_metrics.getValues());
+    for (auto event : ProfileEvents::keeper_profile_events)
+        writeEvent(wb, event);
 #endif
+}
+
+void KeeperPrometheusMetricsWriter::writeMetrics([[maybe_unused]] WriteBuffer & wb) const
+{
+#if USE_NURAFT
+    for (auto metric : CurrentMetrics::keeper_metrics)
+        writeMetric(wb, metric);
+#endif
+}
+
+void KeeperPrometheusMetricsWriter::writeAsynchronousMetrics([[maybe_unused]] WriteBuffer & wb,
+                                                             [[maybe_unused]] const AsynchronousMetrics & async_metrics) const
+{
+#if USE_NURAFT
+    writeAsyncMetrics(wb, async_metrics.getValues());
+#endif
+}
+
+void KeeperPrometheusMetricsWriter::writeErrors(WriteBuffer &) const
+{
 }
 
 }

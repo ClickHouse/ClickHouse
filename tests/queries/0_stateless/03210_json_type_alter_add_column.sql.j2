@@ -1,0 +1,34 @@
+-- Tags: no-fasttest, long
+
+set allow_experimental_dynamic_type = 1;
+set allow_experimental_variant_type = 1;
+set allow_experimental_json_type = 1;
+set use_variant_as_common_type = 1;
+
+drop table if exists test;
+
+{% for create_command in ['create table test (x UInt64) engine=Memory;',
+                          'create table test (x UInt64) engine=MergeTree order by x settings min_rows_for_wide_part=100000000, min_bytes_for_wide_part=1000000000;',
+                          'create table test (x UInt64) engine=MergeTree order by x settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1;'] -%}
+
+{{ create_command }}
+
+select 'initial insert';
+insert into test select number from numbers(3);
+
+select 'alter add column 1';
+alter table test add column json JSON settings mutations_sync=1;
+select count(), arrayJoin(JSONAllPaths(json)) as path from test group by path order by count() desc, path;
+select x, json, json.a.b, json.^a, json.b.c.:Int64, json.c.d from test order by x;
+
+select 'insert after alter add column';
+insert into test select number, toJSONString(map('a.b', number::UInt32)) from numbers(3, 3);
+insert into test select number, toJSONString(map('b.c', number::UInt32)) from numbers(6, 3);
+insert into test select number, toJSONString(map('c.d', number::UInt32)) from numbers(9, 3);
+insert into test select number, '{}' from numbers(12, 3);
+select count(), arrayJoin(JSONAllPaths(json)) as path from test group by path order by count() desc, path;
+select x, json, json.a.b, json.^a, json.b.c.:Int64, json.c.d from test order by x;
+
+drop table test;
+
+{% endfor -%}

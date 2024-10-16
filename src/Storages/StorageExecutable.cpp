@@ -29,6 +29,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsSeconds max_execution_time;
+}
 
 namespace ErrorCodes
 {
@@ -77,7 +82,8 @@ StorageExecutable::StorageExecutable(
     const ExecutableSettings & settings_,
     const std::vector<ASTPtr> & input_queries_,
     const ColumnsDescription & columns,
-    const ConstraintsDescription & constraints)
+    const ConstraintsDescription & constraints,
+    const String & comment)
     : IStorage(table_id_)
     , settings(settings_)
     , input_queries(input_queries_)
@@ -86,6 +92,7 @@ StorageExecutable::StorageExecutable(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
     ShellCommandSourceCoordinator::Configuration configuration
@@ -148,7 +155,7 @@ void StorageExecutable::read(
     for (auto & input_query : input_queries)
     {
         QueryPipelineBuilder builder;
-        if (context->getSettingsRef().allow_experimental_analyzer)
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
             builder = InterpreterSelectQueryAnalyzer(input_query, context, {}).buildQueryPipeline();
         else
             builder = InterpreterSelectWithUnionQuery(input_query, context, {}).buildQueryPipeline();
@@ -226,7 +233,7 @@ void registerStorageExecutable(StorageFactory & factory)
         {
             size_t max_command_execution_time = 10;
 
-            size_t max_execution_time_seconds = static_cast<size_t>(args.getContext()->getSettingsRef().max_execution_time.totalSeconds());
+            size_t max_execution_time_seconds = static_cast<size_t>(args.getContext()->getSettingsRef()[Setting::max_execution_time].totalSeconds());
             if (max_execution_time_seconds != 0 && max_command_execution_time > max_execution_time_seconds)
                 max_command_execution_time = max_execution_time_seconds;
 
@@ -237,7 +244,7 @@ void registerStorageExecutable(StorageFactory & factory)
             settings.loadFromQuery(*args.storage_def);
 
         auto global_context = args.getContext()->getGlobalContext();
-        return std::make_shared<StorageExecutable>(args.table_id, format, settings, input_queries, columns, constraints);
+        return std::make_shared<StorageExecutable>(args.table_id, format, settings, input_queries, columns, constraints, args.comment);
     };
 
     StorageFactory::StorageFeatures storage_features;
@@ -255,4 +262,3 @@ void registerStorageExecutable(StorageFactory & factory)
 }
 
 }
-

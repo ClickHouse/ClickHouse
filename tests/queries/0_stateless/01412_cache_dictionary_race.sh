@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race
+# Tags: race, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -10,7 +10,7 @@ $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS ordinary_db"
 
 $CLICKHOUSE_CLIENT --query "CREATE DATABASE ordinary_db"
 
-$CLICKHOUSE_CLIENT -n -q "
+$CLICKHOUSE_CLIENT -q "
 
 CREATE DICTIONARY ordinary_db.dict1
 (
@@ -35,7 +35,7 @@ function dict_get_thread()
 function drop_create_table_thread()
 {
     while true; do
-        $CLICKHOUSE_CLIENT -n --query "CREATE TABLE ordinary_db.table_for_dict_real (
+        $CLICKHOUSE_CLIENT --query "CREATE TABLE ordinary_db.table_for_dict_real (
             key_column UInt64,
             second_column UInt8,
             third_column String

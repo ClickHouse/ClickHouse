@@ -54,6 +54,7 @@ namespace
         ObjectInfo object_info;
         object_info.size = static_cast<size_t>(result.GetContentLength());
         object_info.last_modification_time = result.GetLastModified().Seconds();
+        object_info.etag = result.GetETag();
 
         if (with_metadata)
             object_info.metadata = result.GetMetadata();
@@ -81,11 +82,13 @@ ObjectInfo getObjectInfo(
     {
         return *object_info;
     }
-    else if (throw_on_error)
+    if (throw_on_error)
     {
-        throw S3Exception(error.GetErrorType(),
+        throw S3Exception(
+            error.GetErrorType(),
             "Failed to get object info: {}. HTTP response code: {}",
-            error.GetMessage(), static_cast<size_t>(error.GetResponseCode()));
+            error.GetMessage(),
+            static_cast<size_t>(error.GetResponseCode()));
     }
     return {};
 }

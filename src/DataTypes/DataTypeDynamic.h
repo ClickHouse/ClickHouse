@@ -12,6 +12,9 @@ class DataTypeDynamic final : public IDataType
 public:
     static constexpr bool is_parametric = true;
 
+    /// Don't change this constant, it can break backward compatibility.
+    static constexpr size_t DEFAULT_MAX_DYNAMIC_TYPES = 32;
+
     explicit DataTypeDynamic(size_t max_dynamic_types_ = DEFAULT_MAX_DYNAMIC_TYPES);
 
     TypeIndex getTypeId() const override { return TypeIndex::Dynamic; }
@@ -43,8 +46,6 @@ public:
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
 
 private:
-    static constexpr size_t DEFAULT_MAX_DYNAMIC_TYPES = 32;
-
     SerializationPtr doGetDefaultSerialization() const override;
     String doGetName() const override;
 

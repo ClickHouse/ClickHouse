@@ -144,6 +144,9 @@ struct StorageInMemoryMetadata
     /// Returns true if there is set table TTL, any column TTL or any move TTL.
     bool hasAnyTTL() const { return hasAnyColumnTTL() || hasAnyTableTTL(); }
 
+    /// Returns true if only rows TTL is set, not even rows where.
+    bool hasOnlyRowsTTL() const;
+
     /// Common tables TTLs (for rows and moves).
     TTLTableDescription getTableTTLs() const;
     bool hasAnyTableTTL() const;

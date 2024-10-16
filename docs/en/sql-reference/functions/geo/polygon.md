@@ -6,11 +6,13 @@ title: "Functions for Working with Polygons"
 
 ## WKT
 
-Returns a WKT (Well Known Text) geometric object from various [Geo Data Types](../../data-types/geo.md). Supported WKT objects are: 
+Returns a WKT (Well Known Text) geometric object from various [Geo Data Types](../../data-types/geo.md). Supported WKT objects are:
 
 - POINT
 - POLYGON
 - MULTIPOLYGON
+- LINESTRING
+- MULTILINESTRING
 
 **Syntax**
 
@@ -26,12 +28,16 @@ WKT(geo_data)
 - [Ring](../../data-types/geo.md#ring)
 - [Polygon](../../data-types/geo.md#polygon)
 - [MultiPolygon](../../data-types/geo.md#multipolygon)
+- [LineString](../../data-types/geo.md#linestring)
+- [MultiLineString](../../data-types/geo.md#multilinestring)
 
 **Returned value**
 
 - WKT geometric object `POINT` is returned for a Point.
 - WKT geometric object `POLYGON` is returned for a Polygon
-- WKT geometric object `MULTIPOLYGON` is returned for a MultiPolygon. 
+- WKT geometric object `MULTIPOLYGON` is returned for a MultiPolygon.
+- WKT geometric object `LINESTRING` is returned for a LineString.
+- WKT geometric object `MULTILINESTRING` is returned for a MultiLineString.
 
 **Examples**
 
@@ -84,7 +90,7 @@ SELECT
 
 ### Input parameters
 
-String starting with `MULTIPOLYGON` 
+String starting with `MULTIPOLYGON`
 
 ### Returned value
 
@@ -170,6 +176,34 @@ SELECT readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)');
 [(1,1),(2,2),(3,3),(1,1)]
 ```
 
+## readWKTMultiLineString
+
+Parses a Well-Known Text (WKT) representation of a MultiLineString geometry and returns it in the internal ClickHouse format.
+
+### Syntax
+
+```sql
+readWKTMultiLineString(wkt_string)
+```
+
+### Arguments
+
+- `wkt_string`: The input WKT string representing a MultiLineString geometry.
+
+### Returned value
+
+The function returns a ClickHouse internal representation of the multilinestring geometry.
+
+### Example
+
+```sql
+SELECT readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3), (4 4, 5 5, 6 6))');
+```
+
+```response
+[[(1,1),(2,2),(3,3)],[(4,4),(5,5),(6,6)]]
+```
+
 ## readWKTRing
 
 Parses a Well-Known Text (WKT) representation of a Polygon geometry and returns a ring (closed linestring) in the internal ClickHouse format.
@@ -219,7 +253,7 @@ UInt8, 0 for false, 1 for true
 
 ## polygonsDistanceSpherical
 
-Calculates the minimal distance between two points where one point belongs to the first polygon and the second to another polygon. Spherical means that coordinates are interpreted as coordinates on a pure and ideal sphere, which is not true for the Earth. Using this type of coordinate system speeds up execution, but of course is not precise. 
+Calculates the minimal distance between two points where one point belongs to the first polygon and the second to another polygon. Spherical means that coordinates are interpreted as coordinates on a pure and ideal sphere, which is not true for the Earth. Using this type of coordinate system speeds up execution, but of course is not precise.
 
 ### Example
 

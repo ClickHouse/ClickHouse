@@ -1,4 +1,7 @@
+import logging
+
 import pytest
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
@@ -208,13 +211,21 @@ def test_merge_tree_custom_disk_setting(start_cluster):
                 secret_access_key='minio123');
     """
     )
-    count = len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
+
+    list1 = list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))
+    count1 = len(list1)
+
     node1.query(f"INSERT INTO {TABLE_NAME}_3 SELECT number FROM numbers(100)")
     assert int(node1.query(f"SELECT count() FROM {TABLE_NAME}_3")) == 100
-    assert (
-        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
-        == count
-    )
+
+    list2 = list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))
+    count2 = len(list2)
+
+    if count1 != count2:
+        logging.info(f"list1: {list1}")
+        logging.info(f"list2: {list2}")
+
+    assert count1 == count2
     assert (
         len(list(minio.list_objects(cluster.minio_bucket, "data2/", recursive=True)))
         > 0
@@ -365,7 +376,7 @@ def test_merge_tree_setting_override(start_cluster):
         CREATE TABLE {TABLE_NAME} (a Int32)
         ENGINE = MergeTree()
         ORDER BY tuple()
-        SETTINGS disk = 'kek', storage_policy = 's3';
+        SETTINGS disk = 's3', storage_policy = 's3';
     """
         )
     )

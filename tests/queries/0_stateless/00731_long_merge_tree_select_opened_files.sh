@@ -12,7 +12,7 @@ settings="--log_queries=1 --log_query_threads=1 --log_profile_events=1 --log_que
 
 # Test insert logging on each block and checkPacket() method
 
-$CLICKHOUSE_CLIENT $settings -n -q "
+$CLICKHOUSE_CLIENT $settings -q "
 DROP TABLE IF EXISTS merge_tree_table;
 CREATE TABLE merge_tree_table (id UInt64, date Date, uid UInt32) ENGINE = MergeTree(date, id, 8192);"
 

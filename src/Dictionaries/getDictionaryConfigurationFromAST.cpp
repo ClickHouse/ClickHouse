@@ -382,6 +382,15 @@ void buildPrimaryKeyConfiguration(
         name_element->appendChild(name);
 
         buildAttributeExpressionIfNeeded(doc, id_element, dict_attr);
+
+        if (!dict_attr->type)
+            return;
+
+        AutoPtr<Element> type_element(doc->createElement("type"));
+        id_element->appendChild(type_element);
+
+        AutoPtr<Text> type(doc->createTextNode(queryToString(dict_attr->type)));
+        type_element->appendChild(type);
     }
     else
     {
