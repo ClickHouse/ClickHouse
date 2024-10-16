@@ -498,8 +498,8 @@ Required parameters:
 
 - `type` — `encrypted`. Otherwise the encrypted disk is not created.
 - `disk` — Type of disk for data storage.
-- `key` — The key for encryption and decryption. Type: [Uint64](/docs/en/sql-reference/data-types/int-uint.md). You can use `key_hex` parameter to encode the key in hexadecimal form.
-    You can specify multiple keys using the `id` attribute (see example below).
+- `key` — The key for encryption and decryption. Type: [Uint64](/docs/en/sql-reference/data-types/int-uint.md). You can use `key_hex` parameter to encode the key in hexadecimal form. You can specify multiple keys using the `id` attribute (see example below).
+You can also use [envelope encryption](https://en.wikipedia.org/wiki/Hybrid_cryptosystem#Envelope_encryption) so that the unencrypted key only lives in memory. It can be done through AWS's KMS setting the `key_aws` field (see example below), which contains a base64-encoded value. There's a mandatory `key_arn` attribute that needs to be set and an optional `role_arn`.
 
 Optional parameters:
 
@@ -523,7 +523,8 @@ Example of disk configuration:
                 <algorithm>AES_128_CTR</algorithm>
                 <key_hex id="0">00112233445566778899aabbccddeeff</key_hex>
                 <key_hex id="1">ffeeddccbbaa99887766554433221100</key_hex>
-                <current_key_id>1</current_key_id>
+                <key_aws id="2" key_arn="arn:aws:kms:eu-west-2:111122223333:key/eaf7e291-01f1-4958-8712-4c7f0d535cb0" role_arn="arn:aws:iam::111122223333:role/cmek-role">S2Fybjphd3M6a21zOmV1LXdlc3QtMjoxMTExMjIyMjMzMzM6a2V5L2VhZjdlMjkxLTAxZjEtNDk1OC04NzEyLTRjN2YwZDUzNWNiMAAAAABlwzYwn3tI3v0u/pZ9XwxlV10FsvEpOwQOeqyLnj/nkGmf6kRdcXPkE7Q5Vg==</key_aws>
+                <current_key_id>2</current_key_id>
             </disk_s3_encrypted>
         </disks>
     </storage_configuration>
