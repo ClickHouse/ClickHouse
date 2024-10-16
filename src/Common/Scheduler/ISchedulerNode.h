@@ -139,7 +139,7 @@ public:
         , info(info_)
     {}
 
-    virtual ~ISchedulerNode() = default;
+    virtual ~ISchedulerNode();
 
     virtual const String & getTypeName() const = 0;
 
@@ -187,10 +187,7 @@ public:
     }
 
     /// Attach to a parent (used by attachChild)
-    virtual void setParent(ISchedulerNode * parent_)
-    {
-        parent = parent_;
-    }
+    void setParent(ISchedulerNode * parent_);
 
 protected:
     /// Notify parents about the first pending request or constraint becoming satisfied.
@@ -324,6 +321,15 @@ public:
         activations.push_back(*node);
         if (was_empty)
             pending.notify_one();
+    }
+
+    /// Removes an activation from queue
+    void cancelActivation(ISchedulerNode * node)
+    {
+        std::unique_lock lock{mutex};
+        if (node->is_linked())
+            activations.erase(activations.iterator_to(*node));
+        node->activation_event_id = 0;
     }
 
     /// Process single event if it exists
@@ -489,6 +495,20 @@ private:
 
     std::atomic<TimePoint> manual_time{TimePoint()}; // for tests only
 };
+
+inline ISchedulerNode::~ISchedulerNode()
+{
+    // Make sure there is no dangling reference in activations queue
+    event_queue->cancelActivation(this);
+}
+
+inline void ISchedulerNode::setParent(ISchedulerNode * parent_)
+{
+    parent = parent_;
+    // Avoid activation of a detached node
+    if (parent == nullptr)
+        event_queue->cancelActivation(this);
+}
 
 inline void ISchedulerNode::scheduleActivation()
 {
