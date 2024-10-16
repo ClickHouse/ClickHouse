@@ -136,7 +136,7 @@ void MergeTreeDataPartWide::loadIndexGranularityImpl(
     }
     else
     {
-        auto marks_file = data_part_storage_.readFile(marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size, std::nullopt);
+        auto marks_file = data_part_storage_.readFile(marks_file_path, getReadSettings().adjustBufferSize(marks_file_size), marks_file_size, std::nullopt);
 
         std::unique_ptr<ReadBuffer> marks_reader;
         if (!index_granularity_info_.mark_type.compressed)
@@ -266,10 +266,13 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
 
 bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
 {
+    auto serialization = tryGetSerialization(column.name);
+    if (!serialization)
+        return false;
     auto marks_file_extension = index_granularity_info.mark_type.getFileExtension();
 
     bool res = true;
-    getSerialization(column.name)->enumerateStreams([&](const auto & substream_path)
+    serialization->enumerateStreams([&](const auto & substream_path)
     {
         auto stream_name = getStreamNameForColumn(column, substream_path, checksums);
         if (!stream_name || !checksums.files.contains(*stream_name + marks_file_extension))

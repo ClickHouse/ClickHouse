@@ -59,29 +59,35 @@ void HDFSBuilderWrapper::loadFromConfig(
             #endif // USE_KRB5
             continue;
         }
-        else if (key == "hadoop_kerberos_principal")
+        if (key == "hadoop_kerberos_principal")
         {
             #if USE_KRB5
             need_kinit = true;
             hadoop_kerberos_principal = config.getString(key_path);
             hdfsBuilderSetPrincipal(hdfs_builder, hadoop_kerberos_principal.c_str());
             #else // USE_KRB5
-            LOG_WARNING(getLogger("HDFSClient"), "hadoop_kerberos_principal parameter is ignored because ClickHouse was built without support of krb5 library.");
+            LOG_WARNING(
+                getLogger("HDFSClient"),
+                "hadoop_kerberos_principal parameter is ignored because ClickHouse was built without support of krb5 library.");
             #endif // USE_KRB5
             continue;
         }
-        else if (key == "hadoop_security_kerberos_ticket_cache_path")
+        if (key == "hadoop_security_kerberos_ticket_cache_path")
         {
             #if USE_KRB5
             if (isUser)
             {
-                throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "hadoop.security.kerberos.ticket.cache.path cannot be set per user");
+                throw Exception(
+                    ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "hadoop.security.kerberos.ticket.cache.path cannot be set per user");
             }
 
             hadoop_security_kerberos_ticket_cache_path = config.getString(key_path);
-            // standard param - pass further
+        // standard param - pass further
             #else // USE_KRB5
-            LOG_WARNING(getLogger("HDFSClient"), "hadoop.security.kerberos.ticket.cache.path parameter is ignored because ClickHouse was built without support of krb5 library.");
+            LOG_WARNING(
+                getLogger("HDFSClient"),
+                "hadoop.security.kerberos.ticket.cache.path parameter is ignored because ClickHouse was built without support of krb5 "
+                "library.");
             #endif // USE_KRB5
         }
 
@@ -125,7 +131,7 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
     hdfsBuilderConfSetStr(builder.get(), "input.write.timeout", "60000"); // 1 min
     hdfsBuilderConfSetStr(builder.get(), "input.connect.timeout", "60000"); // 1 min
 
-    String user_info = uri.getUserInfo();
+    const String & user_info = uri.getUserInfo();
     String user;
     if (!user_info.empty() && user_info.front() != ':')
     {
@@ -192,7 +198,7 @@ String getNameNodeCluster(const String &hdfs_url)
 void checkHDFSURL(const String & url)
 {
     if (!re2::RE2::FullMatch(url, std::string(HDFS_URL_REGEXP)))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad hdfs url: {}. It should have structure 'hdfs://<host_name>:<port>/<path>'", url);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad HDFS URL: {}. It should have structure 'hdfs://<host_name>:<port>/<path>'", url);
 }
 
 }

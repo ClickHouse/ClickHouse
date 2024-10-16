@@ -38,9 +38,6 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 class ArrayJoinAction;
 using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 
-class ActionsDAG;
-using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
-
 /// Create columns in block or return false if not possible
 bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
 
@@ -93,7 +90,6 @@ private:
     /// Extracts settings to enlight which are used (and avoid copy of others).
     struct ExtractedSettings
     {
-        const bool use_index_for_in_with_subqueries;
         const SizeLimits size_limits_for_set;
         const SizeLimits size_limits_for_set_used_with_index;
         const UInt64 distributed_group_by_no_merge;
@@ -117,12 +113,12 @@ public:
     /// If add_aliases, only the calculated values in the desired order and add aliases.
     ///     If also remove_unused_result, than only aliases remain in the output block.
     /// Otherwise, only temporary columns will be deleted from the block.
-    ActionsDAGPtr getActionsDAG(bool add_aliases, bool remove_unused_result = true);
+    ActionsDAG getActionsDAG(bool add_aliases, bool remove_unused_result = true);
     ExpressionActionsPtr getActions(bool add_aliases, bool remove_unused_result = true, CompileExpressions compile_expressions = CompileExpressions::no);
 
     /// Get actions to evaluate a constant expression. The function adds constants and applies functions that depend only on constants.
     /// Does not execute subqueries.
-    ActionsDAGPtr getConstActionsDAG(const ColumnsWithTypeAndName & constant_inputs = {});
+    ActionsDAG getConstActionsDAG(const ColumnsWithTypeAndName & constant_inputs = {});
     ExpressionActionsPtr getConstActions(const ColumnsWithTypeAndName & constant_inputs = {});
 
     /** Sets that require a subquery to be create.
@@ -138,7 +134,12 @@ public:
     /// A list of windows for window functions.
     const WindowDescriptions & windowDescriptions() const { return window_descriptions; }
 
-    void makeWindowDescriptionFromAST(const Context & context, const WindowDescriptions & existing_descriptions, WindowDescription & desc, const IAST * ast);
+    void makeWindowDescriptionFromAST(
+        const Context & context,
+        const WindowDescriptions & existing_descriptions,
+        AggregateFunctionPtr aggregate_function,
+        WindowDescription & desc,
+        const IAST * ast);
     void makeWindowDescriptions(ActionsDAG & actions);
 
     /** Checks if subquery is not a plain StorageSet.
@@ -172,7 +173,7 @@ protected:
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
     void initGlobalSubqueriesAndExternalTables(bool do_global, bool is_explain);
 
-    ArrayJoinActionPtr addMultipleArrayJoinAction(ActionsDAG & actions, bool is_left) const;
+    ArrayJoin addMultipleArrayJoinAction(ActionsDAG & actions, bool is_left) const;
 
     void getRootActions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAG & actions, bool only_consts = false);
 
@@ -232,7 +233,7 @@ struct ExpressionAnalysisResult
     bool use_grouping_set_key = false;
 
     ActionsAndProjectInputsFlagPtr before_array_join;
-    ArrayJoinActionPtr array_join;
+    std::optional<ArrayJoin> array_join;
     ActionsAndProjectInputsFlagPtr before_join;
     ActionsAndProjectInputsFlagPtr converting_join_columns;
     JoinPtr join;
@@ -367,7 +368,7 @@ private:
     JoinPtr makeJoin(
         const ASTTablesInSelectQueryElement & join_element,
         const ColumnsWithTypeAndName & left_columns,
-        ActionsDAGPtr & left_convert_actions);
+        std::optional<ActionsDAG> & left_convert_actions);
 
     const ASTSelectQuery * getAggregatingQuery() const;
 
@@ -386,7 +387,7 @@ private:
       */
 
     /// Before aggregation:
-    ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ActionsAndProjectInputsFlagPtr & before_array_join, bool only_types);
+    std::optional<ArrayJoin> appendArrayJoin(ExpressionActionsChain & chain, ActionsAndProjectInputsFlagPtr & before_array_join, bool only_types);
     bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types);
     JoinPtr appendJoin(ExpressionActionsChain & chain, ActionsAndProjectInputsFlagPtr & converting_join_columns);
 

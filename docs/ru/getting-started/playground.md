@@ -6,38 +6,38 @@ sidebar_label: Playground
 
 # ClickHouse Playground {#clickhouse-playground}
 
-[ClickHouse Playground](https://play.clickhouse.com/play?user=play) allows people to experiment with ClickHouse by running queries instantly, without setting up their server or cluster.
-Several example datasets are available in Playground.
+[ClickHouse Playground](https://play.clickhouse.com/play?user=play) позволяет пользователям экспериментировать с ClickHouse, выполняя запросы мгновенно, без необходимости настройки сервера или кластера.
+В Playground доступны несколько примеров наборов данных.
 
-You can make queries to Playground using any HTTP client, for example [curl](https://curl.haxx.se) or [wget](https://www.gnu.org/software/wget/), or set up a connection using [JDBC](../interfaces/jdbc.md) or [ODBC](../interfaces/odbc.md) drivers. More information about software products that support ClickHouse is available [here](../interfaces/index.md).
+Вы можете выполнять запросы к Playground, используя любой HTTP-клиент, например [curl](https://curl.haxx.se) или [wget](https://www.gnu.org/software/wget/), или настроить соединение, используя драйверы [JDBC](../interfaces/jdbc.md) или [ODBC](../interfaces/odbc.md). Дополнительную информацию о программных продуктах, поддерживающих ClickHouse, можно найти [здесь](../interfaces/index.md).
 
-## Credentials {#credentials}
+## Учетные данные {#credentials}
 
-| Parameter           | Value                              |
+| Параметр            | Значение                           |
 |:--------------------|:-----------------------------------|
-| HTTPS endpoint      | `https://play.clickhouse.com:443/` |
-| Native TCP endpoint | `play.clickhouse.com:9440`         |
-| User                | `explorer` or `play`               |
-| Password            | (empty)                            |
+| HTTPS-адрес         | `https://play.clickhouse.com:443/` |
+| TCP-адрес           | `play.clickhouse.com:9440`         |
+| Пользователь        | `explorer` или `play`              |
+| Пароль              | (пусто)                            |
 
-## Limitations {#limitations}
+## Ограничения {#limitations}
 
-The queries are executed as a read-only user. It implies some limitations:
+Запросы выполняются от имени пользователя с правами только на чтение. Это предполагает некоторые ограничения:
 
--   DDL queries are not allowed
--   INSERT queries are not allowed
+-   DDL-запросы не разрешены
+-   INSERT-запросы не разрешены
 
-The service also have quotas on its usage.
+Сервис также имеет квоты на использование.
 
-## Examples {#examples}
+## Примеры {#examples}
 
-HTTPS endpoint example with `curl`:
+Пример использования HTTPS-адреса с `curl`:
 
-``` bash
+```bash
 curl "https://play.clickhouse.com/?user=explorer" --data-binary "SELECT 'Play ClickHouse'"
 ```
 
-TCP endpoint example with [CLI](../interfaces/cli.md):
+Пример использования TCP-адреса с [CLI](../interfaces/cli.md):
 
 ``` bash
 clickhouse client --secure --host play.clickhouse.com --user explorer

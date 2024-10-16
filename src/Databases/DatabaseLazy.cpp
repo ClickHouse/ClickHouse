@@ -44,7 +44,7 @@ namespace ErrorCodes
 
 
 DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, ContextPtr context_)
-    : DatabaseOnDisk(name_, metadata_path_, "data/" + escapeForFileName(name_) + "/", "DatabaseLazy (" + name_ + ")", context_)
+    : DatabaseOnDisk(name_, metadata_path_, std::filesystem::path("data") / escapeForFileName(name_) / "", "DatabaseLazy (" + name_ + ")", context_)
     , expiration_time(expiration_time_)
 {
 }
@@ -52,7 +52,7 @@ DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, 
 
 void DatabaseLazy::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel /*mode*/)
 {
-    iterateMetadataFiles(local_context, [this, &local_context](const String & file_name)
+    iterateMetadataFiles([this, &local_context](const String & file_name)
     {
         const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
 
@@ -195,7 +195,7 @@ void DatabaseLazy::attachTable(ContextPtr /* context_ */, const String & table_n
         snapshot_detached_tables.erase(table_name);
     }
 
-    CurrentMetrics::add(CurrentMetrics::AttachedTable, 1);
+    CurrentMetrics::add(CurrentMetrics::AttachedTable);
 }
 
 StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & table_name)
@@ -221,7 +221,7 @@ StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & ta
                 .metadata_path = getObjectMetadataPath(table_name),
                 .is_permanently = false});
 
-        CurrentMetrics::sub(CurrentMetrics::AttachedTable, 1);
+        CurrentMetrics::sub(CurrentMetrics::AttachedTable);
     }
     return res;
 }
@@ -398,6 +398,6 @@ void registerDatabaseLazy(DatabaseFactory & factory)
             cache_expiration_time_seconds,
             args.context);
     };
-    factory.registerDatabase("Lazy", create_fn);
+    factory.registerDatabase("Lazy", create_fn, {.supports_arguments = true});
 }
 }

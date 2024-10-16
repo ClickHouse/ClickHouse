@@ -85,7 +85,9 @@ ConcurrentHashJoin::ConcurrentHashJoin(
           CurrentMetrics::ConcurrentHashJoinPoolThreads,
           CurrentMetrics::ConcurrentHashJoinPoolThreadsActive,
           CurrentMetrics::ConcurrentHashJoinPoolThreadsScheduled,
-          slots))
+          /*max_threads_*/ slots,
+          /*max_free_threads_*/ 0,
+          /*queue_size_*/ slots))
     , stats_collecting_params(stats_collecting_params_)
 {
     hash_joins.resize(slots);
@@ -310,7 +312,7 @@ IColumn::Selector ConcurrentHashJoin::selectDispatchBlock(const Strings & key_co
     {
         const auto & key_col = from_block.getByName(key_name).column->convertToFullColumnIfConst();
         const auto & key_col_no_lc = recursiveRemoveLowCardinality(recursiveRemoveSparse(key_col));
-        key_col_no_lc->updateWeakHash32(hash);
+        hash.update(key_col_no_lc->getWeakHash32());
     }
     return hashToSelector(hash, num_shards);
 }

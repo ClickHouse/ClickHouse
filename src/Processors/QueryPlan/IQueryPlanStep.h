@@ -21,51 +21,11 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-/// Description of data stream.
-/// Single logical data stream may relate to many ports of pipeline.
-class DataStream
-{
-public:
-    Block header;
-
-    /// QueryPipeline has single port. Totals or extremes ports are not counted.
-    bool has_single_port = false;
-
-    /// Sorting scope. Please keep the mutual order (more strong mode should have greater value).
-    enum class SortScope : uint8_t
-    {
-        None   = 0,
-        Chunk  = 1, /// Separate chunks are sorted
-        Stream = 2, /// Each data steam is sorted
-        Global = 3, /// Data is globally sorted
-    };
-
-    /// It is not guaranteed that header has columns from sort_description.
-    SortDescription sort_description = {};
-    SortScope sort_scope = SortScope::None;
-
-    /// Things which may be added:
-    /// * limit
-    /// * estimated rows number
-    /// * memory allocation context
-
-    bool hasEqualPropertiesWith(const DataStream & other) const
-    {
-        return has_single_port == other.has_single_port
-            && sort_description == other.sort_description
-            && (sort_description.empty() || sort_scope == other.sort_scope);
-    }
-
-    bool hasEqualHeaderWith(const DataStream & other) const
-    {
-        return blocksHaveEqualStructure(header, other.header);
-    }
-};
-
-using DataStreams = std::vector<DataStream>;
-
 class QueryPlan;
 using QueryPlanRawPtrs = std::list<QueryPlan *>;
+
+using Header = Block;
+using Headers = std::vector<Header>;
 
 /// Single step of query plan.
 class IQueryPlanStep
@@ -77,20 +37,22 @@ public:
 
     /// Add processors from current step to QueryPipeline.
     /// Calling this method, we assume and don't check that:
-    ///   * pipelines.size() == getInputStreams.size()
-    ///   * header from each pipeline is the same as header from corresponding input_streams
-    /// Result pipeline must contain any number of streams with compatible output header is hasOutputStream(),
+    ///   * pipelines.size() == getInputHeaders.size()
+    ///   * header from each pipeline is the same as header from corresponding input
+    /// Result pipeline must contain any number of ports with compatible output header if hasOutputHeader(),
     ///   or pipeline should be completed otherwise.
     virtual QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) = 0;
 
-    const DataStreams & getInputStreams() const { return input_streams; }
+    const Headers & getInputHeaders() const { return input_headers; }
 
-    bool hasOutputStream() const { return output_stream.has_value(); }
-    const DataStream & getOutputStream() const;
+    bool hasOutputHeader() const { return output_header.has_value(); }
+    const Header & getOutputHeader() const;
 
     /// Methods to describe what this step is needed for.
     const std::string & getStepDescription() const { return step_description; }
     void setStepDescription(std::string description) { step_description = std::move(description); }
+
+    virtual const SortDescription & getSortDescription() const;
 
     struct FormatSettings
     {
@@ -121,29 +83,29 @@ public:
     /// Updates the input streams of the given step. Used during query plan optimizations.
     /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
     /// (e.g. you update data stream traits or correctly remove / add columns).
-    void updateInputStreams(DataStreams input_streams_)
+    void updateInputHeaders(Headers input_headers_)
     {
-        chassert(canUpdateInputStream());
-        input_streams = std::move(input_streams_);
-        updateOutputStream();
+        chassert(canUpdateInputHeader());
+        input_headers = std::move(input_headers_);
+        updateOutputHeader();
     }
 
-    void updateInputStream(DataStream input_stream) { updateInputStreams(DataStreams{input_stream}); }
+    void updateInputHeader(Header input_header) { updateInputHeaders(Headers{input_header}); }
 
-    void updateInputStream(DataStream input_stream, size_t idx)
+    void updateInputHeader(Header input_header, size_t idx)
     {
-        chassert(canUpdateInputStream() && idx < input_streams.size());
-        input_streams[idx] = input_stream;
-        updateOutputStream();
+        chassert(canUpdateInputHeader() && idx < input_headers.size());
+        input_headers[idx] = input_header;
+        updateOutputHeader();
     }
 
-    virtual bool canUpdateInputStream() const { return false; }
+    virtual bool canUpdateInputHeader() const { return false; }
 
 protected:
-    virtual void updateOutputStream() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); }
+    virtual void updateOutputHeader() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); }
 
-    DataStreams input_streams;
-    std::optional<DataStream> output_stream;
+    Headers input_headers;
+    std::optional<Header> output_header;
 
     /// Text description about what current step does.
     std::string step_description;

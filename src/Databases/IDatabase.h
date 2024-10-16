@@ -6,7 +6,6 @@
 #include <Interpreters/executeQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/BlockIO.h>
-#include <Storages/IStorage.h>
 #include <Storages/IStorage_fwd.h>
 #include <base/types.h>
 #include <Common/AsyncLoader.h>

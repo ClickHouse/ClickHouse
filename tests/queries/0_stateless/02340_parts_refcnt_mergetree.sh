@@ -9,7 +9,7 @@ function check_refcnt_for_table()
 {
     local table=$1 && shift
 
-    $CLICKHOUSE_CLIENT -nm -q "
+    $CLICKHOUSE_CLIENT -m -q "
         system stop merges $table;
         -- cleanup thread may hold the parts lock
         system stop cleanup $table;
@@ -66,14 +66,14 @@ function check_refcnt_for_table()
 
 # NOTE: index_granularity=1 to cancel ASAP
 
-$CLICKHOUSE_CLIENT -nmq "
+$CLICKHOUSE_CLIENT -mq "
     drop table if exists data_02340;
     create table data_02340 (key Int, part Int) engine=MergeTree() partition by part order by key settings index_granularity=1;
 " || exit 1
 check_refcnt_for_table data_02340
 $CLICKHOUSE_CLIENT -q "drop table data_02340 sync"
 
-$CLICKHOUSE_CLIENT -nmq "
+$CLICKHOUSE_CLIENT -mq "
     drop table if exists data_02340_rep sync;
     create table data_02340_rep (key Int, part Int) engine=ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX', '1') partition by part order by key settings index_granularity=1;
 " || exit 1

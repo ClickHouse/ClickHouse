@@ -52,6 +52,8 @@ CREATE TABLE system.clusters
     `database_shard_name` String,
     `database_replica_name` String,
     `is_active` Nullable(UInt8),
+    `replication_lag` Nullable(UInt32),
+    `recovery_time` Nullable(UInt64),
     `name` String ALIAS cluster
 )
 ENGINE = SystemClusters
@@ -286,7 +288,6 @@ CREATE TABLE system.functions
 (
     `name` String,
     `is_aggregate` UInt8,
-    `is_deterministic` Nullable(UInt8),
     `case_insensitive` UInt8,
     `alias_to` String,
     `create_query` String,
@@ -509,9 +510,15 @@ CREATE TABLE system.parts
     `rows_where_ttl_info.max` Array(DateTime),
     `projections` Array(String),
     `visible` UInt8,
-    `creation_tid` Tuple(UInt64, UInt64, UUID),
+    `creation_tid` Tuple(
+        UInt64,
+        UInt64,
+        UUID),
     `removal_tid_lock` UInt64,
-    `removal_tid` Tuple(UInt64, UInt64, UUID),
+    `removal_tid` Tuple(
+        UInt64,
+        UInt64,
+        UUID),
     `creation_csn` UInt64,
     `removal_csn` UInt64,
     `has_lightweight_delete` UInt8,
@@ -860,6 +867,7 @@ CREATE TABLE system.replicas
     `is_leader` UInt8,
     `can_become_leader` UInt8,
     `is_readonly` UInt8,
+    `readonly_start_time` Nullable(DateTime),
     `is_session_expired` UInt8,
     `future_parts` UInt32,
     `parts_to_check` UInt32,
@@ -888,7 +896,8 @@ CREATE TABLE system.replicas
     `lost_part_count` UInt64,
     `last_queue_update_exception` String,
     `zookeeper_exception` String,
-    `replica_is_active` Map(String, UInt8)
+    `replica_is_active` Map(String, UInt8),
+    `readonly_duration` Nullable(DateTime) ALIAS if(readonly_start_time IS NULL, NULL, now() - readonly_start_time)
 )
 ENGINE = SystemReplicas
 COMMENT 'Contains information and status of all table replicas on current server. Each replica is represented by a single row.'
@@ -1136,8 +1145,8 @@ CREATE TABLE system.users
     `name` String,
     `id` UUID,
     `storage` String,
-    `auth_type` Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6, 'bcrypt_password' = 7, 'ssh_key' = 8, 'http' = 9, 'jwt' = 10),
-    `auth_params` String,
+    `auth_type` Array(Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6, 'bcrypt_password' = 7, 'ssh_key' = 8, 'http' = 9, 'jwt' = 10)),
+    `auth_params` Array(String),
     `host_ip` Array(String),
     `host_names` Array(String),
     `host_names_regexp` Array(String),

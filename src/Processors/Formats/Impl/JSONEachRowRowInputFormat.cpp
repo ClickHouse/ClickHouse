@@ -46,15 +46,6 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
 {
     const auto & header = getPort().getHeader();
     name_map = header.getNamesToIndexesMap();
-    if (format_settings_.json.ignore_key_case)
-    {
-        for (auto & it : name_map)
-        {
-            StringRef key = it.first;
-            String lower_case_key = transformFieldNameToLowerCase(key);
-            lower_case_name_map[lower_case_key] = key;
-        }
-    }
     if (format_settings_.import_nested_json)
     {
         for (size_t i = 0; i != header.columns(); ++i)
@@ -86,19 +77,16 @@ inline size_t JSONEachRowRowInputFormat::columnIndex(StringRef name, size_t key_
     {
         return prev_positions[key_index]->second;
     }
-    else
-    {
-        const auto it = name_map.find(name);
-        if (it != name_map.end())
-        {
-            if (key_index < prev_positions.size())
-                prev_positions[key_index] = it;
 
-            return it->second;
-        }
-        else
-            return UNKNOWN_FIELD;
+    const auto it = name_map.find(name);
+    if (it != name_map.end())
+    {
+        if (key_index < prev_positions.size())
+            prev_positions[key_index] = it;
+
+        return it->second;
     }
+    return UNKNOWN_FIELD;
 }
 
 /** Read the field name and convert it to column name
@@ -154,7 +142,7 @@ inline bool JSONEachRowRowInputFormat::advanceToNextKey(size_t key_index)
 
     if (in->eof())
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while parsing JSONEachRow format");
-    else if (*in->position() == '}')
+    if (*in->position() == '}')
     {
         ++in->position();
         return false;
@@ -180,15 +168,7 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
             skipUnknownField(name_ref);
             continue;
         }
-        size_t column_index = 0;
-        if (format_settings.json.ignore_key_case)
-        {
-            String lower_case_name = transformFieldNameToLowerCase(name_ref);
-            StringRef field_name_ref = lower_case_name_map[lower_case_name];
-            column_index = columnIndex(field_name_ref, key_index);
-        }
-        else
-            column_index = columnIndex(name_ref, key_index);
+        const size_t column_index = columnIndex(name_ref, key_index);
 
         if (unlikely(ssize_t(column_index) < 0))
         {
@@ -255,8 +235,7 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
             const auto & type = header.getByPosition(i).type;
             if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(type))
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot insert NULL value into a column `{}` of type '{}'", columnName(i), type->getName());
-            else
-                type->insertDefaultInto(*columns[i]);
+            type->insertDefaultInto(*columns[i]);
         }
 
 

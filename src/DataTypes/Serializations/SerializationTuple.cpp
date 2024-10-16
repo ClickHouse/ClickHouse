@@ -5,6 +5,7 @@
 #include <Core/Field.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
+#include <Formats/JSONUtils.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -34,7 +35,7 @@ static inline const IColumn & extractElementColumn(const IColumn & column, size_
 
 void SerializationTuple::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const auto & tuple = field.get<const Tuple &>();
+    const auto & tuple = field.safeGet<const Tuple &>();
     for (size_t element_index = 0; element_index < elems.size(); ++element_index)
     {
         const auto & serialization = elems[element_index];
@@ -47,7 +48,7 @@ void SerializationTuple::deserializeBinary(Field & field, ReadBuffer & istr, con
     const size_t size = elems.size();
 
     field = Tuple();
-    Tuple & tuple = field.get<Tuple &>();
+    Tuple & tuple = field.safeGet<Tuple &>();
     tuple.reserve(size);
     for (size_t i = 0; i < size; ++i)
         elems[i]->deserializeBinary(tuple.emplace_back(), istr, settings);
@@ -91,10 +92,9 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
             restore_elements();
             return ReturnType(false);
         }
-        else
-        {
-            assert_cast<ColumnTuple &>(column).addSize(1);
-        }
+
+        assert_cast<ColumnTuple &>(column).addSize(1);
+
 
         // Check that all columns now have the same size.
         size_t new_size = column.size();
@@ -313,27 +313,9 @@ void SerializationTuple::serializeTextJSONPretty(const IColumn & column, size_t 
 }
 
 template <typename ReturnType>
-ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+ReturnType SerializationTuple::deserializeTupleJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, auto && deserialize_element) const
 {
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
-
-    auto deserialize_element = [&](IColumn & element_column, size_t element_pos)
-    {
-        if constexpr (throw_exception)
-        {
-            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(element_column))
-                SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(element_column, istr, settings, elems[element_pos]);
-            else
-                elems[element_pos]->deserializeTextJSON(element_column, istr, settings);
-            return true;
-        }
-        else
-        {
-            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(element_column))
-                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(element_column, istr, settings, elems[element_pos]);
-            return elems[element_pos]->tryDeserializeTextJSON(element_column, istr, settings);
-        }
-    };
+    static constexpr auto throw_exception = std::is_same_v<ReturnType, void>;
 
     if (settings.json.read_named_tuples_as_objects
         && have_explicit_names)
@@ -395,12 +377,14 @@ ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuf
                         ++skipped;
                         continue;
                     }
-                    else
-                    {
-                        if constexpr (throw_exception)
-                            throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with name '{}', enable setting input_format_json_ignore_unknown_keys_in_named_tuple", name);
-                        return false;
-                    }
+
+                    if constexpr (throw_exception)
+                        throw Exception(
+                            ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+                            "Tuple doesn't have element with name '{}', enable setting "
+                            "input_format_json_ignore_unknown_keys_in_named_tuple",
+                            name);
+                    return false;
                 }
 
                 seen_elements[element_pos] = 1;
@@ -462,56 +446,92 @@ ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuf
 
         return addElementSafe<ReturnType>(elems.size(), column, impl);
     }
-    else
+
+    skipWhitespaceIfAny(istr);
+    if constexpr (throw_exception)
+        assertChar('[', istr);
+    else if (!checkChar('[', istr))
+        return false;
+    skipWhitespaceIfAny(istr);
+
+    auto impl = [&]()
     {
-        skipWhitespaceIfAny(istr);
-        if constexpr (throw_exception)
-            assertChar('[', istr);
-        else if (!checkChar('[', istr))
-            return false;
-        skipWhitespaceIfAny(istr);
-
-        auto impl = [&]()
+        for (size_t i = 0; i < elems.size(); ++i)
         {
-            for (size_t i = 0; i < elems.size(); ++i)
+            skipWhitespaceIfAny(istr);
+            if (i != 0)
             {
-                skipWhitespaceIfAny(istr);
-                if (i != 0)
-                {
-                    if constexpr (throw_exception)
-                        assertChar(',', istr);
-                    else if (!checkChar(',', istr))
-                        return false;
-                    skipWhitespaceIfAny(istr);
-                }
-
-                auto & element_column = extractElementColumn(column, i);
-
                 if constexpr (throw_exception)
-                    deserialize_element(element_column, i);
-                else if (!deserialize_element(element_column, i))
+                    assertChar(',', istr);
+                else if (!checkChar(',', istr))
                     return false;
+                skipWhitespaceIfAny(istr);
             }
 
-            skipWhitespaceIfAny(istr);
+            auto & element_column = extractElementColumn(column, i);
+
             if constexpr (throw_exception)
-                assertChar(']', istr);
-            else if (!checkChar(']', istr))
+                deserialize_element(element_column, i);
+            else if (!deserialize_element(element_column, i))
                 return false;
+        }
 
-            return true;
-        };
+        skipWhitespaceIfAny(istr);
+        if constexpr (throw_exception)
+            assertChar(']', istr);
+        else if (!checkChar(']', istr))
+            return false;
 
-        return addElementSafe<ReturnType>(elems.size(), column, impl);
-    }
+        return true;
+    };
+
+    return addElementSafe<ReturnType>(elems.size(), column, impl);
 }
 
-void SerializationTuple::deserializeTextJSON(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
+template <typename ReturnType>
+ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeTextJSONImpl(column, istr, settings);
+    auto deserialize_nested = [&settings](IColumn & nested_column, ReadBuffer & buf, const SerializationPtr & nested_column_serialization) -> ReturnType
+    {
+        if constexpr (std::is_same_v<ReturnType, void>)
+        {
+            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
+                SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(nested_column, buf, settings, nested_column_serialization);
+            else
+                nested_column_serialization->deserializeTextJSON(nested_column, buf, settings);
+        }
+        else
+        {
+            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
+                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(nested_column, buf, settings, nested_column_serialization);
+            return nested_column_serialization->tryDeserializeTextJSON(nested_column, buf, settings);
+        }
+    };
+
+    if (settings.json.empty_as_default)
+        return deserializeTupleJSONImpl<ReturnType>(column, istr, settings,
+            [&deserialize_nested, &istr, this](IColumn & nested_column, size_t element_pos) -> ReturnType
+            {
+                return JSONUtils::deserializeEmpyStringAsDefaultOrNested<ReturnType>(nested_column, istr,
+                    [&deserialize_nested, element_pos, this](IColumn & nested_column_, ReadBuffer & buf) -> ReturnType
+                    {
+                        return deserialize_nested(nested_column_, buf, elems[element_pos]);
+                    });
+            });
+    return deserializeTupleJSONImpl<ReturnType>(
+        column,
+        istr,
+        settings,
+        [&deserialize_nested, &istr, this](IColumn & nested_column, size_t element_pos) -> ReturnType
+        { return deserialize_nested(nested_column, istr, elems[element_pos]); });
 }
 
-bool SerializationTuple::tryDeserializeTextJSON(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
+void SerializationTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeTextJSONImpl<void>(column, istr, settings);
+}
+
+bool SerializationTuple::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     return deserializeTextJSONImpl<bool>(column, istr, settings);
 }
@@ -615,14 +635,12 @@ bool SerializationTuple::tryDeserializeTextCSV(IColumn & column, ReadBuffer & is
             return true;
         });
     }
-    else
-    {
-        String s;
-        if (!tryReadCSV(s, istr, settings.csv))
-            return false;
-        ReadBufferFromString rb(s);
-        return tryDeserializeText(column, rb, settings, true);
-    }
+
+    String s;
+    if (!tryReadCSV(s, istr, settings.csv))
+        return false;
+    ReadBufferFromString rb(s);
+    return tryDeserializeText(column, rb, settings, true);
 }
 
 struct SerializeBinaryBulkStateTuple : public ISerialization::SerializeBinaryBulkState

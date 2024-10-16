@@ -26,7 +26,6 @@ class Logger;
 namespace DB
 {
 
-class SubqueryForSet;
 class InterpreterSelectWithUnionQuery;
 class Context;
 class QueryPlan;
@@ -196,7 +195,7 @@ private:
     void executeExtremes(QueryPlan & query_plan);
     void executeSubqueriesInSetsAndJoins(QueryPlan & query_plan);
     bool autoFinalOnQuery(ASTSelectQuery & select_query);
-    std::optional<UInt64> getTrivialCount(UInt64 max_parallel_replicas);
+    std::optional<UInt64> getTrivialCount(UInt64 allow_experimental_parallel_reading_from_replicas);
     /// Check if we can limit block size to read based on LIMIT clause
     UInt64 maxBlockSizeByLimit() const;
 
@@ -240,7 +239,7 @@ private:
     Block source_header;
 
     /// Actions to calculate ALIAS if required.
-    ActionsDAGPtr alias_actions;
+    std::optional<ActionsDAG> alias_actions;
 
     /// The subquery interpreter, if the subquery
     std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter_subquery;

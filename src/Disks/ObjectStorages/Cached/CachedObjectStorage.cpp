@@ -31,24 +31,24 @@ CachedObjectStorage::CachedObjectStorage(
 
 FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
 {
-    return cache->createKeyForPath(path);
+    return FileCacheKey::fromPath(path);
 }
 
-ObjectStorageKey CachedObjectStorage::generateObjectKeyForPath(const std::string & path) const
+ObjectStorageKey
+CachedObjectStorage::generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const
 {
-    return object_storage->generateObjectKeyForPath(path);
+    return object_storage->generateObjectKeyForPath(path, key_prefix);
 }
 
-ObjectStorageKey CachedObjectStorage::generateObjectKeyPrefixForDirectoryPath(const std::string & path) const
+ObjectStorageKey
+CachedObjectStorage::generateObjectKeyPrefixForDirectoryPath(const std::string & path, const std::optional<std::string> & key_prefix) const
 {
-    return object_storage->generateObjectKeyPrefixForDirectoryPath(path);
+    return object_storage->generateObjectKeyPrefixForDirectoryPath(path, key_prefix);
 }
 
 ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
-    ReadSettings modified_settings{read_settings};
-    modified_settings.remote_fs_cache = cache;
-    return object_storage->patchSettings(modified_settings);
+    return object_storage->patchSettings(read_settings);
 }
 
 void CachedObjectStorage::startup()
@@ -61,21 +61,45 @@ bool CachedObjectStorage::exists(const StoredObject & object) const
     return object_storage->exists(object);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NOLINT
-    const StoredObjects & objects,
-    const ReadSettings & read_settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
-{
-    return object_storage->readObjects(objects, patchSettings(read_settings), read_hint, file_size);
-}
-
 std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
+    if (read_settings.enable_filesystem_cache)
+    {
+        if (cache->isInitialized())
+        {
+            auto cache_key = FileCacheKey::fromPath(object.remote_path);
+            auto global_context = Context::getGlobalContextInstance();
+            auto modified_read_settings = read_settings.withNestedBuffer();
+
+            auto read_buffer_creator = [=, this]()
+            {
+                return object_storage->readObject(object, patchSettings(read_settings), read_hint, file_size);
+            };
+
+            return std::make_unique<CachedOnDiskReadBufferFromFile>(
+                object.remote_path,
+                cache_key,
+                cache,
+                FileCache::getCommonUser(),
+                read_buffer_creator,
+                modified_read_settings,
+                std::string(CurrentThread::getQueryId()),
+                object.bytes_size,
+                /* allow_seeks */!read_settings.remote_read_buffer_restrict_seek,
+                /* use_external_buffer */read_settings.remote_read_buffer_use_external_buffer,
+                /* read_until_position */std::nullopt,
+                global_context->getFilesystemCacheLog());
+        }
+        else
+        {
+            cache->throwInitExceptionIfNeeded();
+        }
+    }
+
     return object_storage->readObject(object, patchSettings(read_settings), read_hint, file_size);
 }
 
@@ -97,7 +121,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     /// Need to remove even if cache_on_write == false.
     removeCacheIfExists(object.remote_path);
 
-    if (cache_on_write)
+    if (cache_on_write && cache->isInitialized())
     {
         auto key = getCacheKey(object.remote_path);
         return std::make_unique<CachedOnDiskWriteBufferFromFile>(
@@ -120,7 +144,8 @@ void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_c
         return;
 
     /// Add try catch?
-    cache->removeKeyIfExists(getCacheKey(path_key_for_cache), FileCache::getCommonUser().user_id);
+    if (cache->isInitialized())
+        cache->removeKeyIfExists(getCacheKey(path_key_for_cache), FileCache::getCommonUser().user_id);
 }
 
 void CachedObjectStorage::removeObject(const StoredObject & object)

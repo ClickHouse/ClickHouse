@@ -98,13 +98,13 @@ public:
 
     bool tryInsert(const Field & x) override;
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src_, size_t index) override;
 #else
     void doInsertFrom(const IColumn & src_, size_t index) override;
 #endif
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
 #else
     void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
@@ -133,11 +133,11 @@ public:
 
     void updateHashWithValue(size_t index, SipHash & hash) const override;
 
-    void updateWeakHash32(WeakHash32 & hash) const override;
+    WeakHash32 getWeakHash32() const override;
 
     void updateHashFast(SipHash & hash) const override;
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const override
 #else
     int doCompareAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const override
@@ -156,7 +156,7 @@ public:
 
     size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const override;
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #else
     void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
@@ -180,6 +180,11 @@ public:
     void reserve(size_t size) override
     {
         chars.reserve_exact(n * size);
+    }
+
+    size_t capacity() const override
+    {
+        return chars.capacity() / n;
     }
 
     void shrinkToFit() override

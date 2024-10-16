@@ -16,12 +16,29 @@ public:
 
     static constexpr auto type_name = "hdfs";
     static constexpr auto engine_name = "HDFS";
+    /// All possible signatures for HDFS engine with structure argument (for example for hdfs table function).
+    static constexpr auto max_number_of_arguments_with_structure = 4;
+    static constexpr auto signatures_with_structure =
+        " - uri\n"
+        " - uri, format\n"
+        " - uri, format, structure\n"
+        " - uri, format, structure, compression_method\n";
+
+    /// All possible signatures for HDFS engine without structure argument (for example for HS table engine).
+    static constexpr auto max_number_of_arguments_without_structure = 3;
+    static constexpr auto signatures_without_structure =
+        " - uri\n"
+        " - uri, format\n"
+        " - uri, format, compression_method\n";
 
     StorageHDFSConfiguration() = default;
     StorageHDFSConfiguration(const StorageHDFSConfiguration & other);
 
     std::string getTypeName() const override { return type_name; }
     std::string getEngineName() const override { return engine_name; }
+
+    std::string getSignatures(bool with_structure = true) const { return with_structure ? signatures_with_structure : signatures_without_structure; }
+    size_t getMaxNumberOfArguments(bool with_structure = true) const { return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure; }
 
     Path getPath() const override { return path; }
     void setPath(const Path & path_) override { path = path_; }
@@ -39,7 +56,7 @@ public:
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override;
 
-    void addStructureAndFormatToArgs(
+    void addStructureAndFormatToArgsIfNeeded(
         ASTs & args,
         const String & structure_,
         const String & format_,

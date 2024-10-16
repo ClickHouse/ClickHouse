@@ -3,6 +3,10 @@
 #include <Processors/Merges/IMergingTransform.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 
+namespace ProfileEvents
+{
+    extern const Event ReplacingSortedMilliseconds;
+}
 
 namespace DB
 {
@@ -38,6 +42,11 @@ public:
     }
 
     String getName() const override { return "ReplacingSorted"; }
+
+    void onFinish() override
+    {
+        logMergedStats(ProfileEvents::ReplacingSortedMilliseconds, "Replaced sorted", getLogger("ReplacingSortedTransform"));
+    }
 };
 
 }

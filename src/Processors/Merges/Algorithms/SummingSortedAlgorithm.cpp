@@ -127,14 +127,14 @@ static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
     Row right(left.size());
 
     for (size_t col_num : desc.key_col_nums)
-        right[col_num] = (*raw_columns[col_num])[row_number].template get<Array>();
+        right[col_num] = (*raw_columns[col_num])[row_number].template safeGet<Array>();
 
     for (size_t col_num : desc.val_col_nums)
-        right[col_num] = (*raw_columns[col_num])[row_number].template get<Array>();
+        right[col_num] = (*raw_columns[col_num])[row_number].template safeGet<Array>();
 
     auto at_ith_column_jth_row = [&](const Row & matrix, size_t i, size_t j) -> const Field &
     {
-        return matrix[i].get<Array>()[j];
+        return matrix[i].safeGet<Array>()[j];
     };
 
     auto tuple_of_nth_columns_at_jth_row = [&](const Row & matrix, const ColumnNumbers & col_nums, size_t j) -> Array
@@ -160,7 +160,7 @@ static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
 
     auto merge = [&](const Row & matrix)
     {
-        size_t rows = matrix[desc.key_col_nums[0]].get<Array>().size();
+        size_t rows = matrix[desc.key_col_nums[0]].safeGet<Array>().size();
 
         for (size_t j = 0; j < rows; ++j)
         {
@@ -190,10 +190,10 @@ static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
     for (const auto & key_value : merged)
     {
         for (size_t col_num_index = 0, size = desc.key_col_nums.size(); col_num_index < size; ++col_num_index)
-            row[desc.key_col_nums[col_num_index]].get<Array>()[row_num] = key_value.first[col_num_index];
+            row[desc.key_col_nums[col_num_index]].safeGet<Array>()[row_num] = key_value.first[col_num_index];
 
         for (size_t col_num_index = 0, size = desc.val_col_nums.size(); col_num_index < size; ++col_num_index)
-            row[desc.val_col_nums[col_num_index]].get<Array>()[row_num] = key_value.second[col_num_index];
+            row[desc.val_col_nums[col_num_index]].safeGet<Array>()[row_num] = key_value.second[col_num_index];
 
         ++row_num;
     }

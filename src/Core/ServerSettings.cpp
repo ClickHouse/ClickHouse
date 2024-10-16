@@ -1,4 +1,4 @@
-#include "ServerSettings.h"
+#include <Core/ServerSettings.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB

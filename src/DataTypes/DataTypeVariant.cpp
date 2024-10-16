@@ -117,7 +117,7 @@ bool DataTypeVariant::equals(const IDataType & rhs) const
 
         /// The same data types with different custom names considered different.
         /// For example, UInt8 and Bool.
-        if ((variants[i]->hasCustomName() || rhs_variant.variants[i]) && variants[i]->getName() != rhs_variant.variants[i]->getName())
+        if ((variants[i]->hasCustomName() || rhs_variant.variants[i]->hasCustomName()) && variants[i]->getName() != rhs_variant.variants[i]->getName())
             return false;
     }
 

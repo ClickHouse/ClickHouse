@@ -52,7 +52,8 @@ struct TranslateImpl
         const std::string & map_from,
         const std::string & map_to,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         Map map;
         fillMapWithValues(map, map_from, map_to);
@@ -62,7 +63,7 @@ struct TranslateImpl
 
         UInt8 * dst = res_data.data();
 
-        for (UInt64 i = 0; i < offsets.size(); ++i)
+        for (UInt64 i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * src = data.data() + offsets[i - 1];
             const UInt8 * src_end = data.data() + offsets[i] - 1;
@@ -175,19 +176,20 @@ struct TranslateUTF8Impl
         const std::string & map_from,
         const std::string & map_to,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         MapASCII map_ascii;
         MapUTF8 map;
         fillMapWithValues(map_ascii, map, map_from, map_to);
 
         res_data.resize(data.size());
-        res_offsets.resize(offsets.size());
+        res_offsets.resize(input_rows_count);
 
         UInt8 * dst = res_data.data();
         UInt64 data_size = 0;
 
-        for (UInt64 i = 0; i < offsets.size(); ++i)
+        for (UInt64 i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * src = data.data() + offsets[i - 1];
             const UInt8 * src_end = data.data() + offsets[i] - 1;
@@ -303,15 +305,13 @@ public:
 
         if (isString(arguments[0]))
             return std::make_shared<DataTypeString>();
-        else
-        {
-            const auto * ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
-            chassert(ptr);
-            return std::make_shared<DataTypeFixedString>(ptr->getN());
-        }
+
+        const auto * ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
+        chassert(ptr);
+        return std::make_shared<DataTypeFixedString>(ptr->getN());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr column_src = arguments[0].column;
         const ColumnPtr column_map_from = arguments[1].column;
@@ -330,18 +330,17 @@ public:
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_src.get()))
         {
             auto col_res = ColumnString::create();
-            Impl::vector(col->getChars(), col->getOffsets(), map_from, map_to, col_res->getChars(), col_res->getOffsets());
+            Impl::vector(col->getChars(), col->getOffsets(), map_from, map_to, col_res->getChars(), col_res->getOffsets(), input_rows_count);
             return col_res;
         }
-        else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_src.get()))
+        if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_src.get()))
         {
             auto col_res = ColumnFixedString::create(col_fixed->getN());
             Impl::vectorFixed(col_fixed->getChars(), col_fixed->getN(), map_from, map_to, col_res->getChars());
             return col_res;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
     }
 };
 

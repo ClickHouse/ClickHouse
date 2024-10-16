@@ -1,10 +1,17 @@
 #include <Access/ContextAccessParams.h>
 #include <Core/Settings.h>
+#include <IO/Operators.h>
 #include <Common/typeid_cast.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_ddl;
+    extern const SettingsBool allow_introspection_functions;
+    extern const SettingsUInt64 readonly;
+}
 
 ContextAccessParams::ContextAccessParams(
     std::optional<UUID> user_id_,
@@ -18,9 +25,9 @@ ContextAccessParams::ContextAccessParams(
     , full_access(full_access_)
     , use_default_roles(use_default_roles_)
     , current_roles(current_roles_)
-    , readonly(settings_.readonly)
-    , allow_ddl(settings_.allow_ddl)
-    , allow_introspection(settings_.allow_introspection_functions)
+    , readonly(settings_[Setting::readonly])
+    , allow_ddl(settings_[Setting::allow_ddl])
+    , allow_introspection(settings_[Setting::allow_introspection_functions])
     , current_database(current_database_)
     , interface(client_info_.interface)
     , http_method(client_info_.http_method)
@@ -82,10 +89,9 @@ bool operator ==(const ContextAccessParams & left, const ContextAccessParams & r
         {
             if (!x)
                 return !y;
-            else if (!y)
+            if (!y)
                 return false;
-            else
-                return *x == *y;
+            return *x == *y;
         }
         else
         {
@@ -125,23 +131,21 @@ bool operator <(const ContextAccessParams & left, const ContextAccessParams & ri
         {
             if (!x)
                 return y ? -1 : 0;
-            else if (!y)
+            if (!y)
                 return 1;
-            else if (*x == *y)
+            if (*x == *y)
                 return 0;
-            else if (*x < *y)
+            if (*x < *y)
                 return -1;
-            else
-                return 1;
+            return 1;
         }
         else
         {
             if (x == y)
                 return 0;
-            else if (x < y)
+            if (x < y)
                 return -1;
-            else
-                return 1;
+            return 1;
         }
     };
 

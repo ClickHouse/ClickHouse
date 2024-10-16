@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 void RestoreChunkInfosTransform::transform(Chunk & chunk)
 {
-    chunk.getChunkInfos().append(chunk_infos.clone());
+    chunk.getChunkInfos().appendIfUniq(chunk_infos.clone());
 }
 
 namespace DeduplicationToken

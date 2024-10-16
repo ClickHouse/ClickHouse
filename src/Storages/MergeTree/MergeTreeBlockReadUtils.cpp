@@ -71,8 +71,7 @@ bool injectRequiredColumnsRecursively(
 
     /// Column doesn't have default value and don't exist in part
     /// don't need to add to required set.
-    auto metadata_snapshot = storage_snapshot->getMetadataForQuery();
-    const auto column_default = metadata_snapshot->getColumns().getDefault(column_name);
+    const auto column_default = storage_snapshot->metadata->getColumns().getDefault(column_name);
     if (!column_default)
         return false;
 
@@ -127,7 +126,8 @@ NameSet injectRequiredColumns(
         */
     if (!have_at_least_one_physical_column)
     {
-        const auto minimum_size_column_name = data_part_info_for_reader.getColumnNameWithMinimumCompressedSize(with_subcolumns);
+        auto available_columns = storage_snapshot->metadata->getColumns().get(options);
+        const auto minimum_size_column_name = data_part_info_for_reader.getColumnNameWithMinimumCompressedSize(available_columns);
         columns.push_back(minimum_size_column_name);
         /// correctly report added column
         injected_columns.insert(columns.back());
@@ -172,7 +172,7 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
         {
             size_t size_of_value = column_data->sizeOfValueIfFixed();
             fixed_columns_bytes_per_row += column_data->sizeOfValueIfFixed();
-            max_size_per_row_fixed = std::max<size_t>(max_size_per_row_fixed, size_of_value);
+            max_size_per_row_fixed = std::max<double>(max_size_per_row_fixed, size_of_value);
         }
         else
         {

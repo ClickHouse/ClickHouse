@@ -52,6 +52,11 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (arguments.empty())
@@ -60,16 +65,15 @@ public:
             res_data->insertDefault();
             return ColumnConst::create(std::move(res_data), input_rows_count);
         }
-        else if (arguments.size() == 1)
+        if (arguments.size() == 1)
             return arguments[0].column;
         /// Format function is not proven to be faster for two arguments.
         /// Actually there is overhead of 2 to 5 extra instructions for each string for checking empty strings in FormatImpl.
         /// Though, benchmarks are really close, for most examples we saw executeBinary is slightly faster (0-3%).
         /// For 3 and more arguments FormatStringImpl is much faster (up to 50-60%).
-        else if (arguments.size() == 2)
+        if (arguments.size() == 2)
             return executeBinary(arguments, input_rows_count);
-        else
-            return executeFormatImpl(arguments, input_rows_count);
+        return executeFormatImpl(arguments, input_rows_count);
     }
 
 private:
@@ -232,6 +236,11 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
 private:
     ContextPtr context;
 };
@@ -240,7 +249,7 @@ private:
 
 REGISTER_FUNCTION(Concat)
 {
-    factory.registerFunction<ConcatOverloadResolver>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<ConcatOverloadResolver>({}, FunctionFactory::Case::Insensitive);
     factory.registerFunction<FunctionConcatAssumeInjective>();
 }
 
