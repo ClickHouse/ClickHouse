@@ -298,7 +298,7 @@ static FunctionBasePtr compile(
     {
         auto [compiled_function_cache_entry, _] = compilation_cache->getOrSet(hash_key, [&] ()
         {
-            LOG_TRACE(getLogger(), "Compile expression {}", llvm_function->getName());
+            LOG_DEBUG(getLogger(), "Compile expression {}", llvm_function->getName());
             auto compiled_function = compileFunction(getJITInstance(), *llvm_function);
             return std::make_shared<CompiledFunctionHolder>(compiled_function);
         });
