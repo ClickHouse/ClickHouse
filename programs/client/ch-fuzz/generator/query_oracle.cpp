@@ -35,7 +35,7 @@ int QueryOracle::GenerateCorrectnessTestFirstQuery(RandomGenerator &rg, Statemen
 	gen.levels[gen.current_level].allow_aggregates = prev_allow_aggregates;
 	gen.levels[gen.current_level].allow_window_funcs = prev_allow_window_funcs;
 
-	ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call()->set_func(sql_query_grammar::FUNCcount);
+	ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(sql_query_grammar::FUNCcount);
 	gen.levels.erase(gen.current_level);
 	gen.SetAllowNotDetermistic(true);
 
@@ -60,9 +60,9 @@ int QueryOracle::GenerateCorrectnessTestSecondQuery(sql_query_grammar::SQLQuery 
 	sql_query_grammar::SQLFuncCall *sfc1 = ssc2->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
 	sql_query_grammar::SQLFuncCall *sfc2 = sfc1->add_args()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
 
-	sfc1->set_func(sql_query_grammar::FUNCifNull);
+	sfc1->mutable_func()->set_catalog_func(sql_query_grammar::FUNCifNull);
 	sfc1->add_args()->mutable_expr()->mutable_lit_val()->set_special_val(sql_query_grammar::SpecialVal::VAL_ZERO);
-	sfc2->set_func(sql_query_grammar::FUNCsum);
+	sfc2->mutable_func()->set_catalog_func(sql_query_grammar::FUNCsum);
 
 	ssc2->set_allocated_from(ssc1.release_from());
 	if (ssc1.has_groupby()) {

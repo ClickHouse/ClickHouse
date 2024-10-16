@@ -1617,8 +1617,8 @@ enum Dates {
 
 message IntLiteral {
   oneof int_oneof {
-    uint64 int_lit = 1;
-    int64 uint_lit = 2;
+    int64 int_lit = 1;
+    uint64 uint_lit = 2;
   }
   optional Integers integers = 3;
 }

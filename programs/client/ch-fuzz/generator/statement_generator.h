@@ -85,14 +85,14 @@ private:
 	std::map<uint32_t, std::shared_ptr<SQLDatabase>> staged_databases, databases;
 	std::map<uint32_t, SQLTable> staged_tables, tables;
 	std::map<uint32_t, SQLView> staged_views, views;
-	std::map<uint32_t, SQLfunction> staged_functions, functions;
+	std::map<uint32_t, SQLFunction> staged_functions, functions;
 
 	std::vector<uint32_t> ids;
 	std::vector<InsertEntry> entries;
 	std::vector<std::reference_wrapper<const SQLTable>> filtered_tables;
 	std::vector<std::reference_wrapper<const SQLView>> filtered_views;
 	std::vector<std::reference_wrapper<const std::shared_ptr<SQLDatabase>>> filtered_databases;
-	std::vector<std::reference_wrapper<const SQLfunction>> filtered_functions;
+	std::vector<std::reference_wrapper<const SQLFunction>> filtered_functions;
 	uint32_t depth = 0, width = 0, max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5;
 
 	std::map<uint32_t, std::map<std::string, SQLRelation>> ctes;
@@ -108,7 +108,7 @@ private:
 			return tables;
 		} else if constexpr (std::is_same<T, SQLView>::value) {
 			return views;
-		} else if constexpr (std::is_same<T, SQLfunction>::value) {
+		} else if constexpr (std::is_same<T, SQLFunction>::value) {
 			return functions;
 		} else {
 			return databases;
@@ -146,7 +146,7 @@ private:
 			return filtered_tables;
 		} else if constexpr (std::is_same<T, SQLView>::value) {
 			return filtered_views;
-		} else if constexpr (std::is_same<T, SQLfunction>::value) {
+		} else if constexpr (std::is_same<T, SQLFunction>::value) {
 			return filtered_functions;
 		} else {
 			return filtered_databases;

@@ -484,19 +484,20 @@ int StatementGenerator::GenerateFuncCall(RandomGenerator &rg, const bool allow_f
 		uint32_t n_lambda = 0, min_args = 0, max_args = 0;
 		sql_query_grammar::SQLFuncName *sfn = func_call->mutable_func();
 
-		if ((this->allow_not_deterministic || CollectionHas<SQLfunction>([](const SQLfunction& f){return !f.not_deterministic;})) &&
+		if ((this->allow_not_deterministic || CollectionHas<SQLFunction>([](const SQLFunction& f){return !f.not_deterministic;})) &&
 			rg.NextSmallNumber() < 3) {
 			//use a function from the user
-			const SQLFunction &func = this->allow_not_deterministic ? rg.PickValueRandomlyFromMap(this->functions) :
-				rg.PickRandomlyFromVector(FilterCollection<SQLfunction>([](const SQLfunction& f){return !f.not_deterministic;}));
+			const std::reference_wrapper<const SQLFunction> &func = this->allow_not_deterministic ?
+				std::ref<const SQLFunction>(rg.PickValueRandomlyFromMap(this->functions)) :
+				rg.PickRandomlyFromVector(FilterCollection<SQLFunction>([](const SQLFunction& f){return !f.not_deterministic;}));
 
-			min_args = max_args = func.nargs;
-			sfn->mutable_function()->set_function("f" + std::to_string(func.fname));
+			min_args = max_args = func.get().nargs;
+			sfn->mutable_function()->set_function("f" + std::to_string(func.get().fname));
 		} else {
 			//use a default catalog function
 			const CHFunction &func = CHFuncs[nopt];
 
-			n_lambda = std::max(func.min_lambda_param, func.max_lambda_param > 0 ? (rg.NextSmallNumber() % func.max_lambda_param) : 0),
+			n_lambda = std::max(func.min_lambda_param, func.max_lambda_param > 0 ? (rg.NextSmallNumber() % func.max_lambda_param) : 0);
 			min_args = func.min_args;
 			max_args = std::min(this->max_width - this->width, std::min(func.max_args, UINT32_C(5)));
 			sfn->set_catalog_func(static_cast<sql_query_grammar::SQLFunc>(func.fnum));

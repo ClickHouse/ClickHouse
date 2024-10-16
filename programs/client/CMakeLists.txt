@@ -34,11 +34,10 @@ list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE readpassphrase)
 
 set (CLICKHOUSE_CLIENT_INCLUDE
     PRIVATE
+    ch-fuzz/ast
+    ch-fuzz/generator
+    ch-fuzz/third_party
     "${CMAKE_CURRENT_BINARY_DIR}"
-    "${CMAKE_CURRENT_BINARY_DIR}/ch-fuzz/ast"
-    "${CMAKE_CURRENT_BINARY_DIR}/ch-fuzz/config"
-    "${CMAKE_CURRENT_BINARY_DIR}/ch-fuzz/generator"
-    "${CMAKE_CURRENT_BINARY_DIR}/ch-fuzz/third_party"
 )
 
 clickhouse_program_add(client)

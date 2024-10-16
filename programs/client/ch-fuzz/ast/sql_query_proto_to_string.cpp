@@ -1,11 +1,10 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
-#include <string>
 #include <limits>
 #include <random>
 
-#include "sql_grammar.pb.h"
+#include "sql_query_proto_to_string.h"
 
 using namespace sql_query_grammar;
 

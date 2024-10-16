@@ -62,7 +62,7 @@ int StatementGenerator::GenerateNextCreateDatabase(RandomGenerator &rg, sql_quer
 }
 
 int StatementGenerator::GenerateNextCreateFunction(RandomGenerator &rg, sql_query_grammar::CreateFunction *cf) {
-	SQLfunction next;
+	SQLFunction next;
 	const uint32_t fname = this->function_counter++;
 
 	next.fname = fname;
@@ -198,7 +198,6 @@ int StatementGenerator::AddTableColumn(RandomGenerator &rg, SQLTable &t, const u
 									   const bool modify, const ColumnSpecial special, sql_query_grammar::ColumnDef *cd) {
 	SQLColumn col;
 	SQLType *tp = nullptr;
-	LowCardinality *lc = nullptr;
 	auto &to_add = staged ? t.staged_cols : t.cols;
 
 	col.cname = cname;

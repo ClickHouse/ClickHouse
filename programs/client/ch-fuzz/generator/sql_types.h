@@ -1,7 +1,7 @@
 #pragma once
 
 #include "random_generator.h"
-#include "sql_grammar.pb.h"
+#include "ch-fuzz/ast/sql_grammar.pb.h"
 
 #include <optional>
 #include <memory>

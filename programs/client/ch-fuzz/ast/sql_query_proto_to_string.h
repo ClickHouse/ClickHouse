@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "sql_grammar.pb.h"
+#include "ch-fuzz/ast/sql_grammar.pb.h"
 
 namespace chfuzz {
 
