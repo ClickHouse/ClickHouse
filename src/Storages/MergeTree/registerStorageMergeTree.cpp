@@ -46,6 +46,12 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 index_granularity;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsString default_replica_name;
+    extern const ServerSettingsString default_replica_path;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -259,8 +265,8 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         {
             LOG_WARNING(&Poco::Logger::get("registerStorageMergeTree"), "Replacing user-provided ZooKeeper path and replica name ({}, {}) "
                                                                      "with default arguments", ast_zk_path->value.safeGet<String>(), ast_replica_name->value.safeGet<String>());
-            ast_zk_path->value = server_settings.default_replica_path;
-            ast_replica_name->value = server_settings.default_replica_name;
+            ast_zk_path->value = server_settings[ServerSetting::default_replica_path];
+            ast_replica_name->value = server_settings[ServerSetting::default_replica_name];
         }
 
         return expand_macro(ast_zk_path, ast_replica_name, ast_zk_path->value.safeGet<String>(), ast_replica_name->value.safeGet<String>());
@@ -283,7 +289,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         auto * ast_zk_path = path_arg.get();
         auto * ast_replica_name = name_arg.get();
 
-        auto res = expand_macro(ast_zk_path, ast_replica_name, server_settings.default_replica_path, server_settings.default_replica_name);
+        auto res = expand_macro(ast_zk_path, ast_replica_name, server_settings[ServerSetting::default_replica_path], server_settings[ServerSetting::default_replica_name]);
 
         engine_args.emplace_back(std::move(path_arg));
         engine_args.emplace_back(std::move(name_arg));

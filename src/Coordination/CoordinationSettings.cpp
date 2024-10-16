@@ -1,5 +1,4 @@
 #include <Coordination/CoordinationSettings.h>
-#include <Coordination/Defines.h>
 #include <Core/BaseSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteIntText.h>
