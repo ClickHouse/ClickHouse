@@ -58,6 +58,7 @@ public:
     explicit TemporaryFileInLocalCache(FileCache & file_cache, size_t max_file_size = 0)
     {
         const auto key = FileSegment::Key::random();
+        LOG_TRACE(getLogger("TemporaryFileOnLocalDisk"), "Creating temporary file in cache with key {}", key);
         segment_holder = file_cache.set(
             key, 0, std::max(10_MiB, max_file_size),
             CreateFileSegmentSettings(FileSegmentKind::Ephemeral), FileCache::getCommonUser());
@@ -91,6 +92,7 @@ public:
     explicit TemporaryFileOnLocalDisk(VolumePtr volume, size_t max_file_size = 0)
         : path_to_file("tmp" + toString(UUIDHelpers::generateV4()))
     {
+        LOG_TRACE(getLogger("TemporaryFileOnLocalDisk"), "Creating temporary file '{}'", path_to_file);
         if (max_file_size > 0)
         {
             auto reservation = volume->reserve(max_file_size);
@@ -129,9 +131,14 @@ public:
     try
     {
         if (disk->exists(path_to_file))
+        {
+            LOG_TRACE(getLogger("TemporaryFileOnLocalDisk"), "Removing temporary file '{}'", path_to_file);
             disk->removeRecursive(path_to_file);
+        }
         else
+        {
             LOG_WARNING(getLogger("TemporaryFileOnLocalDisk"), "Temporary path '{}' does not exist in '{}' on disk {}", path_to_file, disk->getPath(), disk->getName());
+        }
     }
     catch (...)
     {
