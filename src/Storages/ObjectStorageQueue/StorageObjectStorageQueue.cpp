@@ -234,7 +234,7 @@ public:
         std::shared_ptr<StorageObjectStorageQueue> storage_,
         size_t max_block_size_)
         : SourceStepWithFilter(
-            DataStream{.header = std::move(sample_block)},
+            std::move(sample_block),
             column_names_,
             query_info_,
             storage_snapshot_,

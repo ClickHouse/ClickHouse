@@ -432,6 +432,14 @@ QueryTreeNodePtr IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalo
     else
         storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
 
+    if (!storage && storage_id.hasUUID())
+    {
+        // If `storage_id` has UUID, it is possible that the UUID is removed from `DatabaseCatalog` after `context->resolveStorageID(storage_id)`
+        // We try to get the table with the database name and the table name.
+        auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName());
+        if (database)
+            storage = database->tryGetTable(table_name, context);
+    }
     if (!storage)
         return {};
 

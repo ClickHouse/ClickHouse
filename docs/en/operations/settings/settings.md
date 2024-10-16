@@ -413,14 +413,6 @@ Default value: 0
 
 Experimental data deduplication for SELECT queries based on part UUIDs
 
-## allow_experimental_refreshable_materialized_view {#allow_experimental_refreshable_materialized_view}
-
-Type: Bool
-
-Default value: 0
-
-Allow refreshable materialized views (CREATE MATERIALIZED VIEW \\<name\\> REFRESH ...).
-
 ## allow_experimental_shared_set_join {#allow_experimental_shared_set_join}
 
 Type: Bool
@@ -539,6 +531,14 @@ Type: Bool
 Default value: 0
 
 Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*()
+
+## log_query_settings {#log-query-settings}
+
+Type: Bool
+
+Default value: 1
+
+Log query settings into the query_log and opentelemetry_span_log.
 
 ## allow_nondeterministic_mutations {#allow_nondeterministic_mutations}
 
@@ -9382,7 +9382,7 @@ Type: Bool
 
 Default value: 0
 
-Traverse shadow directory when query system.remote_data_paths
+Traverse frozen data (shadow directory) in addition to actual table data when query `system.remote_data_paths`.
 
 ## union_default_mode {#union_default_mode}
 
@@ -9728,6 +9728,10 @@ Type: Seconds
 Default value: 15
 
 The heartbeat interval in seconds to indicate watch query is alive.
+
+## enforce_strict_identifier_format
+
+If enabled, only allow identifiers containing alphanumeric characters and underscores.
 
 ## workload {#workload}
 
