@@ -1,6 +1,7 @@
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
 
 #include <Common/Scheduler/SchedulingSettings.h>
+#include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
@@ -171,9 +172,6 @@ std::vector<String> topologicallySortedDependencies(const std::unordered_map<Str
     for (const auto & [name, _] : dependencies)
         topologicallySortedDependenciesImpl(name, dependencies, visited, result);
 
-    // Reverse the result to get the correct topological order
-    std::reverse(result.begin(), result.end());
-
     return result;
 }
 
@@ -242,6 +240,7 @@ std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityCha
     std::unordered_map<String, std::unordered_set<String>> dependencies; // Key is entity name. Value is set of names of entity that should be changed first.
     for (const auto & change : changes)
     {
+        dependencies.emplace(change.name, std::unordered_set<String>{}); // Make sure we create nodes that have no dependencies
         for (const auto & event : change.toEvents())
         {
             if (!event.entity) // DROP
@@ -284,6 +283,7 @@ std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityCha
 WorkloadEntityStorageBase::WorkloadEntityStorageBase(ContextPtr global_context_)
     : handlers(std::make_shared<Handlers>())
     , global_context(std::move(global_context_))
+    , log{getLogger("WorkloadEntityStorage")} // could be overriden in derived class
 {}
 
 ASTPtr WorkloadEntityStorageBase::get(const String & entity_name) const
@@ -580,15 +580,26 @@ void WorkloadEntityStorageBase::setAllEntities(const std::vector<std::pair<Strin
         if (auto it = new_entities.find(entity_name); it != new_entities.end())
         {
             if (!entityEquals(entity, it->second))
-                changes.emplace_back(entity_name, entity, it->second); // Remove entities that are not present in `new_entities`
+            {
+                changes.emplace_back(entity_name, entity, it->second); // Update entities that are present in both `new_entities` and `entities`
+                LOG_TRACE(log, "Entity {} was updated", entity_name);
+            }
+            else
+                LOG_TRACE(log, "Entity {} is the same", entity_name);
         }
         else
-            changes.emplace_back(entity_name, entity, ASTPtr{}); // Update entities that are present in both `new_entities` and `entities`
+        {
+            changes.emplace_back(entity_name, entity, ASTPtr{}); // Remove entities that are not present in `new_entities`
+            LOG_TRACE(log, "Entity {} was dropped", entity_name);
+        }
     }
     for (const auto & [entity_name, entity] : new_entities)
     {
         if (!entities.contains(entity_name))
+        {
             changes.emplace_back(entity_name, ASTPtr{}, entity); // Create entities that are only present in `new_entities`
+            LOG_TRACE(log, "Entity {} was created", entity_name);
+        }
     }
 
     // Sort `changes` to respect consistency of references and apply them one by one.
@@ -613,6 +624,8 @@ void WorkloadEntityStorageBase::applyEvent(
 {
     if (event.entity) // CREATE || CREATE OR REPLACE
     {
+        LOG_DEBUG(log, "Create or replace entity: {}", serializeAST(*event.entity));
+
         auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(event.entity.get());
 
         // Validate workload
@@ -633,6 +646,8 @@ void WorkloadEntityStorageBase::applyEvent(
     {
         auto it = entities.find(event.name);
         chassert(it != entities.end());
+
+        LOG_DEBUG(log, "Drop entity: {}", event.name);
 
         if (event.name == root_name)
             root_name.clear();

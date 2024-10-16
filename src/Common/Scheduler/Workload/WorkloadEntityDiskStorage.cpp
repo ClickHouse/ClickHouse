@@ -60,8 +60,8 @@ namespace
 WorkloadEntityDiskStorage::WorkloadEntityDiskStorage(const ContextPtr & global_context_, const String & dir_path_)
     : WorkloadEntityStorageBase(global_context_)
     , dir_path{makeDirectoryPathCanonical(dir_path_)}
-    , log{getLogger("WorkloadEntityDiskStorage")}
 {
+    log = getLogger("WorkloadEntityDiskStorage");
 }
 
 

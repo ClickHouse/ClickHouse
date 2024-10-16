@@ -38,7 +38,6 @@ private:
     String getFilePath(WorkloadEntityType entity_type, const String & entity_name) const;
 
     String dir_path;
-    LoggerPtr log;
     std::atomic<bool> entities_loaded = false;
 };
 

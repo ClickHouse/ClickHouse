@@ -120,6 +120,7 @@ private:
 
 protected:
     ContextPtr global_context;
+    LoggerPtr log;
 };
 
 }
