@@ -152,10 +152,7 @@ addNewFilterStepOrThrow(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
     node.step = std::make_unique<FilterStep>(
         node.children.at(0)->step->getOutputHeader(), std::move(split_filter), std::move(split_filter_column_name), can_remove_filter);
 
-    if (auto * join = typeid_cast<JoinStep *>(child.get()))
-        join->updateInputHeader(node.step->getOutputHeader(), child_idx);
-    else
-        child->updateInputHeader(node.step->getOutputHeader());
+    child->updateInputHeader(node.step->getOutputHeader(), child_idx);
 
     if (update_parent_filter)
     {
