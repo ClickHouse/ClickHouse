@@ -8,11 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 void ResourceRequest::finish()
 {
     // Iterate over constraints in reverse order

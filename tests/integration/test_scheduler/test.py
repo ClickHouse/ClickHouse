@@ -896,15 +896,14 @@ def test_workload_entity_keeper_storage():
                 value2 = node2.query(query)
                 if value1 != value2:
                     error_query = query
-                    break # error
+                    break  # error
             else:
-                break # success
+                break  # success
             time.sleep(0.5)
         else:
             raise Exception(
                 f"query '{error_query}' gives different results after {attempts} attempts:\n=== leader node ===\n{value1}\n=== follower node ===\n{value2}"
             )
-
 
     for iteration in range(3):
         split_idx_1 = random.randint(1, len(queries) - 3)

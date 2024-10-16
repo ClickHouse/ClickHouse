@@ -283,7 +283,7 @@ std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityCha
 WorkloadEntityStorageBase::WorkloadEntityStorageBase(ContextPtr global_context_)
     : handlers(std::make_shared<Handlers>())
     , global_context(std::move(global_context_))
-    , log{getLogger("WorkloadEntityStorage")} // could be overriden in derived class
+    , log{getLogger("WorkloadEntityStorage")} // could be overridden in derived class
 {}
 
 ASTPtr WorkloadEntityStorageBase::get(const String & entity_name) const
