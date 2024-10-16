@@ -21,6 +21,60 @@ do
   fi
 done
 
+# Generate pages with settings
+
+ch -q "
+WITH
+
+'/ClickHouse/docs/en/operations/settings/settings.md' AS doc_file,
+'/ClickHouse/src/Core/Settings.cpp' AS cpp_file,
+
+settings_from_cpp AS
+(
+    SELECT extract(line, 'M\(\w+, (\w+),') AS name
+    FROM file(cpp_file, LineAsString)
+    WHERE match(line, '^\s*M\(')
+),
+
+main_content AS
+(
+    SELECT format('## {} {}\n\nType: {}\n\nDefault value: {}\n\n{}\n\n', name, '{#'||name||'}', type, default, trim(BOTH '\n' FROM description))
+    FROM system.settings WHERE name IN settings_from_cpp
+    ORDER BY name
+),
+
+(SELECT extract(raw_blob, '(^(?:[^#]|#[^#])+)##') FROM file(doc_file, RawBLOB)) AS prefix
+
+SELECT prefix || (SELECT groupConcat(*) FROM main_content)
+INTO OUTFILE '/opt/clickhouse-docs/docs/en/operations/settings/settings.md' TRUNCATE FORMAT LineAsString
+"
+
+ch -q "
+WITH
+
+'/ClickHouse/docs/en/operations/settings/settings-formats.md' AS doc_file,
+'/ClickHouse/src/Core/FormatFactorySettingsDeclaration.h' AS cpp_file,
+
+settings_from_cpp AS
+(
+    SELECT extract(line, 'M\(\w+, (\w+),') AS name
+    FROM file(cpp_file, LineAsString)
+    WHERE match(line, '^\s*M\(')
+),
+
+main_content AS
+(
+    SELECT format('## {} {}\n\nType: {}\n\nDefault value: {}\n\n{}\n\n', name, '{#'||name||'}', type, default, trim(BOTH '\n' FROM description))
+    FROM system.settings WHERE name IN settings_from_cpp
+    ORDER BY name
+),
+
+(SELECT extract(raw_blob, '(^(?:[^#]|#[^#])+)##') FROM file(doc_file, RawBLOB)) AS prefix
+
+SELECT prefix || (SELECT groupConcat(*) FROM main_content)
+INTO OUTFILE '/opt/clickhouse-docs/docs/en/operations/settings/settings-formats.md' TRUNCATE FORMAT LineAsString
+"
+
 # Force build error on wrong symlinks
 sed -i '/onBrokenMarkdownLinks:/ s/ignore/error/g' docusaurus.config.js
 
