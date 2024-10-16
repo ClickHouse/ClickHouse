@@ -22,10 +22,7 @@ ColumnPtr ArrayFilterImpl::execute(const ColumnArray & array, ColumnPtr mapped)
 
         if (column_filter_const->getValue<UInt8>())
             return array.clone();
-        else
-            return ColumnArray::create(
-                array.getDataPtr()->cloneEmpty(),
-                ColumnArray::ColumnOffsets::create(array.size(), 0));
+        return ColumnArray::create(array.getDataPtr()->cloneEmpty(), ColumnArray::ColumnOffsets::create(array.size(), 0));
     }
 
     const IColumn::Filter & filter = column_filter->getData();

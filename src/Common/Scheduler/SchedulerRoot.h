@@ -221,8 +221,8 @@ private:
                 busy_periods++;
                 return;
             }
-            else // Just move current to next to avoid invalidation
-                current = current->next;
+            // Just move current to next to avoid invalidation
+            current = current->next;
         }
         value->prev->next = value->next;
         value->next->prev = value->prev;

@@ -417,28 +417,27 @@ bool DDLTask::tryFindHostInCluster()
                                         "There are two exactly the same ClickHouse instances {} in cluster {}",
                                         address.readableString(), cluster_name);
                     }
-                    else
-                    {
-                        /* Circular replication is used.
+
+                    /* Circular replication is used.
                          * It is when every physical node contains
                          * replicas of different shards of the same table.
                          * To distinguish one replica from another on the same node,
                          * every shard is placed into separate database.
                          * */
-                        is_circular_replicated = true;
-                        auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get());
+                    is_circular_replicated = true;
+                    auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get());
 
-                        /// For other DDLs like CREATE USER, there is no database name and should be executed successfully.
-                        if (query_with_table)
-                        {
-                            if (!query_with_table->database)
-                                throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-                                                "For a distributed DDL on circular replicated cluster its table name "
-                                                "must be qualified by database name.");
+                    /// For other DDLs like CREATE USER, there is no database name and should be executed successfully.
+                    if (query_with_table)
+                    {
+                        if (!query_with_table->database)
+                            throw Exception(
+                                ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
+                                "For a distributed DDL on circular replicated cluster its table name "
+                                "must be qualified by database name.");
 
-                            if (default_database == query_with_table->getDatabase())
-                                return true;
-                        }
+                        if (default_database == query_with_table->getDatabase())
+                            return true;
                     }
                 }
                 found_exact_match = true;
@@ -474,13 +473,11 @@ bool DDLTask::tryFindHostInClusterViaResolving(ContextPtr context)
                                     "There are two the same ClickHouse instances in cluster {} : {} and {}",
                                     cluster_name, address_in_cluster.readableString(), address.readableString());
                 }
-                else
-                {
-                    found_via_resolving = true;
-                    host_shard_num = shard_num;
-                    host_replica_num = replica_num;
-                    address_in_cluster = address;
-                }
+
+                found_via_resolving = true;
+                host_shard_num = shard_num;
+                host_replica_num = replica_num;
+                address_in_cluster = address;
             }
         }
     }
@@ -618,8 +615,7 @@ ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
     {
         if (all_groups)
             return replicated_db->tryGetAllGroupsCluster();
-        else
-            return replicated_db->tryGetCluster();
+        return replicated_db->tryGetCluster();
     }
     return {};
 }

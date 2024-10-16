@@ -449,7 +449,6 @@ void KeeperTCPHandler::runImpl()
             using namespace std::chrono_literals;
 
             PollResult result = poll_wrapper->poll(session_timeout, *in);
-            log_long_operation("Polling socket");
             if (result.has_requests && !close_received)
             {
                 if (in->eof())
@@ -547,29 +546,27 @@ bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command)
         LOG_WARNING(log, "invalid four letter command {}", IFourLetterCommand::toName(command));
         return false;
     }
-    else if (!FourLetterCommandFactory::instance().isEnabled(command))
+    if (!FourLetterCommandFactory::instance().isEnabled(command))
     {
         LOG_WARNING(log, "Not enabled four letter command {}", IFourLetterCommand::toName(command));
         return false;
     }
-    else
+
+    auto command_ptr = FourLetterCommandFactory::instance().get(command);
+    LOG_DEBUG(log, "Receive four letter command {}", command_ptr->name());
+
+    try
     {
-        auto command_ptr = FourLetterCommandFactory::instance().get(command);
-        LOG_DEBUG(log, "Receive four letter command {}", command_ptr->name());
-
-        try
-        {
-            String res = command_ptr->run();
-            out->write(res.data(),res.size());
-            out->next();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Error when executing four letter command " + command_ptr->name());
-        }
-
-        return true;
+        String res = command_ptr->run();
+        out->write(res.data(), res.size());
+        out->next();
     }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Error when executing four letter command " + command_ptr->name());
+    }
+
+    return true;
 }
 
 WriteBuffer & KeeperTCPHandler::getWriteBuffer()

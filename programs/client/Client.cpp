@@ -484,27 +484,23 @@ void Client::connect()
         }
         catch (const Exception & e)
         {
+            /// This problem can't be fixed with reconnection so it is not attempted
             if (e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
-            {
-                /// This problem can't be fixed with reconnection so it is not attempted
                 throw;
-            }
-            else
-            {
-                if (attempted_address_index == hosts_and_ports.size() - 1)
-                    throw;
 
-                if (is_interactive)
-                {
-                    std::cerr << "Connection attempt to database at "
-                              << connection_parameters.host << ":" << connection_parameters.port
-                              << " resulted in failure"
-                              << std::endl
-                              << getExceptionMessage(e, false)
-                              << std::endl
-                              << "Attempting connection to the next provided address"
-                              << std::endl;
-                }
+            if (attempted_address_index == hosts_and_ports.size() - 1)
+                throw;
+
+            if (is_interactive)
+            {
+                std::cerr << "Connection attempt to database at "
+                          << connection_parameters.host << ":" << connection_parameters.port
+                          << " resulted in failure"
+                          << std::endl
+                          << getExceptionMessage(e, false)
+                          << std::endl
+                          << "Attempting connection to the next provided address"
+                          << std::endl;
             }
         }
     }

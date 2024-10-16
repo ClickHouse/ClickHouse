@@ -4,10 +4,12 @@
 
 #include <Common/Exception.h>
 
+#include <mutex>
 #include <ostream>
 #include <termios.h>
 #include <unistd.h>
 #include <base/defines.h>
+#include <sys/ioctl.h>
 
 namespace DB::ErrorCodes
 {
@@ -40,14 +42,17 @@ void TerminalKeystrokeInterceptor::registerCallback(char key, TerminalKeystrokeI
 
 void TerminalKeystrokeInterceptor::startIntercept()
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::unique_lock<std::mutex> lock(mutex);
 
     if (intercept_thread && intercept_thread->joinable())
         return;
 
-    chassert(!orig_termios);
+    {
+        std::unique_lock<std::mutex> lk(stop_requested_mutex);
+        stop_requested = false;
+    }
 
-    stop_requested = false;
+    chassert(!orig_termios);
 
     /// Save terminal state.
     orig_termios = std::make_unique<struct termios>();
@@ -69,15 +74,17 @@ void TerminalKeystrokeInterceptor::startIntercept()
 
 void TerminalKeystrokeInterceptor::stopIntercept()
 {
-    stop_requested = true;
-
-    std::lock_guard<std::mutex> lock(mutex);
+    std::unique_lock<std::mutex> lock(mutex);
+    {
+        std::unique_lock<std::mutex> lk(stop_requested_mutex);
+        stop_requested = true;
+    }
+    stop_requested_cv.notify_all();
 
     if (intercept_thread && intercept_thread->joinable())
-    {
         intercept_thread->join();
-        intercept_thread.reset();
-    }
+
+    intercept_thread.reset();
 
     /// Set to the original (canonical) terminal mode.
     if (orig_termios)
@@ -94,16 +101,26 @@ void TerminalKeystrokeInterceptor::stopIntercept()
 
 void TerminalKeystrokeInterceptor::run(TerminalKeystrokeInterceptor::CallbackMap map)
 {
+    constexpr auto intercept_interval_ms = std::chrono::milliseconds(200);
+    std::unique_lock lock(stop_requested_mutex);
     while (!stop_requested)
     {
         runImpl(map);
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        stop_requested_cv.wait_for(lock, intercept_interval_ms, [map, this] { return stop_requested; });
     }
 }
 
 void TerminalKeystrokeInterceptor::runImpl(const DB::TerminalKeystrokeInterceptor::CallbackMap & map) const
 {
     char ch;
+
+    int available = 0;
+    if (ioctl(fd, FIONREAD, &available) < 0)
+        throw DB::ErrnoException(DB::ErrorCodes::SYSTEM_ERROR, "ioctl({}, FIONREAD)", fd);
+
+    if (available <= 0)
+        return;
+
     if (read(fd, &ch, 1) > 0)
     {
         auto it = map.find(ch);

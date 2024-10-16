@@ -227,7 +227,7 @@ bool isStorageTouchedByMutations(
 
     if (!block.rows())
         return false;
-    else if (block.rows() != 1)
+    if (block.rows() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "count() expression returned {} rows, not 1", block.rows());
 
     Block tmp_block;
@@ -265,8 +265,7 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
 
     if (command.predicate && command.partition)
         return makeASTFunction("and", command.predicate->clone(), std::move(partition_predicate_as_ast_func));
-    else
-        return command.predicate ? command.predicate->clone() : partition_predicate_as_ast_func;
+    return command.predicate ? command.predicate->clone() : partition_predicate_as_ast_func;
 }
 
 
@@ -1314,17 +1313,17 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
             {
                 auto dag = step->actions()->dag.clone();
                 if (step->actions()->project_input)
-                    dag.appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
+                    dag.appendInputsForUnusedColumns(plan.getCurrentHeader());
                 /// Execute DELETEs.
-                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), std::move(dag), stage.filter_column_names[i], false));
+                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentHeader(), std::move(dag), stage.filter_column_names[i], false));
             }
             else
             {
                 auto dag = step->actions()->dag.clone();
                 if (step->actions()->project_input)
-                    dag.appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
+                    dag.appendInputsForUnusedColumns(plan.getCurrentHeader());
                 /// Execute UPDATE or final projection.
-                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), std::move(dag)));
+                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(dag)));
             }
         }
 

@@ -464,12 +464,12 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
             error_stream << "\r";
         progress_indication.writeProgress(*tty_buf);
     }
-    if (need_render_progress_table && tty_buf)
+    if (need_render_progress_table && tty_buf && !cancelled)
     {
         if (!need_render_progress && select_into_file && !select_into_file_and_stdout)
             error_stream << "\r";
         bool toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle", true);
-        progress_table.writeTable(*tty_buf, show_progress_table.load(), toggle_enabled);
+        progress_table.writeTable(*tty_buf, progress_table_toggle_on.load(), toggle_enabled);
     }
 }
 
@@ -882,8 +882,7 @@ void ClientBase::initKeystrokeInterceptor()
     if (is_interactive && need_render_progress_table && getClientConfiguration().getBool("enable-progress-table-toggle", true))
     {
         keystroke_interceptor = std::make_unique<TerminalKeystrokeInterceptor>(in_fd, error_stream);
-        keystroke_interceptor->registerCallback(' ', [this]() { show_progress_table = !show_progress_table; });
-
+        keystroke_interceptor->registerCallback(' ', [this]() { progress_table_toggle_on = !progress_table_toggle_on; });
     }
 }
 
@@ -1411,10 +1410,10 @@ void ClientBase::onProfileEvents(Block & block)
 
         if (need_render_progress && tty_buf)
             progress_indication.writeProgress(*tty_buf);
-        if (need_render_progress_table && tty_buf)
+        if (need_render_progress_table && tty_buf && !cancelled)
         {
             bool toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle", true);
-            progress_table.writeTable(*tty_buf, show_progress_table.load(), toggle_enabled);
+            progress_table.writeTable(*tty_buf, progress_table_toggle_on.load(), toggle_enabled);
         }
 
         if (profile_events.print)
@@ -1578,8 +1577,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
         const auto & settings = client_context->getSettingsRef();
         if (settings[Setting::throw_if_no_data_to_insert])
             throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
-        else
-            return;
+        return;
     }
 
     query_interrupt_handler.start();
@@ -1907,6 +1905,17 @@ bool ClientBase::receiveEndOfQuery()
 void ClientBase::cancelQuery()
 {
     connection->sendCancel();
+
+    if (keystroke_interceptor)
+        try
+        {
+            keystroke_interceptor->stopIntercept();
+        }
+        catch (const DB::Exception &)
+        {
+            error_stream << getCurrentExceptionMessage(false);
+        }
+
     if (need_render_progress && tty_buf)
         progress_indication.clearProgressOutput(*tty_buf);
     if (need_render_progress_table && tty_buf)
@@ -2119,6 +2128,8 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             output_stream << processed_rows << " row" << (processed_rows == 1 ? "" : "s") << " in set. ";
         output_stream << "Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
         progress_indication.writeFinalProgress();
+        bool toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle", true);
+        bool show_progress_table = !toggle_enabled || progress_table_toggle_on;
         if (need_render_progress_table && show_progress_table)
             progress_table.writeFinalTable();
         output_stream << std::endl << std::endl;

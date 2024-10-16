@@ -1631,6 +1631,7 @@ class ClickHouseCluster:
         instance_env_variables=False,
         image="clickhouse/integration-test",
         tag=None,
+        # keep the docker container running when clickhouse server is stopped
         stay_alive=False,
         ipv4_address=None,
         ipv6_address=None,
