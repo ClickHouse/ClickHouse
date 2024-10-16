@@ -199,10 +199,10 @@ void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
 FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const QueryTreeNodes & table_nodes, const ContextPtr & query_context)
 {
     bool collect_filters = false;
-    const auto & settings = query_context->getSettingsRef();
+    // const auto & settings = query_context->getSettingsRef();
 
     bool parallel_replicas_estimation_enabled
-        = query_context->canUseParallelReplicasOnInitiator() && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0;
+        = query_context->canUseParallelReplicasOnInitiator(); // && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0;
 
     for (const auto & table_expression : table_nodes)
     {
