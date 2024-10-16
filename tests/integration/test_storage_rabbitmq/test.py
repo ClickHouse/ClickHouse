@@ -6,8 +6,8 @@ import random
 import subprocess
 import threading
 import time
-from random import randrange
 import uuid
+from random import randrange
 
 import pika
 import pytest
