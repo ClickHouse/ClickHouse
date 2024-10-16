@@ -29,3 +29,34 @@ SELECT *
 FROM y;
 
 SELECT * FROM x;
+
+WITH y AS
+    (
+        SELECT *
+        FROM numbers(10)
+    )
+INSERT INTO x
+WITH y2 AS
+    (
+        SELECT *
+        FROM numbers(10)
+    )
+SELECT * FROM y;  -- { clientError SYNTAX_ERROR }
+
+DROP TABLE x;
+
+CREATE TABLE x (d date) ENGINE = Log;
+
+WITH y AS
+    (
+        SELECT
+            number,
+            date_add(YEAR, number, toDate('2025-01-01')) AS new_date
+        FROM numbers(10)
+    )
+INSERT INTO x
+SELECT y.new_date FROM y;
+
+SELECT * FROM x;
+
+DROP TABLE x;
