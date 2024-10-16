@@ -13,6 +13,7 @@ from botocore.exceptions import ClientError
 
 DEBUGGER = os.getenv("DEBUGGER", "")
 FUZZER_ARGS = os.getenv("FUZZER_ARGS", "")
+OUTPUT = "/test_output"
 
 
 def report(source: str, reason: str, call_stack: list, test_unit: str):
@@ -121,7 +122,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
                 custom_libfuzzer_options = " ".join(
                     f"-{key}={value}"
                     for key, value in parser["libfuzzer"].items()
-                    if key != "jobs"
+                    if key != "jobs" and key != "exact_artifact_path"
                 )
 
             if parser.has_section("fuzzer_arguments"):
@@ -130,7 +131,13 @@ def run_fuzzer(fuzzer: str, timeout: int):
                     for key, value in parser["fuzzer_arguments"].items()
                 )
 
+    exact_artifact_path = f"{OUTPUT}/{fuzzer}.unit"
+    status_path = f"{OUTPUT}/{fuzzer}.status"
+    out_path = f"{OUTPUT}/{fuzzer}.out"
+
     cmd_line = f"{DEBUGGER} ./{fuzzer} {FUZZER_ARGS} {new_corpus_dir} {active_corpus_dir} {seed_corpus_dir}"
+
+    cmd_line += f" -exact_artifact_path={exact_artifact_path}"
 
     if custom_libfuzzer_options:
         cmd_line += f" {custom_libfuzzer_options}"
@@ -144,12 +151,11 @@ def run_fuzzer(fuzzer: str, timeout: int):
 
     logging.info("...will execute: %s", cmd_line)
 
-    test_result = TestResult(fuzzer, "OK")
     stopwatch = Stopwatch()
     try:
         result = subprocess.run(
             cmd_line,
-            stderr=subprocess.PIPE,
+            stderr=open(out_path, "w"),
             stdout=subprocess.DEVNULL,
             text=True,
             check=True,
@@ -160,35 +166,23 @@ def run_fuzzer(fuzzer: str, timeout: int):
     except subprocess.CalledProcessError as e:
         # print("Command failed with error:", e)
         logging.info("Stderr output: %s", e.stderr)
-        test_result = TestResult(
-            fuzzer,
-            "FAIL",
-            stopwatch.duration_seconds,
-            "",
-            "\n".join(process_error(e.stderr)),
-        )
+        with open(status_path, "w") as status:
+            status.write(f"FAIL\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n")
     except subprocess.TimeoutExpired as e:
         logging.info("Timeout for %s", cmd_line)
         kill_fuzzer(fuzzer)
         sleep(10)
         process_fuzzer_output(e.stderr)
-        test_result = TestResult(
-            fuzzer,
-            "Timeout",
-            stopwatch.duration_seconds,
-            "",
-            "",
-        )
+        with open(status_path,"w") as status:
+            status.write(f"Timeout\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n")
     else:
         process_fuzzer_output(result.stderr)
-        test_result.time = stopwatch.duration_seconds
+        with open(status_path,"w") as status:
+            status.write(f"OK\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n")
 
     s3.upload_build_directory_to_s3(
         Path(new_corpus_dir), f"fuzzer/corpus/{fuzzer}", False
     )
-
-    logging.info("test_result: %s", test_result)
-    return test_result
 
 
 def main():
@@ -202,25 +196,16 @@ def main():
     if match:
         timeout += int(match.group(2))
 
-    test_results = []
     stopwatch = Stopwatch()
     with Path() as current:
         for fuzzer in current.iterdir():
             if (current / fuzzer).is_file() and os.access(current / fuzzer, os.X_OK):
-                test_results.append(run_fuzzer(fuzzer.name, timeout))
+                run_fuzzer(fuzzer.name, timeout)
 
-    prepared_results = prepare_tests_results_for_clickhouse(
-        PRInfo(),
-        test_results,
-        "failure",
-        stopwatch.duration_seconds,
-        stopwatch.start_time_str,
-        "",
-        "libFuzzer",
-    )
+    subprocess.check_call(f"ls -al {OUTPUT}", shell=True)
+
     # ch_helper = ClickHouseHelper()
     # ch_helper.insert_events_into(db="default", table="checks", events=prepared_results)
-    logging.info("prepared_results: %s", prepared_results)
 
 
 if __name__ == "__main__":
@@ -228,15 +213,9 @@ if __name__ == "__main__":
 
     ACTIVE_DIR = path.dirname(path.abspath(__file__))
     sys.path.append((Path(path.dirname(ACTIVE_DIR)) / "ci").as_posix())
-    from clickhouse_helper import (  # pylint: disable=import-error,no-name-in-module,unused-import
-        ClickHouseHelper,
-        prepare_tests_results_for_clickhouse,
-    )
     from env_helper import (  # pylint: disable=import-error,no-name-in-module
         S3_BUILDS_BUCKET,
     )
-    from pr_info import PRInfo  # pylint: disable=import-error,no-name-in-module
-    from report import TestResult  # pylint: disable=import-error,no-name-in-module
     from s3_helper import S3Helper  # pylint: disable=import-error,no-name-in-module
     from stopwatch import Stopwatch  # pylint: disable=import-error,no-name-in-module
 
