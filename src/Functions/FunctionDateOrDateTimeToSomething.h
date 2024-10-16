@@ -56,6 +56,14 @@ public:
             return std::make_shared<ToDataType>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        /// If result type is DateTime or DateTime64 we don't know the timezone and scale without argument types.
+        if constexpr (!std::is_same_v<ToDataType, DataTypeDateTime> && !std::is_same_v<ToDataType, DataTypeDateTime64>)
+            return std::make_shared<ToDataType>();
+        return nullptr;
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();

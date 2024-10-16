@@ -69,6 +69,7 @@
 #include <Interpreters/registerInterpreters.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControl.h>
+#include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
@@ -1495,6 +1496,8 @@ try
 
     NamedCollectionFactory::instance().loadIfNot();
 
+    FileCacheFactory::instance().loadDefaultCaches(config());
+
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
 
@@ -2083,6 +2086,12 @@ try
 
     try
     {
+        /// Don't run background queries until we loaded tables.
+        /// (In particular things would break if a background drop query happens before the
+        /// loadMarkedAsDroppedTables() call below - it'll see dropped table metadata and try to
+        /// drop the table a second time and throw an exception.)
+        global_context->getRefreshSet().setRefreshesStopped(true);
+
         auto & database_catalog = DatabaseCatalog::instance();
         /// We load temporary database first, because projections need it.
         database_catalog.initializeAndLoadTemporaryDatabase();
@@ -2122,6 +2131,8 @@ try
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
         global_context->getUserDefinedSQLObjectsStorage().loadObjects();
+
+        global_context->getRefreshSet().setRefreshesStopped(false);
     }
     catch (...)
     {
