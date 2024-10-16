@@ -937,7 +937,14 @@ try
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
 
-    MemoryWorker memory_worker(global_context->getServerSettings().memory_worker_period_ms);
+    if (server_settings.page_cache_max_size != 0)
+    {
+        global_context->setPageCache(
+            server_settings.page_cache_block_size, server_settings.page_cache_policy, server_settings.page_cache_size_ratio, server_settings.page_cache_min_size, server_settings.page_cache_max_size, server_settings.page_cache_free_memory_ratio);
+        total_memory_tracker.setPageCache(global_context->getPageCache().get());
+    }
+
+    MemoryWorker memory_worker(global_context->getServerSettings().memory_worker_period_ms, global_context->getServerSettings().memory_worker_use_cgroup, global_context->getPageCache());
 
     /// This object will periodically calculate some metrics.
     ServerAsynchronousMetrics async_metrics(
@@ -1441,13 +1448,6 @@ try
         LOG_INFO(log, "Lowered mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
     global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
-
-    size_t page_cache_size = server_settings.page_cache_size;
-    if (page_cache_size != 0)
-        global_context->setPageCache(
-            server_settings.page_cache_chunk_size, server_settings.page_cache_mmap_size,
-            page_cache_size, server_settings.page_cache_use_madv_free,
-            server_settings.page_cache_use_transparent_huge_pages);
 
     String index_uncompressed_cache_policy = server_settings.index_uncompressed_cache_policy;
     size_t index_uncompressed_cache_size = server_settings.index_uncompressed_cache_size;

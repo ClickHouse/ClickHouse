@@ -6,6 +6,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/OvercommitTracker.h>
+#include <Common/PageCache.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadStatus.h>
@@ -111,6 +112,7 @@ void AllocationTrace::onFreeImpl(void * ptr, size_t size) const
 namespace ProfileEvents
 {
     extern const Event QueryMemoryLimitExceeded;
+    extern const Event PageCacheOvercommitResize;
 }
 
 using namespace std::chrono_literals;
@@ -300,7 +302,22 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         if (memoryTrackerCanThrow(level, false) && throw_if_memory_exceeded)
         {
             OvercommitResult overcommit_result = OvercommitResult::NONE;
-            if (auto * overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed); overcommit_tracker_ptr != nullptr && query_tracker != nullptr)
+
+            /// Try to shrink the userspace page cache.
+            DB::PageCache * page_cache_ptr;
+            if (level == VariableContext::Global && will_be_rss > current_hard_limit && ((page_cache_ptr = page_cache.load(std::memory_order_relaxed))))
+            {
+                ProfileEvents::increment(ProfileEvents::PageCacheOvercommitResize);
+                page_cache_ptr->autoResize(std::max(will_be, will_be_rss), current_hard_limit);
+                will_be = amount.load(std::memory_order_relaxed);
+                will_be_rss = rss.load(std::memory_order_relaxed);
+                if (will_be <= current_hard_limit && will_be_rss <= current_hard_limit)
+                    overcommit_result = OvercommitResult::MEMORY_FREED;
+            }
+
+            /// If that wasn't enough, try to stop some query.
+            OvercommitTracker * overcommit_tracker_ptr;
+            if (overcommit_result == OvercommitResult::NONE && ((overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed))) && query_tracker != nullptr)
                 overcommit_result = overcommit_tracker_ptr->needToStopQuery(query_tracker, size);
 
             if (overcommit_result != OvercommitResult::MEMORY_FREED)
