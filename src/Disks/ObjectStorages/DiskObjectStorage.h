@@ -58,9 +58,9 @@ public:
 
     UInt64 getKeepingFreeSpace() const override { return 0; }
 
-    bool exists(const String & path) const override;
-
-    bool isFile(const String & path) const override;
+    bool existsFile(const String & path) const override;
+    bool existsDirectory(const String & path) const override;
+    bool existsFileOrDirectory(const String & path) const override;
 
     void createFile(const String & path) override;
 
@@ -108,8 +108,6 @@ public:
 
     void setReadOnly(const String & path) override;
 
-    bool isDirectory(const String & path) const override;
-
     void createDirectory(const String & path) override;
 
     void createDirectories(const String & path) override;
@@ -137,6 +135,12 @@ public:
     ReservationPtr reserve(UInt64 bytes) override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
+        const String & path,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override;
+
+    std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const String & path,
         const ReadSettings & settings,
         std::optional<size_t> read_hint,
