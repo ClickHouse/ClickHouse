@@ -418,7 +418,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         }
 
         /// If the original column is DateTime64, check for sub-second precision
-        if (isDateTime64(column_to_cast.column->getDataType()))
+        if (isDateTime64(column_to_cast.column->getDataType()) && isDateTimeOrDateTime64(result->getDataType()))
             result = checkDateTimePrecision(column_to_cast.column, result, vec_res.size());
 
         materialized_columns.emplace_back(result);
