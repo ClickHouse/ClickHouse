@@ -88,12 +88,14 @@ public:
         if (!request)
             return {nullptr, false};
 
-        request->addConstraint(this);
-
-        // Update state on request arrival
         std::unique_lock lock(mutex);
-        requests++;
-        cost += request->cost;
+        if (request->addConstraint(this))
+        {
+            // Update state on request arrival
+            requests++;
+            cost += request->cost;
+        }
+
         child_active = child_now_active;
         if (!active())
             busy_periods++;

@@ -23,20 +23,17 @@ void ResourceRequest::finish()
     }
 }
 
-void ResourceRequest::addConstraint(ISchedulerConstraint * new_constraint)
+bool ResourceRequest::addConstraint(ISchedulerConstraint * new_constraint)
 {
     for (auto & constraint : constraints)
     {
         if (!constraint)
         {
             constraint = new_constraint;
-            return;
+            return true;
         }
     }
-    // TODO(serxa): is it possible to validate it during enqueue of resource request to avoid LOGICAL_ERRORs in the scheduler thread? possible but will not cover case of moving queue with requests inside to invalid position
-    throw Exception(ErrorCodes::LOGICAL_ERROR,
-        "Max number of simultaneous workload constraints exceeded ({}). Remove extra constraints before using this workload.",
-        ResourceMaxConstraints);
+    return false;
 }
 
 }
