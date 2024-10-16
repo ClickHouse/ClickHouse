@@ -17,14 +17,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_hyperscan;
-    extern const SettingsUInt64 max_hyperscan_regexp_length;
-    extern const SettingsUInt64 max_hyperscan_regexp_total_length;
-    extern const SettingsBool reject_expensive_hyperscan_regexps;
-}
-
 /**
   * multiMatchAny(haystack, [pattern_1, pattern_2, ..., pattern_n])
   * multiMatchAnyIndex(haystack, [pattern_1, pattern_2, ..., pattern_n])
@@ -62,7 +54,7 @@ public:
     static FunctionPtr create(ContextPtr context)
     {
         const auto & settings = context->getSettingsRef();
-        return std::make_shared<FunctionsMultiStringSearch>(settings[Setting::allow_hyperscan], settings[Setting::max_hyperscan_regexp_length], settings[Setting::max_hyperscan_regexp_total_length], settings[Setting::reject_expensive_hyperscan_regexps]);
+        return std::make_shared<FunctionsMultiStringSearch>(settings.allow_hyperscan, settings.max_hyperscan_regexp_length, settings.max_hyperscan_regexp_total_length, settings.reject_expensive_hyperscan_regexps);
     }
 
     FunctionsMultiStringSearch(bool allow_hyperscan_, size_t max_hyperscan_regexp_length_, size_t max_hyperscan_regexp_total_length_, bool reject_expensive_hyperscan_regexps_)
@@ -89,7 +81,7 @@ public:
         return Impl::getReturnType();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const ColumnPtr & haystack_ptr = arguments[0].column;
         const ColumnPtr & needles_ptr = arguments[1].column;
@@ -118,15 +110,13 @@ public:
                 col_haystack_vector->getChars(), col_haystack_vector->getOffsets(),
                 col_needles_const->getValue<Array>(),
                 vec_res, offsets_res,
-                allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps,
-                input_rows_count);
+                allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps);
         else
             Impl::vectorVector(
                 col_haystack_vector->getChars(), col_haystack_vector->getOffsets(),
                 col_needles_vector->getData(), col_needles_vector->getOffsets(),
                 vec_res, offsets_res,
-                allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps,
-                input_rows_count);
+                allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps);
 
         // the combination of const haystack + const needle is not implemented because
         // useDefaultImplementationForConstants() == true makes upper layers convert both to

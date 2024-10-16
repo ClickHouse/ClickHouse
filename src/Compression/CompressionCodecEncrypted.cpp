@@ -5,7 +5,6 @@
 #include <IO/VarInt.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionCodecEncrypted.h>
-#include <Parsers/IAST.h>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/safe_cast.h>
@@ -30,9 +29,10 @@ EncryptionMethod toEncryptionMethod(const std::string & name)
 {
     if (name == "AES_128_GCM_SIV")
         return AES_128_GCM_SIV;
-    if (name == "AES_256_GCM_SIV")
+    else if (name == "AES_256_GCM_SIV")
         return AES_256_GCM_SIV;
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown encryption method. Got {}", name);
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown encryption method. Got {}", name);
 }
 
 namespace
@@ -43,9 +43,10 @@ String getMethodName(EncryptionMethod Method)
 {
     if (Method == AES_128_GCM_SIV)
         return "AES_128_GCM_SIV";
-    if (Method == AES_256_GCM_SIV)
+    else if (Method == AES_256_GCM_SIV)
         return "AES_256_GCM_SIV";
-    return "";
+    else
+        return "";
 }
 
 /// Get method code (used for codec, to understand which one we are using)
@@ -53,9 +54,10 @@ uint8_t getMethodCode(EncryptionMethod Method)
 {
     if (Method == AES_128_GCM_SIV)
         return static_cast<uint8_t>(CompressionMethodByte::AES_128_GCM_SIV);
-    if (Method == AES_256_GCM_SIV)
+    else if (Method == AES_256_GCM_SIV)
         return static_cast<uint8_t>(CompressionMethodByte::AES_256_GCM_SIV);
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown encryption method. Got {}", getMethodName(Method));
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown encryption method. Got {}", getMethodName(Method));
 }
 
 } // end of namespace
@@ -87,9 +89,10 @@ UInt64 methodKeySize(EncryptionMethod Method)
 {
     if (Method == AES_128_GCM_SIV)
         return 16;
-    if (Method == AES_256_GCM_SIV)
+    else if (Method == AES_256_GCM_SIV)
         return 32;
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown encryption method. Got {}", getMethodName(Method));
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown encryption method. Got {}", getMethodName(Method));
 }
 
 /// Get human-readable string representation of last error
@@ -306,9 +309,11 @@ inline char* writeNonce(const String& nonce, char* dest)
         dest += copied_symbols;
         return dest;
     }
-
-    *dest = 0;
-    return ++dest;
+    else
+    {
+        *dest = 0;
+        return ++dest;
+    }
 }
 
 /// Firstly, read a byte, which shows if the nonce will be put in text (if it was defined in config)

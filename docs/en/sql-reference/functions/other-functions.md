@@ -86,11 +86,11 @@ Returns the fully qualified domain name of the ClickHouse server.
 fqdn();
 ```
 
-Aliases: `fullHostName`, `FQDN`.
+Aliases: `fullHostName`, `FQDN`. 
 
 **Returned value**
 
-- String with the fully qualified domain name. [String](../data-types/string.md).
+- String with the fully qualified domain name. [String](../data-types/string.md). 
 
 **Example**
 
@@ -202,36 +202,12 @@ Result:
 
 Returns the type name of the passed argument.
 
-If `NULL` is passed, the function returns type `Nullable(Nothing)`, which corresponds to ClickHouse's internal `NULL` representation.
+If `NULL` is passed, then the function returns type `Nullable(Nothing)`, which corresponds to ClickHouse's internal `NULL` representation.
 
 **Syntax**
 
 ```sql
-toTypeName(value)
-```
-
-**Arguments**
-
-- `value` — A value of arbitrary type.
-
-**Returned value**
-
-- The data type name of the input value. [String](../data-types/string.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT toTypeName(123);
-```
-
-Result:
-
-```response
-┌─toTypeName(123)─┐
-│ UInt8           │
-└─────────────────┘
+toTypeName(x)
 ```
 
 ## blockSize {#blockSize}
@@ -269,7 +245,7 @@ Result:
 3. │           5 │
 4. │           5 │
 5. │           5 │
-   └─────────────┘
+   └─────────────┘ 
 ```
 
 ## byteSize
@@ -370,9 +346,7 @@ Result:
 ## materialize
 
 Turns a constant into a full column containing a single value.
-Full columns and constants are represented differently in memory.
-Functions usually execute different code for normal and constant arguments, although the result should typically be the same.
-This function can be used to debug this behavior.
+Full columns and constants are represented differently in memory. Functions usually execute different code for normal and constant arguments, although the result should typically be the same. This function can be used to debug this behavior.
 
 **Syntax**
 
@@ -380,67 +354,15 @@ This function can be used to debug this behavior.
 materialize(x)
 ```
 
-**Parameters**
-
-- `x` — A constant. [Constant](../functions/index.md/#constants).
-
-**Returned value**
-
-- A column containing a single value `x`.
-
-**Example**
-
-In the example below the `countMatches` function expects a constant second argument.
-This behaviour can be debugged by using the `materialize` function to turn a constant into a full column,
-verifying that the function throws an error for a non-constant argument.
-
-Query:
-
-```sql
-SELECT countMatches('foobarfoo', 'foo');
-SELECT countMatches('foobarfoo', materialize('foo'));
-```
-
-Result:
-
-```response
-2
-Code: 44. DB::Exception: Received from localhost:9000. DB::Exception: Illegal type of argument #2 'pattern' of function countMatches, expected constant String, got String
-```
-
 ## ignore
 
-Accepts arbitrary arguments and unconditionally returns `0`.
-The argument is still evaluated internally, making it useful for eg. benchmarking.
+Accepts any arguments, including `NULL` and does nothing. Always returns 0.
+The argument is internally still evaluated. Useful e.g. for benchmarks.
 
 **Syntax**
 
 ```sql
-ignore([arg1[, arg2[, ...]])
-```
-
-**Arguments**
-
-- Accepts arbitrarily many arguments of arbitrary type, including `NULL`.
-
-**Returned value**
-
-- Returns `0`.
-
-**Example**
-
-Query:
-
-```sql
-SELECT ignore(0, 'ClickHouse', NULL);
-```
-
-Result:
-
-```response
-┌─ignore(0, 'ClickHouse', NULL)─┐
-│                             0 │
-└───────────────────────────────┘
+ignore(x)
 ```
 
 ## sleep
@@ -548,26 +470,6 @@ Useful in table engine parameters of `CREATE TABLE` queries where you need to sp
 currentDatabase()
 ```
 
-**Returned value**
-
-- Returns the current database name. [String](../data-types/string.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT currentDatabase()
-```
-
-Result:
-
-```response
-┌─currentDatabase()─┐
-│ default           │
-└───────────────────┘
-```
-
 ## currentUser {#currentUser}
 
 Returns the name of the current user. In case of a distributed query, the name of the user who initiated the query is returned.
@@ -597,42 +499,6 @@ Result:
 ┌─currentUser()─┐
 │ default       │
 └───────────────┘
-```
-
-## currentSchemas
-
-Returns a single-element array with the name of the current database schema.
-
-**Syntax**
-
-```sql
-currentSchemas(bool)
-```
-
-Alias: `current_schemas`.
-
-**Arguments**
-
-- `bool`: A boolean value. [Bool](../data-types/boolean.md).
-
-:::note
-The boolean argument is ignored. It only exists for the sake of compatibility with the [implementation](https://www.postgresql.org/docs/7.3/functions-misc.html) of this function in PostgreSQL.
-:::
-
-**Returned values**
-
-- Returns a single-element array with the name of the current database
-
-**Example**
-
-```sql
-SELECT currentSchemas(true);
-```
-
-Result:
-
-```response
-['default']
 ```
 
 ## isConstant
@@ -1877,7 +1743,7 @@ toColumnTypeName(value)
 
 **Example**
 
-Difference between `toTypeName` and `toColumnTypeName`:
+Difference between `toTypeName ' and ' toColumnTypeName`:
 
 ```sql
 SELECT toTypeName(CAST('2018-01-01 01:02:03' AS DateTime))
@@ -1941,7 +1807,7 @@ Returns the default value for the given data type.
 
 Does not include default values for custom columns set by the user.
 
-**Syntax**
+**Syntax** 
 
 ```sql
 defaultValueOfArgumentType(expression)
@@ -2236,14 +2102,14 @@ Result:
 └─────────────────┘
 ```
 
-## filesystemUnreserved
+## filesystemFree
 
-Returns the total amount of the free space on the filesystem hosting the database persistence. (previously `filesystemFree`). See also [`filesystemAvailable`](#filesystemavailable).
+Returns the total amount of the free space on the filesystem hosting the database persistence. See also `filesystemAvailable`
 
 **Syntax**
 
 ```sql
-filesystemUnreserved()
+filesystemFree()
 ```
 
 **Returned value**
@@ -2255,7 +2121,7 @@ filesystemUnreserved()
 Query:
 
 ```sql
-SELECT formatReadableSize(filesystemUnreserved()) AS "Free space";
+SELECT formatReadableSize(filesystemFree()) AS "Free space";
 ```
 
 Result:
@@ -2268,7 +2134,7 @@ Result:
 
 ## filesystemCapacity
 
-Returns the capacity of the filesystem in bytes. Needs the [path](../../operations/server-configuration-parameters/settings.md#path) to the data directory to be configured.
+Returns the capacity of the filesystem in bytes. Needs the [path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-path) to the data directory to be configured.
 
 **Syntax**
 
@@ -2583,11 +2449,11 @@ As you can see, `runningAccumulate` merges states for each group of rows separat
 
 ## joinGet
 
-The function lets you extract data from the table the same way as from a [dictionary](../../sql-reference/dictionaries/index.md). Gets the data from [Join](../../engines/table-engines/special/join.md#creating-a-table) tables using the specified join key.
+The function lets you extract data from the table the same way as from a [dictionary](../../sql-reference/dictionaries/index.md).
 
-:::note
+Gets the data from [Join](../../engines/table-engines/special/join.md#creating-a-table) tables using the specified join key.
+
 Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
-:::
 
 **Syntax**
 
@@ -2597,32 +2463,26 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 **Arguments**
 
-- `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicating where the search is performed.
+- `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicating where the search is performed. The identifier is searched in the default database (see setting `default_database` in the config file). To override the default database, use `USE db_name` or specify the database and the table through the separator `db_name.db_table` as in the example.
 - `value_column` — name of the column of the table that contains required data.
 - `join_keys` — list of keys.
 
-:::note
-The identifier is searched for in the default database (see setting `default_database` in the config file). To override the default database, use `USE db_name` or specify the database and the table through the separator `db_name.db_table` as in the example.
-:::
-
 **Returned value**
 
-- Returns a list of values corresponded to the list of keys.
+Returns a list of values corresponded to list of keys.
 
-:::note
-If a certain key does not exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting during table creation.
+If certain does not exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting.
+
 More info about `join_use_nulls` in [Join operation](../../engines/table-engines/special/join.md).
-:::
 
 **Example**
 
 Input table:
 
 ```sql
-CREATE DATABASE db_test;
-CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
-INSERT INTO db_test.id_val VALUES (1, 11)(2, 12)(4, 13);
-SELECT * FROM db_test.id_val;
+CREATE DATABASE db_test
+CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id) SETTINGS join_use_nulls = 1
+INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13)
 ```
 
 ```text
@@ -2636,116 +2496,18 @@ SELECT * FROM db_test.id_val;
 Query:
 
 ```sql
-SELECT number, joinGet(db_test.id_val, 'val', toUInt32(number)) from numbers(4);
+SELECT joinGet(db_test.id_val, 'val', toUInt32(number)) from numbers(4) SETTINGS join_use_nulls = 1
 ```
 
 Result:
 
 ```text
-   ┌─number─┬─joinGet('db_test.id_val', 'val', toUInt32(number))─┐
-1. │      0 │                                                  0 │
-2. │      1 │                                                 11 │
-3. │      2 │                                                 12 │
-4. │      3 │                                                  0 │
-   └────────┴────────────────────────────────────────────────────┘
-```
-
-Setting `join_use_nulls` can be used during table creation to change the behaviour of what gets returned if no key exists in the source table.
-
-```sql
-CREATE DATABASE db_test;
-CREATE TABLE db_test.id_val_nulls(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id) SETTINGS join_use_nulls=1;
-INSERT INTO db_test.id_val_nulls VALUES (1, 11)(2, 12)(4, 13);
-SELECT * FROM db_test.id_val_nulls;
-```
-
-```text
-┌─id─┬─val─┐
-│  4 │  13 │
-│  2 │  12 │
-│  1 │  11 │
-└────┴─────┘
-```
-
-Query:
-
-```sql
-SELECT number, joinGet(db_test.id_val_nulls, 'val', toUInt32(number)) from numbers(4);
-```
-
-Result:
-
-```text
-   ┌─number─┬─joinGet('db_test.id_val_nulls', 'val', toUInt32(number))─┐
-1. │      0 │                                                     ᴺᵁᴸᴸ │
-2. │      1 │                                                       11 │
-3. │      2 │                                                       12 │
-4. │      3 │                                                     ᴺᵁᴸᴸ │
-   └────────┴──────────────────────────────────────────────────────────┘
-```
-
-## joinGetOrNull
-
-Like [joinGet](#joinget) but returns `NULL` when the key is missing instead of returning the default value.
-
-**Syntax**
-
-```sql
-joinGetOrNull(join_storage_table_name, `value_column`, join_keys)
-```
-
-**Arguments**
-
-- `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicating where the search is performed.
-- `value_column` — name of the column of the table that contains required data.
-- `join_keys` — list of keys.
-
-:::note
-The identifier is searched for in the default database (see setting `default_database` in the config file). To override the default database, use `USE db_name` or specify the database and the table through the separator `db_name.db_table` as in the example.
-:::
-
-**Returned value**
-
-- Returns a list of values corresponded to the list of keys.
-
-:::note
-If a certain key does not exist in source table then `NULL` is returned for that key.
-:::
-
-**Example**
-
-Input table:
-
-```sql
-CREATE DATABASE db_test;
-CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
-INSERT INTO db_test.id_val VALUES (1, 11)(2, 12)(4, 13);
-SELECT * FROM db_test.id_val;
-```
-
-```text
-┌─id─┬─val─┐
-│  4 │  13 │
-│  2 │  12 │
-│  1 │  11 │
-└────┴─────┘
-```
-
-Query:
-
-```sql
-SELECT number, joinGetOrNull(db_test.id_val, 'val', toUInt32(number)) from numbers(4);
-```
-
-Result:
-
-```text
-   ┌─number─┬─joinGetOrNull('db_test.id_val', 'val', toUInt32(number))─┐
-1. │      0 │                                                     ᴺᵁᴸᴸ │
-2. │      1 │                                                       11 │
-3. │      2 │                                                       12 │
-4. │      3 │                                                     ᴺᵁᴸᴸ │
-   └────────┴──────────────────────────────────────────────────────────┘
+┌─joinGet(db_test.id_val, 'val', toUInt32(number))─┐
+│                                                0 │
+│                                               11 │
+│                                               12 │
+│                                                0 │
+└──────────────────────────────────────────────────┘
 ```
 
 ## catboostEvaluate
@@ -2893,45 +2655,6 @@ Result:
 
 - [Custom Settings](../../operations/settings/index.md#custom_settings)
 
-## getSettingOrDefault
-
-Returns the current value of a [custom setting](../../operations/settings/index.md#custom_settings) or returns the default value specified in the 2nd argument if the custom setting is not set in the current profile.
-
-**Syntax**
-
-```sql
-getSettingOrDefault('custom_setting', default_value);
-```
-
-**Parameter**
-
-- `custom_setting` — The setting name. [String](../data-types/string.md).
-- `default_value` — Value to return if custom_setting is not set. Value may be of any data type or Null.
-
-**Returned value**
-
-- The setting's current value or default_value if setting is not set.
-
-**Example**
-
-```sql
-SELECT getSettingOrDefault('custom_undef1', 'my_value');
-SELECT getSettingOrDefault('custom_undef2', 100);
-SELECT getSettingOrDefault('custom_undef3', NULL);
-```
-
-Result:
-
-```
-my_value
-100
-NULL
-```
-
-**See Also**
-
-- [Custom Settings](../../operations/settings/index.md#custom_settings)
-
 ## isDecimalOverflow
 
 Checks whether the [Decimal](../data-types/decimal.md) value is outside its precision or outside the specified precision.
@@ -3060,7 +2783,7 @@ Result:
 
 **See Also**
 
-- [tcp_port](../../operations/server-configuration-parameters/settings.md#tcp_port)
+- [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
 
 ## currentProfiles
 
@@ -3953,15 +3676,13 @@ Retrieves the connection ID of the client that submitted the current query and r
 connectionId()
 ```
 
-Alias: `connection_id`.
-
 **Parameters**
 
 None.
 
 **Returned value**
 
-The current connection ID. [UInt64](../data-types/int-uint.md).
+Returns an integer of type UInt64.
 
 **Implementation details**
 
@@ -3973,6 +3694,40 @@ Query:
 
 ```sql
 SELECT connectionId();
+```
+
+```response
+0
+```
+
+## connection_id
+
+An alias of `connectionId`. Retrieves the connection ID of the client that submitted the current query and returns it as a UInt64 integer.
+
+**Syntax**
+
+```sql
+connection_id()
+```
+
+**Parameters**
+
+None.
+
+**Returned value**
+
+Returns an integer of type UInt64.
+
+**Implementation details**
+
+This function is most useful in debugging scenarios or for internal purposes within the MySQL handler. It was created for compatibility with [MySQL's `CONNECTION_ID` function](https://dev.mysql.com/doc/refman/8.0/en/information-functions.html#function_connection-id) It is not typically used in production queries.
+
+**Example**
+
+Query:
+
+```sql
+SELECT connection_id();
 ```
 
 ```response
@@ -4142,7 +3897,7 @@ displayName()
 
 **Example**
 
-The `display_name` can be set in `config.xml`. Taking for example a server with `display_name` configured to 'production':
+The `display_name` can be set in `config.xml`. Taking for example a server with `display_name` configured to 'production': 
 
 ```xml
 <!-- It is the name that will be shown in the clickhouse-client.
@@ -4299,94 +4054,4 @@ Result:
 ┌─transactionOldestSnapshot()─┐
 │                          32 │
 └─────────────────────────────┘
-```
-
-## getSubcolumn
-
-Takes a table expression or identifier and constant string with the name of the sub-column, and returns the requested sub-column extracted from the expression.
-
-**Syntax**
-
-```sql
-getSubcolumn(col_name, subcol_name)
-```
-
-**Arguments**
-
-- `col_name` — Table expression or identifier. [Expression](../syntax.md/#expressions), [Identifier](../syntax.md/#identifiers).
-- `subcol_name` — The name of the sub-column. [String](../data-types/string.md).
-
-**Returned value**
-
-- Returns the extracted sub-column.
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE t_arr (arr Array(Tuple(subcolumn1 UInt32, subcolumn2 String))) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t_arr VALUES ([(1, 'Hello'), (2, 'World')]), ([(3, 'This'), (4, 'is'), (5, 'subcolumn')]);
-SELECT getSubcolumn(arr, 'subcolumn1'), getSubcolumn(arr, 'subcolumn2') FROM t_arr;
-```
-
-Result:
-
-```response
-   ┌─getSubcolumn(arr, 'subcolumn1')─┬─getSubcolumn(arr, 'subcolumn2')─┐
-1. │ [1,2]                           │ ['Hello','World']               │
-2. │ [3,4,5]                         │ ['This','is','subcolumn']       │
-   └─────────────────────────────────┴─────────────────────────────────┘
-```
-
-## getTypeSerializationStreams
-
-Enumerates stream paths of a data type.
-
-:::note
-This function is intended for use by developers.
-:::
-
-**Syntax**
-
-```sql
-getTypeSerializationStreams(col)
-```
-
-**Arguments**
-
-- `col` — Column or string representation of a data-type from which the data type will be detected.
-
-**Returned value**
-
-- Returns an array with all the serialization sub-stream paths.[Array](../data-types/array.md)([String](../data-types/string.md)).
-
-**Examples**
-
-Query:
-
-```sql
-SELECT getTypeSerializationStreams(tuple('a', 1, 'b', 2));
-```
-
-Result:
-
-```response
-   ┌─getTypeSerializationStreams(('a', 1, 'b', 2))─────────────────────────────────────────────────────────────────────────┐
-1. │ ['{TupleElement(1), Regular}','{TupleElement(2), Regular}','{TupleElement(3), Regular}','{TupleElement(4), Regular}'] │
-   └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-Query:
-
-```sql
-SELECT getTypeSerializationStreams('Map(String, Int64)');
-```
-
-Result:
-
-```response
-   ┌─getTypeSerializationStreams('Map(String, Int64)')────────────────────────────────────────────────────────────────┐
-1. │ ['{ArraySizes}','{ArrayElements, TupleElement(keys), Regular}','{ArrayElements, TupleElement(values), Regular}'] │
-   └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```

@@ -1,18 +1,13 @@
 #include <Storages/NATS/NATSSource.h>
 
-#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
-#include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/NATS/NATSConsumer.h>
+#include <IO/EmptyReadBuffer.h>
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsMilliseconds rabbitmq_max_wait_ms;
-}
 
 static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot)
 {
@@ -91,7 +86,7 @@ Chunk NATSSource::generate()
 {
     if (!consumer)
     {
-        auto timeout = std::chrono::milliseconds(context->getSettingsRef()[Setting::rabbitmq_max_wait_ms].totalMilliseconds());
+        auto timeout = std::chrono::milliseconds(context->getSettingsRef().rabbitmq_max_wait_ms.totalMilliseconds());
         consumer = storage.popConsumer(timeout);
         consumer->subscribe();
     }
@@ -126,8 +121,10 @@ Chunk NATSSource::generate()
 
             return 1;
         }
-
-        throw std::move(e);
+        else
+        {
+            throw std::move(e);
+        }
     };
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);

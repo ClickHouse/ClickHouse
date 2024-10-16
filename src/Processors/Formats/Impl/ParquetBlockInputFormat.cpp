@@ -14,8 +14,6 @@
 #include <arrow/status.h>
 #include <parquet/arrow/reader.h>
 #include <parquet/arrow/schema.h>
-#include <parquet/bloom_filter.h>
-#include <parquet/bloom_filter_reader.h>
 #include <parquet/file_reader.h>
 #include <parquet/statistics.h>
 #include "ArrowBufferedStreams.h"
@@ -27,7 +25,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Processors/Formats/Impl/Parquet/ParquetRecordReader.h>
-#include <Processors/Formats/Impl/Parquet/ParquetBloomFilterCondition.h>
 #include <Interpreters/convertFieldToType.h>
 
 namespace CurrentMetrics
@@ -137,11 +134,12 @@ static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type
         };
         if (size <= 4)
             return narrow(Decimal32(0));
-        if (size <= 8)
+        else if (size <= 8)
             return narrow(Decimal64(0));
-        if (size <= 16)
+        else if (size <= 16)
             return narrow(Decimal128(0));
-        return narrow(Decimal256(0));
+        else
+            return narrow(Decimal256(0));
     }
     while (false);
 
@@ -266,50 +264,6 @@ static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type
     return field;
 }
 
-static ParquetBloomFilterCondition::ColumnIndexToBF buildColumnIndexToBF(
-    parquet::BloomFilterReader & bf_reader,
-    int row_group,
-    const std::vector<ArrowFieldIndexUtil::ClickHouseIndexToParquetIndex> & clickhouse_column_index_to_parquet_index,
-    const std::unordered_set<std::size_t> & filtering_columns
-)
-{
-    auto rg_bf = bf_reader.RowGroup(row_group);
-
-    if (!rg_bf)
-    {
-        return {};
-    }
-
-    ParquetBloomFilterCondition::ColumnIndexToBF index_to_column_bf;
-
-    for (const auto & [clickhouse_index, parquet_indexes] : clickhouse_column_index_to_parquet_index)
-    {
-        if (!filtering_columns.contains(clickhouse_index))
-        {
-            continue;
-        }
-
-        // Complex / nested types contain more than one index. We don't support those.
-        if (parquet_indexes.size() > 1)
-        {
-            continue;
-        }
-
-        auto parquet_index = parquet_indexes[0];
-
-        auto bf = rg_bf->GetColumnBloomFilter(parquet_index);
-
-        if (!bf)
-        {
-            continue;
-        }
-
-        index_to_column_bf[clickhouse_index] = std::move(bf);
-    }
-
-    return index_to_column_bf;
-}
-
 /// Range of values for each column, based on statistics in the Parquet metadata.
 /// This is lower/upper bounds, not necessarily exact min and max, e.g. the min/max can be just
 /// missing in the metadata.
@@ -330,9 +284,6 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
         auto c = row_group->ColumnChunk(i);
         auto s = c->statistics();
         if (!s)
-            continue;
-
-        if (s->descr()->schema_node()->is_repeated())
             continue;
 
         auto path = c->path_in_schema()->ToDotVector();
@@ -487,7 +438,6 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
     , max_decoding_threads(max_decoding_threads_)
     , min_bytes_for_seek(min_bytes_for_seek_)
     , pending_chunks(PendingChunk::Compare { .row_group_first = format_settings_.parquet.preserve_order })
-    , previous_block_missing_values(getPort().getHeader().columns())
 {
     if (max_decoding_threads > 1)
         pool = std::make_unique<ThreadPool>(CurrentMetrics::ParquetDecoderThreads, CurrentMetrics::ParquetDecoderThreadsActive, CurrentMetrics::ParquetDecoderThreadsScheduled, max_decoding_threads);
@@ -521,30 +471,12 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     ArrowFieldIndexUtil field_util(
         format_settings.parquet.case_insensitive_column_matching,
         format_settings.parquet.allow_missing_columns);
-
-    auto index_mapping = field_util.findRequiredIndices(getPort().getHeader(), *schema, *metadata);
-
-    for (const auto & [clickhouse_header_index, parquet_indexes] : index_mapping)
-    {
-        for (auto parquet_index : parquet_indexes)
-        {
-            column_indices.push_back(parquet_index);
-        }
-    }
+    column_indices = field_util.findRequiredIndices(getPort().getHeader(), *schema);
 
     int num_row_groups = metadata->num_row_groups();
-
-    if (num_row_groups == 0)
-    {
-        return;
-    }
-
-    const auto bf_reader_properties = parquet::default_reader_properties();
-    std::unique_ptr<parquet::BloomFilterReader> bf_reader;
-
     row_group_batches.reserve(num_row_groups);
 
-    auto adaptive_chunk_size = [&](int row_group_idx) -> size_t
+    auto adative_chunk_size = [&](int row_group_idx) -> size_t
     {
         size_t total_size = 0;
         auto row_group_meta = metadata->RowGroup(row_group_idx);
@@ -562,37 +494,10 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         return std::min(std::max(preferred_num_rows, MIN_ROW_NUM), static_cast<size_t>(format_settings.parquet.max_block_size));
     };
 
-    std::unique_ptr<ParquetBloomFilterCondition> parquet_bloom_filter_condition;
-
-    std::unordered_set<std::size_t> filtering_columns;
-
-    if (format_settings.parquet.bloom_filter_push_down && key_condition)
-    {
-        bf_reader = parquet::BloomFilterReader::Make(arrow_file, metadata, bf_reader_properties, nullptr);
-
-        const auto parquet_conditions = keyConditionRPNToParquetBloomFilterCondition(
-            key_condition->getRPN(),
-            index_mapping,
-            metadata->RowGroup(0));
-        parquet_bloom_filter_condition = std::make_unique<ParquetBloomFilterCondition>(parquet_conditions, getPort().getHeader());
-
-        filtering_columns = parquet_bloom_filter_condition->getFilteringColumnKeys();
-    }
-
     for (int row_group = 0; row_group < num_row_groups; ++row_group)
     {
         if (skip_row_groups.contains(row_group))
             continue;
-
-        if (parquet_bloom_filter_condition)
-        {
-            const auto column_index_to_bf = buildColumnIndexToBF(*bf_reader, row_group, index_mapping, filtering_columns);
-
-            if (!parquet_bloom_filter_condition->mayBeTrueOnRowGroup(column_index_to_bf))
-            {
-                continue;
-            }
-        }
 
         if (format_settings.parquet.filter_push_down && key_condition
             && !key_condition
@@ -608,7 +513,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         row_group_batches.back().row_groups_idxs.push_back(row_group);
         row_group_batches.back().total_rows += metadata->RowGroup(row_group)->num_rows();
         row_group_batches.back().total_bytes_compressed += metadata->RowGroup(row_group)->total_compressed_size();
-        auto rows = adaptive_chunk_size(row_group);
+        auto rows = adative_chunk_size(row_group);
         row_group_batches.back().adaptive_chunk_size = rows ? rows : format_settings.parquet.max_block_size;
     }
 }
@@ -772,19 +677,23 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
         // reached. Wake up read() instead.
         condvar.notify_all();
     };
-
-    auto get_approx_original_chunk_size = [&](size_t num_rows)
+    auto get_pending_chunk = [&](size_t num_rows, Chunk chunk = {})
     {
-        return static_cast<size_t>(std::ceil(static_cast<double>(row_group_batch.total_bytes_compressed) / row_group_batch.total_rows * num_rows));
+        size_t approx_chunk_original_size = static_cast<size_t>(std::ceil(
+                static_cast<double>(row_group_batch.total_bytes_compressed) / row_group_batch.total_rows * num_rows));
+        return PendingChunk{
+                .chunk = std::move(chunk),
+                .block_missing_values = {},
+                .chunk_idx = row_group_batch.next_chunk_idx,
+                .row_group_batch_idx = row_group_batch_idx,
+                .approx_original_chunk_size = approx_chunk_original_size
+        };
     };
 
     if (!row_group_batch.record_batch_reader && !row_group_batch.native_record_reader)
         initializeRowGroupBatchReader(row_group_batch_idx);
 
-    PendingChunk res(getPort().getHeader().columns());
-    res.chunk_idx = row_group_batch.next_chunk_idx;
-    res.row_group_batch_idx = row_group_batch_idx;
-
+    PendingChunk res;
     if (format_settings.parquet.use_native_reader)
     {
         auto chunk = row_group_batch.native_record_reader->readChunk();
@@ -794,9 +703,9 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
             return;
         }
 
-        /// TODO: support defaults_for_omitted_fields feature when supporting nested columns
-        res.approx_original_chunk_size = get_approx_original_chunk_size(chunk.getNumRows());
-        res.chunk = std::move(chunk);
+        // TODO support defaults_for_omitted_fields feature when supporting nested columns
+        auto num_rows = chunk.getNumRows();
+        res = get_pending_chunk(num_rows, std::move(chunk));
     }
     else
     {
@@ -811,11 +720,11 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
         }
 
         auto tmp_table = arrow::Table::FromRecordBatches({*batch});
+        res = get_pending_chunk((*tmp_table)->num_rows());
 
         /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
         /// Otherwise fill the missing columns with zero values of its type.
         BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &res.block_missing_values : nullptr;
-        res.approx_original_chunk_size = get_approx_original_chunk_size((*tmp_table)->num_rows());
         res.chunk = row_group_batch.arrow_column_to_ch_column->arrowTableToCHChunk(*tmp_table, (*tmp_table)->num_rows(), block_missing_values_ptr);
     }
 
@@ -929,9 +838,9 @@ void ParquetBlockInputFormat::resetParser()
     IInputFormat::resetParser();
 }
 
-const BlockMissingValues * ParquetBlockInputFormat::getMissingValues() const
+const BlockMissingValues & ParquetBlockInputFormat::getMissingValues() const
 {
-    return &previous_block_missing_values;
+    return previous_block_missing_values;
 }
 
 ParquetSchemaReader::ParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)

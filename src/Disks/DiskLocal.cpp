@@ -148,7 +148,8 @@ public:
     {
         if (entry->is_directory())
             return dir_path / entry->path().filename() / "";
-        return dir_path / entry->path().filename();
+        else
+            return dir_path / entry->path().filename();
     }
 
     String name() const override { return entry->path().filename(); }
@@ -210,9 +211,10 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes)
         reserved_bytes += bytes;
         return {unreserved_space - bytes};
     }
-
-    LOG_TRACE(logger, "Could not reserve {} on local disk {}. Not enough unreserved space", ReadableSize(bytes), backQuote(name));
-
+    else
+    {
+        LOG_TRACE(logger, "Could not reserve {} on local disk {}. Not enough unreserved space", ReadableSize(bytes), backQuote(name));
+    }
 
     return {};
 }
@@ -308,7 +310,8 @@ DirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path) const
     fs::path meta_path = fs::path(disk_path) / path;
     if (!broken && fs::exists(meta_path) && fs::is_directory(meta_path))
         return std::make_unique<DiskLocalDirectoryIterator>(disk_path, path);
-    return std::make_unique<DiskLocalDirectoryIterator>();
+    else
+        return std::make_unique<DiskLocalDirectoryIterator>();
 }
 
 void DiskLocal::moveFile(const String & from_path, const String & to_path)
@@ -336,15 +339,7 @@ DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, const
 {
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
     return std::make_unique<WriteBufferFromFile>(
-        fs::path(disk_path) / path,
-        buf_size,
-        flags,
-        settings.local_throttler,
-        0666,
-        nullptr,
-        0,
-        settings.use_adaptive_write_buffer,
-        settings.adaptive_write_buffer_initial_size);
+        fs::path(disk_path) / path, buf_size, flags, settings.local_throttler);
 }
 
 std::vector<String> DiskLocal::getBlobPath(const String & path) const

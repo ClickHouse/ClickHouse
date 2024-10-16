@@ -270,7 +270,7 @@ void ParquetBlockOutputFormat::resetFormatterImpl()
     staging_bytes = 0;
 }
 
-void ParquetBlockOutputFormat::onCancel() noexcept
+void ParquetBlockOutputFormat::onCancel()
 {
     is_stopped = true;
 }

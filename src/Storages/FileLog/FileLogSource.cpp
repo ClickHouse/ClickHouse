@@ -105,8 +105,10 @@ Chunk FileLogSource::generate()
 
             return 1;
         }
-
-        throw std::move(e);
+        else
+        {
+            throw std::move(e);
+        }
     };
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);

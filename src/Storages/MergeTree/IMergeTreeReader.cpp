@@ -77,7 +77,7 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Filling of virtual columns is supported only for LoadedMergeTreeDataPartInfoForReader");
 
     const auto & data_part = loaded_part_info->getDataPart();
-    const auto & storage_columns = storage_snapshot->metadata->getColumns();
+    const auto & storage_columns = storage_snapshot->getMetadataForQuery()->getColumns();
     const auto & virtual_columns = storage_snapshot->virtual_columns;
 
     auto it = requested_columns.begin();
@@ -172,9 +172,9 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
 
         if (dag)
         {
-            dag->addMaterializingOutputActions(/*materialize_sparse=*/ false);
-            auto actions = std::make_shared<ExpressionActions>(
-                std::move(*dag),
+            dag->addMaterializingOutputActions();
+            auto actions = std::make_shared<
+                ExpressionActions>(std::move(dag),
                 ExpressionActionsSettings::fromSettings(data_part_info_for_read->getContext()->getSettingsRef()));
             actions->execute(additional_columns);
         }
