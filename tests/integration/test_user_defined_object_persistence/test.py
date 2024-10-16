@@ -58,5 +58,6 @@ def test_persistence():
     assert (
         "Unknown function MyUnion" in error_message
         or "Function with name 'MyUnion' does not exist. In scope SELECT MyUnion"
+        or "Function with name 'MyUnion' does not exists. In scope SELECT MyUnion"
         in error_message
     )

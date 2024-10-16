@@ -36,7 +36,10 @@ def started_cluster():
 def test_replicated_db_and_ttl(started_cluster):
     node1 = cluster.instances["node1"]
     node1.query("DROP DATABASE default")
-    node1.query("CREATE DATABASE default ENGINE Replicated('/replicated')")
+    node1.query(
+        "CREATE DATABASE default ENGINE Replicated('/replicated')",
+        settings={"allow_experimental_database_replicated": 1},
+    )
 
     node1.query(
         "CREATE TABLE 02908_main (a UInt32) ENGINE = ReplicatedMergeTree ORDER BY a"
