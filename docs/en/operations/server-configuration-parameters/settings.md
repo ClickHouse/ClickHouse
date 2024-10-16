@@ -3085,7 +3085,7 @@ By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests ove
 
 ### no_proxy
 By default, all requests will go through the proxy. In order to disable it for specific hosts, the `no_proxy` variable must be set.
-It can be set inside the `<proxy>` clause for list and remote resolvers and as an environment variable for environment resolver. 
+It can be set inside the `<proxy>` clause for list and remote resolvers and as an environment variable for environment resolver.
 It supports IP addresses, domains, subdomains and `'*'` wildcard for full bypass. Leading dots are stripped just like curl does.
 
 Example:
@@ -3150,6 +3150,34 @@ Default value: "default"
 
 **See Also**
 - [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+
+## workload_path {#workload_path}
+
+The directory used as a storage for all `CREATE WORKLOAD` and `CREATE RESOURCE` queries. By default `/workload/` folder under server working directory is used.
+
+**Example**
+
+``` xml
+<workload_path>/var/lib/clickhouse/workload/</workload_path>
+```
+
+**See Also**
+- [Workload Hierarchy](/docs/en/operations/workload-scheduling.md#workloads)
+- [workload_zookeeper_path](#workload_zookeeper_path)
+
+## workload_zookeeper_path {#workload_zookeeper_path}
+
+The path to a ZooKeeper node, which is used as a storage for all `CREATE WORKLOAD` and `CREATE RESOURCE` queries. For consistency all SQL definitions are stored as a value of this single znode. By default ZooKeeper is not used and definitions are stored on [disk](#workload_path).
+
+**Example**
+
+``` xml
+<workload_zookeeper_path>/clickhouse/workload/definitions.sql</workload_zookeeper_path>
+```
+
+**See Also**
+- [Workload Hierarchy](/docs/en/operations/workload-scheduling.md#workloads)
+- [workload_path](#workload_path)
 
 ## max_authentication_methods_per_user {#max_authentication_methods_per_user}
 
