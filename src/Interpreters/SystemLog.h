@@ -31,6 +31,7 @@
     M(BackupLog,             backup_log,           "Contains logging entries with the information about BACKUP and RESTORE operations.") \
     M(BlobStorageLog,        blob_storage_log,     "Contains logging entries with information about various blob storage operations such as uploads and deletes.") \
     M(QueryMetricLog,        query_metric_log,     "Contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk.") \
+    M(TLSLog,                tls_log,               "Contains information about TLS Certificates used for authentication.") \
 
 
 namespace DB

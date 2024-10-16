@@ -10,6 +10,7 @@
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/SessionLog.h>
+#include <Interpreters/TLSLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/FilesystemCacheLog.h>
@@ -265,6 +266,7 @@ void SystemLogBase<LogElement>::notifyFlush(Index expected_flushed_index, bool s
 template <typename LogElement>
 void SystemLogBase<LogElement>::flush(Index expected_flushed_index, bool should_prepare_tables_anyway)
 {
+    onFlushNotification();
     queue->waitFlush(expected_flushed_index, should_prepare_tables_anyway);
 }
 
