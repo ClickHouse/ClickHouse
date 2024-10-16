@@ -55,6 +55,7 @@ namespace ErrorCodes
     \
     /** Merge selector settings. */ \
     M(UInt64, merge_selector_blurry_base_scale_factor, 42, "Controls when the logic kicks in relatively to the number of parts in partition. The bigger the factor the more belated reaction will be.", 0) \
+    M(UInt64, merge_selector_window_size, 1000, "How many parts to look at once.", 0) \
     \
     /** Merge settings. */ \
     M(UInt64, merge_max_block_size, 8192, "How many rows in blocks should be formed for merge operations. By default has the same value as `index_granularity`.", 0) \
