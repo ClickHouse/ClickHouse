@@ -26,7 +26,6 @@ done
 ./clickhouse -q "
 WITH
 
-'/ClickHouse/docs/en/operations/settings/settings.md' AS doc_file,
 '/ClickHouse/src/Core/Settings.cpp' AS cpp_file,
 
 settings_from_cpp AS
@@ -43,7 +42,18 @@ main_content AS
     ORDER BY name
 ),
 
-(SELECT extract(raw_blob, '(^(?:[^#]|#[^#])+)##') FROM file(doc_file, RawBLOB)) AS prefix
+'---
+sidebar_label: Core Settings
+sidebar_position: 2
+slug: /en/operations/settings/settings
+toc_max_heading_level: 2
+---
+
+# Core Settings
+
+All below settings are also available in table [system.settings](/docs/en/operations/system-tables/settings).
+
+' AS prefix
 
 SELECT prefix || (SELECT groupConcat(*) FROM main_content)
 INTO OUTFILE '/opt/clickhouse-docs/docs/en/operations/settings/settings.md' TRUNCATE FORMAT LineAsString
@@ -52,7 +62,6 @@ INTO OUTFILE '/opt/clickhouse-docs/docs/en/operations/settings/settings.md' TRUN
 ./clickhouse -q "
 WITH
 
-'/ClickHouse/docs/en/operations/settings/settings-formats.md' AS doc_file,
 '/ClickHouse/src/Core/FormatFactorySettingsDeclaration.h' AS cpp_file,
 
 settings_from_cpp AS
@@ -69,7 +78,16 @@ main_content AS
     ORDER BY name
 ),
 
-(SELECT extract(raw_blob, '(^(?:[^#]|#[^#])+)##') FROM file(doc_file, RawBLOB)) AS prefix
+'---
+sidebar_label: Format Settings
+sidebar_position: 52
+slug: /en/operations/settings/formats
+toc_max_heading_level: 2
+---
+
+# Format settings {#format-settings}
+
+' AS prefix
 
 SELECT prefix || (SELECT groupConcat(*) FROM main_content)
 INTO OUTFILE '/opt/clickhouse-docs/docs/en/operations/settings/settings-formats.md' TRUNCATE FORMAT LineAsString
