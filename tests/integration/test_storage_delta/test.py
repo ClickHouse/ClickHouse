@@ -777,7 +777,7 @@ def test_complex_types(started_cluster):
     endpoint_url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}"
     aws_access_key_id = "minio"
     aws_secret_access_key = "minio123"
-    table_name = f"test_complex_types_{uuid4.hex}"
+    table_name = f"test_complex_types_{uuid4().hex}"
 
     storage_options = {
         "AWS_ENDPOINT_URL": endpoint_url,
