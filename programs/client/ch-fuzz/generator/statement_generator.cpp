@@ -1410,11 +1410,19 @@ int StatementGenerator::GenerateNextExplain(RandomGenerator &rg, sql_query_gramm
 }
 
 int StatementGenerator::GenerateNextStatement(RandomGenerator &rg, sql_query_grammar::SQLQuery &sq) {
-	const uint32_t noption = rg.NextMediumNumber();
+	const uint32_t start_transaction = 5 * static_cast<uint32_t>(supports_cloud_features && !this->in_transaction),
+				   commit = 30 * static_cast<uint32_t>(supports_cloud_features && this->in_transaction),
+				   explain_query = 10,
+				   run_query = 120,
+				   prob_space = start_transaction + commit + explain_query + run_query;
+	std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+	const uint32_t nopt = next_dist(rg.gen);
 
-	if (noption < 11) {
-		return GenerateNextExplain(rg, sq.mutable_explain());
-	} /*else if (this->in_transaction && noption < 41) {
+	if (start_transaction && nopt < (start_transaction + 1)) {
+		sq.set_start_trans(true);
+		this->in_transaction = true;
+		return 0;
+	} else if (commit && nopt < (start_transaction + commit + 1)) {
 		if (rg.NextBool()) {
 			sq.set_commit_trans(true);
 		} else {
@@ -1422,12 +1430,13 @@ int StatementGenerator::GenerateNextStatement(RandomGenerator &rg, sql_query_gra
 		}
 		this->in_transaction = false;
 		return 0;
-	} else if (!this->in_transaction && noption < 16) {
-		sq.set_start_trans(true);
-		this->in_transaction = true;
-		return 0;
-	}*/ else {
+	} else if (explain_query && nopt < (start_transaction + commit + explain_query + 1)) {
+		return GenerateNextExplain(rg, sq.mutable_explain());
+	} else if (run_query) {
 		return GenerateNextQuery(rg, sq.mutable_inner_query());
+	} else {
+		assert(0);
+		return 0;
 	}
 }
 
