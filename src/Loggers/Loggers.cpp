@@ -224,8 +224,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     split->open();
     logger.close();
 
-    std::string global_pos_pattern = config.getRawString("logger.message_regexp", "");
-    std::string global_neg_pattern = config.getRawString("logger.message_regexp_negative", "");
+    const std::string global_pos_pattern = config.getRawString("logger.message_regexp", "");
+    const std::string global_neg_pattern = config.getRawString("logger.message_regexp_negative", "");
 
     Poco::AutoPtr<OwnPatternFormatter> pf;
     if (config.getString("logger.formatting.type", "") == "json")
@@ -250,8 +250,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         logger.get(name).setLevel(max_log_level);
 
         // Create a new filter channel for each logger that share the same split channel
-        filter_channel = new DB::OwnFilteringChannel(split, pf, global_pos_pattern, global_neg_pattern);
-        logger.get(name).setChannel(filter_channel);
+        Poco::AutoPtr<DB::OwnFilteringChannel> filter_chan = new DB::OwnFilteringChannel(split, pf, global_pos_pattern, global_neg_pattern);
+        logger.get(name).setChannel(filter_chan);
     }
 
     // Explicitly specified log levels for specific loggers.
@@ -372,8 +372,8 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
     }
     split->setLevel("syslog", syslog_level);
 
-    std::string global_pos_pattern = config.getRawString("logger.message_regexp", "");
-    std::string global_neg_pattern = config.getRawString("logger.message_regexp_negative", "");
+    const std::string global_pos_pattern = config.getRawString("logger.message_regexp", "");
+    const std::string global_neg_pattern = config.getRawString("logger.message_regexp_negative", "");
 
     // Global logging level (it can be overridden for specific loggers).
     logger.setLevel(max_log_level);

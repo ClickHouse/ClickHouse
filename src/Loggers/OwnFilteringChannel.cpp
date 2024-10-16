@@ -27,7 +27,7 @@ void OwnFilteringChannel::log(const Poco::Message & msg)
     pChannel->log(msg);
 }
 
-bool OwnFilteringChannel::regexpFilteredOut(std::string text) const
+bool OwnFilteringChannel::regexpFilteredOut(const std::string & text) const
 {
     if (!positive_pattern.empty())
     {

@@ -14,7 +14,7 @@ class OwnFilteringChannel : public Poco::Channel
 {
 public:
     explicit OwnFilteringChannel(Poco::AutoPtr<Poco::Channel> pChannel_, Poco::AutoPtr<OwnPatternFormatter> pf,
-        std::string positive_pattern_, std::string negative_pattern_)
+        const std::string & positive_pattern_, const std::string & negative_pattern_)
     : positive_pattern(positive_pattern_), negative_pattern(negative_pattern_), pChannel(pChannel_), pFormatter(pf)
     {
     }
@@ -25,7 +25,7 @@ public:
     void log(const Poco::Message & msg) override;
 
     // Sets the regex patterns to use for filtering. Specifying an empty string pattern "" indicates no filtering
-    void setRegexpPatterns(std::string positive_pattern_, std::string negative_pattern_)
+    void setRegexpPatterns(const std::string & positive_pattern_, const std::string & negative_pattern_)
     {
         if (positive_pattern_ != positive_pattern || negative_pattern_ != negative_pattern)
         {
@@ -47,13 +47,13 @@ public:
             pChannel->close();
     }
 
-    void setProperty(const std::string& name, const std::string& value) override
+    void setProperty(const std::string & name, const std::string & value) override
     {
         if (pChannel)
             pChannel->setProperty(name, value);
     }
 
-    std::string getProperty(const std::string& name) const override
+    std::string getProperty(const std::string & name) const override
     {
         if (pChannel)
             return pChannel->getProperty(name);
@@ -61,7 +61,7 @@ public:
     }
 
 private:
-    bool regexpFilteredOut(std::string text) const;
+    bool regexpFilteredOut(const std::string & text) const;
 
     std::string positive_pattern;
     std::string negative_pattern;
