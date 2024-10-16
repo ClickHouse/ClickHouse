@@ -22,9 +22,9 @@ void registerSimpleMergeSelector(MergeSelectorFactory & factory)
     });
 }
 
-void registerSimpleMergeSelectorWithBlurryBase(MergeSelectorFactory & factory)
+void registerStochasticSimpleMergeSelector(MergeSelectorFactory & factory)
 {
-    factory.registerPublicSelector("BlurryBase", MergeSelectorAlgorithm::BLURRY_BASE, [](const std::any & settings)
+    factory.registerPublicSelector("StochasticSimple", MergeSelectorAlgorithm::STOCHASTIC_SIMPLE, [](const std::any & settings)
     {
         return std::make_shared<SimpleMergeSelector>(std::any_cast<SimpleMergeSelector::Settings>(settings));
     });

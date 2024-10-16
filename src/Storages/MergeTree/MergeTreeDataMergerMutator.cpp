@@ -534,7 +534,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
 
         std::any merge_settings;
         if (merge_selector_algorithm == MergeSelectorAlgorithm::SIMPLE
-            || merge_selector_algorithm == MergeSelectorAlgorithm::BLURRY_BASE)
+            || merge_selector_algorithm == MergeSelectorAlgorithm::STOCHASTIC_SIMPLE)
         {
             SimpleMergeSelector::Settings simple_merge_settings;
             /// Override value from table settings
@@ -545,7 +545,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
             if (aggressive)
                 simple_merge_settings.base = 1;
 
-            if (merge_selector_algorithm == MergeSelectorAlgorithm::BLURRY_BASE)
+            if (merge_selector_algorithm == MergeSelectorAlgorithm::STOCHASTIC_SIMPLE)
             {
                 simple_merge_settings.use_blurry_base = true;
                 simple_merge_settings.blurry_base_scale_factor = (*data_settings)[MergeTreeSetting::merge_selector_blurry_base_scale_factor];
