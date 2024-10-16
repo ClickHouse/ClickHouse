@@ -408,8 +408,6 @@ StorageURLSource::StorageURLSource(
                 compression_method,
                 need_only_count);
 
-            input_format->setSerializationHints(info.serialization_hints);
-
             if (key_condition)
                 input_format->setKeyCondition(key_condition);
 
@@ -1074,7 +1072,7 @@ public:
         std::function<void(std::ostream &)> read_post_data_callback_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
         , storage(std::move(storage_))
         , uri_options(uri_options_)
         , info(std::move(info_))
@@ -1129,7 +1127,7 @@ void IStorageURLBase::read(
     size_t num_streams)
 {
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context));
 
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];
@@ -1299,7 +1297,7 @@ void StorageURLWithFailover::read(
     size_t num_streams)
 {
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context));
 
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];
@@ -1357,17 +1355,19 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             headers,
             http_method);
     }
-
-    return std::make_shared<StorageURLSink>(
-        uri,
-        format_name,
-        format_settings,
-        metadata_snapshot->getSampleBlock(),
-        context,
-        getHTTPTimeouts(context),
-        compression_method,
-        headers,
-        http_method);
+    else
+    {
+        return std::make_shared<StorageURLSink>(
+            uri,
+            format_name,
+            format_settings,
+            metadata_snapshot->getSampleBlock(),
+            context,
+            getHTTPTimeouts(context),
+            compression_method,
+            headers,
+            http_method);
+    }
 }
 
 SchemaCache & IStorageURLBase::getSchemaCache(const ContextPtr & context)

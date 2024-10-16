@@ -680,8 +680,10 @@ bool decompress(
 
         return success;
     }
-
-    return decompressImpl<8, false>(source, dest, source_size, dest_size);
+    else
+    {
+        return decompressImpl<8, false>(source, dest, source_size, dest_size);
+    }
 }
 
 

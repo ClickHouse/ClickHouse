@@ -1,3 +1,4 @@
+version: '2.3'
 services:
     openldap:
         image: bitnami/openldap:2.6.6

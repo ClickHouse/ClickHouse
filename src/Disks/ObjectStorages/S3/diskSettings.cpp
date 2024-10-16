@@ -92,26 +92,12 @@ std::unique_ptr<S3::Client> getClient(
             "Region should be explicitly specified for directory buckets");
     }
 
-    const Settings & local_settings = context->getSettingsRef();
-
-    int s3_max_redirects = static_cast<int>(global_settings[Setting::s3_max_redirects]);
-    if (!for_disk_s3 && local_settings.isChanged("s3_max_redirects"))
-        s3_max_redirects = static_cast<int>(local_settings[Setting::s3_max_redirects]);
-
-    int s3_retry_attempts = static_cast<int>(global_settings[Setting::s3_retry_attempts]);
-    if (!for_disk_s3 && local_settings.isChanged("s3_retry_attempts"))
-        s3_retry_attempts = static_cast<int>(local_settings[Setting::s3_retry_attempts]);
-
-    bool enable_s3_requests_logging = global_settings[Setting::enable_s3_requests_logging];
-    if (!for_disk_s3 && local_settings.isChanged("enable_s3_requests_logging"))
-        enable_s3_requests_logging = local_settings[Setting::enable_s3_requests_logging];
-
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         auth_settings.region,
         context->getRemoteHostFilter(),
-        s3_max_redirects,
-        s3_retry_attempts,
-        enable_s3_requests_logging,
+        static_cast<int>(global_settings[Setting::s3_max_redirects]),
+        static_cast<int>(global_settings[Setting::s3_retry_attempts]),
+        global_settings[Setting::enable_s3_requests_logging],
         for_disk_s3,
         request_settings.get_request_throttler,
         request_settings.put_request_throttler,

@@ -100,7 +100,7 @@ static size_t getTypeDepth(const DataTypePtr & type)
 {
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
         return 1 + getTypeDepth(array_type->getNestedType());
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    else if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
         return 1 + (tuple_type->getElements().empty() ? 0 : getTypeDepth(tuple_type->getElements().at(0)));
 
     return 0;
@@ -181,12 +181,13 @@ static Field extractValueFromNode(const ASTPtr & node, const IDataType & type, C
     {
         return convertFieldToType(lit->value, type);
     }
-    if (node->as<ASTFunction>())
+    else if (node->as<ASTFunction>())
     {
         std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(node, context);
         return convertFieldToType(value_raw.first, type, value_raw.second.get());
     }
-    throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect element of set. Must be literal or constant expression.");
+    else
+        throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect element of set. Must be literal or constant expression.");
 }
 
 static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, ContextPtr context)
@@ -1063,13 +1064,14 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         // aggregate functions.
         return;
     }
-    if (node.compute_after_window_functions)
+    else if (node.compute_after_window_functions)
     {
         if (!data.build_expression_with_window_functions)
         {
             for (const auto & arg : node.arguments->children)
             {
-                if (auto const * function = arg->as<ASTFunction>(); function && function->name == "lambda")
+                if (auto const * function = arg->as<ASTFunction>();
+                    function && function->name == "lambda")
                 {
                     // Lambda function is a special case. It shouldn't be visited here.
                     continue;
@@ -1490,13 +1492,16 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
         return data.prepared_sets->addFromSubquery(
             set_key, std::move(source), nullptr, std::move(external_table_set), data.getContext()->getSettingsRef());
     }
-
-    const auto & last_actions = data.actions_stack.getLastActions();
-    const auto & index = data.actions_stack.getLastActionsIndex();
-    if (data.prepared_sets && index.contains(left_in_operand->getColumnName()))
-        /// An explicit enumeration of values in parentheses.
-        return makeExplicitSet(&node, last_actions, data.getContext(), *data.prepared_sets);
-    return {};
+    else
+    {
+        const auto & last_actions = data.actions_stack.getLastActions();
+        const auto & index = data.actions_stack.getLastActionsIndex();
+        if (data.prepared_sets && index.contains(left_in_operand->getColumnName()))
+            /// An explicit enumeration of values in parentheses.
+            return makeExplicitSet(&node, last_actions, data.getContext(), *data.prepared_sets);
+        else
+            return {};
+    }
 }
 
 }
