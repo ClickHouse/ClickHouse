@@ -1,10 +1,8 @@
 #pragma once
 
 #include <Core/BaseSettingsFwdMacros.h>
-#include <Core/Field.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
-
 
 namespace Poco
 {
@@ -19,7 +17,7 @@ namespace DB
 struct CoordinationSettingsImpl;
 class WriteBufferFromOwnString;
 
-/// List of available types supported in MergeTreeSettings object
+/// List of available types supported in CoordinationSettings object
 #define COORDINATION_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, LogsLevel) \
