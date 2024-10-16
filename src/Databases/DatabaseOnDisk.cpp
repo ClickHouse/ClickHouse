@@ -374,22 +374,25 @@ void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to
     auto mutable_context = std::const_pointer_cast<Context>(getContext());
     const auto & res = executeQuery(query, mutable_context, QueryFlags{ .internal = true }).second;
     const auto & res_col = res.pipeline.getHeader().getColumnsWithTypeAndName()[0].column;
-    const auto allowed_max_length = res_col->getUInt(1);
+    const auto allowed_max_length = res_col->getUInt(0);
     String table_metadata_path = getObjectMetadataPath(to_table_name);
 
     if (escapeForFileName(to_table_name).length() > allowed_max_length)
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The max length of table name for database {} is {}, current length is {}",
-                            database_name, allowed_max_length, to_table_name.length());
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                        "The max length of table name for database {} is {}, current length is {}",
+                        database_name, allowed_max_length, to_table_name.length());
 
     if (fs::exists(table_metadata_path))
     {
         fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
 
         if (fs::exists(detached_permanently_flag))
-            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached permanently)",
+            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
+                            "Table {}.{} already exists (detached permanently)",
                             backQuote(database_name), backQuote(to_table_name));
         else
-            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached)",
+            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
+                            "Table {}.{} already exists (detached)",
                             backQuote(database_name), backQuote(to_table_name));
     }
 }

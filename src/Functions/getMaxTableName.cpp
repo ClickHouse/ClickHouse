@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnConst.h>
 #include <Core/Field.h>
 #include <filesystem>
 #include <Common/escapeForFileName.h>
@@ -19,10 +20,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
 }
 
-class FunctionGetMaxTableName: public IFunction, WithContext
+class FunctionGetMaxTableName : public IFunction, WithContext
 {
-    const String db_name;
-
 public:
     static constexpr auto name = "getMaxTableNameForDatabase";
     static FunctionPtr create(ContextPtr context_)
@@ -30,8 +29,9 @@ public:
         return std::make_shared<FunctionGetMaxTableName>(context_);
     }
 
-    explicit FunctionGetMaxTableName(ContextPtr context_):WithContext(context_)
-    { }
+    explicit FunctionGetMaxTableName(ContextPtr context_) : WithContext(context_)
+    {
+    }
 
     String getName() const override
     {
@@ -76,35 +76,39 @@ public:
         if (max_create_length == -1)
             max_create_length = NAME_MAX;
 
-        //File name to drop is escaped_db_name.escaped_table_name.uuid.sql
-        //File name to create is table_name.sql
-        auto max_to_create = static_cast<size_t>(max_create_length)  - suffix.length();
-        const IColumn * col;
+        // File name to drop is escaped_db_name.escaped_table_name.uuid.sql
+        // File name to create is table_name.sql
+        auto max_to_create = static_cast<size_t>(max_create_length) - suffix.length();
 
         if (!isColumnConst(*arguments[0].column.get()))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must be constant.", getName());
 
-        String database_name;
-        WhichDataType which(arguments[0].type);
+        const ColumnConst * col_const = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
+        if (!col_const)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected a constant string as argument for function {}", getName());
 
-        if (which.isString())
-            col = checkAndGetColumn<ColumnString>(arguments[0].column.get());
-        else
-            col = checkAndGetColumn<ColumnFixedString>(arguments[0].column.get());
-
-        database_name = col->getDataAt(1).toString();
+        String database_name = col_const->getValue<String>();
 
         if (!DatabaseCatalog::instance().isDatabaseExist(database_name))
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist.", database_name);
 
-        //36 is prepared for renaming table operation while dropping
-        //max_to_drop = max_dropped_length - length_of(database_name)- length_of(uuid) - lenght_of('sql' + 3 dots)
+        // 48 is prepared for renaming table operation while dropping (UUID length and extra characters)
+        // max_to_drop = max_dropped_length - length_of(database_name) - length_of(uuid) - length_of('sql' + 3 dots)
         auto max_to_drop = static_cast<size_t>(max_dropped_length) - escapeForFileName(database_name).length() - 48;
-        allowed_max_length = max_to_create > max_to_drop ? max_to_drop : max_to_create;
+        allowed_max_length = std::min(max_to_create, max_to_drop);
         return DataTypeUInt64().createColumnConst(input_rows_count, allowed_max_length);
     }
-};
 
+private:
+    const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * column) const
+    {
+        if (const auto * col = checkAndGetColumnConst<ColumnString>(column))
+            return col;
+        if (const auto * col = checkAndGetColumnConst<ColumnFixedString>(column))
+            return col;
+        return nullptr;
+    }
+};
 
 REGISTER_FUNCTION(getMaxTableName)
 {
@@ -113,4 +117,3 @@ REGISTER_FUNCTION(getMaxTableName)
 }
 
 }
-
