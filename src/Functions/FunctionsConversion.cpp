@@ -1830,7 +1830,7 @@ struct ConvertImpl
                 else if constexpr (std::is_same_v<Name, NameToUnixTimestampEx>
                     && (std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>))
                 {
-                    vec_to[i] = static_cast<ToFieldType>(vec_from[i] * DATE_SECONDS_PER_DAY);
+                    vec_to[i] = vec_from[i] * DATE_SECONDS_PER_DAY;
                 }
                 else
                 {
