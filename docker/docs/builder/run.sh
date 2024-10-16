@@ -23,7 +23,7 @@ done
 
 # Generate pages with settings
 
-ch -q "
+./clickhouse -q "
 WITH
 
 '/ClickHouse/docs/en/operations/settings/settings.md' AS doc_file,
@@ -49,7 +49,7 @@ SELECT prefix || (SELECT groupConcat(*) FROM main_content)
 INTO OUTFILE '/opt/clickhouse-docs/docs/en/operations/settings/settings.md' TRUNCATE FORMAT LineAsString
 "
 
-ch -q "
+./clickhouse -q "
 WITH
 
 '/ClickHouse/docs/en/operations/settings/settings-formats.md' AS doc_file,
