@@ -523,7 +523,7 @@ class CI:
             run_by_labels=[Tags.libFuzzer],
             timeout=10800,
             run_command='libfuzzer_test_check.py "$CHECK_NAME"',
-            runner_type=Runners.STYLE_CHECKER,
+            runner_type=Runners.FUNC_TESTER,
         ),
         JobNames.DOCKER_SERVER: CommonJobConfigs.DOCKER_SERVER.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE, BuildNames.PACKAGE_AARCH64]
