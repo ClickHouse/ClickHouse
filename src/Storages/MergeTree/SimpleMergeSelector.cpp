@@ -150,7 +150,7 @@ bool allow(
 size_t calculateRangeWithStochasticSliding(size_t parts_count, size_t parts_threshold)
 {
     auto mean = static_cast<double>(parts_count);
-    std::normal_distribution<double> distribution{mean, mean / 3};
+    std::normal_distribution<double> distribution{mean, mean / 4};
     size_t right_boundary = static_cast<size_t>(distribution(thread_local_rng));
     if (right_boundary > parts_count)
         right_boundary = 2 * parts_count - right_boundary;
