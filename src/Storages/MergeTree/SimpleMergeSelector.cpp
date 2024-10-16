@@ -1,10 +1,12 @@
 #include <Storages/MergeTree/SimpleMergeSelector.h>
 
 #include <base/interpolate.h>
+#include <Common/thread_local_rng.h>
 
 #include <cmath>
 #include <cassert>
 #include <iostream>
+#include <random>
 
 
 namespace DB
@@ -145,6 +147,18 @@ bool allow(
 }
 
 
+size_t calculateRangeWithStohasticSliding(size_t parts_count, size_t parts_threshold)
+{
+    auto mean = static_cast<double>(parts_count);
+    std::normal_distribution<double> distribution{mean, mean / 3};
+    size_t right_boundary = static_cast<size_t>(distribution(thread_local_rng));
+    if (right_boundary > parts_count)
+        right_boundary = 2 * parts_count - right_boundary;
+    if (right_boundary < parts_threshold)
+        right_boundary = parts_threshold;
+    return right_boundary - parts_threshold;
+}
+
 void selectWithinPartition(
     const SimpleMergeSelector::PartsRange & parts,
     const size_t max_total_size_to_merge,
@@ -165,10 +179,15 @@ void selectWithinPartition(
     /// grow uncontrollably, similar to a snowball effect.
     /// To address this we will try to assign a merge taking into consideration
     /// only last N parts.
-    static constexpr size_t parts_threshold = 1000;
+    const size_t parts_threshold = settings.window_size;
     size_t begin = 0;
     if (parts_count >= parts_threshold)
-        begin = parts_count - parts_threshold;
+    {
+        if (settings.enable_stohastic_sliding)
+            begin = calculateRangeWithStohasticSliding(parts_count, parts_threshold);
+        else
+            begin = parts_count - parts_threshold;
+    }
 
     for (; begin < parts_count; ++begin)
     {
