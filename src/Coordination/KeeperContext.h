@@ -92,7 +92,7 @@ public:
     /// returns true if the log is committed, false if timeout happened
     bool waitCommittedUpto(uint64_t log_idx, uint64_t wait_timeout_ms);
 
-    const CoordinationSettingsPtr & getCoordinationSettings() const;
+    const CoordinationSettings & getCoordinationSettings() const;
 
 private:
     /// local disk defined using path or disk name
