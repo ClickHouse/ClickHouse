@@ -286,6 +286,7 @@ ColumnPtr checkDateTimePrecision(const ColumnPtr & column_to_cast, const ColumnP
     const IColumn * original_nested_column = original_nullable_column ? &original_nullable_column->getNestedColumn() : column_to_cast.get();
 
     const ColumnNullable * result_nullable_column = typeid_cast<const ColumnNullable *>(column_after_cast.get());
+    const IColumn * result_nested_column = result_nullable_column ? &result_nullable_column->getNestedColumn() : column_after_cast.get();
 
     /// Check if the original column is of ColumnDecimal type
     const auto * original_decimal_column = typeid_cast<const ColumnDecimal<DateTime64> *>(original_nested_column);
@@ -335,16 +336,24 @@ ColumnPtr checkDateTimePrecision(const ColumnPtr & column_to_cast, const ColumnP
                 /// Sub-second precision exists; use the original value
                 /// We need to convert the value to the data type of final_column
 
-                if (isDateTime64(result_nullable_column->getNestedColumn().getDataType()))
+                if (isDateTime64(result_nested_column->getDataType()))
                 {
                     final_column->insertData(reinterpret_cast<const char *>(&value), 0);
                 }
-                else if (isUInt32(result_nullable_column->getNestedColumn().getDataType()))
+                else if (isUInt32(result_nested_column->getDataType())) // DateTime
                 {
                     final_column->insert(static_cast<UInt32>(value));
                 }
+                else if (isInt32(result_nested_column->getDataType())) // Date32
+                {
+                    final_column->insert(static_cast<Int32>(value));
+                }
+                else if (isUInt16(result_nested_column->getDataType())) // Date
+                {
+                    final_column->insert(static_cast<UInt16>(value));
+                }
                 else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported final column type");
+                    return column_after_cast;
             }
             else
                 final_column->insertFrom(*column_after_cast, row); /// Didn't lost precision, don't do anything
