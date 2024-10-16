@@ -36,7 +36,7 @@ public:
 
     ~FifoQueue() override
     {
-        chassert(requests.empty());
+        purgeQueue();
     }
 
     const String & getTypeName() const override

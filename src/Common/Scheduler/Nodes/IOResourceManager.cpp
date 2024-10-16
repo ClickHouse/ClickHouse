@@ -54,7 +54,6 @@ IOResourceManager::Resource::Resource(const ASTPtr & resource_entity_)
 
 IOResourceManager::Resource::~Resource()
 {
-    // TODO(serxa): destroy all workloads, purge all queue, abort all resource requests
     scheduler.stop();
 }
 
