@@ -92,7 +92,7 @@ namespace ErrorCodes
     M(String, merge_workload, "", "Name of workload to be used to access resources for merges", 0) \
     M(String, mutation_workload, "", "Name of workload to be used to access resources for mutations", 0) \
     M(Milliseconds, background_task_preferred_step_execution_time_ms, 50, "Target time to execution of one step of merge or mutation. Can be exceeded if one step takes longer time", 0) \
-    M(Bool, check_table_structure_completely, false, "If true, tables must have identical definitions, including projections and secondary indices. Otherwise, the source table's projections and secondary indices must be a subset of those in the target table.", 0) \
+    M(Bool, check_table_structure_completely, false, "Whether to check table structure completely when manipulate partitions. If true, the source and target tables must have identical definitions including projections and secondary indices. Otherwise, the source table's projections and secondary indices must be a subset of those in the target table.", 0) \
     /** Inserts settings. */ \
     M(UInt64, parts_to_delay_insert, 1000, "If table contains at least that many active parts in single partition, artificially slow down insert into table. Disabled if set to 0", 0) \
     M(UInt64, inactive_parts_to_delay_insert, 0, "If table contains at least that many inactive parts in single partition, artificially slow down insert into table.", 0) \
