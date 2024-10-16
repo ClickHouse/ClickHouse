@@ -8,7 +8,6 @@ import signal
 import subprocess
 from pathlib import Path
 from time import sleep
-from typing import List
 
 from botocore.exceptions import ClientError
 
@@ -210,7 +209,15 @@ def main():
             if (current / fuzzer).is_file() and os.access(current / fuzzer, os.X_OK):
                 test_results.append(run_fuzzer(fuzzer.name, timeout))
 
-    prepared_results = prepare_tests_results_for_clickhouse(PRInfo(), test_results, "failure", stopwatch.duration_seconds, stopwatch.start_time_str, "", "libFuzzer")
+    prepared_results = prepare_tests_results_for_clickhouse(
+        PRInfo(),
+        test_results,
+        "failure",
+        stopwatch.duration_seconds,
+        stopwatch.start_time_str,
+        "",
+        "libFuzzer",
+    )
     # ch_helper = ClickHouseHelper()
     # ch_helper.insert_events_into(db="default", table="checks", events=prepared_results)
     logging.info("prepared_results: %s", prepared_results)
@@ -221,16 +228,16 @@ if __name__ == "__main__":
 
     ACTIVE_DIR = path.dirname(path.abspath(__file__))
     sys.path.append((Path(path.dirname(ACTIVE_DIR)) / "ci").as_posix())
-    from env_helper import (  # pylint: disable=import-error,no-name-in-module
-        S3_BUILDS_BUCKET,
-    )
-    from s3_helper import S3Helper  # pylint: disable=import-error,no-name-in-module
-    from clickhouse_helper import (  # pylint: disable=import-error,no-name-in-module
+    from clickhouse_helper import (  # pylint: disable=import-error,no-name-in-module,unused-import
         ClickHouseHelper,
         prepare_tests_results_for_clickhouse,
     )
+    from env_helper import (  # pylint: disable=import-error,no-name-in-module
+        S3_BUILDS_BUCKET,
+    )
     from pr_info import PRInfo  # pylint: disable=import-error,no-name-in-module
-    from stopwatch import Stopwatch  # pylint: disable=import-error,no-name-in-module
     from report import TestResult  # pylint: disable=import-error,no-name-in-module
+    from s3_helper import S3Helper  # pylint: disable=import-error,no-name-in-module
+    from stopwatch import Stopwatch  # pylint: disable=import-error,no-name-in-module
 
     main()
