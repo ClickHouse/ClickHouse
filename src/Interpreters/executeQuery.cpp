@@ -5,6 +5,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/FailPoint.h>
+#include <Common/FieldVisitorToString.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryCache.h>
@@ -155,7 +156,7 @@ namespace Setting
     extern const SettingsBool use_query_cache;
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
-    extern const SettingsBool enable_secure_identifiers;
+    extern const SettingsBool enforce_strict_identifier_format;
 }
 
 namespace ErrorCodes
@@ -565,6 +566,25 @@ void logQueryFinish(
         query_span->addAttributeIfNotZero("clickhouse.written_rows", elem.written_rows);
         query_span->addAttributeIfNotZero("clickhouse.written_bytes", elem.written_bytes);
         query_span->addAttributeIfNotZero("clickhouse.memory_usage", elem.memory_usage);
+
+        if (context)
+        {
+            std::string user_name = context->getUserName();
+            query_span->addAttribute("clickhouse.user", user_name);
+        }
+
+        if (settings[Setting::log_query_settings])
+        {
+            auto changed_settings_names = settings.getChangedNames();
+            for (const auto & name : changed_settings_names)
+            {
+                Field value = settings.get(name);
+                String value_str = convertFieldToString(value);
+
+                query_span->addAttribute(fmt::format("clickhouse.setting.{}", name), value_str);
+
+            }
+        }
         query_span->finish();
     }
 }
@@ -999,12 +1019,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         InterpreterSetQuery::applySettingsFromQuery(ast, context);
         validateAnalyzerSettings(ast, settings[Setting::allow_experimental_analyzer]);
 
-        if (settings[Setting::enable_secure_identifiers])
+        if (settings[Setting::enforce_strict_identifier_format])
         {
             WriteBufferFromOwnString buf;
-            IAST::FormatSettings enable_secure_identifiers_settings(buf, true);
-            enable_secure_identifiers_settings.enable_secure_identifiers = true;
-            ast->format(enable_secure_identifiers_settings);
+            IAST::FormatSettings enforce_strict_identifier_format_settings(buf, true);
+            enforce_strict_identifier_format_settings.enforce_strict_identifier_format = true;
+            ast->format(enforce_strict_identifier_format_settings);
         }
 
         if (auto * insert_query = ast->as<ASTInsertQuery>())
