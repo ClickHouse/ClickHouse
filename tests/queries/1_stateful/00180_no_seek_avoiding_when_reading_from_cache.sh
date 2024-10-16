@@ -23,7 +23,7 @@ $CLICKHOUSE_CLIENT -q "SELECT * FROM hits_s3_sampled WHERE URL LIKE '%google%' O
 query_id=02906_read_from_cache_$RANDOM
 $CLICKHOUSE_CLIENT --query_id ${query_id} -q "SELECT * FROM hits_s3_sampled WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10 FORMAT Null SETTINGS filesystem_cache_reserve_space_wait_lock_timeout_milliseconds=2000"
 
-$CLICKHOUSE_CLIENT -nq "
+$CLICKHOUSE_CLIENT -q "
   SYSTEM FLUSH LOGS;
 
   -- AsynchronousReaderIgnoredBytes = 0: no seek-avoiding happened

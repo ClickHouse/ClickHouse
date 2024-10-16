@@ -1,11 +1,12 @@
 #include <Storages/Kafka/KafkaSource.h>
 
+#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/EmptyReadBuffer.h>
-#include <Storages/Kafka/KafkaConsumer.h>
-#include <Processors/Executors/StreamingFormatExecutor.h>
-#include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
+#include <Processors/Executors/StreamingFormatExecutor.h>
+#include <Storages/Kafka/KafkaConsumer.h>
+#include <Common/logger_useful.h>
 
 #include <Common/ProfileEvents.h>
 
@@ -19,6 +20,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsMilliseconds kafka_max_wait_ms;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -78,7 +84,7 @@ Chunk KafkaSource::generateImpl()
 {
     if (!consumer)
     {
-        auto timeout = std::chrono::milliseconds(context->getSettingsRef().kafka_max_wait_ms.totalMilliseconds());
+        auto timeout = std::chrono::milliseconds(context->getSettingsRef()[Setting::kafka_max_wait_ms].totalMilliseconds());
         consumer = storage.popConsumer(timeout);
 
         if (!consumer)
@@ -126,13 +132,14 @@ Chunk KafkaSource::generateImpl()
 
             return 1;
         }
-        else
-        {
-            e.addMessage("while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
-                consumer->currentTopic(), consumer->currentPartition(), consumer->currentOffset());
-            consumer->setExceptionInfo(e.message());
-            throw std::move(e);
-        }
+
+        e.addMessage(
+            "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
+            consumer->currentTopic(),
+            consumer->currentPartition(),
+            consumer->currentOffset());
+        consumer->setExceptionInfo(e.message());
+        throw std::move(e);
     };
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
@@ -246,7 +253,7 @@ Chunk KafkaSource::generateImpl()
     {
         return {};
     }
-    else if (consumer->polledDataUnusable())
+    if (consumer->polledDataUnusable())
     {
         // the rows were counted already before by KafkaRowsRead,
         // so let's count the rows we ignore separately

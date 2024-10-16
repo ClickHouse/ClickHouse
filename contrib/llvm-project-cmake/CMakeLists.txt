@@ -140,6 +140,12 @@ if (CMAKE_CROSSCOMPILING)
     message (STATUS "CROSS COMPILING SET LLVM HOST TRIPLE ${LLVM_HOST_TRIPLE}")
 endif()
 
+# llvm-project/llvm/cmake/config-ix.cmake does a weird thing: it defines _LARGEFILE64_SOURCE,
+# then checks if lseek64() function exists, then undefines _LARGEFILE64_SOURCE.
+# Then the actual code that uses this function *doesn't* define _LARGEFILE64_SOURCE, so lseek64()
+# may not exist and compilation fails. This happens with musl.
+add_compile_definitions("_LARGEFILE64_SOURCE")
+
 add_subdirectory ("${LLVM_SOURCE_DIR}" "${LLVM_BINARY_DIR}")
 
 set_directory_properties (PROPERTIES

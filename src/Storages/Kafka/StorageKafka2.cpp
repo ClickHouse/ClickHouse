@@ -1,6 +1,7 @@
 #include <Storages/Kafka/StorageKafka2.h>
 
 #include <Core/ServerUUID.h>
+#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
@@ -39,7 +40,6 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/config_version.h>
 #include <Common/formatReadable.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
@@ -71,6 +71,14 @@ extern const Event KafkaWrites;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_block_size;
+    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsUInt64 output_format_avro_rows_in_file;
+    extern const SettingsMilliseconds stream_flush_interval_ms;
+    extern const SettingsMilliseconds stream_poll_timeout_ms;
+}
 
 namespace fs = std::filesystem;
 
@@ -349,7 +357,7 @@ StorageKafka2::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapsho
     cppkafka::Configuration conf = getProducerConfiguration();
 
     const Settings & settings = getContext()->getSettingsRef();
-    size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
+    size_t poll_timeout = settings[Setting::stream_poll_timeout_ms].totalMilliseconds();
     const auto & header = metadata_snapshot->getSampleBlockNonMaterialized();
 
     auto producer = std::make_unique<KafkaProducer>(
@@ -359,8 +367,8 @@ StorageKafka2::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapsho
 
     size_t max_rows = max_rows_per_message;
     /// Need for backward compatibility.
-    if (format_name == "Avro" && local_context->getSettingsRef().output_format_avro_rows_in_file.changed)
-        max_rows = local_context->getSettingsRef().output_format_avro_rows_in_file.value;
+    if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
+        max_rows = local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].value;
     return std::make_shared<MessageQueueSink>(header, getFormatName(), max_rows, std::move(producer), getName(), modified_context);
 }
 
@@ -443,13 +451,13 @@ cppkafka::Configuration StorageKafka2::getProducerConfiguration()
 size_t StorageKafka2::getMaxBlockSize() const
 {
     return kafka_settings->kafka_max_block_size.changed ? kafka_settings->kafka_max_block_size.value
-                                                        : (getContext()->getSettingsRef().max_insert_block_size.value / num_consumers);
+                                                        : (getContext()->getSettingsRef()[Setting::max_insert_block_size].value / num_consumers);
 }
 
 size_t StorageKafka2::getPollMaxBatchSize() const
 {
     size_t batch_size = kafka_settings->kafka_poll_max_batch_size.changed ? kafka_settings->kafka_poll_max_batch_size.value
-                                                                          : getContext()->getSettingsRef().max_block_size.value;
+                                                                          : getContext()->getSettingsRef()[Setting::max_block_size].value;
 
     return std::min(batch_size, getMaxBlockSize());
 }
@@ -457,7 +465,7 @@ size_t StorageKafka2::getPollMaxBatchSize() const
 size_t StorageKafka2::getPollTimeoutMillisecond() const
 {
     return kafka_settings->kafka_poll_timeout_ms.changed ? kafka_settings->kafka_poll_timeout_ms.totalMilliseconds()
-                                                         : getContext()->getSettingsRef().stream_poll_timeout_ms.totalMilliseconds();
+                                                         : getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds();
 }
 
 namespace
@@ -551,7 +559,7 @@ bool StorageKafka2::createTableIfNotExists()
             LOG_INFO(log, "It looks like the table {} was created by another replica at the same moment, will retry", keeper_path);
             continue;
         }
-        else if (code != Coordination::Error::ZOK)
+        if (code != Coordination::Error::ZOK)
         {
             zkutil::KeeperMultiException::check(code, ops, responses);
         }
@@ -593,7 +601,7 @@ bool StorageKafka2::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr keeper_to
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal of replicated table. It's a bug");
     }
-    else if (code == Coordination::Error::ZNOTEMPTY)
+    if (code == Coordination::Error::ZNOTEMPTY)
     {
         LOG_ERROR(
             log,
@@ -835,15 +843,13 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
 
             return 1;
         }
-        else
-        {
-            e.addMessage(
-                "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
-                consumer.currentTopic(),
-                consumer.currentPartition(),
-                consumer.currentOffset());
-            throw std::move(e);
-        }
+
+        e.addMessage(
+            "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
+            consumer.currentTopic(),
+            consumer.currentPartition(),
+            consumer.currentOffset());
+        throw std::move(e);
     };
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
@@ -851,7 +857,7 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
 
     Poco::Timespan max_execution_time = kafka_settings->kafka_flush_interval_ms.changed
         ? kafka_settings->kafka_flush_interval_ms
-        : getContext()->getSettingsRef().stream_flush_interval_ms;
+        : getContext()->getSettingsRef()[Setting::stream_flush_interval_ms];
 
     const auto check_time_limit = [&max_execution_time, &total_stopwatch]()
     {

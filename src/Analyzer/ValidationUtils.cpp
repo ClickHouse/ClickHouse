@@ -19,6 +19,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int ILLEGAL_PREWHERE;
+    extern const int UNSUPPORTED_METHOD;
+    extern const int UNEXPECTED_EXPRESSION;
 }
 
 namespace
@@ -26,11 +28,24 @@ namespace
 
 void validateFilter(const QueryTreeNodePtr & filter_node, std::string_view exception_place_message, const QueryTreeNodePtr & query_node)
 {
-    if (filter_node->getNodeType() == QueryTreeNodeType::LIST)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Unsupported expression '{}' in filter", filter_node->formatASTForErrorMessage());
+    DataTypePtr filter_node_result_type;
+    try
+    {
+        filter_node_result_type = filter_node->getResultType();
+    }
+    catch (const DB::Exception &e)
+    {
+        if (e.code() != ErrorCodes::UNSUPPORTED_METHOD)
+            e.rethrow();
+    }
 
-    auto filter_node_result_type = filter_node->getResultType();
+    if (!filter_node_result_type)
+        throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
+                        "Unexpected expression '{}' in filter in {}. In query {}",
+                        filter_node->formatASTForErrorMessage(),
+                        exception_place_message,
+                        query_node->formatASTForErrorMessage());
+
     if (!filter_node_result_type->canBeUsedInBooleanContext())
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
             "Invalid type for filter in {}: {}. In query {}",
@@ -173,9 +188,9 @@ private:
 
                 if (!lhs_child && !rhs_child)
                     continue;
-                else if (lhs_child && !rhs_child)
+                if (lhs_child && !rhs_child)
                     return false;
-                else if (!lhs_child && rhs_child)
+                if (!lhs_child && rhs_child)
                     return false;
 
                 nodes_to_process.emplace_back(lhs_child.get(), rhs_child.get());
