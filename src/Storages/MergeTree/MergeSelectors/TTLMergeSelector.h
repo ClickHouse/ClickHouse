@@ -1,7 +1,7 @@
 #pragma once
 
 #include <base/types.h>
-#include <Storages/MergeTree/MergeSelector.h>
+#include <Storages/MergeTree/MergeSelectors/MergeSelector.h>
 #include <Storages/TTLDescription.h>
 
 #include <map>
@@ -58,10 +58,18 @@ class TTLDeleteMergeSelector : public ITTLMergeSelector
 public:
     using PartitionIdToTTLs = std::map<String, time_t>;
 
-    TTLDeleteMergeSelector(PartitionIdToTTLs & merge_due_times_, time_t current_time_, Int64 merge_cooldown_time_,
-                           bool only_drop_parts_, bool dry_run_)
-        : ITTLMergeSelector(merge_due_times_, current_time_, merge_cooldown_time_, dry_run_)
-        , only_drop_parts(only_drop_parts_) {}
+    struct Params
+    {
+        PartitionIdToTTLs & merge_due_times;
+        time_t current_time;
+        Int64 merge_cooldown_time;
+        bool only_drop_parts;
+        bool dry_run;
+    };
+
+    explicit TTLDeleteMergeSelector(const Params & params)
+        : ITTLMergeSelector(params.merge_due_times, params.current_time, params.merge_cooldown_time, params.dry_run)
+        , only_drop_parts(params.only_drop_parts) {}
 
     time_t getTTLForPart(const IMergeSelector::Part & part) const override;
 
@@ -78,10 +86,18 @@ private:
 class TTLRecompressMergeSelector : public ITTLMergeSelector
 {
 public:
-    TTLRecompressMergeSelector(PartitionIdToTTLs & merge_due_times_, time_t current_time_, Int64 merge_cooldown_time_,
-                               const TTLDescriptions & recompression_ttls_, bool dry_run_)
-        : ITTLMergeSelector(merge_due_times_, current_time_, merge_cooldown_time_, dry_run_)
-        , recompression_ttls(recompression_ttls_)
+    struct Params
+    {
+        PartitionIdToTTLs & merge_due_times;
+        time_t current_time;
+        Int64 merge_cooldown_time;
+        TTLDescriptions recompression_ttls;
+        bool dry_run;
+    };
+
+    explicit TTLRecompressMergeSelector(const Params & params)
+        : ITTLMergeSelector(params.merge_due_times, params.current_time, params.merge_cooldown_time, params.dry_run)
+        , recompression_ttls(params.recompression_ttls)
     {}
 
     /// Return part min recompression TTL.

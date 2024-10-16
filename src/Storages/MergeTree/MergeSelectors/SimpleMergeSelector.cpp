@@ -1,4 +1,6 @@
-#include <Storages/MergeTree/SimpleMergeSelector.h>
+#include <Storages/MergeTree/MergeSelectors/SimpleMergeSelector.h>
+#include <Storages/MergeTree/MergeSelectors/MergeSelectorFactory.h>
+#include <Core/MergeSelectorAlgorithm.h>
 
 #include <base/interpolate.h>
 
@@ -9,6 +11,14 @@
 
 namespace DB
 {
+
+void registerSimpleMergeSelector(MergeSelectorFactory & factory)
+{
+    factory.registerPublicSelector("Simple", MergeSelectorAlgorithm::SIMPLE, [](const std::any & settings)
+    {
+        return std::make_shared<SimpleMergeSelector>(std::any_cast<SimpleMergeSelector::Settings>(settings));
+    });
+}
 
 namespace
 {
