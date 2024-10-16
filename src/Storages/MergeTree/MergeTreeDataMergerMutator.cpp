@@ -549,9 +549,9 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
             if (merge_selector_algorithm == MergeSelectorAlgorithm::STOCHASTIC_SIMPLE)
             {
                 simple_merge_settings.parts_to_throw_insert = (*data_settings)[MergeTreeSetting::parts_to_throw_insert];
-                simple_merge_settings.use_blurry_base = true;
-                simple_merge_settings.enable_stochastic_sliding = true;
                 simple_merge_settings.blurry_base_scale_factor = (*data_settings)[MergeTreeSetting::merge_selector_blurry_base_scale_factor];
+                simple_merge_settings.use_blurry_base = simple_merge_settings.blurry_base_scale_factor != 0;
+                simple_merge_settings.enable_stochastic_sliding = true;
             }
 
             merge_settings = simple_merge_settings;

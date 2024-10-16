@@ -54,7 +54,7 @@ namespace ErrorCodes
     M(Bool, use_compact_variant_discriminators_serialization, true, "Use compact version of Variant discriminators serialization.", 0) \
     \
     /** Merge selector settings. */ \
-    M(UInt64, merge_selector_blurry_base_scale_factor, 42, "Controls when the logic kicks in relatively to the number of parts in partition. The bigger the factor the more belated reaction will be.", 0) \
+    M(UInt64, merge_selector_blurry_base_scale_factor, 0, "Controls when the logic kicks in relatively to the number of parts in partition. The bigger the factor the more belated reaction will be.", 0) \
     M(UInt64, merge_selector_window_size, 1000, "How many parts to look at once.", 0) \
     \
     /** Merge settings. */ \
