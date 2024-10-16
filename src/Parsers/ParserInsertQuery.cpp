@@ -186,8 +186,13 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             const auto & children = select->as<ASTSelectWithUnionQuery>()->list_of_selects->children;
             for (const auto & child : children)
+            {
+                if (child->as<ASTSelectQuery>()->getExpression(ASTSelectQuery::Expression::WITH, false))
+                    throw Exception(ErrorCodes::SYNTAX_ERROR,
+                        "Only one WITH should be presented, either before INSERT or SELECT.");
                 child->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::WITH,
                     std::move(with_expression_list));
+            }
         }
 
         /// FORMAT section is expected if we have input() in SELECT part
