@@ -323,7 +323,7 @@ uhugeint_t::operator bool() const {
 }
 
 void uhugeint_t::ToString(std::string &res) const {
-	bool added = false;
+	std::string in;
 	uhugeint_t input = *this, remainder;
 
 	while (true) {
@@ -331,12 +331,13 @@ void uhugeint_t::ToString(std::string &res) const {
 			break;
 		}
 		input = DivMod(input, 10, remainder);
-		res.insert(0, std::string(1, static_cast<char>('0' + remainder.lower)));
-		added = true;
+		in.insert(0, std::string(1, static_cast<char>('0' + remainder.lower)));
 	}
-	if (!added) {
+	if (in.empty()) {
 		// value is zero
 		res += "0";
+	} else {
+		res += in;
 	}
 }
 

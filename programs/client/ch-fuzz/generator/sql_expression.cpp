@@ -123,12 +123,12 @@ int StatementGenerator::GenerateLiteralValue(RandomGenerator &rg, sql_query_gram
 			}
 		} else if (noption < 41) {
 			//uhugeint
-			sql_query_grammar::UHugeInt *huge = il->mutable_uhugeint();
+			sql_query_grammar::UHugeInt *uhuge = il->mutable_uhugeint();
 
-			huge->set_lower(rg.NextRandomUInt64());
-			huge->set_upper(rg.NextRandomUInt64());
+			uhuge->set_lower(rg.NextRandomUInt64());
+			uhuge->set_upper(rg.NextRandomUInt64());
 			if (rg.NextSmallNumber() < 9) {
-				il->set_integers(rg.NextBool() ? sql_query_grammar::Integers::UInt128 : sql_query_grammar::Integers::Int256);
+				il->set_integers(rg.NextBool() ? sql_query_grammar::Integers::UInt128 : sql_query_grammar::Integers::UInt256);
 			}
 		} else if (noption < 121) {
 			il->set_int_lit(rg.NextRandomInt64());

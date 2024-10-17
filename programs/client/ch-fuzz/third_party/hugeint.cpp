@@ -470,7 +470,7 @@ hugeint_t::operator bool() const {
 }
 
 void hugeint_t::ToString(std::string &res) const {
-	bool added = false;
+	std::string in;
 	uint64_t remainder;
 	hugeint_t input = *this;
 
@@ -488,12 +488,13 @@ void hugeint_t::ToString(std::string &res) const {
 			break;
 		}
 		input = DivModPositive(input, 10, remainder);
-		res.insert(0, std::string(1, static_cast<char>('0' + remainder)));
-		added = true;
+		in.insert(0, std::string(1, static_cast<char>('0' + remainder)));
 	}
-	if (!added) {
+	if (in.empty()) {
 		// value is zero
 		res += "0";
+	} else {
+		res += in;
 	}
 }
 

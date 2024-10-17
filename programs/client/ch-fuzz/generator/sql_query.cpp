@@ -535,8 +535,8 @@ int StatementGenerator::GenerateGroupBy(RandomGenerator &rg, const uint32_t ncol
 		const uint32_t nclauses = std::min<uint32_t>(this->max_width - this->width,
 			std::min<uint32_t>(UINT32_C(5), (rg.NextRandomUInt32() % (available_cols.empty() ? 5 : static_cast<uint32_t>(available_cols.size()))) + 1));
 		const bool no_grouping_sets = next_opt < 91,
-				   has_gsm = !enforce_having && no_grouping_sets && allow_settings && rg.NextSmallNumber() < 4,
-				   has_totals = !enforce_having && next_opt < 51 && allow_settings && rg.NextSmallNumber() < 4;
+				   has_gsm = !enforce_having && next_opt < 51 && allow_settings && rg.NextSmallNumber() < 4,
+				   has_totals = !enforce_having && no_grouping_sets && allow_settings && rg.NextSmallNumber() < 4;
 
 		if (no_grouping_sets) {
 			//group list

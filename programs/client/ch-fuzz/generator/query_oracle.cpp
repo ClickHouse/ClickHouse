@@ -113,11 +113,8 @@ int QueryOracle::DumpTableContent(const SQLTable &t, sql_query_grammar::SQLQuery
 
 static const std::map<sql_query_grammar::OutFormat, sql_query_grammar::InFormat> out_in{
 	{sql_query_grammar::OutFormat::OUT_TabSeparated, sql_query_grammar::InFormat::IN_TabSeparated},
-	{sql_query_grammar::OutFormat::OUT_TabSeparatedRaw, sql_query_grammar::InFormat::IN_TabSeparatedRaw},
 	{sql_query_grammar::OutFormat::OUT_TabSeparatedWithNames, sql_query_grammar::InFormat::IN_TabSeparatedWithNames},
 	{sql_query_grammar::OutFormat::OUT_TabSeparatedWithNamesAndTypes, sql_query_grammar::InFormat::IN_TabSeparatedWithNamesAndTypes},
-	{sql_query_grammar::OutFormat::OUT_TabSeparatedRawWithNames, sql_query_grammar::InFormat::IN_TabSeparatedRawWithNames},
-	{sql_query_grammar::OutFormat::OUT_TabSeparatedRawWithNamesAndTypes, sql_query_grammar::InFormat::IN_TabSeparatedRawWithNamesAndTypes},
 	{sql_query_grammar::OutFormat::OUT_CSV, sql_query_grammar::InFormat::IN_CSV},
 	{sql_query_grammar::OutFormat::OUT_CSVWithNames, sql_query_grammar::InFormat::IN_CSVWithNames},
 	{sql_query_grammar::OutFormat::OUT_CSVWithNamesAndTypes, sql_query_grammar::InFormat::IN_CSVWithNamesAndTypes},
