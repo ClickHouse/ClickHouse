@@ -16,6 +16,7 @@ static const auto MAX_BUFFERED = 131072;
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int INVALID_STATE;
     extern const int UNFINISHED;
 }
