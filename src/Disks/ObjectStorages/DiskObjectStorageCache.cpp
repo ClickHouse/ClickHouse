@@ -7,6 +7,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
 
 void DiskObjectStorage::wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name)
 {
@@ -15,7 +19,13 @@ void DiskObjectStorage::wrapWithCache(FileCachePtr cache, const FileCacheSetting
 
 void DiskObjectStorage::wrapWithEncryption(EncryptedObjectStorageSettingsPtr enc_settings, const String & layer_name)
 {
+#if USE_SSL
     object_storage = std::make_shared<EncryptedObjectStorage>(object_storage, enc_settings, layer_name);
+#else
+    UNUSED(enc_settings);
+    UNUSED(layer_name);
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cannot use Encrypted disk without SSL support");
+#endif
 }
 
 NameSet DiskObjectStorage::getOverlaysNames() const
