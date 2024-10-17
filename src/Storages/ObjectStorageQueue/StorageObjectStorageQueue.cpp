@@ -23,6 +23,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/AlterCommands.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <filesystem>
@@ -45,6 +46,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int BAD_QUERY_PARAMETER;
     extern const int QUERY_NOT_ALLOWED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -127,7 +129,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     const String & comment,
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_,
-    ASTStorage * /* engine_args */,
+    ASTStorage * engine_args,
     LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_)
@@ -167,6 +169,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.settings_changes = engine_args->settings->ptr();
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
@@ -513,6 +516,89 @@ bool StorageObjectStorageQueue::streamToViews()
     }
 
     return total_rows > 0;
+}
+
+void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
+{
+    for (const auto & command : commands)
+    {
+        if (command.type != AlterCommand::MODIFY_SETTING)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only MODIFY SETTING alter is allowed for {}", getName());
+    }
+
+    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    commands.apply(new_metadata, local_context);
+
+    StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
+    if (!new_metadata.hasSettingsChanges())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No settings changes");
+
+    std::unordered_set<std::string_view> changeable_settings_unordered_mode
+    {
+        "processing_threads_num",
+        "s3queue_processing_threads_num"
+    };
+    std::unordered_set<std::string_view> changeable_settings_ordered_mode{};
+
+    const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+    const auto & old_changes = old_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+    for (const auto & changed_setting : new_changes)
+    {
+        auto it = std::find_if(old_changes.begin(), old_changes.end(), [&](const SettingChange & change) { return change.name == changed_setting.name; });
+        const bool setting_changed = it != old_changes.end() && it->value != changed_setting.value;
+
+        if (setting_changed)
+        {
+            if (queue_settings->mode == ObjectStorageQueueMode::UNORDERED)
+            {
+                if (!changeable_settings_unordered_mode.contains(changed_setting.name))
+                {
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                                    "Changing setting {} is not allowed for Unordered mode of {}",
+                                    changed_setting.name, getName());
+                }
+            }
+            else
+            {
+                if (!changeable_settings_ordered_mode.contains(changed_setting.name))
+                {
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                                    "Changing setting {} is not allowed for Unordered mode of {}",
+                                    changed_setting.name, getName());
+                }
+            }
+        }
+    }
+}
+
+void StorageObjectStorageQueue::alter(
+    const AlterCommands & commands,
+    ContextPtr local_context,
+    AlterLockHolder &)
+{
+    if (commands.isSettingsAlter())
+    {
+        StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+        auto table_id = getStorageID();
+        commands.apply(new_metadata, local_context);
+
+        const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        for (const auto & changed_setting : new_changes)
+        {
+            if (queue_settings->mode == ObjectStorageQueueMode::UNORDERED)
+            {
+                if (endsWith(changed_setting.name, "processing_threads_num"))
+                {
+                    /// TODO: catch errors and commit partioal setting change state as difficult to rollback.
+                    files_metadata->alterSetting(changed_setting);
+                    /// TODO: need a mutex for queue_settings, otherwise a race
+                    queue_settings->processing_threads_num = changed_setting.value;
+                }
+            }
+        }
+
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+    }
 }
 
 zkutil::ZooKeeperPtr StorageObjectStorageQueue::getZooKeeper() const

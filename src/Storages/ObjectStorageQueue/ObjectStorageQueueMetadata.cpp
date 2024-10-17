@@ -214,6 +214,50 @@ ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket, const Proces
     return ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(zookeeper_path, bucket, processor, log);
 }
 
+void ObjectStorageQueueMetadata::alterSetting(const SettingChange & change)
+{
+    alterSetting(change, zookeeper_path, table_metadata, log);
+}
+
+void ObjectStorageQueueMetadata::alterSetting(
+    const SettingChange & change,
+    const fs::path & zookeeper_path,
+    ObjectStorageQueueTableMetadata & table_metadata,
+    LoggerPtr log)
+{
+    auto zookeeper = getZooKeeper();
+    Coordination::Stat stat;
+    const auto metadata_str = zookeeper->get(fs::path(zookeeper_path) / "metadata", &stat);
+    const auto metadata_from_zk = ObjectStorageQueueTableMetadata::parse(metadata_str);
+    auto new_table_metadata{table_metadata};
+    if (endsWith(change.name, "processing_threads_num"))
+    {
+        const auto value = change.value.safeGet<UInt64>();
+        if (table_metadata.processing_threads_num == value)
+        {
+            LOG_TRACE(log, "Setting `processing_threads_num` already equals {}. "
+                      "Will do nothing", value);
+            return;
+        }
+        new_table_metadata.processing_threads_num = value;
+
+        const fs::path alter_setting_lock_path = zookeeper_path / "alter_setting_lock";
+        const fs::path table_metadata_path = zookeeper_path / "metadata";
+
+        auto ephemeral_node = zkutil::EphemeralNodeHolder::tryCreate(alter_setting_lock_path, *zookeeper, toString(getCurrentTime()));
+        if (!ephemeral_node)
+        {
+            /// TODO: add tries, change error code
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to take alter setting lock");
+        }
+
+        /// TODO: catch and retry if node version changed
+        zookeeper->set(table_metadata_path, new_table_metadata.toString(), stat.version);
+
+        table_metadata.processing_threads_num = new_table_metadata.processing_threads_num;
+    }
+}
+
 ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
     const fs::path & zookeeper_path,
     const ObjectStorageQueueSettings & settings,
