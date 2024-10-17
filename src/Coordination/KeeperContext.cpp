@@ -564,9 +564,9 @@ void KeeperContext::waitLocalLogsPreprocessedOrShutdown()
     local_logs_preprocessed_cv.wait(lock, [this]{ return shutdown_called || local_logs_preprocessed; });
 }
 
-const CoordinationSettingsPtr & KeeperContext::getCoordinationSettings() const
+const CoordinationSettings & KeeperContext::getCoordinationSettings() const
 {
-    return coordination_settings;
+    return *coordination_settings;
 }
 
 uint64_t KeeperContext::lastCommittedIndex() const

@@ -48,6 +48,11 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 max_materialized_views_count_for_table;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -135,7 +140,7 @@ StorageMaterializedView::StorageMaterializedView(
     {
         auto select_table_dependent_views = DatabaseCatalog::instance().getDependentViews(select.select_table_id);
 
-        auto max_materialized_views_count_for_table = getContext()->getServerSettings().max_materialized_views_count_for_table;
+        auto max_materialized_views_count_for_table = getContext()->getServerSettings()[ServerSetting::max_materialized_views_count_for_table];
         if (max_materialized_views_count_for_table && select_table_dependent_views.size() >= max_materialized_views_count_for_table)
             throw Exception(ErrorCodes::TOO_MANY_MATERIALIZED_VIEWS,
                             "Too many materialized views, maximum: {}", max_materialized_views_count_for_table);
