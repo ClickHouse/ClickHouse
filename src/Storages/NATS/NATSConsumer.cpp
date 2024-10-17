@@ -12,8 +12,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int CANNOT_CONNECT_NATS;
+    extern const int INVALID_STATE;
 }
 
 NATSConsumer::NATSConsumer(
@@ -89,7 +89,7 @@ void NATSConsumer::onMsg(natsConnection *, natsSubscription *, natsMsg * msg, vo
             .subject = subject,
         };
         if (!nats_consumer->received.push(std::move(data)))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to received queue");
+            throw Exception(ErrorCodes::INVALID_STATE, "Could not push to received queue");
 
         nats_consumer->storage.startStreaming();
     }

@@ -18,8 +18,8 @@ namespace Loop
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int CANNOT_CONNECT_NATS;
+    extern const int INVALID_STATE;
 }
 
 NATSHandler::NATSHandler(LoggerPtr log_)
@@ -37,6 +37,8 @@ void NATSHandler::runLoop()
 
     natsLibuvInit();
     natsLibuvSetThreadLocalLoop(loop.getLoop());
+
+    SCOPE_EXIT(nats_ReleaseThreadMemory());
 
     loop_state.store(Loop::RUN);
 
@@ -71,8 +73,6 @@ void NATSHandler::runLoop()
     loop_state.store(Loop::CLOSED);
 
     LOG_DEBUG(log, "Background loop ended");
-
-    nats_ReleaseThreadMemory();
 }
 
 void NATSHandler::stopLoop()
@@ -90,7 +90,7 @@ void NATSHandler::post(Task task)
 {
     const auto current_state = loop_state.load();
     if (current_state != Loop::CREATED && current_state != Loop::RUN)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not post task to event loop: event loop stopped");
+        throw Exception(ErrorCodes::INVALID_STATE, "Can not post task to event loop: event loop stopped");
 
     std::lock_guard<std::mutex> lock(tasks_mutex);
     tasks.push(std::move(task));

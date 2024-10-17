@@ -5,6 +5,7 @@
 #include <thread>
 #include <Columns/ColumnString.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 
 
 namespace DB
@@ -15,7 +16,8 @@ static const auto MAX_BUFFERED = 131072;
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int INVALID_STATE;
+    extern const int UNFINISHED;
 }
 
 NATSProducer::NATSProducer(
@@ -80,7 +82,7 @@ void NATSProducer::finishImpl()
 void NATSProducer::produce(const String & message, size_t, const Columns &, size_t)
 {
     if (!payloads.push(message))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to payloads queue");
+        throw Exception(ErrorCodes::INVALID_STATE, "Could not push to payloads queue");
 }
 
 void NATSProducer::publish()
@@ -88,7 +90,7 @@ void NATSProducer::publish()
     String payload;
 
     natsStatus status;
-    while (!payloads.empty())
+    while (!payloads.empty() && !shutdown_called)
     {
         if (!connection->isConnected() || natsConnection_Buffered(connection->getConnection()) > MAX_BUFFERED)
             break;
@@ -104,7 +106,7 @@ void NATSProducer::publish()
             LOG_DEBUG(log, "Something went wrong during publishing to NATS subject. Nats status text: {}. Last error message: {}",
                       natsStatus_GetText(status), nats_GetLastError(nullptr));
             if (!payloads.pushFront(payload))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to payloads queue");
+                throw Exception(ErrorCodes::INVALID_STATE, "Could not push to payloads queue");
             break;
         }
     }
@@ -117,11 +119,15 @@ void NATSProducer::stopProducingTask()
 
 void NATSProducer::startProducingTaskLoop()
 {
+    SCOPE_EXIT(nats_ReleaseThreadMemory());
+
     try
     {
         while (!payloads.isFinishedAndEmpty())
         {
-            if (!connection->isConnected())
+            if (shutdown_called)
+                throw Exception(ErrorCodes::UNFINISHED, "Operation aborted");
+            else if (!connection->isConnected())
                 std::this_thread::sleep_for(std::chrono::milliseconds(configuration.reconnect_wait));
             else
                 publish();
@@ -141,8 +147,6 @@ void NATSProducer::startProducingTaskLoop()
     }
 
     LOG_DEBUG(log, "Producer on subject {} completed", subject);
-
-    nats_ReleaseThreadMemory();
 }
 
 }
