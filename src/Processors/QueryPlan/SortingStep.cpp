@@ -280,9 +280,9 @@ void SortingStep::mergeSorting(
             if (increase_sort_description_compile_attempts)
                 increase_sort_description_compile_attempts = false;
 
-            auto tmp_data_on_disk = sort_settings.tmp_data
-                ? std::make_unique<TemporaryDataOnDisk>(sort_settings.tmp_data, CurrentMetrics::TemporaryFilesForSort)
-                : std::unique_ptr<TemporaryDataOnDisk>();
+            TemporaryDataOnDiskScopePtr tmp_data_on_disk = nullptr;
+            if (sort_settings.tmp_data)
+                tmp_data_on_disk = sort_settings.tmp_data->childScope(CurrentMetrics::TemporaryFilesForSort);
 
             return std::make_shared<MergeSortingTransform>(
                 header,

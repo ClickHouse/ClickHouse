@@ -5,6 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <Columns/IColumn.h>
 #include <Processors/Merges/Algorithms/RowRef.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 
 namespace DB
 {
@@ -37,12 +38,13 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     const String & version_column,
     size_t max_block_size_rows,
     size_t max_block_size_bytes,
-    WriteBuffer * out_row_sources_buf_,
+    std::shared_ptr<TemporaryDataBuffer> temp_data_buffer_,
     bool use_average_block_sizes,
     bool cleanup_,
     bool enable_vertical_final_)
-    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs, std::make_unique<MergedData>(use_average_block_sizes, max_block_size_rows, max_block_size_bytes))
+    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), temp_data_buffer_.get(), max_row_refs, std::make_unique<MergedData>(use_average_block_sizes, max_block_size_rows, max_block_size_bytes))
     , cleanup(cleanup_), enable_vertical_final(enable_vertical_final_)
+    , temp_data_buffer(temp_data_buffer_)
 {
     if (!is_deleted_column.empty())
         is_deleted_column_number = header_.getPositionByName(is_deleted_column);
