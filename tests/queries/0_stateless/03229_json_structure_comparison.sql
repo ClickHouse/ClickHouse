@@ -16,7 +16,8 @@ SELECT
 FROM
     test_new_json_type a
     JOIN test_new_json_type b
-        ON a.id = b.id;
+        ON a.id = b.id
+ORDER BY ALL;
 
 DROP TABLE test_new_json_type;
 
