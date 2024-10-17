@@ -2700,7 +2700,7 @@ The maximum read speed in bytes per second for particular backup on server. Zero
 Log query performance statistics into the query_log, query_thread_log and query_views_log.
 )", 0) \
     M(Bool, log_query_settings, true, R"(
-Log query settings into the query_log.
+Log query settings into the query_log and OpenTelemetry span log.
 )", 0) \
     M(Bool, log_query_threads, false, R"(
 Setting up query threads logging.
@@ -4822,6 +4822,9 @@ Max attempts to read with backoff
     M(Bool, enable_filesystem_cache, true, R"(
 Use cache for remote filesystem. This setting does not turn on/off cache for disks (must be done via disk config), but allows to bypass cache for some queries if intended
 )", 0) \
+    M(String, filesystem_cache_name, "", R"(
+Filesystem cache name to use for stateless table engines or data lakes
+)", 0) \
     M(Bool, enable_filesystem_cache_on_write_operations, false, R"(
 Write into cache on write operations. To actually work this setting requires be added to disk config too
 )", 0) \
@@ -5160,7 +5163,7 @@ SELECT * FROM test_table
 Rewrite count distinct to subquery of group by
 )", 0) \
     M(Bool, throw_if_no_data_to_insert, true, R"(
-Allows or forbids empty INSERTs, enabled by default (throws an error on an empty insert)
+Allows or forbids empty INSERTs, enabled by default (throws an error on an empty insert). Only applies to INSERTs using [`clickhouse-client`](/docs/en/interfaces/cli) or using the [gRPC interface](/docs/en/interfaces/grpc).
 )", 0) \
     M(Bool, compatibility_ignore_auto_increment_in_create_table, false, R"(
 Ignore AUTO_INCREMENT keyword in column declaration if true, otherwise return error. It simplifies migration from MySQL
@@ -5385,7 +5388,7 @@ Result:
 If enabled, server will ignore all DROP table queries with specified probability (for Memory and JOIN engines it will replcase DROP to TRUNCATE). Used for testing purposes
 )", 0) \
     M(Bool, traverse_shadow_remote_data_paths, false, R"(
-Traverse shadow directory when query system.remote_data_paths
+Traverse frozen data (shadow directory) in addition to actual table data when query system.remote_data_paths
 )", 0) \
     M(Bool, geo_distance_returns_float64_on_float64_arguments, true, R"(
 If all four arguments to `geoDistance`, `greatCircleDistance`, `greatCircleAngle` functions are Float64, return Float64 and use double precision for internal calculations. In previous ClickHouse versions, the functions always returned Float32.
@@ -5507,8 +5510,8 @@ Replace external dictionary sources to Null on restore. Useful for testing purpo
     M(Bool, create_if_not_exists, false, R"(
 Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting or `IF NOT EXISTS` is specified and a table with the provided name already exists, no exception will be thrown.
 )", 0) \
-    M(Bool, enable_secure_identifiers, false, R"(
-If enabled, only allow secure identifiers which contain only underscore and alphanumeric characters
+    M(Bool, enforce_strict_identifier_format, false, R"(
+If enabled, only allow identifiers containing alphanumeric characters and underscores.
 )", 0) \
     M(Bool, mongodb_throw_on_unsupported_query, true, R"(
 If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply to the legacy implementation or when 'allow_experimental_analyzer=0'.
@@ -6202,6 +6205,16 @@ std::vector<std::string_view> Settings::getUnchangedNames() const
 {
     std::vector<std::string_view> setting_names;
     for (const auto & setting : impl->allUnchanged())
+    {
+        setting_names.emplace_back(setting.getName());
+    }
+    return setting_names;
+}
+
+std::vector<std::string_view> Settings::getChangedNames() const
+{
+    std::vector<std::string_view> setting_names;
+    for (const auto & setting : impl->allChanged())
     {
         setting_names.emplace_back(setting.getName());
     }
