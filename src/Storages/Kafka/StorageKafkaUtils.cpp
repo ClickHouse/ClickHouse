@@ -426,7 +426,7 @@ bool checkDependencies(const StorageID & table_id, const ContextPtr& context)
 }
 
 
-VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode)
+VirtualColumnsDescription createVirtuals(ExtStreamingHandleErrorMode handle_error_mode)
 {
     VirtualColumnsDescription desc;
 
@@ -439,7 +439,7 @@ VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_m
     desc.addEphemeral("_headers.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "");
     desc.addEphemeral("_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "");
 
-    if (handle_error_mode == StreamingHandleErrorMode::STREAM)
+    if (handle_error_mode == ExtStreamingHandleErrorMode::STREAM)
     {
         desc.addEphemeral("_raw_message", std::make_shared<DataTypeString>(), "");
         desc.addEphemeral("_error", std::make_shared<DataTypeString>(), "");
