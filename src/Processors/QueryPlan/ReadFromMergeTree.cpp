@@ -711,11 +711,10 @@ Pipe ReadFromMergeTree::read(
     bool use_uncompressed_cache)
 {
     const auto & settings = context->getSettingsRef();
-    size_t sum_marks = parts_with_range.getMarksCountAllParts();
 
     PoolSettings pool_settings{
         .threads = max_streams,
-        .sum_marks = sum_marks,
+        .sum_marks = parts_with_range.getMarksCountAllParts(),
         .min_marks_for_concurrent_read = min_marks_for_concurrent_read,
         .preferred_block_size_bytes = settings[Setting::preferred_block_size_bytes],
         .use_uncompressed_cache = use_uncompressed_cache,
@@ -806,6 +805,13 @@ struct PartRangesReadInfo
     }
 };
 
+}
+
+size_t ReadFromMergeTree::getMinMarksForConcurrentRead(const RangesInDataParts & parts_with_ranges) const
+{
+    const auto & settings = context->getSettingsRef();
+    const auto & data_settings = data.getSettings();
+    return PartRangesReadInfo(parts_with_ranges, settings, *data_settings).min_marks_for_concurrent_read;
 }
 
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & column_names)
