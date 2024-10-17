@@ -871,7 +871,7 @@ std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const
         std::lock_guard lock(replica_sync_mutex);
         if (uuid != last_synced_inner_uuid)
         {
-            InterpreterSystemQuery::trySyncReplica(storage.get(), SyncReplicaMode::DEFAULT, {}, context);
+            InterpreterSystemQuery::trySyncReplica(storage, SyncReplicaMode::DEFAULT, {}, context);
 
             /// (Race condition: this may revert from a newer uuid to an older one. This doesn't break
             ///  anything, just causes an unnecessary sync. Should be rare.)
