@@ -215,7 +215,7 @@ struct ResultOfIf
 template <typename A, typename B>
 struct ResultOfModuloNativePromotion
 {
-    static_assert(std::is_arithmetic_v<A> && std::is_arithmetic_v<B>);
+    static_assert(is_arithmetic_v<A> && is_arithmetic_v<B>);
 
     static constexpr bool has_float = std::is_floating_point_v<A> || std::is_floating_point_v<B>;
     static constexpr bool has_integer = is_integer<A> || is_integer<B>;
