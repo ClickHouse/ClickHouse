@@ -371,7 +371,7 @@ int StatementGenerator::AddWhereFilter(RandomGenerator &rg, const std::vector<Gr
 		if (rg.NextSmallNumber() < 5) {
 			buf.resize(0);
 			buf += "'";
-			rg.NextString(buf, 100000);
+			rg.NextString(buf, (rg.NextRandomUInt32() % 100000) + 1);
 			buf += "'";
 			expr2->mutable_lit_val()->set_no_quote_str(buf);
 		} else {
@@ -534,10 +534,11 @@ int StatementGenerator::GenerateGroupBy(RandomGenerator &rg, const uint32_t ncol
 		sql_query_grammar::GroupByList *gbl = gbs->mutable_glist();
 		const uint32_t nclauses = std::min<uint32_t>(this->max_width - this->width,
 			std::min<uint32_t>(UINT32_C(5), (rg.NextRandomUInt32() % (available_cols.empty() ? 5 : static_cast<uint32_t>(available_cols.size()))) + 1));
-		const bool has_gsm = !enforce_having && allow_settings && rg.NextSmallNumber() < 4,
-				   has_totals = !enforce_having && allow_settings && rg.NextSmallNumber() < 4;
+		const bool no_grouping_sets = next_opt < 91,
+				   has_gsm = !enforce_having && no_grouping_sets && allow_settings && rg.NextSmallNumber() < 4,
+				   has_totals = !enforce_having && next_opt < 51 && allow_settings && rg.NextSmallNumber() < 4;
 
-		if (next_opt < 91) {
+		if (no_grouping_sets) {
 			//group list
 			sql_query_grammar::ExprList *elist = (next_opt < 51) ? gbl->mutable_exprs() : ((next_opt < 71) ? gbl->mutable_rollup() : gbl->mutable_cube());
 
@@ -547,14 +548,15 @@ int StatementGenerator::GenerateGroupBy(RandomGenerator &rg, const uint32_t ncol
 			}
 		} else {
 			//grouping sets
+			bool has_global = false;
 			sql_query_grammar::GroupingSets *gsets = gbl->mutable_sets();
 
 			for (uint32_t i = 0 ; i < nclauses; i++) {
-				this->width++;
-				const uint32_t nelems = std::min<uint32_t>(this->max_width - this->width,
-					rg.NextRandomUInt32() % (available_cols.empty() ? 5 : static_cast<uint32_t>(available_cols.size())));
+				const uint32_t nelems = rg.NextRandomUInt32() % (available_cols.empty() ? 3 : static_cast<uint32_t>(available_cols.size()));
 				sql_query_grammar::OptionalExprList *oel = i == 0 ? gsets->mutable_exprs() : gsets->add_other_exprs();
 
+				has_global |= nelems == 0;
+				this->width++;
 				for (uint32_t j = 0 ; j < nelems; j++) {
 					this->width++;
 					GenerateGroupByExpr(rg, enforce_having, j, ncols, available_cols, gcols, oel->add_exprs());
@@ -562,6 +564,7 @@ int StatementGenerator::GenerateGroupBy(RandomGenerator &rg, const uint32_t ncol
 				this->width -= nelems;
 				std::shuffle(available_cols.begin(), available_cols.end(), rg.gen);
 			}
+			this->levels[this->current_level].global_aggregate |= gcols.empty() && has_global;
 		}
 		this->width -= nclauses;
 		this->levels[this->current_level].gcols = std::move(gcols);

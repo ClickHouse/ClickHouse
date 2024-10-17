@@ -577,7 +577,7 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &
 
 		AppendDecimal(rg, ret, left, right);
 	} else if ((stp = dynamic_cast<StringType*>(tp))) {
-		const uint32_t limit = stp->precision.value_or(100000);
+		const uint32_t limit = stp->precision.value_or((rg.NextRandomUInt32() % 100000) + 1);
 
 		ret += "'";
 		rg.NextString(ret, limit);
@@ -600,7 +600,7 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &
 }
 
 void StatementGenerator::StrAppendMap(RandomGenerator &rg, std::string &ret, MapType *mt) {
-	const uint32_t limit = (rg.NextSmallNumber() - 1);
+	const uint32_t limit = rg.NextLargeNumber() % 100;
 
 	ret += "map(";
 	for (uint32_t i = 0 ; i < limit; i++) {
@@ -615,7 +615,7 @@ void StatementGenerator::StrAppendMap(RandomGenerator &rg, std::string &ret, Map
 }
 
 void StatementGenerator::StrAppendArray(RandomGenerator &rg, std::string &ret, ArrayType *at) {
-	const uint32_t limit = (rg.NextSmallNumber() - 1);
+	const uint32_t limit = rg.NextLargeNumber() % 100;
 
 	ret += "[";
 	for (uint32_t i = 0 ; i < limit; i++) {
