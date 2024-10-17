@@ -334,7 +334,7 @@ void KeeperStateManager::save_state(const nuraft::srv_state & state)
 
     auto disk = getStateFileDisk();
 
-    if (disk->exists(server_state_file_name))
+    if (disk->existsFile(server_state_file_name))
     {
         auto buf = disk->writeFile(copy_lock_file);
         buf->finalize();
@@ -422,7 +422,7 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
         }
     };
 
-    if (disk->exists(server_state_file_name))
+    if (disk->existsFile(server_state_file_name))
     {
         auto state = try_read_file(server_state_file_name);
 
@@ -435,9 +435,9 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
         disk->removeFile(server_state_file_name);
     }
 
-    if (disk->exists(old_path))
+    if (disk->existsFile(old_path))
     {
-        if (disk->exists(copy_lock_file))
+        if (disk->existsFile(copy_lock_file))
         {
             disk->removeFile(old_path);
             disk->removeFile(copy_lock_file);
@@ -453,7 +453,7 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
             disk->removeFile(old_path);
         }
     }
-    else if (disk->exists(copy_lock_file))
+    else if (disk->existsFile(copy_lock_file))
     {
         disk->removeFile(copy_lock_file);
     }
