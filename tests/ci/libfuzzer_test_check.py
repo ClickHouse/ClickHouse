@@ -121,9 +121,7 @@ def download_corpus(corpus_path: str, fuzzer_name: str):
 
 
 def upload_corpus(path: str):
-    with zipfile.ZipFile(
-        f"{path}/corpus.zip", "w", zipfile.ZIP_DEFLATED
-    ) as zipf:
+    with zipfile.ZipFile(f"{path}/corpus.zip", "w", zipfile.ZIP_DEFLATED) as zipf:
         zipdir(f"{path}/corpus/", zipf)
     s3.upload_file(
         bucket=S3_BUILDS_BUCKET,

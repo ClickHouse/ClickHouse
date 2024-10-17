@@ -136,7 +136,9 @@ def run_fuzzer(fuzzer: str, timeout: int):
     status_path = f"{OUTPUT}/{fuzzer}.status"
     out_path = f"{OUTPUT}/{fuzzer}.out"
 
-    cmd_line = f"{DEBUGGER} ./{fuzzer} {FUZZER_ARGS} {active_corpus_dir} {seed_corpus_dir}"
+    cmd_line = (
+        f"{DEBUGGER} ./{fuzzer} {FUZZER_ARGS} {active_corpus_dir} {seed_corpus_dir}"
+    )
     # cmd_line = f"{DEBUGGER} ./{fuzzer} {FUZZER_ARGS} {new_corpus_dir} {active_corpus_dir} {seed_corpus_dir}"
 
     cmd_line += f" -exact_artifact_path={exact_artifact_path}"
