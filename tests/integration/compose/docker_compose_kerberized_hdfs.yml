@@ -2,7 +2,7 @@ services:
   kerberizedhdfs1:
     cap_add:
       - DAC_READ_SEARCH
-    image: ilejn/kerberized-hadoop-new:${DOCKER_KERBERIZED_HADOOP_TAG:-latest}
+    image: clickhouse/kerberized-hadoop:${DOCKER_KERBERIZED_HADOOP_TAG:-latest}
     hostname: kerberizedhdfs1
     restart: always
     volumes:
