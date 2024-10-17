@@ -159,6 +159,14 @@ bool IndicesDescription::has(const String & name) const
     return false;
 }
 
+bool IndicesDescription::hasType(const String & type) const
+{
+    for (const auto & index : *this)
+        if (index.type == type)
+            return true;
+    return false;
+}
+
 String IndicesDescription::toString() const
 {
     if (empty())

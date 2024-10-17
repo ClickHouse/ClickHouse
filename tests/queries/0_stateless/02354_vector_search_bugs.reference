@@ -40,3 +40,4 @@ Expression (Projection)
             Condition: true
             Parts: 1/1
             Granules: 4/4
+index_granularity_bytes = 0 is disallowed
