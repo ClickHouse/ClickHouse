@@ -17,18 +17,21 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int UNKNOWN_DATABASE;
+    extern const int INCORRECT_DATA;
 }
 
-class FunctionGetMaxTableName : public IFunction, WithContext
+
+
+class FunctionGetMaxTableNameLength : public IFunction, WithContext
 {
 public:
-    static constexpr auto name = "getMaxTableNameForDatabase";
+    static constexpr auto name = "getMaxTableNameLengthForDatabase";
     static FunctionPtr create(ContextPtr context_)
     {
-        return std::make_shared<FunctionGetMaxTableName>(context_);
+        return std::make_shared<FunctionGetMaxTableNameLength>(context_);
     }
 
-    explicit FunctionGetMaxTableName(ContextPtr context_) : WithContext(context_)
+    explicit FunctionGetMaxTableNameLength(ContextPtr context_) : WithContext(context_)
     {
     }
 
@@ -73,8 +76,8 @@ public:
 
         String database_name = col_const->getValue<String>();
 
-        if (!DatabaseCatalog::instance().isDatabaseExist(database_name))
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist.", database_name);
+        if (database_name.empty())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect name for a database. It shouldn't be empty");
 
         allowed_max_length = computeMaxTableNameLength(database_name, getContext());
         return DataTypeUInt64().createColumnConst(input_rows_count, allowed_max_length);
@@ -93,8 +96,7 @@ private:
 
 REGISTER_FUNCTION(getMaxTableName)
 {
-    factory.registerFunction<FunctionGetMaxTableName>();
-    factory.registerAlias("getMaxTableName", "getMaxTableNameForDatabase", FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionGetMaxTableNameLength>();
 }
 
 }

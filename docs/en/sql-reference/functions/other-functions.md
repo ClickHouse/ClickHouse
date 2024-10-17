@@ -4390,3 +4390,37 @@ Result:
 1. │ ['{ArraySizes}','{ArrayElements, TupleElement(keys), Regular}','{ArrayElements, TupleElement(values), Regular}'] │
    └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+## getMaxTableNameLengthForDatabase
+
+Returns the maximum table name length in a specified database.
+
+**Syntax**
+
+```sql
+getMaxTableNameLengthForDatabase(database_name)
+```
+
+**Arguments**
+
+- `database_name` — The name of the specified database. [String](../data-types/string.md).
+
+**Returned value**
+
+- Returns the length of the maximum table name.
+
+**Example**
+
+Query:
+
+```sql
+SELECT getMaxTableNameLengthForDatabase('default');
+```
+
+Result:
+
+```response
+┌─getMaxTableNameLengthForDatabase('default')─┐
+│                                         206 │
+└─────────────────────────────────────────────┘
+```
