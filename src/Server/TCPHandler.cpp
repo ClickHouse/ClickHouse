@@ -101,6 +101,11 @@ namespace Setting
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
 }
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool validate_tcp_client_information;
+}
 }
 
 namespace CurrentMetrics
@@ -1899,7 +1904,7 @@ void TCPHandler::receiveQuery()
 
         correctQueryClientInfo(session->getClientInfo(), client_info);
         const auto & config_ref = Context::getGlobalContextInstance()->getServerSettings();
-        if (config_ref.validate_tcp_client_information)
+        if (config_ref[ServerSetting::validate_tcp_client_information])
             validateClientInfo(session->getClientInfo(), client_info);
     }
 
