@@ -168,6 +168,7 @@ def send_repeated_query(table, count=5):
                 table
             )
         )
+        time.sleep(0.5)
 
 
 def get_errors_count(cluster, host_name="node_1"):
