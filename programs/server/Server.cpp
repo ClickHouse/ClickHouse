@@ -1101,10 +1101,6 @@ try
 
     PlacementInfo::PlacementInfo::instance().initialize(config());
 
-    auto cancellation_task_holder = global_context->getSchedulePool().createTask("CancellationChecker", []{ CancellationChecker::getInstance().workerFunction(); });
-    auto cancellation_task = std::make_unique<DB::BackgroundSchedulePoolTaskHolder>(std::move(cancellation_task_holder));
-    (*cancellation_task)->activateAndSchedule();
-
     zkutil::validateZooKeeperConfig(config());
     bool has_zookeeper = zkutil::hasZooKeeperConfig(config());
 
@@ -1248,6 +1244,14 @@ try
     if (oom_score)
         setOOMScore(oom_score, log);
 #endif
+
+    auto cancellation_task_holder = global_context->getSchedulePool().createTask("CancellationChecker", []{ CancellationChecker::getInstance().workerFunction(); });
+    auto cancellation_task = std::make_unique<DB::BackgroundSchedulePoolTaskHolder>(std::move(cancellation_task_holder));
+    (*cancellation_task)->activateAndSchedule();
+
+    SCOPE_EXIT({
+        CancellationChecker::getInstance().terminateThread();
+    });
 
     global_context->setRemoteHostFilter(config());
     global_context->setHTTPHeaderFilter(config());
@@ -2317,8 +2321,6 @@ try
 
             if (current_connections)
                 current_connections = waitServersToFinish(servers, servers_lock, server_settings.shutdown_wait_unfinished);
-
-            CancellationChecker::getInstance().terminateThread();
 
             if (current_connections)
                 LOG_WARNING(log, "Closed connections. But {} remain."
