@@ -8,6 +8,8 @@ import zipfile
 from pathlib import Path
 from typing import List
 
+from botocore.exceptions import ClientError
+
 from build_download_helper import download_fuzzers
 from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image, pull_image
@@ -16,9 +18,6 @@ from pr_info import PRInfo
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-
-from botocore.exceptions import ClientError
-
 
 NO_CHANGES_MSG = "Nothing to run"
 s3 = S3Helper()
