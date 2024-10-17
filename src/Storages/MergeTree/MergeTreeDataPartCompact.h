@@ -42,6 +42,8 @@ public:
 
     bool isStoredOnDisk() const override { return true; }
 
+    bool isStoredOnReadonlyDisk() const override;
+
     bool isStoredOnRemoteDisk() const override;
 
     bool isStoredOnRemoteDiskWithZeroCopySupport() const override;
@@ -65,7 +67,7 @@ private:
      /// Loads marks index granularity into memory
      void loadIndexGranularity() override;
 
-     /// Compact parts doesn't support per column size, only total size
+     /// Compact parts don't support per column size, only total size
      void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 };
 
