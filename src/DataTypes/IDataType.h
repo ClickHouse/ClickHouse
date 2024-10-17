@@ -457,7 +457,9 @@ struct WhichDataType
 bool isUInt8(TYPE data_type); \
 bool isUInt16(TYPE data_type); \
 bool isUInt32(TYPE data_type); \
-bool isUInt64(TYPE data_type); \
+bool isUInt64(TYPE data_type);\
+bool isUInt128(TYPE data_type);\
+bool isUInt256(TYPE data_type); \
 bool isNativeUInt(TYPE data_type); \
 bool isUInt(TYPE data_type); \
 \
@@ -465,6 +467,8 @@ bool isInt8(TYPE data_type); \
 bool isInt16(TYPE data_type); \
 bool isInt32(TYPE data_type); \
 bool isInt64(TYPE data_type); \
+bool isInt128(TYPE data_type); \
+bool isInt256(TYPE data_type); \
 bool isNativeInt(TYPE data_type); \
 bool isInt(TYPE data_type); \
 \

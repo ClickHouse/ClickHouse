@@ -5,6 +5,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/FailPoint.h>
+#include <Common/FieldVisitorToString.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryCache.h>
@@ -565,6 +566,25 @@ void logQueryFinish(
         query_span->addAttributeIfNotZero("clickhouse.written_rows", elem.written_rows);
         query_span->addAttributeIfNotZero("clickhouse.written_bytes", elem.written_bytes);
         query_span->addAttributeIfNotZero("clickhouse.memory_usage", elem.memory_usage);
+
+        if (context)
+        {
+            std::string user_name = context->getUserName();
+            query_span->addAttribute("clickhouse.user", user_name);
+        }
+
+        if (settings[Setting::log_query_settings])
+        {
+            auto changed_settings_names = settings.getChangedNames();
+            for (const auto & name : changed_settings_names)
+            {
+                Field value = settings.get(name);
+                String value_str = convertFieldToString(value);
+
+                query_span->addAttribute(fmt::format("clickhouse.setting.{}", name), value_str);
+
+            }
+        }
         query_span->finish();
     }
 }

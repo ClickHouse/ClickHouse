@@ -19,12 +19,12 @@ public:
     using Base::Base;
 
     SourceStepWithFilter(
-        DataStream output_stream_,
+        Header output_header_,
         const Names & column_names_,
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_)
-        : ISourceStep(std::move(output_stream_))
+        : ISourceStep(std::move(output_header_))
         , required_source_columns(column_names_)
         , query_info(query_info_)
         , prewhere_info(query_info.prewhere_info)

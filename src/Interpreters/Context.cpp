@@ -1192,7 +1192,7 @@ void Context::setFilesystemCachesPath(const String & path)
 {
     std::lock_guard lock(shared->mutex);
 
-    if (!fs::path(path).is_absolute())
+    if (getApplicationType() != ApplicationType::LOCAL && !fs::path(path).is_absolute())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filesystem caches path must be absolute: {}", path);
 
     shared->filesystem_caches_path = path;

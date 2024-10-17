@@ -913,7 +913,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::getLatestSnapshotInfo() cons
 
         try
         {
-            if (disk->exists(path))
+            if (disk->existsFile(path))
                 return std::make_shared<SnapshotFileInfo>(path, disk);
         }
         catch (...)

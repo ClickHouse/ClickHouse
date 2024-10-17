@@ -37,6 +37,8 @@ public:
 
     bool isStoredOnDisk() const override { return true; }
 
+    bool isStoredOnReadonlyDisk() const override;
+
     bool isStoredOnRemoteDisk() const override;
 
     bool isStoredOnRemoteDiskWithZeroCopySupport() const override;

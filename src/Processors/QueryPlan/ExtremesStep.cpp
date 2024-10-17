@@ -19,8 +19,8 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-ExtremesStep::ExtremesStep(const DataStream & input_stream_)
-    : ITransformingStep(input_stream_, input_stream_.header, getTraits())
+ExtremesStep::ExtremesStep(const Header & input_header)
+    : ITransformingStep(input_header, input_header, getTraits())
 {
 }
 

@@ -2,9 +2,9 @@
 
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
-#include <Storages/MergeTree/SimpleMergeSelector.h>
-#include <Storages/MergeTree/AllMergeSelector.h>
-#include <Storages/MergeTree/TTLMergeSelector.h>
+#include <Storages/MergeTree/MergeSelectors/SimpleMergeSelector.h>
+#include <Storages/MergeTree/MergeSelectors/AllMergeSelector.h>
+#include <Storages/MergeTree/MergeSelectors/TTLMergeSelector.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
@@ -15,6 +15,7 @@
 #include <Storages/MergeTree/MergeProgress.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
+#include <Storages/MergeTree/MergeSelectors/MergeSelectorFactory.h>
 
 #include <Processors/Transforms/TTLTransform.h>
 #include <Processors/Transforms/TTLCalcTransform.h>
@@ -65,6 +66,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_execute_mutation;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_lower_max_size_of_merge;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
+    extern const MergeTreeSettingsMergeSelectorAlgorithm merge_selector_algorithm;
 }
 
 namespace ErrorCodes
@@ -469,13 +471,17 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
 
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && !ttl_merges_blocker.isCancelled())
     {
+        TTLDeleteMergeSelector::Params params_drop
+        {
+            .merge_due_times = next_delete_ttl_merge_times_by_partition,
+            .current_time = current_time,
+            .merge_cooldown_time = (*data_settings)[MergeTreeSetting::merge_with_ttl_timeout],
+            .only_drop_parts = true,
+            .dry_run = dry_run
+        };
+
         /// TTL delete is preferred to recompression
-        TTLDeleteMergeSelector drop_ttl_selector(
-                next_delete_ttl_merge_times_by_partition,
-                current_time,
-                (*data_settings)[MergeTreeSetting::merge_with_ttl_timeout],
-                /*only_drop_parts*/ true,
-                dry_run);
+        TTLDeleteMergeSelector drop_ttl_selector(params_drop);
 
         /// The size of the completely expired part of TTL drop is not affected by the merge pressure and the size of the storage space
         parts_to_merge = drop_ttl_selector.select(parts_ranges, (*data_settings)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool]);
@@ -485,12 +491,15 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
         }
         else if (!(*data_settings)[MergeTreeSetting::ttl_only_drop_parts])
         {
-            TTLDeleteMergeSelector delete_ttl_selector(
-                next_delete_ttl_merge_times_by_partition,
-                current_time,
-                (*data_settings)[MergeTreeSetting::merge_with_ttl_timeout],
-                /*only_drop_parts*/ false,
-                dry_run);
+            TTLDeleteMergeSelector::Params params_delete
+            {
+                .merge_due_times = next_delete_ttl_merge_times_by_partition,
+                .current_time = current_time,
+                .merge_cooldown_time = (*data_settings)[MergeTreeSetting::merge_with_ttl_timeout],
+                .only_drop_parts = false,
+                .dry_run = dry_run
+            };
+            TTLDeleteMergeSelector delete_ttl_selector(params_delete);
 
             parts_to_merge = delete_ttl_selector.select(parts_ranges, max_total_size_to_merge);
             if (!parts_to_merge.empty())
@@ -499,12 +508,16 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
 
         if (parts_to_merge.empty() && metadata_snapshot->hasAnyRecompressionTTL())
         {
-            TTLRecompressMergeSelector recompress_ttl_selector(
-                    next_recompress_ttl_merge_times_by_partition,
-                    current_time,
-                    (*data_settings)[MergeTreeSetting::merge_with_recompression_ttl_timeout],
-                    metadata_snapshot->getRecompressionTTLs(),
-                    dry_run);
+            TTLRecompressMergeSelector::Params params
+            {
+                .merge_due_times = next_recompress_ttl_merge_times_by_partition,
+                .current_time = current_time,
+                .merge_cooldown_time = (*data_settings)[MergeTreeSetting::merge_with_recompression_ttl_timeout],
+                .recompression_ttls = metadata_snapshot->getRecompressionTTLs(),
+                .dry_run = dry_run,
+            };
+
+            TTLRecompressMergeSelector recompress_ttl_selector(params);
 
             parts_to_merge = recompress_ttl_selector.select(parts_ranges, max_total_size_to_merge);
             if (!parts_to_merge.empty())
@@ -514,17 +527,23 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
 
     if (parts_to_merge.empty())
     {
-        SimpleMergeSelector::Settings merge_settings;
-        /// Override value from table settings
-        merge_settings.max_parts_to_merge_at_once = (*data_settings)[MergeTreeSetting::max_parts_to_merge_at_once];
-        if (!(*data_settings)[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
-            merge_settings.min_age_to_force_merge = (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds];
+        auto merge_selector_algorithm = (*data_settings)[MergeTreeSetting::merge_selector_algorithm];
+        std::any merge_settings;
+        if (merge_selector_algorithm == MergeSelectorAlgorithm::SIMPLE)
+        {
+            SimpleMergeSelector::Settings simple_merge_settings;
+            /// Override value from table settings
+            simple_merge_settings.max_parts_to_merge_at_once = (*data_settings)[MergeTreeSetting::max_parts_to_merge_at_once];
+            if (!(*data_settings)[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
+                simple_merge_settings.min_age_to_force_merge = (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds];
 
-        if (aggressive)
-            merge_settings.base = 1;
+            if (aggressive)
+                simple_merge_settings.base = 1;
 
-        parts_to_merge = SimpleMergeSelector(merge_settings)
-                            .select(parts_ranges, max_total_size_to_merge);
+            merge_settings = simple_merge_settings;
+        }
+
+        parts_to_merge = MergeSelectorFactory::instance().get(merge_selector_algorithm, merge_settings)->select(parts_ranges, max_total_size_to_merge);
 
         /// Do not allow to "merge" part with itself for regular merges, unless it is a TTL-merge where it is ok to remove some values with expired ttl
         if (parts_to_merge.size() == 1)

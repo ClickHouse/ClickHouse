@@ -78,7 +78,7 @@ TEST(DateTimeToStringTest, RFC1123)
     ASSERT_EQ(out.str(), "Fri, 18 Mar 2005 01:58:31 GMT");
 }
 
-template <typename ValueType>
+template <typename ValueType, bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = false>
 class DateTimeToStringParamTestBase : public ::testing::TestWithParam<DateTimeToStringParamTestCase<ValueType>>
 {
 public:
@@ -99,7 +99,10 @@ public:
         }
         else if constexpr (std::is_same_v<ValueType, DateTime64WithScale>)
         {
-            writeDateTimeText(input.value, input.scale, out, DateLUT::instance(timezone_name));
+            if constexpr (date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands)
+                writeDateTimeTextCutTrailingZerosAlignToGroupOfThousands(input.value, input.scale, out, DateLUT::instance(timezone_name));
+            else
+                writeDateTimeText(input.value, input.scale, out, DateLUT::instance(timezone_name));
         }
 
         ASSERT_EQ(expected, out.str());
@@ -126,6 +129,14 @@ class DateTimeToStringParamTestDateTime64 : public DateTimeToStringParamTestBase
 {};
 
 TEST_P(DateTimeToStringParamTestDateTime64, writeDateText)
+{
+    ASSERT_NO_FATAL_FAILURE(test(GetParam()));
+}
+
+class DateTimeToStringParamTestDateTime64TrimZeros : public DateTimeToStringParamTestBase<DateTime64WithScale, true>
+{};
+
+TEST_P(DateTimeToStringParamTestDateTime64TrimZeros, writeDateText)
 {
     ASSERT_NO_FATAL_FAILURE(test(GetParam()));
 }
@@ -212,3 +223,36 @@ INSTANTIATE_TEST_SUITE_P(DateTimeToString, DateTimeToStringParamTestDateTime64,
 //        },
     })
 );
+
+
+INSTANTIATE_TEST_SUITE_P(DateTimeToString, DateTimeToStringParamTestDateTime64TrimZeros,
+    ::testing::ValuesIn(std::initializer_list<DateTimeToStringParamTestCase<DateTime64WithScale>>
+    {
+         /// Inside basic LUT boundaries
+         {
+             "Zero DateTime64 with scale 0",
+             DateTime64WithScale{0, 0},
+             "1970-01-01 00:00:00"
+         },
+         {
+             "Zero DateTime64 with scale 6, fractional is trimmed",
+             DateTime64WithScale{0, 6},
+             "1970-01-01 00:00:00"
+         },
+         {
+             "DateTime64 with scale 3, fractional is trimmed",
+             DateTime64WithScale{NON_ZERO_TIME_T * 1000LL, 3},
+             "1979-12-31 10:17:36"
+         },
+         {
+             "DateTime64 with scale 6, fractional is partially trimmed",
+             DateTime64WithScale{120000, 6},
+             "1970-01-01 00:00:00.120"
+         },
+         {
+             "DateTime64 with scale 6, fractional is kept",
+             DateTime64WithScale{123456, 6},
+             "1970-01-01 00:00:00.123456"
+         },
+    })
+ );

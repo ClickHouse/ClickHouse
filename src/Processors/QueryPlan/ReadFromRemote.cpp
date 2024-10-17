@@ -121,7 +121,7 @@ ReadFromRemote::ReadFromRemote(
     UInt32 shard_count_,
     std::shared_ptr<const StorageLimitsList> storage_limits_,
     const String & cluster_name_)
-    : ISourceStep(DataStream{.header = std::move(header_)})
+    : ISourceStep(std::move(header_))
     , shards(std::move(shards_))
     , stage(stage_)
     , main_table(std::move(main_table_))
@@ -229,7 +229,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
     };
 
     pipes.emplace_back(createDelayedPipe(shard.header, lazily_create_stream, add_totals, add_extremes));
-    addConvertingActions(pipes.back(), output_stream->header, shard.has_missing_objects);
+    addConvertingActions(pipes.back(), *output_header, shard.has_missing_objects);
 }
 
 void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard)
@@ -310,7 +310,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
 
             pipes.emplace_back(
                 createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
-            addConvertingActions(pipes.back(), output_stream->header, shard.has_missing_objects);
+            addConvertingActions(pipes.back(), *output_header, shard.has_missing_objects);
         }
     }
     else
@@ -339,7 +339,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
 
         pipes.emplace_back(
             createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
-        addConvertingActions(pipes.back(), output_stream->header, shard.has_missing_objects);
+        addConvertingActions(pipes.back(), *output_header, shard.has_missing_objects);
     }
 }
 
@@ -379,7 +379,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     std::shared_ptr<const StorageLimitsList> storage_limits_,
     std::vector<ConnectionPoolPtr> pools_to_use_,
     std::optional<size_t> exclude_pool_index_)
-    : ISourceStep(DataStream{.header = std::move(header_)})
+    : ISourceStep(std::move(header_))
     , cluster(cluster_)
     , query_ast(query_ast_)
     , storage_id(storage_id_)
@@ -476,12 +476,12 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(
     String query_string = formattedAST(query_ast);
 
     assert(stage != QueryProcessingStage::Complete);
-    assert(output_stream);
+    assert(output_header);
 
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
         pool,
         query_string,
-        output_stream->header,
+        *output_header,
         context,
         throttler,
         scalars,
@@ -493,7 +493,7 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(
     remote_query_executor->setMainTable(storage_id);
 
     pipes.emplace_back(createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
-    addConvertingActions(pipes.back(), output_stream->header);
+    addConvertingActions(pipes.back(), *output_header);
 }
 
 }

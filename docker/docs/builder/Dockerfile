@@ -9,7 +9,7 @@ RUN CGO_ENABLED=0 go install github.com/wjdp/htmltest@v${HTMLTEST_VERSION} \
 # nodejs 17 prefers ipv6 and is broken in our environment
 FROM node:16-alpine
 
-RUN apk add --no-cache git openssh bash
+RUN apk add --no-cache git openssh bash curl
 
 # At this point we want to really update /opt/clickhouse-docs directory
 # So we reset the cache
@@ -32,5 +32,8 @@ RUN mkdir /output_path \
 
 COPY run.sh /run.sh
 COPY --from=htmltest-builder /usr/bin/htmltest /usr/bin/htmltest
+
+# Install ClickHouse Local, which is used to auto-generate some doc pages.
+RUN curl https://clickhouse.com/ | sh
 
 ENTRYPOINT ["/run.sh"]

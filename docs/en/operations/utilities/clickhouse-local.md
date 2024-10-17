@@ -177,6 +177,26 @@ When you are ready to insert your files into ClickHouse, startup a ClickHouse se
 :::
 
 
+## Format Conversions
+
+You can use `clickhouse-local` for converting data between different formats. Example:
+
+``` bash
+$ clickhouse-local --input-format JSONLines --output-format CSV --query "SELECT * FROM table" < data.json > data.csv
+```
+
+Formats are auto-detected from file extensions: 
+
+``` bash
+$ clickhouse-local --query "SELECT * FROM table" < data.json > data.csv
+```
+
+As a shortcut, you can write it using the `--copy` argument:
+``` bash
+$ clickhouse-local --copy < data.json > data.csv
+```
+
+
 ## Usage {#usage}
 
 By default `clickhouse-local` has access to data of a ClickHouse server on the same host, and it does not depend on the server's configuration. It also supports loading server configuration using `--config-file` argument. For temporary data, a unique temporary data directory is created by default.
