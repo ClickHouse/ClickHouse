@@ -47,7 +47,7 @@ public:
 
     std::string getName() const override { return "ConcurrentHashJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
-    bool addBlockToJoin(const Block & block, bool check_limits) override;
+    bool addBlockToJoin(const Block & right_block_, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override;
     void setTotals(const Block & block) override;
@@ -56,6 +56,9 @@ public:
     size_t getTotalByteCount() const override;
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
+
+    bool supportsJoinWithManyResultBlocks() const override { return true; }
+    void joinBlock(Block & block, std::vector<Block> & res, std::shared_ptr<ExtraBlock> & not_processed) override;
 
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
@@ -78,8 +81,7 @@ private:
     std::mutex totals_mutex;
     Block totals;
 
-    IColumn::Selector selectDispatchBlock(const Strings & key_columns_names, const Block & from_block);
-    Blocks dispatchBlock(const Strings & key_columns_names, const Block & from_block);
+    ScatteredBlocks dispatchBlock(const Strings & key_columns_names, const Block & from_block);
 };
 
 UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, const QueryTreeNodePtr & right_table_expression);
