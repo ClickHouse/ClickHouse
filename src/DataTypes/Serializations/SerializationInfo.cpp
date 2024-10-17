@@ -317,7 +317,7 @@ SerializationInfoByName SerializationInfoByName::readJSON(
         auto array = object->getArray(KEY_COLUMNS);
         for (const auto & elem : *array)
         {
-            auto elem_object = elem.extract<Poco::JSON::Object::Ptr>();
+            const auto & elem_object = elem.extract<Poco::JSON::Object::Ptr>();
 
             if (!elem_object->has(KEY_NAME))
                 throw Exception(ErrorCodes::CORRUPTED_DATA,

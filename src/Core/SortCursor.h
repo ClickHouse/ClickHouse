@@ -600,7 +600,7 @@ public:
             initializeQueues<SortCursorWithCollation>();
             return;
         }
-        else if (sort_description.size() == 1)
+        if (sort_description.size() == 1)
         {
             TypeIndex column_type_index = sort_description_types[0]->getTypeId();
 
@@ -723,7 +723,7 @@ bool less(const TLeftColumns & lhs, const TRightColumns & rhs, size_t i, size_t 
         int res = elem.base.direction * lhs[ind]->compareAt(i, j, *rhs[ind], elem.base.nulls_direction);
         if (res < 0)
             return true;
-        else if (res > 0)
+        if (res > 0)
             return false;
     }
 

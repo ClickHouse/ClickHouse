@@ -342,12 +342,10 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
                     delayed_tasks_cond_var.wait_for(lock, std::chrono::microseconds(min_time - current_time));
                     continue;
                 }
-                else
-                {
-                    /// We have a task ready for execution
-                    found = true;
-                    break;
-                }
+
+                /// We have a task ready for execution
+                found = true;
+                break;
             }
         }
 

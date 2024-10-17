@@ -298,19 +298,32 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
     return p.returncode == 0
 
 
-def check_rabbitmq_is_available(rabbitmq_id, cookie):
-    p = subprocess.Popen(
-        docker_exec(
-            "-e",
-            f"RABBITMQ_ERLANG_COOKIE={cookie}",
-            rabbitmq_id,
-            "rabbitmqctl",
-            "await_startup",
-        ),
-        stdout=subprocess.PIPE,
-    )
-    p.wait(timeout=60)
-    return p.returncode == 0
+def check_rabbitmq_is_available(rabbitmq_id, cookie, timeout=90):
+    try:
+        subprocess.check_output(
+            docker_exec(
+                "-e",
+                f"RABBITMQ_ERLANG_COOKIE={cookie}",
+                rabbitmq_id,
+                "rabbitmqctl",
+                "await_startup",
+            ),
+            stderr=subprocess.STDOUT,
+            timeout=timeout,
+        )
+        return True
+    except subprocess.CalledProcessError as e:
+        # Raised if the command returns a non-zero exit code
+        error_message = (
+            f"RabbitMQ startup failed with return code {e.returncode}. "
+            f"Output: {e.output.decode(errors='replace')}"
+        )
+        raise RuntimeError(error_message)
+    except subprocess.TimeoutExpired as e:
+        # Raised if the command times out
+        raise RuntimeError(
+            f"RabbitMQ startup timed out. Output: {e.output.decode(errors='replace')}"
+        )
 
 
 def rabbitmq_debuginfo(rabbitmq_id, cookie):
@@ -372,22 +385,6 @@ async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None):
         tls=ssl_ctx,
     )
     return nc
-
-
-def enable_consistent_hash_plugin(rabbitmq_id, cookie):
-    p = subprocess.Popen(
-        docker_exec(
-            "-e",
-            f"RABBITMQ_ERLANG_COOKIE={cookie}",
-            rabbitmq_id,
-            "rabbitmq-plugins",
-            "enable",
-            "rabbitmq_consistent_hash_exchange",
-        ),
-        stdout=subprocess.PIPE,
-    )
-    p.communicate()
-    return p.returncode == 0
 
 
 def get_instances_dir(name):
@@ -1634,6 +1631,7 @@ class ClickHouseCluster:
         instance_env_variables=False,
         image="clickhouse/integration-test",
         tag=None,
+        # keep the docker container running when clickhouse server is stopped
         stay_alive=False,
         ipv4_address=None,
         ipv6_address=None,
@@ -2355,22 +2353,14 @@ class ClickHouseCluster:
         self.print_all_docker_pieces()
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
-        start = time.time()
-        while time.time() - start < timeout:
-            try:
-                if check_rabbitmq_is_available(
-                    self.rabbitmq_docker_id, self.rabbitmq_cookie
-                ):
-                    logging.debug("RabbitMQ is available")
-                    if enable_consistent_hash_plugin(
-                        self.rabbitmq_docker_id, self.rabbitmq_cookie
-                    ):
-                        logging.debug("RabbitMQ consistent hash plugin is available")
-                    return True
-                time.sleep(0.5)
-            except Exception as ex:
-                logging.debug("Can't connect to RabbitMQ " + str(ex))
-                time.sleep(0.5)
+        try:
+            if check_rabbitmq_is_available(
+                self.rabbitmq_docker_id, self.rabbitmq_cookie, timeout
+            ):
+                logging.debug("RabbitMQ is available")
+                return True
+        except Exception as ex:
+            logging.debug("RabbitMQ await_startup failed", exc_info=True)
 
         try:
             with open(os.path.join(self.rabbitmq_dir, "docker.log"), "w+") as f:
@@ -2701,7 +2691,8 @@ class ClickHouseCluster:
                     [
                         "bash",
                         "-c",
-                        f"/opt/bitnami/openldap/bin/ldapsearch -x -H ldap://{self.ldap_host}:{self.ldap_port} -D cn=admin,dc=example,dc=org -w clickhouse -b dc=example,dc=org"
+                        "test -f /tmp/.openldap-initialized"
+                        f"&& /opt/bitnami/openldap/bin/ldapsearch -x -H ldap://{self.ldap_host}:{self.ldap_port} -D cn=admin,dc=example,dc=org -w clickhouse -b dc=example,dc=org"
                         f'| grep -c -E "member: cn=j(ohn|ane)doe"'
                         f"| grep 2 >> /dev/null",
                     ],

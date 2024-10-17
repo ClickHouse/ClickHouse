@@ -216,6 +216,9 @@
     M(ParquetDecoderThreads, "Number of threads in the ParquetBlockInputFormat thread pool.") \
     M(ParquetDecoderThreadsActive, "Number of threads in the ParquetBlockInputFormat thread pool running a task.") \
     M(ParquetDecoderThreadsScheduled, "Number of queued or active jobs in the ParquetBlockInputFormat thread pool.") \
+    M(ParquetDecoderIOThreads, "Number of threads in the ParquetBlockInputFormat io thread pool.") \
+    M(ParquetDecoderIOThreadsActive, "Number of threads in the ParquetBlockInputFormat io thread pool running a task.") \
+    M(ParquetDecoderIOThreadsScheduled, "Number of queued or active jobs in the ParquetBlockInputFormat io thread pool.") \
     M(ParquetEncoderThreads, "Number of threads in ParquetBlockOutputFormat thread pool.") \
     M(ParquetEncoderThreadsActive, "Number of threads in ParquetBlockOutputFormat thread pool running a task.") \
     M(ParquetEncoderThreadsScheduled, "Number of queued or active jobs in ParquetBlockOutputFormat thread pool.") \
@@ -291,9 +294,14 @@
     M(CacheWarmerBytesInProgress, "Total size of remote file segments waiting to be asynchronously loaded into filesystem cache.") \
     M(DistrCacheOpenedConnections, "Number of open connections to Distributed Cache") \
     M(DistrCacheUsedConnections, "Number of currently used connections to Distributed Cache") \
+    M(DistrCacheAllocatedConnections, "Number of currently allocated connections to Distributed Cache connection pool") \
+    M(DistrCacheBorrowedConnections, "Number of currently borrowed connections to Distributed Cache connection pool") \
     M(DistrCacheReadRequests, "Number of executed Read requests to Distributed Cache") \
     M(DistrCacheWriteRequests, "Number of executed Write requests to Distributed Cache") \
     M(DistrCacheServerConnections, "Number of open connections to ClickHouse server from Distributed Cache") \
+    M(DistrCacheRegisteredServers, "Number of distributed cache registered servers") \
+    M(DistrCacheRegisteredServersCurrentAZ, "Number of distributed cache registered servers in current az") \
+    M(DistrCacheServerS3CachedClients, "Number of distributed cache S3 cached clients") \
     \
     M(SchedulerIOReadScheduled, "Number of IO reads are being scheduled currently") \
     M(SchedulerIOWriteScheduled, "Number of IO writes are being scheduled currently") \
@@ -314,6 +322,20 @@
     M(FilteringMarksWithSecondaryKeys, "Number of threads currently doing filtering of mark ranges by secondary keys") \
     \
     M(DiskS3NoSuchKeyErrors, "The number of `NoSuchKey` errors that occur when reading data from S3 cloud storage through ClickHouse disks.") \
+    \
+    M(SharedCatalogStateApplicationThreads, "Number of threads in the threadpool for state application in Shared Catalog.") \
+    M(SharedCatalogStateApplicationThreadsActive, "Number of active threads in the threadpool for state application in Shared Catalog.") \
+    M(SharedCatalogStateApplicationThreadsScheduled, "Number of queued or active jobs in the threadpool for state application in Shared Catalog.") \
+    \
+    M(SharedCatalogDropLocalThreads, "Number of threads in the threadpool for drop of local tables in Shared Catalog.") \
+    M(SharedCatalogDropLocalThreadsActive, "Number of active threads in the threadpool for drop of local tables in Shared Catalog.") \
+    M(SharedCatalogDropLocalThreadsScheduled, "Number of queued or active jobs in the threadpool for drop of local tables in Shared Catalog.") \
+    \
+    M(SharedCatalogDropZooKeeperThreads, "Number of threads in the threadpool for drop of object in ZooKeeper in Shared Catalog.") \
+    M(SharedCatalogDropZooKeeperThreadsActive, "Number of active threads in the threadpool for drop of object in ZooKeeper in Shared Catalog.") \
+    M(SharedCatalogDropZooKeeperThreadsScheduled, "Number of queued or active jobs in the threadpool for drop of object in ZooKeeper in Shared Catalog.") \
+    \
+    M(SharedDatabaseCatalogTablesInLocalDropDetachQueue, "Number of tables in the queue for local drop or detach in Shared Catalog.") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)
