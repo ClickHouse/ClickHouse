@@ -1,3 +1,7 @@
+/**
+*  Patched adapter from NATS io library to plug a `NATS` connection to a `libuv` event loop.
+ */
+
 #include <Storages/NATS/NATSLibUVAdapter.h>
 
 static uv_once_t    uvOnce = UV_ONCE_INIT;
@@ -9,39 +13,20 @@ static void initOnce()
         abort();
 }
 
-/** \defgroup libuvFunctions Libuv Adapter
- *
- *  Adapter to plug a `NATS` connection to a `libuv` event loop.
- *  @{
- */
-
-/** \brief Initialize the adapter.
- *
- * Needs to be called once so that the adapter can initialize some state.
- */
-void natsLibuv_Init()
+void natsLibuvInit()
 {
     uv_once(&uvOnce, initOnce);
 }
 
-/** \brief Register the event loop with the thread running `uv_run()`.
- *
- * Since `libuv` is not thread-safe, the adapter needs to know in which
- * thread `uv_run()` will run for the given `loop`. It allows the adapter
- * to schedule events so that they are executed in the event loop thread.
- *
- * @param loop an event loop.
- */
-void
-natsLibuv_SetThreadLocalLoop(uv_loop_t *loop)
+void natsLibuvSetThreadLocalLoop(uv_loop_t *loop)
 {
     uv_key_set(&uvLoopThreadKey, static_cast<void*>(loop));
 }
 
-static natsStatus
-uvScheduleToEventLoop(natsLibuvEvents *nle, int eventType, bool add)
+/// Patched uvScheduleToEventLoop function from NATS io libuv adapter (contrib/nats-io/src/adapters/libuv.h)
+static natsStatus uvScheduleToEventLoop(NATSLibuvEvents *nle, int eventType, bool add)
 {
-    natsLibuvEvent  *newEvent = nullptr;
+    NATSLibuvEvent  *newEvent = nullptr;
     int             res;
 
     uv_mutex_lock(nle->lock);
@@ -52,7 +37,7 @@ uvScheduleToEventLoop(natsLibuvEvents *nle, int eventType, bool add)
     }
     uv_mutex_unlock(nle->lock);
 
-    newEvent = static_cast<natsLibuvEvent*>(malloc(sizeof(natsLibuvEvent)));
+    newEvent = static_cast<NATSLibuvEvent*>(malloc(sizeof(NATSLibuvEvent)));
     if (newEvent == nullptr)
         return NATS_NO_MEMORY;
 
@@ -77,10 +62,9 @@ uvScheduleToEventLoop(natsLibuvEvents *nle, int eventType, bool add)
     return (res == 0 ? NATS_OK : NATS_ERR);
 }
 
-static void
-natsLibuvPoll(uv_poll_t* handle, int status, int events)
+static void natsLibuvPoll(uv_poll_t* handle, int status, int events)
 {
-    natsLibuvEvents *nle = static_cast<natsLibuvEvents*>(handle->data);
+    NATSLibuvEvents *nle = static_cast<NATSLibuvEvents*>(handle->data);
 
     if (status != 0)
     {
@@ -98,8 +82,7 @@ natsLibuvPoll(uv_poll_t* handle, int status, int events)
         natsConnection_ProcessWriteEvent(nle->nc);
 }
 
-static natsStatus
-uvPollUpdate(natsLibuvEvents *nle, int eventType, bool add)
+static natsStatus uvPollUpdate(NATSLibuvEvents *nle, int eventType, bool add)
 {
     int res;
 
@@ -129,14 +112,13 @@ uvPollUpdate(natsLibuvEvents *nle, int eventType, bool add)
     return NATS_OK;
 }
 
-static void
-uvHandleClosedCb(uv_handle_t *handle)
+static void uvHandleClosedCb(uv_handle_t *handle)
 {
     free(handle);
 }
 
-static natsStatus
-uvAsyncAttach(natsLibuvEvents *nle)
+/// Pathed uvAsyncAttach function from NATS io libuv adapter (contrib/nats-io/src/adapters/libuv.h)
+static natsStatus uvAsyncAttach(NATSLibuvEvents *nle)
 {
     natsStatus  s = NATS_OK;
 
@@ -171,19 +153,19 @@ uvAsyncAttach(natsLibuvEvents *nle)
     return s;
 }
 
-static void
-finalCloseCb(uv_handle_t* handle)
+/// Pathed finalCloseCb function from NATS io libuv adapter (contrib/nats-io/src/adapters/libuv.h)
+static void finalCloseCb(uv_handle_t* handle)
 {
     free(handle);
 }
 
-static void
-closeSchedulerCb(uv_handle_t* scheduler)
+/// Pathed closeSchedulerCb function from NATS io libuv adapter (contrib/nats-io/src/adapters/libuv.h)
+static void closeSchedulerCb(uv_handle_t* scheduler)
 {
     free(scheduler);
 }
 
-static void uvAsyncDetach(natsLibuvEvents *nle)
+static void uvAsyncDetach(NATSLibuvEvents *nle)
 {
     if (nle->lock)
         uv_mutex_lock(nle->lock);
@@ -194,7 +176,7 @@ static void uvAsyncDetach(natsLibuvEvents *nle)
     uv_handle_t* handle = reinterpret_cast<uv_handle_t*>(nle->handle);
     nle->handle = nullptr;
 
-    natsLibuvEvent *event;
+    NATSLibuvEvent *event;
     while ((event = nle->head) != nullptr)
     {
         nle->head = event->next;
@@ -218,12 +200,11 @@ static void uvAsyncDetach(natsLibuvEvents *nle)
         uv_close(handle, finalCloseCb);
 }
 
-static void
-uvAsyncCb(uv_async_t *handle)
+static void uvAsyncCb(uv_async_t *handle)
 {
-    natsLibuvEvents  *nle    = static_cast<natsLibuvEvents*>(handle->data);
+    NATSLibuvEvents  *nle    = static_cast<NATSLibuvEvents*>(handle->data);
     natsStatus       s       = NATS_OK;
-    natsLibuvEvent   *event  = nullptr;
+    NATSLibuvEvent   *event  = nullptr;
     bool             more    = false;
 
     while (true)
@@ -282,24 +263,12 @@ uvAsyncCb(uv_async_t *handle)
         natsConnection_Close(nle->nc);
 }
 
-/** \brief Attach a connection to the given event loop.
- *
- * This callback is invoked after `NATS` library has connected, or reconnected.
- * For a reconnect event, `*userData` will not be `nullptrptr`. This function will
- * start polling on READ events for the given `socket`.
- *
- * @param userData the location where the adapter stores the user object passed
- * to the other callbacks.
- * @param loop the event loop as a generic pointer. Cast to appropriate type.
- * @param nc the connection to attach to the event loop
- * @param socket the socket to start polling on.
- */
-natsStatus
-natsLibuv_Attach(void **userData, void *loop, natsConnection *nc, natsSock socket)
+/// Pathed natsLibuv_Attach function from NATS io libuv adapter (contrib/nats-io/src/adapters/libuv.h)
+natsStatus natsLibuvAttach(void **userData, void *loop, natsConnection *nc, natsSock socket)
 {
     uv_loop_t       *uvLoop = static_cast<uv_loop_t*>(loop);
     bool            sched   = false;
-    natsLibuvEvents *nle    = static_cast<natsLibuvEvents*>(*userData);
+    NATSLibuvEvents *nle    = static_cast<NATSLibuvEvents*>(*userData);
     natsStatus      s       = NATS_OK;
 
     sched = ((uv_key_get(&uvLoopThreadKey) != loop) ? true : false);
@@ -311,7 +280,7 @@ natsLibuv_Attach(void **userData, void *loop, natsConnection *nc, natsSock socke
         if (sched)
             return NATS_ILLEGAL_STATE;
 
-        nle = static_cast<natsLibuvEvents*>(calloc(1, sizeof(natsLibuvEvents)));
+        nle = static_cast<NATSLibuvEvents*>(calloc(1, sizeof(NATSLibuvEvents)));
         if (nle == nullptr)
             return NATS_NO_MEMORY;
 
@@ -377,18 +346,9 @@ natsLibuv_Attach(void **userData, void *loop, natsConnection *nc, natsSock socke
     return s;
 }
 
-/** \brief Start or stop polling on READ events.
- *
- * This callback is invoked to notify that the event library should start
- * or stop polling for READ events.
- *
- * @param userData the user object created in #natsLibuv_Attach
- * @param add `true` if the library needs to start polling, `false` otherwise.
- */
-natsStatus
-natsLibuv_Read(void *userData, bool add)
+natsStatus natsLibuvRead(void *userData, bool add)
 {
-    natsLibuvEvents *nle = static_cast<natsLibuvEvents*>(userData);
+    NATSLibuvEvents *nle = static_cast<NATSLibuvEvents*>(userData);
     natsStatus      s    = NATS_OK;
     bool            sched;
 
@@ -410,18 +370,9 @@ natsLibuv_Read(void *userData, bool add)
     return s;
 }
 
-/** \brief Start or stop polling on WRITE events.
- *
- * This callback is invoked to notify that the event library should start
- * or stop polling for WRITE events.
- *
- * @param userData the user object created in #natsLibuv_Attach
- * @param add `true` if the library needs to start polling, `false` otherwise.
- */
-natsStatus
-natsLibuv_Write(void *userData, bool add)
+natsStatus natsLibuvWrite(void *userData, bool add)
 {
-    natsLibuvEvents *nle = static_cast<natsLibuvEvents*>(userData);
+    NATSLibuvEvents *nle = static_cast<NATSLibuvEvents*>(userData);
     natsStatus      s    = NATS_OK;
     bool            sched;
 
@@ -436,18 +387,10 @@ natsLibuv_Write(void *userData, bool add)
     return s;
 }
 
-/** \brief The connection is closed, it can be safely detached.
- *
- * When a connection is closed (not disconnected, pending a reconnect), this
- * callback will be invoked. This is the opportunity to cleanup the state
- * maintained by the adapter for this connection.
- *
- * @param userData the user object created in #natsLibuv_Attach
- */
-natsStatus
-natsLibuv_Detach(void *userData)
+/// Pathed function natsLibuvDetach from NATS io libuv adapter (contrib/nats-io/src/adapters/libuv.h)
+natsStatus natsLibuvDetach(void *userData)
 {
-    natsLibuvEvents *nle = static_cast<natsLibuvEvents*>(userData);
+    NATSLibuvEvents *nle = static_cast<NATSLibuvEvents*>(userData);
     natsStatus      s    = NATS_OK;
     bool            sched;
 
@@ -461,5 +404,3 @@ natsLibuv_Detach(void *userData)
 
     return s;
 }
-
-/** @} */ // end of libuvFunctions

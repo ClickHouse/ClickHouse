@@ -35,8 +35,8 @@ void NATSHandler::runLoop()
         return;
     }
 
-    natsLibuv_Init();
-    natsLibuv_SetThreadLocalLoop(loop.getLoop());
+    natsLibuvInit();
+    natsLibuvSetThreadLocalLoop(loop.getLoop());
 
     loop_state.store(Loop::RUN);
 
@@ -158,10 +158,10 @@ NATSOptionsPtr NATSHandler::createOptions()
 
     NATSOptionsPtr result(options, &natsOptions_Destroy);
     er = natsOptions_SetEventLoop(result.get(), static_cast<void *>(loop.getLoop()),
-                                  natsLibuv_Attach,
-                                  natsLibuv_Read,
-                                  natsLibuv_Write,
-                                  natsLibuv_Detach);
+                                  natsLibuvAttach,
+                                  natsLibuvRead,
+                                  natsLibuvWrite,
+                                  natsLibuvDetach);
     if (er)
     {
         throw Exception(
