@@ -27,13 +27,12 @@ mypy-extensions==1.0.0
 packaging==24.1
 pathspec==0.9.0
 pip==24.1.1
-pipdeptree==2.23.0
 platformdirs==4.2.2
 pycodestyle==2.8.0
 pycparser==2.22
 pyflakes==2.4.0
 PyGithub==2.3.0
-PyJWT==2.8.0
+PyJWT==2.9.0
 pylint==3.1.0
 PyNaCl==1.5.0
 python-dateutil==2.9.0.post0
