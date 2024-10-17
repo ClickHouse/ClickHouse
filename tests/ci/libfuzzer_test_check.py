@@ -8,15 +8,29 @@ import zipfile
 from pathlib import Path
 from typing import List
 
+from botocore.exceptions import ClientError
+
 from build_download_helper import download_fuzzers
 from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
+from env_helper import REPO_COPY, REPORT_PATH, S3_BUILDS_BUCKET, TEMP_PATH
 from pr_info import PRInfo
+from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
 NO_CHANGES_MSG = "Nothing to run"
+s3 = S3Helper()
+
+
+def zipdir(path, ziph):
+    # ziph is zipfile handle
+    for root, _, files in os.walk(path):
+        for file in files:
+            ziph.write(
+                os.path.join(root, file),
+                os.path.relpath(os.path.join(root, file), os.path.join(path, "..")),
+            )
 
 
 def get_additional_envs(check_name, run_by_hash_num, run_by_hash_total):
@@ -59,7 +73,7 @@ def get_run_command(
 
     envs = [
         # a static link, don't use S3_URL or S3_DOWNLOAD
-        '-e S3_URL="https://s3.amazonaws.com/clickhouse-datasets"',
+        '-e S3_URL="https://s3.amazonaws.com"',
     ]
 
     envs += [f"-e {e}" for e in additional_envs]
@@ -83,6 +97,41 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("check_name")
     return parser.parse_args()
+
+
+def download_corpus(corpus_path: str, fuzzer_name: str):
+    logging.info("Download corpus for %s ...", fuzzer_name)
+
+    units = []
+
+    try:
+        units = s3.download_files(
+            bucket=S3_BUILDS_BUCKET,
+            s3_path=f"fuzzer/corpus/{fuzzer_name}/",
+            file_suffix="",
+            local_directory=corpus_path,
+        )
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "NoSuchKey":
+            logging.debug("No active corpus exists for %s", fuzzer_name)
+        else:
+            raise
+
+    logging.info("...downloaded %d units", len(units))
+
+
+def upload_corpus(path: str):
+    with zipfile.ZipFile(f"{path}/corpus.zip", "w", zipfile.ZIP_DEFLATED) as zipf:
+        zipdir(f"{path}/corpus/", zipf)
+    s3.upload_file(
+        bucket=S3_BUILDS_BUCKET,
+        file_path=f"{path}/corpus.zip",
+        s3_path="fuzzer/corpus.zip",
+    )
+    # for file in os.listdir(f"{result_path}/corpus/"):
+    #     s3.upload_build_directory_to_s3(
+    #         Path(f"{result_path}/corpus/{file}"), f"fuzzer/corpus/{file}", False
+    #     )
 
 
 def main():
@@ -113,16 +162,22 @@ def main():
 
     fuzzers_path = temp_path / "fuzzers"
     fuzzers_path.mkdir(parents=True, exist_ok=True)
+    corpus_path = fuzzers_path / "corpus"
+    corpus_path.mkdir(parents=True, exist_ok=True)
 
     download_fuzzers(check_name, reports_path, fuzzers_path)
 
     for file in os.listdir(fuzzers_path):
         if file.endswith("_fuzzer"):
             os.chmod(fuzzers_path / file, 0o777)
+            fuzzer_corpus_path = corpus_path / file
+            download_corpus(fuzzer_corpus_path, file)
         elif file.endswith("_seed_corpus.zip"):
-            corpus_path = fuzzers_path / (file.removesuffix("_seed_corpus.zip") + ".in")
+            seed_corpus_path = fuzzers_path / (
+                file.removesuffix("_seed_corpus.zip") + ".in"
+            )
             with zipfile.ZipFile(fuzzers_path / file, "r") as zfd:
-                zfd.extractall(corpus_path)
+                zfd.extractall(seed_corpus_path)
 
     result_path = temp_path / "result_path"
     result_path.mkdir(parents=True, exist_ok=True)
@@ -132,6 +187,8 @@ def main():
     additional_envs = get_additional_envs(
         check_name, run_by_hash_num, run_by_hash_total
     )
+
+    # additional_envs.append("CI=1")
 
     ci_logs_credentials = CiLogsCredentials(Path(temp_path) / "export-logs-config.sh")
     ci_logs_args = ci_logs_credentials.get_docker_arguments(
@@ -152,6 +209,7 @@ def main():
         retcode = process.wait()
         if retcode == 0:
             logging.info("Run successfully")
+            upload_corpus(fuzzers_path)
         else:
             logging.info("Run failed")
 
