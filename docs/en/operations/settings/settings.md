@@ -9721,6 +9721,10 @@ Default value: 15
 
 The heartbeat interval in seconds to indicate watch query is alive.
 
+## enforce_strict_identifier_format
+
+If enabled, only allow identifiers containing alphanumeric characters and underscores.
+
 ## workload {#workload}
 
 Type: String
