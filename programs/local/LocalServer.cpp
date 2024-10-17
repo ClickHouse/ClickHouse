@@ -34,7 +34,6 @@
 #include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
-// #include <Loggers/OwnFilteringChannel.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <IO/ReadBufferFromFile.h>
