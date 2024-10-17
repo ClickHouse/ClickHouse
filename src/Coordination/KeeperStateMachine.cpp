@@ -4,6 +4,7 @@
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Coordination/KeeperReconfiguration.h>
+#include <Common/thread_local_rng.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStorage.h>
@@ -202,6 +203,18 @@ struct LockGuardWithStats final
 template<typename Storage>
 nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log_idx, nuraft::buffer & data)
 {
+    double sleep_probability = keeper_context->getPrecommitSleepProbabilityForTesting();
+    int64_t sleep_ms = keeper_context->getPrecommitSleepMillisecondsForTesting();
+    if (sleep_ms != 0 && sleep_probability != 0)
+    {
+        std::uniform_real_distribution<double> distribution{0., 1.};
+        if (distribution(thread_local_rng) > (1 - sleep_probability))
+        {
+            LOG_WARNING(log, "Precommit sleep enabled, will pause for {} ms", sleep_ms);
+            std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
+        }
+    }
+
     auto result = nuraft::buffer::alloc(sizeof(log_idx));
     nuraft::buffer_serializer ss(result);
     ss.put_u64(log_idx);
