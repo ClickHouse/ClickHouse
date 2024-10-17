@@ -122,9 +122,6 @@ def download_corpus(corpus_path: str, fuzzer_name: str):
 
 
 def upload_corpus(path: str):
-    logging.info("Upload corpus from path %s", path)
-    subprocess.check_call(f"ls -al {path}", shell=True)
-    subprocess.check_call(f"ls -Ral {path}/corpus/", shell=True)
     with zipfile.ZipFile(f"{path}/corpus.zip", "w", zipfile.ZIP_DEFLATED) as zipf:
         zipdir(f"{path}/corpus/", zipf)
     s3.upload_file(
@@ -175,9 +172,7 @@ def main():
         if file.endswith("_fuzzer"):
             os.chmod(fuzzers_path / file, 0o777)
             fuzzer_corpus_path = corpus_path / file
-            subprocess.check_call(f"ls -Ral {corpus_path}", shell=True)
             download_corpus(fuzzer_corpus_path, file)
-            subprocess.check_call(f"ls -Ral {fuzzer_corpus_path}", shell=True)
         elif file.endswith("_seed_corpus.zip"):
             seed_corpus_path = fuzzers_path / (
                 file.removesuffix("_seed_corpus.zip") + ".in"
