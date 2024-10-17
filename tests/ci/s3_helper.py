@@ -311,23 +311,27 @@ class S3Helper:
     def list_prefix(
         self, s3_prefix_path: str, bucket: str = S3_BUILDS_BUCKET
     ) -> List[str]:
-        objects = self.client.list_objects_v2(Bucket=bucket, Prefix=s3_prefix_path)
+        paginator = self.client.get_paginator('list_objects_v2')
+        pages = paginator.paginate(Bucket=bucket, Prefix=s3_prefix_path)
         result = []
-        if "Contents" in objects:
-            for obj in objects["Contents"]:
-                result.append(obj["Key"])
+        for page in pages:
+            if "Contents" in page:
+                for obj in page["Contents"]:
+                    result.append(obj["Key"])
 
         return result
 
     def list_prefix_non_recursive(
         self, s3_prefix_path: str, bucket: str = S3_BUILDS_BUCKET
     ) -> List[str]:
-        objects = self.client.list_objects_v2(Bucket=bucket, Prefix=s3_prefix_path)
+        paginator = self.client.get_paginator('list_objects_v2')
+        pages = paginator.paginate(Bucket=bucket, Prefix=s3_prefix_path)
         result = []
-        if "Contents" in objects:
-            for obj in objects["Contents"]:
-                if "/" not in obj["Key"][len(s3_prefix_path) + 1 :]:
-                    result.append(obj["Key"])
+        for page in pages:
+            if "Contents" in page:
+                for obj in page["Contents"]:
+                    if "/" not in obj["Key"][len(s3_prefix_path) + 1 :]:
+                        result.append(obj["Key"])
 
         return result
 

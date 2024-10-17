@@ -110,10 +110,10 @@ def download_corpus(corpus_path: str, fuzzer_name: str):
     logging.info("...downloaded %d units", len(units))
 
 
-def upload_corpus(fuzzers_path: str):
-    for file in os.listdir(f"{fuzzers_path}/corpus/"):
+def upload_corpus(result_path: str):
+    for file in os.listdir(f"{result_path}/corpus/"):
         s3.upload_build_directory_to_s3(
-            Path(f"{fuzzers_path}/corpus/{file}"), f"fuzzer/corpus/{file}", False
+            Path(f"{result_path}/corpus/{file}"), f"fuzzer/corpus/{file}", False
         )
 
 
@@ -187,7 +187,7 @@ def main():
         retcode = process.wait()
         if retcode == 0:
             logging.info("Run successfully")
-            upload_corpus(fuzzers_path)
+            upload_corpus(result_path)
         else:
             logging.info("Run failed")
 
