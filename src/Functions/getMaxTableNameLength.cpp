@@ -1,12 +1,9 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnConst.h>
-#include <Core/Field.h>
 #include <Common/computeMaxTableNameLength.h>
 
 namespace DB
