@@ -168,6 +168,11 @@ public:
         return return_type;
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnPtr & column_haystack = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[0].column : arguments[1].column;
@@ -221,8 +226,7 @@ public:
 
                 if (is_col_start_pos_const)
                     return result_type->createColumnConst(col_haystack_const->size(), toField(vec_res[0]));
-                else
-                    return col_res;
+                return col_res;
             }
         }
 

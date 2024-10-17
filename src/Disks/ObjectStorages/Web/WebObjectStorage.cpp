@@ -48,7 +48,7 @@ WebObjectStorage::loadFiles(const String & path, const std::unique_lock<std::sha
 
         auto timeouts = ConnectionTimeouts::getHTTPTimeouts(
             getContext()->getSettingsRef(),
-            getContext()->getServerSettings().keep_alive_timeout);
+            getContext()->getServerSettings());
 
         auto metadata_buf = BuilderRWBufferFromHTTP(Poco::URI(fs::path(full_url) / ".index"))
                                 .withConnectionGroup(HTTPConnectionGroupType::DISK)
@@ -199,38 +199,30 @@ WebObjectStorage::FileDataPtr WebObjectStorage::tryGetFileInfo(const String & pa
 
         if (auto jt = files.find(path, is_file); jt != files.end())
             return jt->second;
-        else
-        {
-            return nullptr;
-        }
+
+        return nullptr;
     }
-    else
+
+    auto it = std::lower_bound(
+        files.begin(), files.end(), path, [](const auto & file, const std::string & path_) { return file.first < path_; });
+    if (it != files.end())
     {
-        auto it = std::lower_bound(
-            files.begin(), files.end(), path,
-            [](const auto & file, const std::string & path_) { return file.first < path_; }
-        );
-        if (it != files.end())
+        if (startsWith(it->first, path) || (it != files.begin() && startsWith(std::prev(it)->first, path)))
         {
-            if (startsWith(it->first, path)
-                || (it != files.begin() && startsWith(std::prev(it)->first, path)))
-            {
-                shared_lock.unlock();
-                std::unique_lock unique_lock(metadata_mutex);
+            shared_lock.unlock();
+            std::unique_lock unique_lock(metadata_mutex);
 
-                /// Add this directory path not files cache to simplify further checks for this path.
-                return files.add(path, FileData::createDirectoryInfo(false)).first->second;
-            }
+            /// Add this directory path not files cache to simplify further checks for this path.
+            return files.add(path, FileData::createDirectoryInfo(false)).first->second;
         }
-
-        shared_lock.unlock();
-        std::unique_lock unique_lock(metadata_mutex);
-
-        if (auto jt = files.find(path, is_file); jt != files.end())
-            return jt->second;
-        else
-            return loadFiles(path, unique_lock).first;
     }
+
+    shared_lock.unlock();
+    std::unique_lock unique_lock(metadata_mutex);
+
+    if (auto jt = files.find(path, is_file); jt != files.end())
+        return jt->second;
+    return loadFiles(path, unique_lock).first;
 }
 
 std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
