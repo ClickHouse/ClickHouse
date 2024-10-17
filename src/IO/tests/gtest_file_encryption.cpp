@@ -151,7 +151,7 @@ TEST_P(FileEncryptionCipherTest, Decryption)
     for (size_t i = 0; i <= expected.size(); ++i)
     {
         encryptor.setOffset(base_offset);
-        encryptor.decrypt(input.data(), i, buf.data());  /// NOINT(bugprone-suspicious-stringview-data-usage)
+        encryptor.decrypt(input.data(), i, buf.data());  /// NOLINT(bugprone-suspicious-stringview-data-usage)
         ASSERT_EQ(expected.substr(0, i), buf.substr(0, i));
     }
 }
