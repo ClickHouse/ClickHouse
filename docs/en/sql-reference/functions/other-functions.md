@@ -4391,6 +4391,40 @@ Result:
    └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## globalVariable
+
+Takes constant string argument and returns the value of global variable with that name. It is intended for compatibility with MySQL.
+
+**Syntax**
+
+```sql
+globalVariable(name)
+```
+
+**Arguments**
+
+- `name` — Global variable name. [String](../data-types/string.md).
+
+**Returned value**
+
+- Returns the value of variable `name`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT globalVariable('max_allowed_packet');
+```
+
+Result:
+
+```response
+┌─globalVariable('max_allowed_packet')─┐
+│                             67108864 │
+└──────────────────────────────────────┘
+```
+
 ## getMaxTableNameLengthForDatabase
 
 Returns the maximum table name length in a specified database.
@@ -4408,6 +4442,7 @@ getMaxTableNameLengthForDatabase(database_name)
 **Returned value**
 
 - Returns the length of the maximum table name.
+- `name` — Global variable name. [String](../data-types/string.md).
 
 **Example**
 

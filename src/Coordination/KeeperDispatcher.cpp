@@ -964,7 +964,7 @@ static uint64_t getTotalSize(const DiskPtr & disk, const std::string & path = ""
     uint64_t size = 0;
     for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
     {
-        if (disk->isFile(it->path()))
+        if (disk->existsFile(it->path()))
             size += disk->getFileSize(it->path());
         else
             size += getTotalSize(disk, it->path());
