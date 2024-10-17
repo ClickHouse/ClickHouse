@@ -203,7 +203,11 @@ public:
     void wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name);
 
     /// Add an encryption layer.
+#if USE_SSL
     void wrapWithEncryption(EncryptedObjectStorageSettingsPtr enc_settings, const String & layer_name);
+#else
+    [[noreturn]] void wrapWithEncryption(EncryptedObjectStorageSettingsPtr enc_settings, const String & layer_name);
+#endif
 
     /// Get names of all layers. Name is how the layer is defined in configuration file.
     NameSet getOverlaysNames() const override;
