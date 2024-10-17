@@ -8,6 +8,14 @@
 namespace DB
 {
 
+namespace Loop
+{
+    static const UInt8 CREATED = 0;
+    static const UInt8 RUN = 1;
+    static const UInt8 STOP = 2;
+    static const UInt8 CLOSED = 3;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -16,13 +24,13 @@ namespace ErrorCodes
 
 NATSHandler::NATSHandler(LoggerPtr log_)
     : log(log_)
-    , loop_state(Loop::INITIALIZED)
+    , loop_state(Loop::CREATED)
 {
 }
 
 void NATSHandler::runLoop()
 {
-    if (loop_state.load() != Loop::INITIALIZED)
+    if (loop_state.load() != Loop::CREATED)
     {
         return;
     }
@@ -81,7 +89,7 @@ void NATSHandler::stopLoop()
 void NATSHandler::post(Task task)
 {
     const auto current_state = loop_state.load();
-    if (current_state != Loop::INITIALIZED && current_state != Loop::RUN)
+    if (current_state != Loop::CREATED && current_state != Loop::RUN)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not post task to event loop: event loop stopped");
 
     std::lock_guard<std::mutex> lock(tasks_mutex);

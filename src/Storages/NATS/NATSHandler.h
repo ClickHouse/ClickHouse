@@ -16,14 +16,6 @@
 namespace DB
 {
 
-namespace Loop
-{
-    static const UInt8 INITIALIZED = 0;
-    static const UInt8 RUN = 1;
-    static const UInt8 STOP = 2;
-    static const UInt8 CLOSED = 3;
-}
-
 class NATSHandler
 {
     using Task = std::function<void ()>;
