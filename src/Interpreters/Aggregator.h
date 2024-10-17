@@ -309,9 +309,9 @@ public:
     /// For external aggregation.
     void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0) const;
 
-    bool hasTemporaryData() const { return !tmp_files.empty(); }
+    bool hasTemporaryData() const;
 
-    std::vector<TemporaryBlockStreamHolder> & getTemporaryData();
+    std::list<TemporaryBlockStreamHolder> & getTemporaryData();
 
     /// Get data structure of the result.
     Block getHeader(bool final) const;
@@ -356,7 +356,8 @@ private:
 
     /// For external aggregation.
     TemporaryDataOnDiskScopePtr tmp_data;
-    mutable std::vector<TemporaryBlockStreamHolder> tmp_files;
+    mutable std::mutex tmp_files_mutex;
+    mutable std::list<TemporaryBlockStreamHolder> tmp_files;
 
     size_t min_bytes_for_prefetch = 0;
 

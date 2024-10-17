@@ -1519,7 +1519,10 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
     Stopwatch watch;
     size_t rows = data_variants.size();
 
+    std::unique_lock lk(tmp_files_mutex);
     auto & out_stream = tmp_files.emplace_back(getHeader(false), tmp_data.get(), max_temp_file_size);
+    lk.unlock();
+
     ProfileEvents::increment(ProfileEvents::ExternalAggregationWritePart);
 
     LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}", out_stream.getHolder()->describeFilePath());
@@ -1639,10 +1642,17 @@ Block Aggregator::convertOneBucketToBlock(AggregatedDataVariants & variants, Are
     return block;
 }
 
-std::vector<TemporaryBlockStreamHolder> & Aggregator::getTemporaryData()
+std::list<TemporaryBlockStreamHolder> & Aggregator::getTemporaryData()
 {
     return tmp_files;
 }
+
+bool Aggregator::hasTemporaryData() const
+{
+    std::lock_guard lk(tmp_files_mutex);
+    return !tmp_files.empty();
+}
+
 
 template <typename Method>
 void Aggregator::writeToTemporaryFileImpl(
