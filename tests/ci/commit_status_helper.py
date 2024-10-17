@@ -552,7 +552,7 @@ CHECK_DESCRIPTIONS = [
     CheckDescription(
         CI.StatusNames.PR_CHECK,
         "Checks correctness of the PR's body",
-        lambda x: x == "PR Check",
+        lambda x: x == CI.StatusNames.PR_CHECK,
     ),
     CheckDescription(
         CI.StatusNames.SYNC,
