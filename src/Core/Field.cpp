@@ -35,7 +35,7 @@ static void readBinaryArrayWithMaybeDifferentTypes(Array & x, ReadBuffer & buf)
     readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
-        x.push_back(readFieldBinary( buf));
+        x.push_back(readFieldBinary(buf));
 }
 
 Field getBinaryValue(UInt8 type, ReadBuffer & buf)
