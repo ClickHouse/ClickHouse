@@ -1623,6 +1623,7 @@ If unit `WEEK` was specified, `toStartOfInterval` assumes that weeks start on Mo
 toStartOfInterval(value, INTERVAL x unit[, time_zone])
 toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 ```
+Aliases: `time_bucket`, `date_bin`.
 
 The second overload emulates TimescaleDB's `time_bucket()` function, respectively PostgreSQL's `date_bin()` function, e.g.
 
@@ -1630,15 +1631,13 @@ The second overload emulates TimescaleDB's `time_bucket()` function, respectivel
 SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, toDateTime('2023-01-01 14:35:30'));
 ```
 
-result:
+Result:
 
 ``` reference
 ┌───toStartOfInterval(...)─┐
 │      2023-01-01 14:44:30 │
 └──────────────────────────┘
 ```
-
-Aliases: `time_bucket`, `date_bin`.
 
 **See Also**
 - [date_trunc](#date_trunc)
@@ -1973,11 +1972,75 @@ Result:
 
 ## toISOYear
 
-Converts a date, or date with time, to a UInt16 number containing the ISO Year number.
+Converts a date, or date with time, to the ISO year as a UInt16 number.
+
+**Syntax**
+
+```sql
+toISOYear(value)
+```
+
+**Arguments**
+
+- `value` — The value with date or date with time. [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
+
+**Returned value**
+
+- The input value converted to a ISO year number. [UInt16](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+  toISOYear(toDate('2024/10/02')) as year1,
+  toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
+```
+
+Result:
+
+```response
+┌─year1─┬─year2─┐
+│  2024 │  2024 │
+└───────┴───────┘
+```
 
 ## toISOWeek
 
 Converts a date, or date with time, to a UInt8 number containing the ISO Week number.
+
+**Syntax**
+
+```sql
+toISOWeek(value)
+```
+
+**Arguments**
+
+- `value` — The value with date or date with time.
+
+**Returned value**
+
+- `value` converted to the current ISO week number. [UInt8](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+  toISOWeek(toDate('2024/10/02')) AS week1,
+  toISOWeek(toDateTime('2024/10/02 01:30:00')) AS week2
+```
+
+Response:
+
+```response
+┌─week1─┬─week2─┐
+│    40 │    40 │
+└───────┴───────┘
+```
 
 ## toWeek
 
@@ -2870,7 +2933,42 @@ The same as ‘today() - 1’.
 
 ## timeSlot
 
-Rounds the time to the half hour.
+Round the time to the start of a half-an-hour length interval.
+
+**Syntax**
+
+```sql
+timeSlot(time[, time_zone])
+```
+
+**Arguments**
+
+- `time` — Time to round to the start of a half-an-hour length interval. [DateTime](../data-types/datetime.md)/[Date32](../data-types/date32.md)/[DateTime64](../data-types/datetime64.md).
+- `time_zone` — A String type const value or an expression representing the time zone. [String](../data-types/string.md).
+
+:::note
+Though this function can take values of the extended types `Date32` and `DateTime64` as an argument, passing it a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results.
+:::
+
+**Return type**
+
+- Returns the time rounded to the start of a half-an-hour length interval. [DateTime](../data-types/datetime.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT timeSlot(toDateTime('2000-01-02 03:04:05', 'UTC'));
+```
+
+Result:
+
+```response
+┌─timeSlot(toDateTime('2000-01-02 03:04:05', 'UTC'))─┐
+│                                2000-01-02 03:00:00 │
+└────────────────────────────────────────────────────┘
+```
 
 ## toYYYYMM
 

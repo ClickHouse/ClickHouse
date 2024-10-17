@@ -1,5 +1,3 @@
-version: '2.3'
-
 services:
   kafka_zookeeper:
     image: zookeeper:3.4.9
