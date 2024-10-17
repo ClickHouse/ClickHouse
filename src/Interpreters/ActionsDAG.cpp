@@ -3,15 +3,21 @@
 #include <Analyzer/FunctionNode.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/materialize.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/indexHint.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/SetSerialization.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Core/SortDescription.h>
@@ -38,6 +44,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -3193,6 +3200,357 @@ const ActionsDAG::Node * FindOriginalNodeForOutputName::find(const String & outp
         return nullptr;
 
     return it->second;
+}
+
+static const ColumnSet * tryGetColumnSet(const ColumnPtr & colunm)
+{
+    const IColumn * maybe_set = colunm.get();
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(maybe_set))
+        maybe_set = &column_const->getDataColumn();
+
+    return typeid_cast<const ColumnSet *>(maybe_set);
+}
+
+static void serializeCapture(const ExecutableFunctionCapture::Capture & capture, WriteBuffer & out)
+{
+    writeStringBinary(capture.return_name, out);
+    encodeDataType(capture.return_type, out);
+
+    writeVarUInt(capture.captured_names.size(), out);
+    for (const auto & name : capture.captured_names)
+        writeStringBinary(name, out);
+
+    writeVarUInt(capture.captured_types.size(), out);
+    for (const auto & type : capture.captured_types)
+        encodeDataType(type, out);
+
+    writeVarUInt(capture.lambda_arguments.size(), out);
+    for (const auto & item : capture.lambda_arguments)
+    {
+        writeStringBinary(item.name, out);
+        encodeDataType(item.type, out);
+    }
+}
+
+static void deserializeCapture(ExecutableFunctionCapture::Capture & capture, ReadBuffer & in)
+{
+    readStringBinary(capture.return_name, in);
+    capture.return_type = decodeDataType(in);
+
+    UInt64 num_names;
+    readVarUInt(num_names, in);
+    capture.captured_names.resize(num_names);
+    for (auto & name : capture.captured_names)
+        readStringBinary(name, in);
+
+    UInt64 num_types;
+    readVarUInt(num_types, in);
+    capture.captured_types.resize(num_types);
+    for (auto & type : capture.captured_types)
+        type = decodeDataType(in);
+
+    UInt64 num_args;
+    readVarUInt(num_args, in);
+    capture.lambda_arguments.clear();
+    for (size_t i = 0; i < num_args; ++i)
+    {
+        NameAndTypePair name_and_type;
+        readStringBinary(name_and_type.name, in);
+        name_and_type.type = decodeDataType(in);
+        capture.lambda_arguments.push_back(std::move(name_and_type));
+    }
+}
+
+void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const
+{
+    size_t nodes_size = nodes.size();
+    writeVarUInt(nodes_size, out);
+
+    std::unordered_map<const Node *, size_t> node_to_id;
+    for (const auto & node : nodes)
+        node_to_id.emplace(&node, node_to_id.size());
+
+    if (nodes_size != node_to_id.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate nodes in ActionsDAG");
+
+    for (const auto & node : nodes)
+    {
+        writeIntBinary(static_cast<UInt8>(node.type), out);
+        writeStringBinary(node.result_name, out);
+        encodeDataType(node.result_type, out);
+
+        writeVarUInt(node.children.size(), out);
+        for (const auto * child : node.children)
+            writeVarUInt(node_to_id.at(child), out);
+
+        /// Serialize column if it is present
+        const bool has_column = node.column != nullptr;
+        const ColumnSet * column_set = nullptr;
+        UInt8 column_flags = 0;
+        if (has_column)
+        {
+            column_flags |= 1;
+            if (node.is_deterministic_constant)
+                column_flags |= 2;
+
+            column_set = tryGetColumnSet(node.column);
+            if (column_set)
+                column_flags |= 4;
+        }
+
+        const auto * function_capture = typeid_cast<const FunctionCapture *>(node.function_base.get());
+        if (function_capture)
+            column_flags |= 8;
+
+        writeIntBinary(column_flags, out);
+        if (column_set)
+        {
+            auto hash = column_set->getData()->getHash();
+            writeBinary(hash, out);
+            registry.sets.emplace(hash, column_set->getData());
+        }
+        else if (has_column)
+        {
+            const auto * const_column = typeid_cast<const ColumnConst *>(node.column.get());
+            if (!const_column)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Cannot serialize non-constant column {}", node.column->getName());
+
+            auto value = const_column->getField();
+            node.result_type->getDefaultSerialization()->serializeBinary(value, out, FormatSettings{});
+        }
+
+        if (node.type == ActionType::INPUT)
+        {
+            /// nothing to serialize
+        }
+        else if (node.type == ActionType::COLUMN)
+        {
+            /// nothing to serialize, column is already serialized
+        }
+        else if (node.type == ActionType::ALIAS)
+        {
+            /// nothing to serialize
+        }
+        else if (node.type == ActionType::FUNCTION)
+        {
+            writeStringBinary(node.function_base->getName(), out);
+            if (function_capture)
+            {
+                serializeCapture(function_capture->getCapture(), out);
+                function_capture->getAcionsDAG().serialize(out, registry);
+            }
+        }
+        else if (node.type == ActionType::ARRAY_JOIN)
+        {
+            /// nothing to serialize
+        }
+        else
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown node type {}", static_cast<size_t>(node.type));
+        }
+    }
+
+    writeVarUInt(inputs.size(), out);
+    for (const auto * input : inputs)
+        writeVarUInt(node_to_id.at(input), out);
+
+    writeVarUInt(outputs.size(), out);
+    for (const auto * output : outputs)
+        writeVarUInt(node_to_id.at(output), out);
+}
+
+ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context)
+{
+    size_t nodes_size;
+    readVarUInt(nodes_size, in);
+
+    std::list<Node> nodes;
+    std::unordered_map<size_t, Node *> id_to_node;
+    for (size_t i = 0; i < nodes_size; ++i)
+        id_to_node.emplace(i, &nodes.emplace_back(Node{}));
+
+    for (size_t i = 0; i < nodes_size; ++i)
+    {
+        Node & node = *id_to_node.at(i);
+
+        UInt8 action_type{0};
+        readIntBinary(action_type, in);
+        if (action_type > static_cast<UInt8>(ActionType::FUNCTION))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type {}", size_t(action_type));
+        node.type = static_cast<ActionType>(action_type);
+
+        readStringBinary(node.result_name, in);
+        node.result_type = decodeDataType(in);
+
+        size_t children_size;
+        readVarUInt(children_size, in);
+        for (size_t j = 0; j < children_size; ++j)
+        {
+            size_t child_id;
+            readVarUInt(child_id, in);
+            node.children.push_back(id_to_node.at(child_id));
+        }
+
+        UInt8 column_flags = 0;
+        readIntBinary(column_flags, in);
+
+        /// Deserialize column if it is present
+        if (column_flags & 1)
+        {
+            if ((column_flags & 2) == 0)
+                node.is_deterministic_constant = false;
+
+            if (column_flags & 4)
+            {
+                FutureSet::Hash hash;
+                readBinary(hash, in);
+
+                auto column_set = ColumnSet::create(0, nullptr);
+                registry.sets[hash].push_back(column_set.get());
+
+                node.column = std::move(column_set);
+            }
+            else
+            {
+                Field value;
+                node.result_type->getDefaultSerialization()->deserializeBinary(value, in, FormatSettings{});
+                node.column = node.result_type->createColumnConst(0, value);
+            }
+        }
+
+        if (node.type == ActionType::INPUT)
+        {
+            /// nothing to deserialize
+            if (!node.children.empty())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized input can't have children");
+        }
+        else if (node.type == ActionType::COLUMN)
+        {
+            /// Column is already deserialized
+            if (!node.children.empty())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized column can't have children");
+        }
+        else if (node.type == ActionType::ALIAS)
+        {
+            /// nothing to deserialize
+            if (node.children.size() != 1)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized alias must have one children");
+        }
+        else if (node.type == ActionType::FUNCTION)
+        {
+            String function_name;
+            readStringBinary(function_name, in);
+
+            ColumnsWithTypeAndName arguments;
+            arguments.reserve(node.children.size());
+            for (const auto * child : node.children)
+            {
+                ColumnWithTypeAndName argument;
+                argument.column = child->column;
+                argument.type = child->result_type;
+                argument.name = child->result_name;
+
+                arguments.emplace_back(std::move(argument));
+            }
+
+            if (column_flags & 8)
+            {
+                ExecutableFunctionCapture::Capture capture;
+                deserializeCapture(capture, in);
+                auto capture_dag = ActionsDAG::deserialize(in, registry, context);
+
+                node.function_base = std::make_shared<FunctionCapture>(
+                    std::make_shared<ActionsDAG>(std::move(capture_dag)),
+                    std::make_shared<ExecutableFunctionCapture::Capture>(std::move(capture)),
+                    node.result_type,
+                    function_name);
+
+                node.function = node.function_base->prepare(arguments);
+                node.is_function_compiled = false;
+            }
+            else
+            {
+                auto function = FunctionFactory::instance().get(function_name, context);
+
+                node.function_base = function->build(arguments);
+                node.function = node.function_base->prepare(arguments);
+                node.is_function_compiled = false;
+
+                auto lhs_type = node.result_type;
+                if (const auto * lhs_tuple = typeid_cast<const DataTypeTuple *>(lhs_type.get()))
+                    lhs_type = std::make_shared<DataTypeTuple>(lhs_tuple->getElements());
+
+                auto rhs_type = node.function_base->getResultType();
+                if (const auto * rhs_tuple = typeid_cast<const DataTypeTuple *>(rhs_type.get()))
+                    rhs_type = std::make_shared<DataTypeTuple>(rhs_tuple->getElements());
+
+                if (!lhs_type->equals(*lhs_type))
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "Deserialized function {} has invalid type. Expected {}, deserialized {}.",
+                        function_name,
+                        rhs_type->getName(),
+                        lhs_type->getName());
+            }
+        }
+        else if (node.type == ActionType::ARRAY_JOIN)
+        {
+            /// nothing to deserialize
+            if (node.children.size() != 1)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized array join must have one children");
+        }
+        else
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown node type {}", static_cast<size_t>(node.type));
+        }
+    }
+
+    size_t inputs_size;
+    readVarUInt(inputs_size, in);
+    std::vector<const Node *> inputs;
+    std::unordered_set<const Node *> inputs_set;
+    inputs.reserve(inputs_size);
+    for (size_t i = 0; i < inputs_size; ++i)
+    {
+        size_t input_id;
+        readVarUInt(input_id, in);
+        const auto * input = id_to_node.at(input_id);
+
+        if (input->type != ActionType::INPUT)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Deserialized input {} has type {}",
+                input->result_name, magic_enum::enum_name(input->type));
+
+        if (!inputs_set.emplace(input).second)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Duplicate input {}", input->result_name);
+
+        inputs.push_back(input);
+    }
+
+    size_t outputs_size;
+    readVarUInt(outputs_size, in);
+    std::vector<const Node *> outputs;
+    outputs.reserve(outputs_size);
+    for (size_t i = 0; i < outputs_size; ++i)
+    {
+        size_t output_id;
+        readVarUInt(output_id, in);
+        outputs.push_back(id_to_node.at(output_id));
+    }
+
+    for (const auto & node : nodes)
+        if (node.type == ActionType::INPUT && !inputs_set.contains(&node))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Deserialized input {} is not in the inputs list",
+                node.result_name);
+
+    ActionsDAG dag;
+    dag.nodes = std::move(nodes);
+    dag.inputs = std::move(inputs);
+    dag.outputs = std::move(outputs);
+
+    return dag;
 }
 
 }

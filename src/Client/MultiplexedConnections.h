@@ -38,6 +38,8 @@ public:
         ClientInfo & client_info,
         bool with_pending_data) override;
 
+    void sendQueryPlan(const QueryPlan & query_plan) override;
+
     void sendReadTaskResponse(const String &) override;
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
 

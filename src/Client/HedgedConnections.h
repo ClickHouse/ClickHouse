@@ -92,6 +92,8 @@ public:
         ClientInfo & client_info,
         bool with_pending_data) override;
 
+    void sendQueryPlan(const QueryPlan & query_plan) override;
+
     void sendReadTaskResponse(const String &) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "sendReadTaskResponse in not supported with HedgedConnections");

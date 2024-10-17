@@ -116,6 +116,8 @@ public:
         bool with_pending_data/* = false */,
         std::function<void(const Progress &)> process_progress_callback) override;
 
+    void sendQueryPlan(const QueryPlan &) override;
+
     void sendCancel() override;
 
     void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;

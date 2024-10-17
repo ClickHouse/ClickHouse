@@ -16,13 +16,10 @@ using Processors = std::vector<ProcessorPtr>;
 
 namespace JSONBuilder { class JSONMap; }
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 class QueryPlan;
 using QueryPlanRawPtrs = std::list<QueryPlan *>;
+
+struct QueryPlanSerializationSettings;
 
 using Header = Block;
 using Headers = std::vector<Header>;
@@ -34,6 +31,7 @@ public:
     virtual ~IQueryPlanStep() = default;
 
     virtual String getName() const = 0;
+    virtual String getSerializationName() const { return getName(); }
 
     /// Add processors from current step to QueryPipeline.
     /// Calling this method, we assume and don't check that:
@@ -52,6 +50,11 @@ public:
     const std::string & getStepDescription() const { return step_description; }
     void setStepDescription(std::string description) { step_description = std::move(description); }
 
+    struct Serialization;
+    struct Deserialization;
+
+    virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/) const {}
+    virtual void serialize(Serialization & /*ctx*/) const;
     virtual const SortDescription & getSortDescription() const;
 
     struct FormatSettings
@@ -102,7 +105,7 @@ public:
     virtual bool canUpdateInputHeader() const { return false; }
 
 protected:
-    virtual void updateOutputHeader() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); }
+    virtual void updateOutputHeader();
 
     Headers input_headers;
     std::optional<Header> output_header;
