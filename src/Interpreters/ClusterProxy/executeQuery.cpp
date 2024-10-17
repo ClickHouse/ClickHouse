@@ -655,8 +655,8 @@ void executeQueryWithParallelReplicas(
 
         Headers input_headers;
         input_headers.reserve(2);
-        input_headers.emplace_back(local_plan->getCurrentHeader());
         input_headers.emplace_back(remote_plan->getCurrentHeader());
+        input_headers.emplace_back(local_plan->getCurrentHeader());
 
         std::vector<QueryPlanPtr> plans;
         plans.emplace_back(std::move(remote_plan));
