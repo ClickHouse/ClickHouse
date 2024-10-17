@@ -229,6 +229,8 @@ private:
 
 	int GenerateOrderBy(RandomGenerator &rg, const uint32_t ncols, const bool allow_settings, sql_query_grammar::OrderByStatement *ob);
 	int GenerateLimit(RandomGenerator &rg, const bool has_order_by, const bool has_distinct, const uint32_t ncols, sql_query_grammar::LimitStatement *ls);
+	int GenerateGroupByExpr(RandomGenerator &rg, const bool enforce_having, const uint32_t offset, const uint32_t ncols,
+							const std::vector<SQLRelationCol> &available_cols, std::vector<GroupCol> &gcols, sql_query_grammar::Expr *expr);
 	int GenerateGroupBy(RandomGenerator &rg, const uint32_t ncols, const bool enforce_having, const bool allow_settings, sql_query_grammar::GroupByStatement *gb);
 	int AddWhereSide(RandomGenerator &rg, const std::vector<GroupCol> &available_cols, sql_query_grammar::Expr *expr);
 	int AddWhereFilter(RandomGenerator &rg, const std::vector<GroupCol> &available_cols, sql_query_grammar::Expr *expr);

@@ -485,6 +485,35 @@ int StatementGenerator::GenerateFromStatement(RandomGenerator &rg, const uint32_
 	return 0;
 }
 
+int StatementGenerator::GenerateGroupByExpr(RandomGenerator &rg, const bool enforce_having, const uint32_t offset, const uint32_t ncols,
+											const std::vector<SQLRelationCol> &available_cols, std::vector<GroupCol> &gcols, sql_query_grammar::Expr *expr) {
+	const uint32_t next_option = rg.NextSmallNumber();
+
+	if (!available_cols.empty() && (enforce_having || next_option < 9)) {
+		const SQLRelationCol &rel_col = available_cols[offset];
+		sql_query_grammar::ExprSchemaTableColumn *estc = expr->mutable_comp_expr()->mutable_expr_stc();
+		sql_query_grammar::ExprColumn *ecol = estc->mutable_col();
+
+		if (rel_col.rel_name != "") {
+			estc->mutable_table()->set_table(rel_col.rel_name);
+		}
+		ecol->mutable_col()->set_column(rel_col.name);
+		if (rel_col.name2.has_value()) {
+			ecol->mutable_subcol()->set_column(rel_col.name2.value());
+		}
+		AddFieldAccess(rg, expr, 16);
+		AddColNestedAccess(rg, ecol, 31);
+		gcols.push_back(GroupCol(rel_col, expr));
+	} else if (next_option < 10) {
+		sql_query_grammar::LiteralValue *lv = expr->mutable_lit_val();
+
+		lv->mutable_int_lit()->set_uint_lit((rg.NextRandomUInt64() % ncols) + 1);
+	} else {
+		GenerateExpression(rg, expr);
+	}
+	return 0;
+}
+
 int StatementGenerator::GenerateGroupBy(RandomGenerator &rg, const uint32_t ncols, const bool enforce_having,
 										const bool allow_settings, sql_query_grammar::GroupByStatement *gbs) {
 	std::vector<SQLRelationCol> available_cols;
@@ -501,39 +530,37 @@ int StatementGenerator::GenerateGroupBy(RandomGenerator &rg, const uint32_t ncol
 	this->depth++;
 	if (enforce_having || rg.NextSmallNumber() < (available_cols.empty() ? 3 : 9)) {
 		std::vector<GroupCol> gcols;
+		const uint32_t next_opt = rg.NextMediumNumber();
 		sql_query_grammar::GroupByList *gbl = gbs->mutable_glist();
-		sql_query_grammar::ExprList *elist = gbl->mutable_exprs();
 		const uint32_t nclauses = std::min<uint32_t>(this->max_width - this->width,
 			std::min<uint32_t>(UINT32_C(5), (rg.NextRandomUInt32() % (available_cols.empty() ? 5 : static_cast<uint32_t>(available_cols.size()))) + 1));
 		const bool has_gsm = !enforce_having && allow_settings && rg.NextSmallNumber() < 4,
 				   has_totals = !enforce_having && allow_settings && rg.NextSmallNumber() < 4;
 
-		for (uint32_t i = 0 ; i < nclauses; i++) {
-			sql_query_grammar::Expr *expr = i == 0 ? elist->mutable_expr() : elist->add_extra_exprs();
-			const uint32_t next_option = rg.NextSmallNumber();
+		if (next_opt < 91) {
+			//group list
+			sql_query_grammar::ExprList *elist = (next_opt < 51) ? gbl->mutable_exprs() : ((next_opt < 71) ? gbl->mutable_rollup() : gbl->mutable_cube());
 
-			this->width++;
-			if (!available_cols.empty() && (enforce_having || next_option < 9)) {
-				const SQLRelationCol &rel_col = available_cols[i];
-				sql_query_grammar::ExprSchemaTableColumn *estc = expr->mutable_comp_expr()->mutable_expr_stc();
-				sql_query_grammar::ExprColumn *ecol = estc->mutable_col();
+			for (uint32_t i = 0 ; i < nclauses; i++) {
+				this->width++;
+				GenerateGroupByExpr(rg, enforce_having, i, ncols, available_cols, gcols, i == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
+			}
+		} else {
+			//grouping sets
+			sql_query_grammar::GroupingSets *gsets = gbl->mutable_sets();
 
-				if (rel_col.rel_name != "") {
-					estc->mutable_table()->set_table(rel_col.rel_name);
+			for (uint32_t i = 0 ; i < nclauses; i++) {
+				this->width++;
+				const uint32_t nelems = std::min<uint32_t>(this->max_width - this->width,
+					rg.NextRandomUInt32() % (available_cols.empty() ? 5 : static_cast<uint32_t>(available_cols.size())));
+				sql_query_grammar::OptionalExprList *oel = i == 0 ? gsets->mutable_exprs() : gsets->add_other_exprs();
+
+				for (uint32_t j = 0 ; j < nelems; j++) {
+					this->width++;
+					GenerateGroupByExpr(rg, enforce_having, j, ncols, available_cols, gcols, oel->add_exprs());
 				}
-				ecol->mutable_col()->set_column(rel_col.name);
-				if (rel_col.name2.has_value()) {
-					ecol->mutable_subcol()->set_column(rel_col.name2.value());
-				}
-				AddFieldAccess(rg, expr, 16);
-				AddColNestedAccess(rg, ecol, 31);
-				gcols.push_back(GroupCol(rel_col, expr));
-			} else if (next_option < 10) {
-				sql_query_grammar::LiteralValue *lv = expr->mutable_lit_val();
-
-				lv->mutable_int_lit()->set_uint_lit((rg.NextRandomUInt64() % ncols) + 1);
-			} else {
-				GenerateExpression(rg, expr);
+				this->width -= nelems;
+				std::shuffle(available_cols.begin(), available_cols.end(), rg.gen);
 			}
 		}
 		this->width -= nclauses;
