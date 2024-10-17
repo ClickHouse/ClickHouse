@@ -73,6 +73,10 @@
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 
+#if USE_EMBEDDED_COMPILER
+#include <DataTypes/Native.h>
+#endif
+
 namespace DB
 {
 namespace Setting
@@ -113,6 +117,43 @@ namespace ErrorCodes
 
 namespace
 {
+
+#if USE_EMBEDDED_COMPILER
+bool castType(const IDataType * type, auto && f)
+{
+    using Types = TypeList<
+        DataTypeUInt8,
+        DataTypeUInt16,
+        DataTypeUInt32,
+        DataTypeUInt64,
+        DataTypeUInt128,
+        DataTypeUInt256,
+        DataTypeInt8,
+        DataTypeInt16,
+        DataTypeInt32,
+        DataTypeInt64,
+        DataTypeInt128,
+        DataTypeInt256,
+        DataTypeFloat32,
+        DataTypeFloat64,
+        DataTypeDecimal32,
+        DataTypeDecimal64,
+        DataTypeDecimal128,
+        DataTypeDecimal256,
+        DataTypeDate,
+        DataTypeDateTime,
+        DataTypeFixedString,
+        DataTypeString,
+        DataTypeInterval>;
+    return castTypeToEither(Types{}, type, std::forward<decltype(f)>(f));
+}
+
+template <typename F>
+bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
+{
+    return castType(left, [&](const auto & left_) { return castType(right, [&](const auto & right_) { return f(left_, right_); }); });
+}
+#endif
 
 /** Type conversion functions.
   * toType - conversion in "natural way";
@@ -2207,6 +2248,52 @@ public:
         return Monotonic::get(type, left, right);
     }
 
+#if USE_EMBEDDED_COMPILER
+    bool isCompilableImpl(const DataTypes & types, const DataTypePtr & result_type) const override
+    {
+        if (types.size() != 1)
+            return false;
+
+        if (!canBeNativeType(types[0]) || !canBeNativeType(result_type))
+            return false;
+
+        return castBothTypes(types[0].get(), result_type.get(), [](const auto & left, const auto & right)
+        {
+            using LeftDataType = std::decay_t<decltype(left)>;
+            using RightDataType = std::decay_t<decltype(right)>;
+
+            if constexpr (IsDataTypeNativeNumber<LeftDataType> && IsDataTypeNativeNumber<RightDataType>)
+                return true;
+
+            return false;
+        });
+    }
+
+    llvm::Value *
+    compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
+    {
+        llvm::Value * result = nullptr;
+        castBothTypes(
+            arguments[0].type.get(),
+            result_type.get(),
+            [&](const auto & left, const auto & right)
+            {
+                using LeftDataType = std::decay_t<decltype(left)>;
+                using RightDataType = std::decay_t<decltype(right)>;
+
+                if constexpr (IsDataTypeNativeNumber<LeftDataType> && IsDataTypeNativeNumber<RightDataType>)
+                {
+                    result = nativeCast(builder, arguments[0], result_type);
+                    return true;
+                }
+
+                return false;
+            });
+
+        return result;
+    }
+#endif
+
 private:
     ContextPtr context;
     mutable bool checked_return_type = false;
@@ -3189,6 +3276,61 @@ public:
     {
         return monotonicity_for_range(type, left, right);
     }
+
+#if USE_EMBEDDED_COMPILER
+    bool isCompilable() const override
+    {
+        if (getName() != "CAST" || argument_types.size() != 2)
+            return false;
+
+        const auto & from_type = argument_types[0];
+        const auto & to_type = return_type;
+        auto denull_from_type = removeNullable(from_type);
+        auto denull_to_type = removeNullable(to_type);
+        if (!canBeNativeType(denull_from_type) || !canBeNativeType(denull_to_type))
+            return false;
+
+        return castBothTypes(denull_from_type.get(), denull_to_type.get(), [](const auto & left, const auto & right)
+        {
+            using LeftDataType = std::decay_t<decltype(left)>;
+            using RightDataType = std::decay_t<decltype(right)>;
+
+            if constexpr (IsDataTypeNativeNumber<LeftDataType> && IsDataTypeNativeNumber<RightDataType>)
+                return true;
+
+            return false;
+        });
+    }
+
+    llvm::Value * compile(llvm::IRBuilderBase & builder, const ValuesWithType & arguments) const override
+    {
+        llvm::Value * result = nullptr;
+
+        const auto & from_type = arguments[0].type;
+        const auto & to_type = return_type;
+        auto denull_from_type = removeNullable(from_type);
+        auto denull_to_type = removeNullable(to_type);
+        castBothTypes(
+            denull_from_type.get(),
+            denull_to_type.get(),
+            [&](const auto & left, const auto & right)
+            {
+                using LeftDataType = std::decay_t<decltype(left)>;
+                using RightDataType = std::decay_t<decltype(right)>;
+
+                if constexpr (IsDataTypeNativeNumber<LeftDataType> && IsDataTypeNativeNumber<RightDataType>)
+                {
+                    result = nativeCast(builder, arguments[0], return_type);
+                    return true;
+                }
+
+                return false;
+            });
+
+        return result;
+    }
+
+#endif
 
 private:
     const char * cast_name;
