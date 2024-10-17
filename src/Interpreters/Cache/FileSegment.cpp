@@ -627,7 +627,7 @@ void FileSegment::completePartAndResetDownloader()
     LOG_TEST(log, "Complete batch. ({})", getInfoForLogUnlocked(lk));
 }
 
-void FileSegment::complete()
+void FileSegment::complete(bool allow_background_download)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentCompleteMicroseconds);
 
@@ -704,7 +704,7 @@ void FileSegment::complete()
             if (is_last_holder)
             {
                 bool added_to_download_queue = false;
-                if (background_download_enabled && remote_file_reader)
+                if (allow_background_download && background_download_enabled && remote_file_reader)
                 {
                     added_to_download_queue = locked_key->addToDownloadQueue(offset(), segment_lock); /// Finish download in background.
                 }
@@ -1001,7 +1001,7 @@ void FileSegmentsHolder::reset()
 
     ProfileEvents::increment(ProfileEvents::FilesystemCacheUnusedHoldFileSegments, file_segments.size());
     for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end();)
-        file_segment_it = completeAndPopFrontImpl();
+        file_segment_it = completeAndPopFrontImpl(false);
     file_segments.clear();
 }
 
@@ -1010,9 +1010,9 @@ FileSegmentsHolder::~FileSegmentsHolder()
     reset();
 }
 
-FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
+FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl(bool allow_background_download)
 {
-    front().complete();
+    front().complete(allow_background_download);
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheHoldFileSegments);
     return file_segments.erase(file_segments.begin());
 }
