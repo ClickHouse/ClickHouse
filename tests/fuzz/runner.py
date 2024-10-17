@@ -10,8 +10,6 @@ import subprocess
 from pathlib import Path
 from time import sleep
 
-from botocore.exceptions import ClientError
-
 DEBUGGER = os.getenv("DEBUGGER", "")
 FUZZER_ARGS = os.getenv("FUZZER_ARGS", "")
 OUTPUT = "/test_output"
