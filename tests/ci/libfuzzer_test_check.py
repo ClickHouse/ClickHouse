@@ -174,7 +174,9 @@ def main():
     for file in os.listdir(fuzzers_path):
         if file.endswith("_fuzzer"):
             os.chmod(fuzzers_path / file, 0o777)
-            download_corpus(f"{corpus_path}/{file}", file)
+            fuzzer_corpus_path = corpus_path / file
+            fuzzer_corpus_path.mkdir(parents=True, exist_ok=True)
+            download_corpus(fuzzer_corpus_path, file)
         elif file.endswith("_seed_corpus.zip"):
             corpus_path = fuzzers_path / (file.removesuffix("_seed_corpus.zip") + ".in")
             with zipfile.ZipFile(fuzzers_path / file, "r") as zfd:
