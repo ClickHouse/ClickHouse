@@ -32,6 +32,12 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsString default_replica_name;
+    extern const ServerSettingsString default_replica_path;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -62,8 +68,8 @@ RefreshTask::RefreshTask(
         const auto macros = context->getMacros();
         Macros::MacroExpansionInfo info;
         info.table_id = view->getStorageID();
-        coordination.path = macros->expand(server_settings.default_replica_path, info);
-        coordination.replica_name = context->getMacros()->expand(server_settings.default_replica_name, info);
+        coordination.path = macros->expand(server_settings[ServerSetting::default_replica_path], info);
+        coordination.replica_name = context->getMacros()->expand(server_settings[ServerSetting::default_replica_name], info);
 
         auto zookeeper = context->getZooKeeper();
         String replica_path = coordination.path + "/replicas/" + coordination.replica_name;

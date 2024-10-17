@@ -45,6 +45,14 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace CoordinationSetting
+{
+    extern const CoordinationSettingsBool compress_snapshots_with_zstd_format;
+    extern const CoordinationSettingsMilliseconds dead_session_check_period_ms;
+    extern const CoordinationSettingsUInt64 min_request_size_for_cache;
+    extern const CoordinationSettingsUInt64 snapshots_to_keep;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -60,7 +68,7 @@ IKeeperStateMachine::IKeeperStateMachine(
     : commit_callback(commit_callback_)
     , responses_queue(responses_queue_)
     , snapshots_queue(snapshots_queue_)
-    , min_request_size_to_cache(keeper_context_->getCoordinationSettings()->min_request_size_for_cache)
+    , min_request_size_to_cache(keeper_context_->getCoordinationSettings()[CoordinationSetting::min_request_size_for_cache])
     , log(getLogger("KeeperStateMachine"))
     , read_pool(CurrentMetrics::KeeperAliveConnections, CurrentMetrics::KeeperAliveConnections, CurrentMetrics::KeeperAliveConnections, 100, 10000, 10000)
     , superdigest(superdigest_)
@@ -87,11 +95,11 @@ KeeperStateMachine<Storage>::KeeperStateMachine(
         commit_callback_,
         superdigest_),
         snapshot_manager(
-          keeper_context_->getCoordinationSettings()->snapshots_to_keep,
+          keeper_context_->getCoordinationSettings()[CoordinationSetting::snapshots_to_keep],
           keeper_context_,
-          keeper_context_->getCoordinationSettings()->compress_snapshots_with_zstd_format,
+          keeper_context_->getCoordinationSettings()[CoordinationSetting::compress_snapshots_with_zstd_format],
           superdigest_,
-          keeper_context_->getCoordinationSettings()->dead_session_check_period_ms.totalMilliseconds())
+          keeper_context_->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds())
 {
 }
 
@@ -152,7 +160,7 @@ void KeeperStateMachine<Storage>::init()
 
     if (!storage)
         storage = std::make_unique<Storage>(
-            keeper_context->getCoordinationSettings()->dead_session_check_period_ms.totalMilliseconds(), superdigest, keeper_context);
+            keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds(), superdigest, keeper_context);
 }
 
 namespace
