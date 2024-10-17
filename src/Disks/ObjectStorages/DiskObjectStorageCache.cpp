@@ -1,6 +1,7 @@
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/ObjectStorages/Encrypted/EncryptedObjectStorage.h>
 
 #include <Common/assert_cast.h>
 
