@@ -49,7 +49,7 @@ struct ServerSettings
 
     SERVER_SETTINGS_SUPPORTED_TYPES(ServerSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    void dumpToSystemServerSettingsColumns(ServerSettingColumnsParams & res_columns) const;
+    void dumpToSystemServerSettingsColumns(ServerSettingColumnsParams & params) const;
 
 private:
     std::unique_ptr<ServerSettingsImpl> impl;
