@@ -389,22 +389,6 @@ void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_n
 
 void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name) const
 {
-    String table_metadata_path = getObjectMetadataPath(to_table_name);
-
-    if (fs::exists(table_metadata_path))
-    {
-        fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
-
-        if (fs::exists(detached_permanently_flag))
-            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached permanently)",
-                            backQuote(database_name), backQuote(to_table_name));
-        throw Exception(
-            ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached)", backQuote(database_name), backQuote(to_table_name));
-    }
-}
-
-void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name) const
-{
     // Compute allowed max length directly
     size_t allowed_max_length = computeMaxTableNameLength(database_name, getContext());
     String table_metadata_path = getObjectMetadataPath(to_table_name);
