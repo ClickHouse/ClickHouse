@@ -129,8 +129,8 @@ void NATSConnection::connectImpl()
     natsStatus status = natsConnection_Connect(&new_conection, options.get());
     if (status != NATS_OK)
     {
-        LOG_DEBUG(log, "New connection {} to {} failed. Nats status text: {}. Last error message: {}",
-                  static_cast<void*>(this), connectionInfoForLog(), natsStatus_GetText(status), nats_GetLastError(nullptr));
+        LOG_DEBUG(log, "New connection to {} failed. Nats status text: {}. Last error message: {}",
+                  connectionInfoForLog(), natsStatus_GetText(status), nats_GetLastError(nullptr));
         return;
     }
     connection.reset(new_conection);
