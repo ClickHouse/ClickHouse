@@ -330,8 +330,11 @@ ColumnPtr checkDateTimePrecision(const ColumnPtr & column_to_cast, const ColumnP
         else
         {
             Int64 value = original_data[row];
+            auto result_value = result_nullable_column->getInt(row);
+            if (!result_value)
+                return column_after_cast;
 
-            if (value % result_nullable_column->getInt(row) != 0)
+            if (value % result_value != 0)
             {
                 /// Sub-second precision exists; use the original value
                 /// We need to convert the value to the data type of final_column
