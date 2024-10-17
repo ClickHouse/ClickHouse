@@ -27,7 +27,7 @@ namespace ErrorCodes
 #if USE_EMBEDDED_COMPILER
 
 template <typename F>
-static llvm::Value * wrapInNullable(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed, F && f)
+static llvm::Value * compileWithNullableValues(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed, F && compile_func)
 {
     auto * left_type = left->getType();
     auto * right_type = right->getType();
@@ -35,12 +35,12 @@ static llvm::Value * wrapInNullable(llvm::IRBuilder<> & b, llvm::Value * left, l
     if (!left_type->isStructTy() && !right_type->isStructTy())
     {
         // Both arguments are not nullable.
-        return f(b, left, right, is_signed);
+        return compile_func(b, left, right, is_signed);
     }
 
     auto * denull_left = left_type->isStructTy() ? b.CreateExtractValue(left, {1}) : left;
     auto * denull_right = right_type->isStructTy() ? b.CreateExtractValue(right, {1}) : right;
-    auto * denull_result = f(b, denull_left, denull_right, is_signed);
+    auto * denull_result = compile_func(b, denull_left, denull_right, is_signed);
 
     auto * nullable_result_type = toNullableType(b, denull_result->getType());
     llvm::Value * nullable_result = llvm::Constant::getNullValue(nullable_result_type);
@@ -202,7 +202,7 @@ struct ModuloImpl
 
     static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
     {
-        return wrapInNullable(
+        return compileWithNullableValues(
             b,
             left,
             right,
@@ -264,7 +264,7 @@ struct PositiveModuloImpl : ModuloImpl<A, B>
 
     static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
     {
-        return wrapInNullable(
+        return compileWithNullableValues(
             b,
             left,
             right,
