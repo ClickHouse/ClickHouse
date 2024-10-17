@@ -69,13 +69,6 @@ namespace
             query->authentication_methods.push_back(authentication_method.toAST());
         }
 
-        if (user.valid_until)
-        {
-            WriteBufferFromOwnString out;
-            writeDateTimeText(user.valid_until, out);
-            query->valid_until = std::make_shared<ASTLiteral>(out.str());
-        }
-
         if (!user.settings.empty())
         {
             if (attach_mode)
