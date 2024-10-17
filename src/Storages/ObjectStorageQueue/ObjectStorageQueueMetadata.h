@@ -89,9 +89,17 @@ public:
     const ObjectStorageQueueTableMetadata & getTableMetadata() const { return table_metadata; }
     ObjectStorageQueueTableMetadata & getTableMetadata() { return table_metadata; }
 
+    void alterSetting(const SettingChange & change);
+
 private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
+
+    static void alterSetting(
+        const SettingChange & change,
+        const fs::path & zookeeper_path,
+        ObjectStorageQueueTableMetadata & table_metadata,
+        LoggerPtr log);
 
     ObjectStorageQueueTableMetadata table_metadata;
     const ObjectStorageQueueMode mode;
