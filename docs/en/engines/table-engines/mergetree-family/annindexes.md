@@ -117,7 +117,6 @@ ANN indexes are built during column insertion and merge. As a result, `INSERT` a
 tables. ANNIndexes are ideally used only with immutable or rarely changed data, respectively when are far more read requests than write
 requests.
 
-
 :::tip
 To reduce the cost of building vector similarity indexes, consider setting `materialize_skip_indexes_on_insert` which disables the
 construction of skipping indexes on newly inserted parts. Search would fall back to exact search but as inserted parts are typically small
