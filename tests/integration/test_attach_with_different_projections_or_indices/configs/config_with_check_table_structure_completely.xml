@@ -1,0 +1,5 @@
+<clickhouse>
+    <merge_tree>
+        <check_table_structure_completely>true</check_table_structure_completely>
+    </merge_tree>
+</clickhouse>
