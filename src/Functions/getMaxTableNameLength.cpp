@@ -13,7 +13,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
-    extern const int UNKNOWN_DATABASE;
     extern const int INCORRECT_DATA;
 }
 
