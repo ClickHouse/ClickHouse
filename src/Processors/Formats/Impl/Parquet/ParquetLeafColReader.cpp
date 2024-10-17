@@ -505,6 +505,16 @@ void ParquetLeafColReader<TColumn>::readPageV1(const parquet::DataPageV1 & page)
     initDataReader(page.encoding(), buffer, max_size, std::move(def_level_reader));
 }
 
+/*
+ * As far as I understand, the difference between page v1 and page v2 lies primarily on the below:
+ * 1. repetition and definition levels are not compressed;
+ * 2. size of repetition and definition levels is present in the header;
+ * 3. the encoding is always RLE
+ *
+ * Therefore, this method leverages the existing `parquet::LevelDecoder::SetDataV2` method to build the repetition level decoder.
+ * The data buffer is "offset-ed" by rl bytes length and then dl decoder is built using RLE decoder. Since dl bytes length was present in the header,
+ * there is no need to read it and apply an offset like in page v1.
+ * */
 template <typename TColumn>
 void ParquetLeafColReader<TColumn>::readPageV2(const parquet::DataPageV2 & page)
 {
