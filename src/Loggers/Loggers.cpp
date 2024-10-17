@@ -233,7 +233,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     else
         pf = new OwnPatternFormatter;
 
-    Poco::AutoPtr<DB::OwnFilteringChannel> filter_channel = new DB::OwnFilteringChannel(split, pf, global_pos_pattern, global_neg_pattern);
+    Poco::AutoPtr<DB::OwnFilteringChannel> filter_channel = new DB::OwnFilteringChannel(split, pf, global_pos_pattern, global_neg_pattern, "");
     logger.setChannel(filter_channel);
     logger.setLevel(max_log_level);
 
@@ -250,7 +250,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         logger.get(name).setLevel(max_log_level);
 
         // Create a new filter channel for each logger that share the same split channel
-        filter_channel = new DB::OwnFilteringChannel(split, pf, global_pos_pattern, global_neg_pattern);
+        filter_channel = new DB::OwnFilteringChannel(split, pf, global_pos_pattern, global_neg_pattern, name);
         logger.get(name).setChannel(filter_channel);
     }
 
@@ -290,11 +290,19 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
                 if (key == "logger" || key.starts_with("logger["))
                 {
                     const std::string name(config.getString("logger.message_regexps." + key + ".name"));
-                    const std::string pos_pattern = config.getRawString("logger.message_regexps." + key + ".message_regexp", global_pos_pattern);  // TODO. wrong symbols
+                    const std::string pos_pattern = config.getRawString("logger.message_regexps." + key + ".message_regexp", global_pos_pattern);
                     const std::string neg_pattern = config.getRawString("logger.message_regexps." + key + ".message_regexp_negative", global_neg_pattern);
 
                     if (auto * regexp_channel = dynamic_cast<DB::OwnFilteringChannel*>(logger.root().get(name).getChannel()))
+                    {
+                        // If this specific logger didn't create it's own OwnFilteringChannel previously, create one using copy constructor
+                        if (regexp_channel->getAssignedLoggerName() != name)
+                        {
+                            regexp_channel = new DB::OwnFilteringChannel(regexp_channel, name);
+                            logger.root().get(name).setChannel(regexp_channel);
+                        }
                         regexp_channel->setRegexpPatterns(pos_pattern, neg_pattern);
+                    }
                     else
                         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Couldn't convert to OwnFilteringChannel.");
                 }

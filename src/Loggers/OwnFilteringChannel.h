@@ -14,8 +14,13 @@ class OwnFilteringChannel : public Poco::Channel
 {
 public:
     explicit OwnFilteringChannel(Poco::AutoPtr<Poco::Channel> pChannel_, Poco::AutoPtr<OwnPatternFormatter> pf,
-        const std::string & positive_pattern_, const std::string & negative_pattern_)
-    : positive_pattern(positive_pattern_), negative_pattern(negative_pattern_), pChannel(pChannel_), pFormatter(pf)
+        const std::string & positive_pattern_, const std::string & negative_pattern_, const std::string & name_)
+    : logger_name(name_), positive_pattern(positive_pattern_), negative_pattern(negative_pattern_), pChannel(pChannel_), pFormatter(pf)
+    {
+    }
+
+    explicit OwnFilteringChannel(OwnFilteringChannel * other, std::string name_)
+    : logger_name(name_), positive_pattern(other->positive_pattern), negative_pattern(other->negative_pattern), pChannel(other->pChannel), pFormatter(other->pFormatter)
     {
     }
 
@@ -33,6 +38,11 @@ public:
             positive_pattern = positive_pattern_;
             negative_pattern = negative_pattern_;
         }
+    }
+
+    std::string getAssignedLoggerName() const
+    {
+        return logger_name;
     }
 
     void open() override
@@ -63,6 +73,7 @@ public:
 private:
     bool regexpFilteredOut(const std::string & text) const;
 
+    const std::string logger_name;
     std::string positive_pattern;
     std::string negative_pattern;
     Poco::AutoPtr<Poco::Channel> pChannel;
