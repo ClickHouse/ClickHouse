@@ -1,5 +1,5 @@
--- Tags: no-s3-storage
--- no-s3-storage: the test checks that there is no crash when we set parallel_replicas_single_task_marks_count_multiplier to 0 and we have some custom heuristic for
+-- Tags: no-s3-storage, no-azure-blob-storage
+-- no-s3-storage, no-azure-blob-storage: the test checks that there is no crash when we set parallel_replicas_single_task_marks_count_multiplier to 0 and we have some custom heuristic for
 -- finding its optimal value in case if the table is stored on remote disk.
 
 DROP TABLE IF EXISTS 03215_parallel_replicas;

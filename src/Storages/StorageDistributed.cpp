@@ -23,15 +23,15 @@
 
 #include <Columns/ColumnConst.h>
 
-#include <Common/threadPoolCallbackRunner.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
 #include <Common/escapeForFileName.h>
-#include <Common/typeid_cast.h>
+#include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
-#include <Common/formatReadable.h>
-#include <Common/CurrentMetrics.h>
+#include <Common/threadPoolCallbackRunner.h>
+#include <Common/typeid_cast.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -40,8 +40,9 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
+#include <Parsers/IdentifierQuotingStyle.h>
+#include <Parsers/parseQuery.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -271,7 +272,7 @@ public:
         std::string name = node->getColumnName();
         if (block_with_constants.has(name))
         {
-            auto result = block_with_constants.getByName(name);
+            const auto & result = block_with_constants.getByName(name);
             if (!isColumnConst(*result.column))
                 return;
 
@@ -451,17 +452,15 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         {
             if (settings[Setting::distributed_push_down_limit])
                 return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
-            else
-                return QueryProcessingStage::WithMergeableStateAfterAggregation;
+            return QueryProcessingStage::WithMergeableStateAfterAggregation;
         }
-        else
-        {
-            /// NOTE: distributed_group_by_no_merge=1 does not respect distributed_push_down_limit
-            /// (since in this case queries processed separately and the initiator is just a proxy in this case).
-            if (to_stage != QueryProcessingStage::Complete)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Queries with distributed_group_by_no_merge=1 should be processed to Complete stage");
-            return QueryProcessingStage::Complete;
-        }
+
+        /// NOTE: distributed_group_by_no_merge=1 does not respect distributed_push_down_limit
+        /// (since in this case queries processed separately and the initiator is just a proxy in this case).
+        if (to_stage != QueryProcessingStage::Complete)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Queries with distributed_group_by_no_merge=1 should be processed to Complete stage");
+        return QueryProcessingStage::Complete;
     }
 
     /// Nested distributed query cannot return Complete stage,
@@ -480,7 +479,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         /// relevant for Distributed over Distributed
         return std::max(to_stage, QueryProcessingStage::Complete);
     }
-    else if (nodes == 0)
+    if (nodes == 0)
     {
         /// In case of 0 shards, the query should be processed fully on the initiator,
         /// since we need to apply aggregations.
@@ -489,7 +488,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     }
 
     std::optional<QueryProcessingStage::Enum> optimized_stage;
-    if (query_info.query_tree)
+    if (settings[Setting::allow_experimental_analyzer])
         optimized_stage = getOptimizedQueryProcessingStageAnalyzer(query_info, settings);
     else
         optimized_stage = getOptimizedQueryProcessingStage(query_info, settings);
@@ -1003,7 +1002,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     String new_query_str;
     {
         WriteBufferFromOwnString buf;
-        IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true, /*hilite*/ false, /*always_quote_identifiers_=*/ true);
+        IAST::FormatSettings ast_format_settings(
+            /*ostr_=*/buf, /*one_line*/ true, /*hilite*/ false, /*identifier_quoting_rule_=*/IdentifierQuotingRule::Always);
         new_query->IAST::format(ast_format_settings);
         new_query_str = buf.str();
     }
@@ -1123,7 +1123,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     String new_query_str;
     {
         WriteBufferFromOwnString buf;
-        IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true, /*hilite*/ false, /*always_quote_identifiers*/ true);
+        IAST::FormatSettings ast_format_settings(
+            /*ostr_=*/buf, /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
         new_query->IAST::format(ast_format_settings);
         new_query_str = buf.str();
     }
@@ -1327,7 +1328,7 @@ void StorageDistributed::drop()
     auto disks = data_volume->getDisks();
     for (const auto & disk : disks)
     {
-        if (!disk->exists(relative_data_path))
+        if (!disk->existsDirectory(relative_data_path))
         {
             LOG_INFO(log, "Path {} is already removed from disk {}", relative_data_path, disk->getName());
             continue;
@@ -1525,10 +1526,9 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
     {
         if (!has_sharding_key)
             throw Exception(ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS, "No sharding key");
-        else if (!sharding_key_is_usable)
+        if (!sharding_key_is_usable)
             throw Exception(ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS, "Sharding key is not deterministic");
-        else
-            throw Exception(ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS, "Sharding key {} is not used", sharding_key_column_name);
+        throw Exception(ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS, "Sharding key {} is not used", sharding_key_column_name);
     }
 
     return {};
@@ -1539,6 +1539,7 @@ IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, c
     const auto & slot_to_shard = cluster->getSlotToShard();
     const IColumn * column = result.column.get();
 
+/// NOLINTBEGIN(readability-else-after-return)
 // If result.type is DataTypeLowCardinality, do shard according to its dictionaryType
 #define CREATE_FOR_TYPE(TYPE)                                                                                       \
     if (typeid_cast<const DataType##TYPE *>(result.type.get()))                                                     \
@@ -1560,6 +1561,7 @@ IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, c
 
     throw Exception(ErrorCodes::TYPE_MISMATCH, "Sharding key expression does not evaluate to an integer type");
 }
+/// NOLINTEND(readability-else-after-return)
 
 ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
     ClusterPtr cluster,

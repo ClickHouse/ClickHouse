@@ -296,8 +296,13 @@ void LocalServer::tryInitPath()
 
     global_context->setUserFilesPath(""); /// user's files are everywhere
 
-    std::string user_scripts_path = getClientConfiguration().getString("user_scripts_path", fs::path(path) / "user_scripts/");
+    std::string user_scripts_path = getClientConfiguration().getString("user_scripts_path", fs::path(path) / "user_scripts" / "");
     global_context->setUserScriptsPath(user_scripts_path);
+
+    /// Set path for filesystem caches
+    String filesystem_caches_path(getClientConfiguration().getString("filesystem_caches_path", fs::path(path) / "cache" / ""));
+    if (!filesystem_caches_path.empty())
+        global_context->setFilesystemCachesPath(filesystem_caches_path);
 
     /// top_level_domains_lists
     const std::string & top_level_domains_path = getClientConfiguration().getString("top_level_domains_path", fs::path(path) / "top_level_domains/");
@@ -518,7 +523,9 @@ try
 
     SCOPE_EXIT({ cleanup(); });
 
-    initTTYBuffer(toProgressOption(getClientConfiguration().getString("progress", "default")));
+    initTTYBuffer(toProgressOption(getClientConfiguration().getString("progress", "default")),
+        toProgressOption(config().getString("progress-table", "default")));
+    initKeystrokeInterceptor();
     ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
     /// try to load user defined executable functions, throw on error and die
@@ -856,6 +863,7 @@ void LocalServer::addOptions(OptionsDescription & options_description)
 {
     options_description.main_description->add_options()
         ("table,N", po::value<std::string>(), "name of the initial table")
+        ("copy", "shortcut for format conversion, equivalent to: --query 'SELECT * FROM table'")
 
         /// If structure argument is omitted then initial query is not generated
         ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
@@ -928,6 +936,12 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         getClientConfiguration().setString("send_logs_level", options["send_logs_level"].as<std::string>());
     if (options.count("wait_for_suggestions_to_load"))
         getClientConfiguration().setBool("wait_for_suggestions_to_load", true);
+    if (options.count("copy"))
+    {
+        if (!queries.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--copy' and '--query' cannot be specified at the same time");
+        queries.emplace_back("SELECT * FROM table");
+    }
 }
 
 void LocalServer::readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &)
