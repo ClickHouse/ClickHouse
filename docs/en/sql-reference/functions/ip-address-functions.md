@@ -288,11 +288,11 @@ toIPv4OrDefault(value)
 
 **Arguments**
 
-- `value` — The value with IPv4 address.
+- `value` — A string-encoded IPv4 address. [String](../data-types/string.md)
 
 **Returned value**
 
-- `value` converted to the current IPv4 address. [String](../data-types/string.md).
+- `value` converted to an IPv4 address. [IPv4](../data-types/ipv4.md).
 
 **Example**
 
@@ -315,6 +315,38 @@ Result:
 ## toIPv4OrNull(string)
 
 Same as `toIPv4`, but if the IPv4 address has an invalid format, it returns null.
+
+**Syntax**
+
+```sql
+toIPv4OrNull(value)
+```
+
+**Arguments**
+
+- `value` — A string-encoded IPv4 address. [String](../data-types/string.md)
+
+**Returned value**
+
+- `value` converted to an IPv4 address. [IPv4](../data-types/ipv4.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+  toIPv4OrNull('192.168.0.1') AS s1,
+  toIPv4OrNull('192.168.0') AS s2
+```
+
+Result:
+
+```response
+┌─s1──────────┬─s2───┐
+│ 192.168.0.1 │ ᴺᵁᴸᴸ │
+└─────────────┴──────┘
+```
 
 ## toIPv6OrDefault(string)
 

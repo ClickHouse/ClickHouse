@@ -235,8 +235,7 @@ Field BaseSettings<TTraits>::get(std::string_view name) const
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getValue(*this, index);
-    else
-        return static_cast<Field>(getCustomSetting(name));
+    return static_cast<Field>(getCustomSetting(name));
 }
 
 template <typename TTraits>
@@ -257,8 +256,7 @@ String BaseSettings<TTraits>::getString(std::string_view name) const
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getValueString(*this, index);
-    else
-        return getCustomSetting(name).toString();
+    return getCustomSetting(name).toString();
 }
 
 template <typename TTraits>
@@ -381,10 +379,9 @@ const char * BaseSettings<TTraits>::getTypeName(std::string_view name) const
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getTypeName(index);
-    else if (tryGetCustomSetting(name))
+    if (tryGetCustomSetting(name))
         return "Custom";
-    else
-        BaseSettingsHelpers::throwSettingNotFound(name);
+    BaseSettingsHelpers::throwSettingNotFound(name);
 }
 
 template <typename TTraits>
@@ -394,10 +391,9 @@ const char * BaseSettings<TTraits>::getDescription(std::string_view name) const
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getDescription(index);
-    else if (tryGetCustomSetting(name))
+    if (tryGetCustomSetting(name))
         return "Custom";
-    else
-        BaseSettingsHelpers::throwSettingNotFound(name);
+    BaseSettingsHelpers::throwSettingNotFound(name);
 }
 
 template <typename TTraits>

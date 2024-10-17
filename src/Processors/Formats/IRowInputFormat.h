@@ -59,6 +59,7 @@ protected:
     /// `max_block_size` can be ignored.
     virtual size_t countRows(size_t max_block_size);
     virtual bool supportsCountRows() const { return false; }
+    virtual bool supportsCustomSerializations() const { return false; }
 
     virtual void readPrefix() {}                /// delimiter before begin of result
     virtual void readSuffix() {}                /// delimiter after end of result
@@ -78,7 +79,7 @@ protected:
 
     void logError();
 
-    const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
+    const BlockMissingValues * getMissingValues() const override { return &block_missing_values; }
 
     size_t getRowNum() const { return total_rows; }
 

@@ -5,7 +5,6 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
 #include <Interpreters/SetKeys.h>
-#include <Parsers/IAST.h>
 #include <Storages/MergeTree/BoolMask.h>
 
 #include <Common/SharedMutex.h>
@@ -238,6 +237,8 @@ public:
     BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point = false) const;
 
     const Columns & getOrderedSet() const { return ordered_set; }
+
+    const std::vector<KeyTuplePositionMapping> & getIndexesMapping() const { return indexes_mapping; }
 
 private:
     // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.
