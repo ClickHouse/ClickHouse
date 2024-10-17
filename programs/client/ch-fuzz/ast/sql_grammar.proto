@@ -2302,14 +2302,28 @@ message WhereStatement {
   required ExprComparisonHighProbability expr = 1;
 }
 
+message OptionalExprList {
+  repeated Expr exprs = 2;
+}
+
+message GroupingSets {
+  required OptionalExprList exprs = 1;
+  repeated OptionalExprList other_exprs = 2;
+}
+
 message GroupByList {
-  enum GroupingSets {
+  enum GroupingSetsModifier {
     ROLLUP = 1;
     CUBE = 2;
   }
-  required ExprList exprs = 1;
-  optional GroupingSets gs = 2;
-  optional bool with_totals = 3;
+  oneof group_by_list_oneof {
+    ExprList exprs = 1;
+    ExprList rollup = 2;
+    ExprList cube = 3;
+    GroupingSets sets = 4;
+  }
+  optional GroupingSetsModifier gsm = 5;
+  optional bool with_totals = 6;
 }
 
 message GroupByStatement {

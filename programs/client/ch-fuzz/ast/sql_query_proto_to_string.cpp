@@ -1503,11 +1503,53 @@ CONV_FN(WhereStatement, ws) {
   ExprComparisonHighProbabilityToString(ret, ws.expr());
 }
 
+CONV_FN(OptionalExprList, oel) {
+  for (int i = 0; i < oel.exprs_size(); i++) {
+    if (i != 0) {
+      ret += ", ";
+    }
+    ExprToString(ret, oel.exprs(i));
+  }
+}
+
+CONV_FN(GroupingSets, gs) {
+  ret += "(";
+  OptionalExprListToString(ret, gs.exprs());
+  ret += ")";
+  for (int i = 0; i < gs.other_exprs_size(); i++) {
+    ret += ", (";
+    OptionalExprListToString(ret, gs.other_exprs(i));
+    ret += ")";
+  }
+}
+
 CONV_FN(GroupByList, gbl) {
-  ExprListToString(ret, gbl.exprs());
-  if (gbl.has_gs()) {
+  using GroupByListType = GroupByList::GroupByListOneofCase;
+  switch (gbl.group_by_list_oneof_case()) {
+    case GroupByListType::kExprs:
+      ExprListToString(ret, gbl.exprs());
+      break;
+    case GroupByListType::kRollup:
+      ret += "ROLLUP(";
+      ExprListToString(ret, gbl.rollup());
+      ret += ")";
+      break;
+    case GroupByListType::kCube:
+      ret += "CUBE(";
+      ExprListToString(ret, gbl.cube());
+      ret += ")";
+      break;
+    case GroupByListType::kSets:
+      ret += "GROUPING SETS(";
+      GroupingSetsToString(ret, gbl.sets());
+      ret += ")";
+      break;
+    default:
+      ret += "GROUPING SETS(())";
+  }
+  if (gbl.has_gsm()) {
     ret += " WITH ";
-    ret += GroupByList_GroupingSets_Name(gbl.gs());
+    ret += GroupByList_GroupingSetsModifier_Name(gbl.gsm());
   }
   if (gbl.with_totals()) {
     ret += " WITH TOTALS";

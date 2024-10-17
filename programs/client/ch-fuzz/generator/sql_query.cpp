@@ -505,7 +505,7 @@ int StatementGenerator::GenerateGroupBy(RandomGenerator &rg, const uint32_t ncol
 		sql_query_grammar::ExprList *elist = gbl->mutable_exprs();
 		const uint32_t nclauses = std::min<uint32_t>(this->max_width - this->width,
 			std::min<uint32_t>(UINT32_C(5), (rg.NextRandomUInt32() % (available_cols.empty() ? 5 : static_cast<uint32_t>(available_cols.size()))) + 1));
-		const bool has_gs = !enforce_having && allow_settings && rg.NextSmallNumber() < 4,
+		const bool has_gsm = !enforce_having && allow_settings && rg.NextSmallNumber() < 4,
 				   has_totals = !enforce_having && allow_settings && rg.NextSmallNumber() < 4;
 
 		for (uint32_t i = 0 ; i < nclauses; i++) {
@@ -539,12 +539,12 @@ int StatementGenerator::GenerateGroupBy(RandomGenerator &rg, const uint32_t ncol
 		this->width -= nclauses;
 		this->levels[this->current_level].gcols = std::move(gcols);
 
-		if (has_gs) {
-			gbl->set_gs(static_cast<sql_query_grammar::GroupByList_GroupingSets>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::GroupByList::GroupingSets_MAX)) + 1));
+		if (has_gsm) {
+			gbl->set_gsm(static_cast<sql_query_grammar::GroupByList_GroupingSetsModifier>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::GroupByList::GroupingSetsModifier_MAX)) + 1));
 		}
 		gbl->set_with_totals(has_totals);
 
-		if (!has_gs && !has_totals && allow_settings && (enforce_having || rg.NextSmallNumber() < 5)) {
+		if (!has_gsm && !has_totals && allow_settings && (enforce_having || rg.NextSmallNumber() < 5)) {
 			const bool prev_allow_aggregates = this->levels[this->current_level].allow_aggregates;
 
 			this->levels[this->current_level].allow_aggregates = true;
