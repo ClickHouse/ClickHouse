@@ -99,7 +99,7 @@ std::future<NATSConnectionPtr> NATSHandler::createConnection(const NATSConfigura
             try
             {
                 if (loop_state.load() != Loop::RUN)
-                    throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot connect to NATS: Event loop stopped");
+                    throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot connect to NATS: Event loop is not running");
 
                 for (UInt64 i = 0; i < configuration.max_connect_tries; ++i)
                 {

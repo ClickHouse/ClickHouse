@@ -135,7 +135,7 @@ void NATSConnection::connectImpl()
     }
     connection.reset(new_conection);
 
-    LOG_DEBUG(log, "New connection {} to {} connected.", static_cast<void*>(this), connectionInfoForLog());
+    LOG_DEBUG(log, "New connection {} is connected to {}", static_cast<void*>(this), connectionInfoForLog());
 }
 
 void NATSConnection::disconnectImpl()
@@ -148,12 +148,12 @@ void NATSConnection::disconnectImpl()
 
 void NATSConnection::reconnectedCallback(natsConnection *, void * connection)
 {
-    LOG_DEBUG(callback_logger, "Got reconnected {} to NATS server.", static_cast<void*>(connection));
+    LOG_DEBUG(callback_logger, "Connection {} got reconnected to NATS server", static_cast<void*>(connection));
 }
 
 void NATSConnection::disconnectedCallback(natsConnection *, void * connection)
 {
-    LOG_DEBUG(callback_logger, "Got disconnected {} from NATS server.", connection);
+    LOG_DEBUG(callback_logger, "Connection {} got disconnected from NATS server.", connection);
 }
 
 }
