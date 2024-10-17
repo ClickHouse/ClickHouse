@@ -751,8 +751,8 @@ namespace
                         if constexpr (parseDateTime64)
                         {
                             const DataTypeDateTime64 * datatime64_type = checkAndGetDataType<DataTypeDateTime64>(removeNullable(result_type).get());
-                            Int64 multipler = DecimalUtils::scaleMultiplier<DateTime64>(datatime64_type->getScale());
-                            res_data[i] = static_cast<Int64>(*result) * multipler + datetime.microsecond;
+                            Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(datatime64_type->getScale());
+                            res_data[i] = static_cast<Int64>(*result) * multiplier + datetime.microsecond;
                         }
                         else
                             res_data[i] = static_cast<UInt32>(*result);
