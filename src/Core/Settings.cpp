@@ -5501,6 +5501,7 @@ Replace external dictionary sources to Null on restore. Useful for testing purpo
     M(Bool, create_if_not_exists, false, R"(
 Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting or `IF NOT EXISTS` is specified and a table with the provided name already exists, no exception will be thrown.
 )", 0) \
+    M(Bool, enable_optimize_query_tree_logical_expression, true, "Optimize logical optimizer on top of query tree.", 0) \
     M(Bool, enforce_strict_identifier_format, false, R"(
 If enabled, only allow identifiers containing alphanumeric characters and underscores.
 )", 0) \

@@ -15,6 +15,7 @@ CREATE TABLE t2n (x Int64, y UInt64) ENGINE = TinyLog;
 INSERT INTO t1n VALUES (1,42), (2,2), (3,3);
 INSERT INTO t2n VALUES (2,2), (3,33), (4,42);
 
+SET enable_optimize_query_tree_logical_expression = 1;
 SET enable_analyzer = 1;
 
 -- { echoOn }

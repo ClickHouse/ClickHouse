@@ -10,6 +10,8 @@ SELECT count() FROM regression_for_in_operator_view WHERE g = '5';
 SELECT count() FROM regression_for_in_operator_view WHERE g IN ('5');
 SELECT count() FROM regression_for_in_operator_view WHERE g IN ('5','6');
 
+SET enable_optimize_query_tree_logical_expression = 1;
+
 SET optimize_min_equality_disjunction_chain_length = 1;
 SELECT count() FROM regression_for_in_operator_view WHERE g = '5' OR g = '6';
 SELECT count() FROM regression_for_in_operator_view WHERE g = '5' OR g = '6' SETTINGS enable_analyzer = 1;
