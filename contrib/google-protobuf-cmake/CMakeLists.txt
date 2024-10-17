@@ -340,6 +340,8 @@ if (CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
         utf8_validity
         ${protobuf_absl_used_targets})
     add_executable(protobuf::protoc ALIAS protoc)
+    # aarch64 protoc with asan fails with segmentation fault
+    target_compile_options(protoc PRIVATE "-fno-sanitize=address")
 
     if (ENABLE_FUZZING)
         # `protoc` will be built with sanitizer and it could fail during ClickHouse build
