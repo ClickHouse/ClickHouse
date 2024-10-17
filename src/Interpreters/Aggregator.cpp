@@ -1639,6 +1639,11 @@ Block Aggregator::convertOneBucketToBlock(AggregatedDataVariants & variants, Are
     return block;
 }
 
+std::vector<TemporaryBlockStreamHolder> & Aggregator::getTemporaryData()
+{
+    return tmp_files;
+}
+
 template <typename Method>
 void Aggregator::writeToTemporaryFileImpl(
     AggregatedDataVariants & data_variants,

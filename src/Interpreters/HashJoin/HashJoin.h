@@ -424,7 +424,7 @@ private:
 
     /// Needed to do external cross join
     TemporaryDataOnDiskScopePtr tmp_data;
-    TemporaryBlockStreamHolder tmp_stream;
+    std::optional<TemporaryBlockStreamHolder> tmp_stream;
     mutable std::once_flag finish_writing;
 
     /// Block with columns from the right-side table.
