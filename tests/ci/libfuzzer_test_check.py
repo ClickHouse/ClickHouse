@@ -3,6 +3,7 @@
 import argparse
 import logging
 import os
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -121,6 +122,8 @@ def download_corpus(corpus_path: str, fuzzer_name: str):
 
 
 def upload_corpus(path: str):
+    logging.info("Upload corpus from path %s", path)
+    subprocess.check_call(f"ls -al {path}", shell=True)
     with zipfile.ZipFile(f"{path}/corpus.zip", "w", zipfile.ZIP_DEFLATED) as zipf:
         zipdir(f"{path}/corpus/", zipf)
     s3.upload_file(
