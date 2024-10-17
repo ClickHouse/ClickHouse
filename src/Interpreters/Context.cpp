@@ -1459,8 +1459,6 @@ void Context::setUser(const UUID & user_id_)
     std::lock_guard lock(mutex);
 
     setUserIDWithLock(user_id_, lock);
-    setCurrentUserName(user->getName());  /// TODO
-    setInitialUserName(user->getName());  /// TODO
 
     /// A profile can specify a value and a readonly constraint for same setting at the same time,
     /// so we shouldn't check constraints here.
@@ -1565,8 +1563,10 @@ void Context::setCurrentRolesDefault()
 
 void Context::switchImpersonateUser(const RolesOrUsersSet & users )
 {
-	auto new_user_uuid = *(users.ids.begin());
-	setUser(new_user_uuid);
+    auto new_user_uuid = *(users.ids.begin());
+    setUser(new_user_uuid);
+    setCurrentUserName(getUser()->getName());
+    setInitialUserName(getUser()->getName());
 }
 
 std::vector<UUID> Context::getCurrentRoles() const
@@ -5155,6 +5155,12 @@ void Context::setCurrentAddress(const Poco::Net::SocketAddress & current_address
 void Context::setInitialUserName(const String & initial_user_name)
 {
     client_info.initial_user = initial_user_name;
+    need_recalculate_access = true;
+}
+
+void Context::setAuthUserName(const String & auth_user_name)
+{
+    client_info.auth_user = auth_user_name;
     need_recalculate_access = true;
 }
 

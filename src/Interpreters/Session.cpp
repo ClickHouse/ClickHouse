@@ -377,6 +377,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     }
 
     prepared_client_info->current_user = credentials_.getUserName();
+    prepared_client_info->auth_user = credentials_.getUserName();
     prepared_client_info->current_address = address;
 }
 
