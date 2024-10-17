@@ -83,10 +83,10 @@ IProcessor::Status FilterTransform::prepare()
 }
 
 
-void FilterTransform::removeFilterIfNeed(Chunk & chunk) const
+void FilterTransform::removeFilterIfNeed(Columns & columns) const
 {
-    if (chunk && remove_filter_column)
-        chunk.erase(filter_column_position);
+    if (remove_filter_column)
+        columns.erase(columns.begin() + filter_column_position);
 }
 
 void FilterTransform::transform(Chunk & chunk)
@@ -116,8 +116,8 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     if (constant_filter_description.always_true || on_totals)
     {
+        removeFilterIfNeed(columns);
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
-        removeFilterIfNeed(chunk);
         return;
     }
 
@@ -136,8 +136,8 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     if (constant_filter_description.always_true)
     {
+        removeFilterIfNeed(columns);
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
-        removeFilterIfNeed(chunk);
         return;
     }
 
@@ -186,8 +186,8 @@ void FilterTransform::doTransform(Chunk & chunk)
     if (num_filtered_rows == num_rows_before_filtration)
     {
         /// No need to touch the rest of the columns.
+        removeFilterIfNeed(columns);
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
-        removeFilterIfNeed(chunk);
         return;
     }
 
@@ -196,7 +196,7 @@ void FilterTransform::doTransform(Chunk & chunk)
     {
         auto & current_column = columns[i];
 
-        if (i == filter_column_position)
+        if (i == filter_column_position && remove_filter_column)
             continue;
 
         if (i == first_non_constant_column)
@@ -208,8 +208,8 @@ void FilterTransform::doTransform(Chunk & chunk)
             current_column = filter_description->filter(*current_column, num_filtered_rows);
     }
 
+    removeFilterIfNeed(columns);
     chunk.setColumns(std::move(columns), num_filtered_rows);
-    removeFilterIfNeed(chunk);
 }
 
 
