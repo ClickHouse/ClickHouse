@@ -29,6 +29,15 @@ T DecimalField<T>::getScaleMultiplier() const
     return DecimalUtils::scaleMultiplier<T>(scale);
 }
 
+static void readBinaryArrayWithMaybeDifferentTypes(Array & x, ReadBuffer & buf)
+{
+    size_t size;
+    readBinary(size, buf);
+
+    for (size_t index = 0; index < size; ++index)
+        x.push_back(readFieldBinary( buf));
+}
+
 Field getBinaryValue(UInt8 type, ReadBuffer & buf)
 {
     switch (static_cast<Field::Types::Which>(type))
@@ -106,7 +115,7 @@ Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         case Field::Types::Array:
         {
             Array value;
-            readBinary(value, buf);
+            readBinaryArrayWithMaybeDifferentTypes(value, buf);
             return value;
         }
         case Field::Types::Tuple:
@@ -150,7 +159,7 @@ Field getBinaryValue(UInt8 type, ReadBuffer & buf)
     throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field type {}", std::to_string(type));
 }
 
-void readBinary(Array & x, ReadBuffer & buf)
+void readBinaryArrayWithUniformTypes(Array & x, ReadBuffer & buf)
 {
     size_t size;
     UInt8 type;
@@ -161,7 +170,7 @@ void readBinary(Array & x, ReadBuffer & buf)
         x.push_back(getBinaryValue(type, buf));
 }
 
-void writeBinary(const Array & x, WriteBuffer & buf)
+void writeBinaryArrayWithUniformTypes(const Array & x, WriteBuffer & buf)
 {
     UInt8 type = Field::Types::Null;
     size_t size = x.size();
