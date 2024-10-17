@@ -1,6 +1,10 @@
 #include "MetadataStorageFromPlainObjectStorageOperations.h"
 #include <Disks/ObjectStorages/InMemoryPathMap.h>
+#include "Disks/ObjectStorages/IObjectStorage_fwd.h"
+#include "base/defines.h"
 
+#include <filesystem>
+#include <mutex>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
@@ -278,4 +282,81 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo(std::un
     CurrentMetrics::add(metric, 1);
 }
 
+MetadataStorageFromPlainObjectStorageWriteFileOperation::MetadataStorageFromPlainObjectStorageWriteFileOperation(
+    const std::string & path_, const ObjectStorageKey & object_key_, InMemoryPathMap & path_map_, ObjectStoragePtr object_storage_)
+    : path(path_), remote_path(object_key_.serialize()), path_map(path_map_)
+{
+    auto common_key_prefix = object_storage_->getCommonKeyPrefix();
+    chassert(remote_path.string().starts_with(common_key_prefix));
+    auto rel_path = remote_path.lexically_relative(common_key_prefix);
+    remote_parent_path = rel_path.parent_path() / "";
+    filename = rel_path.filename();
+}
+
+void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute(std::unique_lock<SharedMutex> &)
+{
+    LOG_TRACE(
+        getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"),
+        "Creating metadata for a file write '{}' with remote path='{}'",
+        path,
+        remote_path);
+
+    std::lock_guard lock(path_map.mutex);
+    written = path_map.remote_filenames[remote_parent_path].emplace(filename).second;
+}
+
+void MetadataStorageFromPlainObjectStorageWriteFileOperation::undo(std::unique_lock<SharedMutex> &)
+{
+    if (!written)
+        return;
+
+    std::lock_guard lock(path_map.mutex);
+    auto it = path_map.remote_filenames.find(remote_parent_path);
+    chassert(it != path_map.remote_filenames.end());
+    if (it != path_map.remote_filenames.end())
+    {
+        it->second.erase(filename);
+        if (it->second.empty())
+            path_map.remote_filenames.erase(it);
+    }
+}
+
+MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
+    std::filesystem::path && path_, InMemoryPathMap & path_map_, ObjectStoragePtr object_storage_)
+    : path(path_), remote_path(std::filesystem::path(object_storage_->generateObjectKeyForPath(path_, std::nullopt).serialize())), path_map(path_map_)
+{
+    auto common_key_prefix = object_storage_->getCommonKeyPrefix();
+    chassert(remote_path.string().starts_with(common_key_prefix));
+    auto rel_path = remote_path.lexically_relative(common_key_prefix);
+    remote_parent_path = rel_path.parent_path() / "";
+    filename = rel_path.filename();
+}
+
+void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute(std::unique_lock<SharedMutex> &)
+{
+    LOG_TRACE(
+        getLogger("MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation"),
+        "Unlinking metadata for a write '{}' with remote path='{}'",
+        path,
+        remote_path);
+
+    std::lock_guard lock(path_map.mutex);
+    auto it = path_map.remote_filenames.find(remote_parent_path);
+    if (it != path_map.remote_filenames.end())
+    {
+        auto res = it->second.erase(filename);
+        removed = res > 0;
+        if (it->second.empty())
+            path_map.remote_filenames.erase(it);
+    }
+}
+
+void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo(std::unique_lock<SharedMutex> &)
+{
+    if (!removed)
+        return;
+
+    std::lock_guard lock(path_map.mutex);
+    path_map.remote_filenames[remote_parent_path].emplace(filename);
+}
 }

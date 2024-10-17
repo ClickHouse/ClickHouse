@@ -87,4 +87,43 @@ public:
     void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 };
 
+class MetadataStorageFromPlainObjectStorageWriteFileOperation final : public IMetadataOperation
+{
+private:
+    std::string path;
+    std::filesystem::path remote_path;
+    InMemoryPathMap & path_map;
+
+    std::filesystem::path remote_parent_path;
+    std::string filename;
+
+    bool written = false;
+
+public:
+    MetadataStorageFromPlainObjectStorageWriteFileOperation(
+        const std::string & path, const ObjectStorageKey & object_key_, InMemoryPathMap & path_map_, ObjectStoragePtr object_storage_);
+
+    void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
+    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
+};
+
+class MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation final : public IMetadataOperation
+{
+private:
+    std::string path;
+    std::filesystem::path remote_path;
+    InMemoryPathMap & path_map;
+
+    std::filesystem::path remote_parent_path;
+    std::string filename;
+
+    bool removed = false;
+
+public:
+    MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
+        std::filesystem::path && path_, InMemoryPathMap & path_map_, ObjectStoragePtr object_storage_);
+
+    void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
+    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
+};
 }
