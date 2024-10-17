@@ -74,7 +74,7 @@ void NATSHandler::stopLoop()
         return;
     }
 
-    LOG_DEBUG(log, "Implicit loop stop.");
+    LOG_DEBUG(log, "Implicit loop stop");
     loop_state.store(Loop::STOP);
 }
 

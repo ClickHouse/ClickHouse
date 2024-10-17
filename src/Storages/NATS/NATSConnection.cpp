@@ -153,7 +153,7 @@ void NATSConnection::reconnectedCallback(natsConnection *, void * connection)
 
 void NATSConnection::disconnectedCallback(natsConnection *, void * connection)
 {
-    LOG_DEBUG(callback_logger, "Connection {} got disconnected from NATS server.", connection);
+    LOG_DEBUG(callback_logger, "Connection {} got disconnected from NATS server", connection);
 }
 
 }

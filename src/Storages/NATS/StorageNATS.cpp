@@ -607,7 +607,7 @@ void StorageNATS::streamingToViewsFunc()
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
                 if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
                 {
-                    LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded.");
+                    LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded");
                     break;
                 }
             }
@@ -630,7 +630,7 @@ bool StorageNATS::streamToViews()
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist.", table_id.getNameForLogs());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist", table_id.getNameForLogs());
 
     // Create an INSERT query for streaming data
     auto insert = std::make_shared<ASTInsertQuery>();
@@ -686,7 +686,7 @@ bool StorageNATS::streamToViews()
         if (shutdown_called)
             return true;
 
-        LOG_TRACE(log, "Reschedule streaming. Unable to restore connection.");
+        LOG_TRACE(log, "Reschedule streaming. Unable to restore connection");
         return true;
     }
     else
@@ -700,7 +700,7 @@ bool StorageNATS::streamToViews()
 
     if (queue_empty == num_created_consumers)
     {
-        LOG_TRACE(log, "Reschedule streaming. Queues are empty.");
+        LOG_TRACE(log, "Reschedule streaming. Queues are empty");
         return true;
     }
 
