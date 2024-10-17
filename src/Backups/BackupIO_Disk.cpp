@@ -20,7 +20,7 @@ BackupReaderDisk::~BackupReaderDisk() = default;
 
 bool BackupReaderDisk::fileExists(const String & file_name)
 {
-    return disk->exists(root_path / file_name);
+    return disk->existsFile(root_path / file_name);
 }
 
 UInt64 BackupReaderDisk::getFileSize(const String & file_name)
@@ -68,7 +68,7 @@ BackupWriterDisk::~BackupWriterDisk() = default;
 
 bool BackupWriterDisk::fileExists(const String & file_name)
 {
-    return disk->exists(root_path / file_name);
+    return disk->existsFile(root_path / file_name);
 }
 
 UInt64 BackupWriterDisk::getFileSize(const String & file_name)
@@ -91,7 +91,7 @@ std::unique_ptr<WriteBuffer> BackupWriterDisk::writeFile(const String & file_nam
 void BackupWriterDisk::removeFile(const String & file_name)
 {
     disk->removeFileIfExists(root_path / file_name);
-    if (disk->isDirectory(root_path) && disk->isDirectoryEmpty(root_path))
+    if (disk->existsDirectory(root_path) && disk->isDirectoryEmpty(root_path))
         disk->removeDirectory(root_path);
 }
 
@@ -99,7 +99,7 @@ void BackupWriterDisk::removeFiles(const Strings & file_names)
 {
     for (const auto & file_name : file_names)
         disk->removeFileIfExists(root_path / file_name);
-    if (disk->isDirectory(root_path) && disk->isDirectoryEmpty(root_path))
+    if (disk->existsDirectory(root_path) && disk->isDirectoryEmpty(root_path))
         disk->removeDirectory(root_path);
 }
 

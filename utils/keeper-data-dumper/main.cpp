@@ -56,12 +56,11 @@ int main(int argc, char *argv[])
         std::cerr << "usage: " << argv[0] << " snapshotpath logpath" << std::endl;
         return 3;
     }
-    else
-    {
-        Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
-        Poco::Logger::root().setChannel(channel);
-        Poco::Logger::root().setLevel("trace");
-    }
+
+    Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
+    Poco::Logger::root().setChannel(channel);
+    Poco::Logger::root().setLevel("trace");
+
     auto logger = getLogger("keeper-dumper");
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};

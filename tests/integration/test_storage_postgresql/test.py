@@ -527,6 +527,7 @@ def test_postgres_distributed(started_cluster):
     result = node2.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
     started_cluster.unpause_container("postgres1")
     assert result == "host2\nhost4\n" or result == "host3\nhost4\n"
+    node2.query("DROP TABLE test_shards2")
     node2.query("DROP TABLE test_shards")
     node2.query("DROP TABLE test_replicas")
 
@@ -818,6 +819,9 @@ def test_auto_close_connection(started_cluster):
     # Connection from python + pg_stat table also has a connection at the moment of current query
     assert count == 2
 
+    node2.query("DROP TABLE test.stat")
+    node2.query("DROP TABLE test.test_table")
+
 
 def test_literal_escaping(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
@@ -833,6 +837,7 @@ def test_literal_escaping(started_cluster):
     node1.query("SELECT * FROM escaping WHERE text like '%a''a%'")  # %a'a% -> %a''a%
     node1.query("SELECT * FROM escaping WHERE text like '%a\\'a%'")  # %a'a% -> %a''a%
     cursor.execute(f"DROP TABLE escaping")
+    node1.query("DROP TABLE default.escaping")
 
 
 def test_filter_pushdown(started_cluster):
@@ -887,6 +892,28 @@ def test_filter_pushdown(started_cluster):
             )
 
     cursor.execute("DROP SCHEMA test_filter_pushdown CASCADE")
+    node1.query("DROP TABLE test_filter_pushdown_local_table")
+    node1.query("DROP TABLE test_filter_pushdown_pg_table")
+
+
+def test_fixed_string_type(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_fixed_string")
+    cursor.execute(
+        "CREATE TABLE test_fixed_string (contact_id numeric NULL, email varchar NULL)"
+    )
+    cursor.execute("INSERT INTO test_fixed_string values (1, 'abc')")
+
+    node1.query("DROP TABLE IF EXISTS test_fixed_string")
+    node1.query(
+        "CREATE TABLE test_fixed_string(contact_id Int64, email Nullable(FixedString(3))) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_fixed_string', 'postgres', 'mysecretpassword')"
+    )
+
+    result = node1.query("SELECT * FROM test_fixed_string format TSV")
+
+    assert result.strip() == "1\tabc"
+
+    node1.query("DROP TABLE test_fixed_string")
 
 
 if __name__ == "__main__":

@@ -441,6 +441,7 @@ public:
 
     bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsSparseSerialization() const override { return true; }
 
     bool supportsLightweightDelete() const override;
 
@@ -1242,6 +1243,11 @@ protected:
     /// protected by @data_parts_mutex.
     ColumnsDescription object_columns;
 
+    /// Serialization info accumulated among all active parts.
+    /// It changes only when set of parts is changed and is
+    /// protected by @data_parts_mutex.
+    SerializationInfoByName serialization_hints;
+
     MergeTreePartsMover parts_mover;
 
     /// Executors are common for both ReplicatedMergeTree and plain MergeTree
@@ -1529,6 +1535,13 @@ protected:
 
     void resetObjectColumnsFromActiveParts(const DataPartsLock & lock);
     void updateObjectColumns(const DataPartPtr & part, const DataPartsLock & lock);
+
+    void resetSerializationHints(const DataPartsLock & lock);
+
+    template <typename AddedParts, typename RemovedParts>
+    void updateSerializationHints(const AddedParts & added_parts, const RemovedParts & removed_parts, const DataPartsLock & lock);
+
+    SerializationInfoByName getSerializationHints() const override;
 
     /** A structure that explicitly represents a "merge tree" of parts
      *  which is implicitly presented by min-max block numbers and levels of parts.
