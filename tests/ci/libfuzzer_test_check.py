@@ -180,9 +180,9 @@ def main():
             download_corpus(fuzzer_corpus_path, file)
             subprocess.check_call(f"ls -Ral {fuzzer_corpus_path}", shell=True)
         elif file.endswith("_seed_corpus.zip"):
-            corpus_path = fuzzers_path / (file.removesuffix("_seed_corpus.zip") + ".in")
+            seed_corpus_path = fuzzers_path / (file.removesuffix("_seed_corpus.zip") + ".in")
             with zipfile.ZipFile(fuzzers_path / file, "r") as zfd:
-                zfd.extractall(corpus_path)
+                zfd.extractall(seed_corpus_path)
 
     result_path = temp_path / "result_path"
     result_path.mkdir(parents=True, exist_ok=True)
