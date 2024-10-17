@@ -11,12 +11,17 @@ from typing import List
 from build_download_helper import download_fuzzers
 from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
+from env_helper import REPO_COPY, REPORT_PATH, S3_BUILDS_BUCKET, TEMP_PATH
 from pr_info import PRInfo
+from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
+from botocore.exceptions import ClientError
+
+
 NO_CHANGES_MSG = "Nothing to run"
+s3 = S3Helper()
 
 
 def get_additional_envs(check_name, run_by_hash_num, run_by_hash_total):
@@ -85,6 +90,34 @@ def parse_args():
     return parser.parse_args()
 
 
+def download_corpus(corpus_path: str, fuzzer_name: str):
+    logging.info("Download corpus for %s ...", fuzzer_name)
+
+    units = []
+
+    try:
+        units = s3.download_files(
+            bucket=S3_BUILDS_BUCKET,
+            s3_path=f"fuzzer/corpus/{fuzzer_name}/",
+            file_suffix="",
+            local_directory=corpus_path,
+        )
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "NoSuchKey":
+            logging.debug("No active corpus exists for %s", fuzzer_name)
+        else:
+            raise
+
+    logging.info("...downloaded %d units", len(units))
+
+
+def upload_corpus(fuzzers_path: str):
+    for file in os.listdir(f"{fuzzers_path}/corpus/"):
+        s3.upload_build_directory_to_s3(
+            Path(f"{fuzzers_path}/corpus/{file}"), f"fuzzer/corpus/{file}", False
+        )
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
 
@@ -119,6 +152,7 @@ def main():
     for file in os.listdir(fuzzers_path):
         if file.endswith("_fuzzer"):
             os.chmod(fuzzers_path / file, 0o777)
+            download_corpus(f"{fuzzers_path}/{file}.corpus", file)
         elif file.endswith("_seed_corpus.zip"):
             corpus_path = fuzzers_path / (file.removesuffix("_seed_corpus.zip") + ".in")
             with zipfile.ZipFile(fuzzers_path / file, "r") as zfd:
@@ -133,7 +167,7 @@ def main():
         check_name, run_by_hash_num, run_by_hash_total
     )
 
-    additional_envs.append("CI=1")
+    # additional_envs.append("CI=1")
 
     ci_logs_credentials = CiLogsCredentials(Path(temp_path) / "export-logs-config.sh")
     ci_logs_args = ci_logs_credentials.get_docker_arguments(
@@ -154,6 +188,7 @@ def main():
         retcode = process.wait()
         if retcode == 0:
             logging.info("Run successfully")
+            upload_corpus(fuzzers_path)
         else:
             logging.info("Run failed")
 
