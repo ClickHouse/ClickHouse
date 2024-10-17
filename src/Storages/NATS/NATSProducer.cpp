@@ -25,7 +25,6 @@ NATSProducer::NATSProducer(const NATSConfiguration & configuration_, BackgroundS
     , subject(subject_)
     , payloads(BATCH)
 {
-    /// One looping task for all consumers as they share the same connection == the same handler == the same event loop
     looping_task = broker_schedule_pool_.createTask("NATSProducerLoopingTask", [this] { event_handler.runLoop(); });
     looping_task->deactivate();
 }

@@ -1,7 +1,6 @@
 #include <Storages/NATS/NATSHandler.h>
 
 #include <Storages/NATS/NATSLibUVAdapter.h>
-
 #include <Core/Defines.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -81,7 +80,8 @@ void NATSHandler::stopLoop()
 
 void NATSHandler::post(Task task)
 {
-    if (loop_state.load() != Loop::INITIALIZED && loop_state.load() != Loop::RUN)
+    const auto current_state = loop_state.load();
+    if (current_state != Loop::INITIALIZED && current_state != Loop::RUN)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not post task to event loop: event loop stopped");
 
     std::lock_guard<std::mutex> lock(tasks_mutex);
