@@ -17,7 +17,12 @@ namespace DB
 class NATSProducer : public AsynchronousMessageProducer
 {
 public:
-    NATSProducer(const NATSConfiguration & configuration_, BackgroundSchedulePool & broker_schedule_pool_, const String & subject_, LoggerPtr log_);
+    NATSProducer(
+        const NATSConfiguration & configuration_,
+        BackgroundSchedulePool & broker_schedule_pool_,
+        const String & subject_,
+        std::atomic<bool> & shutdown_called_,
+        LoggerPtr log_);
 
     void produce(const String & message, size_t rows_in_message, const Columns & columns, size_t last_row) override;
 
@@ -40,6 +45,8 @@ private:
 
     NATSConnectionPtr connection;
     const String subject;
+
+    std::atomic<bool> & shutdown_called;
 
     /* payloads.queue:
      *      - payloads are pushed to queue in countRow and popped by another thread in writingFunc, each payload gets into queue only once

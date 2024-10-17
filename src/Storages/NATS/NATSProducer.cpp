@@ -18,11 +18,17 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-NATSProducer::NATSProducer(const NATSConfiguration & configuration_, BackgroundSchedulePool & broker_schedule_pool_, const String & subject_, LoggerPtr log_)
+NATSProducer::NATSProducer(
+    const NATSConfiguration & configuration_,
+    BackgroundSchedulePool & broker_schedule_pool_,
+    const String & subject_,
+    std::atomic<bool> & shutdown_called_,
+    LoggerPtr log_)
     : AsynchronousMessageProducer(log_)
     , configuration(configuration_)
     , event_handler(log)
     , subject(subject_)
+    , shutdown_called(shutdown_called_)
     , payloads(BATCH)
 {
     looping_task = broker_schedule_pool_.createTask("NATSProducerLoopingTask", [this] { event_handler.runLoop(); });
@@ -121,12 +127,12 @@ void NATSProducer::startProducingTaskLoop()
                 publish();
         }
 
-        while (!connection->isConnected())
+        while (!connection->isConnected() && !shutdown_called)
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(configuration.reconnect_wait));
         }
 
-        if (natsConnection_Buffered(connection->getConnection()) > 0)
+        if (connection->isConnected() && natsConnection_Buffered(connection->getConnection()) > 0)
             natsConnection_Flush(connection->getConnection());
     }
     catch (...)
