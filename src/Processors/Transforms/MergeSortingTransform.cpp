@@ -69,7 +69,7 @@ public:
                 ReadableSize(static_cast<double>(stat.compressed_size)), ReadableSize(static_cast<double>(stat.uncompressed_size)));
         }
 
-        Block block = tmp_read_stream->read();
+        Block block = tmp_read_stream.value()->read();
         if (!block)
             return {};
 
@@ -79,7 +79,7 @@ public:
 
 private:
     TemporaryBlockStreamHolder tmp_stream;
-    TemporaryBlockStreamReaderHolder tmp_read_stream;
+    std::optional<TemporaryBlockStreamReaderHolder> tmp_read_stream;
 
     LoggerPtr log;
 };

@@ -964,7 +964,7 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline MergeTask::Vertic
     auto pipeline_settings = BuildQueryPipelineSettings::fromContext(global_ctx->context);
     auto optimization_settings = QueryPlanOptimizationSettings::fromContext(global_ctx->context);
     auto builder = merge_column_query_plan.buildQueryPipeline(optimization_settings, pipeline_settings);
-    builder->addResource<std::shared_ptr<TemporaryDataBuffer>>(ctx->rows_sources_temporary_file, &QueryPlanResourceHolder::rows_sources_temporary_file);
+    builder->addResource(ctx->rows_sources_temporary_file, &QueryPlanResourceHolder::rows_sources_temporary_file);
 
     return {QueryPipelineBuilder::getPipeline(std::move(*builder)), std::move(indexes_to_recalc)};
 }

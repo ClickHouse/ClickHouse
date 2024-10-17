@@ -311,7 +311,7 @@ public:
 
     bool hasTemporaryData() const { return !tmp_files.empty(); }
 
-    std::vector<TemporaryBlockStreamHolder> & getTemporaryData() { return tmp_files; }
+    std::vector<TemporaryBlockStreamHolder> & getTemporaryData();
 
     /// Get data structure of the result.
     Block getHeader(bool final) const;

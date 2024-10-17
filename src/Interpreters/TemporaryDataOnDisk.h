@@ -114,18 +114,19 @@ template <typename Impl, typename Holder>
 class WrapperGuard
 {
 public:
-    WrapperGuard() = default;
-
     template <typename ... Args>
     WrapperGuard(std::unique_ptr<Holder> holder_, Args && ... args)
         : holder(std::move(holder_))
         , impl(std::make_unique<Impl>(*holder, std::forward<Args>(args)...))
-    {}
+    {
+        chassert(holder);
+        chassert(impl);
+    }
 
-    Impl * operator->() { return impl.get(); }
-    const Impl * operator->() const { return impl.get(); }
-    Impl & operator*() { return *impl; }
-    const Impl & operator*() const { return *impl; }
+    Impl * operator->() { chassert(impl); chassert(holder); return impl.get(); }
+    const Impl * operator->() const { chassert(impl); chassert(holder); return impl.get(); }
+    Impl & operator*() { chassert(impl); chassert(holder); return *impl; }
+    const Impl & operator*() const { chassert(impl); chassert(holder); return *impl; }
     operator bool() const { return impl != nullptr; }
 
     const Holder * getHolder() const { return holder.get(); }
@@ -153,13 +154,13 @@ public:
     virtual std::unique_ptr<WriteBuffer> write() = 0;
     virtual std::unique_ptr<ReadBuffer> read(size_t buffer_size) const = 0;
 
-    /// Get location for logging purposes
+    /// Get location for logging
     virtual String describeFilePath() const = 0;
 
     virtual ~TemporaryFileHolder() = default;
 };
 
-
+/// Reads raw data from temporary file
 class TemporaryDataReadBuffer : public ReadBuffer
 {
 public:
@@ -173,7 +174,7 @@ private:
     WrapperGuard<CompressedReadBuffer, ReadBuffer> compressed_buf;
 };
 
-/// Writes data to buffer provided by file_holder, and accounts amount of written data in parent scope.
+/// Writes raw data to buffer provided by file_holder, and accounts amount of written data in parent scope.
 class TemporaryDataBuffer : public WriteBuffer
 {
 public:
@@ -206,13 +207,13 @@ private:
     Stat stat;
 };
 
+
+/// High level interfaces for reading and writing temporary data by blocks.
 using TemporaryBlockStreamReaderHolder = WrapperGuard<NativeReader, ReadBuffer>;
 
 class TemporaryBlockStreamHolder : public WrapperGuard<NativeWriter, TemporaryDataBuffer>
 {
 public:
-    TemporaryBlockStreamHolder() = default;
-
     TemporaryBlockStreamHolder(const Block & header_, TemporaryDataOnDiskScope * parent_, size_t max_file_size = 0);
 
     TemporaryBlockStreamReaderHolder getReadStream() const;
