@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import configparser
+import datetime
 import logging
 import os
 import re
@@ -14,6 +15,23 @@ from botocore.exceptions import ClientError
 DEBUGGER = os.getenv("DEBUGGER", "")
 FUZZER_ARGS = os.getenv("FUZZER_ARGS", "")
 OUTPUT = "/test_output"
+
+
+class Stopwatch:
+    def __init__(self):
+        self.reset()
+
+    @property
+    def duration_seconds(self) -> float:
+        return (datetime.datetime.utcnow() - self.start_time).total_seconds()
+
+    @property
+    def start_time_str(self) -> str:
+        return self.start_time_str_value
+
+    def reset(self) -> None:
+        self.start_time = datetime.datetime.utcnow()
+        self.start_time_str_value = self.start_time.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def report(source: str, reason: str, call_stack: list, test_unit: str):
@@ -67,8 +85,6 @@ def kill_fuzzer(fuzzer: str):
 
 
 def run_fuzzer(fuzzer: str, timeout: int):
-    s3 = S3Helper()
-
     logging.info("Running fuzzer %s...", fuzzer)
 
     seed_corpus_dir = f"{fuzzer}.in"
@@ -77,20 +93,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
             seed_corpus_dir = ""
 
     active_corpus_dir = f"{fuzzer}.corpus"
-    try:
-        s3.download_files(
-            bucket=S3_BUILDS_BUCKET,
-            s3_path=f"fuzzer/corpus/{fuzzer}/",
-            file_suffix="",
-            local_directory=active_corpus_dir,
-        )
-    except ClientError as e:
-        if e.response["Error"]["Code"] == "NoSuchKey":
-            logging.debug("No active corpus exists for %s", fuzzer)
-        else:
-            raise
-
-    new_corpus_dir = f"{fuzzer}.corpus_new"
+    new_corpus_dir = f"{OUTPUT}/corpus/{fuzzer}"
     if not os.path.exists(new_corpus_dir):
         os.makedirs(new_corpus_dir)
 
@@ -180,16 +183,18 @@ def run_fuzzer(fuzzer: str, timeout: int):
             status.write(
                 f"Timeout\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
             )
+        os.remove(out_path)
     else:
         process_fuzzer_output(result.stderr)
         with open(status_path, "w", encoding="utf-8") as status:
             status.write(
                 f"OK\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
             )
+        os.remove(out_path)
 
-    s3.upload_build_directory_to_s3(
-        Path(new_corpus_dir), f"fuzzer/corpus/{fuzzer}", False
-    )
+    # s3.upload_build_directory_to_s3(
+    #     Path(new_corpus_dir), f"fuzzer/corpus/{fuzzer}", False
+    # )
 
 
 def main():
@@ -215,14 +220,4 @@ def main():
 
 
 if __name__ == "__main__":
-    from os import path, sys
-
-    ACTIVE_DIR = path.dirname(path.abspath(__file__))
-    sys.path.append((Path(path.dirname(ACTIVE_DIR)) / "ci").as_posix())
-    from env_helper import (  # pylint: disable=import-error,no-name-in-module
-        S3_BUILDS_BUCKET,
-    )
-    from s3_helper import S3Helper  # pylint: disable=import-error,no-name-in-module
-    from stopwatch import Stopwatch  # pylint: disable=import-error,no-name-in-module
-
     main()
