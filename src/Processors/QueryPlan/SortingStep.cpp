@@ -35,6 +35,7 @@ namespace Setting
     extern const SettingsBool read_in_order_use_buffering;
     extern const SettingsFloat remerge_sort_lowered_memory_bytes_ratio;
     extern const SettingsOverflowMode sort_overflow_mode;
+    extern const SettingsUInt64 shuffle_join_optimization_buckets;
 }
 
 namespace ErrorCodes
@@ -54,6 +55,7 @@ SortingStep::Settings::Settings(const Context & context)
     min_free_disk_space = settings[Setting::min_free_disk_space_for_temporary_data];
     max_block_bytes = settings[Setting::prefer_external_sort_block_bytes];
     read_in_order_use_buffering = settings[Setting::read_in_order_use_buffering];
+    shuffle_join_optimization_enabled = settings[Setting::shuffle_join_optimization_buckets] > 1;
 }
 
 SortingStep::Settings::Settings(size_t max_block_size_)
@@ -236,6 +238,13 @@ void SortingStep::finishSorting(
 
 void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_)
 {
+    // Shuffle optimization does not require MergingSortedTransform.
+    if (sort_settings.shuffle_join_optimization_enabled)
+    {
+        mergeSorting(pipeline, sort_settings, result_sort_desc, limit_);
+        return;
+    }
+
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1)
     {
@@ -340,6 +349,12 @@ void SortingStep::fullSort(
     scatterByPartitionIfNeeded(pipeline);
 
     fullSortStreams(pipeline, sort_settings, result_sort_desc, limit_, skip_partial_sort);
+
+    // Shuffle optimization does not require MergingSortedTransform.
+    if (sort_settings.shuffle_join_optimization_enabled)
+    {
+        return;
+    }
 
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1 && (partition_by_description.empty() || pipeline.getNumThreads() == 1))

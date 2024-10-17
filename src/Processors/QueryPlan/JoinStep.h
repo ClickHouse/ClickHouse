@@ -19,7 +19,9 @@ public:
         JoinPtr join_,
         size_t max_block_size_,
         size_t max_streams_,
-        bool keep_left_read_in_order_);
+        bool keep_left_read_in_order_,
+        size_t shuffle_optimize_buckets_ = 0,
+        size_t shuffle_optimize_max_ = 0);
 
     String getName() const override { return "Join"; }
 
@@ -43,6 +45,8 @@ private:
     size_t max_block_size;
     size_t max_streams;
     bool keep_left_read_in_order;
+    size_t shuffle_optimize_buckets;
+    size_t shuffle_optimize_max;
 };
 
 /// Special step for the case when Join is already filled.

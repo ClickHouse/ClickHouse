@@ -139,6 +139,14 @@ public:
         size_t max_block_size,
         Processors * collected_processors = nullptr);
 
+    static std::unique_ptr<QueryPipelineBuilder> joinPipelinesYShapedWithShuffle(
+        std::unique_ptr<QueryPipelineBuilder> left,
+        std::unique_ptr<QueryPipelineBuilder> right,
+        JoinPtr join,
+        const Block & out_header,
+        size_t max_block_size,
+        Processors * collected_processors = nullptr);
+
     /// Add other pipeline and execute it before current one.
     /// Pipeline must have empty header, it should not generate any chunk.
     /// This is used for CreatingSets.

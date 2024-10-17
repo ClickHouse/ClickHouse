@@ -5803,6 +5803,14 @@ Allow to create database with Engine=MaterializedPostgreSQL(...).
     M(Bool, allow_experimental_query_deduplication, false, R"(
 Experimental data deduplication for SELECT queries based on part UUIDs
 )", 0) \
+    \
+    /** Experimental feature for moving data between shards. */ \
+    M(UInt64, shuffle_join_optimization_buckets, 0, R"(
+The number of buckets for shuffle-based full_sorting_merge join optimization. 0 - disable.
+)", 0) \
+    M(UInt64, shuffle_join_optimization_max_key, 100000000, R"(
+The maximum value of the join key. The value is used to evenly divide bucket ranges for shuffle-based full_sorting_merge join optimization.
+)", 0) \
 
     /** End of experimental features */
 

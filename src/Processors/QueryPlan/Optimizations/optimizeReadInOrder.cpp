@@ -19,6 +19,7 @@
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Processors/QueryPlan/ShuffleStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -97,7 +98,7 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, bool allow_existing_or
     if (node.children.size() != 1)
         return nullptr;
 
-    if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step))
+    if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step) || typeid_cast<ShuffleStep *>(step))
         return findReadingStep(*node.children.front(), allow_existing_order);
 
     if (auto * distinct = typeid_cast<DistinctStep *>(step); distinct && distinct->isPreliminary())

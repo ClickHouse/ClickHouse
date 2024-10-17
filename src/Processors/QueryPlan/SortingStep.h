@@ -29,6 +29,7 @@ public:
         size_t min_free_disk_space = 0;
         size_t max_block_bytes = 0;
         size_t read_in_order_use_buffering = 0;
+        bool shuffle_join_optimization_enabled = false;
 
         explicit Settings(const Context & context);
         explicit Settings(size_t max_block_size_);
