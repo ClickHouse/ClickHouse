@@ -120,14 +120,14 @@ def download_corpus(corpus_path: str, fuzzer_name: str):
     logging.info("...downloaded %d units", len(units))
 
 
-def upload_corpus(result_path: str):
+def upload_corpus(path: str):
     with zipfile.ZipFile(
-        f"{result_path}/corpus.zip", "w", zipfile.ZIP_DEFLATED
+        f"{path}/corpus.zip", "w", zipfile.ZIP_DEFLATED
     ) as zipf:
-        zipdir(f"{result_path}/corpus/", zipf)
+        zipdir(f"{path}/corpus/", zipf)
     s3.upload_file(
         bucket=S3_BUILDS_BUCKET,
-        file_path=f"{result_path}/corpus.zip",
+        file_path=f"{path}/corpus.zip",
         s3_path="fuzzer/corpus.zip",
     )
     # for file in os.listdir(f"{result_path}/corpus/"):
@@ -164,13 +164,15 @@ def main():
 
     fuzzers_path = temp_path / "fuzzers"
     fuzzers_path.mkdir(parents=True, exist_ok=True)
+    corpus_path = fuzzers_path / "corpus"
+    corpus_path.mkdir(parents=True, exist_ok=True)
 
     download_fuzzers(check_name, reports_path, fuzzers_path)
 
     for file in os.listdir(fuzzers_path):
         if file.endswith("_fuzzer"):
             os.chmod(fuzzers_path / file, 0o777)
-            download_corpus(f"{fuzzers_path}/{file}.corpus", file)
+            download_corpus(f"{corpus_path}/{file}", file)
         elif file.endswith("_seed_corpus.zip"):
             corpus_path = fuzzers_path / (file.removesuffix("_seed_corpus.zip") + ".in")
             with zipfile.ZipFile(fuzzers_path / file, "r") as zfd:
@@ -206,7 +208,7 @@ def main():
         retcode = process.wait()
         if retcode == 0:
             logging.info("Run successfully")
-            upload_corpus(result_path)
+            upload_corpus(fuzzers_path)
         else:
             logging.info("Run failed")
 
