@@ -375,3 +375,6 @@
 [submodule "contrib/postgres"]
 	path = contrib/postgres
 	url = https://github.com/ClickHouse/postgres.git
+[submodule "contrib/xsimd"]
+	path = contrib/xsimd
+	url = https://github.com/xtensor-stack/xsimd.git
