@@ -1,10 +1,15 @@
-#include "uhugeint.hpp"
-#include "hugeint.hpp"
+#include "uhugeint.h"
+#include "hugeint.h"
 
 #include <cmath>
 #include <cassert>
 
 namespace chfuzz {
+
+uhugeint_t::uhugeint_t(uint64_t value) {
+	this->lower = value;
+	this->upper = 0;
+}
 
 bool uhugeint_t::operator==(const uhugeint_t &rhs) const {
 	int lower_equals = this->lower == rhs.lower;

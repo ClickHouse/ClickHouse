@@ -1615,12 +1615,24 @@ enum Dates {
   DateTime64 = 4;
 }
 
+message HugeInt {
+  required int64 lower = 1;
+  required uint64 upper = 2;
+}
+
+message UHugeInt {
+  required uint64 lower = 1;
+  required uint64 upper = 2;
+}
+
 message IntLiteral {
   oneof int_oneof {
     int64 int_lit = 1;
     uint64 uint_lit = 2;
+    HugeInt hugeint = 3;
+    UHugeInt uhugeint = 4;
   }
-  optional Integers integers = 3;
+  optional Integers integers = 5;
 }
 
 message LiteralValue {

@@ -1,3 +1,5 @@
+#include "hugeint.h"
+#include "uhugeint.h"
 #include "sql_types.h"
 #include "statement_generator.h"
 
@@ -520,9 +522,13 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &
 				case 32:
 					ret += std::to_string(rg.NextRandomUInt32());
 					break;
-				default:
+				case 64:
 					ret += std::to_string(rg.NextRandomUInt64());
 					break;
+				default: {
+					hugeint_t val(rg.NextRandomInt64(), rg.NextRandomUInt64());
+					val.ToString(ret);
+				}
 			}
 		} else {
 			switch (itp->size) {
@@ -535,9 +541,13 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &
 				case 32:
 					ret += std::to_string(rg.NextRandomInt32());
 					break;
-				default:
+				case 64:
 					ret += std::to_string(rg.NextRandomInt64());
 					break;
+				default: {
+					uhugeint_t val(rg.NextRandomUInt64(), rg.NextRandomUInt64());
+					val.ToString(ret);
+				}
 			}
 		}
 	} else if (dynamic_cast<FloatType*>(tp)) {
@@ -681,7 +691,7 @@ void StatementGenerator::StrBuildJSONArray(RandomGenerator &rg, const int jdepth
 }
 
 void StatementGenerator::StrBuildJSONElement(RandomGenerator &rg, std::string &ret) {
-	std::uniform_int_distribution<int> opts(1, 12);
+	std::uniform_int_distribution<int> opts(1, 14);
 	const int noption = opts(rg.gen);
 
 	switch (noption) {
@@ -753,6 +763,14 @@ void StatementGenerator::StrBuildJSONElement(RandomGenerator &rg, std::string &r
 				}
 			}
 			ret += '"';
+		} break;
+		case 13: { //128-bit signed number
+			hugeint_t val(rg.NextRandomInt64(), rg.NextRandomUInt64());
+			val.ToString(ret);
+		} break;
+		case 14: { //128-bit unsigned number
+			uhugeint_t val(rg.NextRandomUInt64(), rg.NextRandomUInt64());
+			val.ToString(ret);
 		} break;
 		default:
 			assert(0);

@@ -1,5 +1,5 @@
-#include "hugeint.hpp"
-#include "uhugeint.hpp"
+#include "hugeint.h"
+#include "uhugeint.h"
 
 #include <cmath>
 #include <cassert>
@@ -257,6 +257,20 @@ static hugeint_t Multiply(hugeint_t lhs, hugeint_t rhs) {
 		NegateInPlace(result);
 	}
 	return result;
+}
+
+template <class DST>
+hugeint_t HugeintConvertInteger(DST input) {
+	hugeint_t result;
+	result.lower = static_cast<uint64_t>(input);
+	result.upper = (input < 0) * -1;
+	return result;
+}
+
+hugeint_t::hugeint_t(int64_t value) {
+	auto result = HugeintConvertInteger<int64_t>(value);
+	this->lower = result.lower;
+	this->upper = result.upper;
 }
 
 bool hugeint_t::operator==(const hugeint_t &rhs) const {

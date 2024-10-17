@@ -5,6 +5,8 @@
 #include <random>
 
 #include "sql_query_proto_to_string.h"
+#include "hugeint.h"
+#include "uhugeint.h"
 
 using namespace sql_query_grammar;
 
@@ -410,11 +412,25 @@ BuildJson(std::string &ret, const int depth, const int width, std::mt19937 &gen)
   ret += "}";
 }
 
+CONV_FN(HugeInt, huge) {
+    hugeint_t val(huge.lower(), huge.upper());
+    val.ToString(ret);
+}
+
+CONV_FN(UHugeInt, uhuge) {
+    uhugeint_t val(uhuge.lower(), uhuge.upper());
+    val.ToString(ret);
+}
+
 CONV_FN(IntLiteral, int_val) {
   if (int_val.has_int_lit()) {
     ret += std::to_string(int_val.int_lit());
   } else if (int_val.has_uint_lit()) {
     ret += std::to_string(int_val.uint_lit());
+  } else if (int_val.has_hugeint()) {
+    HugeIntToString(ret, int_val.hugeint());
+  } else if (int_val.has_uhugeint()) {
+    UHugeIntToString(ret, int_val.uhugeint());
   } else {
     ret += "0";
   }

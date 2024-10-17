@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string>
 
-#include "nlimits.hpp"
+#include "nlimits.h"
 
 namespace chfuzz {
 
