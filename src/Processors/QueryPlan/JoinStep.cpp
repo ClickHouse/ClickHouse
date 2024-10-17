@@ -44,8 +44,10 @@ JoinStep::JoinStep(
     JoinPtr join_,
     size_t max_block_size_,
     size_t max_streams_,
-    bool keep_left_read_in_order_)
-    : join(std::move(join_)), max_block_size(max_block_size_), max_streams(max_streams_), keep_left_read_in_order(keep_left_read_in_order_)
+    bool keep_left_read_in_order_,
+    size_t shuffle_optimize_buckets_,
+    size_t shuffle_optimize_max_)
+    : join(std::move(join_)), max_block_size(max_block_size_), max_streams(max_streams_), keep_left_read_in_order(keep_left_read_in_order_), shuffle_optimize_buckets(shuffle_optimize_buckets_), shuffle_optimize_max(shuffle_optimize_max_)
 {
     updateInputHeaders({left_header_, right_header_});
 }
@@ -57,8 +59,31 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 
     if (join->pipelineType() == JoinPipelineType::YShaped)
     {
-        auto joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
-            std::move(pipelines[0]), std::move(pipelines[1]), join, *output_header, max_block_size, &processors);
+        std::unique_ptr<QueryPipelineBuilder> joined_pipeline;
+        if (shuffle_optimize_buckets > 1)
+        {
+            //For example, if divided into four buckets, the maximum value should be at least 3 (0,1,2,3)
+            if (shuffle_optimize_max < shuffle_optimize_buckets - 1)
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Max key value must be at least number of shuffle buckets - 1");
+            }
+
+            assert(output_header.has_value());
+            joined_pipeline = QueryPipelineBuilder::joinPipelinesYShapedWithShuffle(
+                std::move(pipelines[0]),
+                std::move(pipelines[1]),
+                join,
+                *output_header,
+                max_block_size,
+                &processors);
+            joined_pipeline->resize(max_streams);
+        }
+        else
+        {
+            assert(output_header.has_value());
+            joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
+                std::move(pipelines[0]), std::move(pipelines[1]), join, *output_header, max_block_size, &processors);
+        }
         joined_pipeline->resize(max_streams);
         return joined_pipeline;
     }
