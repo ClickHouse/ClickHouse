@@ -77,5 +77,4 @@ struct NumericLimits<hugeint_t> {
 	}
 };
 
-
 }

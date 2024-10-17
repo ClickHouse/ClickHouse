@@ -112,7 +112,25 @@ int StatementGenerator::GenerateLiteralValue(RandomGenerator &rg, sql_query_gram
 	if (noption < 201) {
 		sql_query_grammar::IntLiteral *il = lv->mutable_int_lit();
 
-		if (noption < 101) {
+		if (noption < 21) {
+			//hugeint
+			sql_query_grammar::HugeInt *huge = il->mutable_hugeint();
+
+			huge->set_lower(rg.NextRandomInt64());
+			huge->set_upper(rg.NextRandomUInt64());
+			if (rg.NextSmallNumber() < 9) {
+				il->set_integers(rg.NextBool() ? sql_query_grammar::Integers::Int128 : sql_query_grammar::Integers::Int256);
+			}
+		} else if (noption < 41) {
+			//uhugeint
+			sql_query_grammar::UHugeInt *huge = il->mutable_uhugeint();
+
+			huge->set_lower(rg.NextRandomUInt64());
+			huge->set_upper(rg.NextRandomUInt64());
+			if (rg.NextSmallNumber() < 9) {
+				il->set_integers(rg.NextBool() ? sql_query_grammar::Integers::UInt128 : sql_query_grammar::Integers::Int256);
+			}
+		} else if (noption < 121) {
 			il->set_int_lit(rg.NextRandomInt64());
 			if (rg.NextSmallNumber() < 9) {
 				il->set_integers(static_cast<sql_query_grammar::Integers>(
