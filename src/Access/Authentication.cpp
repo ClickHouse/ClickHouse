@@ -246,6 +246,11 @@ bool Authentication::areCredentialsValid(
     }
 #endif
 
+    if (const auto * jwt_credentials = typeid_cast<const JWTCredentials *>(&credentials))
+    {
+        return external_authenticators.checkJWTCredentials(authentication_method.getJWTClaims(), *jwt_credentials, settings);
+    }
+
     if ([[maybe_unused]] const auto * always_allow_credentials = typeid_cast<const AlwaysAllowCredentials *>(&credentials))
         return true;
 

@@ -1583,6 +1583,10 @@ void TCPHandler::receiveHello()
     if (is_ssh_based_auth)
         user.erase(0, std::string_view(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER).size());
 
+    is_jwt_based_auth = user.starts_with(EncodedUserInfo::JWT_AUTHENTICAION_MARKER);
+    if (is_jwt_based_auth)
+        user.erase(0, std::string_view(EncodedUserInfo::JWT_AUTHENTICAION_MARKER).size());
+
     session = makeSession();
     const auto & client_info = session->getClientInfo();
 
@@ -1668,6 +1672,16 @@ void TCPHandler::receiveHello()
         return;
     }
 #endif
+
+    if (is_jwt_based_auth)
+    {
+        if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_JWT_AUTHENTICATION)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot authenticate user with JWT key, because client version is too old");
+
+        auto cred = JWTCredentials(password);
+        session->authenticate(cred, getClientAddress(client_info));
+        return;
+    }
 
     session->authenticate(user, password, getClientAddress(client_info));
 }
