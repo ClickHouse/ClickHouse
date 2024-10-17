@@ -2074,10 +2074,7 @@ def test_alter_settings(started_cluster):
         table_name,
         "unordered",
         files_path,
-        additional_settings={
-            "keeper_path": keeper_path,
-            "processing_threads_num":10
-        },
+        additional_settings={"keeper_path": keeper_path, "processing_threads_num": 10},
         database_name="r",
     )
 
