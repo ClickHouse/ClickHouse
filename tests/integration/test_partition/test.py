@@ -75,11 +75,12 @@ def partition_complex_assert_columns_txt():
 
 def partition_complex_assert_checksums(after_detach=False):
     # Do not check increment.txt - it can be changed by other tests with FREEZE
+    # Do not check min_max_time_of_data_insert.txt - checksum will be always different, because it depends from the time of data insert.
     cmd = [
         "bash",
         "-c",
         f"cd {path_to_data} && find shadow -type f -exec"
-        + " md5sum {} \\; | grep partition_complex"
+        + " md5sum {} \\; | grep partition_complex | grep -v 'min_max_time_of_data_insert.txt'"
         " | sed 's shadow/[0-9]*/data/[a-z0-9_-]*/ shadow/1/data/test/ g' | sort | uniq",
     ]
 
