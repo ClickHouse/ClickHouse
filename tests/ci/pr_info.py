@@ -408,7 +408,7 @@ class PRInfo:
             path_in_docs = f.startswith("docs/")
             if (
                 ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs
-            ) or "docker/docs" in f:
+            ) or "docker/docs" in f or "Settings.cpp" in f or "FormatFactorySettingsDeclaration.h" in f:
                 return True
         return False
 
