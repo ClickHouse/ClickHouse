@@ -98,6 +98,11 @@ namespace Setting
     extern const SettingsSeconds receive_timeout;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsDouble cannot_allocate_thread_fault_injection_probability;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -755,7 +760,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::START_THREAD_FUZZER:
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::start();
-            CannotAllocateThreadFaultInjector::setFaultProbability(getContext()->getServerSettings().cannot_allocate_thread_fault_injection_probability);
+            CannotAllocateThreadFaultInjector::setFaultProbability(getContext()->getServerSettings()[ServerSetting::cannot_allocate_thread_fault_injection_probability]);
             break;
         case Type::UNFREEZE:
         {
