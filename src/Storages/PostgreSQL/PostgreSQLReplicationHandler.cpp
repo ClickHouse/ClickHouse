@@ -228,9 +228,6 @@ void PostgreSQLReplicationHandler::checkConnectionAndStart()
         if (!is_attach)
             throw;
 
-        if (stop_synchronization)
-            return;
-
         LOG_ERROR(log, "Unable to set up connection. Reconnection attempt will continue. Error message: {}", pqxx_error.what());
         startup_task->scheduleAfter(milliseconds_to_wait);
     }
