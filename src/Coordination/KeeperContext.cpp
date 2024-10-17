@@ -138,7 +138,8 @@ KeeperContext::Storage KeeperContext::getRocksDBPathFromConfig(const Poco::Util:
 
     if (standalone_keeper)
         return create_local_disk(std::filesystem::path{config.getString("path", KEEPER_DEFAULT_PATH)} / "rocksdb");
-    return create_local_disk(std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/rocksdb");
+    else
+        return create_local_disk(std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/rocksdb");
 }
 
 void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config, KeeperDispatcher * dispatcher_)
@@ -410,9 +411,7 @@ KeeperContext::Storage KeeperContext::getLogsPathFromConfig(const Poco::Util::Ab
         if (!fs::exists(path))
             fs::create_directories(path);
 
-        auto disk = std::make_shared<DiskLocal>("LocalLogDisk", path);
-        disk->startup(Context::getGlobalContextInstance(), false);
-        return disk;
+        return std::make_shared<DiskLocal>("LocalLogDisk", path);
     };
 
     /// the most specialized path
@@ -427,7 +426,8 @@ KeeperContext::Storage KeeperContext::getLogsPathFromConfig(const Poco::Util::Ab
 
     if (standalone_keeper)
         return create_local_disk(std::filesystem::path{config.getString("path", KEEPER_DEFAULT_PATH)} / "logs");
-    return create_local_disk(std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/logs");
+    else
+        return create_local_disk(std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/logs");
 }
 
 KeeperContext::Storage KeeperContext::getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const
@@ -437,9 +437,7 @@ KeeperContext::Storage KeeperContext::getSnapshotsPathFromConfig(const Poco::Uti
         if (!fs::exists(path))
             fs::create_directories(path);
 
-        auto disk = std::make_shared<DiskLocal>("LocalSnapshotDisk", path);
-        disk->startup(Context::getGlobalContextInstance(), false);
-        return disk;
+        return std::make_shared<DiskLocal>("LocalSnapshotDisk", path);
     };
 
     /// the most specialized path
@@ -454,7 +452,8 @@ KeeperContext::Storage KeeperContext::getSnapshotsPathFromConfig(const Poco::Uti
 
     if (standalone_keeper)
         return create_local_disk(std::filesystem::path{config.getString("path", KEEPER_DEFAULT_PATH)} / "snapshots");
-    return create_local_disk(std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/snapshots");
+    else
+        return create_local_disk(std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/snapshots");
 }
 
 KeeperContext::Storage KeeperContext::getStatePathFromConfig(const Poco::Util::AbstractConfiguration & config) const
@@ -464,9 +463,7 @@ KeeperContext::Storage KeeperContext::getStatePathFromConfig(const Poco::Util::A
         if (!fs::exists(path))
             fs::create_directories(path);
 
-        auto disk = std::make_shared<DiskLocal>("LocalStateFileDisk", path);
-        disk->startup(Context::getGlobalContextInstance(), false);
-        return disk;
+        return std::make_shared<DiskLocal>("LocalStateFileDisk", path);
     };
 
     if (config.has("keeper_server.state_storage_disk"))
@@ -483,7 +480,8 @@ KeeperContext::Storage KeeperContext::getStatePathFromConfig(const Poco::Util::A
 
     if (standalone_keeper)
         return create_local_disk(std::filesystem::path{config.getString("path", KEEPER_DEFAULT_PATH)});
-    return create_local_disk(std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination");
+    else
+        return create_local_disk(std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination");
 }
 
 void KeeperContext::initializeFeatureFlags(const Poco::Util::AbstractConfiguration & config)

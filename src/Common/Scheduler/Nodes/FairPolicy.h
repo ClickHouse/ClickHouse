@@ -52,7 +52,7 @@ public:
     {
         if (!ISchedulerNode::equals(other))
             return false;
-        if (auto * _ = dynamic_cast<FairPolicy *>(other))
+        if (auto * o = dynamic_cast<FairPolicy *>(other))
             return true;
         return false;
     }
@@ -128,7 +128,8 @@ public:
     {
         if (auto iter = children.find(child_name); iter != children.end())
             return iter->second.get();
-        return nullptr;
+        else
+            return nullptr;
     }
 
     std::pair<ResourceRequest *, bool> dequeueRequest() override

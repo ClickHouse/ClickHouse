@@ -26,7 +26,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 
 #if USE_SSL
 #    include <Server/CertificateReloader.h>
@@ -444,7 +444,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     /// At least 16 threads for network communication in asio.
     /// asio is async framework, so even with 1 thread it should be ok, but
     /// still as safeguard it's better to have some redundant capacity here
-    asio_opts.thread_pool_size_ = std::max(16U, getNumberOfCPUCoresToUse());
+    asio_opts.thread_pool_size_ = std::max(16U, getNumberOfPhysicalCPUCores());
 
     if (state_manager->isSecure())
     {
@@ -506,7 +506,6 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
 
     nuraft::raft_server::limits raft_limits;
     raft_limits.reconnect_limit_ = getValueOrMaxInt32AndLogWarning(coordination_settings->raft_limits_reconnect_limit, "raft_limits_reconnect_limit", log);
-    raft_limits.response_limit_ = getValueOrMaxInt32AndLogWarning(coordination_settings->raft_limits_response_limit, "response_limit", log);
     raft_instance->set_raft_limits(raft_limits);
 
     raft_instance->start_server(init_options.skip_initial_election_timeout_);
@@ -598,6 +597,20 @@ void KeeperServer::shutdown()
 namespace
 {
 
+// Serialize the request for the log entry
+nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(const KeeperStorageBase::RequestForSession & request_for_session)
+{
+    DB::WriteBufferFromNuraftBuffer write_buf;
+    DB::writeIntBinary(request_for_session.session_id, write_buf);
+    request_for_session.request->write(write_buf);
+    DB::writeIntBinary(request_for_session.time, write_buf);
+    /// we fill with dummy values to eliminate unnecessary copy later on when we will write correct values
+    DB::writeIntBinary(static_cast<int64_t>(0), write_buf); /// zxid
+    DB::writeIntBinary(KeeperStorageBase::DigestVersion::NO_DIGEST, write_buf); /// digest version or NO_DIGEST flag
+    DB::writeIntBinary(static_cast<uint64_t>(0), write_buf); /// digest value
+    /// if new fields are added, update KeeperStateMachine::ZooKeeperLogSerializationVersion along with parseRequest function and PreAppendLog callback handler
+    return write_buf.getBuffer();
+}
 
 }
 
@@ -614,7 +627,7 @@ RaftAppendResult KeeperServer::putRequestBatch(const KeeperStorageBase::Requests
     std::vector<nuraft::ptr<nuraft::buffer>> entries;
     entries.reserve(requests_for_sessions.size());
     for (const auto & request_for_session : requests_for_sessions)
-        entries.push_back(IKeeperStateMachine::getZooKeeperLogEntry(request_for_session));
+        entries.push_back(getZooKeeperLogEntry(request_for_session));
 
     std::lock_guard lock{server_write_mutex};
     if (is_recovering)
@@ -868,9 +881,6 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_ZXID_DIGEST)
                     bytes_missing += sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version) + sizeof(request_for_session->digest->value);
 
-                if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_XID_64)
-                    bytes_missing += sizeof(uint32_t);
-
                 if (bytes_missing != 0)
                 {
                     auto new_buffer = nuraft::buffer::alloc(entry_buf->size() + bytes_missing);
@@ -879,8 +889,8 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                     entry = nuraft::cs_new<nuraft::log_entry>(entry->get_term(), entry_buf, entry->get_val_type());
                 }
 
-                size_t write_buffer_header_size = sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version)
-                    + sizeof(request_for_session->digest->value) + sizeof(uint32_t);
+                size_t write_buffer_header_size
+                    = sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version) + sizeof(request_for_session->digest->value);
 
                 if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
                     write_buffer_header_size += sizeof(request_for_session->time);
@@ -1019,7 +1029,7 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
         resp->get();
         return resp->get_accepted() ? Accepted : Declined;
     }
-    if (const auto * remove = std::get_if<RemoveRaftServer>(&action))
+    else if (const auto * remove = std::get_if<RemoveRaftServer>(&action))
     {
         // This corner case is the most problematic. Issue follows: if we agree on a number
         // of commands but don't commit them on leader, and then issue a leadership change via
@@ -1049,16 +1059,16 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
         resp->get();
         return resp->get_accepted() ? Accepted : Declined;
     }
-    if (const auto * update = std::get_if<UpdateRaftServerPriority>(&action))
+    else if (const auto * update = std::get_if<UpdateRaftServerPriority>(&action))
     {
-        auto ptr = raft_instance->get_srv_config(update->id);
-
-        if (ptr == nullptr)
-            throw Exception(ErrorCodes::RAFT_ERROR, "Attempt to apply {} but server is not present in Raft", action);
-        if (ptr->get_priority() == update->priority)
+        if (auto ptr = raft_instance->get_srv_config(update->id); ptr == nullptr)
+            throw Exception(ErrorCodes::RAFT_ERROR,
+                "Attempt to apply {} but server is not present in Raft",
+                action);
+        else if (ptr->get_priority() == update->priority)
             return Accepted;
 
-        raft_instance->set_priority(update->id, update->priority, /*broadcast on live leader*/ true);
+        raft_instance->set_priority(update->id, update->priority, /*broadcast on live leader*/true);
         return Accepted;
     }
     std::unreachable();
@@ -1080,7 +1090,7 @@ ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::Ab
 
 void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateAction& action)
 {
-    std::unique_lock server_write_lock{server_write_mutex};
+    std::lock_guard _{server_write_mutex};
     if (is_recovering) return;
     constexpr auto sleep_time = 500ms;
 
@@ -1091,9 +1101,7 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
     auto backoff_on_refusal = [&](size_t i)
     {
         LOG_INFO(log, "Update was not accepted (try {}), backing off for {}", i + 1, sleep_time * (i + 1));
-        server_write_lock.unlock();
         std::this_thread::sleep_for(sleep_time * (i + 1));
-        server_write_lock.lock();
     };
 
     const auto & coordination_settings = keeper_context->getCoordinationSettings();

@@ -226,10 +226,15 @@ String Cluster::Address::toFullString(bool use_compact_format) const
 
         return fmt::format("shard{}_replica{}", shard_index, replica_index);
     }
-
-    return escapeForFileName(user) + (password.empty() ? "" : (':' + escapeForFileName(password))) + '@' + escapeForFileName(host_name)
-        + ':' + std::to_string(port) + (default_database.empty() ? "" : ('#' + escapeForFileName(default_database)))
-        + ((secure == Protocol::Secure::Enable) ? "+secure" : "");
+    else
+    {
+        return
+            escapeForFileName(user)
+            + (password.empty() ? "" : (':' + escapeForFileName(password))) + '@'
+            + escapeForFileName(host_name) + ':' + std::to_string(port)
+            + (default_database.empty() ? "" : ('#' + escapeForFileName(default_database)))
+            + ((secure == Protocol::Secure::Enable) ? "+secure" : "");
+    }
 }
 
 Cluster::Address Cluster::Address::fromFullString(std::string_view full_string)
@@ -266,45 +271,47 @@ Cluster::Address Cluster::Address::fromFullString(std::string_view full_string)
 
         return address;
     }
-
-    /// parsing with the old user[:password]@host:port#default_database format
-    /// This format is appeared to be inconvenient for the following reasons:
-    /// - credentials are exposed in file name;
-    /// - the file name can be too long.
-
-    const char * address_begin = full_string.data();
-    const char * address_end = address_begin + full_string.size();
-    const char * user_pw_end = strchr(address_begin, '@');
-
-    Protocol::Secure secure = Protocol::Secure::Disable;
-    const char * secure_tag = "+secure";
-    if (full_string.ends_with(secure_tag))
+    else
     {
-        address_end -= strlen(secure_tag);
-        secure = Protocol::Secure::Enable;
+        /// parsing with the old user[:password]@host:port#default_database format
+        /// This format is appeared to be inconvenient for the following reasons:
+        /// - credentials are exposed in file name;
+        /// - the file name can be too long.
+
+        const char * address_begin = full_string.data();
+        const char * address_end = address_begin + full_string.size();
+        const char * user_pw_end = strchr(address_begin, '@');
+
+        Protocol::Secure secure = Protocol::Secure::Disable;
+        const char * secure_tag = "+secure";
+        if (full_string.ends_with(secure_tag))
+        {
+            address_end -= strlen(secure_tag);
+            secure = Protocol::Secure::Enable;
+        }
+
+        const char * colon = strchr(full_string.data(), ':');
+        if (!user_pw_end || !colon)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect user[:password]@host:port#default_database format {}", full_string);
+
+        const bool has_pw = colon < user_pw_end;
+        const char * host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
+        if (!host_end)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect address '{}', it does not contain port", full_string);
+
+        const char * has_db = strchr(full_string.data(), '#');
+        const char * port_end = has_db ? has_db : address_end;
+
+        Address address;
+        address.secure = secure;
+        address.port = parse<UInt16>(host_end + 1, port_end - (host_end + 1));
+        address.host_name = unescapeForFileName(std::string(user_pw_end + 1, host_end));
+        address.user = unescapeForFileName(std::string(address_begin, has_pw ? colon : user_pw_end));
+        address.password = has_pw ? unescapeForFileName(std::string(colon + 1, user_pw_end)) : std::string();
+        address.default_database = has_db ? unescapeForFileName(std::string(has_db + 1, address_end)) : std::string();
+        // address.priority ignored
+        return address;
     }
-
-    const char * colon = strchr(full_string.data(), ':');
-    if (!user_pw_end || !colon)
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect user[:password]@host:port#default_database format {}", full_string);
-
-    const bool has_pw = colon < user_pw_end;
-    const char * host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
-    if (!host_end)
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect address '{}', it does not contain port", full_string);
-
-    const char * has_db = strchr(full_string.data(), '#');
-    const char * port_end = has_db ? has_db : address_end;
-
-    Address address;
-    address.secure = secure;
-    address.port = parse<UInt16>(host_end + 1, port_end - (host_end + 1));
-    address.host_name = unescapeForFileName(std::string(user_pw_end + 1, host_end));
-    address.user = unescapeForFileName(std::string(address_begin, has_pw ? colon : user_pw_end));
-    address.password = has_pw ? unescapeForFileName(std::string(colon + 1, user_pw_end)) : std::string();
-    address.default_database = has_db ? unescapeForFileName(std::string(has_db + 1, address_end)) : std::string();
-    // address.priority ignored
-    return address;
 }
 
 
@@ -659,7 +666,8 @@ Poco::Timespan Cluster::saturate(Poco::Timespan v, Poco::Timespan limit)
 {
     if (limit.totalMicroseconds() == 0)
         return v;
-    return (v > limit) ? limit : v;
+    else
+        return (v > limit) ? limit : v;
 }
 
 
@@ -902,8 +910,10 @@ const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool pr
         }
         return path;
     }
-
-    return paths.compact;
+    else
+    {
+        return paths.compact;
+    }
 }
 
 bool Cluster::maybeCrossReplication() const

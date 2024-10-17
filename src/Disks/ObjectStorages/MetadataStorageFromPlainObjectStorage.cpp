@@ -3,7 +3,6 @@
 #include <Disks/ObjectStorages/InMemoryPathMap.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
 #include <Disks/ObjectStorages/StaticDirectoryIterator.h>
-#include <Disks/ObjectStorages/StoredObject.h>
 
 #include <Common/filesystemHelpers.h>
 
@@ -11,14 +10,8 @@
 #include <tuple>
 #include <unordered_set>
 
-
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int FILE_DOESNT_EXIST;
-}
 
 namespace
 {
@@ -30,12 +23,10 @@ std::filesystem::path normalizeDirectoryPath(const std::filesystem::path & path)
 
 }
 
-MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t file_sizes_cache_size)
+MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_)
     : object_storage(object_storage_)
     , storage_path_prefix(std::move(storage_path_prefix_))
 {
-    if (file_sizes_cache_size)
-        file_sizes_cache.emplace(file_sizes_cache_size);
 }
 
 MetadataTransactionPtr MetadataStorageFromPlainObjectStorage::createTransaction()
@@ -48,61 +39,35 @@ const std::string & MetadataStorageFromPlainObjectStorage::getPath() const
     return storage_path_prefix;
 }
 
-bool MetadataStorageFromPlainObjectStorage::existsFile(const std::string & path) const
-{
-    ObjectStorageKey object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
-    StoredObject object(object_key.serialize(), path);
-    if (!object_storage->exists(object))
-        return false;
-
-    /// The path does not correspond to a directory.
-    auto directory = std::filesystem::path(object_key.serialize()) / "";
-    return !object_storage->existsOrHasAnyChild(directory);
-}
-
-bool MetadataStorageFromPlainObjectStorage::existsDirectory(const std::string & path) const
-{
-    auto key_prefix = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */).serialize();
-    auto directory = std::filesystem::path(std::move(key_prefix)) / "";
-    return object_storage->existsOrHasAnyChild(directory);
-}
-
-bool MetadataStorageFromPlainObjectStorage::existsFileOrDirectory(const std::string & path) const
+bool MetadataStorageFromPlainObjectStorage::exists(const std::string & path) const
 {
     /// NOTE: exists() cannot be used here since it works only for existing
     /// key, and does not work for some intermediate path.
-    auto key_prefix = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */).serialize();
-    return object_storage->existsOrHasAnyChild(key_prefix);
+    auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
+    return object_storage->existsOrHasAnyChild(object_key.serialize());
 }
 
+bool MetadataStorageFromPlainObjectStorage::isFile(const std::string & path) const
+{
+    /// NOTE: This check is inaccurate and has excessive API calls
+    return exists(path) && !isDirectory(path);
+}
+
+bool MetadataStorageFromPlainObjectStorage::isDirectory(const std::string & path) const
+{
+    auto key_prefix = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */).serialize();
+    auto directory = std::filesystem::path(std::move(key_prefix)) / "";
+
+    return object_storage->existsOrHasAnyChild(directory);
+}
 
 uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path) const
 {
-    if (auto res = getFileSizeIfExists(path))
-        return *res;
-    throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist on plain object storage", path);
-}
-
-std::optional<uint64_t> MetadataStorageFromPlainObjectStorage::getFileSizeIfExists(const String & path) const
-{
-    auto get = [&] -> std::shared_ptr<uint64_t>
-    {
-        auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
-        auto metadata = object_storage->tryGetObjectMetadata(object_key.serialize());
-        if (metadata)
-            return std::make_shared<uint64_t>(metadata->size_bytes);
-        return nullptr;
-    };
-
-    std::shared_ptr<uint64_t> res;
-    if (file_sizes_cache)
-        res = file_sizes_cache->getOrSet(path, get).first;
-    else
-        res = get();
-
-    if (res)
-        return *res;
-    return std::nullopt;
+    auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
+    auto metadata = object_storage->tryGetObjectMetadata(object_key.serialize());
+    if (metadata)
+        return metadata->size_bytes;
+    return 0;
 }
 
 std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(const std::string & path) const
@@ -110,18 +75,18 @@ std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(co
     auto key_prefix = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */).serialize();
 
     RelativePathsWithMetadata files;
-    std::string absolute_key = key_prefix;
-    if (!absolute_key.ends_with('/'))
-        absolute_key += '/';
+    std::string abs_key = key_prefix;
+    if (!abs_key.ends_with('/'))
+        abs_key += '/';
 
-    object_storage->listObjects(absolute_key, files, 0);
+    object_storage->listObjects(abs_key, files, 0);
 
     std::unordered_set<std::string> result;
     for (const auto & elem : files)
     {
         const auto & p = elem->relative_path;
-        chassert(p.find(absolute_key) == 0);
-        const auto child_pos = absolute_key.size();
+        chassert(p.find(abs_key) == 0);
+        const auto child_pos = abs_key.size();
         /// string::npos is ok.
         const auto slash_pos = p.find('/', child_pos);
         if (slash_pos == std::string::npos)
@@ -147,16 +112,6 @@ StoredObjects MetadataStorageFromPlainObjectStorage::getStorageObjects(const std
     size_t object_size = getFileSize(path);
     auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     return {StoredObject(object_key.serialize(), path, object_size)};
-}
-
-std::optional<StoredObjects> MetadataStorageFromPlainObjectStorage::getStorageObjectsIfExist(const std::string & path) const
-{
-    if (auto object_size = getFileSizeIfExists(path))
-    {
-        auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
-        return StoredObjects{StoredObject(object_key.serialize(), path, *object_size)};
-    }
-    return std::nullopt;
 }
 
 const IMetadataStorage & MetadataStorageFromPlainObjectStorageTransaction::getStorageForNonTransactionalReads() const

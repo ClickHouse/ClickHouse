@@ -68,7 +68,8 @@ public:
         DataTypePtr string_type = std::make_shared<DataTypeString>();
         if (error_handling == ErrorHandling::Null)
             return std::make_shared<DataTypeNullable>(string_type);
-        return string_type;
+        else
+            return string_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -86,9 +87,11 @@ public:
 
             if (error_handling == ErrorHandling::Null)
                 return ColumnNullable::create(std::move(col_res), std::move(col_null_map));
-            return col_res;
+            else
+                return col_res;
         }
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", col_query->getName(), getName());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", col_query->getName(), getName());
     }
 
 private:
@@ -137,8 +140,10 @@ private:
 
                     continue;
                 }
-
-                throw;
+                else
+                {
+                    throw;
+                }
             }
 
             IAST::FormatSettings settings(buf, output_formatting == OutputFormatting::SingleLine, /*hilite*/ false);

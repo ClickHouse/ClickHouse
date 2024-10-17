@@ -26,7 +26,6 @@
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Common.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
@@ -388,19 +387,15 @@ DataLakeMetadataPtr IcebergMetadata::create(
     ContextPtr local_context)
 {
     const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration);
-
-    auto log = getLogger("IcebergMetadata");
-    LOG_DEBUG(log, "Parse metadata {}", metadata_file_path);
-
-    StorageObjectStorageSource::ObjectInfo object_info(metadata_file_path);
-    auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
-
+    LOG_DEBUG(getLogger("IcebergMetadata"), "Parse metadata {}", metadata_file_path);
+    auto read_settings = local_context->getReadSettings();
+    auto buf = object_storage->readObject(StoredObject(metadata_file_path), read_settings);
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
 
     Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
     Poco::Dynamic::Var json = parser.parse(json_str);
-    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+    Poco::JSON::Object::Ptr object = json.extract<Poco::JSON::Object::Ptr>();
 
     auto format_version = object->getValue<int>("format-version");
     auto [schema, schema_id]
@@ -461,8 +456,8 @@ Strings IcebergMetadata::getDataFiles() const
     LOG_TEST(log, "Collect manifest files from manifest list {}", manifest_list_file);
 
     auto context = getContext();
-    StorageObjectStorageSource::ObjectInfo object_info(manifest_list_file);
-    auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
+    auto read_settings = context->getReadSettings();
+    auto manifest_list_buf = object_storage->readObject(StoredObject(manifest_list_file), read_settings);
     auto manifest_list_file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf));
 
     auto data_type = AvroSchemaReader::avroNodeToDataType(manifest_list_file_reader->dataSchema().root()->leafAt(0));
@@ -492,8 +487,7 @@ Strings IcebergMetadata::getDataFiles() const
     {
         LOG_TEST(log, "Process manifest file {}", manifest_file);
 
-        StorageObjectStorageSource::ObjectInfo manifest_object_info(manifest_file);
-        auto buffer = StorageObjectStorageSource::createReadBuffer(manifest_object_info, object_storage, context, log);
+        auto buffer = object_storage->readObject(StoredObject(manifest_file), read_settings);
         auto manifest_file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));
 
         /// Manifest file should always have table schema in avro file metadata. By now we don't support tables with evolved schema,

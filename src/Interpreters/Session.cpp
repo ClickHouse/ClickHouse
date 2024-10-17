@@ -129,15 +129,17 @@ public:
 
             return {session, true};
         }
+        else
+        {
+            /// Use existing session.
+            const auto & session = it->second;
 
-        /// Use existing session.
-        const auto & session = it->second;
+            LOG_TRACE(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
 
-        LOG_TRACE(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
-
-        if (!isSharedPtrUnique(session))
-            throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session {} is locked by a concurrent client", session_id);
-        return {session, false};
+            if (!isSharedPtrUnique(session))
+                throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session {} is locked by a concurrent client", session_id);
+            return {session, false};
+        }
     }
 
     void releaseSession(NamedSessionData & session)
