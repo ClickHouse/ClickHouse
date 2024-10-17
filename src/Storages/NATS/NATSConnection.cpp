@@ -12,8 +12,6 @@ namespace DB
 /// disconnectedCallback may be called after connection destroy
 LoggerPtr NATSConnection::callback_logger = getLogger("NATSConnection callback");
 
-constexpr int infinite_reconnect_count = -1;
-
 NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerPtr log_, NATSOptionsPtr options_)
     : configuration(configuration_)
     , log(std::move(log_))
@@ -53,6 +51,8 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
         }
         natsOptions_SetServers(options.get(), servers, static_cast<int>(configuration.servers.size()));
     }
+
+    static constexpr int infinite_reconnect_count = -1;
     natsOptions_SetMaxReconnect(options.get(), infinite_reconnect_count);
     natsOptions_SetReconnectWait(options.get(), configuration.reconnect_wait);
     natsOptions_SetDisconnectedCB(options.get(), disconnectedCallback, this);
