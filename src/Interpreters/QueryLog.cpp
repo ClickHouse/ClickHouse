@@ -97,6 +97,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
 
         {"is_initial_query", std::make_shared<DataTypeUInt8>(), "Query type. Possible values: 1 — query was initiated by the client, 0 — query was initiated by another query as part of distributed query execution."},
         {"user", low_cardinality_string, "Name of the user who initiated the current query."},
+        {"auth_user", low_cardinality_string, "Name of the user who was authenticated in the session."},
         {"query_id", std::make_shared<DataTypeString>(), "ID of the query."},
         {"address", DataTypeFactory::instance().get("IPv6"), "IP address that was used to make the query."},
         {"port", std::make_shared<DataTypeUInt16>(), "The client port that was used to make the query."},
@@ -337,6 +338,7 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY);
 
     columns[i++]->insertData(client_info.current_user);
+    columns[i++]->insertData(client_info.auth_user);
     columns[i++]->insertData(client_info.current_query_id);
     columns[i++]->insertData(IPv6ToBinary(client_info.current_address->host()).data(), 16);
     typeid_cast<ColumnUInt16 &>(*columns[i++]).getData().push_back(client_info.current_address->port());
