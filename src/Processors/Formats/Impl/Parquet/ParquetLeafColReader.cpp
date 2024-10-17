@@ -408,46 +408,13 @@ void ParquetLeafColReader<TColumn>::readPage()
 }
 
 template <typename TColumn>
-void ParquetLeafColReader<TColumn>::readPageV1(const parquet::DataPageV1 & page)
+void ParquetLeafColReader<TColumn>::initDataReader(
+    parquet::Encoding::type enconding_type,
+    const uint8_t * buffer,
+    std::size_t max_size,
+    std::unique_ptr<RleValuesReader> && def_level_reader)
 {
-    static parquet::LevelDecoder repetition_level_decoder;
-
-    cur_page_values = page.num_values();
-
-    // refer to: VectorizedColumnReader::readPageV1 in Spark and LevelDecoder::SetData in column_reader.cc
-    if (page.definition_level_encoding() != parquet::Encoding::RLE && col_descriptor.max_definition_level() != 0)
-    {
-        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Unsupported encoding: {}", page.definition_level_encoding());
-    }
-    const auto * buffer =  page.data();
-    auto max_size = page.size();
-
-    if (col_descriptor.max_repetition_level() > 0)
-    {
-        auto rep_levels_bytes = repetition_level_decoder.SetData(
-            page.repetition_level_encoding(), col_descriptor.max_repetition_level(), 0, buffer, max_size);
-        buffer += rep_levels_bytes;
-        max_size -= rep_levels_bytes;
-    }
-
-    assert(col_descriptor.max_definition_level() >= 0);
-    std::unique_ptr<RleValuesReader> def_level_reader;
-    if (col_descriptor.max_definition_level() > 0)
-    {
-        auto bit_width = arrow::bit_util::Log2(col_descriptor.max_definition_level() + 1);
-        auto num_bytes = ::arrow::util::SafeLoadAs<int32_t>(buffer);
-        auto bit_reader = std::make_unique<arrow::bit_util::BitReader>(buffer + 4, num_bytes);
-        num_bytes += 4;
-        buffer += num_bytes;
-        max_size -= num_bytes;
-        def_level_reader = std::make_unique<RleValuesReader>(std::move(bit_reader), bit_width);
-    }
-    else
-    {
-        def_level_reader = std::make_unique<RleValuesReader>(page.num_values());
-    }
-
-    switch (page.encoding())
+    switch (enconding_type)
     {
         case parquet::Encoding::PLAIN:
         {
@@ -488,17 +455,104 @@ void ParquetLeafColReader<TColumn>::readPageV1(const parquet::DataPageV1 & page)
         case parquet::Encoding::DELTA_BINARY_PACKED:
         case parquet::Encoding::DELTA_LENGTH_BYTE_ARRAY:
         case parquet::Encoding::DELTA_BYTE_ARRAY:
-            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Unsupported encoding: {}", page.encoding());
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Unsupported encoding: {}", enconding_type);
 
         default:
-          throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Unknown encoding type: {}", page.encoding());
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Unknown encoding type: {}", enconding_type);
     }
 }
 
 template <typename TColumn>
-void ParquetLeafColReader<TColumn>::readPageV2(const parquet::DataPageV2 & /*page*/)
+void ParquetLeafColReader<TColumn>::readPageV1(const parquet::DataPageV1 & page)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "read page V2 is not implemented yet");
+    static parquet::LevelDecoder repetition_level_decoder;
+
+    cur_page_values = page.num_values();
+
+    // refer to: VectorizedColumnReader::readPageV1 in Spark and LevelDecoder::SetData in column_reader.cc
+    if (page.definition_level_encoding() != parquet::Encoding::RLE && col_descriptor.max_definition_level() != 0)
+    {
+        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Unsupported encoding: {}", page.definition_level_encoding());
+    }
+    const auto * buffer =  page.data();
+    auto max_size = page.size();
+
+    if (col_descriptor.max_repetition_level() > 0)
+    {
+        auto rep_levels_bytes = repetition_level_decoder.SetData(
+            page.repetition_level_encoding(), col_descriptor.max_repetition_level(), 0, buffer, max_size);
+        buffer += rep_levels_bytes;
+        max_size -= rep_levels_bytes;
+    }
+
+    assert(col_descriptor.max_definition_level() >= 0);
+    std::unique_ptr<RleValuesReader> def_level_reader;
+    if (col_descriptor.max_definition_level() > 0)
+    {
+        auto bit_width = arrow::bit_util::Log2(col_descriptor.max_definition_level() + 1);
+        auto num_bytes = ::arrow::util::SafeLoadAs<int32_t>(buffer);
+        auto bit_reader = std::make_unique<arrow::bit_util::BitReader>(buffer + 4, num_bytes);
+        num_bytes += 4;
+        buffer += num_bytes;
+        max_size -= num_bytes;
+        def_level_reader = std::make_unique<RleValuesReader>(std::move(bit_reader), bit_width);
+    }
+    else
+    {
+        def_level_reader = std::make_unique<RleValuesReader>(page.num_values());
+    }
+
+    initDataReader(page.encoding(), buffer, max_size, std::move(def_level_reader));
+}
+
+template <typename TColumn>
+void ParquetLeafColReader<TColumn>::readPageV2(const parquet::DataPageV2 & page)
+{
+    static parquet::LevelDecoder repetition_level_decoder;
+
+    cur_page_values = page.num_values();
+
+    const auto * buffer =  page.data();
+
+    const int64_t total_levels_length =
+        static_cast<int64_t>(page.repetition_levels_byte_length()) +
+        page.definition_levels_byte_length();
+
+    if (total_levels_length > page.size())
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Data page too small for levels (corrupt header?)");
+    }
+
+    if (col_descriptor.max_repetition_level() > 0)
+    {
+        repetition_level_decoder.SetDataV2(
+            page.repetition_levels_byte_length(),
+            col_descriptor.max_repetition_level(),
+            cur_page_values,
+            buffer);
+    }
+
+    // ARROW-17453: Even if max_rep_level_ is 0, there may still be
+    // repetition level bytes written and/or reported in the header by
+    // some writers (e.g. Athena)
+    buffer += page.repetition_levels_byte_length();
+
+    assert(col_descriptor.max_definition_level() >= 0);
+    std::unique_ptr<RleValuesReader> def_level_reader;
+    if (col_descriptor.max_definition_level() > 0)
+    {
+        auto bit_width = arrow::bit_util::Log2(col_descriptor.max_definition_level() + 1);
+        auto num_bytes = page.definition_levels_byte_length();
+        auto bit_reader = std::make_unique<arrow::bit_util::BitReader>(buffer, num_bytes);
+        def_level_reader = std::make_unique<RleValuesReader>(std::move(bit_reader), bit_width);
+    }
+    else
+    {
+        def_level_reader = std::make_unique<RleValuesReader>(page.num_values());
+    }
+
+    initDataReader(page.encoding(), &buffer[total_levels_length], page.size(), std::move(def_level_reader));
 }
 
 template <typename TColumn>
