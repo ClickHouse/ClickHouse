@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ClickHouse Merges Visualizer</title>
+    <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDkgOCI+PHN0eWxlPi5ve2ZpbGw6I2ZjMH0ucntmaWxsOnJlZH08L3N0eWxlPjxwYXRoIGQ9Ik0wLDcgaDEgdjEgaC0xIHoiIGNsYXNzPSJyIi8+PHBhdGggZD0iTTAsMCBoMSB2NyBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNMiwwIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik00LDAgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTYsMCBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNOCwzLjI1IGgxIHYxLjUgaC0xIHoiIGNsYXNzPSJvIi8+PC9zdmc+">
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        html, body {
+            height: 100%;
+            overflow: auto;
+            margin: 0;
+            background: #F8F8F8;
+            font-size: 16pt;
+        }
+        body {
+            font-family: Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
+            padding: 1rem;
+        }
+
+        input, textarea {
+            border: 3px solid #EEE;
+            font-size: 16pt;
+            padding: 0.25rem;
+        }
+
+        #url {
+            width: 80%;
+        }
+        #user, #password {
+            width: 10%;
+        }
+        #query {
+            width: 100%;
+            height: 3rem;
+        }
+
+        input[type="button"] {
+            background: #FED;
+            width: 2rem;
+            height: 2rem;
+        }
+        input[type="button"]:hover {
+            background: #F88;
+            cursor: pointer;
+        }
+
+        #time, #stats {
+            padding-left: 1rem;
+            font-family: monospace;
+        }
+
+        #canvas {
+            margin-top: 0.25rem;
+        }
+
+        .host {
+            float: left;
+            padding: 0.5rem;
+            border: 3px solid #EEE;
+            background: white;
+            overflow: hidden;
+            font-size: 10pt;
+        }
+
+        .host_title {
+            text-align: center;
+        }
+
+        .part {
+            display: inline-block;
+            padding: 0;
+            margin: 0.1rem;
+            border: 1px solid #EEE;
+            background: #FED;
+            overflow: hidden;
+        }
+
+        .part_title {
+            text-align: center;
+        }
+
+        .part:hover .part_title {
+            z-index: 100;
+            position: absolute;
+            background: yellow;
+        }
+    </style>
+</head>
+<body>
+<div class="inputs">
+    <form id="params">
+        <div id="connection-params">
+            <input spellcheck="false" id="url" type="text" value="https://kvzqttvc2n.eu-west-1.aws.clickhouse-staging.com/" placeholder="URL" /><input spellcheck="false" id="user" type="text" value="default" placeholder="user" /><input spellcheck="false" id="password" type="password" placeholder="password" value="RXzlBhNfVRzotn2qa4c1eIdBj79xkGClGKogqJwnkos8A8SlQ55EKRiu6KQNXIFI" />
+            <input id="hidden-submit" type="submit" hidden="true"/>
+        </div>
+        <textarea  spellcheck="false" data-gramm="false" id="query">SELECT * FROM system.part_log WHERE database = 'default' AND table = 'planes_mercator' ORDER BY event_time</textarea>
+        <input id="play" type="button" value="▶"></input><span id="time">0000-00-00 00:00:00</span><span id="stats"></span>
+    </form>
+</div>
+<div id="canvas">
+</div>
+<script>
+
+const add_http_cors_header = false;
+
+function formatValue(v) {
+    if (v >= 1000000000000) { return Math.round(v / 1000000000000) + 'T'; }
+    if (v >= 1000000000) { return Math.round(v / 1000000000) + 'G'; }
+    if (v >= 1000000) { return Math.round(v / 1000000) + 'M'; }
+    if (v >= 1000) { return Math.round(v / 1000) + 'K'; }
+    return v;
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+let canvas = document.getElementById('canvas');
+let time = document.getElementById('time');
+let stats = document.getElementById('stats');
+
+let inserted_rows = 0;
+let inserted_bytes = 0;
+let merged_rows = 0;
+let merged_bytes = 0;
+
+let prev_time = null;
+async function update(data) {
+    curr_time = new Date(data.event_time_microseconds + 'Z');
+    time_diff = prev_time ? curr_time - prev_time : 0;
+    prev_time = curr_time;
+
+    await sleep(time_diff / 100);
+
+    time.innerText = data.event_time;
+
+    const host_id = `host-${data.hostname}`;
+    let host = document.getElementById(host_id);
+    if (!host) {
+        host = document.createElement('div');
+        host.id = host_id;
+        host.className = 'host';
+        let host_title = document.createElement('div');
+        host_title.className = 'host_title';
+        host_title.innerText = `${data.hostname}`;
+        host.appendChild(host_title);
+        canvas.appendChild(host);
+    }
+
+    const part_id = `${host_id}-part-${data.part_name}`;
+
+    if (data.event_type == 'NewPart' || data.event_type == 'DownloadPart' || data.event_type == 'MergeParts' || data.event_type == 'MutatePart') {
+        if (data.event_type == 'NewPart' || data.event_type == 'DownloadPart') {
+            inserted_rows += +data.rows;
+            inserted_bytes += +data.size_in_bytes;
+        }
+
+        part = document.createElement('div');
+        part.id = part_id;
+        part.className = 'part';
+        part_title = document.createElement('div');
+        part_title.className = 'part_title';
+        part_title.innerText = `${data.part_name}, ${formatValue(data.size_in_bytes)}`;
+        part.appendChild(part_title);
+
+        const size = Math.sqrt(data.size_in_bytes);
+
+        part.style.width = Math.round(size / 500) + 'px';
+        part.style.height = Math.round(size / 1000) + 'px';
+        part.style.line_height = part.style.height;
+
+        host.appendChild(part);
+    } else if (data.event_type == 'RemovePart') {
+        const old_part = document.getElementById(part_id);
+        if (old_part) {
+            host.removeChild(old_part);
+        }
+    } else if (data.event_type == 'MergeParts' || data.event_type == 'MutatePart') {
+        merged_rows += +data.read_rows;
+        merged_bytes += +data.size_in_bytes;
+
+        for (const old_part_name of data.merged_from) {
+            const old_part = document.getElementById(`${host_id}-part-${old_part}`);
+            if (old_part) {
+                host.removeChild(old_part);
+            }
+        }
+    }
+
+    stats.innerText = `Inserted ${inserted_rows} rows, ${formatValue(inserted_bytes)}. Merged ${merged_rows} rows, ${formatValue(merged_bytes)}.`;
+}
+
+let loading = false;
+let stopping = false;
+
+async function load() {
+    canvas.innerHTML = '';
+    inserted_rows = 0;
+    inserted_bytes = 0;
+    merged_rows = 0;
+    merged_bytes = 0;
+
+    const host = document.getElementById('url').value;
+    const user = document.getElementById('user').value;
+    const password = document.getElementById('password').value;
+
+    let url = `${host}?default_format=JSONEachRow&enable_http_compression=1`
+
+    if (add_http_cors_header) {
+        // For debug purposes, you may set add_http_cors_header from the browser console
+        url += '&add_http_cors_header=1';
+    }
+
+    if (user) {
+        url += `&user=${encodeURIComponent(user)}`;
+    }
+    if (password) {
+        url += `&password=${encodeURIComponent(password)}`;
+    }
+
+    const query = document.getElementById('query').value;
+
+    let response, reply, error;
+    try {
+        loading = true;
+        document.getElementById('play').value = '⏹';
+
+        response = await fetch(url, { method: "POST", body: query });
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        let buffer = '';
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (stopping) {
+                stopped = true;
+                break;
+            }
+
+            buffer += decoder.decode(value, { stream: true });
+
+            let lines = buffer.split('\n');
+
+            for (line of lines.slice(0, -1)) {
+                if (stopping) {
+                    stopped = true;
+                    return;
+                }
+                const data = JSON.parse(line);
+                await update(data);
+            };
+
+            buffer = lines[lines.length - 1];
+        }
+    } catch (e) {
+        console.log(e);
+        error = e.toString();
+    }
+
+    loading = false;
+    stopping = false;
+    document.getElementById('play').value = '▶';
+}
+
+function stop() {
+    stopping = true;
+}
+
+document.getElementById('play').addEventListener('click', _ => {
+    if (loading) {
+        stop();
+    } else if (stopping) {
+    } else {
+        load();
+    }
+});
+</script>
+</body>
+</html>
