@@ -1,10 +1,16 @@
-#include <Storages/MergeTree/AllMergeSelector.h>
-
-#include <cmath>
-
+#include <Storages/MergeTree/MergeSelectors/AllMergeSelector.h>
+#include <Storages/MergeTree/MergeSelectors/MergeSelectorFactory.h>
 
 namespace DB
 {
+
+void registerAllMergeSelector(MergeSelectorFactory & factory)
+{
+    factory.registerPrivateSelector("All", [](const std::any &)
+    {
+        return std::make_shared<AllMergeSelector>();
+    });
+}
 
 AllMergeSelector::PartsRange AllMergeSelector::select(
     const PartsRanges & parts_ranges,

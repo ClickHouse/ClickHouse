@@ -99,6 +99,8 @@ struct FormatSettings
         Saturate
     };
 
+    bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = false;
+
     DateTimeOverflowBehavior date_time_overflow_behavior = DateTimeOverflowBehavior::Ignore;
 
     bool input_format_ipv4_default_on_conversion_error = false;
