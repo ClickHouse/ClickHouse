@@ -833,7 +833,7 @@ void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) con
         LOG_TRACE(log, "Will prefetch {} commit log entries [{} - {}]", prefetch_to - prefetch_from + 1, prefetch_from, prefetch_to);
 
         current_prefetch_info->file_infos = std::move(file_infos);
-        auto inserted = prefetch_queue.push(current_prefetch_info);
+        auto inserted = prefetch_queue.push(current_prefetch_info);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
         chassert(inserted);
     }
 }

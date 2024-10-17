@@ -767,6 +767,15 @@ bool isColumnNullableOrLowCardinalityNullable(const IColumn & column);
 template <typename Derived, typename Parent = IColumn>
 class IColumnHelper : public Parent
 {
+private:
+    using Self = IColumnHelper<Derived, Parent>;
+
+    friend Derived;
+    friend class COWHelper<Self, Derived>;
+
+    IColumnHelper() = default;
+    IColumnHelper(const IColumnHelper &) = default;
+
     /// Devirtualize insertFrom.
     MutableColumns scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const override;
 

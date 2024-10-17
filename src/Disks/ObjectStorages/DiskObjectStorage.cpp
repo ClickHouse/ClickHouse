@@ -623,7 +623,7 @@ void DiskObjectStorage::restoreMetadataIfNeeded(
     {
         metadata_helper->restore(config, config_prefix, context);
 
-        auto current_schema_version = metadata_helper->readSchemaVersion(object_storage.get(), object_key_prefix);
+        auto current_schema_version = DB::DiskObjectStorageRemoteMetadataRestoreHelper::readSchemaVersion(object_storage.get(), object_key_prefix);
         if (current_schema_version < DiskObjectStorageRemoteMetadataRestoreHelper::RESTORABLE_SCHEMA_VERSION)
             metadata_helper->migrateToRestorableSchema();
 

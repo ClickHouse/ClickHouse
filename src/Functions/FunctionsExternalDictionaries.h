@@ -1219,7 +1219,7 @@ public:
             return result_type->createColumn();
 
         auto dictionary = dictionary_helper->getDictionary(arguments[0].column);
-        const auto & hierarchical_attribute = dictionary_helper->getDictionaryHierarchicalAttribute(dictionary);
+        const auto & hierarchical_attribute = FunctionDictHelper::getDictionaryHierarchicalAttribute(dictionary);
 
         auto key_column = ColumnWithTypeAndName{arguments[1].column->convertToFullColumnIfConst(), arguments[1].type, arguments[1].name};
         auto key_column_casted = castColumnAccurate(key_column, removeNullable(hierarchical_attribute.type));
@@ -1371,7 +1371,7 @@ public:
         }
 
         auto dictionary = dictionary_helper->getDictionary(arguments[0].column);
-        const auto & hierarchical_attribute = dictionary_helper->getDictionaryHierarchicalAttribute(dictionary);
+        const auto & hierarchical_attribute = FunctionDictHelper::getDictionaryHierarchicalAttribute(dictionary);
 
         return std::make_shared<DataTypeArray>(removeNullable(hierarchical_attribute.type));
     }

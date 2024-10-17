@@ -81,7 +81,7 @@ struct Memory : boost::noncopyable, Allocator
 
     size_t size() const { return m_size; }
     const char & operator[](size_t i) const { return m_data[i]; }
-    char & operator[](size_t i) { return m_data[i]; }
+    char & operator[](size_t i) { return m_data[i]; }  /// NOLINT(clang-analyzer-core.uninitialized.UndefReturn)
     const char * data() const { return m_data; }
     char * data() { return m_data; }
 

@@ -252,7 +252,7 @@ void DynamicResourceManager::forEachNode(IResourceManager::VisitorFunc visitor)
     future.get();
 }
 
-void registerDynamicResourceManager(ResourceManagerFactory & factory)
+void registerDynamicResourceManager(ResourceManagerFactory & factory)  /// NOLINT(misc-internal-linkage)
 {
     factory.registerMethod<DynamicResourceManager>("dynamic");
 }

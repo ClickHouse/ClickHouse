@@ -562,6 +562,9 @@ void BaseDaemon::setupWatchdog()
     bool restart = getenvBool("CLICKHOUSE_WATCHDOG_RESTART");
     bool forward_signals = !getenvBool("CLICKHOUSE_WATCHDOG_NO_FORWARD");
 
+    /// We want to avoid SIGPIPE when working with sockets and pipes, and just handle return value/errno instead.
+    blockSignals({SIGPIPE});
+
     while (true)
     {
         /// This pipe is used to synchronize notifications to the service manager from the child process
@@ -630,8 +633,8 @@ void BaseDaemon::setupWatchdog()
             logger().setChannel(log);
         }
 
-        /// Cuncurrent writing logs to the same file from two threads is questionable on its own,
-        ///  but rotating them from two threads is disastrous.
+        /// Concurrent writing logs to the same file from two threads is questionable on its own,
+        /// but rotating them from two threads is disastrous.
         if (auto * channel = dynamic_cast<OwnSplitChannel *>(logger().getChannel()))
         {
             channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATION, "never");
