@@ -10,6 +10,8 @@ set (CLICKHOUSE_CLIENT_SOURCES
     ch-fuzz/generator/statement_generator.cpp
     ch-fuzz/generator/random_settings.cpp
     ch-fuzz/generator/query_oracle.cpp
+    ch-fuzz/third_party/hugeint.cpp
+    ch-fuzz/third_party/uhugeint.cpp
     ${GRAMMAR_SRC}
 )
 set_source_files_properties(${CLICKHOUSE_CLIENT_SOURCES} PROPERTIES COMPILE_FLAGS "-Wno-reserved-identifier -Wno-extra-semi-stmt -Wno-used-but-marked-unused -Wno-covered-switch-default")
