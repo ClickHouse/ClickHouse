@@ -1,12 +1,12 @@
 # pylint: disable=unused-argument
 # pylint: disable=redefined-outer-name
 
+import pytest
 import fnmatch
 
-import pytest
-
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.client import QueryRuntimeException
+
 
 MB = 1024 * 1024
 

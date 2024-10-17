@@ -1,5 +1,4 @@
 #include "HTTPDictionarySource.h"
-#include <Common/HTTPHeaderFilter.h>
 #include <Core/ServerSettings.h>
 #include <Formats/formatBlock.h>
 #include <IO/ConnectionTimeouts.h>

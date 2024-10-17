@@ -71,11 +71,6 @@ namespace CurrentMetrics
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_introspection_functions;
-    extern const SettingsLocalFSReadMethod storage_file_read_method;
-}
 
 namespace ErrorCodes
 {
@@ -88,8 +83,8 @@ void applySettingsOverridesForLocal(ContextMutablePtr context)
 {
     Settings settings = context->getSettingsCopy();
 
-    settings[Setting::allow_introspection_functions] = true;
-    settings[Setting::storage_file_read_method] = LocalFSReadMethod::mmap;
+    settings.allow_introspection_functions = true;
+    settings.storage_file_read_method = LocalFSReadMethod::mmap;
 
     context->setSettings(settings);
 }
@@ -296,13 +291,8 @@ void LocalServer::tryInitPath()
 
     global_context->setUserFilesPath(""); /// user's files are everywhere
 
-    std::string user_scripts_path = getClientConfiguration().getString("user_scripts_path", fs::path(path) / "user_scripts" / "");
+    std::string user_scripts_path = getClientConfiguration().getString("user_scripts_path", fs::path(path) / "user_scripts/");
     global_context->setUserScriptsPath(user_scripts_path);
-
-    /// Set path for filesystem caches
-    String filesystem_caches_path(getClientConfiguration().getString("filesystem_caches_path", fs::path(path) / "cache" / ""));
-    if (!filesystem_caches_path.empty())
-        global_context->setFilesystemCachesPath(filesystem_caches_path);
 
     /// top_level_domains_lists
     const std::string & top_level_domains_path = getClientConfiguration().getString("top_level_domains_path", fs::path(path) / "top_level_domains/");
@@ -377,7 +367,7 @@ std::string LocalServer::getInitialCreateTableQuery()
     else
         table_structure = "(" + table_structure + ")";
 
-    return fmt::format("CREATE TEMPORARY TABLE {} {} ENGINE = File({}, {});",
+    return fmt::format("CREATE TABLE {} {} ENGINE = File({}, {});",
                        table_name, table_structure, data_format, table_file);
 }
 
@@ -512,10 +502,10 @@ try
     /// Don't initialize DateLUT
     registerFunctions();
     registerAggregateFunctions();
-    registerTableFunctions(server_settings.use_legacy_mongodb_integration);
+    registerTableFunctions();
     registerDatabases();
-    registerStorages(server_settings.use_legacy_mongodb_integration);
-    registerDictionaries(server_settings.use_legacy_mongodb_integration);
+    registerStorages();
+    registerDictionaries();
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
 
@@ -523,9 +513,7 @@ try
 
     SCOPE_EXIT({ cleanup(); });
 
-    initTTYBuffer(toProgressOption(getClientConfiguration().getString("progress", "default")),
-        toProgressOption(config().getString("progress-table", "default")));
-    initKeystrokeInterceptor();
+    initTTYBuffer(toProgressOption(getClientConfiguration().getString("progress", "default")));
     ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
     /// try to load user defined executable functions, throw on error and die
@@ -725,7 +713,7 @@ void LocalServer::processConfig()
     if (index_uncompressed_cache_size > max_cache_size)
     {
         index_uncompressed_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered index uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(index_uncompressed_cache_size));
+        LOG_INFO(log, "Lowered index uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
     global_context->setIndexUncompressedCache(index_uncompressed_cache_policy, index_uncompressed_cache_size, index_uncompressed_cache_size_ratio);
 
@@ -735,7 +723,7 @@ void LocalServer::processConfig()
     if (index_mark_cache_size > max_cache_size)
     {
         index_mark_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered index mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(index_mark_cache_size));
+        LOG_INFO(log, "Lowered index mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
     global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
 
@@ -743,7 +731,7 @@ void LocalServer::processConfig()
     if (mmap_cache_size > max_cache_size)
     {
         mmap_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered mmap file cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mmap_cache_size));
+        LOG_INFO(log, "Lowered mmap file cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
     global_context->setMMappedFileCache(mmap_cache_size);
 
@@ -858,7 +846,6 @@ void LocalServer::addOptions(OptionsDescription & options_description)
 {
     options_description.main_description->add_options()
         ("table,N", po::value<std::string>(), "name of the initial table")
-        ("copy", "shortcut for format conversion, equivalent to: --query 'SELECT * FROM table'")
 
         /// If structure argument is omitted then initial query is not generated
         ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
@@ -931,12 +918,6 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         getClientConfiguration().setString("send_logs_level", options["send_logs_level"].as<std::string>());
     if (options.count("wait_for_suggestions_to_load"))
         getClientConfiguration().setBool("wait_for_suggestions_to_load", true);
-    if (options.count("copy"))
-    {
-        if (!queries.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--copy' and '--query' cannot be specified at the same time");
-        queries.emplace_back("SELECT * FROM table");
-    }
 }
 
 void LocalServer::readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &)

@@ -36,8 +36,8 @@ struct CreateFileSegmentSettings
 
     CreateFileSegmentSettings() = default;
 
-    explicit CreateFileSegmentSettings(FileSegmentKind kind_)
-        : kind(kind_), unbounded(kind == FileSegmentKind::Ephemeral) {}
+    explicit CreateFileSegmentSettings(FileSegmentKind kind_, bool unbounded_ = false)
+        : kind(kind_), unbounded(unbounded_) {}
 };
 
 class FileSegment : private boost::noncopyable
@@ -201,11 +201,7 @@ public:
 
     /// Try to reserve exactly `size` bytes (in addition to the getDownloadedSize() bytes already downloaded).
     /// Returns true if reservation was successful, false otherwise.
-    bool reserve(
-        size_t size_to_reserve,
-        size_t lock_wait_timeout_milliseconds,
-        std::string & failure_reason,
-        FileCacheReserveStat * reserve_stat = nullptr);
+    bool reserve(size_t size_to_reserve, size_t lock_wait_timeout_milliseconds, FileCacheReserveStat * reserve_stat = nullptr);
 
     /// Write data into reserved space.
     void write(char * from, size_t size, size_t offset_in_file);
@@ -283,7 +279,7 @@ private:
 };
 
 
-struct FileSegmentsHolder final : private boost::noncopyable
+struct FileSegmentsHolder : private boost::noncopyable
 {
     FileSegmentsHolder() = default;
 
@@ -295,7 +291,7 @@ struct FileSegmentsHolder final : private boost::noncopyable
 
     size_t size() const { return file_segments.size(); }
 
-    String toString(bool with_state = false) const;
+    String toString(bool with_state = false);
 
     void popFront() { completeAndPopFrontImpl(); }
 
@@ -312,9 +308,6 @@ struct FileSegmentsHolder final : private boost::noncopyable
 
     FileSegments::const_iterator begin() const { return file_segments.begin(); }
     FileSegments::const_iterator end() const { return file_segments.end(); }
-    FileSegmentPtr getSingleFileSegment() const;
-
-    void reset();
 
 private:
     FileSegments file_segments{};

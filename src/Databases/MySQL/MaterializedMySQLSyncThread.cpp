@@ -37,11 +37,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool enable_global_with_statement;
-    extern const SettingsBool insert_allow_materialized_columns;
-}
 
 namespace ErrorCodes
 {
@@ -95,11 +90,11 @@ static constexpr auto MYSQL_BACKGROUND_THREAD_NAME = "MySQLDBSync";
 static ContextMutablePtr createQueryContext(ContextPtr context)
 {
     Settings new_query_settings = context->getSettingsCopy();
-    new_query_settings[Setting::insert_allow_materialized_columns] = true;
+    new_query_settings.insert_allow_materialized_columns = true;
 
     /// To avoid call AST::format
     /// TODO: We need to implement the format function for MySQLAST
-    new_query_settings[Setting::enable_global_with_statement] = false;
+    new_query_settings.enable_global_with_statement = false;
 
     auto query_context = Context::createCopy(context);
     query_context->setSettings(new_query_settings);
@@ -387,9 +382,10 @@ void MaterializedMySQLSyncThread::assertMySQLAvailable()
             throw Exception(ErrorCodes::SYNC_MYSQL_USER_ACCESS_ERROR, "MySQL SYNC USER ACCESS ERR: "
                             "mysql sync user needs at least GLOBAL PRIVILEGES:'RELOAD, REPLICATION SLAVE, REPLICATION CLIENT' "
                             "and SELECT PRIVILEGE on Database {}", mysql_database_name);
-        if (e.errnum() == ER_BAD_DB_ERROR)
+        else if (e.errnum() == ER_BAD_DB_ERROR)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Unknown database '{}' on MySQL", mysql_database_name);
-        throw;
+        else
+            throw;
     }
 }
 

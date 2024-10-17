@@ -7,8 +7,9 @@
 #include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
-#include <Common/SharedLockGuard.h>
-#include <Common/SharedMutex.h>
+#include "Common/SharedLockGuard.h"
+#include "Common/SharedMutex.h"
+#include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
 #include "CommonPathPrefixKeyGenerator.h"
 
@@ -50,7 +51,7 @@ std::shared_ptr<InMemoryPathMap> loadPathPrefixMap(const std::string & metadata_
 
     LoggerPtr log = getLogger("MetadataStorageFromPlainObjectStorage");
 
-    auto settings = getReadSettings();
+    ReadSettings settings;
     settings.enable_filesystem_cache = false;
     settings.remote_fs_method = RemoteFSReadMethod::read;
     settings.remote_fs_buffer_size = 1024;  /// These files are small.
@@ -180,8 +181,8 @@ void getDirectChildrenOnDiskImpl(
 }
 
 MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewritableObjectStorage(
-    ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t file_sizes_cache_size)
-    : MetadataStorageFromPlainObjectStorage(object_storage_, storage_path_prefix_, file_sizes_cache_size)
+    ObjectStoragePtr object_storage_, String storage_path_prefix_)
+    : MetadataStorageFromPlainObjectStorage(object_storage_, storage_path_prefix_)
     , metadata_key_prefix(DB::getMetadataKeyPrefix(object_storage))
     , path_map(loadPathPrefixMap(metadata_key_prefix, object_storage))
 {
@@ -210,9 +211,9 @@ MetadataStorageFromPlainRewritableObjectStorage::~MetadataStorageFromPlainRewrit
     CurrentMetrics::sub(metric, path_map->map.size());
 }
 
-bool MetadataStorageFromPlainRewritableObjectStorage::existsFileOrDirectory(const std::string & path) const
+bool MetadataStorageFromPlainRewritableObjectStorage::exists(const std::string & path) const
 {
-    if (MetadataStorageFromPlainObjectStorage::existsFileOrDirectory(path))
+    if (MetadataStorageFromPlainObjectStorage::exists(path))
         return true;
 
     if (useSeparateLayoutForMetadata())
@@ -224,19 +225,15 @@ bool MetadataStorageFromPlainRewritableObjectStorage::existsFileOrDirectory(cons
     return false;
 }
 
-bool MetadataStorageFromPlainRewritableObjectStorage::existsFile(const std::string & path) const
-{
-    return MetadataStorageFromPlainObjectStorage::existsFile(path);
-}
-
-bool MetadataStorageFromPlainRewritableObjectStorage::existsDirectory(const std::string & path) const
+bool MetadataStorageFromPlainRewritableObjectStorage::isDirectory(const std::string & path) const
 {
     if (useSeparateLayoutForMetadata())
     {
         auto directory = std::filesystem::path(object_storage->generateObjectKeyForPath(path, getMetadataKeyPrefix()).serialize()) / "";
         return object_storage->existsOrHasAnyChild(directory);
     }
-    return MetadataStorageFromPlainObjectStorage::existsDirectory(path);
+    else
+        return MetadataStorageFromPlainObjectStorage::isDirectory(path);
 }
 
 std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDirectory(const std::string & path) const
@@ -244,12 +241,21 @@ std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDi
     auto key_prefix = object_storage->generateObjectKeyForPath(path, "" /* key_prefix */).serialize();
 
     RelativePathsWithMetadata files;
-    auto absolute_key = std::filesystem::path(object_storage->getCommonKeyPrefix()) / key_prefix / "";
+    auto abs_key = std::filesystem::path(object_storage->getCommonKeyPrefix()) / key_prefix / "";
 
-    object_storage->listObjects(absolute_key, files, 0);
+    object_storage->listObjects(abs_key, files, 0);
 
     std::unordered_set<std::string> directories;
-    getDirectChildrenOnDisk(absolute_key, files, std::filesystem::path(path) / "", directories);
+    getDirectChildrenOnDisk(abs_key, files, std::filesystem::path(path) / "", directories);
+    /// List empty directories that are identified by the `prefix.path` metadata files. This is required to, e.g., remove
+    /// metadata along with regular files.
+    if (useSeparateLayoutForMetadata())
+    {
+        auto metadata_key = std::filesystem::path(getMetadataKeyPrefix()) / key_prefix / "";
+        RelativePathsWithMetadata metadata_files;
+        object_storage->listObjects(metadata_key, metadata_files, 0);
+        getDirectChildrenOnDisk(metadata_key, metadata_files, std::filesystem::path(path) / "", directories);
+    }
 
     return std::vector<std::string>(std::make_move_iterator(directories.begin()), std::make_move_iterator(directories.end()));
 }

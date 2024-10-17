@@ -272,7 +272,7 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
         return;
     }
     /// If column has only NULLs, just serialize NULL discriminators.
-    if (col.hasOnlyNulls())
+    else if (col.hasOnlyNulls())
     {
         /// In compact mode write single NULL_DISCRIMINATOR.
         if (variant_state->discriminators_mode.value == DiscriminatorsSerializationMode::COMPACT)
@@ -859,7 +859,7 @@ bool SerializationVariant::tryDeserializeImpl(
             column_variant.getOffsets().push_back(prev_size);
             return true;
         }
-        if (variant_column.size() > prev_size)
+        else if (variant_column.size() > prev_size)
         {
             variant_column.popBack(1);
         }
