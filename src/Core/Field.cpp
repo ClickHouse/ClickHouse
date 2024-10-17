@@ -29,15 +29,6 @@ T DecimalField<T>::getScaleMultiplier() const
     return DecimalUtils::scaleMultiplier<T>(scale);
 }
 
-static void readBinaryArrayWithMaybeDifferentTypes(Array & x, ReadBuffer & buf)
-{
-    size_t size;
-    readBinary(size, buf);
-
-    for (size_t index = 0; index < size; ++index)
-        x.push_back(readFieldBinary(buf));
-}
-
 Field getBinaryValue(UInt8 type, ReadBuffer & buf)
 {
     switch (static_cast<Field::Types::Which>(type))
