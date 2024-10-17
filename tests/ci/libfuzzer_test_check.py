@@ -27,9 +27,10 @@ def zipdir(path, ziph):
     # ziph is zipfile handle
     for root, dirs, files in os.walk(path):
         for file in files:
-            ziph.write(os.path.join(root, file), 
-                       os.path.relpath(os.path.join(root, file), 
-                                       os.path.join(path, '..')))
+            ziph.write(
+                os.path.join(root, file), 
+                os.path.relpath(os.path.join(root, file), os.path.join(path, '..')),
+            )
 
 
 def get_additional_envs(check_name, run_by_hash_num, run_by_hash_total):
@@ -120,10 +121,14 @@ def download_corpus(corpus_path: str, fuzzer_name: str):
 
 
 def upload_corpus(result_path: str):
-    with zipfile.ZipFile(f"{result_path}/corpus.zip", "w", zipfile.ZIP_DEFLATED) as zipf:
+    with zipfile.ZipFile(
+        f"{result_path}/corpus.zip", "w", zipfile.ZIP_DEFLATED
+    ) as zipf:
         zipdir(f"{result_path}/corpus/", zipf)
     s3.upload_file(
-        bucket=S3_BUILDS_BUCKET, file_path=f"{result_path}/corpus.zip", s3_path="fuzzer/corpus.zip"
+        bucket=S3_BUILDS_BUCKET,
+        file_path=f"{result_path}/corpus.zip",
+        s3_path="fuzzer/corpus.zip",
     )
     # for file in os.listdir(f"{result_path}/corpus/"):
     #     s3.upload_build_directory_to_s3(
