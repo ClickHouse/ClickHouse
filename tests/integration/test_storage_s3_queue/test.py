@@ -2046,3 +2046,68 @@ def test_bad_settings(started_cluster):
         assert False
     except Exception as e:
         assert "Ordered mode in cloud without either" in str(e)
+
+
+def test_alter_settings(started_cluster):
+    node1 = started_cluster.instances["node1"]
+    node2 = started_cluster.instances["node2"]
+
+    table_name = f"test_alter_settings_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 1000
+
+    node1.query("DROP DATABASE IF EXISTS r")
+    node2.query("DROP DATABASE IF EXISTS r")
+
+    node1.query(
+        f"CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/{table_name}', 'shard1', 'node1')"
+    )
+    node2.query(
+        f"CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/{table_name}', 'shard1', 'node2')"
+    )
+
+    create_table(
+        started_cluster,
+        node1,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "processing_threads_num":10
+        },
+        database_name="r",
+    )
+
+    assert '"processing_threads_num":10' in node1.query(
+        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    )
+
+    total_values = generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+
+    create_mv(node1, f"r.{table_name}", dst_table_name)
+    create_mv(node2, f"r.{table_name}", dst_table_name)
+
+    def get_count():
+        return int(
+            node1.query(
+                f"SELECT count() FROM clusterAllReplicas(cluster, default.{dst_table_name})"
+            )
+        )
+
+    expected_rows = files_to_generate
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+    assert expected_rows == get_count()
+
+    node1.query(f"ALTER TABLE r.{table_name} MODIFY SETTING processing_threads_num=5")
+
+    assert '"processing_threads_num":5' in node1.query(
+        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    )
