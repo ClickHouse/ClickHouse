@@ -535,7 +535,7 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
     chassert(file_offset_of_buffer_end > completed_range.right);
     cache_file_reader.reset();
 
-    file_segments->popFront();
+    file_segments->completeAndPopFront(settings.filesystem_cache_allow_background_download);
     if (file_segments->empty() && !nextFileSegmentsBatch())
         return false;
 

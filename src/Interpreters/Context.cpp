@@ -239,6 +239,7 @@ namespace Setting
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsString workload;
     extern const SettingsString compatibility;
+    extern const SettingsBool filesystem_cache_enable_background_download_for_metadata_files;
 }
 
 namespace MergeTreeSetting
@@ -5687,6 +5688,7 @@ ReadSettings Context::getReadSettings() const
     res.filesystem_cache_segments_batch_size = settings_ref[Setting::filesystem_cache_segments_batch_size];
     res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds
         = settings_ref[Setting::filesystem_cache_reserve_space_wait_lock_timeout_milliseconds];
+    res.filesystem_cache_allow_background_download = settings_ref[Setting::filesystem_cache_enable_background_download_for_metadata_files];
 
     res.filesystem_cache_max_download_size = settings_ref[Setting::filesystem_cache_max_download_size];
     res.skip_download_if_exceeds_query_cache = settings_ref[Setting::skip_download_if_exceeds_query_cache];
