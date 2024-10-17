@@ -6,6 +6,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Storages/NATS/NATSConnection.h>
+#include <Storages/NATS/NATSHandler.h>
 #include <Storages/NATS/NATSSettings.h>
 #include <Poco/Semaphore.h>
 #include <Common/thread_local_rng.h>
@@ -80,7 +81,9 @@ private:
 
     LoggerPtr log;
 
-    NATSConnectionManagerPtr connection; /// Connection for all consumers
+    NATSHandler event_handler;
+
+    NATSConnectionPtr consumers_connection; /// Connection for all consumers
     NATSConfiguration configuration;
 
     size_t num_created_consumers = 0;
@@ -96,7 +99,7 @@ private:
     std::mutex task_mutex;
     BackgroundSchedulePool::TaskHolder streaming_task;
     BackgroundSchedulePool::TaskHolder looping_task;
-    BackgroundSchedulePool::TaskHolder connection_task;
+    BackgroundSchedulePool::TaskHolder subscribe_consumers_task;
 
     /// True if consumers have subscribed to all subjects
     std::atomic<bool> consumers_ready{false};
@@ -126,12 +129,11 @@ private:
 
     /// Functions working in the background
     void streamingToViewsFunc();
-    void loopingFunc();
-    void connectionFunc();
+    void subscribeConsumersFunc();
 
-    bool initBuffers();
+    void createConsumers();
+    bool subscribeConsumers();
 
-    void startLoop();
     void stopLoop();
     void stopLoopIfNoReaders();
 
