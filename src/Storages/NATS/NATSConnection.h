@@ -30,6 +30,8 @@ using NATSOptionsPtr = std::unique_ptr<natsOptions, decltype(&natsOptions_Destro
 
 class NATSConnection
 {
+    using Lock = std::lock_guard<std::mutex>;
+
 public:
     NATSConnection(const NATSConfiguration & configuration_, LoggerPtr log_, NATSOptionsPtr options_);
     ~NATSConnection();
@@ -48,13 +50,13 @@ public:
     String connectionInfoForLog() const;
 
 private:
-    bool isConnectedImpl() const;
-    bool isDisconnectedImpl() const;
-    bool isClosedImpl() const;
+    bool isConnectedImpl(const Lock & connection_lock) const;
+    bool isDisconnectedImpl(const Lock & connection_lock) const;
+    bool isClosedImpl(const Lock & connection_lock) const;
 
-    void connectImpl();
+    void connectImpl(const Lock & connection_lock);
 
-    void disconnectImpl();
+    void disconnectImpl(const Lock & connection_lock);
 
     static void disconnectedCallback(natsConnection * nc, void * connection);
     static void reconnectedCallback(natsConnection * nc, void * connection);

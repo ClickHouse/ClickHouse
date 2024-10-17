@@ -60,7 +60,8 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
 }
 NATSConnection::~NATSConnection()
 {
-    if (!isDisconnectedImpl())
+    std::lock_guard lock(mutex);
+    if (!isDisconnectedImpl(lock))
     {
         natsConnection_Close(connection.get());
     }
@@ -79,51 +80,51 @@ String NATSConnection::connectionInfoForLog() const
 bool NATSConnection::isConnected()
 {
     std::lock_guard lock(mutex);
-    return isConnectedImpl();
+    return isConnectedImpl(lock);
 }
 
 bool NATSConnection::isDisconnected()
 {
     std::lock_guard lock(mutex);
-    return isDisconnectedImpl();
+    return isDisconnectedImpl(lock);
 }
 
 bool NATSConnection::isClosed()
 {
     std::lock_guard lock(mutex);
-    return isClosedImpl();
+    return isClosedImpl(lock);
 }
 
 bool NATSConnection::connect()
 {
     std::lock_guard lock(mutex);
-    connectImpl();
-    return isConnectedImpl();
+    connectImpl(lock);
+    return isConnectedImpl(lock);
 }
 
 void NATSConnection::disconnect()
 {
     std::lock_guard lock(mutex);
-    disconnectImpl();
+    disconnectImpl(lock);
 }
 
-bool NATSConnection::isConnectedImpl() const
+bool NATSConnection::isConnectedImpl(const Lock &) const
 {
     return connection && (natsConnection_Status(connection.get()) == NATS_CONN_STATUS_CONNECTED || natsConnection_IsDraining(connection.get()));
 }
 
-bool NATSConnection::isDisconnectedImpl() const
+bool NATSConnection::isDisconnectedImpl(const Lock &) const
 {
     return !connection || (natsConnection_Status(connection.get()) == NATS_CONN_STATUS_DISCONNECTED || natsConnection_IsClosed(connection.get()));
 }
 
-bool NATSConnection::isClosedImpl() const
+bool NATSConnection::isClosedImpl(const Lock &) const
 {
     return !connection || natsConnection_IsClosed(connection.get());
 }
 
 
-void NATSConnection::connectImpl()
+void NATSConnection::connectImpl(const Lock &)
 {
     natsConnection * new_conection = nullptr;
     natsStatus status = natsConnection_Connect(&new_conection, options.get());
@@ -138,9 +139,9 @@ void NATSConnection::connectImpl()
     LOG_DEBUG(log, "New connection {} is connected to {}", static_cast<void*>(this), connectionInfoForLog());
 }
 
-void NATSConnection::disconnectImpl()
+void NATSConnection::disconnectImpl(const Lock & connection_lock)
 {
-    if (isDisconnectedImpl())
+    if (isDisconnectedImpl(connection_lock))
         return;
 
     natsConnection_Close(connection.get());
