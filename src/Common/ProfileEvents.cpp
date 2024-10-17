@@ -888,6 +888,8 @@ The server successfully detected this situation and will download merged part fr
     \
     M(MemoryWorkerRun, "Number of runs done by MemoryWorker in background", ValueType::Number) \
     M(MemoryWorkerRunElapsedMicroseconds, "Total time spent by MemoryWorker for background work", ValueType::Microseconds) \
+    \
+    M(ParquetFetchWaitTimeMicroseconds, "Time of waiting fetching parquet data", ValueType::Microseconds) \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
