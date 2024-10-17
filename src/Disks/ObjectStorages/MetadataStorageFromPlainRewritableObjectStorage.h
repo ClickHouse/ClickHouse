@@ -36,8 +36,6 @@ protected:
     std::string getMetadataKeyPrefix() const override { return metadata_key_prefix; }
     std::shared_ptr<InMemoryDirectoryPathMap> getPathMap() const override { return path_map; }
     void getDirectChildrenOnDisk(
-        const std::string & storage_key,
-        const RelativePathsWithMetadata & remote_paths,
         const std::string & local_path,
         std::unordered_set<std::string> & result) const;
 

@@ -5,17 +5,22 @@
 
 #include <cstddef>
 #include <exception>
+#include <iterator>
+#include <mutex>
 #include <optional>
+#include <unordered_map>
 #include <unordered_set>
 #include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
 #include <Poco/Timestamp.h>
 #include "Common/Exception.h"
+#include "Common/Logger.h"
 #include <Common/SharedLockGuard.h>
 #include <Common/SharedMutex.h>
 #include <Common/logger_useful.h>
 #include "CommonPathPrefixKeyGenerator.h"
+#include "Disks/ObjectStorages/IObjectStorage_fwd.h"
 
 
 namespace DB
@@ -45,6 +50,28 @@ std::string getMetadataKeyPrefix(ObjectStoragePtr object_storage)
         : metadata_key_prefix;
 }
 
+void loadDirectory(InMemoryDirectoryPathMap::Map & map, ObjectStoragePtr object_storage)
+{
+    const auto common_key_prefix = object_storage->getCommonKeyPrefix();
+    LOG_DEBUG(getLogger("MetadataStorageFromPlainObjectStorage"), "Loading directory structure");
+    for (auto & [local_path, info] : map)
+    {
+        LOG_TRACE(getLogger("loadDirectory"), "Loading directories for local path: {}", local_path);
+        const auto remote_path = std::filesystem::path(common_key_prefix) / info.path / "";
+        for (auto iterator = object_storage->iterate(remote_path, 0); iterator->isValid(); iterator->next())
+        {
+            auto file = iterator->current();
+            String path = file->getPath();
+            LOG_TRACE(getLogger("loadDirectory"), "Remote path: {}", path);
+            chassert(path.starts_with(remote_path.string()));
+            auto filename = std::filesystem::path(path).filename();
+            /// Check that the file is a direct child.
+            if (path.substr(remote_path.string().size()) == filename)
+                info.filenames.emplace(filename);
+        }
+    }
+}
+
 std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & metadata_key_prefix, ObjectStoragePtr object_storage)
 {
     auto result = std::make_shared<InMemoryDirectoryPathMap>();
@@ -62,6 +89,9 @@ std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & 
 
     LOG_DEBUG(log, "Loading metadata");
     size_t num_files = 0;
+
+    std::mutex mutex;
+    InMemoryDirectoryPathMap::Map map;
     for (auto iterator = object_storage->iterate(metadata_key_prefix, 0); iterator->isValid(); iterator->next())
     {
         ++num_files;
@@ -72,7 +102,7 @@ std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & 
             continue;
 
         runner(
-            [remote_metadata_path, path, &object_storage, &result, &log, &settings, &metadata_key_prefix]
+            [remote_metadata_path, path, &object_storage, &mutex, &map, &log, &settings, &metadata_key_prefix]
             {
                 setThreadName("PlainRWMetaLoad");
 
@@ -109,13 +139,13 @@ std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & 
                 chassert(remote_metadata_path.has_parent_path());
                 chassert(remote_metadata_path.string().starts_with(metadata_key_prefix));
                 auto suffix = remote_metadata_path.string().substr(metadata_key_prefix.size());
-                auto remote_path = std::filesystem::path(std::move(suffix));
+                auto rel_path = std::filesystem::path(std::move(suffix));
                 std::pair<Map::iterator, bool> res;
                 {
-                    std::lock_guard lock(result->mutex);
-                    res = result->map.emplace(
+                    std::lock_guard lock(mutex);
+                    res = map.emplace(
                         std::filesystem::path(local_path).parent_path(),
-                        InMemoryDirectoryPathMap::RemotePathInfo{remote_path.parent_path(), last_modified.epochTime()});
+                        InMemoryDirectoryPathMap::RemotePathInfo{rel_path.parent_path(), last_modified.epochTime(), {}});
                 }
 
                 /// This can happen if table replication is enabled, then the same local path is written
@@ -126,13 +156,16 @@ std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & 
                         "The local path '{}' is already mapped to a remote path '{}', ignoring: '{}'",
                         local_path,
                         res.first->second.path,
-                        remote_path.parent_path().string());
+                        rel_path.parent_path().string());
             });
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
+
+    loadDirectory(map, object_storage);
     {
-        SharedLockGuard lock(result->mutex);
+        std::lock_guard lock(result->mutex);
+        result->map = std::move(map);
         LOG_DEBUG(log, "Loaded metadata for {} files, found {} directories", num_files, result->map.size());
 
         auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
@@ -142,50 +175,36 @@ std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & 
 }
 
 void getDirectChildrenOnDiskImpl(
-    const std::string & storage_key,
-    const RelativePathsWithMetadata & remote_paths,
-    const std::string & local_path,
+    const std::filesystem::path & local_path,
     const InMemoryDirectoryPathMap & path_map,
     std::unordered_set<std::string> & result)
 {
-    /// Directories are retrieved from the in-memory path map.
     {
+        /// Directories are retrieved from the in-memory path map.
         SharedLockGuard lock(path_map.mutex);
         const auto & local_path_prefixes = path_map.map;
         const auto end_it = local_path_prefixes.end();
         for (auto it = local_path_prefixes.lower_bound(local_path); it != end_it; ++it)
         {
             const auto & [k, _] = std::make_tuple(it->first.string(), it->second);
-            if (!k.starts_with(local_path))
+            if (!k.starts_with(local_path.string()))
                 break;
 
-            auto slash_num = count(k.begin() + local_path.size(), k.end(), '/');
+            auto slash_num = count(k.begin() + local_path.string().size(), k.end(), '/');
             /// The local_path_prefixes comparator ensures that the paths with the smallest number of
             /// hops from the local_path are iterated first. The paths do not end with '/', hence
             /// break the loop if the number of slashes is greater than 0.
             if (slash_num != 0)
                 break;
 
-            result.emplace(std::string(k.begin() + local_path.size(), k.end()) + "/");
+            result.emplace(std::string(k.begin() + local_path.string().size(), k.end()) + "/");
         }
-    }
 
-    /// Files.
-    auto skip_list = std::set<std::string>{PREFIX_PATH_FILE_NAME};
-    for (const auto & elem : remote_paths)
-    {
-        const auto & path = elem->relative_path;
-        chassert(path.find(storage_key) == 0);
-        const auto child_pos = storage_key.size();
-
-        auto slash_pos = path.find('/', child_pos);
-
-        if (slash_pos == std::string::npos)
+        /// Files.
+        auto it = path_map.map.find(local_path.parent_path());
+        if (it != path_map.map.end())
         {
-            /// File names.
-            auto filename = path.substr(child_pos);
-            if (!skip_list.contains(filename))
-                result.emplace(std::move(filename));
+            result.insert(it->second.filenames.begin(), it->second.filenames.end());
         }
     }
 }
@@ -246,17 +265,10 @@ bool MetadataStorageFromPlainRewritableObjectStorage::existsDirectory(const std:
 
 std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDirectory(const std::string & path) const
 {
-    auto key_prefix = object_storage->generateObjectKeyForPath(path, "" /* key_prefix */).serialize();
+    std::unordered_set<std::string> children;
+    getDirectChildrenOnDisk(std::filesystem::path(path) / "", children);
 
-    RelativePathsWithMetadata files;
-    auto absolute_key = std::filesystem::path(object_storage->getCommonKeyPrefix()) / key_prefix / "";
-
-    object_storage->listObjects(absolute_key, files, 0);
-
-    std::unordered_set<std::string> directories;
-    getDirectChildrenOnDisk(absolute_key, files, std::filesystem::path(path) / "", directories);
-
-    return std::vector<std::string>(std::make_move_iterator(directories.begin()), std::make_move_iterator(directories.end()));
+    return std::vector<std::string>(std::make_move_iterator(children.begin()), std::make_move_iterator(children.end()));
 }
 
 std::optional<Poco::Timestamp> MetadataStorageFromPlainRewritableObjectStorage::getLastModifiedIfExists(const String & path) const
@@ -272,12 +284,10 @@ std::optional<Poco::Timestamp> MetadataStorageFromPlainRewritableObjectStorage::
 }
 
 void MetadataStorageFromPlainRewritableObjectStorage::getDirectChildrenOnDisk(
-    const std::string & storage_key,
-    const RelativePathsWithMetadata & remote_paths,
     const std::string & local_path,
     std::unordered_set<std::string> & result) const
 {
-    getDirectChildrenOnDiskImpl(storage_key, remote_paths, local_path, *getPathMap(), result);
+    getDirectChildrenOnDiskImpl(local_path, *getPathMap(), result);
 }
 
 bool MetadataStorageFromPlainRewritableObjectStorage::useSeparateLayoutForMetadata() const

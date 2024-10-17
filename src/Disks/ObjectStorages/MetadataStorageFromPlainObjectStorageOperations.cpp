@@ -1,6 +1,8 @@
 #include "MetadataStorageFromPlainObjectStorageOperations.h"
 #include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
 
+#include <filesystem>
+#include <mutex>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Timestamp.h>
@@ -76,7 +78,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
         std::lock_guard lock(path_map.mutex);
         auto & map = path_map.map;
         [[maybe_unused]] auto result
-            = map.emplace(base_path, InMemoryDirectoryPathMap::RemotePathInfo{object_key_prefix, Poco::Timestamp{}.epochTime()});
+            = map.emplace(base_path, InMemoryDirectoryPathMap::RemotePathInfo{object_key_prefix, Poco::Timestamp{}.epochTime(), {}});
         chassert(result.second);
     }
     auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
@@ -287,4 +289,82 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo(std::un
     CurrentMetrics::add(metric, 1);
 }
 
+MetadataStorageFromPlainObjectStorageWriteFileOperation::MetadataStorageFromPlainObjectStorageWriteFileOperation(
+    const std::string & path_, InMemoryDirectoryPathMap & path_map_)
+    : path(path_), path_map(path_map_)
+{
+}
+
+void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute(std::unique_lock<SharedMutex> &)
+{
+    LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), "Creating metadata for a file  '{}'", path);
+
+    std::lock_guard lock(path_map.mutex);
+
+    auto it = path_map.map.find(path.parent_path());
+    /// Some paths (e.g., clickhouse_access_check) may not have parent directories.
+    if (it == path_map.map.end())
+        LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), "{}", path);
+    else
+        written = it->second.filenames.emplace(path.filename()).second;
+}
+
+void MetadataStorageFromPlainObjectStorageWriteFileOperation::undo(std::unique_lock<SharedMutex> &)
+{
+    if (written)
+    {
+        std::lock_guard lock(path_map.mutex);
+        auto it = path_map.map.find(path.parent_path());
+        chassert(it != path_map.map.end());
+        if (it != path_map.map.end())
+        {
+            [[maybe_unused]] auto res = it->second.filenames.erase(path.filename());
+            chassert(res > 0);
+        }
+    }
+}
+
+MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
+    std::filesystem::path && path_, InMemoryDirectoryPathMap & path_map_, ObjectStoragePtr object_storage_)
+    : path(path_)
+    , remote_path(std::filesystem::path(object_storage_->generateObjectKeyForPath(path_, std::nullopt).serialize()))
+    , path_map(path_map_)
+{
+    auto common_key_prefix = object_storage_->getCommonKeyPrefix();
+    chassert(remote_path.string().starts_with(common_key_prefix));
+    auto rel_path = remote_path.lexically_relative(common_key_prefix);
+    remote_parent_path = rel_path.parent_path() / "";
+    filename = rel_path.filename();
+}
+
+void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute(std::unique_lock<SharedMutex> &)
+{
+    LOG_TEST(
+        getLogger("MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation"),
+        "Unlinking metadata for a write '{}' with remote path '{}'",
+        path,
+        remote_path);
+
+    std::lock_guard lock(path_map.mutex);
+    auto it = path_map.map.find(path.parent_path());
+    if (it != path_map.map.end())
+    {
+        auto res = it->second.filenames.erase(filename);
+        unlinked = res > 0;
+    }
+}
+
+void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo(std::unique_lock<SharedMutex> &)
+{
+    if (unlinked)
+    {
+        std::lock_guard lock(path_map.mutex);
+        auto it = path_map.map.find(path.parent_path());
+        chassert(it != path_map.map.end());
+        if (it != path_map.map.end())
+        {
+            it->second.filenames.emplace(filename);
+        }
+    }
+}
 }
