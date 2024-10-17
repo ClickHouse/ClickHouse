@@ -115,7 +115,7 @@ Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         case Field::Types::Array:
         {
             Array value;
-            readBinaryArrayWithMaybeDifferentTypes(value, buf);
+            readBinaryArray(value, buf);
             return value;
         }
         case Field::Types::Tuple:
@@ -159,28 +159,22 @@ Field getBinaryValue(UInt8 type, ReadBuffer & buf)
     throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field type {}", std::to_string(type));
 }
 
-void readBinaryArrayWithUniformTypes(Array & x, ReadBuffer & buf)
+void readBinaryArray(Array & x, ReadBuffer & buf)
 {
     size_t size;
-    UInt8 type;
-    readBinary(type, buf);
     readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
-        x.push_back(getBinaryValue(type, buf));
+        x.push_back(readFieldBinary(buf));
 }
 
-void writeBinaryArrayWithUniformTypes(const Array & x, WriteBuffer & buf)
+void writeBinaryArray(const Array & x, WriteBuffer & buf)
 {
-    UInt8 type = Field::Types::Null;
     size_t size = x.size();
-    if (size)
-        type = x.front().getType();
-    writeBinary(type, buf);
     writeBinary(size, buf);
 
     for (const auto & elem : x)
-        Field::dispatch([&buf] (const auto & value) { FieldVisitorWriteBinary()(value, buf); }, elem);
+        writeFieldBinary(elem, buf);
 }
 
 void writeText(const Array & x, WriteBuffer & buf)
@@ -325,7 +319,6 @@ Field readFieldBinary(ReadBuffer & buf)
     readBinary(type, buf);
     return getBinaryValue(type, buf);
 }
-
 
 String Field::dump() const
 {
