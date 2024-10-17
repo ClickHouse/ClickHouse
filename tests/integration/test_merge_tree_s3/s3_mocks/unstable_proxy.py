@@ -47,6 +47,9 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         self.do_HEAD()
 
+    def do_DELETE(self):
+        self.do_HEAD()
+
     def do_HEAD(self):
         content_length = self.headers.get("Content-Length")
         data = self.rfile.read(int(content_length)) if content_length else None
