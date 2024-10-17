@@ -1,5 +1,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Core/Settings.h>
+#include <Interpreters/CancellationChecker.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -55,6 +56,7 @@ namespace ErrorCodes
     extern const int QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 
@@ -104,6 +106,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query id cannot be empty");
 
     bool is_unlimited_query = isUnlimitedQuery(ast);
+    std::shared_ptr<QueryStatus> query;
 
     {
         auto [lock, overcommit_blocker] = safeLock(); // To avoid deadlock in case of OOM
@@ -285,17 +288,21 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
             ///  since allocation and deallocation could happen in different threads
         }
 
+        query = std::make_shared<QueryStatus>(
+            query_context,
+            query_,
+            client_info,
+            priorities.insert(settings[Setting::priority]),
+            std::move(thread_group),
+            query_kind,
+            settings,
+            watch_start_nanoseconds);
+
         auto process_it = processes.emplace(
             processes.end(),
-            std::make_shared<QueryStatus>(
-                query_context,
-                query_,
-                client_info,
-                priorities.insert(settings[Setting::priority]),
-                std::move(thread_group),
-                query_kind,
-                settings,
-                watch_start_nanoseconds));
+            query);
+
+        CancellationChecker::getInstance().appendTask(query, query_context->getSettingsRef()[Setting::max_execution_time].totalMilliseconds(), query_context->getSettingsRef()[Setting::timeout_overflow_mode]);
 
         increaseQueryKindAmount(query_kind);
 
@@ -366,6 +373,8 @@ ProcessListEntry::~ProcessListEntry()
 
     if (auto query_user = parent.queries_to_user.find(query_id); query_user != parent.queries_to_user.end())
         parent.queries_to_user.erase(query_user);
+
+    CancellationChecker::getInstance().appendDoneTasks(*it);
 
     /// This removes the memory_tracker of one request.
     parent.processes.erase(it);
@@ -446,12 +455,14 @@ void QueryStatus::ExecutorHolder::remove()
     executor = nullptr;
 }
 
-CancellationCode QueryStatus::cancelQuery(bool)
+CancellationCode QueryStatus::cancelQuery(CancelReason reason)
 {
     if (is_killed.load())
         return CancellationCode::CancelSent;
 
     is_killed.store(true);
+
+    std::atomic_exchange(&cancel_reason, reason);
 
     std::vector<ExecutorHolderPtr> executors_snapshot;
 
@@ -485,7 +496,11 @@ void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
     /// addPipelineExecutor() from the cancelQuery() context, and this will
     /// lead to deadlock.
     if (is_killed.load())
+    {
+        if (cancel_reason == CancelReason::TIMEOUT)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Query was timed out");
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+    }
 
     std::lock_guard lock(executors_mutex);
     assert(!executors.contains(e));
@@ -511,7 +526,11 @@ void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
 bool QueryStatus::checkTimeLimit()
 {
     if (is_killed.load())
+    {
+        if (cancel_reason == CancelReason::TIMEOUT)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Query was timed out");
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+    }
 
     return limits.checkTimeLimit(watch, overflow_mode);
 }
@@ -571,7 +590,7 @@ QueryStatusPtr ProcessList::tryGetProcessListElement(const String & current_quer
 }
 
 
-CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill)
+CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user)
 {
     QueryStatusPtr elem;
 
@@ -603,11 +622,11 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
         cancelled_cv.notify_all();
     });
 
-    return elem->cancelQuery(kill);
+    return elem->cancelQuery(CancelReason::MANUAL_CANCEL);
 }
 
 
-CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem, bool kill)
+CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem)
 {
     /// Cancelling the query should be done without the lock.
     /// So here we first set is_cancelling, and later reset it.
@@ -625,7 +644,7 @@ CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem, bool kill)
         cancelled_cv.notify_all();
     });
 
-    return elem->cancelQuery(kill);
+    return elem->cancelQuery(CancelReason::MANUAL_CANCEL);
 }
 
 
@@ -651,7 +670,7 @@ void ProcessList::killAllQueries()
     }
 
     for (auto & cancelled_process : cancelled_processes)
-        cancelled_process->cancelQuery(true);
+        cancelled_process->cancelQuery(CancelReason::MANUAL_CANCEL);
 
 }
 
