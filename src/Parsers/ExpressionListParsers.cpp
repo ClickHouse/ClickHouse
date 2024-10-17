@@ -2410,7 +2410,7 @@ bool ParserExpressionWithOptionalArguments::parseImpl(Pos & pos, ASTPtr & node, 
     if (ParserIdentifier().parse(pos, node, expected))
     {
         node = makeASTFunction(node->as<ASTIdentifier>()->name());
-        node->as<ASTFunction &>().no_empty_args = true;
+        node->as<ASTFunction &>().clearEmptyArgs();
         return true;
     }
 

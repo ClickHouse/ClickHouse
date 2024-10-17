@@ -241,15 +241,7 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
     if (new_name)
         formatRenameTo(*new_name, format);
 
-    if (authentication_methods.empty())
-    {
-        // If identification (auth method) is missing from query, we should serialize it in the form of `NO_PASSWORD` unless it is alter query
-        if (!alter)
-        {
-            format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED WITH no_password" << (format.hilite ? IAST::hilite_none : "");
-        }
-    }
-    else
+    if (!authentication_methods.empty())
     {
         if (add_identified_with)
         {
