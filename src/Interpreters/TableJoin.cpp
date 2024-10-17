@@ -997,8 +997,9 @@ void TableJoin::resetToCross()
 
 bool TableJoin::allowParallelHashJoin() const
 {
-    // if (std::find(join_algorithm.begin(), join_algorithm.end(), JoinAlgorithm::PARALLEL_HASH) == join_algorithm.end())
-    //     return false;
+    if (std::ranges::find(join_algorithm, JoinAlgorithm::DEFAULT) == join_algorithm.end()
+        && std::ranges::find(join_algorithm, JoinAlgorithm::PARALLEL_HASH) == join_algorithm.end())
+        return false;
     if (!right_storage_name.empty())
         return false;
     if (table_join.kind != JoinKind::Left && table_join.kind != JoinKind::Inner)

@@ -1,17 +1,20 @@
 (Expression)
-ExpressionTransform
+ExpressionTransform × 16
   (Join)
-  JoiningTransform 2 → 1
-    (Expression)
-    ExpressionTransform
-      (Limit)
-      Limit
-        (ReadFromSystemNumbers)
-        NumbersRange 0 → 1
-    (Expression)
-    FillingRightJoinSide
+  JoiningTransform × 16 2 → 1
+    Resize 1 → 16
+      (Expression)
       ExpressionTransform
         (Limit)
         Limit
           (ReadFromSystemNumbers)
           NumbersRange 0 → 1
+      (Expression)
+      Resize × 2 16 → 1
+        FillingRightJoinSide × 16
+          Resize 1 → 16
+            ExpressionTransform
+              (Limit)
+              Limit
+                (ReadFromSystemNumbers)
+                NumbersRange 0 → 1
