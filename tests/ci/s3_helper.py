@@ -311,7 +311,7 @@ class S3Helper:
     def list_prefix(
         self, s3_prefix_path: str, bucket: str = S3_BUILDS_BUCKET
     ) -> List[str]:
-        paginator = self.client.get_paginator('list_objects_v2')
+        paginator = self.client.get_paginator("list_objects_v2")
         pages = paginator.paginate(Bucket=bucket, Prefix=s3_prefix_path)
         result = []
         for page in pages:
@@ -324,7 +324,7 @@ class S3Helper:
     def list_prefix_non_recursive(
         self, s3_prefix_path: str, bucket: str = S3_BUILDS_BUCKET
     ) -> List[str]:
-        paginator = self.client.get_paginator('list_objects_v2')
+        paginator = self.client.get_paginator("list_objects_v2")
         pages = paginator.paginate(Bucket=bucket, Prefix=s3_prefix_path)
         result = []
         for page in pages:
