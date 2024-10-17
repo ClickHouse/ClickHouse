@@ -31,6 +31,9 @@ const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const Name
     else
         column_identifier = column.name;
 
+    if (hasColumnIdentifier("__table1.c1"))
+        column_identifiers.erase("__table1.c1");
+
     auto [it, inserted] = column_identifiers.emplace(column_identifier);
     if (!inserted)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Column identifier {} is already registered", column_identifier);

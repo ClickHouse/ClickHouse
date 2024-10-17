@@ -10,6 +10,7 @@ StoragePtr TableFunctionURLCluster::getStorage(
     const String & /*source*/, const String & /*format_*/, const ColumnsDescription & columns, ContextPtr context,
     const std::string & table_name, const String & /*compression_method_*/) const
 {
+    LOG_DEBUG(&Poco::Logger::get("TableFunctionURLCluster"), "TableFunctionURLCluster::getStorage !!!");
     StoragePtr storage;
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
