@@ -136,6 +136,8 @@ namespace ProfileEvents
     extern const Event DelayedMutationsMilliseconds;
     extern const Event PartsLockWaitMicroseconds;
     extern const Event PartsLockHoldMicroseconds;
+    extern const Event LoadedDataParts;
+    extern const Event LoadedDataPartsMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -344,9 +346,8 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
             disk->createDirectories(fs::path(relative_data_path) / DETACHED_DIR_NAME);
         }
 
-        if (disk->exists(format_version_path))
+        if (auto buf = disk->readFileIfExists(format_version_path, getReadSettings()))
         {
-            auto buf = disk->readFile(format_version_path, getReadSettings());
             UInt32 current_format_version{0};
             readIntText(current_format_version, *buf);
             if (!buf->eof())
@@ -399,6 +400,8 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
             throw Exception(ErrorCodes::METADATA_MISMATCH, "MergeTree data format version on disk doesn't support custom partitioning");
     }
 }
+
+
 DataPartsLock::DataPartsLock(std::mutex & data_parts_mutex_)
     : wait_watch(Stopwatch(CLOCK_MONOTONIC))
     , lock(data_parts_mutex_)
@@ -1460,7 +1463,6 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     auto data_part_storage = std::make_shared<DataPartStorageOnDiskFull>(single_disk_volume, relative_data_path, part_name);
 
     String part_path = fs::path(relative_data_path) / part_name;
-    String marker_path = fs::path(part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED;
 
     /// Ignore broken parts that can appear as a result of hard server restart.
     auto mark_broken = [&]
@@ -1508,25 +1510,9 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         return res;
     }
 
-    if (part_disk_ptr->exists(marker_path))
-    {
-        /// NOTE: getBytesOnDisk() cannot be used here, since it may be zero if checksums.txt does not exist.
-        res.size_of_part = calculatePartSizeSafe(res.part, log.load());
-        res.is_broken = true;
-
-        auto part_size_str = res.size_of_part ? formatReadableSizeWithBinarySuffix(*res.size_of_part) : "failed to calculate size";
-
-        LOG_WARNING(log,
-            "Detaching stale part {} (size: {}), which should have been deleted after a move. "
-            "That can only happen after unclean restart of ClickHouse after move of a part having an operation blocking that stale copy of part.",
-            res.part->getDataPartStorage().getFullPath(), part_size_str);
-
-        return res;
-    }
-
     try
     {
-        res.part->loadColumnsChecksumsIndexes(require_part_metadata, true);
+        res.part->loadColumnsChecksumsIndexes(require_part_metadata, !part_disk_ptr->isReadOnly());
     }
     catch (...)
     {
@@ -1757,6 +1743,7 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
 
 void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts)
 {
+    Stopwatch watch;
     LOG_DEBUG(log, "Loading data parts");
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -1810,16 +1797,15 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
             bool is_disk_defined = defined_disk_names.contains(disk_name);
 
-            if (!is_disk_defined && disk->exists(relative_data_path))
+            if (!is_disk_defined && disk->existsDirectory(relative_data_path))
             {
                 /// There still a chance that underlying disk is defined in storage policy
                 const auto & delegate = disk->getDelegateDiskIfExists();
-                is_disk_defined = delegate && !delegate->isBroken() && !delegate->isCustomDisk()
-                               && delegate->getPath() == disk->getPath()
-                               && defined_disk_names.contains(delegate->getName());
+                is_disk_defined = delegate && !delegate->isBroken() && !delegate->isCustomDisk() && delegate->getPath() == disk->getPath()
+                    && defined_disk_names.contains(delegate->getName());
             }
 
-            if (!is_disk_defined && disk->exists(relative_data_path))
+            if (!is_disk_defined && disk->existsDirectory(relative_data_path))
             {
                 for (const auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
                 {
@@ -1854,12 +1840,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         auto & disk_parts = parts_to_load_by_disk[i];
         auto & unexpected_disk_parts = unexpected_parts_to_load_by_disk[i];
 
-        runner([&, disk_ptr]()
+        runner([&expected_parts, &unexpected_disk_parts, &disk_parts, this, disk_ptr]()
         {
             for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
             {
                 /// Skip temporary directories, file 'format_version.txt' and directory 'detached'.
-                if (startsWith(it->name(), "tmp") || it->name() == MergeTreeData::FORMAT_VERSION_FILE_NAME
+                if (startsWith(it->name(), "tmp")
+                    || it->name() == MergeTreeData::FORMAT_VERSION_FILE_NAME
                     || it->name() == DETACHED_DIR_NAME)
                     continue;
 
@@ -2064,7 +2051,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             [this] { loadOutdatedDataParts(/*is_async=*/ true); });
     }
 
-    LOG_DEBUG(log, "Loaded data parts ({} items)", data_parts_indexes.size());
+    watch.stop();
+    LOG_DEBUG(log, "Loaded data parts ({} items) took {} seconds", data_parts_indexes.size(), watch.elapsedSeconds());
+    ProfileEvents::increment(ProfileEvents::LoadedDataParts, data_parts_indexes.size());
+    ProfileEvents::increment(ProfileEvents::LoadedDataPartsMicroseconds, watch.elapsedMicroseconds());
     data_parts_loading_finished = true;
 }
 
@@ -2339,7 +2329,7 @@ void MergeTreeData::stopOutdatedAndUnexpectedDataPartsLoadingTask()
 /// (Only files on the first level of nesting are considered).
 static bool isOldPartDirectory(const DiskPtr & disk, const String & directory_path, time_t threshold)
 {
-    if (!disk->isDirectory(directory_path) || disk->getLastModified(directory_path).epochTime() > threshold)
+    if (!disk->existsDirectory(directory_path) || disk->getLastModified(directory_path).epochTime() > threshold)
         return false;
 
     for (auto it = disk->iterateDirectory(directory_path); it->isValid(); it->next())
@@ -2384,7 +2374,7 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, siz
         if (disk->isBroken())
             continue;
 
-        if (!disk->exists(root_path))
+        if (!disk->existsDirectory(root_path))
             continue;
 
         for (auto it = disk->iterateDirectory(root_path); it->isValid(); it->next())
@@ -2418,7 +2408,7 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, siz
                         LOG_INFO(LogFrequencyLimiter(log.load(), 10), "{} is in use (by merge/mutation/INSERT) (consider increasing temporary_directories_lifetime setting)", full_path);
                         continue;
                     }
-                    if (!disk->exists(it->path()))
+                    if (!disk->existsDirectory(it->path()))
                     {
                         /// We should recheck that the dir exists, otherwise we can get "No such file or directory"
                         /// due to a race condition with "Renaming temporary part" (temporary part holder could be already released, so the check above is not enough)
@@ -3002,7 +2992,7 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
 
     for (const auto & disk : disks)
     {
-        if (disk->exists(new_table_path))
+        if (disk->existsDirectory(new_table_path))
             throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Target path already exists: {}", fullPath(disk, new_table_path));
     }
 
@@ -3118,7 +3108,7 @@ void MergeTreeData::dropAllData()
 
         /// It can naturally happen if we cannot drop table from the first time
         /// i.e. get exceptions after remove recursive
-        if (!disk->exists(relative_data_path))
+        if (!disk->existsDirectory(relative_data_path))
         {
             LOG_INFO(log, "dropAllData: path {} is already removed from disk {}", relative_data_path, disk->getName());
             continue;
@@ -3127,10 +3117,10 @@ void MergeTreeData::dropAllData()
         LOG_INFO(log, "dropAllData: remove format_version.txt, detached, moving and write ahead logs");
         disk->removeFileIfExists(fs::path(relative_data_path) / FORMAT_VERSION_FILE_NAME);
 
-        if (disk->exists(fs::path(relative_data_path) / DETACHED_DIR_NAME))
+        if (disk->existsDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME))
             disk->removeSharedRecursive(fs::path(relative_data_path) / DETACHED_DIR_NAME, /*keep_all_shared_data*/ true, {});
 
-        if (disk->exists(fs::path(relative_data_path) / MOVING_DIR_NAME))
+        if (disk->existsDirectory(fs::path(relative_data_path) / MOVING_DIR_NAME))
             disk->removeRecursive(fs::path(relative_data_path) / MOVING_DIR_NAME);
 
         try
@@ -3778,7 +3768,7 @@ void MergeTreeData::changeSettings(
                     for (const String & disk_name : all_diff_disk_names)
                     {
                         auto disk = new_storage_policy->getDiskByName(disk_name);
-                        if (disk->exists(relative_data_path))
+                        if (disk->existsDirectory(relative_data_path))
                             throw Exception(ErrorCodes::LOGICAL_ERROR, "New storage policy contain disks which already contain data of a table with the same name");
                     }
 
@@ -5595,7 +5585,7 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
             if (endsWith(name, proj_suffix) && !defined_projections.contains(projection_name))
             {
                 auto projection_storage = part->getDataPartStorage().getProjection(projection_name + proj_suffix);
-                if (projection_storage->exists("checksums.txt"))
+                if (projection_storage->existsFile("checksums.txt"))
                 {
                     auto projection_part = const_cast<IMergeTreeDataPart &>(*part).getProjectionPartBuilder(
                         projection_name, /* is_temp_projection */false).withPartFormatFromDisk().build();
@@ -6339,7 +6329,7 @@ DetachedPartsInfo MergeTreeData::getDetachedParts() const
         String detached_path = fs::path(relative_data_path) / DETACHED_DIR_NAME;
 
         /// Note: we don't care about TOCTOU issue here.
-        if (disk->exists(detached_path))
+        if (disk->existsDirectory(detached_path))
         {
             for (auto it = disk->iterateDirectory(detached_path); it->isValid(); it->next())
             {
@@ -7604,7 +7594,7 @@ DiskPtr MergeTreeData::tryGetDiskForDetachedPart(const String & part_name) const
     const auto disks = getStoragePolicy()->getDisks();
 
     for (const DiskPtr & disk : disks)
-        if (disk->exists(fs::path(relative_data_path) / DETACHED_DIR_NAME / part_name))
+        if (disk->existsDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME / part_name))
             return disk;
 
     return nullptr;
@@ -8073,7 +8063,7 @@ MergeTreeData::CurrentlyMovingPartsTaggerPtr MergeTreeData::checkPartsForMove(co
 
         auto reserved_disk = reservation->getDisk();
 
-        if (reserved_disk->exists(relative_data_path + part->name))
+        if (reserved_disk->existsDirectory(relative_data_path + part->name))
             throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Move is not possible: {} already exists",
                 fullPath(reserved_disk, relative_data_path + part->name));
 
