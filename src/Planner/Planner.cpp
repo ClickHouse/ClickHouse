@@ -854,9 +854,8 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     query_plan.addStep(std::move(filling_step));
 }
 
-void addLimitByStep(QueryPlan & query_plan,
-    const LimitByAnalysisResult & limit_by_analysis_result,
-    const QueryNode & query_node)
+void addLimitByStep(
+    QueryPlan & query_plan, const LimitByAnalysisResult & limit_by_analysis_result, const QueryNode & query_node, bool do_not_skip_offset)
 {
     /// Constness of LIMIT BY limit is validated during query analysis stage
     UInt64 limit_by_limit = query_node.getLimitByLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
@@ -866,6 +865,15 @@ void addLimitByStep(QueryPlan & query_plan,
     {
         /// Constness of LIMIT BY offset is validated during query analysis stage
         limit_by_offset = query_node.getLimitByOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+    }
+
+    if (do_not_skip_offset)
+    {
+        if (limit_by_limit > std::numeric_limits<UInt64>::max() - limit_by_offset)
+            return;
+
+        limit_by_limit += limit_by_offset;
+        limit_by_offset = 0;
     }
 
     auto limit_by_step = std::make_unique<LimitByStep>(query_plan.getCurrentDataStream(),
@@ -981,10 +989,10 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(QueryPlan & query_plan,
     {
         auto & limit_by_analysis_result = expressions_analysis_result.getLimitBy();
         addExpressionStep(query_plan, limit_by_analysis_result.before_limit_by_actions, "Before LIMIT BY", useful_sets);
-        addLimitByStep(query_plan, limit_by_analysis_result, query_node);
+        addLimitByStep(query_plan, limit_by_analysis_result, query_node, true /*do_not_skip_offset*/);
     }
 
-    if (query_node.hasLimit())
+    if (query_node.hasLimit() && !query_node.hasLimitBy() && !query_node.isLimitWithTies())
         addPreliminaryLimitStep(query_plan, query_analysis_result, planner_context, true /*do_not_skip_offset*/);
 }
 
@@ -1777,7 +1785,7 @@ void Planner::buildPlanForQueryNode()
         {
             auto & limit_by_analysis_result = expression_analysis_result.getLimitBy();
             addExpressionStep(query_plan, limit_by_analysis_result.before_limit_by_actions, "Before LIMIT BY", useful_sets);
-            addLimitByStep(query_plan, limit_by_analysis_result, query_node);
+            addLimitByStep(query_plan, limit_by_analysis_result, query_node, false /*do_not_skip_offset*/);
         }
 
         if (query_node.hasOrderBy())
