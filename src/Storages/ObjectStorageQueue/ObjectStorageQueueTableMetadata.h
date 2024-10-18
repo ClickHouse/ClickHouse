@@ -21,15 +21,15 @@ struct ObjectStorageQueueTableMetadata
     /// Non-changeable settings.
     const String format_name;
     const String columns;
-    const String after_processing;
     const String mode;
-    const UInt64 tracked_files_limit;
-    const UInt64 tracked_files_ttl_sec;
     const UInt64 buckets;
     const String last_processed_path;
     /// Changeable settings.
+    std::atomic<ObjectStorageQueueAction> after_processing;
     std::atomic<UInt64> loading_retries;
     std::atomic<UInt64> processing_threads_num;
+    std::atomic<UInt64> tracked_files_limit;
+    std::atomic<UInt64> tracked_files_ttl_sec;
 
     bool processing_threads_num_changed = false;
 
@@ -41,20 +41,32 @@ struct ObjectStorageQueueTableMetadata
     ObjectStorageQueueTableMetadata(const ObjectStorageQueueTableMetadata & other)
         : format_name(other.format_name)
         , columns(other.columns)
-        , after_processing(other.after_processing)
         , mode(other.mode)
-        , tracked_files_limit(other.tracked_files_limit)
-        , tracked_files_ttl_sec(other.tracked_files_ttl_sec)
         , buckets(other.buckets)
         , last_processed_path(other.last_processed_path)
+        , after_processing(other.after_processing.load())
         , loading_retries(other.loading_retries.load())
         , processing_threads_num(other.processing_threads_num.load())
+        , tracked_files_limit(other.tracked_files_limit.load())
+        , tracked_files_ttl_sec(other.tracked_files_ttl_sec.load())
     {
+    }
+
+    void syncChangeableSettings(const ObjectStorageQueueTableMetadata & other)
+    {
+        after_processing = other.after_processing.load();
+        loading_retries = other.loading_retries.load();
+        processing_threads_num = other.processing_threads_num.load();
+        tracked_files_limit = other.tracked_files_limit.load();
+        tracked_files_ttl_sec = other.tracked_files_ttl_sec.load();
     }
 
     explicit ObjectStorageQueueTableMetadata(const Poco::JSON::Object::Ptr & json);
 
     static ObjectStorageQueueTableMetadata parse(const String & metadata_str);
+
+    static ObjectStorageQueueAction actionFromString(const std::string & action);
+    static std::string actionToString(ObjectStorageQueueAction action);
 
     String toString() const;
 
