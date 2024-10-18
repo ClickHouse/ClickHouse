@@ -66,6 +66,11 @@ struct GroupArraySortedData
 
     static constexpr bool is_value_generic_field = std::is_same_v<T, Field>;
 
+    /// If T is Field, this is a PODArray of non-POD values. Be very careful when resizing it:
+    ///  * destructor must be called manually for removed elements,
+    ///  * constructor must be called manually for added elements; in particular, make sure
+    ///    no exceptions can be thrown between adding an element and initializing it
+    ///    (otherwise ~GroupArraySortedData will call destructor on uninitialized Field and likely crash).
     Array values;
 
     static bool compare(const T & lhs, const T & rhs)
@@ -144,7 +149,7 @@ struct GroupArraySortedData
         }
 
         if (values.size() > max_elements)
-            values.resize(max_elements, arena);
+            shrink(max_elements, arena);
     }
 
     ALWAYS_INLINE void partialSortAndLimitIfNeeded(size_t max_elements, Arena * arena)
@@ -153,6 +158,17 @@ struct GroupArraySortedData
             return;
 
         ::nth_element(values.begin(), values.begin() + max_elements, values.end(), Comparator());
+        shrink(max_elements, arena);
+    }
+
+    ALWAYS_INLINE void shrink(size_t max_elements, Arena * arena)
+    {
+        assert(max_elements <= values.size());
+        if constexpr (is_value_generic_field)
+        {
+            for (size_t i = values.size(); i < max_elements; ++i)
+                values[i].~T();
+        }
         values.resize(max_elements, arena);
     }
 
@@ -313,14 +329,14 @@ public:
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size, it should not exceed {}", max_elements);
 
         auto & values = this->data(place).values;
-        values.resize_exact(size, arena);
 
         if constexpr (std::is_same_v<T, Field>)
         {
-            for (Field & element : values)
+            values.reserve_exact(size, arena);
+            for (size_t i = 0; i < size; ++i)
             {
-                /// We must initialize the Field type since some internal functions (like operator=) use them
-                new (&element) Field;
+                values.push_back(Field(), arena);
+                Field & element = values.back();
                 bool has_value = false;
                 readBinary(has_value, buf);
                 if (has_value)
@@ -329,6 +345,7 @@ public:
         }
         else
         {
+            values.resize_exact(size, arena);
             if constexpr (std::endian::native == std::endian::little)
             {
                 buf.readStrict(reinterpret_cast<char *>(values.data()), size * sizeof(values[0]));
