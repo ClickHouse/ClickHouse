@@ -96,12 +96,6 @@ private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
 
-    static void alterSetting(
-        const SettingChange & change,
-        const fs::path & zookeeper_path,
-        ObjectStorageQueueTableMetadata & table_metadata,
-        LoggerPtr log);
-
     ObjectStorageQueueTableMetadata table_metadata;
     const ObjectStorageQueueMode mode;
     const fs::path zookeeper_path;
