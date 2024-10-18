@@ -45,6 +45,13 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
+
+    void alter(
+        const AlterCommands & commands,
+        ContextPtr local_context,
+        AlterLockHolder & table_lock_holder) override;
+
     const auto & getFormatName() const { return configuration->format; }
 
     const fs::path & getZooKeeperPath() const { return zk_path; }
@@ -56,6 +63,7 @@ private:
     using FileIterator = ObjectStorageQueueSource::FileIterator;
 
     const std::unique_ptr<ObjectStorageQueueSettings> queue_settings;
+    std::mutex changeable_settings_mutex;
     const fs::path zk_path;
 
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
