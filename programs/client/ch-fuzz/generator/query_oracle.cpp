@@ -270,7 +270,6 @@ static const std::vector<TestSetting> test_settings{
 	TestSetting("aggregation_in_order_max_block_bytes", {"0", "1"}),
 	TestSetting("any_join_distinct_right_table_keys", {"0", "1"}),
 	TestSetting("async_insert", {"0", "1"}),
-	TestSetting("cast_keep_nullable", {"0", "1"}),
 	TestSetting("check_query_single_value_result", {"0", "1"}),
 	TestSetting("compile_aggregate_expressions", {"0", "1"}),
 	TestSetting("compile_sort_description", {"0", "1"}),
