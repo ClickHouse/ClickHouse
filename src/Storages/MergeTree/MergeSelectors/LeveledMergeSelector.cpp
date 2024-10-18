@@ -70,7 +70,7 @@ std::optional<WindowDescription> selectWithinPartition(
             double deviation = 0;
             for (size_t j = i - window_size; j < i; ++j)
                 deviation += std::abs(parts[j].size - static_cast<double>(sum_in_window) / parts_count);
-            deviation /= std::log(std::log(parts_count));
+            deviation /= sum_in_window * std::log(std::log(parts_count));
 
             auto window = WindowDescription
             {
