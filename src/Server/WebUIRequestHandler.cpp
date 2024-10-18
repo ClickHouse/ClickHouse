@@ -13,6 +13,7 @@
 
 #include <incbin.h>
 
+#include "Server/ACMEClient.h"
 #include "config.h"
 
 /// Embedded HTML pages
@@ -29,6 +30,9 @@ namespace DB
 PlayWebUIRequestHandler::PlayWebUIRequestHandler(IServer & server_) : server(server_) {}
 DashboardWebUIRequestHandler::DashboardWebUIRequestHandler(IServer & server_) : server(server_) {}
 BinaryWebUIRequestHandler::BinaryWebUIRequestHandler(IServer & server_) : server(server_) {}
+#if USE_SSL
+ACMERequestHandler::ACMERequestHandler(IServer & server_) : server(server_) {}
+#endif
 JavaScriptWebUIRequestHandler::JavaScriptWebUIRequestHandler(IServer & server_) : server(server_) {}
 
 static void handle(HTTPServerRequest & request, HTTPServerResponse & response, std::string_view html)
@@ -69,6 +73,23 @@ void BinaryWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPS
 {
     handle(request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize});
 }
+
+#if USE_SSL
+/// FIXME not a Web UI
+void ACMERequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+{
+    LOG_DEBUG(&Poco::Logger::get("ACME"), "ACME request: {}", request.getURI());
+    auto challenge = ACMEClient::ACMEClient::instance().requestChallenge(request.getURI());
+
+    if (challenge.empty())
+    {
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+        *response.send() << "Not found.\n";
+    }
+
+    handle(request, response, { challenge });
+}
+#endif
 
 void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
