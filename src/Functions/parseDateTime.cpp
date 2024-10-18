@@ -623,9 +623,9 @@ namespace
                         if (scale > 0)
                             break;
                         const String fragment = ins.getFragment();
-                        for (size_t i = 0; i < fragment.size(); i++)
+                        for (char ch : fragment)
                         {
-                            if (fragment[i] != 'S')
+                            if (ch != 'S')
                             {
                                 scale = 0;
                                 break;
@@ -809,7 +809,7 @@ namespace
             explicit Instruction(const String & literal_) : literal(literal_), fragment("LITERAL") { }
             explicit Instruction(String && literal_) : literal(std::move(literal_)), fragment("LITERAL") { }
 
-            const String getFragment() const { return fragment; }
+            String getFragment() const { return fragment; }
 
             /// For debug
             [[maybe_unused]] String toString() const
@@ -1707,7 +1707,7 @@ namespace
             [[nodiscard]]
             static PosOrError jodaTimezoneId(size_t, Pos cur, Pos end, const String &, DateTime<error_handling> & date)
             {
-                String dateTimeZone = "";
+                String dateTimeZone;
                 while (cur <= end)
                 {
                     dateTimeZone += *cur;
