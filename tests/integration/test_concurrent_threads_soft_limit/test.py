@@ -57,25 +57,25 @@ def test_concurrent_threads_soft_limit_default(started_cluster):
     assert_profile_event(
         node1,
         "test_concurrent_threads_soft_limit_1",
-        "ConcurrencyControlGrantedHard",
+        "ConcurrencyControlSlotsGranted",
         lambda x: x == 1,
     )
     assert_profile_event(
         node1,
         "test_concurrent_threads_soft_limit_1",
-        "ConcurrencyControlGrantDelayed",
+        "ConcurrencyControlSlotsDelayed",
         lambda x: x == 0,
     )
     assert_profile_event(
         node1,
         "test_concurrent_threads_soft_limit_1",
-        "ConcurrencyControlAcquiredTotal",
+        "ConcurrencyControlSlotsAcquired",
         lambda x: x == 100,
     )
     assert_profile_event(
         node1,
         "test_concurrent_threads_soft_limit_1",
-        "ConcurrencyControlAllocationDelayed",
+        "ConcurrencyControlQueriesDelayed",
         lambda x: x == 0,
     )
     assert (
@@ -97,25 +97,25 @@ def test_use_concurrency_control_default(started_cluster):
     assert_profile_event(
         node1,
         "test_use_concurrency_control",
-        "ConcurrencyControlGrantedHard",
+        "ConcurrencyControlSlotsGranted",
         lambda x: x == 0,
     )
     assert_profile_event(
         node1,
         "test_use_concurrency_control",
-        "ConcurrencyControlGrantDelayed",
+        "ConcurrencyControlSlotsDelayed",
         lambda x: x == 0,
     )
     assert_profile_event(
         node1,
         "test_use_concurrency_control",
-        "ConcurrencyControlAcquiredTotal",
+        "ConcurrencyControlSlotsAcquired",
         lambda x: x == 0,
     )
     assert_profile_event(
         node1,
         "test_use_concurrency_control",
-        "ConcurrencyControlAllocationDelayed",
+        "ConcurrencyControlQueriesDelayed",
         lambda x: x == 0,
     )
 
@@ -129,25 +129,25 @@ def test_concurrent_threads_soft_limit_defined_50(started_cluster):
     assert_profile_event(
         node2,
         "test_concurrent_threads_soft_limit_2",
-        "ConcurrencyControlGrantedHard",
+        "ConcurrencyControlSlotsGranted",
         lambda x: x == 1,
     )
     assert_profile_event(
         node2,
         "test_concurrent_threads_soft_limit_2",
-        "ConcurrencyControlGrantDelayed",
+        "ConcurrencyControlSlotsDelayed",
         lambda x: x == 50,
     )
     assert_profile_event(
         node2,
         "test_concurrent_threads_soft_limit_2",
-        "ConcurrencyControlAcquiredTotal",
+        "ConcurrencyControlSlotsAcquired",
         lambda x: x == 50,
     )
     assert_profile_event(
         node2,
         "test_concurrent_threads_soft_limit_2",
-        "ConcurrencyControlAllocationDelayed",
+        "ConcurrencyControlQueriesDelayed",
         lambda x: x == 1,
     )
     assert (
@@ -168,25 +168,25 @@ def test_use_concurrency_control_soft_limit_defined_50(started_cluster):
     assert_profile_event(
         node2,
         "test_use_concurrency_control_2",
-        "ConcurrencyControlGrantedHard",
+        "ConcurrencyControlSlotsGranted",
         lambda x: x == 0,
     )
     assert_profile_event(
         node2,
         "test_use_concurrency_control_2",
-        "ConcurrencyControlGrantDelayed",
+        "ConcurrencyControlSlotsDelayed",
         lambda x: x == 0,
     )
     assert_profile_event(
         node2,
         "test_use_concurrency_control_2",
-        "ConcurrencyControlAcquiredTotal",
+        "ConcurrencyControlSlotsAcquired",
         lambda x: x == 0,
     )
     assert_profile_event(
         node2,
         "test_use_concurrency_control_2",
-        "ConcurrencyControlAllocationDelayed",
+        "ConcurrencyControlQueriesDelayed",
         lambda x: x == 0,
     )
 
@@ -200,25 +200,25 @@ def test_concurrent_threads_soft_limit_defined_1(started_cluster):
     assert_profile_event(
         node3,
         "test_concurrent_threads_soft_limit_3",
-        "ConcurrencyControlGrantedHard",
+        "ConcurrencyControlSlotsGranted",
         lambda x: x == 1,
     )
     assert_profile_event(
         node3,
         "test_concurrent_threads_soft_limit_3",
-        "ConcurrencyControlGrantDelayed",
+        "ConcurrencyControlSlotsDelayed",
         lambda x: x == 99,
     )
     assert_profile_event(
         node3,
         "test_concurrent_threads_soft_limit_3",
-        "ConcurrencyControlAcquiredTotal",
+        "ConcurrencyControlSlotsAcquired",
         lambda x: x == 1,
     )
     assert_profile_event(
         node3,
         "test_concurrent_threads_soft_limit_3",
-        "ConcurrencyControlAllocationDelayed",
+        "ConcurrencyControlQueriesDelayed",
         lambda x: x == 1,
     )
     assert (
@@ -267,25 +267,25 @@ def test_concurrent_threads_soft_limit_limit_reached(started_cluster):
     assert_profile_event(
         node4,
         "test_concurrent_threads_soft_limit_4",
-        "ConcurrencyControlGrantedHard",
+        "ConcurrencyControlSlotsGranted",
         lambda x: x == 1,
     )
     assert_profile_event(
         node4,
         "test_concurrent_threads_soft_limit_4",
-        "ConcurrencyControlGrantDelayed",
+        "ConcurrencyControlSlotsDelayed",
         lambda x: x > 0,
     )
     assert_profile_event(
         node4,
         "test_concurrent_threads_soft_limit_4",
-        "ConcurrencyControlAcquiredTotal",
+        "ConcurrencyControlSlotsAcquired",
         lambda x: x < 5,
     )
     assert_profile_event(
         node4,
         "test_concurrent_threads_soft_limit_4",
-        "ConcurrencyControlAllocationDelayed",
+        "ConcurrencyControlQueriesDelayed",
         lambda x: x == 1,
     )
     s_count = node4.query(

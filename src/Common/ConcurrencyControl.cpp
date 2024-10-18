@@ -6,10 +6,10 @@
 
 namespace ProfileEvents
 {
-    extern const Event ConcurrencyControlGrantedHard;
-    extern const Event ConcurrencyControlGrantDelayed;
-    extern const Event ConcurrencyControlAcquiredTotal;
-    extern const Event ConcurrencyControlAllocationDelayed;
+    extern const Event ConcurrencyControlSlotsGranted;
+    extern const Event ConcurrencyControlSlotsDelayed;
+    extern const Event ConcurrencyControlSlotsAcquired;
+    extern const Event ConcurrencyControlQueriesDelayed;
 }
 
 namespace CurrentMetrics
@@ -51,7 +51,7 @@ ConcurrencyControl::Allocation::~Allocation()
     {
         if (granted.compare_exchange_strong(value, value - 1))
         {
-            ProfileEvents::increment(ProfileEvents::ConcurrencyControlAcquiredTotal, 1);
+            ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsAcquired, 1);
             std::unique_lock lock{mutex};
             return AcquiredSlotPtr(new Slot(shared_from_this())); // can't use std::make_shared due to private ctor
         }
@@ -122,13 +122,13 @@ ConcurrencyControl::~ConcurrencyControl()
     // Acquire as many slots as we can, but not lower than `min`
     SlotCount granted = std::max(min, std::min(max, available(lock)));
     cur_concurrency += granted;
-    ProfileEvents::increment(ProfileEvents::ConcurrencyControlGrantedHard, min);
+    ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsGranted, min);
 
     // Create allocation and start waiting if more slots are required
     if (granted < max)
     {
-        ProfileEvents::increment(ProfileEvents::ConcurrencyControlGrantDelayed, max - granted);
-        ProfileEvents::increment(ProfileEvents::ConcurrencyControlAllocationDelayed);
+        ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsDelayed, max - granted);
+        ProfileEvents::increment(ProfileEvents::ConcurrencyControlQueriesDelayed);
         return SlotAllocationPtr(new Allocation(*this, max, granted,
             waiters.insert(cur_waiter, nullptr /* pointer is set by Allocation ctor */)));
     }
