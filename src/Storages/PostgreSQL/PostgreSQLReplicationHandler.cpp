@@ -160,8 +160,8 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     LOG_INFO(log, "Using replication slot {} and publication {}", replication_slot, doubleQuoteString(publication_name));
 
     startup_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ checkConnectionAndStart(); });
-    consumer_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ consumerFunc(); });
-    cleanup_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ cleanupFunc(); });
+    consumer_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaConsume", [this]{ consumerFunc(); });
+    cleanup_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaCleanup", [this]{ cleanupFunc(); });
 }
 
 
@@ -244,9 +244,17 @@ void PostgreSQLReplicationHandler::checkConnectionAndStart()
 void PostgreSQLReplicationHandler::shutdown()
 {
     stop_synchronization.store(true);
+
+    LOG_TRACE(log, "Deactivating startup task");
     startup_task->deactivate();
+
+    LOG_TRACE(log, "Deactivating consumer task");
     consumer_task->deactivate();
+
+    LOG_TRACE(log, "Deactivating cleanup task");
     cleanup_task->deactivate();
+
+    LOG_TRACE(log, "Resetting consumer");
     consumer.reset(); /// Clear shared pointers to inner storages.
 }
 
@@ -493,7 +501,9 @@ void PostgreSQLReplicationHandler::cleanupFunc()
         if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
             dropReplicationSlot(tx, /* temporary */true);
     });
-    cleanup_task->scheduleAfter(CLEANUP_RESCHEDULE_MS);
+
+    if (!stop_synchronization)
+        cleanup_task->scheduleAfter(CLEANUP_RESCHEDULE_MS);
 }
 
 PostgreSQLReplicationHandler::ConsumerPtr PostgreSQLReplicationHandler::getConsumer()
@@ -723,16 +733,21 @@ Strings PostgreSQLReplicationHandler::getTableAllowedColumns(const std::string &
     if (tables_list.empty())
         return result;
 
-    size_t table_pos = tables_list.find(table_name);
-    if (table_pos == std::string::npos)
+    size_t table_pos = 0;
+    while (true)
     {
-        return result;
+        table_pos = tables_list.find(table_name, table_pos + 1);
+        if (table_pos == std::string::npos)
+            return result;
+        if (table_pos + table_name.length() + 1 > tables_list.length())
+            return result;
+        if (tables_list[table_pos + table_name.length() + 1] == '(' ||
+            tables_list[table_pos + table_name.length() + 1] == ',' ||
+            tables_list[table_pos + table_name.length() + 1] == ' '
+        )
+            break;
     }
 
-    if (table_pos + table_name.length() + 1 > tables_list.length())
-    {
-        return result;
-    }
     String column_list = tables_list.substr(table_pos + table_name.length() + 1);
     column_list.erase(std::remove(column_list.begin(), column_list.end(), '"'), column_list.end());
     boost::trim(column_list);

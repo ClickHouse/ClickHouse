@@ -135,7 +135,7 @@ SelectQueryDescription buildSelectQueryDescription(const ASTPtr & select_query, 
 
             break;
         }
-        else if (auto subquery = extractTableExpression(*inner_select_query, 0))
+        if (auto subquery = extractTableExpression(*inner_select_query, 0))
         {
             inner_query = subquery;
         }

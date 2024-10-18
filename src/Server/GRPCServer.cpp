@@ -1006,14 +1006,12 @@ namespace
         {
             if (!insert_query)
                 throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "Query requires data to insert, but it is not an INSERT query");
-            else
-            {
-                const auto & settings = query_context->getSettingsRef();
-                if (settings[Setting::throw_if_no_data_to_insert])
-                    throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
-                else
-                    return;
-            }
+
+            const auto & settings = query_context->getSettingsRef();
+            if (settings[Setting::throw_if_no_data_to_insert])
+                throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
+
+            return;
         }
 
         /// This is significant, because parallel parsing may be used.
@@ -1488,8 +1486,7 @@ namespace
         {
             if (initial_query_info_read)
                 throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to read extra QueryInfo");
-            else
-                throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to read initial QueryInfo");
+            throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to read initial QueryInfo");
         }
     }
 
