@@ -1,0 +1,40 @@
+test> switched to db default
+default> [ { a: 34 } ]
+default> [
+  { name: 'John', c: Long('2') },
+  { name: 'Alexa', c: Long('1') },
+  { name: 'Alexa', c: Long('1') },
+  { name: 'John', c: Long('1') }
+]
+default> [ { c: Long('2') }, { c: Long('2') }, { c: Long('1') } ]
+default> [
+  { age: 20, l: 4.5, c: Long('2') },
+  { age: 15, l: 4.5, c: Long('2') },
+  { age: 100, l: 4, c: Long('1') }
+]
+default> [
+  { long_age: Long('15') },
+  { long_age: Long('20') },
+  { long_age: Long('100') }
+]
+default> [
+  {
+    _id: 2,
+    name: 'John',
+    age: 15,
+    date: ISODate('2000-01-12T00:14:15.000Z')
+  },
+  {
+    _id: 3,
+    name: 'John',
+    age: 20,
+    date: ISODate('2003-08-14T12:12:12.000Z')
+  },
+  {
+    _id: 4,
+    name: 'John',
+    age: 100,
+    date: ISODate('2001-08-14T13:12:34.000Z')
+  }
+]
+default> 

@@ -1,0 +1,4 @@
+test> switched to db default
+default> [ { age: 20, c: Long('2') }, { age: 15, c: Long('2') } ]
+default> [ { age: 20, c: Long('1') }, { age: 15, c: Long('1') } ]
+default> 
