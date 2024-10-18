@@ -136,6 +136,7 @@ ExpressionTransform
                 Resize 1 → 4
                   FinishAggregatingInOrderTransform 3 → 1
                     (Union)
+                      (ReadFromRemoteParallelReplicas)
                       (Aggregating)
                       FinalizeAggregatedTransform
                         AggregatingInOrderTransform
@@ -143,7 +144,6 @@ ExpressionTransform
                           ExpressionTransform
                             (ReadFromMergeTree)
                             MergeTreeSelect(pool: ReadPoolParallelReplicasInOrder, algorithm: InOrder) 0 → 1
-                      (ReadFromRemoteParallelReplicas)
 select a, count() from pr_t group by a order by a limit 5 offset 500;
 500	1000
 501	1000
