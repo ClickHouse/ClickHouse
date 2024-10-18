@@ -21,7 +21,7 @@ Write add http CORS header.
 
 Type: String
 
-Default value:
+Default value: 
 
 An additional filter expression to apply to the result of `SELECT` query.
 This setting is not applied to any subquery.
@@ -413,6 +413,14 @@ Default value: 0
 
 Experimental data deduplication for SELECT queries based on part UUIDs
 
+## allow_experimental_refreshable_materialized_view {#allow_experimental_refreshable_materialized_view}
+
+Type: Bool
+
+Default value: 0
+
+Allow refreshable materialized views (CREATE MATERIALIZED VIEW \\<name\\> REFRESH ...).
+
 ## allow_experimental_shared_set_join {#allow_experimental_shared_set_join}
 
 Type: Bool
@@ -531,14 +539,6 @@ Type: Bool
 Default value: 0
 
 Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*()
-
-## log_query_settings {#log-query-settings}
-
-Type: Bool
-
-Default value: 1
-
-Log query settings into the query_log and opentelemetry_span_log.
 
 ## allow_nondeterministic_mutations {#allow_nondeterministic_mutations}
 
@@ -1253,7 +1253,7 @@ Type: Bool
 
 Default value: 0
 
-Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connection without waiting for the response.
+Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connection without waiting for the response.
 
 Cloud default value: `1`.
 
@@ -1389,7 +1389,7 @@ The engine family allowed in Cloud. 0 - allow everything, 1 - rewrite DDLs to us
 
 Type: String
 
-Default value:
+Default value: 
 
 Cluster for a shard in which current server is located
 
@@ -1413,7 +1413,7 @@ Enable collecting hash table statistics to optimize memory allocation
 
 Type: String
 
-Default value:
+Default value: 
 
 The `compatibility` setting causes ClickHouse to use the default settings of a previous version of ClickHouse, where the previous version is provided as the setting.
 
@@ -1776,7 +1776,7 @@ Usage
 
 By default, deduplication is not performed for materialized views but is done upstream, in the source table.
 If an INSERTed block is skipped due to deduplication in the source table, there will be no insertion into attached materialized views. This behaviour exists to enable the insertion of highly aggregated data into materialized views, for cases where inserted blocks are the same after materialized view aggregation but derived from different INSERTs into the source table.
-At the same time, this behaviour “breaks” `INSERT` idempotency. If an `INSERT` into the main table was successful and `INSERT` into a materialized view failed (e.g. because of communication failure with ClickHouse Keeper) a client will get an error and can retry the operation. However, the materialized view won’t receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` allows for changing this behaviour. On retry, a materialized view will receive the repeat insert and will perform a deduplication check by itself,
+At the same time, this behaviour “breaks” `INSERT` idempotency. If an `INSERT` into the main table was successful and `INSERT` into a materialized view failed (e.g. because of communication failure with ClickHouse Keeper) a client will get an error and can retry the operation. However, the materialized view won’t receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` allows for changing this behaviour. On retry, a materialized view will receive the repeat insert and will perform a deduplication check by itself,
 ignoring check result for the source table, and will insert rows lost because of the first failure.
 
 ## default_materialized_view_sql_security {#default_materialized_view_sql_security}
@@ -2288,7 +2288,7 @@ Default value: deny
 
 Changes the behaviour of [distributed subqueries](../../sql-reference/operators/in.md).
 
-ClickHouse applies this setting when the query contains the product of distributed tables, i.e. when the query for a distributed table contains a non-GLOBAL subquery for the distributed table.
+ClickHouse applies this setting when the query contains the product of distributed tables, i.e. when the query for a distributed table contains a non-GLOBAL subquery for the distributed table.
 
 Restrictions:
 
@@ -3119,7 +3119,7 @@ The setting is used by the server itself to support distributed queries. Do not 
 
 Type: String
 
-Default value:
+Default value: 
 
 Disables query execution if passed data skipping indices wasn't used.
 
@@ -3183,7 +3183,7 @@ Possible values:
 
 Type: String
 
-Default value:
+Default value: 
 
 If it is set to a non-empty string, check that this projection is used in the query at least once.
 
@@ -3277,7 +3277,7 @@ It makes sense to disable it if the server has millions of tiny tables that are 
 
 Type: String
 
-Default value:
+Default value: 
 
 Choose function implementation for specific target or variant (experimental). If empty enable all of them.
 
@@ -3770,7 +3770,7 @@ Only available in ClickHouse Cloud. Exclude new data parts from SELECT queries u
 
 Type: String
 
-Default value:
+Default value: 
 
 Ignores the skipping indexes specified if used by the query.
 
@@ -3945,7 +3945,7 @@ For not replicated tables see [non_replicated_deduplication_window](merge-tree-s
 
 Type: String
 
-Default value:
+Default value: 
 
 The setting allows a user to provide own deduplication semantic in MergeTree/ReplicatedMergeTree
 For example, by providing a unique value for the setting in each INSERT statement,
@@ -4516,7 +4516,7 @@ Disadvantages: Server proximity is not accounted for; if the replicas have diffe
 load_balancing = nearest_hostname
 ```
 
-The number of errors is counted for each replica. Every 5 minutes, the number of errors is integrally divided by 2. Thus, the number of errors is calculated for a recent time with exponential smoothing. If there is one replica with a minimal number of errors (i.e. errors occurred recently on the other replicas), the query is sent to it. If there are multiple replicas with the same minimal number of errors, the query is sent to the replica with a hostname that is most similar to the server’s hostname in the config file (for the number of different characters in identical positions, up to the minimum length of both hostnames).
+The number of errors is counted for each replica. Every 5 minutes, the number of errors is integrally divided by 2. Thus, the number of errors is calculated for a recent time with exponential smoothing. If there is one replica with a minimal number of errors (i.e. errors occurred recently on the other replicas), the query is sent to it. If there are multiple replicas with the same minimal number of errors, the query is sent to the replica with a hostname that is most similar to the server’s hostname in the config file (for the number of different characters in identical positions, up to the minimum length of both hostnames).
 
 For instance, example01-01-1 and example01-01-2 are different in one position, while example01-01-1 and example01-02-2 differ in two places.
 This method might seem primitive, but it does not require external data about network topology, and it does not compare IP addresses, which would be complicated for our IPv6 addresses.
@@ -4623,7 +4623,7 @@ Possible values:
 
 Type: String
 
-Default value:
+Default value: 
 
 Specifies the value for the `log_comment` field of the [system.query_log](../system-tables/query_log.md) table and comment text for the server log.
 
@@ -5533,12 +5533,6 @@ Default value: -1
 
 Limit the max number of partitions that can be accessed in one query. <= 0 means unlimited.
 
-## max_parts_to_move {#max_parts_to_move}
-
-Limit the number of parts that can be moved in one query. Zero means unlimited.
-
-Default value: `1000`.
-
 ## max_query_size {#max_query_size}
 
 Type: UInt64
@@ -6087,7 +6081,7 @@ If enabled, some of the perf events will be measured throughout queries' executi
 
 Type: String
 
-Default value:
+Default value: 
 
 Comma separated list of perf metrics that will be measured throughout queries' execution. Empty means all events. See PerfEventInfo in sources for the available events.
 
@@ -6377,7 +6371,7 @@ Possible values:
 
 Type: MySQLDataTypesSupport
 
-Default value:
+Default value: 
 
 Defines how MySQL types are converted to corresponding ClickHouse types. A comma separated list in any combination of `decimal`, `datetime64`, `date2Date32` or `date2String`.
 - `decimal`: convert `NUMERIC` and `DECIMAL` types to `Decimal` when precision allows it.
@@ -6731,7 +6725,7 @@ Type: UInt64
 
 Default value: 3
 
-The minimum length of the expression `expr = x1 OR ... expr = xN` for optimization
+The minimum length of the expression `expr = x1 OR ... expr = xN` for optimization 
 
 ## optimize_min_inequality_conjunction_chain_length {#optimize_min_inequality_conjunction_chain_length}
 
@@ -6739,7 +6733,7 @@ Type: UInt64
 
 Default value: 3
 
-The minimum length of the expression `expr <> x1 AND ... expr <> xN` for optimization
+The minimum length of the expression `expr <> x1 AND ... expr <> xN` for optimization 
 
 ## optimize_move_to_prewhere {#optimize_move_to_prewhere}
 
@@ -7251,7 +7245,7 @@ This is internal setting that should not be used directly and represents an impl
 
 Type: String
 
-Default value:
+Default value: 
 
 An arbitrary integer expression that can be used to split work between replicas for a specific table.
 The value can be any integer expression.
@@ -7541,11 +7535,11 @@ Possible values:
 
 **Usage**
 
-Although `SET distributed_product_mode=global` can change the queries behavior for the distributed tables, it's not suitable for local tables or tables from external resources. Here is when the `prefer_global_in_and_join` setting comes into play.
+Although `SET distributed_product_mode=global` can change the queries behavior for the distributed tables, it's not suitable for local tables or tables from external resources. Here is when the `prefer_global_in_and_join` setting comes into play.
 
 For example, we have query serving nodes that contain local tables, which are not suitable for distribution. We need to scatter their data on the fly during distributed processing with the `GLOBAL` keyword — `GLOBAL IN`/`GLOBAL JOIN`.
 
-Another use case of `prefer_global_in_and_join` is accessing tables created by external engines. This setting helps to reduce the number of calls to external sources while joining such tables: only one call per query.
+Another use case of `prefer_global_in_and_join` is accessing tables created by external engines. This setting helps to reduce the number of calls to external sources while joining such tables: only one call per query.
 
 **See also:**
 
@@ -7598,7 +7592,7 @@ Limit on max column size in block while reading. Helps to decrease cache misses 
 
 Type: String
 
-Default value:
+Default value: 
 
 If it is set to a non-empty string, ClickHouse will try to apply specified projection in query.
 
@@ -7780,7 +7774,7 @@ Possible values:
 
 Type: String
 
-Default value:
+Default value: 
 
 A string which acts as a label for [query cache](../query-cache.md) entries.
 The same queries with different tags are considered different by the query cache.
@@ -8346,7 +8340,7 @@ Min bytes required for remote read (url, s3) to do seek, instead of read with ig
 
 Type: String
 
-Default value:
+Default value: 
 
 - **Type:** String
 
@@ -8833,7 +8827,7 @@ Send server text logs with specified minimum level to client. Valid values: 'tra
 
 Type: String
 
-Default value:
+Default value: 
 
 Send server text logs with specified regexp to match log source name. Empty means all sources.
 
@@ -8864,7 +8858,7 @@ Timeout for sending data to the network, in seconds. If a client needs to send s
 
 Type: Timezone
 
-Default value:
+Default value: 
 
 Sets the implicit time zone of the current session or query.
 The implicit time zone is the time zone applied to values of type DateTime/DateTime64 which have no explicitly specified time zone.
@@ -9117,7 +9111,7 @@ Allow direct SELECT query for Kafka, RabbitMQ, FileLog, Redis Streams, and NATS 
 
 Type: String
 
-Default value:
+Default value: 
 
 When stream-like engine reads from multiple queues, the user will need to select one queue to insert into when writing. Used by Redis Streams and NATS.
 
@@ -9388,7 +9382,7 @@ Traverse frozen data (shadow directory) in addition to actual table data when qu
 
 Type: SetOperationMode
 
-Default value:
+Default value: 
 
 Sets a mode for combining `SELECT` query results. The setting is only used when shared with [UNION](../../sql-reference/statements/select/union.md) without explicitly specifying the `UNION ALL` or `UNION DISTINCT`.
 
@@ -9729,10 +9723,6 @@ Default value: 15
 
 The heartbeat interval in seconds to indicate watch query is alive.
 
-## enforce_strict_identifier_format
-
-If enabled, only allow identifiers containing alphanumeric characters and underscores.
-
 ## workload {#workload}
 
 Type: String
@@ -9756,6 +9746,4 @@ Type: Int64
 Default value: 0
 
 Allows you to select the max window log of ZSTD (it will not be used for MergeTree family)
-
-Default value: `true`.
 

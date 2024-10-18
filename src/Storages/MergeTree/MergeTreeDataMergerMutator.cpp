@@ -60,12 +60,15 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_parts_to_merge_at_once;
     extern const MergeTreeSettingsInt64 merge_with_recompression_ttl_timeout;
     extern const MergeTreeSettingsInt64 merge_with_ttl_timeout;
+    extern const MergeTreeSettingsUInt64 merge_selector_blurry_base_scale_factor;
+    extern const MergeTreeSettingsUInt64 merge_selector_window_size;
     extern const MergeTreeSettingsBool min_age_to_force_merge_on_partition_only;
     extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_execute_optimize_entire_partition;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_execute_mutation;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_lower_max_size_of_merge;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
+    extern const MergeTreeSettingsUInt64 parts_to_throw_insert;
     extern const MergeTreeSettingsMergeSelectorAlgorithm merge_selector_algorithm;
 }
 
@@ -528,17 +531,28 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
     if (parts_to_merge.empty())
     {
         auto merge_selector_algorithm = (*data_settings)[MergeTreeSetting::merge_selector_algorithm];
+
         std::any merge_settings;
-        if (merge_selector_algorithm == MergeSelectorAlgorithm::SIMPLE)
+        if (merge_selector_algorithm == MergeSelectorAlgorithm::SIMPLE
+            || merge_selector_algorithm == MergeSelectorAlgorithm::STOCHASTIC_SIMPLE)
         {
             SimpleMergeSelector::Settings simple_merge_settings;
             /// Override value from table settings
+            simple_merge_settings.window_size = (*data_settings)[MergeTreeSetting::merge_selector_window_size];
             simple_merge_settings.max_parts_to_merge_at_once = (*data_settings)[MergeTreeSetting::max_parts_to_merge_at_once];
             if (!(*data_settings)[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
                 simple_merge_settings.min_age_to_force_merge = (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds];
 
             if (aggressive)
                 simple_merge_settings.base = 1;
+
+            if (merge_selector_algorithm == MergeSelectorAlgorithm::STOCHASTIC_SIMPLE)
+            {
+                simple_merge_settings.parts_to_throw_insert = (*data_settings)[MergeTreeSetting::parts_to_throw_insert];
+                simple_merge_settings.blurry_base_scale_factor = (*data_settings)[MergeTreeSetting::merge_selector_blurry_base_scale_factor];
+                simple_merge_settings.use_blurry_base = simple_merge_settings.blurry_base_scale_factor != 0;
+                simple_merge_settings.enable_stochastic_sliding = true;
+            }
 
             merge_settings = simple_merge_settings;
         }
