@@ -105,7 +105,7 @@ def download_corpus(path: str):
     try:
         s3.download_file(
             bucket=S3_BUILDS_BUCKET,
-            s3_path=f"fuzzer/corpus.zip",
+            s3_path="fuzzer/corpus.zip",
             local_file_path=path,
         )
     except ClientError as e:
