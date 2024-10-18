@@ -12,6 +12,7 @@
     <trace_log remove="remove"/>
     <asynchronous_metric_log remove="remove" />
     <session_log remove="remove" />
+    <tls_log remove="remove" />
     <part_log remove="remove" />
     <crash_log remove="remove" />
     <opentelemetry_span_log remove="remove" />

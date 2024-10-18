@@ -15,6 +15,7 @@
     <part_log remove="remove"/>
     <opentelemetry_span_log remove="remove"/>
     <session_log remove="remove"/>
+    <tls_log remove="remove"/>
 
     <uncompressed_cache_size>1000000000</uncompressed_cache_size>
 
