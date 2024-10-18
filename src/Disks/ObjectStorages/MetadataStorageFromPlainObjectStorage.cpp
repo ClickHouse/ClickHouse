@@ -8,6 +8,7 @@
 #include <Common/filesystemHelpers.h>
 
 #include <filesystem>
+#include <memory>
 #include <tuple>
 #include <unordered_set>
 
@@ -185,6 +186,16 @@ void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std
     }
 }
 
+void MetadataStorageFromPlainObjectStorageTransaction::createMetadataFile(
+    const std::string & path, ObjectStorageKey object_key, uint64_t /* size_in_bytes */)
+{
+    if (metadata_storage.object_storage->isWriteOnce())
+        return;
+
+    addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageWriteFileOperation>(
+        path, object_key, *metadata_storage.getPathMap(), object_storage));
+}
+
 void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std::string & path)
 {
     if (metadata_storage.object_storage->isWriteOnce())
@@ -218,15 +229,23 @@ void MetadataStorageFromPlainObjectStorageTransaction::moveDirectory(const std::
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::addBlobToMetadata(
-    const std::string &, ObjectStorageKey /* object_key */, uint64_t /* size_in_bytes */)
+    const std::string & path, ObjectStorageKey object_key, uint64_t /* size_in_bytes */)
 {
-    /// Noop, local metadata files is only one file, it is the metadata file itself.
+    if (metadata_storage.object_storage->isWriteOnce())
+        return;
+
+    addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageWriteFileOperation>(
+        path, object_key, *metadata_storage.getPathMap(), object_storage));
 }
 
-UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainObjectStorageTransaction::unlinkMetadata(const std::string &)
+UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainObjectStorageTransaction::unlinkMetadata(const std::string & path)
 {
     /// No hardlinks, so will always remove file.
-    return std::make_shared<UnlinkMetadataFileOperationOutcome>(UnlinkMetadataFileOperationOutcome{0});
+    auto result = std::make_shared<UnlinkMetadataFileOperationOutcome>(UnlinkMetadataFileOperationOutcome{0});
+    if (!metadata_storage.object_storage->isWriteOnce())
+        addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation>(
+            path, *metadata_storage.getPathMap(), object_storage));
+    return result;
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::commit()
