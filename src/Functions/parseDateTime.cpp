@@ -2227,7 +2227,7 @@ namespace
         static constexpr auto name = "parseDateTime64InJodaSyntax";
     };
 
-     struct NameParseDateTime64InJodaSyntaxOrZero
+    struct NameParseDateTime64InJodaSyntaxOrZero
     {
         static constexpr auto name = "parseDateTime64InJodaSyntaxOrZero";
     };
