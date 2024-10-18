@@ -134,6 +134,11 @@ public:
         DataTypePtr current_type,
         bool single_point = false);
 
+    ActionsDAG getFilterDagCopy() const
+    {
+        return filter_expr.clone();
+    }
+
     static ActionsDAG cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context);
 
     bool matchesExactContinuousRange() const;
@@ -349,6 +354,7 @@ private:
     /// This flag identify whether there are filters.
     bool has_filter;
 
+    ActionsDAG filter_expr;
     ColumnIndices key_columns;
     std::vector<size_t> key_indices;
 
