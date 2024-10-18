@@ -1064,7 +1064,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
                 /// We cannot sort up to partial read-in-order description with limit cause result set can be wrong.
                 const auto & descr = limit ? sorting->getSortDescription() : *max_sort_descr;
                 additional_sorting = std::make_unique<SortingStep>(
-                    child->step->getOutputStream(),
+                    child->step->getOutputHeader(),
                     descr,
                     limit, /// TODO: support limit with ties
                     sorting->getSettings());
@@ -1072,7 +1072,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
             else if (info->sort_description_for_merging.size() < max_sort_descr->size())
             {
                 additional_sorting = std::make_unique<SortingStep>(
-                    child->step->getOutputStream(),
+                    child->step->getOutputHeader(),
                     info->sort_description_for_merging,
                     *max_sort_descr,
                     sorting->getSettings().max_block_size,
