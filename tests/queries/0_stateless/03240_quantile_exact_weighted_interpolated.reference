@@ -12,3 +12,9 @@ quantileExactWeightedInterpolated
 [-10,-8,-6,-4,-2,0,2,4,6,8,10]
 quantileExactWeightedInterpolatedState
 [10000.6,20000.2,29999.8,39999.4]
+Test with filter that returns no rows
+0	0	0
+Test with dynamic weights
+21	7	4.2
+Test with all weights set to 0
+50	16.66666666	10

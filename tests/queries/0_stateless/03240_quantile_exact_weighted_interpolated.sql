@@ -4,11 +4,12 @@ CREATE TABLE decimal
 (
     a Decimal32(4),
     b Decimal64(8),
-    c Decimal128(8)
+    c Decimal128(8),
+    w UInt64
 ) ENGINE = Memory;
 
-INSERT INTO decimal (a, b, c)
-SELECT toDecimal32(number - 50, 4), toDecimal64(number - 50, 8) / 3, toDecimal128(number - 50, 8) / 5
+INSERT INTO decimal (a, b, c, w)
+SELECT toDecimal32(number - 50, 4), toDecimal64(number - 50, 8) / 3, toDecimal128(number - 50, 8) / 5, number
 FROM system.numbers LIMIT 101;
 
 SELECT 'quantileExactWeightedInterpolated';
@@ -31,5 +32,14 @@ FROM
     SELECT quantilesExactWeightedInterpolatedState(0.2, 0.4, 0.6, 0.8)(number + 1, 1) AS x
     FROM numbers(49999)
 );
+
+SELECT 'Test with filter that returns no rows';
+SELECT medianExactWeightedInterpolated(a, 1), medianExactWeightedInterpolated(b, 2),  medianExactWeightedInterpolated(c, 3) FROM decimal WHERE a > 1000;
+
+SELECT 'Test with dynamic weights';
+SELECT medianExactWeightedInterpolated(a, w), medianExactWeightedInterpolated(b, w), medianExactWeightedInterpolated(c, w) FROM decimal;
+
+SELECT 'Test with all weights set to 0';
+SELECT medianExactWeightedInterpolated(a, 0), medianExactWeightedInterpolated(b, 0), medianExactWeightedInterpolated(c, 0) FROM decimal;
 
 DROP TABLE IF EXISTS decimal;
