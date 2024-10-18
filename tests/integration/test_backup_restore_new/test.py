@@ -1,14 +1,15 @@
 import glob
 import os.path
-import pytest
 import random
 import re
 import sys
 import uuid
 from collections import namedtuple
-from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry, TSV
 
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV, assert_eq_with_retry
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 
