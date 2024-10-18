@@ -4,6 +4,7 @@
 #include <Poco/Message.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Loggers/OwnPatternFormatter.h>
+#include <shared_mutex>
 
 
 namespace DB
@@ -30,13 +31,14 @@ public:
     void log(const Poco::Message & msg) override;
 
     // Sets the regex patterns to use for filtering. Specifying an empty string pattern "" indicates no filtering
-    void setRegexpPatterns(const std::string & positive_pattern_, const std::string & negative_pattern_)
+    void setRegexpPatterns(const std::string & new_pos_pattern, const std::string & new_neg_pattern)
     {
-        if (positive_pattern_ != positive_pattern || negative_pattern_ != negative_pattern)
+        auto [old_pos_pattern, old_neg_pattern] = safeGetPatterns();
+        if (old_pos_pattern != new_pos_pattern || old_neg_pattern != new_neg_pattern)
         {
-            std::lock_guard<std::mutex> lock(pattern_mutex);
-            positive_pattern = positive_pattern_;
-            negative_pattern = negative_pattern_;
+            std::unique_lock<std::shared_mutex> write_lock(pattern_mutex);
+            positive_pattern = new_pos_pattern;
+            negative_pattern = new_neg_pattern;
         }
     }
 
@@ -71,14 +73,17 @@ public:
     }
 
 private:
-    bool regexpFilteredOut(const std::string & text) const;
+    bool regexpFilteredOut(const Poco::Message & msg);
+
+    // Create copy safely, so we don't have to worry about race conditions from reading and writing at the same time
+    std::pair<std::string, std::string> safeGetPatterns();
 
     const std::string logger_name;
     std::string positive_pattern;
     std::string negative_pattern;
     Poco::AutoPtr<Poco::Channel> pChannel;
     Poco::AutoPtr<OwnPatternFormatter> pFormatter;
-    std::mutex pattern_mutex;
+    std::shared_mutex pattern_mutex;
 };
 
 }
