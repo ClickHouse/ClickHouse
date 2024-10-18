@@ -18,7 +18,8 @@
 #include <Disks/FakeDiskTransaction.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
-
+#include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
+#include <Parsers/ASTCreateResourceQuery.h>
 
 namespace DB
 {
@@ -71,8 +72,8 @@ DiskObjectStorage::DiskObjectStorage(
     , metadata_storage(std::move(metadata_storage_))
     , object_storage(std::move(object_storage_))
     , send_metadata(config.getBool(config_prefix + ".send_metadata", false))
-    , read_resource_name(config.getString(config_prefix + ".read_resource", ""))
-    , write_resource_name(config.getString(config_prefix + ".write_resource", ""))
+    , read_resource_name_from_config(config.getString(config_prefix + ".read_resource", ""))
+    , write_resource_name_from_config(config.getString(config_prefix + ".write_resource", ""))
     , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}, WriteSettings{}))
 {
     data_source_description = DataSourceDescription{
@@ -83,6 +84,68 @@ DiskObjectStorage::DiskObjectStorage(
         .is_encrypted = false,
         .is_cached = object_storage->supportsCache(),
     };
+    resource_changes_subscription = Context::getGlobalContextInstance()->getWorkloadEntityStorage().getAllEntitiesAndSubscribe(
+        [this] (const std::vector<IWorkloadEntityStorage::Event> & events)
+        {
+            std::unique_lock lock{resource_mutex};
+            for (auto [entity_type, resource_name, resource] : events)
+            {
+                if (entity_type == WorkloadEntityType::Resource)
+                {
+                    if (resource) // CREATE RESOURCE
+                    {
+                        // We rely on the fact that every disk is allowed to be mentioned at most
+                        // in one RESOURCE for READ and in one RESOURCE for WRITE
+                        // TODO(serxa): add disk operations validation in workload entity storage
+                        auto * create = typeid_cast<ASTCreateResourceQuery *>(resource.get());
+                        chassert(create);
+                        for (const auto & [mode, disk] : create->operations)
+                        {
+                            if (disk == name)
+                            {
+                                switch (mode)
+                                {
+                                    case ASTCreateResourceQuery::AccessMode::Read:
+                                    {
+                                        if (read_resource_name_from_config.empty())
+                                            LOG_INFO(log, "Using resource '{}' for READ", resource_name);
+                                        else
+                                            LOG_INFO(log, "Resource '{}' should be used for READ, but it is overridden by config to resource '{}'",
+                                                resource_name, read_resource_name_from_config);
+                                        read_resource_name_from_sql = resource_name;
+                                        break;
+                                    }
+                                    case ASTCreateResourceQuery::AccessMode::Write:
+                                    {
+                                        if (write_resource_name_from_config.empty())
+                                            LOG_INFO(log, "Using resource '{}' for WRITE", resource_name);
+                                        else
+                                            LOG_INFO(log, "Resource '{}' should be used for WRITE, but it is overridden by config to resource '{}'",
+                                                resource_name, write_resource_name_from_config);
+                                        write_resource_name_from_sql = resource_name;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else // DROP RESOURCE
+                    {
+                        if (read_resource_name_from_sql == resource_name)
+                        {
+                            LOG_INFO(log, "Stop using resource '{}' for READ", resource_name);
+                            read_resource_name_from_sql.clear();
+                        }
+                        if (write_resource_name_from_sql == resource_name)
+                        {
+                            LOG_INFO(log, "Stop using resource '{}' for WRITE", resource_name);
+                            write_resource_name_from_sql.clear();
+                        }
+                    }
+                    break;
+                }
+            }
+        });
 }
 
 StoredObjects DiskObjectStorage::getStorageObjects(const String & local_path) const
@@ -480,13 +543,13 @@ static inline Settings updateIOSchedulingSettings(const Settings & settings, con
 String DiskObjectStorage::getReadResourceName() const
 {
     std::unique_lock lock(resource_mutex);
-    return read_resource_name;
+    return read_resource_name_from_config.empty() ? read_resource_name_from_sql : read_resource_name_from_config;
 }
 
 String DiskObjectStorage::getWriteResourceName() const
 {
     std::unique_lock lock(resource_mutex);
-    return write_resource_name;
+    return write_resource_name_from_config.empty() ? write_resource_name_from_sql : write_resource_name_from_config;
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
@@ -607,10 +670,10 @@ void DiskObjectStorage::applyNewSettings(
 
     {
         std::unique_lock lock(resource_mutex);
-        if (String new_read_resource_name = config.getString(config_prefix + ".read_resource", ""); new_read_resource_name != read_resource_name)
-            read_resource_name = new_read_resource_name;
-        if (String new_write_resource_name = config.getString(config_prefix + ".write_resource", ""); new_write_resource_name != write_resource_name)
-            write_resource_name = new_write_resource_name;
+        if (String new_read_resource_name = config.getString(config_prefix + ".read_resource", ""); new_read_resource_name != read_resource_name_from_config)
+            read_resource_name_from_config = new_read_resource_name;
+        if (String new_write_resource_name = config.getString(config_prefix + ".write_resource", ""); new_write_resource_name != write_resource_name_from_config)
+            write_resource_name_from_config = new_write_resource_name;
     }
 
     IDisk::applyNewSettings(config, context_, config_prefix, disk_map);
