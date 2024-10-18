@@ -343,7 +343,10 @@ VolumePtr StoragePolicy::tryGetVolumeByName(const String & volume_name) const
 void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const
 {
     /// Do not check volumes for temporary policy because their names are automatically generated
-    if (!new_storage_policy->getName().starts_with(StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX))
+    bool check_volumes = this->getName().starts_with(StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX)
+        || new_storage_policy->getName().starts_with(StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX);
+
+    if (!check_volumes)
     {
         std::unordered_set<String> new_volume_names;
         for (const auto & volume : new_storage_policy->getVolumes())
@@ -374,18 +377,16 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
     else
     {
         std::unordered_set<String> new_disk_names;
-        for (const auto & volume : new_storage_policy->getVolumes())
-            for (const auto & disk : volume->getDisks())
-                new_disk_names.insert(disk->getName());
+        for (const auto & disk : new_storage_policy->getDisks())
+            new_disk_names.insert(disk->getName());
 
-        for (const auto & volume : this->getVolumes())
-            for (const auto & disk : volume->getDisks())
-                if (!new_disk_names.contains(disk->getName()))
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "New storage policy {} shall contain disks of the old storage policy {}",
-                        backQuote(new_storage_policy->getName()),
-                        backQuote(name));
+        for (const auto & disk : this->getDisks())
+            if (!new_disk_names.contains(disk->getName()))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "New storage policy {} shall contain disks of the old storage policy {}",
+                    backQuote(new_storage_policy->getName()),
+                    backQuote(name));
     }
 }
 

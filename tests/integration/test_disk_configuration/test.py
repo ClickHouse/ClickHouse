@@ -381,11 +381,10 @@ def test_merge_tree_setting_override(start_cluster):
         )
     )
 
-    # TODO: test ALTER storage_policy = '', disk = ''
-
-    # TODO: clear storage_policy from metadata
-    node.query(
-        f"""
+    assert (
+        "MergeTree settings `storage_policy` and `disk` cannot be specified at the same time"
+        in node.query_and_get_error(
+            f"""
         DROP TABLE IF EXISTS {TABLE_NAME} SYNC;
         CREATE TABLE {TABLE_NAME} (a Int32)
         ENGINE = MergeTree()
@@ -393,6 +392,21 @@ def test_merge_tree_setting_override(start_cluster):
         SETTINGS storage_policy = 's3';
         ALTER TABLE {TABLE_NAME} MODIFY SETTING disk = 's3';
     """
+        )
+    )
+
+    assert (
+        "MergeTree settings `storage_policy` and `disk` cannot be specified at the same time"
+        in node.query_and_get_error(
+            f"""
+        DROP TABLE IF EXISTS {TABLE_NAME} SYNC;
+        CREATE TABLE {TABLE_NAME} (a Int32)
+        ENGINE = MergeTree()
+        ORDER BY tuple()
+        SETTINGS disk = 's3';
+        ALTER TABLE {TABLE_NAME} MODIFY SETTING storage_policy = 's3';
+    """
+        )
     )
 
     assert (
