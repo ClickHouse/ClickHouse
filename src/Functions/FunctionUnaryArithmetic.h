@@ -497,7 +497,9 @@ public:
                 using T0 = typename DataType::FieldType;
                 using T1 = typename Op<T0>::ResultType;
                 if constexpr (!std::is_same_v<T1, InvalidType> && !IsDataTypeDecimal<DataType> && Op<T0>::compilable)
+                {
                     return true;
+                }
             }
 
             return false;
@@ -523,8 +525,16 @@ public:
                 if constexpr (!std::is_same_v<T1, InvalidType> && !IsDataTypeDecimal<DataType> && Op<T0>::compilable)
                 {
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                    auto * v = nativeCast(b, arguments[0], result_type);
-                    result = Op<T0>::compile(b, v, is_signed_v<T1>);
+                    if constexpr (std::is_same_v<Op<T0>, AbsImpl<T0>> || std::is_same_v<Op<T0>, BitCountImpl<T0>>)
+                    {
+                        /// We don't need to cast the argument to the result type if it's abs/bitcount function.
+                        result = Op<T0>::compile(b, arguments[0].value, is_signed_v<T0>);
+                    }
+                    else
+                    {
+                        auto * v = nativeCast(b, arguments[0], result_type);
+                        result = Op<T0>::compile(b, v, is_signed_v<T1>);
+                    }
 
                     return true;
                 }
