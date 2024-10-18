@@ -9,13 +9,14 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Formats/NativeWriter.h>
 #include <Core/ProtocolDefines.h>
+#include <Disks/IDisk.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/IO/WriteBufferFromTemporaryFile.h>
 
 #include <Core/Defines.h>
 #include <Interpreters/Cache/WriteBufferToFileSegment.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 
 namespace ProfileEvents
 {
@@ -130,7 +131,7 @@ public:
     ~TemporaryFileOnLocalDisk() override
     try
     {
-        if (disk->exists(path_to_file))
+        if (disk->existsFile(path_to_file))
         {
             LOG_TRACE(getLogger("TemporaryFileOnLocalDisk"), "Removing temporary file '{}'", path_to_file);
             disk->removeRecursive(path_to_file);
