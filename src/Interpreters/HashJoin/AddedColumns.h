@@ -14,6 +14,8 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 struct JoinOnKeyColumns
 {
+    const ScatteredBlock & block;
+
     Names key_names;
 
     Columns materialized_keys_holder;
@@ -27,9 +29,13 @@ struct JoinOnKeyColumns
 
     Sizes key_sizes;
 
-    explicit JoinOnKeyColumns(const Block & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_);
+    JoinOnKeyColumns(
+        const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_);
 
-    bool isRowFiltered(size_t i) const { return join_mask_column.isRowFiltered(i); }
+    bool isRowFiltered(size_t i) const
+    {
+        return join_mask_column.isRowFiltered(i);
+    }
 };
 
 template <bool lazy>
@@ -54,7 +60,7 @@ public:
     };
 
     AddedColumns(
-        const Block & left_block_,
+        const ScatteredBlock & left_block_,
         const Block & block_with_columns_to_add,
         const Block & saved_block_sample,
         const HashJoin & join,
@@ -62,7 +68,8 @@ public:
         ExpressionActionsPtr additional_filter_expression_,
         bool is_asof_join,
         bool is_join_get_)
-        : left_block(left_block_)
+        : src_block(left_block_)
+        , left_block(left_block_.getSourceBlock())
         , join_on_keys(join_on_keys_)
         , additional_filter_expression(additional_filter_expression_)
         , rows_to_add(left_block.rows())
@@ -139,6 +146,7 @@ public:
 
     static constexpr bool isLazy() { return lazy; }
 
+    const ScatteredBlock & src_block;
     Block left_block;
     std::vector<JoinOnKeyColumns> join_on_keys;
     ExpressionActionsPtr additional_filter_expression;

@@ -66,10 +66,10 @@ public:
         HashJoin & join,
         HashJoin::Type type,
         MapsTemplate & maps,
-        size_t rows,
         const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes,
         Block * stored_block,
+        const ScatteredBlock::Selector & selector,
         ConstNullMapPtr null_map,
         UInt8ColumnDataPtr join_mask,
         Arena & pool,
@@ -83,14 +83,30 @@ public:
         const Block & block_with_columns_to_add,
         const MapsTemplateVector & maps_,
         bool is_join_get = false);
+
+    static ScatteredBlock joinBlockImpl(
+        const HashJoin & join,
+        ScatteredBlock & block,
+        const Block & block_with_columns_to_add,
+        const MapsTemplateVector & maps_,
+        bool is_join_get = false);
+
 private:
     template <typename KeyGetter, bool is_asof_join>
     static KeyGetter createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes);
 
-    template <typename KeyGetter, typename HashMap>
+    template <typename KeyGetter, typename HashMap, typename Selector>
     static size_t insertFromBlockImplTypeCase(
-        HashJoin & join, HashMap & map, size_t rows, const ColumnRawPtrs & key_columns,
-        const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, UInt8ColumnDataPtr join_mask, Arena & pool, bool & is_inserted);
+        HashJoin & join,
+        HashMap & map,
+        const ColumnRawPtrs & key_columns,
+        const Sizes & key_sizes,
+        Block * stored_block,
+        const Selector & selector,
+        ConstNullMapPtr null_map,
+        UInt8ColumnDataPtr join_mask,
+        Arena & pool,
+        bool & is_inserted);
 
     template <typename AddedColumns>
     static size_t switchJoinRightColumns(
@@ -115,12 +131,13 @@ private:
 
     /// Joins right table columns which indexes are present in right_indexes using specified map.
     /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
-    template <typename KeyGetter, typename Map, bool need_filter, bool flag_per_row, typename AddedColumns>
+    template <typename KeyGetter, typename Map, bool need_filter, bool flag_per_row, typename AddedColumns, typename Selector>
     static size_t joinRightColumns(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,
-        JoinStuff::JoinUsedFlags & used_flags);
+        JoinStuff::JoinUsedFlags & used_flags,
+        const Selector & selector);
 
     template <bool need_filter>
     static void setUsed(IColumn::Filter & filter [[maybe_unused]], size_t pos [[maybe_unused]]);
