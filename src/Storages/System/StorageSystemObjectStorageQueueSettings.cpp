@@ -43,6 +43,9 @@ void StorageSystemObjectStorageQueueSettings<type>::fillData(
     auto add_table = [&](
         const DatabaseTablesIteratorPtr & it, StorageObjectStorageQueue & storage)
     {
+        if (storage.getType() != type)
+            return;
+
         /// We cannot use setting.isValueChanged(), because we do not store initial settings in storage.
         /// Therefore check if the setting was changed via table metadata.
         const auto & settings_changes = storage.getInMemoryMetadataPtr()->settings_changes->as<ASTSetQuery>()->changes;
