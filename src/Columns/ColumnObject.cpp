@@ -422,7 +422,7 @@ bool ColumnObject::tryInsert(const Field & x)
                 column->popBack(column->size() - prev_size);
         }
 
-        if (shared_data_paths->size() != prev_paths_size)
+        if (shared_data_paths->size() != prev_paths_size)  /// NOLINT(clang-analyzer-core.NullDereference)
             shared_data_paths->popBack(shared_data_paths->size() - prev_paths_size);
         if (shared_data_values->size() != prev_values_size)
             shared_data_values->popBack(shared_data_values->size() - prev_values_size);

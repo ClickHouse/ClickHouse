@@ -503,7 +503,7 @@ Strings IcebergMetadata::getDataFiles() const
         String schema_json_string = String(reinterpret_cast<char *>(schema_json.data()), schema_json.size());
         Poco::JSON::Parser parser;
         Poco::Dynamic::Var json = parser.parse(schema_json_string);
-        Poco::JSON::Object::Ptr schema_object = json.extract<Poco::JSON::Object::Ptr>();
+        const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
         if (!context->getSettingsRef()[Setting::iceberg_engine_ignore_schema_evolution]
             && schema_object->getValue<int>("schema-id") != current_schema_id)
             throw Exception(

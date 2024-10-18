@@ -1279,7 +1279,7 @@ void IMergeTreeDataPart::appendFilesOfPartitionAndMinMaxIndex(Strings & files) c
         MergeTreePartition::appendFiles(storage, files);
 
     if (!parent_part)
-        minmax_idx->appendFiles(storage, files);
+        IMergeTreeDataPart::MinMaxIndex::appendFiles(storage, files);
 }
 
 void IMergeTreeDataPart::loadChecksums(bool require)

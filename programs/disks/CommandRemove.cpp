@@ -25,7 +25,7 @@ public:
 
     void executeImpl(const CommandLineOptions & options, DisksClient & client) override
     {
-        auto disk = client.getCurrentDiskWithPath();
+        const auto & disk = client.getCurrentDiskWithPath();
         const String & path = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path"));
         bool recursive = options.count("recursive");
         if (disk.getDisk()->existsDirectory(path))

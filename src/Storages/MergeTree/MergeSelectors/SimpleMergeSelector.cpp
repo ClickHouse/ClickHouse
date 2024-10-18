@@ -166,8 +166,7 @@ size_t calculateRangeWithStochasticSliding(size_t parts_count, size_t parts_thre
     size_t right_boundary = static_cast<size_t>(distribution(thread_local_rng));
     if (right_boundary > parts_count)
         right_boundary = 2 * parts_count - right_boundary;
-    if (right_boundary < parts_threshold)
-        right_boundary = parts_threshold;
+    right_boundary = std::max(right_boundary, parts_count);
     return right_boundary - parts_threshold;
 }
 

@@ -907,7 +907,7 @@ namespace ProfileEvents
 constexpr Event END = Event(__COUNTER__);
 
 /// Global variable, initialized by zeros.
-Counter global_counters_array[END] {};
+static Counter global_counters_array[END] {};
 /// Initialize global counters statically
 Counters global_counters(global_counters_array);
 

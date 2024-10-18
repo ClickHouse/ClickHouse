@@ -31,7 +31,7 @@ namespace ErrorCodes
  * If test-mode option is added, files will be put by given url via PUT request.
  */
 
-void processFile(const fs::path & file_path, const fs::path & dst_path, bool test_mode, bool link, WriteBuffer & metadata_buf)
+static void processFile(const fs::path & file_path, const fs::path & dst_path, bool test_mode, bool link, WriteBuffer & metadata_buf)
 {
     String remote_path;
     RE2::FullMatch(file_path.string(), EXTRACT_PATH_PATTERN, &remote_path);
@@ -76,7 +76,7 @@ void processFile(const fs::path & file_path, const fs::path & dst_path, bool tes
 }
 
 
-void processTableFiles(const fs::path & data_path, fs::path dst_path, bool test_mode, bool link)
+static void processTableFiles(const fs::path & data_path, fs::path dst_path, bool test_mode, bool link)
 {
     std::cerr << "Data path: " << data_path << ", destination path: " << dst_path << std::endl;
 

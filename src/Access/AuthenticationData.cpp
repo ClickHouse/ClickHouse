@@ -76,7 +76,7 @@ AuthenticationData::Digest AuthenticationData::Util::encodeBcrypt(std::string_vi
     if (ret != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_gensalt returned {}", ret);
 
-    ret = bcrypt_hashpw(text.data(), salt, reinterpret_cast<char *>(hash.data()));
+    ret = bcrypt_hashpw(text.data(), salt, reinterpret_cast<char *>(hash.data()));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
     if (ret != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_hashpw returned {}", ret);
 
@@ -91,7 +91,7 @@ AuthenticationData::Digest AuthenticationData::Util::encodeBcrypt(std::string_vi
 bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[maybe_unused]], const Digest & password_bcrypt [[maybe_unused]])
 {
 #if USE_BCRYPT
-    int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));
+    int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
     /// Before 24.6 we didn't validate hashes on creation, so it could be that the stored hash is invalid
     /// and it could not be decoded by the library
     if (ret == -1)
