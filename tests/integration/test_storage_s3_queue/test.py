@@ -1721,7 +1721,7 @@ def test_upgrade(started_cluster):
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
-            "after_processing":"keep",
+            "after_processing": "keep",
         },
     )
     total_values = generate_random_files(
@@ -2075,7 +2075,11 @@ def test_alter_settings(started_cluster):
         table_name,
         "unordered",
         files_path,
-        additional_settings={"keeper_path": keeper_path, "processing_threads_num": 10, "loading_retries": 20},
+        additional_settings={
+            "keeper_path": keeper_path,
+            "processing_threads_num": 10,
+            "loading_retries": 20,
+        },
         database_name="r",
     )
 
@@ -2112,10 +2116,12 @@ def test_alter_settings(started_cluster):
         time.sleep(1)
     assert expected_rows == get_count()
 
-    node1.query(f"""
+    node1.query(
+        f"""
         ALTER TABLE r.{table_name}
         MODIFY SETTING processing_threads_num=5, loading_retries=10, after_processing='delete', tracked_files_limit=50, tracked_files_ttl_sec=10000
-    """)
+    """
+    )
 
     assert '"processing_threads_num":5' in node1.query(
         f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
