@@ -171,6 +171,9 @@ Avoid reordering rows when reading from Parquet files. Usually makes it much slo
     M(Bool, input_format_parquet_filter_push_down, true, R"(
 When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and min/max statistics in the Parquet metadata.
 )", 0) \
+    M(Bool, input_format_parquet_bloom_filter_push_down, false, R"(
+When reading Parquet files, skip whole row groups based on the WHERE expressions and bloom filter in the Parquet metadata.
+)", 0) \
     M(Bool, input_format_parquet_use_native_reader, false, R"(
 When reading Parquet files, to use native reader instead of arrow reader.
 )", 0) \
@@ -191,11 +194,17 @@ When reading ORC files, skip whole stripes or row groups based on the WHERE/PREW
     M(String, input_format_orc_reader_time_zone_name, "GMT", R"(
 The time zone name for ORC row reader, the default ORC row reader's time zone is GMT.
 )", 0) \
+    M(Bool, input_format_orc_dictionary_as_low_cardinality, true, R"(
+Treat ORC dictionary encoded columns as LowCardinality columns while reading ORC files.
+)", 0) \
     M(Bool, input_format_parquet_allow_missing_columns, true, R"(
 Allow missing columns while reading Parquet input formats
 )", 0) \
     M(UInt64, input_format_parquet_local_file_min_bytes_for_seek, 8192, R"(
 Min bytes required for local read (file) to do seek, instead of read with ignore in Parquet input format
+)", 0) \
+    M(Bool, input_format_parquet_enable_row_group_prefetch, true, R"(
+Enable row group prefetching during parquet parsing. Currently, only single-threaded parsing can prefetch.
 )", 0) \
     M(Bool, input_format_arrow_allow_missing_columns, true, R"(
 Allow missing columns while reading Arrow input formats
@@ -538,6 +547,9 @@ Read data types in binary format instead of type names in Native input format
     M(Bool, output_format_native_encode_types_in_binary_format, false, R"(
 Write data types in binary format instead of type names in Native output format
 )", 0) \
+    M(Bool, output_format_native_write_json_as_string, false, R"(
+Write data of [JSON](../../sql-reference/data-types/newjson.md) column as [String](../../sql-reference/data-types/string.md) column containing JSON strings instead of default native JSON serialization.
+)", 0) \
     \
     M(DateTimeInputFormat, date_time_input_format, FormatSettings::DateTimeInputFormat::Basic, R"(
 Allows choosing a parser of the text representation of date and time.
@@ -601,6 +613,9 @@ See also:
 -   [Interval](../../sql-reference/data-types/special-data-types/interval.md)
 )", 0) \
     \
+    M(Bool, date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands, false, R"(
+Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to [0, 3, 6],
+corresponding to 'seconds', 'milliseconds', and 'microseconds')", 0) \
     M(Bool, input_format_ipv4_default_on_conversion_error, false, R"(
 Deserialization of IPv4 will use default values instead of throwing exception on conversion error.
 
@@ -648,6 +663,12 @@ Write data types in binary format instead of type names in RowBinaryWithNamesAnd
 )", 0) \
     M(URI, format_avro_schema_registry_url, "", R"(
 For AvroConfluent format: Confluent Schema Registry URL.
+)", 0) \
+    M(Bool, input_format_binary_read_json_as_string, false, R"(
+Read values of [JSON](../../sql-reference/data-types/newjson.md) data type as JSON [String](../../sql-reference/data-types/string.md) values in RowBinary input format.
+)", 0) \
+    M(Bool, output_format_binary_write_json_as_string, false, R"(
+Write values of [JSON](../../sql-reference/data-types/newjson.md) data type as JSON [String](../../sql-reference/data-types/string.md) values in RowBinary output format.
 )", 0) \
     \
     M(Bool, output_format_json_quote_64bit_integers, true, R"(

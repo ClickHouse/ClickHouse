@@ -83,8 +83,9 @@ public:
     /// A measure of how far this view has progressed. Used by dependent views.
     std::chrono::sys_seconds getNextRefreshTimeslot() const;
 
-    /// Called when progress is made (i.e. getNextRefreshTimeslot() changes) in any task that this task depends on.
-    void notifyDependencyProgress();
+    /// Called when refresh scheduling needs to be reconsidered, e.g. after a refresh happens in
+    /// any task that this task depends on.
+    void notify();
 
     /// For tests
     void setFakeTime(std::optional<Int64> t);

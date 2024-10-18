@@ -93,6 +93,18 @@ See also:
 - [DateTime data type.](../../sql-reference/data-types/datetime.md)
 - [Functions for working with dates and times.](../../sql-reference/functions/date-time-functions.md)
 
+## date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands {#date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands}
+
+Dynamically cut the trailing zeros of `datetime64` values to adjust the output scale to `(0, 3, 6)`, corresponding to `seconds`, `milliseconds`, and `microseconds`.
+
+See changes in following examples:
+
+- 2012-01-01 00:11:22.000000 -> 2012-01-01 00:11:22
+- 2012-01-01 00:11:22.120000 -> 2012-01-01 00:11:22.120
+- 2012-01-01 00:11:22.123400 -> 2012-01-01 00:11:22.123400
+
+Default value: `false`.
+
 ## date_time_overflow_behavior {#date_time_overflow_behavior}
 
 Type: DateTimeOverflowBehavior
@@ -492,6 +504,14 @@ Type: Bool
 Default value: 0
 
 Read data types in binary format instead of type names in RowBinaryWithNamesAndTypes input format
+
+### input_format_binary_read_json_as_string {#input_format_binary_read_json_as_string}
+
+Type: Bool
+
+Default value: 0
+
+Read values of [JSON](../../sql-reference/data-types/newjson.md) data type as JSON [String](../../sql-reference/data-types/string.md) values in RowBinary input format.
 
 ## input_format_bson_skip_fields_with_unsupported_types_in_schema_inference {#input_format_bson_skip_fields_with_unsupported_types_in_schema_inference}
 
@@ -1567,7 +1587,15 @@ Type: Bool
 
 Default value: 0
 
-Write data types in binary format instead of type names in RowBinaryWithNamesAndTypes output format 
+Write data types in binary format instead of type names in RowBinaryWithNamesAndTypes output format
+
+### output_format_binary_write_json_as_string {#output_format_binary_write_json_as_string}
+
+Type: Bool
+
+Default value: 0
+
+Write values of [JSON](../../sql-reference/data-types/newjson.md) data type as JSON [String](../../sql-reference/data-types/string.md) values in RowBinary output format.
 
 ## output_format_bson_string_as_string {#output_format_bson_string_as_string}
 
@@ -1858,6 +1886,14 @@ Type: Bool
 Default value: 0
 
 Write data types in binary format instead of type names in Native output format
+
+### output_format_native_write_json_as_string {#output_format_native_write_json_as_string}
+
+Type: Bool
+
+Default value: 0
+
+Write data of [JSON](../../sql-reference/data-types/newjson.md) column as [String](../../sql-reference/data-types/string.md) column containing JSON strings instead of default native JSON serialization.
 
 ## output_format_orc_compression_method {#output_format_orc_compression_method}
 
@@ -2297,5 +2333,3 @@ Type: Bool
 Default value: 1
 
 Validate usage of experimental and suspicious types inside nested types like Array/Map/Tuple
-
-
