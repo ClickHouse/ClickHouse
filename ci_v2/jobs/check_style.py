@@ -2,7 +2,6 @@ import math
 import multiprocessing
 import os
 import re
-import sys
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
@@ -49,25 +48,6 @@ def run_check_concurrent(check_name, check_function, files, nproc=NPROC):
         info=f"errors: {results}" if results else "",
     )
     return result
-
-
-def run_simple_check(check_name, check_function, **kwargs):
-    stop_watch = Utils.Stopwatch()
-
-    error = check_function(**kwargs)
-
-    result = Result(
-        name=check_name,
-        status=Result.Status.SUCCESS if not error else Result.Status.FAILED,
-        start_time=stop_watch.start_time,
-        duration=stop_watch.duration,
-        info=error,
-    )
-    return result
-
-
-def run_check(check_name, check_function, files):
-    return run_check_concurrent(check_name, check_function, files, nproc=1)
 
 
 def check_duplicate_includes(file_path):
@@ -117,7 +97,7 @@ def check_xmllint(file_paths):
 def check_functional_test_cases(files):
     """
     Queries with event_date should have yesterday() not today()
-    NOTE: it is not that accuate, but at least something.
+    NOTE: it is not that accurate, but at least something.
     """
 
     patterns = [
@@ -345,66 +325,58 @@ if __name__ == "__main__":
         )
     )
     results.append(
-        run_check(
-            check_name="Check Tests Numbers",
-            check_function=check_gaps_in_tests_numbers,
-            files=functional_test_files,
+        Result.create_from_command_execution(
+            name="Check Tests Numbers",
+            command=check_gaps_in_tests_numbers,
+            command_args=[functional_test_files],
         )
     )
     results.append(
-        run_simple_check(
-            check_name="Check Broken Symlinks",
-            check_function=check_broken_links,
-            path="./",
-            exclude_paths=["contrib/", "metadata/", "programs/server/data"],
+        Result.create_from_command_execution(
+            name="Check Broken Symlinks",
+            command=check_broken_links,
+            command_kwargs={
+                "path": "./",
+                "exclude_paths": ["contrib/", "metadata/", "programs/server/data"],
+            },
         )
     )
     results.append(
-        run_simple_check(
-            check_name="Check CPP code",
-            check_function=check_cpp_code,
+        Result.create_from_command_execution(
+            name="Check CPP code",
+            command=check_cpp_code,
         )
     )
     results.append(
-        run_simple_check(
-            check_name="Check Submodules",
-            check_function=check_repo_submodules,
+        Result.create_from_command_execution(
+            name="Check Submodules",
+            command=check_repo_submodules,
         )
     )
     results.append(
-        run_check(
-            check_name="Check File Names",
-            check_function=check_file_names,
-            files=all_files,
+        Result.create_from_command_execution(
+            name="Check File Names",
+            command=check_file_names,
+            command_args=[all_files],
         )
     )
     results.append(
-        run_simple_check(
-            check_name="Check Many Different Things",
-            check_function=check_other,
+        Result.create_from_command_execution(
+            name="Check Many Different Things",
+            command=check_other,
         )
     )
     results.append(
-        run_simple_check(
-            check_name="Check Codespell",
-            check_function=check_codespell,
+        Result.create_from_command_execution(
+            name="Check Codespell",
+            command=check_codespell,
         )
     )
     results.append(
-        run_simple_check(
-            check_name="Check Aspell",
-            check_function=check_aspell,
+        Result.create_from_command_execution(
+            name="Check Aspell",
+            command=check_aspell,
         )
     )
 
-    res = Result.create_from(results=results, stopwatch=stop_watch).dump()
-
-    if not res.is_ok():
-        print("Style check: failed")
-        for result in results:
-            if not result.is_ok():
-                print("Failed check:")
-                print("  |  ", result)
-        sys.exit(1)
-    else:
-        print("Style check: ok")
+    Result.create_from(results=results, stopwatch=stop_watch).finish_job_accordingly()
