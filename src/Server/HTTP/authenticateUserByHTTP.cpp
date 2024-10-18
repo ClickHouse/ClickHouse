@@ -54,6 +54,7 @@ bool authenticateUserByHTTP(
     HTTPServerResponse & response,
     Session & session,
     std::unique_ptr<Credentials> & request_credentials,
+    const std::optional<BasicCredentials> & config_credentials,
     ContextPtr global_context,
     LoggerPtr log)
 {
@@ -79,6 +80,10 @@ bool authenticateUserByHTTP(
     std::string spnego_challenge;
     SSLCertificateSubjects certificate_subjects;
 
+    if (config_credentials)
+    {
+        checkUserNameNotEmpty(config_credentials->getUserName(), "config authentication");
+    }
     if (has_ssl_certificate_auth)
     {
 #if USE_SSL
@@ -86,6 +91,8 @@ bool authenticateUserByHTTP(
         checkUserNameNotEmpty(user, "X-ClickHouse HTTP headers");
 
         /// It is prohibited to mix different authorization schemes.
+        if (config_credentials.has_value())
+            throwMultipleAuthenticationMethods("SSL certificate authentication", "authentication set in config");
         if (!password.empty())
             throwMultipleAuthenticationMethods("SSL certificate authentication", "authentication via password");
         if (has_http_credentials)
@@ -109,6 +116,8 @@ bool authenticateUserByHTTP(
         checkUserNameNotEmpty(user, "X-ClickHouse HTTP headers");
 
         /// It is prohibited to mix different authorization schemes.
+        if (config_credentials.has_value())
+            throwMultipleAuthenticationMethods("X-ClickHouse HTTP headers", "authentication set in config");
         if (has_http_credentials)
             throwMultipleAuthenticationMethods("X-ClickHouse HTTP headers", "Authorization HTTP header");
         if (has_credentials_in_query_params)
@@ -117,6 +126,8 @@ bool authenticateUserByHTTP(
     else if (has_http_credentials)
     {
         /// It is prohibited to mix different authorization schemes.
+        if (config_credentials.has_value())
+            throwMultipleAuthenticationMethods("Authorization HTTP header", "authentication set in config");
         if (has_credentials_in_query_params)
             throwMultipleAuthenticationMethods("Authorization HTTP header", "authentication via parameters");
 
@@ -189,6 +200,10 @@ bool authenticateUserByHTTP(
             request_credentials = std::move(current_credentials);
             return false;
         }
+    }
+    else if (config_credentials.has_value())
+    {
+        current_credentials = std::make_unique<BasicCredentials>(config_credentials->getUserName(), config_credentials->getPassword());
     }
     else // I.e., now using user name and password strings ("Basic").
     {
