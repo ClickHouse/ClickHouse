@@ -18,6 +18,7 @@ class ReadBuffer;
  */
 struct ObjectStorageQueueTableMetadata
 {
+    /// Non-changeable settings.
     const String format_name;
     const String columns;
     const String after_processing;
@@ -26,15 +27,30 @@ struct ObjectStorageQueueTableMetadata
     const UInt64 tracked_files_ttl_sec;
     const UInt64 buckets;
     const String last_processed_path;
-    const UInt64 loading_retries;
+    /// Changeable settings.
+    std::atomic<UInt64> loading_retries;
+    std::atomic<UInt64> processing_threads_num;
 
-    UInt64 processing_threads_num; /// Can be changed from keeper.
     bool processing_threads_num_changed = false;
 
     ObjectStorageQueueTableMetadata(
         const ObjectStorageQueueSettings & engine_settings,
         const ColumnsDescription & columns_,
         const std::string & format_);
+
+    ObjectStorageQueueTableMetadata(const ObjectStorageQueueTableMetadata & other)
+        : format_name(other.format_name)
+        , columns(other.columns)
+        , after_processing(other.after_processing)
+        , mode(other.mode)
+        , tracked_files_limit(other.tracked_files_limit)
+        , tracked_files_ttl_sec(other.tracked_files_ttl_sec)
+        , buckets(other.buckets)
+        , last_processed_path(other.last_processed_path)
+        , loading_retries(other.loading_retries.load())
+        , processing_threads_num(other.processing_threads_num.load())
+    {
+    }
 
     explicit ObjectStorageQueueTableMetadata(const Poco::JSON::Object::Ptr & json);
 

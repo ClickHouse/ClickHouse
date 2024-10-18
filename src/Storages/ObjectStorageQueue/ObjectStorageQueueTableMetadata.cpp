@@ -65,12 +65,12 @@ String ObjectStorageQueueTableMetadata::toString() const
     json.set("mode", mode);
     json.set("tracked_files_limit", tracked_files_limit);
     json.set("tracked_files_ttl_sec", tracked_files_ttl_sec);
-    json.set("processing_threads_num", processing_threads_num);
+    json.set("processing_threads_num", processing_threads_num.load());
     json.set("buckets", buckets);
     json.set("format_name", format_name);
     json.set("columns", columns);
     json.set("last_processed_file", last_processed_path);
-    json.set("loading_retries", loading_retries);
+    json.set("loading_retries", loading_retries.load());
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
@@ -135,7 +135,7 @@ void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueT
         else
             LOG_TRACE(log, "{}", message);
 
-        processing_threads_num = from_zk.processing_threads_num;
+        processing_threads_num = from_zk.processing_threads_num.load();
     }
 }
 
