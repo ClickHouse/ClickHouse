@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-allowed_name_length=$($CLICKHOUSE_CLIENT -mn --query="SELECT getMaxTableNameForDatabase('$CLICKHOUSE_DATABASE')")
+allowed_name_length=$($CLICKHOUSE_CLIENT -mn --query="SELECT getMaxTableNameLengthForDatabase('$CLICKHOUSE_DATABASE')")
 let excess_length=allowed_name_length+1
 
 long_table_name=$(openssl rand -base64 $excess_length | tr -dc A-Za-z | head -c $excess_length)
