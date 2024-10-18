@@ -682,3 +682,81 @@ INSTANTIATE_TEST_SUITE_P(
                 "WITH\n    table_1 AS\n    (\n        SELECT\n            country,\n            city,\n            c + some_derived_value AS _expr_1\n        FROM matches\n        WHERE start_date > toDate('2023-05-30')\n    ),\n    table_0 AS\n    (\n        SELECT\n            country,\n            city,\n            AVG(_expr_1) AS _expr_0,\n            MAX(_expr_1) AS aggr\n        FROM table_1\n        WHERE _expr_1 > 0\n        GROUP BY\n            country,\n            city\n    )\nSELECT\n    country,\n    city,\n    _expr_0,\n    aggr,\n    CONCAT(city, ' in ', country) AS place,\n    LEFT(country, 2) AS country_code\nFROM table_0\nORDER BY\n    aggr ASC,\n    country DESC\nLIMIT 20",
             },
         })));
+
+namespace DB { std::ostream & operator<<(std::ostream & stream, const Field & field) { return stream << field.dump(); } }
+
+
+template <typename ParserType, typename LiteralType>
+void testCollectionOfLiteralsParser(
+    const std::vector<std::string_view> & test_cases,
+    const std::vector<std::string_view> & negative_test_cases,
+    size_t top_level_size)
+{
+    ParserType parser;
+    auto parse_literal = [&](std::string_view text) -> std::optional<LiteralType>
+    {
+        try
+        {
+            auto ast = parseQuery(parser, text.begin(), text.end(), 0, 0, 0);
+            const auto * literal = typeid_cast<const ASTLiteral *>(ast.get());
+            if (!literal || literal->value.getType() != Field::TypeToEnum<LiteralType>::value)
+                return {};
+            return literal->value.template safeGet<LiteralType>();
+        }
+        catch (const DB::Exception & e)
+        {
+            std::cerr << e.displayText() << std::endl;
+            return {};
+        }
+    };
+
+    const auto & reference_literal = parse_literal(test_cases[0]);
+    ASSERT_TRUE(reference_literal && reference_literal->size() == top_level_size);
+
+    for (size_t i = 1; i < test_cases.size(); ++i)
+    {
+        SCOPED_TRACE(fmt::format("Test case #{}: {}", i + 1, test_cases[i]));
+        EXPECT_EQ(reference_literal, parse_literal(test_cases[i]));
+    }
+
+    for (size_t i = 0; i < negative_test_cases.size(); ++i)
+    {
+        SCOPED_TRACE(fmt::format("Negative test case #{}: {}", i + 1, negative_test_cases[i]));
+        auto negative_example = parse_literal(negative_test_cases[i]);
+        ASSERT_TRUE(negative_example);
+        EXPECT_NE(reference_literal, negative_example);
+    }
+}
+
+TEST(ParserTest, parseTupleLiterals)
+try
+{
+    testCollectionOfLiteralsParser<ParserTupleOfLiterals, Tuple>({
+        "((1, 2), (3, 4))",
+        "(((1), 2), (3, 4))",
+        "(((1, 2)), (3, 4))",
+        "(((1), 2), (((((((3))))), 4)))",
+        "(tuple(1, 2), (3, 4))",
+        "(tuple((1), (2)), (tuple(3, 4)))",
+    }, {
+        "((tuple(1), 2), (3, 4))",
+    }, 2);
+
+    // testCollectionOfLiteralsParser<ParserArrayOfLiterals, Array>({
+    //     "[[1, 2, 3]]",
+    //     "[[(1), (2), 3]]",
+    //     "[[1, (((2))), (((((3)))))]]",
+    //     "[(([1, (((2))), (((((3)))))]))]",
+    //     "[([1, 2, 3])]",
+    // }, {
+    //     "[[[1], 2, 3]]",
+    //     "[1, 2, 3]",
+    //     "[[1, (2, 3)]]",
+    //     "[[[1, 2, 3]]]",
+    // }, 1);
+}
+catch (...)
+{
+    std::cerr << getCurrentExceptionMessage(true) << std::endl;
+    throw;
+}
