@@ -369,6 +369,7 @@ template <typename TColumn>
 void ParquetLeafColReader<TColumn>::readPage()
 {
     // refer to: ColumnReaderImplBase::ReadNewPage in column_reader.cc
+    // this is where decompression happens
     auto cur_page = parquet_page_reader->NextPage();
     switch (cur_page->type())
     {
@@ -475,12 +476,12 @@ void ParquetLeafColReader<TColumn>::readPageV1(const parquet::DataPageV1 & page)
         throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Unsupported encoding: {}", page.definition_level_encoding());
     }
     const auto * buffer =  page.data();
-    auto max_size = page.size();
+    auto max_size = static_cast<std::size_t>(page.size());
 
     if (col_descriptor.max_repetition_level() > 0)
     {
         auto rep_levels_bytes = repetition_level_decoder.SetData(
-            page.repetition_level_encoding(), col_descriptor.max_repetition_level(), 0, buffer, max_size);
+            page.repetition_level_encoding(), col_descriptor.max_repetition_level(), 0, buffer, static_cast<int>(max_size));
         buffer += rep_levels_bytes;
         max_size -= rep_levels_bytes;
     }
@@ -490,7 +491,24 @@ void ParquetLeafColReader<TColumn>::readPageV1(const parquet::DataPageV1 & page)
     if (col_descriptor.max_definition_level() > 0)
     {
         auto bit_width = arrow::bit_util::Log2(col_descriptor.max_definition_level() + 1);
+
+        if (max_size < sizeof(int32_t))
+        {
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Not enough bytes in parquet page buffer, corrupt?");
+        }
+
         auto num_bytes = ::arrow::util::SafeLoadAs<int32_t>(buffer);
+
+        if (num_bytes < 0)
+        {
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Number of bytes for dl is negative, corrupt?");
+        }
+
+        if (num_bytes + 4u > max_size)
+        {
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Not enough bytes in parquet page buffer, corrupt?");
+        }
+
         auto bit_reader = std::make_unique<arrow::bit_util::BitReader>(buffer + 4, num_bytes);
         num_bytes += 4;
         buffer += num_bytes;
@@ -523,6 +541,12 @@ void ParquetLeafColReader<TColumn>::readPageV2(const parquet::DataPageV2 & page)
     cur_page_values = page.num_values();
 
     const auto * buffer =  page.data();
+
+    if (page.repetition_levels_byte_length() < 0 || page.definition_levels_byte_length() < 0)
+    {
+        throw Exception(
+            ErrorCodes::PARQUET_EXCEPTION, "Either RL or DL is negative, this should not happen. Most likely corrupt file or parsing issue");
+    }
 
     const int64_t total_levels_length =
         static_cast<int64_t>(page.repetition_levels_byte_length()) +
@@ -562,7 +586,9 @@ void ParquetLeafColReader<TColumn>::readPageV2(const parquet::DataPageV2 & page)
         def_level_reader = std::make_unique<RleValuesReader>(page.num_values());
     }
 
-    initDataReader(page.encoding(), &buffer[total_levels_length], page.size(), std::move(def_level_reader));
+    buffer += page.definition_levels_byte_length();
+
+    initDataReader(page.encoding(), buffer, page.size() - total_levels_length, std::move(def_level_reader));
 }
 
 template <typename TColumn>
