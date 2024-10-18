@@ -3626,15 +3626,14 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         performRequiredConversions(old_header, columns_to_check_conversion, local_context);
     }
 
-    // HERE
     if (old_metadata.hasSettingsChanges())
     {
         const auto current_changes = old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
         const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
         local_context->checkMergeTreeSettingsConstraints(*settings_from_storage, new_changes);
 
-        // bool found_disk_setting = false;
-        // bool found_storage_policy_setting = false;
+        bool found_disk_setting = false;
+        bool found_storage_policy_setting = false;
 
         for (const auto & changed_setting : new_changes)
         {
@@ -3661,21 +3660,19 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             if (setting_name == "storage_policy")
             {
                 checkStoragePolicy(local_context->getStoragePolicy(new_value.safeGet<String>()));
-                // found_storage_policy_setting = true;
+                found_storage_policy_setting = true;
             }
-            if (setting_name == "disk")
+            else if (setting_name == "disk")
             {
-                // TODO: check reset
-                // if (getSettings()->has("storage_policy"))
-                //     throw Exception(
-                //         ErrorCodes::BAD_ARGUMENTS,
-                //         "MergeTree settings `storage_policy` and `disk` cannot be specified at the same time");
                 checkStoragePolicy(local_context->getStoragePolicyFromDisk(new_value.safeGet<String>()));
-                // found_disk_setting = true;
+                found_disk_setting = true;
             }
         }
 
-        // if ()
+        if (found_storage_policy_setting && found_disk_setting)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "MergeTree settings `storage_policy` and `disk` cannot be specified at the same time");
 
         /// Check if it is safe to reset the settings
         for (const auto & current_setting : current_changes)
@@ -3775,12 +3772,16 @@ void MergeTreeData::changeSettings(
         bool has_storage_policy_changed = false;
 
         const auto & new_changes = new_settings->as<const ASTSetQuery &>().changes;
+        StoragePolicyPtr new_storage_policy = nullptr;
 
         for (const auto & change : new_changes)
         {
-            if (change.name == "storage_policy")
+            if (change.name == "disk" || change.name == "storage_policy")
             {
-                StoragePolicyPtr new_storage_policy = getContext()->getStoragePolicy(change.value.safeGet<String>());
+                if (change.name == "disk")
+                    new_storage_policy = getContext()->getStoragePolicyFromDisk(change.value.safeGet<String>());
+                else
+                    new_storage_policy = getContext()->getStoragePolicy(change.value.safeGet<String>());
                 StoragePolicyPtr old_storage_policy = getStoragePolicy();
 
                 /// StoragePolicy of different version or name is guaranteed to have different pointer
