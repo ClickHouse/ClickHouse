@@ -71,6 +71,7 @@ struct GroupArraySortedData
     ///  * constructor must be called manually for added elements; in particular, make sure
     ///    no exceptions can be thrown between adding an element and initializing it
     ///    (otherwise ~GroupArraySortedData will call destructor on uninitialized Field and likely crash).
+    /// (Next time we touch this code we should probably change it to just use std::vector if T = Field.)
     Array values;
 
     static bool compare(const T & lhs, const T & rhs)
