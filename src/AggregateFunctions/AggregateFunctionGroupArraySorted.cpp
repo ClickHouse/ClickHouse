@@ -59,19 +59,13 @@ constexpr size_t group_array_sorted_sort_strategy_max_elements_threshold = 10000
 template <typename T, GroupArraySortedStrategy strategy>
 struct GroupArraySortedData
 {
+    static constexpr bool is_value_generic_field = std::is_same_v<T, Field>;
+
     using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
-    using Array = PODArray<T, 32, Allocator>;
+    using Array = typename std::conditional_t<is_value_generic_field, std::vector<T>, PODArray<T, 32, Allocator>>;
 
     static constexpr size_t partial_sort_max_elements_factor = 2;
 
-    static constexpr bool is_value_generic_field = std::is_same_v<T, Field>;
-
-    /// If T is Field, this is a PODArray of non-POD values. Be very careful when resizing it:
-    ///  * destructor must be called manually for removed elements,
-    ///  * constructor must be called manually for added elements; in particular, make sure
-    ///    no exceptions can be thrown between adding an element and initializing it
-    ///    (otherwise ~GroupArraySortedData will call destructor on uninitialized Field and likely crash).
-    /// (Next time we touch this code we should probably change it to just use std::vector if T = Field.)
     Array values;
 
     static bool compare(const T & lhs, const T & rhs)
@@ -150,7 +144,7 @@ struct GroupArraySortedData
         }
 
         if (values.size() > max_elements)
-            shrink(max_elements, arena);
+            resize(max_elements, arena);
     }
 
     ALWAYS_INLINE void partialSortAndLimitIfNeeded(size_t max_elements, Arena * arena)
@@ -159,18 +153,23 @@ struct GroupArraySortedData
             return;
 
         ::nth_element(values.begin(), values.begin() + max_elements, values.end(), Comparator());
-        shrink(max_elements, arena);
+        resize(max_elements, arena);
     }
 
-    ALWAYS_INLINE void shrink(size_t max_elements, Arena * arena)
+    ALWAYS_INLINE void resize(size_t n, Arena * arena)
     {
-        assert(max_elements <= values.size());
         if constexpr (is_value_generic_field)
-        {
-            for (size_t i = values.size(); i < max_elements; ++i)
-                values[i].~T();
-        }
-        values.resize(max_elements, arena);
+            values.resize(n);
+        else
+            values.resize(n, arena);
+    }
+
+    ALWAYS_INLINE void push_back(T && element, Arena * arena)
+    {
+        if constexpr (is_value_generic_field)
+            values.push_back(element);
+        else
+            values.push_back(element, arena);
     }
 
     ALWAYS_INLINE void addElement(T && element, size_t max_elements, Arena * arena)
@@ -188,12 +187,12 @@ struct GroupArraySortedData
                 return;
             }
 
-            values.push_back(std::move(element), arena);
+            push_back(std::move(element), arena);
             std::push_heap(values.begin(), values.end(), Comparator());
         }
         else
         {
-            values.push_back(std::move(element), arena);
+            push_back(std::move(element), arena);
             partialSortAndLimitIfNeeded(max_elements, arena);
         }
     }
@@ -225,14 +224,6 @@ struct GroupArraySortedData
 
             for (size_t i = 0; i < values.size(); ++i)
                 result_array_data[result_array_data_insert_begin + i] = values[i];
-        }
-    }
-
-    ~GroupArraySortedData()
-    {
-        for (auto & value : values)
-        {
-            value.~T();
         }
     }
 };
@@ -331,13 +322,11 @@ public:
 
         auto & values = this->data(place).values;
 
-        if constexpr (std::is_same_v<T, Field>)
+        if constexpr (Data::is_value_generic_field)
         {
-            values.reserve_exact(size, arena);
-            for (size_t i = 0; i < size; ++i)
+            values.resize(size);
+            for (Field & element : values)
             {
-                values.push_back(Field(), arena);
-                Field & element = values.back();
                 bool has_value = false;
                 readBinary(has_value, buf);
                 if (has_value)
