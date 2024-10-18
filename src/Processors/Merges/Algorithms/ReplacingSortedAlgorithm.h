@@ -24,6 +24,8 @@ struct ChunkSelectFinalIndices : public ChunkInfoCloneable<ChunkSelectFinalIndic
     const ColumnUInt64 * select_final_indices = nullptr;
 };
 
+class TemporaryDataBuffer;
+
 /** Merges several sorted inputs into one.
   * For each group of consecutive identical values of the primary key (the columns by which the data is sorted),
   *  keeps row with max `version` value.
@@ -38,7 +40,7 @@ public:
         const String & version_column,
         size_t max_block_size_rows,
         size_t max_block_size_bytes,
-        WriteBuffer * out_row_sources_buf_ = nullptr,
+        std::shared_ptr<TemporaryDataBuffer> temp_data_buffer_ = nullptr,
         bool use_average_block_sizes = false,
         bool cleanup = false,
         bool enable_vertical_final_ = false);
@@ -58,6 +60,8 @@ private:
     static constexpr size_t max_row_refs = 2; /// last, current.
     RowRef selected_row; /// Last row with maximum version for current primary key, may extend lifetime of chunk in input source
     size_t max_pos = 0; /// The position (into current_row_sources) of the row with the highest version.
+
+    std::shared_ptr<TemporaryDataBuffer> temp_data_buffer = nullptr;
 
     /// Sources of rows with the current primary key.
     PODArray<RowSourcePart> current_row_sources;
