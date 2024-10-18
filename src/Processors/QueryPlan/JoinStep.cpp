@@ -173,7 +173,7 @@ void JoinStep::updateOutputHeader()
     if (join_algorithm_header)
         return;
 
-    const auto & header = swap_streams ? input_streams[1].header : input_streams[0].header;
+    const auto & header = swap_streams ? input_headers[1] : input_headers[0];
 
     Block result_header = JoiningTransform::transformHeader(header, join);
     join_algorithm_header = result_header;
