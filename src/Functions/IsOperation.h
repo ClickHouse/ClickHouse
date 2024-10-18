@@ -12,11 +12,13 @@ template <typename, typename> struct PlusImpl;
 template <typename, typename> struct MinusImpl;
 template <typename, typename> struct MultiplyImpl;
 template <typename, typename> struct DivideFloatingImpl;
+template <typename, typename> struct DivideOrNullImpl;
 template <typename, typename> struct DivideIntegralImpl;
 template <typename, typename> struct DivideIntegralOrZeroImpl;
 template <typename, typename> struct LeastBaseImpl;
 template <typename, typename> struct GreatestBaseImpl;
 template <typename, typename> struct ModuloImpl;
+template <typename, typename> struct ModuloOrNullImpl;
 template <typename, typename> struct PositiveModuloImpl;
 template <typename, typename> struct EqualsOp;
 template <typename, typename> struct NotEqualsOp;
@@ -51,16 +53,18 @@ struct IsOperation
     static constexpr bool minus = IsSameOperation<Op, MinusImpl>::value;
     static constexpr bool multiply = IsSameOperation<Op, MultiplyImpl>::value;
     static constexpr bool div_floating = IsSameOperation<Op, DivideFloatingImpl>::value;
+    static constexpr bool divide_or_null = IsSameOperation<Op, DivideOrNullImpl>::value;
     static constexpr bool int_div = IsSameOperation<Op, DivideIntegralImpl>::value;
     static constexpr bool int_div_or_zero = IsSameOperation<Op, DivideIntegralOrZeroImpl>::value;
     static constexpr bool modulo = IsSameOperation<Op, ModuloImpl>::value;
+    static constexpr bool modulo_or_null = IsSameOperation<Op, ModuloOrNullImpl>::value;
     static constexpr bool positive_modulo = IsSameOperation<Op, PositiveModuloImpl>::value;
     static constexpr bool least = IsSameOperation<Op, LeastBaseImpl>::value;
     static constexpr bool greatest = IsSameOperation<Op, GreatestBaseImpl>::value;
 
     static constexpr bool bit_hamming_distance = IsSameOperation<Op, BitHammingDistanceImpl>::value;
 
-    static constexpr bool division = div_floating || int_div || int_div_or_zero || modulo;
+    static constexpr bool division = div_floating || int_div || int_div_or_zero || modulo || modulo_or_null || divide_or_null;
     // NOTE: allow_decimal should not fully contain `division` because of divInt
     static constexpr bool allow_decimal = plus || minus || multiply || division || least || greatest;
 };
