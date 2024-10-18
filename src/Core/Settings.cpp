@@ -701,6 +701,9 @@ Move more conditions from WHERE to PREWHERE and do reads from disk and filtering
     M(Bool, move_primary_key_columns_to_end_of_prewhere, true, R"(
 Move PREWHERE conditions containing primary key columns to the end of AND chain. It is likely that these conditions are taken into account during primary key analysis and thus will not contribute a lot to PREWHERE filtering.
 )", 0) \
+    M(Bool, allow_reorder_prewhere_conditions, true, R"(
+When moving conditions from WHERE to PREWHERE, allow reordering them to optimize filtering
+)", 0) \
     \
     M(UInt64, alter_sync, 1, R"(
 Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
@@ -6205,16 +6208,6 @@ std::vector<std::string_view> Settings::getUnchangedNames() const
 {
     std::vector<std::string_view> setting_names;
     for (const auto & setting : impl->allUnchanged())
-    {
-        setting_names.emplace_back(setting.getName());
-    }
-    return setting_names;
-}
-
-std::vector<std::string_view> Settings::getChangedNames() const
-{
-    std::vector<std::string_view> setting_names;
-    for (const auto & setting : impl->allChanged())
     {
         setting_names.emplace_back(setting.getName());
     }
