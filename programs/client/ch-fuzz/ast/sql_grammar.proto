@@ -2766,7 +2766,7 @@ enum ExpQueryTreeOpt {
 
 message ExplainOption {
   required uint32 opt = 1;
-  required bool val = 2;
+  required int32 val = 2;
 }
 
 message SelectIntoFile {

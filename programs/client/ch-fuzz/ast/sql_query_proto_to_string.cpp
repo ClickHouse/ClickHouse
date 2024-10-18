@@ -2515,7 +2515,7 @@ CONV_FN(ExplainQuery, explain) {
       std::transform(ostr.begin(), ostr.end(), ostr.begin(), [](unsigned char c){ return std::tolower(c); });
       ret += ostr;
       ret += " = ";
-      ret += eopt.val() ? "1" : "0";
+      ret += std::to_string(eopt.val());
     }
   }
   ret += " ";

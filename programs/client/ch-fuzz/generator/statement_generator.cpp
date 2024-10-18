@@ -1402,10 +1402,70 @@ int StatementGenerator::GenerateNextQuery(RandomGenerator &rg, sql_query_grammar
 	return GenerateTopSelect(rg, sq->mutable_select());
 }
 
-int StatementGenerator::GenerateNextExplain(RandomGenerator &rg, sql_query_grammar::ExplainQuery *eq) {
+static const std::vector<TestSetting> explain_settings{
+	//QUERY TREE
+	TestSetting("run_passes", {"0", "1"}),
+	TestSetting("dump_passes", {"0", "1"}),
+	TestSetting("passes", {"-1", "0", "1", "2", "3", "4"}),
+	//PLAN
+	TestSetting("header", {"0", "1"}),
+	TestSetting("description", {"0", "1"}),
+	TestSetting("indexes", {"0", "1"}),
+	TestSetting("actions", {"0", "1"}),
+	TestSetting("json", {"0", "1"}),
+	//PIPELINE
+	TestSetting("header", {"0", "1"}),
+	TestSetting("graph", {"0", "1"}),
+	TestSetting("compact", {"0", "1"})
+};
 
+int StatementGenerator::GenerateNextExplain(RandomGenerator &rg, sql_query_grammar::ExplainQuery *eq) {
 	if (rg.NextSmallNumber() < 10) {
-		eq->set_expl(static_cast<sql_query_grammar::ExplainQuery_ExplainValues>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::ExplainQuery::ExplainValues_MAX)) + 1));
+		sql_query_grammar::ExplainQuery_ExplainValues val =
+			static_cast<sql_query_grammar::ExplainQuery_ExplainValues>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::ExplainQuery::ExplainValues_MAX)) + 1);
+
+		if (rg.NextBool()) {
+			uint32_t offset = 0;
+
+			assert(this->ids.empty());
+			switch (val) {
+				case sql_query_grammar::ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_QUERY_TREE:
+					this->ids.push_back(0);
+					this->ids.push_back(1);
+					this->ids.push_back(2);
+					break;
+				case sql_query_grammar::ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PLAN:
+					offset = 3;
+					this->ids.push_back(3);
+					this->ids.push_back(4);
+					this->ids.push_back(5);
+					this->ids.push_back(6);
+					this->ids.push_back(7);
+					break;
+				case sql_query_grammar::ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PIPELINE:
+					offset = 8;
+					this->ids.push_back(8);
+					this->ids.push_back(9);
+					this->ids.push_back(10);
+					break;
+				default:
+					break;
+			}
+			if (!this->ids.empty()) {
+				const size_t noptions = (static_cast<size_t>(rg.NextMediumNumber()) % this->ids.size()) + 1;
+				std::shuffle(ids.begin(), ids.end(), rg.gen);
+
+				for (size_t i = 0 ; i < noptions ; i++) {
+					const uint32_t nopt = this->ids[i];
+					sql_query_grammar::ExplainOption *eopt = eq->add_opts();
+
+					eopt->set_opt(nopt - offset);
+					eopt->set_val(std::stoi(rg.PickRandomlyFromSet(explain_settings[nopt].options)));
+				}
+				this->ids.clear();
+			}
+		}
+		eq->set_expl(val);
 	}
 	return GenerateNextQuery(rg, eq->mutable_inner_query());
 }

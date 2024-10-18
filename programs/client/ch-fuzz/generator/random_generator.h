@@ -11,6 +11,14 @@
 
 namespace chfuzz {
 
+typedef struct TestSetting {
+	const std::string tsetting;
+	const std::set<std::string> options;
+
+	TestSetting (const std::string &sett, const std::set<std::string> &noptions) :
+		tsetting(sett), options(noptions) {}
+} TestSetting;
+
 static inline std::tm
 make_tm(int year, int month, int day) {
 	std::tm tm;

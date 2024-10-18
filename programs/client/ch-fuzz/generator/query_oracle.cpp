@@ -265,14 +265,6 @@ int QueryOracle::GenerateImportQuery(const SQLTable &t, const sql_query_grammar:
 /*
 Run query with different settings oracle
 */
-typedef struct TestSetting {
-	const std::string tsetting;
-	const std::set<std::string> options;
-
-	TestSetting (const std::string &sett, const std::set<std::string> &noptions) :
-		tsetting(sett), options(noptions) {}
-} TestSetting;
-
 static const std::vector<TestSetting> test_settings{
 	TestSetting("aggregate_functions_null_for_empty", {"0", "1"}),
 	TestSetting("aggregation_in_order_max_block_bytes", {"0", "1"}),
