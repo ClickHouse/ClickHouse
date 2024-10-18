@@ -589,11 +589,8 @@ AggregatingProjectionStep::AggregatingProjectionStep(
     , merge_threads(merge_threads_)
     , temporary_data_merge_threads(temporary_data_merge_threads_)
 {
-    updateInputHeaders(std::move(input_headers_));
-}
+    input_headers = std::move(input_headers_);
 
-void AggregatingProjectionStep::updateOutputHeader()
-{
     if (input_headers.size() != 2)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,

@@ -21,8 +21,6 @@ public:
     void describePipeline(FormatSettings & settings) const override;
 
 private:
-    void updateOutputHeader() override;
-
     Operator current_operator;
     size_t max_threads;
 };

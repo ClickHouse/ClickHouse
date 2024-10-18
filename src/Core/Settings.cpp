@@ -1902,6 +1902,9 @@ See also:
 For single JOIN in case of identifier ambiguity prefer left table
 )", IMPORTANT) \
     \
+    M(JoinInnerTableSelectionMode, query_plan_join_inner_table_selection, JoinInnerTableSelectionMode::Auto, R"(
+Select the side of the join to be the inner table in the query plan. Supported only for `ALL` join strictness with `JOIN ON` clause. Possible values: 'auto', 'left', 'right'.
+)", 0) \
     M(UInt64, preferred_block_size_bytes, 1000000, R"(
 This setting adjusts the data block size for query processing and represents additional fine-tuning to the more rough 'max_block_size' setting. If the columns are large and with 'max_block_size' rows the block size is likely to be larger than the specified amount of bytes, its size will be lowered for better CPU cache locality.
 )", 0) \
@@ -6199,6 +6202,16 @@ std::vector<std::string_view> Settings::getUnchangedNames() const
 {
     std::vector<std::string_view> setting_names;
     for (const auto & setting : impl->allUnchanged())
+    {
+        setting_names.emplace_back(setting.getName());
+    }
+    return setting_names;
+}
+
+std::vector<std::string_view> Settings::getChangedNames() const
+{
+    std::vector<std::string_view> setting_names;
+    for (const auto & setting : impl->allChanged())
     {
         setting_names.emplace_back(setting.getName());
     }

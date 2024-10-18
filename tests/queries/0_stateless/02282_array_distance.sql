@@ -48,7 +48,8 @@ SELECT
     L2SquaredDistance(v1.v, v2.v),
     cosineDistance(v1.v, v2.v)
 FROM vec2 v1, vec2 v2
-WHERE length(v1.v) == length(v2.v);
+WHERE length(v1.v) == length(v2.v)
+ORDER BY ALL;
 
 INSERT INTO vec2f VALUES (1, [100, 200, 0]), (2, [888, 777, 666]), (3, range(1, 35, 1)), (4, range(3, 37, 1)), (5, range(1, 135, 1)), (6, range(3, 137, 1));
 SELECT
@@ -61,7 +62,8 @@ SELECT
     L2SquaredDistance(v1.v, v2.v),
     cosineDistance(v1.v, v2.v)
 FROM vec2f v1, vec2f v2
-WHERE length(v1.v) == length(v2.v);
+WHERE length(v1.v) == length(v2.v)
+ORDER BY ALL;
 
 INSERT INTO vec2d VALUES (1, [100, 200, 0]), (2, [888, 777, 666]), (3, range(1, 35, 1)), (4, range(3, 37, 1)), (5, range(1, 135, 1)), (6, range(3, 137, 1));
 SELECT
@@ -74,7 +76,8 @@ SELECT
     L2SquaredDistance(v1.v, v2.v),
     cosineDistance(v1.v, v2.v)
 FROM vec2d v1, vec2d v2
-WHERE length(v1.v) == length(v2.v);
+WHERE length(v1.v) == length(v2.v)
+ORDER BY ALL;
 
 SELECT
     v1.id,
@@ -86,7 +89,8 @@ SELECT
     L2SquaredDistance(v1.v, v2.v),
     cosineDistance(v1.v, v2.v)
 FROM vec2f v1, vec2d v2
-WHERE length(v1.v) == length(v2.v);
+WHERE length(v1.v) == length(v2.v)
+ORDER BY ALL;
 
 SELECT L1Distance([0, 0], [1]); -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
 SELECT L2Distance([1, 2], (3,4)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

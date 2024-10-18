@@ -19,6 +19,8 @@ public:
 
     size_t getMaxThreads() const { return max_threads; }
 
+    bool canUpdateInputHeader() const override { return true; }
+
 private:
     void updateOutputHeader() override;
 
