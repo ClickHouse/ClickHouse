@@ -187,6 +187,7 @@ async function update(data) {
 
     const matches = data.part_name.match(/[\w-]+_(\d+)_(\d+)_(\d+)(?:_(\d+))?/);
     const min_block_id = +matches[1];
+    const max_block_id = +matches[2];
     const level = +matches[3];
 
     if (data.event_type == 'NewPart' || data.event_type == 'DownloadPart' || data.event_type == 'MergeParts' || data.event_type == 'MutatePart') {
@@ -208,7 +209,9 @@ async function update(data) {
 
             part = document.createElement('div');
             part.id = part_id;
+            part['data-name'] = data.part_name;
             part['data-min-block-id'] = min_block_id;
+            part['data-max-block-id'] = max_block_id;
             part['data-level'] = level;
             part.className = 'part';
             part_title = document.createElement('div');
@@ -224,9 +227,21 @@ async function update(data) {
 
             let inserted = false;
             for (const child of partition.childNodes) {
-                if (child['data-min-block-id'] >= min_block_id) {
+                const child_min_block_id = child['data-min-block-id'];
+                const child_max_block_id = child['data-max-block-id'];
+                const child_level = child['data-level'];
+
+                if (!inserted && child_min_block_id >= min_block_id) {
                     partition.insertBefore(part, child);
                     inserted = true;
+                }
+                /// Covered parts.
+                if (level > child_level && min_block_id <= child_min_block_id && max_block_id >= child_max_block_id) {
+                    delete currently_active_parts[data.table_uuid][child['data-name']];
+                    --num_parts;
+                    partition.removeChild(child);
+                }
+                if (child_min_block_id > max_block_id) {
                     break;
                 }
             }
