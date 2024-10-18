@@ -11,6 +11,8 @@ INSERT INTO t2 SELECT number % 2 FROM numbers(10);
 -- block size is always multiple of 5 because we have 5 rows for each key in right table
 -- we do not split rows corresponding to the same key
 
+SET join_algorithm = 'hash';
+
 SELECT max(bs) <= 5, b FROM (
     SELECT blockSize() as bs, * FROM t1 JOIN t2 ON t1.a = t2.a
 ) GROUP BY b
