@@ -99,25 +99,30 @@ def parse_args():
     return parser.parse_args()
 
 
-def download_corpus(corpus_path: str, fuzzer_name: str):
-    logging.info("Download corpus for %s ...", fuzzer_name)
-
-    units = []
+def download_corpus(path: str):
+    logging.info("Download corpus...")
 
     try:
-        units = s3.download_files(
+        s3.download_file(
             bucket=S3_BUILDS_BUCKET,
-            s3_path=f"fuzzer/corpus/{fuzzer_name}/",
-            file_suffix="",
-            local_directory=corpus_path,
+            s3_path=f"fuzzer/corpus.zip",
+            local_file_path=path,
         )
     except ClientError as e:
         if e.response["Error"]["Code"] == "NoSuchKey":
-            logging.debug("No active corpus exists for %s", fuzzer_name)
+            logging.debug("No active corpus exists")
         else:
             raise
 
-    logging.info("...downloaded %d units", len(units))
+    with zipfile.ZipFile(f"{path}/corpus.zip", "r") as zipf:
+        zipf.extractall(path)
+    os.remove(f"{path}/corpus.zip")
+
+    units = 0
+    for _, _, files in os.walk(path):
+        units += len(files)
+
+    logging.info("...downloaded %d units", units)
 
 
 def upload_corpus(path: str):
@@ -128,10 +133,6 @@ def upload_corpus(path: str):
         file_path=f"{path}/corpus.zip",
         s3_path="fuzzer/corpus.zip",
     )
-    # for file in os.listdir(f"{result_path}/corpus/"):
-    #     s3.upload_build_directory_to_s3(
-    #         Path(f"{result_path}/corpus/{file}"), f"fuzzer/corpus/{file}", False
-    #     )
 
 
 def main():
@@ -162,16 +163,13 @@ def main():
 
     fuzzers_path = temp_path / "fuzzers"
     fuzzers_path.mkdir(parents=True, exist_ok=True)
-    corpus_path = fuzzers_path / "corpus"
-    corpus_path.mkdir(parents=True, exist_ok=True)
 
+    download_corpus(fuzzers_path)
     download_fuzzers(check_name, reports_path, fuzzers_path)
 
     for file in os.listdir(fuzzers_path):
         if file.endswith("_fuzzer"):
             os.chmod(fuzzers_path / file, 0o777)
-            fuzzer_corpus_path = corpus_path / file
-            download_corpus(fuzzer_corpus_path, file)
         elif file.endswith("_seed_corpus.zip"):
             seed_corpus_path = fuzzers_path / (
                 file.removesuffix("_seed_corpus.zip") + ".in"
@@ -187,8 +185,6 @@ def main():
     additional_envs = get_additional_envs(
         check_name, run_by_hash_num, run_by_hash_total
     )
-
-    # additional_envs.append("CI=1")
 
     ci_logs_credentials = CiLogsCredentials(Path(temp_path) / "export-logs-config.sh")
     ci_logs_args = ci_logs_credentials.get_docker_arguments(
