@@ -1,5 +1,6 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/BaseSettings.h>
+#include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/ServerSettings.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/UncompressedCache.h>
@@ -250,18 +251,7 @@ ServerSettings::ServerSettings(const ServerSettings & settings) : impl(std::make
 
 ServerSettings::~ServerSettings() = default;
 
-#define IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR(CLASS_NAME, TYPE) \
-    const SettingField##TYPE & ServerSettings::operator[](CLASS_NAME##TYPE t) const \
-    { \
-        return impl.get()->*t; \
-    } \
-    SettingField##TYPE & ServerSettings::operator[](CLASS_NAME##TYPE t) \
-    { \
-        return impl.get()->*t; \
-    }
-
 SERVER_SETTINGS_SUPPORTED_TYPES(ServerSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
-#undef IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR
 
 void ServerSettings::set(std::string_view name, const Field & value)
 {
