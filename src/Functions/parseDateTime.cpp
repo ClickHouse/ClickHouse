@@ -2222,6 +2222,16 @@ namespace
         static constexpr auto name = "parseDateTimeInJodaSyntaxOrNull";
     };
 
+    struct NameParseDateTime64InJodaSyntax
+    {
+        static constexpr auto name = "parseDateTime64InJodaSyntax";
+    };
+
+     struct NameParseDateTime64InJodaSyntaxOrZero
+    {
+        static constexpr auto name = "parseDateTime64InJodaSyntaxOrZero";
+    };
+
     struct NameParseDateTime64InJodaSyntaxOrNull
     {
         static constexpr auto name = "parseDateTime64InJodaSyntaxOrNull";
@@ -2233,6 +2243,8 @@ namespace
     using FunctionParseDateTimeInJodaSyntax = FunctionParseDateTimeImpl<NameParseDateTimeInJodaSyntax, ParseSyntax::Joda, ErrorHandling::Exception>;
     using FunctionParseDateTimeInJodaSyntaxOrZero = FunctionParseDateTimeImpl<NameParseDateTimeInJodaSyntaxOrZero, ParseSyntax::Joda, ErrorHandling::Zero>;
     using FunctionParseDateTimeInJodaSyntaxOrNull = FunctionParseDateTimeImpl<NameParseDateTimeInJodaSyntaxOrNull, ParseSyntax::Joda, ErrorHandling::Null>;
+    using FunctionParseDateTime64InJodaSyntax = FunctionParseDateTimeImpl<NameParseDateTime64InJodaSyntax, ParseSyntax::Joda, ErrorHandling::Exception, true>;
+    using FunctionParseDateTime64InJodaSyntaxOrZero = FunctionParseDateTimeImpl<NameParseDateTime64InJodaSyntaxOrZero, ParseSyntax::Joda, ErrorHandling::Zero, true>;
     using FunctionParseDateTime64InJodaSyntaxOrNull = FunctionParseDateTimeImpl<NameParseDateTime64InJodaSyntaxOrNull, ParseSyntax::Joda, ErrorHandling::Null, true>;
 }
 
@@ -2247,6 +2259,8 @@ REGISTER_FUNCTION(ParseDateTime)
     factory.registerFunction<FunctionParseDateTimeInJodaSyntax>();
     factory.registerFunction<FunctionParseDateTimeInJodaSyntaxOrZero>();
     factory.registerFunction<FunctionParseDateTimeInJodaSyntaxOrNull>();
+    factory.registerFunction<FunctionParseDateTime64InJodaSyntax>();
+    factory.registerFunction<FunctionParseDateTime64InJodaSyntaxOrZero>();
     factory.registerFunction<FunctionParseDateTime64InJodaSyntaxOrNull>();
 }
 
