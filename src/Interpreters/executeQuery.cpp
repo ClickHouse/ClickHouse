@@ -575,14 +575,10 @@ void logQueryFinish(
 
         if (settings[Setting::log_query_settings])
         {
-            auto changed_settings_names = settings.getChangedNames();
-            for (const auto & name : changed_settings_names)
+            auto changes = settings.changes();
+            for (const auto & change : changes)
             {
-                Field value = settings.get(name);
-                String value_str = convertFieldToString(value);
-
-                query_span->addAttribute(fmt::format("clickhouse.setting.{}", name), value_str);
-
+                query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), convertFieldToString(change.value));
             }
         }
         query_span->finish();
