@@ -8,15 +8,29 @@ import zipfile
 from pathlib import Path
 from typing import List
 
+from botocore.exceptions import ClientError
+
 from build_download_helper import download_fuzzers
 from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
+from env_helper import REPO_COPY, REPORT_PATH, S3_BUILDS_BUCKET, TEMP_PATH
 from pr_info import PRInfo
+from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
 NO_CHANGES_MSG = "Nothing to run"
+s3 = S3Helper()
+
+
+def zipdir(path, ziph):
+    # ziph is zipfile handle
+    for root, _, files in os.walk(path):
+        for file in files:
+            ziph.write(
+                os.path.join(root, file),
+                os.path.relpath(os.path.join(root, file), os.path.join(path, "..")),
+            )
 
 
 def get_additional_envs(check_name, run_by_hash_num, run_by_hash_total):
@@ -59,7 +73,7 @@ def get_run_command(
 
     envs = [
         # a static link, don't use S3_URL or S3_DOWNLOAD
-        '-e S3_URL="https://s3.amazonaws.com/clickhouse-datasets"',
+        '-e S3_URL="https://s3.amazonaws.com"',
     ]
 
     envs += [f"-e {e}" for e in additional_envs]
@@ -83,6 +97,42 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("check_name")
     return parser.parse_args()
+
+
+def download_corpus(path: str):
+    logging.info("Download corpus...")
+
+    try:
+        s3.download_file(
+            bucket=S3_BUILDS_BUCKET,
+            s3_path="fuzzer/corpus.zip",
+            local_file_path=path,
+        )
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "NoSuchKey":
+            logging.debug("No active corpus exists")
+        else:
+            raise
+
+    with zipfile.ZipFile(f"{path}/corpus.zip", "r") as zipf:
+        zipf.extractall(path)
+    os.remove(f"{path}/corpus.zip")
+
+    units = 0
+    for _, _, files in os.walk(path):
+        units += len(files)
+
+    logging.info("...downloaded %d units", units)
+
+
+def upload_corpus(path: str):
+    with zipfile.ZipFile(f"{path}/corpus.zip", "w", zipfile.ZIP_DEFLATED) as zipf:
+        zipdir(f"{path}/corpus/", zipf)
+    s3.upload_file(
+        bucket=S3_BUILDS_BUCKET,
+        file_path=f"{path}/corpus.zip",
+        s3_path="fuzzer/corpus.zip",
+    )
 
 
 def main():
@@ -114,15 +164,18 @@ def main():
     fuzzers_path = temp_path / "fuzzers"
     fuzzers_path.mkdir(parents=True, exist_ok=True)
 
+    download_corpus(fuzzers_path)
     download_fuzzers(check_name, reports_path, fuzzers_path)
 
     for file in os.listdir(fuzzers_path):
         if file.endswith("_fuzzer"):
             os.chmod(fuzzers_path / file, 0o777)
         elif file.endswith("_seed_corpus.zip"):
-            corpus_path = fuzzers_path / (file.removesuffix("_seed_corpus.zip") + ".in")
+            seed_corpus_path = fuzzers_path / (
+                file.removesuffix("_seed_corpus.zip") + ".in"
+            )
             with zipfile.ZipFile(fuzzers_path / file, "r") as zfd:
-                zfd.extractall(corpus_path)
+                zfd.extractall(seed_corpus_path)
 
     result_path = temp_path / "result_path"
     result_path.mkdir(parents=True, exist_ok=True)
@@ -152,6 +205,7 @@ def main():
         retcode = process.wait()
         if retcode == 0:
             logging.info("Run successfully")
+            upload_corpus(fuzzers_path)
         else:
             logging.info("Run failed")
 
