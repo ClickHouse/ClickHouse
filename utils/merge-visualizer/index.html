@@ -47,6 +47,14 @@
             cursor: pointer;
         }
 
+        #slower {
+            margin-left: 1rem;
+        }
+
+        #speed {
+            background: #DDD;
+        }
+
         #time, #stats {
             padding-left: 1rem;
             font-family: monospace;
@@ -54,18 +62,21 @@
 
         #canvas {
             margin-top: 0.25rem;
+            font-size: 10pt;
         }
 
-        .host {
-            float: left;
+        .table, .partition {
             padding: 0.5rem;
             border: 3px solid #EEE;
             background: white;
             overflow: hidden;
-            font-size: 10pt;
         }
 
-        .host_title {
+        .partition {
+            float: left;
+        }
+
+        .table_title, .partition_title {
             text-align: center;
         }
 
@@ -73,7 +84,7 @@
             display: inline-block;
             padding: 0;
             margin: 0.1rem;
-            border: 1px solid #EEE;
+            border: 1px solid black;
             background: #FED;
             overflow: hidden;
         }
@@ -93,11 +104,14 @@
 <div class="inputs">
     <form id="params">
         <div id="connection-params">
-            <input spellcheck="false" id="url" type="text" value="https://kvzqttvc2n.eu-west-1.aws.clickhouse-staging.com/" placeholder="URL" /><input spellcheck="false" id="user" type="text" value="default" placeholder="user" /><input spellcheck="false" id="password" type="password" placeholder="password" value="RXzlBhNfVRzotn2qa4c1eIdBj79xkGClGKogqJwnkos8A8SlQ55EKRiu6KQNXIFI" />
+            <input spellcheck="false" id="url" type="text" value="https://....eu-west-1.aws.clickhouse-staging.com/" placeholder="URL" /><input spellcheck="false" id="user" type="text" value="default" placeholder="user" /><input spellcheck="false" id="password" type="password" placeholder="password" value="" />
             <input id="hidden-submit" type="submit" hidden="true"/>
         </div>
-        <textarea  spellcheck="false" data-gramm="false" id="query">SELECT * FROM system.part_log WHERE database = 'default' AND table = 'planes_mercator' ORDER BY event_time</textarea>
-        <input id="play" type="button" value="▶"></input><span id="time">0000-00-00 00:00:00</span><span id="stats"></span>
+        <textarea spellcheck="false" data-gramm="false" id="query">SELECT * FROM system.part_log ORDER BY event_date, event_time, event_time_microseconds</textarea>
+        <input id="play" type="button" value="▶">
+        <input id="slower" type="button" value="⏪"><span id="speed">10x</span><input id="faster" type="button" value="⏩"></input>
+        <span id="time">0000-00-00 00:00:00</span>
+        <span id="stats"></span>
     </form>
 </div>
 <div id="canvas">
@@ -122,10 +136,14 @@ let canvas = document.getElementById('canvas');
 let time = document.getElementById('time');
 let stats = document.getElementById('stats');
 
+let num_parts = 0;
 let inserted_rows = 0;
 let inserted_bytes = 0;
 let merged_rows = 0;
 let merged_bytes = 0;
+let currently_active_parts = {};
+
+let speed = 100;
 
 let prev_time = null;
 async function update(data) {
@@ -133,64 +151,113 @@ async function update(data) {
     time_diff = prev_time ? curr_time - prev_time : 0;
     prev_time = curr_time;
 
-    await sleep(time_diff / 100);
+    if (speed <= 1000) {
+        await sleep(time_diff / speed);
+    }
 
     time.innerText = data.event_time;
 
-    const host_id = `host-${data.hostname}`;
-    let host = document.getElementById(host_id);
-    if (!host) {
-        host = document.createElement('div');
-        host.id = host_id;
-        host.className = 'host';
-        let host_title = document.createElement('div');
-        host_title.className = 'host_title';
-        host_title.innerText = `${data.hostname}`;
-        host.appendChild(host_title);
-        canvas.appendChild(host);
+    const table_id = `table-${data.table_uuid}`;
+    let table = document.getElementById(table_id);
+    if (!table) {
+        table = document.createElement('div');
+        table.id = table_id;
+        table.className = 'table';
+        let table_title = document.createElement('div');
+        table_title.className = 'table_title';
+        table_title.innerText = `${data.database}.${data.table}`;
+        table.appendChild(table_title);
+        canvas.appendChild(table);
     }
 
-    const part_id = `${host_id}-part-${data.part_name}`;
+    const partition_id = `partition-${data.table_uuid}-${data.partition_id}`;
+    let partition = document.getElementById(partition_id);
+    if (!partition) {
+        partition = document.createElement('div');
+        partition.id = partition_id;
+        partition.className = 'partition';
+        let partition_title = document.createElement('div');
+        partition_title.className = 'partition_title';
+        partition_title.innerText = `${data.partition_id}`;
+        partition.appendChild(partition_title);
+        table.appendChild(partition);
+    }
+
+    const part_id = `part-${data.table_uuid}-${data.part_name}`;
+
+    const matches = data.part_name.match(/[\w-]+_(\d+)_(\d+)_(\d+)(?:_(\d+))?/);
+    const min_block_id = matches[1];
+    const level = matches[3];
 
     if (data.event_type == 'NewPart' || data.event_type == 'DownloadPart' || data.event_type == 'MergeParts' || data.event_type == 'MutatePart') {
-        if (data.event_type == 'NewPart' || data.event_type == 'DownloadPart') {
-            inserted_rows += +data.rows;
-            inserted_bytes += +data.size_in_bytes;
+        if (!currently_active_parts[data.table_uuid]) {
+            currently_active_parts[data.table_uuid] = {};
         }
 
-        part = document.createElement('div');
-        part.id = part_id;
-        part.className = 'part';
-        part_title = document.createElement('div');
-        part_title.className = 'part_title';
-        part_title.innerText = `${data.part_name}, ${formatValue(data.size_in_bytes)}`;
-        part.appendChild(part_title);
+        if (!currently_active_parts[data.table_uuid][data.part_name]) {
+            currently_active_parts[data.table_uuid][data.part_name] = 1;
+            ++num_parts;
 
-        const size = Math.sqrt(data.size_in_bytes);
+            if (level == 0) {
+                inserted_rows += +data.rows;
+                inserted_bytes += +data.size_in_bytes;
+            } else {
+                merged_rows += +data.rows;
+                merged_bytes += +data.size_in_bytes;
+            }
 
-        part.style.width = Math.round(size / 500) + 'px';
-        part.style.height = Math.round(size / 1000) + 'px';
-        part.style.line_height = part.style.height;
+            part = document.createElement('div');
+            part.id = part_id;
+            part['data-min-block-id'] = min_block_id;
+            part['data-level'] = level;
+            part.className = 'part';
+            part_title = document.createElement('div');
+            part_title.className = 'part_title';
+            part_title.innerText = `${data.part_name}, ${formatValue(data.size_in_bytes)}`;
+            part.appendChild(part_title);
 
-        host.appendChild(part);
-    } else if (data.event_type == 'RemovePart') {
-        const old_part = document.getElementById(part_id);
-        if (old_part) {
-            host.removeChild(old_part);
+            const size = Math.sqrt(data.size_in_bytes);
+
+            part.style.width = Math.round(size / 500) + 'px';
+            part.style.height = Math.round(size / 1000) + 'px';
+            part.style.line_height = part.style.height;
+
+            let inserted = false;
+            for (const child of partition.childNodes) {
+                if (child['data-min-block-id'] >= min_block_id) {
+                    partition.insertBefore(part, child);
+                    inserted = true;
+                    break;
+                }
+            }
+            if (!inserted) {
+                partition.appendChild(part);
+            }
         }
-    } else if (data.event_type == 'MergeParts' || data.event_type == 'MutatePart') {
-        merged_rows += +data.read_rows;
-        merged_bytes += +data.size_in_bytes;
 
         for (const old_part_name of data.merged_from) {
-            const old_part = document.getElementById(`${host_id}-part-${old_part}`);
+            if (currently_active_parts[data.table_uuid][old_part_name]) {
+                delete currently_active_parts[data.table_uuid][old_part_name];
+                --num_parts;
+                const old_part = document.getElementById(`part-${data.table_uuid}-${old_part_name}`);
+                if (old_part) {
+                    partition.removeChild(old_part);
+                }
+            }
+        }
+    }
+    if (data.event_type == 'RemovePart') {
+        if (currently_active_parts[data.table_uuid][data.part_name]) {
+            delete currently_active_parts[data.table_uuid][data.part_name];
+            --num_parts;
+            const old_part = document.getElementById(part_id);
             if (old_part) {
-                host.removeChild(old_part);
+                partition.removeChild(old_part);
             }
         }
     }
 
-    stats.innerText = `Inserted ${inserted_rows} rows, ${formatValue(inserted_bytes)}. Merged ${merged_rows} rows, ${formatValue(merged_bytes)}.`;
+    stats.innerText = `${num_parts} parts. Inserted ${inserted_rows} rows, ${formatValue(inserted_bytes)}. Merged ${merged_rows} rows, ${formatValue(merged_bytes)}.`;
 }
 
 let loading = false;
@@ -198,6 +265,7 @@ let stopping = false;
 
 async function load() {
     canvas.innerHTML = '';
+    num_parts = 0;
     inserted_rows = 0;
     inserted_bytes = 0;
     merged_rows = 0;
@@ -248,7 +316,7 @@ async function load() {
             for (line of lines.slice(0, -1)) {
                 if (stopping) {
                     stopped = true;
-                    return;
+                    break;
                 }
                 const data = JSON.parse(line);
                 await update(data);
@@ -278,6 +346,26 @@ document.getElementById('play').addEventListener('click', _ => {
         load();
     }
 });
+
+function updateSpeed() {
+    document.getElementById('speed').innerText = speed <= 1000 ? `${speed}x` : `max`;
+}
+updateSpeed();
+
+document.getElementById('slower').addEventListener('click', _ => {
+    if (speed > 1) {
+        speed = Math.max(speed / 10, 1);
+        updateSpeed();
+    }
+});
+
+document.getElementById('faster').addEventListener('click', _ => {
+    if (speed <= 1000) {
+        speed = Math.min(speed * 10, 10000);
+        updateSpeed();
+    }
+});
+
 </script>
 </body>
 </html>
