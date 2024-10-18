@@ -123,6 +123,7 @@ struct QuantileExactWeighted
 private:
     /// get implementation without interpolation
     Value getImpl(Float64 level) const
+    requires(!interpolated)
     {
         size_t size = map.size();
 
@@ -174,6 +175,7 @@ private:
 
     /// getMany implementation without interpolation
     void getManyImpl(const Float64 * levels, const size_t * indices, size_t num_levels, Value * result) const
+    requires(!interpolated)
     {
         size_t size = map.size();
 
@@ -234,22 +236,25 @@ private:
 
     /// getFloat implementation without interpolation
     Float64 getFloatImpl(Float64) const
+    requires(!interpolated)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat is not implemented for QuantileExact");
     }
 
     /// getManyFloat implementation without interpolation
     void getManyFloatImpl(const Float64 *, const size_t *, size_t, Float64 *) const
+    requires(!interpolated)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getManyFloat is not implemented for QuantileExact");
     }
 
     /// get implementation with interpolation
     Value getInterpolatedImpl(Float64 level) const
+    requires(interpolated)
     {
         size_t size = map.size();
         if (0 == size)
-            return std::numeric_limits<Value>::quiet_NaN();
+            return Value();
 
         Float64 res = getFloatInterpolatedImpl(level);
         if constexpr (is_decimal<Value>)
@@ -260,6 +265,7 @@ private:
 
     /// getMany implementation with interpolation
     void getManyInterpolatedImpl(const Float64 * levels, const size_t * indices, size_t num_levels, Value * result) const
+    requires(interpolated)
     {
         size_t size = map.size();
         if (0 == size)
@@ -283,6 +289,7 @@ private:
 
     /// getFloat implementation with interpolation
     Float64 getFloatInterpolatedImpl(Float64 level) const
+    requires(interpolated)
     {
         size_t size = map.size();
 
@@ -309,6 +316,7 @@ private:
 
     /// getManyFloat implementation with interpolation
     void getManyFloatInterpolatedImpl(const Float64 * levels, const size_t * indices, size_t num_levels, Float64 * result) const
+    requires(interpolated)
     {
         size_t size = map.size();
         if (0 == size)
@@ -342,15 +350,10 @@ private:
 
     /// Calculate quantile, using linear interpolation between two closest values
     Float64 NO_SANITIZE_UNDEFINED quantileInterpolated(const Pair * array, size_t size, Float64 position) const
+    requires(interpolated)
     {
-        /*
-        for (size_t i = 0; i < size; ++i)
-            std::cout << "array[" << i << "]: " << toString(Field(array[i].first)) << ", " << array[i].second << std::endl;
-        std::cout << "position: " << position << std::endl;
-        */
         size_t lower = static_cast<size_t>(std::floor(position));
         size_t higher = static_cast<size_t>(std::ceil(position));
-        // std::cout << "lower: " << lower << ", higher: " << higher << std::endl;
 
         const auto * lower_it = std::lower_bound(array, array + size, lower + 1, [](const Pair & a, size_t b) { return a.second < b; });
         const auto * higher_it = std::lower_bound(array, array + size, higher + 1, [](const Pair & a, size_t b) { return a.second < b; });
@@ -358,14 +361,11 @@ private:
             lower_it = array + size - 1;
         if (higher_it == array + size)
             higher_it = array + size - 1;
-        // std::cout << "lower_index:" << lower_it - array << ", higher_index:" << higher_it - array << std::endl;
 
         UnderlyingType lower_key = lower_it->first;
         UnderlyingType higher_key = higher_it->first;
 
-        if (lower == higher)
-            return static_cast<Float64>(lower_key);
-        if (lower_key == higher_key)
+        if (lower == higher || lower_key == higher_key)
             return static_cast<Float64>(lower_key);
 
         return (static_cast<Float64>(higher) - position) * lower_key + (position - static_cast<Float64>(lower)) * higher_key;
