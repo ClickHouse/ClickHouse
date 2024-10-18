@@ -2,6 +2,7 @@
 #include <Common/config_version.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/CurrentThread.h>
+#include <Common/SymbolIndex.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
 #include <base/sleep.h>
@@ -14,6 +15,7 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Poco/Environment.h>
+
 
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
@@ -252,6 +254,16 @@ void blockSignals(const std::vector<int> & signals)
 }
 
 
+SignalListener::SignalListener(BaseDaemon * daemon_, LoggerPtr log_)
+    : daemon(daemon_), log(log_)
+{
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+    build_id = SymbolIndex::instance().getBuildIDHex();
+#else
+    build_id = "<unknown>";
+#endif
+}
+
 void SignalListener::run()
 {
     static_assert(PIPE_BUF >= 512);
@@ -338,7 +350,7 @@ void SignalListener::onTerminate(std::string_view message, UInt32 thread_num) co
     size_t pos = message.find('\n');
 
     LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}) (from thread {}) {}",
-              VERSION_STRING, VERSION_OFFICIAL, daemon ? daemon->build_id : "", GIT_HASH, thread_num, message.substr(0, pos));
+              VERSION_STRING, VERSION_OFFICIAL, build_id, GIT_HASH, thread_num, message.substr(0, pos));
 
     /// Print trace from std::terminate exception line-by-line to make it easy for grep.
     while (pos != std::string_view::npos)
@@ -372,7 +384,7 @@ try
 
     LOG_FATAL(log, "########## Short fault info ############");
     LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}, architecture: {}) (from thread {}) Received signal {}",
-              VERSION_STRING, VERSION_OFFICIAL, daemon ? daemon->build_id : "", GIT_HASH, Poco::Environment::osArchitecture(),
+              VERSION_STRING, VERSION_OFFICIAL, build_id, GIT_HASH, Poco::Environment::osArchitecture(),
               thread_num, sig);
 
     std::string signal_description = "Unknown signal";
@@ -438,13 +450,13 @@ try
     if (query_id.empty())
     {
         LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}) (from thread {}) (no query) Received signal {} ({})",
-                  VERSION_STRING, VERSION_OFFICIAL, daemon ? daemon->build_id : "", GIT_HASH,
+                  VERSION_STRING, VERSION_OFFICIAL, build_id, GIT_HASH,
                   thread_num, signal_description, sig);
     }
     else
     {
         LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}) (from thread {}) (query_id: {}) (query: {}) Received signal {} ({})",
-                  VERSION_STRING, VERSION_OFFICIAL, daemon ? daemon->build_id : "", GIT_HASH,
+                  VERSION_STRING, VERSION_OFFICIAL, build_id, GIT_HASH,
                   thread_num, query_id, query, signal_description, sig);
     }
 
