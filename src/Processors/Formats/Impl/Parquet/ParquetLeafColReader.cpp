@@ -466,8 +466,6 @@ void ParquetLeafColReader<TColumn>::initDataReader(
 template <typename TColumn>
 void ParquetLeafColReader<TColumn>::readPageV1(const parquet::DataPageV1 & page)
 {
-    static parquet::LevelDecoder repetition_level_decoder;
-
     cur_page_values = page.num_values();
 
     // refer to: VectorizedColumnReader::readPageV1 in Spark and LevelDecoder::SetData in column_reader.cc
@@ -554,8 +552,6 @@ void ParquetLeafColReader<TColumn>::readPageV1(const parquet::DataPageV1 & page)
 template <typename TColumn>
 void ParquetLeafColReader<TColumn>::readPageV2(const parquet::DataPageV2 & page)
 {
-    static parquet::LevelDecoder repetition_level_decoder;
-
     cur_page_values = page.num_values();
 
     const auto * buffer =  page.data();
