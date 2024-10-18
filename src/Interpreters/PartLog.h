@@ -135,7 +135,7 @@ public:
 
     static PartLogEntries createPartLogEntries(const MutableDataPartsVector & parts, UInt64 elapsed_ns, ProfileCountersSnapshotPtr profile_counters = {});
 
-    /// Add a record about creation of new part.
+    /// Add a record about creation of a new part.
     static bool addNewPart(ContextPtr context, const PartLogEntry & part,
                            const ExecutionStatus & execution_status = {});
 
