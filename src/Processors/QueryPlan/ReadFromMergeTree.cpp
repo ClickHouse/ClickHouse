@@ -1749,7 +1749,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             num_streams,
             result.index_stats,
             indexes->use_skip_indexes,
-            find_exact_ranges);
+            find_exact_ranges,
+            query_info_.isFinal());
     }
 
     size_t sum_marks_pk = total_marks_pk;
