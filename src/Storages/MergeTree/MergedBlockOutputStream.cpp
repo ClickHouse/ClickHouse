@@ -195,11 +195,18 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     }
 
     auto finalizer = std::make_unique<Finalizer::Impl>(*writer, new_part, files_to_remove_after_sync, sync);
+    auto current_time = time(nullptr);
+    if (!new_part->min_time_of_data_insert.has_value() && !new_part->max_time_of_data_insert.has_value())
+    {
+        new_part->min_time_of_data_insert = current_time;
+        new_part->max_time_of_data_insert = current_time;
+    }
+    new_part->modification_time = current_time;
+
     if (new_part->isStoredOnDisk())
        finalizer->written_files = finalizePartOnDisk(new_part, checksums);
 
     new_part->rows_count = rows_count;
-    new_part->modification_time = time(nullptr);
     new_part->setIndex(writer->releaseIndexColumns());
     new_part->checksums = checksums;
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
@@ -320,6 +327,16 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         /// Write a file with a description of columns.
         auto out = new_part->getDataPartStorage().writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, write_settings);
         DB::writeIntText(new_part->getMetadataVersion(), *out);
+        out->preFinalize();
+        written_files.emplace_back(std::move(out));
+    }
+
+    {
+        auto out = new_part->getDataPartStorage().writeFile(IMergeTreeDataPart::MIN_MAX_TIME_OF_DATA_INSERT_FILE, 4096, write_settings);
+        DB::writeIntText(new_part->getMinTimeOfDataInsertion(), *out);
+        DB::writeText(" ", *out);
+        DB::writeIntText(new_part->getMaxTimeOfDataInsertion(), *out);
+
         out->preFinalize();
         written_files.emplace_back(std::move(out));
     }

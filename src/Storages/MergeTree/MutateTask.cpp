@@ -961,6 +961,15 @@ void finalizeMutatedPart(
     }
 
     {
+        auto out = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::MIN_MAX_TIME_OF_DATA_INSERT_FILE, 4096, context->getWriteSettings());
+        DB::writeIntText(new_data_part->getMinTimeOfDataInsertion(), *out);
+        DB::writeText(" ", *out);
+        DB::writeIntText(new_data_part->getMaxTimeOfDataInsertion(), *out);
+
+        written_files.emplace_back(std::move(out));
+    }
+
+    {
         auto out_metadata = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, context->getWriteSettings());
         DB::writeText(metadata_snapshot->getMetadataVersion(), *out_metadata);
         written_files.push_back(std::move(out_metadata));
@@ -2296,6 +2305,9 @@ bool MutateTask::prepare()
     ctx->new_data_part->uuid = ctx->future_part->uuid;
     ctx->new_data_part->is_temp = true;
     ctx->new_data_part->ttl_infos = ctx->source_part->ttl_infos;
+
+    ctx->new_data_part->min_time_of_data_insert = ctx->future_part->parts.front()->getMinTimeOfDataInsertion();
+    ctx->new_data_part->max_time_of_data_insert = ctx->future_part->parts.front()->getMaxTimeOfDataInsertion();
 
     /// It shouldn't be changed by mutation.
     ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
