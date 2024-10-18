@@ -80,7 +80,7 @@ private:
 	const bool supports_cloud_features;
 
 	std::string buf;
-	bool in_transaction = false, inside_projection = false, allow_not_deterministic = true;
+	bool in_transaction = false, inside_projection = false, allow_not_deterministic = true, enforce_final = false;
 	uint32_t database_counter = 0, zoo_path_counter = 0, function_counter = 0, current_level = 0;
 	std::map<uint32_t, std::shared_ptr<SQLDatabase>> staged_databases, databases;
 	std::map<uint32_t, SQLTable> staged_tables, tables;
@@ -100,6 +100,9 @@ private:
 
 	void SetAllowNotDetermistic(const bool value) {
 		allow_not_deterministic = value;
+	}
+	void EnforceFinal(const bool value) {
+		enforce_final = value;
 	}
 
 	template<typename T>

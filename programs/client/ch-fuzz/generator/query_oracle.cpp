@@ -20,6 +20,7 @@ int QueryOracle::GenerateCorrectnessTestFirstQuery(RandomGenerator &rg, Statemen
 	const uint32_t combination = 0;//TODO fix this rg.NextLargeNumber() % 3; /* 0 WHERE, 1 HAVING, 2 WHERE + HAVING */
 
 	gen.SetAllowNotDetermistic(false);
+	gen.EnforceFinal(true);
 	gen.levels[gen.current_level] = QueryLevel(gen.current_level);
 	gen.GenerateFromStatement(rg, std::numeric_limits<uint32_t>::max(), ssc->mutable_from());
 
@@ -38,6 +39,7 @@ int QueryOracle::GenerateCorrectnessTestFirstQuery(RandomGenerator &rg, Statemen
 	ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(sql_query_grammar::FUNCcount);
 	gen.levels.erase(gen.current_level);
 	gen.SetAllowNotDetermistic(true);
+	gen.EnforceFinal(false);
 
 	ts->set_format(sql_query_grammar::OutFormat::OUT_CSV);
 	sif->set_path(qfile.generic_string());
