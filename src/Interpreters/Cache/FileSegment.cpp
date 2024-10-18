@@ -28,6 +28,7 @@ namespace ProfileEvents
     extern const Event FileSegmentFailToIncreasePriority;
     extern const Event FilesystemCacheHoldFileSegments;
     extern const Event FilesystemCacheUnusedHoldFileSegments;
+    extern const Event FilesystemCacheBackgroundDownloadQueuePush;
 }
 
 namespace CurrentMetrics
@@ -706,6 +707,7 @@ void FileSegment::complete(bool allow_background_download)
                 bool added_to_download_queue = false;
                 if (allow_background_download && background_download_enabled && remote_file_reader)
                 {
+                    ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundDownloadQueuePush);
                     added_to_download_queue = locked_key->addToDownloadQueue(offset(), segment_lock); /// Finish download in background.
                 }
 
