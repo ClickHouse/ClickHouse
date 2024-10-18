@@ -71,8 +71,8 @@ std::vector<size_t> getPermutationForBlock(
 }
 
 JoinStep::JoinStep(
-    const DataStream & left_stream_,
-    const DataStream & right_stream_,
+    const Header & left_header_,
+    const Header & right_header_,
     JoinPtr join_,
     size_t max_block_size_,
     size_t max_streams_,
@@ -86,7 +86,7 @@ JoinStep::JoinStep(
     , keep_left_read_in_order(keep_left_read_in_order_)
     , use_new_analyzer(use_new_analyzer_)
 {
-    updateInputStreams(DataStreams{left_stream_, right_stream_});
+    updateInputHeaders({left_header_, right_header_});
 }
 
 QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
@@ -168,7 +168,7 @@ void JoinStep::setJoin(JoinPtr join_, bool swap_streams_)
     join = std::move(join_);
 }
 
-void JoinStep::updateOutputStream()
+void JoinStep::updateOutputHeader()
 {
     if (join_algorithm_header)
         return;
@@ -182,7 +182,7 @@ void JoinStep::updateOutputStream()
     {
         if (swap_streams)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot swap streams without new analyzer");
-        output_stream = DataStream { .header = result_header };
+        output_header = result_header;
         return;
     }
 
@@ -190,7 +190,7 @@ void JoinStep::updateOutputStream()
     if (!column_permutation.empty())
         result_header = ColumnPermuteTransform::permute(result_header, column_permutation);
 
-    output_stream = DataStream { .header = result_header };
+    output_header = result_header;
 }
 
 static ITransformingStep::Traits getStorageJoinTraits()
@@ -208,10 +208,10 @@ static ITransformingStep::Traits getStorageJoinTraits()
     };
 }
 
-FilledJoinStep::FilledJoinStep(const DataStream & input_stream_, JoinPtr join_, size_t max_block_size_)
+FilledJoinStep::FilledJoinStep(const Header & input_header_, JoinPtr join_, size_t max_block_size_)
     : ITransformingStep(
-        input_stream_,
-        JoiningTransform::transformHeader(input_stream_.header, join_),
+        input_header_,
+        JoiningTransform::transformHeader(input_header_, join_),
         getStorageJoinTraits())
     , join(std::move(join_))
     , max_block_size(max_block_size_)
@@ -235,14 +235,13 @@ void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
         auto counter = on_totals ? nullptr : finish_counter;
-        return std::make_shared<JoiningTransform>(header, output_stream->header, join, max_block_size, on_totals, default_totals, counter);
+        return std::make_shared<JoiningTransform>(header, *output_header, join, max_block_size, on_totals, default_totals, counter);
     });
 }
 
-void FilledJoinStep::updateOutputStream()
+void FilledJoinStep::updateOutputHeader()
 {
-    output_stream = createOutputStream(
-        input_streams.front(), JoiningTransform::transformHeader(input_streams.front().header, join), getDataStreamTraits());
+    output_header = JoiningTransform::transformHeader(input_headers.front(), join);
 }
 
 void FilledJoinStep::describeActions(FormatSettings & settings) const

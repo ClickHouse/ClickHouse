@@ -29,6 +29,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 max_build_vector_similarity_index_thread_pool_size;
+}
+
 namespace ErrorCodes
 {
     extern const int FORMAT_VERSION_TOO_OLD;
@@ -270,7 +275,7 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
             throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column with vector similarity index must have equal length");
 
     /// Reserving space is mandatory
-    size_t max_thread_pool_size = Context::getGlobalContextInstance()->getServerSettings().max_build_vector_similarity_index_thread_pool_size;
+    size_t max_thread_pool_size = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::max_build_vector_similarity_index_thread_pool_size];
     if (max_thread_pool_size == 0)
         max_thread_pool_size = getNumberOfCPUCoresToUse();
     unum::usearch::index_limits_t limits(roundUpToPowerOfTwoOrZero(index->size() + rows), max_thread_pool_size);

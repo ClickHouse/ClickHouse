@@ -238,6 +238,8 @@ public:
 
     const Columns & getOrderedSet() const { return ordered_set; }
 
+    const std::vector<KeyTuplePositionMapping> & getIndexesMapping() const { return indexes_mapping; }
+
 private:
     // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.
     bool has_all_keys;

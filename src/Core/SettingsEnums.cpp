@@ -1,7 +1,6 @@
 #include <Core/SettingsEnums.h>
 #include <magic_enum.hpp>
 #include <Access/Common/SQLSecurityDefs.h>
-
 #include <boost/range/adaptor/map.hpp>
 
 
@@ -277,4 +276,11 @@ IMPLEMENT_SETTING_ENUM(
     {{"user_display", IdentifierQuotingRule::UserDisplay},
      {"when_necessary", IdentifierQuotingRule::WhenNecessary},
      {"always", IdentifierQuotingRule::Always}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeSelectorAlgorithm,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"Simple", MergeSelectorAlgorithm::SIMPLE},
+     {"StochasticSimple", MergeSelectorAlgorithm::STOCHASTIC_SIMPLE}})
+
 }

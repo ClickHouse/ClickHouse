@@ -1762,6 +1762,7 @@ github
 glibc
 globalIn
 globalNotIn
+globalVariable
 globbing
 glushkovds
 golang
