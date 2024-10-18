@@ -148,6 +148,13 @@ ASTPtr ASTFunction::clone() const
 }
 
 
+void ASTFunction::clearEmptyArgs()
+{
+    if (arguments && arguments->children.empty())
+        arguments.reset();
+}
+
+
 void ASTFunction::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(name.size());
@@ -691,11 +698,10 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
         settings.ostr << (settings.hilite ? hilite_function : "") << ')';
     }
 
-    if ((arguments && !arguments->children.empty()) || !no_empty_args)
-        settings.ostr << '(' << (settings.hilite ? hilite_none : "");
-
     if (arguments)
     {
+        settings.ostr << '(' << (settings.hilite ? hilite_none : "");
+
         bool special_hilite_regexp = settings.hilite
             && (name == "match" || name == "extract" || name == "extractAll" || name == "replaceRegexpOne"
                 || name == "replaceRegexpAll");
@@ -762,10 +768,9 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             nested_dont_need_parens.list_element_index = i;
             argument->formatImpl(settings, state, nested_dont_need_parens);
         }
-    }
 
-    if ((arguments && !arguments->children.empty()) || !no_empty_args)
         settings.ostr << (settings.hilite ? hilite_function : "") << ')';
+    }
 
     settings.ostr << (settings.hilite ? hilite_none : "");
     finishFormatWithWindow(settings, state, frame);
