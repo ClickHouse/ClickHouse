@@ -82,7 +82,7 @@ private:
 		"place","year","back","thing","name", "sentence","man","line","boy"};
 
 	const std::vector<std::string> common_chinese{"认识你很高兴", "美国", "叫", "名字", "你们", "日本", "哪国人",
-		"爸爸", "兄弟姐妹", "漂亮", "照片"};
+		"爸爸", "兄弟姐妹", "漂亮", "照片", "😉"};
 
 	const std::vector<std::string> nasty_strings{"a\"a", "b\\tb", "c\\nc", "d\\'d", "e e", "", "😉",
 		"\"", "\\'", "\\t", "\\n", " ", "--", "{", "}", "[", "]", ",", ".",
@@ -356,12 +356,30 @@ public:
 		ret += pick;
 	}
 
-	void NextString(std::string &ret, const uint32_t limit) {
+	void NextString(std::string &ret, const bool allow_nasty, const uint32_t limit) {
 		const std::string &pick = PickRandomlyFromVector(
-			this->NextSmallNumber() < 3 ? nasty_strings : (this->NextBool() ? common_english : common_chinese));
+			allow_nasty && this->NextSmallNumber() < 3 ? nasty_strings : (this->NextBool() ? common_english : common_chinese));
 
 		if (pick.length() < limit) {
 			ret += pick;
+			/* A few times, generate a large string */
+			if (this->NextLargeNumber() < 4) {
+				uint32_t i = 0, len = pick.size();
+				const uint32_t max_iterations = this->NextBool() ? 10000 : this->NextMediumNumber();
+
+				while (i < max_iterations) {
+					const std::string &npick = PickRandomlyFromVector(
+						allow_nasty && this->NextSmallNumber() < 3 ? nasty_strings : (this->NextBool() ? common_english : common_chinese));
+
+					len += npick.length();
+					if (len < limit) {
+						ret += npick;
+					} else {
+						break;
+					}
+					i++;
+				}
+			}
 			return;
 		}
 		ret += "a";

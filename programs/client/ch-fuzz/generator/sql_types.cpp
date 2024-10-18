@@ -587,10 +587,10 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &
 
 		AppendDecimal(rg, ret, left, right);
 	} else if ((stp = dynamic_cast<StringType*>(tp))) {
-		const uint32_t limit = stp->precision.value_or((rg.NextRandomUInt32() % 100000) + 1);
+		const uint32_t limit = stp->precision.value_or((rg.NextRandomUInt32() % 10000) + 1);
 
 		ret += "'";
-		rg.NextString(ret, limit);
+		rg.NextString(ret, true, limit);
 		ret += "'";
 	} else if (dynamic_cast<BoolType*>(tp)) {
 		ret += rg.NextBool() ? "TRUE" : "FALSE";
@@ -691,7 +691,7 @@ void StatementGenerator::StrBuildJSONArray(RandomGenerator &rg, const int jdepth
 }
 
 void StatementGenerator::StrBuildJSONElement(RandomGenerator &rg, std::string &ret) {
-	std::uniform_int_distribution<int> opts(1, 14);
+	std::uniform_int_distribution<int> opts(1, 16);
 	const int noption = opts(rg.gen);
 
 	switch (noption) {
@@ -736,34 +736,11 @@ void StatementGenerator::StrBuildJSONElement(RandomGenerator &rg, std::string &r
 		} break;
 		case 10:
 		case 11:
-		case 12: { //string
-			std::uniform_int_distribution<int> slen(0, 200);
-			std::uniform_int_distribution<uint8_t> chars(32, 127);
-			const int nlen = slen(rg.gen);
-
+		case 12: //string
 			ret += '"';
-			for (int i = 0 ; i < nlen ; i++) {
-				const uint8_t nchar = chars(rg.gen);
-
-				switch (nchar) {
-				case 127:
-					ret += "😂";
-					break;
-				case static_cast<int>('"'):
-					ret += "a";
-					break;
-				case static_cast<int>('\\'):
-					ret += "b";
-					break;
-				case static_cast<int>('\''):
-					ret += "''";
-					break;
-				default:
-					ret += static_cast<char>(nchar);
-				}
-			}
+			rg.NextString(ret, false, (rg.NextRandomUInt32() % 10000) + 1);
 			ret += '"';
-		} break;
+			break;
 		case 13: { //128-bit signed number
 			hugeint_t val(rg.NextRandomInt64(), rg.NextRandomUInt64());
 			val.ToString(ret);
@@ -772,6 +749,14 @@ void StatementGenerator::StrBuildJSONElement(RandomGenerator &rg, std::string &r
 			uhugeint_t val(rg.NextRandomUInt64(), rg.NextRandomUInt64());
 			val.ToString(ret);
 		} break;
+		case 15: //uuid
+			ret += '"';
+			rg.NextUUID(ret);
+			ret += '"';
+			break;
+		case 16: //double
+			ret += std::to_string(rg.NextRandomDouble());
+			break;
 		default:
 			assert(0);
 	}

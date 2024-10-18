@@ -371,7 +371,7 @@ int StatementGenerator::AddWhereFilter(RandomGenerator &rg, const std::vector<Gr
 		if (rg.NextSmallNumber() < 5) {
 			buf.resize(0);
 			buf += "'";
-			rg.NextString(buf, (rg.NextRandomUInt32() % 100000) + 1);
+			rg.NextString(buf, true, (rg.NextRandomUInt32() % 10000) + 1);
 			buf += "'";
 			expr2->mutable_lit_val()->set_no_quote_str(buf);
 		} else {

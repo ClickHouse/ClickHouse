@@ -192,7 +192,7 @@ int StatementGenerator::GenerateLiteralValue(RandomGenerator &rg, sql_query_gram
 		if (rg.NextMediumNumber() < 6) {
 			rg.NextUUID(buf);
 		} else {
-			rg.NextString(buf, (rg.NextRandomUInt32() % 100000) + 1);
+			rg.NextString(buf, true, (rg.NextRandomUInt32() % 10000) + 1);
 		}
 		buf += "'";
 		lv->set_no_quote_str(buf);
