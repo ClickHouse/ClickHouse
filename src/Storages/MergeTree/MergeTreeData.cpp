@@ -7903,10 +7903,20 @@ try
     part_log_elem.table_name = table_id.table_name;
     part_log_elem.table_uuid = table_id.uuid;
     part_log_elem.partition_id = MergeTreePartInfo::fromPartName(new_part_name, format_version).partition_id;
+
     {
-        WriteBufferFromString out(part_log_elem.partition);
-        result_part->partition.serializeText(*this, out, {});
+        const DataPart * result_or_source_data_part = nullptr;
+        if (result_part)
+            result_or_source_data_part = result_part.get();
+        else if (!source_parts.empty())
+            result_or_source_data_part = source_parts.at(0).get();
+        if (result_or_source_data_part)
+        {
+            WriteBufferFromString out(part_log_elem.partition);
+            result_or_source_data_part->partition.serializeText(*this, out, {});
+        }
     }
+
     part_log_elem.part_name = new_part_name;
 
     if (result_part)
