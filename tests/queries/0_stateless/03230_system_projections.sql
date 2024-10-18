@@ -28,7 +28,20 @@ CREATE TABLE projections_2
 Engine=MergeTree()
 ORDER BY name;
 
-SELECT * FROM system.projections WHERE database = currentDatabase();
+INSERT INTO projections SELECT 'name_' || number AS key, number AS d1 FROM numbers(1000);
+INSERT INTO projections_2 SELECT 'name_' || number % 2 AS name, number AS frequency FROM numbers(1000);
+
+SELECT
+    database,
+    table,
+    name,
+    type,
+    total_rows,
+    data_compressed_bytes > 0,
+    data_uncompressed_bytes > 0,
+    sorting_key,
+    query
+FROM system.projections WHERE database = currentDatabase();
 
 SELECT count(*) FROM system.projections WHERE table = 'projections' AND database = currentDatabase();
 SELECT count(*) FROM system.projections WHERE table = 'projections_2' AND database = currentDatabase();
