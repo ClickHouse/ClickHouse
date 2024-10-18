@@ -1,4 +1,5 @@
 #include <Core/BaseSettings.h>
+#include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
 #include <Core/MergeSelectorAlgorithm.h>
 #include <Core/SettingsChangesHistory.h>
@@ -511,18 +512,7 @@ MergeTreeSettings::MergeTreeSettings(MergeTreeSettings && settings) noexcept
 
 MergeTreeSettings::~MergeTreeSettings() = default;
 
-#define IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR(CLASS_NAME, TYPE)                          \
-    const SettingField##TYPE & MergeTreeSettings::operator[](CLASS_NAME##TYPE t) const  \
-    {                                                                                   \
-        return impl.get()->*t;                                                          \
-    }                                                                                   \
-SettingField##TYPE & MergeTreeSettings::operator[](CLASS_NAME##TYPE t)                  \
-    {                                                                                   \
-        return impl.get()->*t;                                                          \
-    }
-
 MERGETREE_SETTINGS_SUPPORTED_TYPES(MergeTreeSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
-#undef IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR
 
 bool MergeTreeSettings::has(std::string_view name) const
 {
