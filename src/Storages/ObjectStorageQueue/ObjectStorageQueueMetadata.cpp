@@ -214,7 +214,7 @@ ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket, const Proces
     return ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(zookeeper_path, bucket, processor, log);
 }
 
-std::pair<zkutil::EphemeralNodeHolder::Ptr, zkutil::ZooKeeperPtr> ObjectStorageQueueMetadata::getAlterSettingsLock()
+void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes)
 {
     const fs::path alter_settings_lock_path = zookeeper_path / "alter_settings_lock";
     zkutil::EphemeralNodeHolder::Ptr alter_settings_lock;
@@ -235,50 +235,82 @@ std::pair<zkutil::EphemeralNodeHolder::Ptr, zkutil::ZooKeeperPtr> ObjectStorageQ
 
         sleepForMilliseconds(50);
     }
-    return std::pair(alter_settings_lock, zookeeper);
-}
-
-void ObjectStorageQueueMetadata::alterSetting(
-    const SettingChange & change,
-    zkutil::ZooKeeperPtr zookeeper,
-    zkutil::EphemeralNodeHolder::Ptr /* alter_settings_lock */)
-{
-    const fs::path table_metadata_path = zookeeper_path / "metadata";
 
     Coordination::Stat stat;
     auto metadata_str = zookeeper->get(fs::path(zookeeper_path) / "metadata", &stat);
     auto metadata_from_zk = ObjectStorageQueueTableMetadata::parse(metadata_str);
     auto new_table_metadata{table_metadata};
 
-    if (endsWith(change.name, "processing_threads_num"))
+    for (const auto & change : changes)
     {
-        const auto value = change.value.safeGet<UInt64>();
-        if (table_metadata.processing_threads_num == value)
+        if (endsWith(change.name, "processing_threads_num"))
         {
-            LOG_TRACE(log, "Setting `processing_threads_num` already equals {}. "
-                    "Will do nothing", value);
-            return;
+            const auto value = change.value.safeGet<UInt64>();
+            if (table_metadata.processing_threads_num == value)
+            {
+                LOG_TRACE(log, "Setting `processing_threads_num` already equals {}. "
+                        "Will do nothing", value);
+                return;
+            }
+            new_table_metadata.processing_threads_num = value;
         }
-        new_table_metadata.processing_threads_num = value;
-    }
-    else if (endsWith(change.name, "loading_retries"))
-    {
-        const auto value = change.value.safeGet<UInt64>();
-        if (table_metadata.loading_retries == value)
+        else if (endsWith(change.name, "loading_retries"))
         {
-            LOG_TRACE(log, "Setting `loading_retries` already equals {}. "
-                      "Will do nothing", value);
-            return;
+            const auto value = change.value.safeGet<UInt64>();
+            if (table_metadata.loading_retries == value)
+            {
+                LOG_TRACE(log, "Setting `loading_retries` already equals {}. "
+                        "Will do nothing", value);
+                return;
+            }
+            new_table_metadata.loading_retries = value;
         }
-        new_table_metadata.loading_retries = value;
-    }
-    else
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting `{}` is not changeable", change.name);
+        else if (endsWith(change.name, "after_processing"))
+        {
+            const auto value = ObjectStorageQueueTableMetadata::actionFromString(change.value.safeGet<String>());
+            if (table_metadata.after_processing == value)
+            {
+                LOG_TRACE(log, "Setting `after_processing` already equals {}. "
+                        "Will do nothing", value);
+                return;
+            }
+            new_table_metadata.after_processing = value;
+        }
+        else if (endsWith(change.name, "tracked_files_limit"))
+        {
+            const auto value = change.value.safeGet<UInt64>();
+            if (table_metadata.tracked_files_limit == value)
+            {
+                LOG_TRACE(log, "Setting `tracked_files_limit` already equals {}. "
+                        "Will do nothing", value);
+                return;
+            }
+            new_table_metadata.tracked_files_limit = value;
+        }
+        else if (endsWith(change.name, "tracked_files_ttl_sec"))
+        {
+            const auto value = change.value.safeGet<UInt64>();
+            if (table_metadata.tracked_files_ttl_sec == value)
+            {
+                LOG_TRACE(log, "Setting `tracked_files_ttl_sec` already equals {}. "
+                        "Will do nothing", value);
+                return;
+            }
+            new_table_metadata.tracked_files_ttl_sec = value;
+        }
+        else
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting `{}` is not changeable", change.name);
+        }
     }
 
-    zookeeper->set(table_metadata_path, new_table_metadata.toString(), stat.version);
-    table_metadata.processing_threads_num = new_table_metadata.processing_threads_num.load();
+    const auto new_metadata_str = new_table_metadata.toString();
+    LOG_TRACE(log, "New metadata: {}", new_metadata_str);
+
+    const fs::path table_metadata_path = zookeeper_path / "metadata";
+    zookeeper->set(table_metadata_path, new_metadata_str, stat.version);
+
+    table_metadata.syncChangeableSettings(new_table_metadata);
 }
 
 ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
