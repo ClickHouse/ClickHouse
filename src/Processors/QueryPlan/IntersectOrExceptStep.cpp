@@ -35,8 +35,6 @@ IntersectOrExceptStep::IntersectOrExceptStep(
     , max_threads(max_threads_)
 {
     updateInputHeaders(std::move(input_headers_));
-    // input_headers = std::move(input_headers_);
-    // output_header = checkHeaders(input_headers);
 }
 
 void IntersectOrExceptStep::updateOutputHeader()
