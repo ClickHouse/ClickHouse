@@ -213,10 +213,7 @@ struct ModuloImpl
     static llvm::Value * compileImpl(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
     {
         if (left->getType()->isFloatingPointTy())
-        {
-            auto * func_frem = llvm::Intrinsic::getDeclaration(b.GetInsertBlock()->getModule(), llvm::Intrinsic::vp_frem, left->getType());
-            return b.CreateCall(func_frem, {left, right});
-        }
+            return b.CreateFRem(left, right);
         else if (left->getType()->isIntegerTy())
             return is_signed ? b.CreateSRem(left, right) : b.CreateURem(left, right);
         else
