@@ -1704,7 +1704,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     executeLimitBy(query_plan);
                 }
 
-                if (query.limitLength() && !query.limitBy())
+                /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.
+                if (query.limitLength() && !query.limitBy() && !query.limit_with_ties)
                     executePreLimit(query_plan, true);
             }
         };

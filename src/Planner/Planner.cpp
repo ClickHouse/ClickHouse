@@ -989,10 +989,14 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(QueryPlan & query_plan,
     {
         auto & limit_by_analysis_result = expressions_analysis_result.getLimitBy();
         addExpressionStep(query_plan, limit_by_analysis_result.before_limit_by_actions, "Before LIMIT BY", useful_sets);
+        /// We don't apply LIMIT BY on remote nodes at all in the old infrastructure.
+        /// https://github.com/ClickHouse/ClickHouse/blob/67c1e89d90ef576e62f8b1c68269742a3c6f9b1e/src/Interpreters/InterpreterSelectQuery.cpp#L1697-L1705
+        /// Let's be optimistic and try to disable only skipping offset.
         addLimitByStep(query_plan, limit_by_analysis_result, query_node, true /*do_not_skip_offset*/);
     }
 
-    if (query_node.hasLimit() && !query_node.hasLimitBy() && !query_node.isLimitWithTies())
+    /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.
+    if (query_node.hasLimit() && !query_node.hasLimitByOffset() && !query_node.isLimitWithTies())
         addPreliminaryLimitStep(query_plan, query_analysis_result, planner_context, true /*do_not_skip_offset*/);
 }
 
