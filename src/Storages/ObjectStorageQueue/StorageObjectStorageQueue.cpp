@@ -131,6 +131,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_)
+    , type(engine_args->engine->name == "S3Queue" ? StorageObjectStorageQueueType::S3 : StorageObjectStorageQueueType::Azure)
+    , engine_name(engine_args->engine->name)
     , zk_path(chooseZooKeeperPath(table_id_, context_->getSettingsRef(), *queue_settings_))
     , enable_logging_to_queue_log(queue_settings_->enable_logging_to_queue_log)
     , polling_min_timeout_ms(queue_settings_->polling_min_timeout_ms)

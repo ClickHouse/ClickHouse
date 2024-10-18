@@ -8,6 +8,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageFactory.h>
 
@@ -33,7 +34,9 @@ public:
         ASTStorage * engine_args,
         LoadingStrictnessLevel mode);
 
-    String getName() const override { return "ObjectStorageQueue"; }
+    String getName() const override { return engine_name; }
+
+    StorageObjectStorageQueueType getType() { return type; }
 
     void read(
         QueryPlan & query_plan,
@@ -58,6 +61,8 @@ private:
     using FileIterator = ObjectStorageQueueSource::FileIterator;
     using CommitSettings = ObjectStorageQueueSource::CommitSettings;
 
+    StorageObjectStorageQueueType type;
+    const std::string engine_name;
     const fs::path zk_path;
     const bool enable_logging_to_queue_log;
     const UInt32 polling_min_timeout_ms;
