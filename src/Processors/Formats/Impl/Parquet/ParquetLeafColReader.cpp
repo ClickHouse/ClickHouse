@@ -475,15 +475,33 @@ void ParquetLeafColReader<TColumn>::readPageV1(const parquet::DataPageV1 & page)
     {
         throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Unsupported encoding: {}", page.definition_level_encoding());
     }
+
     const auto * buffer =  page.data();
     auto max_size = static_cast<std::size_t>(page.size());
 
     if (col_descriptor.max_repetition_level() > 0)
     {
-        auto rep_levels_bytes = repetition_level_decoder.SetData(
-            page.repetition_level_encoding(), col_descriptor.max_repetition_level(), 0, buffer, static_cast<int>(max_size));
-        buffer += rep_levels_bytes;
-        max_size -= rep_levels_bytes;
+        if (max_size < sizeof(int32_t))
+        {
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Not enough bytes in parquet page buffer, corrupt?");
+        }
+
+        auto num_bytes = ::arrow::util::SafeLoadAs<int32_t>(buffer);
+
+        if (num_bytes < 0)
+        {
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Number of bytes for dl is negative, corrupt?");
+        }
+
+        if (num_bytes + 4u > max_size)
+        {
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Not enough bytes in parquet page buffer, corrupt?");
+        }
+
+        // not constructing level reader because we are not using it atm
+        num_bytes += 4;
+        buffer += num_bytes;
+        max_size -= num_bytes;
     }
 
     assert(col_descriptor.max_definition_level() >= 0);
@@ -556,15 +574,6 @@ void ParquetLeafColReader<TColumn>::readPageV2(const parquet::DataPageV2 & page)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Data page too small for levels (corrupt header?)");
-    }
-
-    if (col_descriptor.max_repetition_level() > 0)
-    {
-        repetition_level_decoder.SetDataV2(
-            page.repetition_levels_byte_length(),
-            col_descriptor.max_repetition_level(),
-            cur_page_values,
-            buffer);
     }
 
     // ARROW-17453: Even if max_rep_level_ is 0, there may still be
