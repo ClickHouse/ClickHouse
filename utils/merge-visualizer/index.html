@@ -186,8 +186,8 @@ async function update(data) {
     const part_id = `part-${data.table_uuid}-${data.part_name}`;
 
     const matches = data.part_name.match(/[\w-]+_(\d+)_(\d+)_(\d+)(?:_(\d+))?/);
-    const min_block_id = matches[1];
-    const level = matches[3];
+    const min_block_id = +matches[1];
+    const level = +matches[3];
 
     if (data.event_type == 'NewPart' || data.event_type == 'DownloadPart' || data.event_type == 'MergeParts' || data.event_type == 'MutatePart') {
         if (!currently_active_parts[data.table_uuid]) {
