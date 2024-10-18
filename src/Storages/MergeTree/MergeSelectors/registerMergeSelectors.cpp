@@ -7,6 +7,7 @@ namespace DB
 
 void registerSimpleMergeSelector(MergeSelectorFactory & factory);
 void registerStochasticSimpleMergeSelector(MergeSelectorFactory & factory);
+void registerLeveledMergeSelector(MergeSelectorFactory & factory);
 void registerAllMergeSelector(MergeSelectorFactory & factory);
 void registerTTLDeleteMergeSelector(MergeSelectorFactory & factory);
 void registerTTLRecompressMergeSelector(MergeSelectorFactory & factory);
@@ -17,6 +18,7 @@ void registerMergeSelectors()
 
     registerSimpleMergeSelector(factory);
     registerStochasticSimpleMergeSelector(factory);
+    registerLeveledMergeSelector(   factory);
     registerAllMergeSelector(factory);
     registerTTLDeleteMergeSelector(factory);
     registerTTLRecompressMergeSelector(factory);
