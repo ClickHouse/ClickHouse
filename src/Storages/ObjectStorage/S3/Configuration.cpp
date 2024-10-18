@@ -144,11 +144,7 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
 
     auto client = getClient(url, *s3_settings, context, /* for_disk_s3 */false);
     auto key_generator = createObjectStorageKeysGeneratorAsIsWithPrefix(url.key);
-    auto s3_capabilities = S3Capabilities
-    {
-        .support_batch_delete = config.getBool("s3.support_batch_delete", true),
-        .support_proxy = config.getBool("s3.support_proxy", config.has("s3.proxy")),
-    };
+    auto s3_capabilities = getCapabilitiesFromConfig(config, "s3");
 
     return std::make_shared<S3ObjectStorage>(
         std::move(client), std::move(s3_settings), url, s3_capabilities,
