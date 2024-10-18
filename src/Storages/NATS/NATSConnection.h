@@ -15,6 +15,9 @@ struct NATSConfiguration
     String password;
     String token;
     String credential_file;
+    String ca_file;
+    String client_cert_file;
+    String client_key_file;
 
     int max_reconnect;
     int reconnect_wait;
