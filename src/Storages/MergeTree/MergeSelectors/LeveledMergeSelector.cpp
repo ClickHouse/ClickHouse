@@ -119,8 +119,6 @@ LeveledMergeSelector::PartsRange LeveledMergeSelector::select(
         return LeveledMergeSelector::PartsRange{};
 
     auto best = *std::min_element(partitions.begin(), partitions.end(), compareByDeviation);
-
-    std::cout << "Best " << best.deviation << best.sum << std::endl;
     return best.range;
 }
 
