@@ -19,8 +19,6 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-
-
 class FunctionGetMaxTableNameLength : public IFunction, WithContext
 {
 public:
