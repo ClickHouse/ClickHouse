@@ -58,6 +58,11 @@ namespace Setting
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsBool database_replicated_allow_detach_permanently;
+    extern const ServerSettingsUInt32 max_database_replicated_create_table_thread_pool_size;
+}
 
 namespace ErrorCodes
 {
@@ -1358,7 +1363,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     tables_dependencies.checkNoCyclicDependencies();
 
-    auto allow_concurrent_table_creation = getContext()->getServerSettings().max_database_replicated_create_table_thread_pool_size > 1;
+    auto allow_concurrent_table_creation = getContext()->getServerSettings()[ServerSetting::max_database_replicated_create_table_thread_pool_size] > 1;
     auto tables_to_create_by_level = tables_dependencies.getTablesSplitByDependencyLevel();
 
     ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseReplicatedCreateTablesThreadPool().get(), "CreateTables");
@@ -1761,7 +1766,7 @@ void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const 
 {
     waitDatabaseStarted();
 
-    if (!local_context->getServerSettings().database_replicated_allow_detach_permanently)
+    if (!local_context->getServerSettings()[ServerSetting::database_replicated_allow_detach_permanently])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for DETACH TABLE PERMANENTLY is disabled");
 
     auto txn = local_context->getZooKeeperMetadataTransaction();

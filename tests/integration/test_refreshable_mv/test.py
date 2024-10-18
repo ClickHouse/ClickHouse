@@ -103,7 +103,9 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
             )
             node.query(f"system wait view re.{name}")
         # Check results.
-        rows_after = int(nodes[randint(0, 1)].query(f"select count() from re.{name}"))
+        node = nodes[randint(0, 1)]
+        node.query(f"system sync replica re.{name}")
+        rows_after = int(node.query(f"select count() from re.{name}"))
         expected = 1 if coordinated else 2
         assert rows_after - rows_before == expected
 

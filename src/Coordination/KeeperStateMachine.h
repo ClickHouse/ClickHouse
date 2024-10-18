@@ -11,6 +11,8 @@
 
 namespace DB
 {
+struct CoordinationSettings;
+using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
 using ResponsesQueue = ConcurrentBoundedQueue<KeeperStorageBase::ResponseForSession>;
 using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 

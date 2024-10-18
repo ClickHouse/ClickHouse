@@ -196,7 +196,7 @@ void FileChecker::load()
 
 bool FileChecker::fileReallyExists(const String & path_) const
 {
-    return disk ? disk->exists(path_) : fs::exists(path_);
+    return disk ? disk->existsFile(path_) : fs::exists(path_);
 }
 
 size_t FileChecker::getRealFileSize(const String & path_) const

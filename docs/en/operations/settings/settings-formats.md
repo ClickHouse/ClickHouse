@@ -93,6 +93,18 @@ See also:
 - [DateTime data type.](../../sql-reference/data-types/datetime.md)
 - [Functions for working with dates and times.](../../sql-reference/functions/date-time-functions.md)
 
+## date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands {#date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands}
+
+Dynamically cut the trailing zeros of `datetime64` values to adjust the output scale to `(0, 3, 6)`, corresponding to `seconds`, `milliseconds`, and `microseconds`.
+
+See changes in following examples:
+
+- 2012-01-01 00:11:22.000000 -> 2012-01-01 00:11:22
+- 2012-01-01 00:11:22.120000 -> 2012-01-01 00:11:22.120
+- 2012-01-01 00:11:22.123400 -> 2012-01-01 00:11:22.123400
+
+Default value: `false`.
+
 ## date_time_overflow_behavior {#date_time_overflow_behavior}
 
 Type: DateTimeOverflowBehavior

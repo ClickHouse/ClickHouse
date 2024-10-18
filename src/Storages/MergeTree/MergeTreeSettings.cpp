@@ -1,5 +1,6 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsProgramOptions.h>
+#include <Core/MergeSelectorAlgorithm.h>
 #include <Core/SettingsChangesHistory.h>
 #include <Disks/DiskFomAST.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -52,6 +53,10 @@ namespace ErrorCodes
     M(Bool, load_existing_rows_count_for_old_parts, false, "Whether to load existing_rows_count for existing parts. If false, existing_rows_count will be equal to rows_count for existing parts.", 0) \
     M(Bool, use_compact_variant_discriminators_serialization, true, "Use compact version of Variant discriminators serialization.", 0) \
     \
+    /** Merge selector settings. */ \
+    M(UInt64, merge_selector_blurry_base_scale_factor, 0, "Controls when the logic kicks in relatively to the number of parts in partition. The bigger the factor the more belated reaction will be.", 0) \
+    M(UInt64, merge_selector_window_size, 1000, "How many parts to look at once.", 0) \
+    \
     /** Merge settings. */ \
     M(UInt64, merge_max_block_size, 8192, "How many rows in blocks should be formed for merge operations. By default has the same value as `index_granularity`.", 0) \
     M(UInt64, merge_max_block_size_bytes, 10 * 1024 * 1024, "How many bytes in blocks should be formed for merge operations. By default has the same value as `index_granularity_bytes`.", 0) \
@@ -92,6 +97,7 @@ namespace ErrorCodes
     M(String, merge_workload, "", "Name of workload to be used to access resources for merges", 0) \
     M(String, mutation_workload, "", "Name of workload to be used to access resources for mutations", 0) \
     M(Milliseconds, background_task_preferred_step_execution_time_ms, 50, "Target time to execution of one step of merge or mutation. Can be exceeded if one step takes longer time", 0) \
+    M(MergeSelectorAlgorithm, merge_selector_algorithm, MergeSelectorAlgorithm::SIMPLE, "The algorithm to select parts for merges assignment", 0) \
     \
     /** Inserts settings. */ \
     M(UInt64, parts_to_delay_insert, 1000, "If table contains at least that many active parts in single partition, artificially slow down insert into table. Disabled if set to 0", 0) \

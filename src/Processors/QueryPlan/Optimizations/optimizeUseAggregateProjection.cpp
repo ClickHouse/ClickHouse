@@ -798,7 +798,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
     }
 
     // LOG_TRACE(getLogger("optimizeUseProjections"), "Projection reading header {}",
-    //           projection_reading->getOutputStream().header.dumpStructure());
+    //           projection_reading->getOutputHeader().header.dumpStructure());
 
     projection_reading->setStepDescription(selected_projection_name);
     auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
@@ -814,14 +814,14 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
         {
             const auto & result_name = best_candidate->dag.getOutputs().front()->result_name;
             aggregate_projection_node->step = std::make_unique<FilterStep>(
-                projection_reading_node.step->getOutputStream(),
+                projection_reading_node.step->getOutputHeader(),
                 std::move(best_candidate->dag),
                 result_name,
                 true);
         }
         else
             aggregate_projection_node->step
-                = std::make_unique<ExpressionStep>(projection_reading_node.step->getOutputStream(), std::move(best_candidate->dag));
+                = std::make_unique<ExpressionStep>(projection_reading_node.step->getOutputHeader(), std::move(best_candidate->dag));
 
         aggregate_projection_node->children.push_back(&projection_reading_node);
     }
@@ -833,12 +833,12 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
     if (!has_ordinary_parts)
     {
         /// All parts are taken from projection
-        aggregating->requestOnlyMergeForAggregateProjection(aggregate_projection_node->step->getOutputStream());
+        aggregating->requestOnlyMergeForAggregateProjection(aggregate_projection_node->step->getOutputHeader());
         node.children.front() = aggregate_projection_node;
     }
     else
     {
-        node.step = aggregating->convertToAggregatingProjection(aggregate_projection_node->step->getOutputStream());
+        node.step = aggregating->convertToAggregatingProjection(aggregate_projection_node->step->getOutputHeader());
         node.children.push_back(aggregate_projection_node);
     }
 

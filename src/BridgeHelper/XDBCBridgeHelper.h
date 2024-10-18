@@ -99,7 +99,7 @@ protected:
         {
             auto buf = BuilderRWBufferFromHTTP(getPingURI())
                            .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
-                           .withTimeouts(getHTTPTimeouts())
+                           .withTimeouts(ConnectionTimeouts::getHTTPTimeouts(getContext()->getSettingsRef(), getContext()->getServerSettings()))
                            .withSettings(getContext()->getReadSettings())
                            .create(credentials);
 
@@ -165,11 +165,6 @@ private:
 
     Poco::Net::HTTPBasicCredentials credentials{};
 
-    ConnectionTimeouts getHTTPTimeouts()
-    {
-        return ConnectionTimeouts::getHTTPTimeouts(getContext()->getSettingsRef(), getContext()->getServerSettings().keep_alive_timeout);
-    }
-
 protected:
     using URLParams = std::vector<std::pair<std::string, std::string>>;
 
@@ -206,7 +201,7 @@ protected:
             auto buf = BuilderRWBufferFromHTTP(uri)
                            .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                            .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
-                           .withTimeouts(getHTTPTimeouts())
+                           .withTimeouts(ConnectionTimeouts::getHTTPTimeouts(getContext()->getSettingsRef(), getContext()->getServerSettings()))
                            .withSettings(getContext()->getReadSettings())
                            .create(credentials);
 
@@ -233,7 +228,7 @@ protected:
             auto buf = BuilderRWBufferFromHTTP(uri)
                            .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                            .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
-                           .withTimeouts(getHTTPTimeouts())
+                           .withTimeouts(ConnectionTimeouts::getHTTPTimeouts(getContext()->getSettingsRef(), getContext()->getServerSettings()))
                            .withSettings(getContext()->getReadSettings())
                            .create(credentials);
 

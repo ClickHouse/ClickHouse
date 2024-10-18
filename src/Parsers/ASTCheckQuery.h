@@ -58,8 +58,15 @@ protected:
             settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " PARTITION " << (settings.hilite ? hilite_none : "");
             partition->formatImpl(settings, state, frame);
         }
+
+        if (!part_name.empty())
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " PART " << (settings.hilite ? hilite_none : "")
+                << quoteString(part_name);
+        }
     }
 };
+
 
 struct ASTCheckAllTablesQuery : public ASTQueryWithOutput
 {

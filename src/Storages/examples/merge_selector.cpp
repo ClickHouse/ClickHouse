@@ -1,7 +1,7 @@
 #include <iostream>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
-#include <Storages/MergeTree/SimpleMergeSelector.h>
+#include <Storages/MergeTree/MergeSelectors/SimpleMergeSelector.h>
 
 
 /** This program tests merge-selecting algorithm.

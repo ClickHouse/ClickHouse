@@ -7,6 +7,7 @@
 
 #include <Core/ServerSettings.h>
 #include <IO/HTTPCommon.h>
+#include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Common/re2.h>
 

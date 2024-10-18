@@ -446,7 +446,7 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     /// header is a header which is returned by the follower.
     /// They are different because tables will have different aliases (e.g. _table1 or _table5).
     /// Here we just rename columns by position, with the hope the types would match.
-    auto step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(converting));
+    auto step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(converting));
     step->setStepDescription("Convert distributed names");
     query_plan.addStep(std::move(step));
 

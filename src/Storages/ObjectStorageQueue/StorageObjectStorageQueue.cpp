@@ -151,7 +151,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "ObjectStorageQueue url must either end with '/' or contain globs");
     }
 
-    validateSettings(*queue_settings, mode > LoadingStrictnessLevel::CREATE);
+    const bool is_attach = mode > LoadingStrictnessLevel::CREATE;
+    validateSettings(*queue_settings, is_attach);
 
     object_storage = configuration->createObjectStorage(context_, /* is_readonly */true);
     FormatFactory::instance().checkFormatName(configuration->format);
@@ -172,7 +173,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
 
     auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
-        zk_path, *queue_settings, storage_metadata.getColumns(), configuration_->format, log);
+        zk_path, *queue_settings, storage_metadata.getColumns(), configuration_->format, context_, is_attach, log);
 
     auto queue_metadata = std::make_unique<ObjectStorageQueueMetadata>(
         zk_path, std::move(table_metadata), queue_settings->cleanup_interval_min_ms, queue_settings->cleanup_interval_max_ms);
@@ -234,7 +235,7 @@ public:
         std::shared_ptr<StorageObjectStorageQueue> storage_,
         size_t max_block_size_)
         : SourceStepWithFilter(
-            DataStream{.header = std::move(sample_block)},
+            std::move(sample_block),
             column_names_,
             query_info_,
             storage_snapshot_,

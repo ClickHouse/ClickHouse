@@ -66,6 +66,8 @@ public:
         const ObjectStorageQueueSettings & settings,
         const ColumnsDescription & columns,
         const std::string & format,
+        const ContextPtr & context,
+        bool is_attach,
         LoggerPtr log);
 
     void shutdown();
