@@ -214,48 +214,71 @@ ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket, const Proces
     return ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(zookeeper_path, bucket, processor, log);
 }
 
-void ObjectStorageQueueMetadata::alterSetting(const SettingChange & change)
+std::pair<zkutil::EphemeralNodeHolder::Ptr, zkutil::ZooKeeperPtr> ObjectStorageQueueMetadata::getAlterSettingsLock()
 {
-    alterSetting(change, zookeeper_path, table_metadata, log);
+    const fs::path alter_settings_lock_path = zookeeper_path / "alter_settings_lock";
+    zkutil::EphemeralNodeHolder::Ptr alter_settings_lock;
+    auto zookeeper = getZooKeeper();
+
+    /// We will retry taking alter_settings_lock for the duration of 5 seconds.
+    /// Do we need to add a setting for this?
+    const size_t num_tries = 100;
+    for (size_t i = 0; i < num_tries; ++i)
+    {
+        alter_settings_lock = zkutil::EphemeralNodeHolder::tryCreate(alter_settings_lock_path, *zookeeper, toString(getCurrentTime()));
+
+        if (alter_settings_lock)
+            break;
+
+        if (i == num_tries - 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to take alter setting lock");
+
+        sleepForMilliseconds(50);
+    }
+    return std::pair(alter_settings_lock, zookeeper);
 }
 
 void ObjectStorageQueueMetadata::alterSetting(
     const SettingChange & change,
-    const fs::path & zookeeper_path,
-    ObjectStorageQueueTableMetadata & table_metadata,
-    LoggerPtr log)
+    zkutil::ZooKeeperPtr zookeeper,
+    zkutil::EphemeralNodeHolder::Ptr /* alter_settings_lock */)
 {
-    auto zookeeper = getZooKeeper();
+    const fs::path table_metadata_path = zookeeper_path / "metadata";
+
     Coordination::Stat stat;
-    const auto metadata_str = zookeeper->get(fs::path(zookeeper_path) / "metadata", &stat);
-    const auto metadata_from_zk = ObjectStorageQueueTableMetadata::parse(metadata_str);
+    auto metadata_str = zookeeper->get(fs::path(zookeeper_path) / "metadata", &stat);
+    auto metadata_from_zk = ObjectStorageQueueTableMetadata::parse(metadata_str);
     auto new_table_metadata{table_metadata};
+
     if (endsWith(change.name, "processing_threads_num"))
     {
         const auto value = change.value.safeGet<UInt64>();
         if (table_metadata.processing_threads_num == value)
         {
             LOG_TRACE(log, "Setting `processing_threads_num` already equals {}. "
-                      "Will do nothing", value);
+                    "Will do nothing", value);
             return;
         }
         new_table_metadata.processing_threads_num = value;
-
-        const fs::path alter_setting_lock_path = zookeeper_path / "alter_setting_lock";
-        const fs::path table_metadata_path = zookeeper_path / "metadata";
-
-        auto ephemeral_node = zkutil::EphemeralNodeHolder::tryCreate(alter_setting_lock_path, *zookeeper, toString(getCurrentTime()));
-        if (!ephemeral_node)
-        {
-            /// TODO: add tries, change error code
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to take alter setting lock");
-        }
-
-        /// TODO: catch and retry if node version changed
-        zookeeper->set(table_metadata_path, new_table_metadata.toString(), stat.version);
-
-        table_metadata.processing_threads_num = new_table_metadata.processing_threads_num;
     }
+    else if (endsWith(change.name, "loading_retries"))
+    {
+        const auto value = change.value.safeGet<UInt64>();
+        if (table_metadata.loading_retries == value)
+        {
+            LOG_TRACE(log, "Setting `loading_retries` already equals {}. "
+                      "Will do nothing", value);
+            return;
+        }
+        new_table_metadata.loading_retries = value;
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting `{}` is not changeable", change.name);
+    }
+
+    zookeeper->set(table_metadata_path, new_table_metadata.toString(), stat.version);
+    table_metadata.processing_threads_num = new_table_metadata.processing_threads_num.load();
 }
 
 ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(

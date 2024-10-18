@@ -89,7 +89,11 @@ public:
     const ObjectStorageQueueTableMetadata & getTableMetadata() const { return table_metadata; }
     ObjectStorageQueueTableMetadata & getTableMetadata() { return table_metadata; }
 
-    void alterSetting(const SettingChange & change);
+    std::pair<zkutil::EphemeralNodeHolder::Ptr, zkutil::ZooKeeperPtr> getAlterSettingsLock();
+    void alterSetting(
+        const SettingChange & change,
+        zkutil::ZooKeeperPtr zookeeper,
+        zkutil::EphemeralNodeHolder::Ptr alter_settings_lock);
 
 private:
     void cleanupThreadFunc();

@@ -2108,3 +2108,9 @@ def test_alter_settings(started_cluster):
     assert '"processing_threads_num":5' in node1.query(
         f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
     )
+
+    node1.restart_clickhouse()
+
+    assert '"processing_threads_num":5' in node1.query(
+        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    )

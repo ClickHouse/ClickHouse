@@ -63,6 +63,7 @@ private:
     using FileIterator = ObjectStorageQueueSource::FileIterator;
 
     const std::unique_ptr<ObjectStorageQueueSettings> queue_settings;
+    std::mutex changeable_settings_mutex;
     const fs::path zk_path;
 
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
