@@ -5,6 +5,8 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <DataTypes/DataTypeNullable.h>
 
+#include <Common/logger_useful.h>
+
 namespace DB
 {
 
@@ -40,6 +42,8 @@ public:
 
     /// Construct column node with column name, type and column source weak pointer
     ColumnNode(NameAndTypePair column_, QueryTreeNodeWeakPtr column_source_);
+
+    std::shared_ptr<IQueryTreeNode> temp;
 
     /// Get column
     const NameAndTypePair & getColumn() const
@@ -110,7 +114,9 @@ public:
 
     void setColumnSource(const QueryTreeNodePtr & source)
     {
+        LOG_DEBUG(&Poco::Logger::get("uwu"), "Setting column source: {}", !!source);
         getSourceWeakPointer() = source;
+        LOG_DEBUG(&Poco::Logger::get("uwu"), "Setting column source: {}", !!weak_pointers[source_weak_pointer_index].lock());
     }
 
     QueryTreeNodeType getNodeType() const override

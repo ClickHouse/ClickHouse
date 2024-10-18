@@ -51,7 +51,7 @@ protected:
                 "corresponding table function",
                 getName());
 
-        /// Evaluate only first argument, everything else will be done Base class
+        /// Evaluate only first argument, everything else will be done by Base class
         args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context);
 
         /// Cluster name is always the first

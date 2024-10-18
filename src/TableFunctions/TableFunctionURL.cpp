@@ -121,6 +121,8 @@ StoragePtr TableFunctionURL::getStorage(
     const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
     const std::string & table_name, const String & compression_method_) const
 {
+    LOG_DEBUG(&Poco::Logger::get("TableFunctionURL"), "TableFunctionURL::getStorage :(");
+
     return std::make_shared<StorageURL>(
         source,
         StorageID(getDatabaseName(), table_name),
