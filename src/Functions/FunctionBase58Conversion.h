@@ -2,6 +2,7 @@
 #include <Columns/ColumnConst.h>
 #include <Common/MemorySanitizer.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -25,7 +26,7 @@ struct Base58Encode
 {
     static constexpr auto name = "base58Encode";
 
-    static void process(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count)
+    static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count)
     {
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
@@ -61,6 +62,35 @@ struct Base58Encode
 
         dst_data.resize(current_dst_offset);
     }
+
+    static void processFixedString(const ColumnFixedString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count)
+    {
+        auto & dst_data = dst_column->getChars();
+        auto & dst_offsets = dst_column->getOffsets();
+
+        size_t max_result_size = static_cast<size_t>(ceil(2 * src_column.getChars().size() + 1));
+
+        dst_data.resize(max_result_size);
+        dst_offsets.resize(input_rows_count);
+
+        const auto * src = src_column.getChars().data();
+        auto * dst = dst_data.data();
+
+        size_t fixed_size = src_column.getN();
+        size_t current_dst_offset = 0;
+
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            size_t encoded_size = encodeBase58(&src[row * fixed_size], fixed_size, &dst[current_dst_offset]);
+            current_dst_offset += encoded_size;
+            dst[current_dst_offset] = 0;
+            ++current_dst_offset;
+
+            dst_offsets[row] = current_dst_offset;
+        }
+
+        dst_data.resize(current_dst_offset);
+    }
 };
 
 enum class Base58DecodeErrorHandling : uint8_t
@@ -74,7 +104,7 @@ struct Base58Decode
 {
     static constexpr auto name = Name::name;
 
-    static void process(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count)
+    static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count)
     {
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
@@ -118,6 +148,43 @@ struct Base58Decode
 
         dst_data.resize(current_dst_offset);
     }
+
+    static void processFixedString(const ColumnFixedString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count)
+    {
+        auto & dst_data = dst_column->getChars();
+        auto & dst_offsets = dst_column->getOffsets();
+
+        size_t max_result_size = src_column.getChars().size() + 1;
+
+        dst_data.resize(max_result_size);
+        dst_offsets.resize(input_rows_count);
+
+        const auto * src = src_column.getChars().data();
+        auto * dst = dst_data.data();
+
+        size_t fixed_size = src_column.getN();
+        size_t current_dst_offset = 0;
+
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            std::optional<size_t>  decoded_size = decodeBase58(&src[row * fixed_size], fixed_size, &dst[current_dst_offset]);
+            if (!decoded_size)
+            {
+                if constexpr (ErrorHandling == Base58DecodeErrorHandling::ThrowException)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Base58 value, cannot be decoded");
+                else
+                    decoded_size = 0;
+            }
+
+            current_dst_offset += *decoded_size;
+            dst[current_dst_offset] = 0;
+            ++current_dst_offset;
+
+            dst_offsets[row] = current_dst_offset;
+        }
+
+        dst_data.resize(current_dst_offset);
+    }
 };
 
 template <typename Func>
@@ -138,10 +205,10 @@ public:
         if (arguments.size() != 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Wrong number of arguments for function {}: 1 expected.", getName());
 
-        if (!isString(arguments[0].type))
+        if (!isStringOrFixedString(arguments[0].type))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}. Must be String.",
+                "Illegal type {} of first argument of function {}. Must be String or FixedString.",
                 arguments[0].type->getName(), getName());
 
         return std::make_shared<DataTypeString>();
@@ -155,18 +222,25 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr column_string = arguments[0].column;
-        const ColumnString * input = checkAndGetColumn<ColumnString>(column_string.get());
-        if (!input)
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of first argument of function {}, must be String",
-                arguments[0].column->getName(), getName());
 
-        auto dst_column = ColumnString::create();
+        if (const ColumnString * input = checkAndGetColumn<ColumnString>(column_string.get()))
+        {
+            auto dst_column = ColumnString::create();
+            Func::processString(*input, dst_column, input_rows_count);
+            return dst_column;
+        }
 
-        Func::process(*input, dst_column, input_rows_count);
-
-        return dst_column;
+        if (const ColumnFixedString * input = checkAndGetColumn<ColumnFixedString>(column_string.get()))
+        {
+            auto dst_column = ColumnString::create();
+            Func::processFixedString(*input, dst_column, input_rows_count);
+            return dst_column;
+        }
+        
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Illegal column {} of first argument of function {}, must be String or FixedString",
+            arguments[0].column->getName(), getName());
     }
 };
 }
