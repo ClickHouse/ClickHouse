@@ -36,7 +36,7 @@ namespace DB
     M(Bool, reject_unhandled_messages, false, "Allow messages to be rejected in case they cannot be processed. This also automatically implies if there is a x-deadletter-exchange queue setting added", 0) \
     M(Bool, rabbitmq_commit_on_select, false, "Commit messages when select query is made", 0) \
     M(UInt64, rabbitmq_max_rows_per_message, 1, "The maximum number of rows produced in one message for row-based formats.", 0) \
-    M(StreamingHandleErrorMode, rabbitmq_handle_error_mode, StreamingHandleErrorMode::DEFAULT, "How to handle errors for RabbitMQ engine. Possible values: default (throw an exception after rabbitmq_skip_broken_messages broken messages), stream (save broken messages and errors in virtual columns _raw_message, _error).", 0) \
+    M(ExtStreamingHandleErrorMode, rabbitmq_handle_error_mode, ExtStreamingHandleErrorMode::DEFAULT, "How to handle errors for RabbitMQ engine. Possible values: default (throw an exception after rabbitmq_skip_broken_messages broken messages), stream (save broken messages and errors in virtual columns _raw_message, _error), dead_letter_queue (error related data will be saved in system.dead_letter_queue).", 0) \
 
 #define OBSOLETE_RABBITMQ_SETTINGS(M, ALIAS) \
     MAKE_OBSOLETE(M, Char, rabbitmq_row_delimiter, '\0') \
