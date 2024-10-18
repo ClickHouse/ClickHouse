@@ -51,6 +51,8 @@ public:
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
+    ObjectStorageQueueSettings getSettings() const;
+
 private:
     friend class ReadFromObjectStorageQueue;
     using FileIterator = ObjectStorageQueueSource::FileIterator;
@@ -58,9 +60,9 @@ private:
 
     const fs::path zk_path;
     const bool enable_logging_to_queue_log;
-    const size_t polling_min_timeout_ms;
-    const size_t polling_max_timeout_ms;
-    const size_t polling_backoff_ms;
+    const UInt32 polling_min_timeout_ms;
+    const UInt32 polling_max_timeout_ms;
+    const UInt32 polling_backoff_ms;
     const CommitSettings commit_settings;
 
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;

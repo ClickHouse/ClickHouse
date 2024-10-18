@@ -2073,6 +2073,10 @@ def test_processing_threads(started_cluster):
         f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
     )
 
+    assert 32 == int(node.query(
+        f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'processing_threads_num'"
+    ))
+
     total_values = generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )

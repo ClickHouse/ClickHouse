@@ -127,7 +127,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     const String & comment,
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_,
-    ASTStorage * /* engine_args */,
+    ASTStorage * engine_args,
     LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_)
@@ -176,6 +176,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.settings_changes = engine_args->settings->ptr();
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
@@ -415,7 +416,7 @@ void StorageObjectStorageQueue::threadFunc()
             else
             {
                 /// Increase the reschedule interval.
-                reschedule_processing_interval_ms = std::min(polling_max_timeout_ms, reschedule_processing_interval_ms + polling_backoff_ms);
+                reschedule_processing_interval_ms = std::min<size_t>(polling_max_timeout_ms, reschedule_processing_interval_ms + polling_backoff_ms);
             }
 
             LOG_DEBUG(log, "Stopped streaming to {} attached views", dependencies_count);
@@ -540,6 +541,33 @@ std::shared_ptr<StorageObjectStorageQueue::FileIterator> StorageObjectStorageQue
         object_storage, configuration, predicate, getVirtualsList(), local_context, nullptr, settings.list_object_keys_size, settings.throw_on_zero_files_match);
 
     return std::make_shared<FileIterator>(files_metadata, std::move(glob_iterator), shutdown_called, log);
+}
+
+ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
+{
+    /// We do not store queue settings
+    /// (because of the inconbenience of keeping them in sync with ObjectStorageQueueTableMetadata),
+    /// so let's reconstruct.
+    ObjectStorageQueueSettings settings;
+    const auto & table_metadata = getTableMetadata();
+    settings.after_processing = table_metadata.after_processing;
+    settings.keeper_path = zk_path;
+    settings.loading_retries = table_metadata.loading_retries;
+    settings.processing_threads_num = table_metadata.processing_threads_num;
+    settings.enable_logging_to_queue_log = enable_logging_to_queue_log;
+    settings.last_processed_path = table_metadata.last_processed_path;
+    settings.tracked_file_ttl_sec = 0;
+    settings.tracked_files_limit = 0;
+    settings.polling_min_timeout_ms = polling_min_timeout_ms;
+    settings.polling_max_timeout_ms = polling_max_timeout_ms;
+    settings.polling_backoff_ms = polling_backoff_ms;
+    settings.cleanup_interval_min_ms = 0;
+    settings.cleanup_interval_max_ms = 0;
+    settings.buckets = table_metadata.buckets;
+    settings.max_processed_files_before_commit = commit_settings.max_processed_files_before_commit;
+    settings.max_processed_rows_before_commit = commit_settings.max_processed_rows_before_commit;
+    settings.max_processed_bytes_before_commit = commit_settings.max_processed_bytes_before_commit;
+    return settings;
 }
 
 }
