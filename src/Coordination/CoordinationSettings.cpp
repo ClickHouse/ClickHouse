@@ -1,5 +1,6 @@
 #include <Coordination/CoordinationSettings.h>
 #include <Core/BaseSettings.h>
+#include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteIntText.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
@@ -119,18 +120,7 @@ CoordinationSettings::CoordinationSettings(const CoordinationSettings & settings
 
 CoordinationSettings::~CoordinationSettings() = default;
 
-#define IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR(CLASS_NAME, TYPE) \
-    const SettingField##TYPE & CoordinationSettings::operator[](CLASS_NAME##TYPE t) const \
-    { \
-        return impl.get()->*t; \
-    } \
-    SettingField##TYPE & CoordinationSettings::operator[](CLASS_NAME##TYPE t) \
-    { \
-        return impl.get()->*t; \
-    }
-
 COORDINATION_SETTINGS_SUPPORTED_TYPES(CoordinationSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
-#undef IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR
 
 void CoordinationSettings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
 {

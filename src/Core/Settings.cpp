@@ -2,6 +2,7 @@
 #include <Columns/ColumnMap.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacros.h>
+#include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
 #include <Core/FormatFactorySettingsDeclaration.h>
 #include <Core/Settings.h>
@@ -6111,18 +6112,7 @@ bool Settings::operator==(const Settings & other) const
     return *impl == *other.impl;
 }
 
-#define IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR(CLASS_NAME, TYPE)           \
-    const SettingField##TYPE & Settings::operator[](CLASS_NAME##TYPE t) const  \
-    {                                                                    \
-        return impl.get()->*t;                                           \
-    }                                                                    \
-    SettingField##TYPE & Settings::operator[](CLASS_NAME##TYPE t)        \
-    {                                                                    \
-        return impl.get()->*t;                                           \
-    }
-
 COMMON_SETTINGS_SUPPORTED_TYPES(Settings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
-#undef IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR
 
 bool Settings::has(std::string_view name) const
 {
