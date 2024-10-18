@@ -41,7 +41,9 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void enableMemoryBoundMerging();
-    void enforceAggregationInOrder();
+    void enforceAggregationInOrder(const SortDescription & sort_description);
+
+    bool hasSerializedPlan() const;
 
 private:
     ClusterProxy::SelectStreamFactory::Shards shards;
@@ -87,7 +89,7 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void enableMemoryBoundMerging();
-    void enforceAggregationInOrder();
+    void enforceAggregationInOrder(const SortDescription & sort_description);
 
 private:
     void addPipeForSingeReplica(Pipes & pipes, const ConnectionPoolPtr & pool, IConnections::ReplicaInfo replica_info);

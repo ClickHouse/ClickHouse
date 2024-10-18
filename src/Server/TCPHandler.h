@@ -21,6 +21,7 @@
 #include <IO/ReadBufferFromPocoSocketChunked.h>
 #include <IO/WriteBufferFromPocoSocketChunked.h>
 
+#include "Client/IServerConnection.h"
 #include "Core/Types.h"
 #include "IServer.h"
 #include "Interpreters/AsynchronousInsertQueue.h"
@@ -41,6 +42,7 @@ namespace DB
 
 class Session;
 struct Settings;
+struct QueryPlanAndSets;
 class ColumnsDescription;
 struct ProfileInfo;
 class TCPServer;
@@ -76,6 +78,7 @@ struct QueryState
 
     /// Query text.
     String query;
+    std::shared_ptr<QueryPlanAndSets> plan_and_sets;
     /// Parsed query
     ASTPtr parsed_query;
     /// Streams of blocks, that are processing the query.
@@ -264,6 +267,7 @@ private:
     void receiveAddendum();
     bool receivePacket();
     void receiveQuery();
+    void receiveQueryPlan();
     void receiveIgnoredPartUUIDs();
     String receiveReadTaskResponseAssumeLocked();
     std::optional<ParallelReadResponse> receivePartitionMergeTreeReadTaskResponseAssumeLocked();

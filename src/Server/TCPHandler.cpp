@@ -49,6 +49,7 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>
@@ -589,7 +590,7 @@ void TCPHandler::runImpl()
             });
 
             /// Processing Query
-            std::tie(state.parsed_query, state.io) = executeQuery(state.query, query_context, QueryFlags{}, state.stage);
+            std::tie(state.parsed_query, state.io) = executeQuery(state.query, state.plan_and_sets, query_context, QueryFlags{}, state.stage);
 
             after_check_cancelled.restart();
             after_send_progress.restart();
@@ -1775,13 +1776,15 @@ bool TCPHandler::receivePacket()
             receiveQuery();
             return true;
 
-        case Protocol::Client::Data:
         case Protocol::Client::Scalar:
-            if (state.skipping_data)
-                return receiveUnexpectedData(false);
-            if (state.empty())
-                receiveUnexpectedData(true);
-            return receiveData(packet_type == Protocol::Client::Scalar);
+            return receiveData(/*scalar=*/ true);
+
+        case Protocol::Client::QueryPlan:
+            receiveQueryPlan();
+            return true;
+
+        case Protocol::Client::Data:
+            return receiveData(/*scalar=*/ false);
 
         case Protocol::Client::Ping:
             writeVarUInt(Protocol::Server::Pong, *out);
@@ -2106,8 +2109,27 @@ void TCPHandler::receiveUnexpectedQuery()
     throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Query received from client");
 }
 
+void TCPHandler::receiveQueryPlan()
+{
+    bool unexpected_packet = state.empty() || state.stage != QueryProcessingStage::QueryPlan || state.plan_and_sets || !query_context || state.read_all_data;
+    auto context = unexpected_packet ? Context::getGlobalContextInstance() : query_context;
+
+    auto plan_and_sets = QueryPlan::deserialize(*in, context);
+    LOG_TRACE(log, "Received query plan");
+
+    if (!state.skipping_data && unexpected_packet)
+        throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet QueryPlan received from client");
+
+    state.plan_and_sets = std::make_shared<QueryPlanAndSets>(std::move(plan_and_sets));
+}
+
 bool TCPHandler::receiveData(bool scalar)
 {
+    if (state.skipping_data)
+        return receiveUnexpectedData(false);
+    if (state.empty())
+        return receiveUnexpectedData(true);
+
     initBlockInput();
 
     /// The name of the temporary table for writing data, default to empty string

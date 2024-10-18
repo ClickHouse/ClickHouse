@@ -4646,6 +4646,11 @@ Possible values:
     M(Bool, query_plan_enable_multithreading_after_window_functions, true, R"(
 Enable multithreading after evaluating window functions to allow parallel stream processing
 )", 0) \
+    \
+    M(Bool, serialize_query_plan, true, R"(
+Serialize query plan for distributed processing"\
+)", 0) \
+    \
     M(UInt64, regexp_max_matches_per_row, 1000, R"(
 Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](../../sql-reference/functions/string-search-functions.md/#extractallgroups-horizontal) function.
 
