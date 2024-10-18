@@ -222,6 +222,7 @@ private:
     String default_database;
 
     bool is_ssh_based_auth = false; /// authentication is via SSH pub-key challenge
+    bool is_jwt_based_auth = false; /// authentication is via JWT challenge
     /// For inter-server secret (remote_server.*.secret)
     bool is_interserver_mode = false;
     bool is_interserver_authenticated = false;

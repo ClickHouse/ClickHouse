@@ -441,7 +441,7 @@ std::optional<AuthResult>
 MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address,
                                         const ExternalAuthenticators & external_authenticators,
                                         bool throw_if_user_not_exists,
-                                        bool allow_no_password, bool allow_plaintext_password) const
+                                        bool allow_no_password, bool allow_plaintext_password, bool allow_jwt) const
 {
     auto storages = getStoragesInternal();
     for (size_t i = 0; i != storages->size(); ++i)
@@ -450,7 +450,7 @@ MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const P
         bool is_last_storage = (i == storages->size() - 1);
         auto auth_result = storage->authenticate(credentials, address, external_authenticators,
                                         (throw_if_user_not_exists && is_last_storage),
-                                        allow_no_password, allow_plaintext_password);
+                                        allow_no_password, allow_plaintext_password, allow_jwt);
         if (auth_result)
         {
             std::lock_guard lock{mutex};

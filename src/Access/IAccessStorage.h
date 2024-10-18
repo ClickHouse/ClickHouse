@@ -201,14 +201,16 @@ public:
         const Poco::Net::IPAddress & address,
         const ExternalAuthenticators & external_authenticators,
         bool allow_no_password,
-        bool allow_plaintext_password) const;
+        bool allow_plaintext_password,
+        bool allow_jwt) const;
     std::optional<AuthResult> authenticate(
         const Credentials & credentials,
         const Poco::Net::IPAddress & address,
         const ExternalAuthenticators & external_authenticators,
         bool throw_if_user_not_exists,
         bool allow_no_password,
-        bool allow_plaintext_password) const;
+        bool allow_plaintext_password,
+        bool allow_jwt) const;
 
     /// Returns true if this storage can be stored to or restored from a backup.
     virtual bool isBackupAllowed() const { return false; }
@@ -233,7 +235,8 @@ protected:
         const ExternalAuthenticators & external_authenticators,
         bool throw_if_user_not_exists,
         bool allow_no_password,
-        bool allow_plaintext_password) const;
+        bool allow_plaintext_password,
+        bool allow_jwt) const;
     virtual bool areCredentialsValid(
         const std::string & user_name,
         time_t valid_until,
