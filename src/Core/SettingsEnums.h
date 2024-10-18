@@ -14,6 +14,7 @@
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/ShellCommandSettings.h>
+#include <Core/MergeSelectorAlgorithm.h>
 
 
 namespace DB
@@ -362,5 +363,7 @@ enum class GroupArrayActionWhenLimitReached : uint8_t
     DISCARD
 };
 DECLARE_SETTING_ENUM(GroupArrayActionWhenLimitReached)
+
+DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
 }

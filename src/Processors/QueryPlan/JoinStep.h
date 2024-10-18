@@ -15,8 +15,8 @@ class JoinStep : public IQueryPlanStep
 {
 public:
     JoinStep(
-        const DataStream & left_stream_,
-        const DataStream & right_stream_,
+        const Header & left_header_,
+        const Header & right_header_,
         JoinPtr join_,
         size_t max_block_size_,
         size_t max_streams_,
@@ -37,12 +37,13 @@ public:
     void setJoin(JoinPtr join_, bool swap_streams_ = false);
     bool allowPushDownToRight() const;
 
-    bool canUpdateInputStream() const override { return true; }
+    bool canUpdateInputHeader() const override { return true; }
 
     JoinInnerTableSelectionMode inner_table_selection_mode = JoinInnerTableSelectionMode::Right;
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
+
     /// Header that expected to be returned from IJoin
     Block join_algorithm_header;
 
@@ -62,7 +63,7 @@ private:
 class FilledJoinStep : public ITransformingStep
 {
 public:
-    FilledJoinStep(const DataStream & input_stream_, JoinPtr join_, size_t max_block_size_);
+    FilledJoinStep(const Header & input_header_, JoinPtr join_, size_t max_block_size_);
 
     String getName() const override { return "FilledJoin"; }
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
@@ -73,7 +74,7 @@ public:
     const JoinPtr & getJoin() const { return join; }
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     JoinPtr join;
     size_t max_block_size;

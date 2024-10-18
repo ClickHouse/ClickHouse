@@ -8,6 +8,7 @@
 #include <Poco/String.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
+#include <Common/StringUtils.h>
 #include <algorithm>
 
 namespace DB
@@ -264,14 +265,14 @@ void IAST::FormatSettings::writeIdentifier(const String & name, bool ambiguous) 
 
 void IAST::FormatSettings::checkIdentifier(const String & name) const
 {
-    if (enable_secure_identifiers)
+    if (enforce_strict_identifier_format)
     {
-        bool is_secure_identifier = std::all_of(name.begin(), name.end(), [](char ch) { return std::isalnum(ch) || ch == '_'; });
-        if (!is_secure_identifier)
+        bool is_word_char_identifier = std::all_of(name.begin(), name.end(), isWordCharASCII);
+        if (!is_word_char_identifier)
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Not a secure identifier: `{}`, a secure identifier must contain only underscore and alphanumeric characters",
+                "Identifier '{}' contains characters other than alphanumeric and cannot be when enforce_strict_identifier_format is enabled",
                 name);
         }
     }
