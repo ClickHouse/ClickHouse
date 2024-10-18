@@ -31,6 +31,11 @@
 #    include <llvm/IR/IRBuilder.h>
 #endif
 
+namespace ProfileEvents
+{
+    extern const Event DefaultImplementationForNullsRows;
+    extern const Event DefaultImplementationForNullsRowsWithNulls;
+}
 
 namespace DB
 {
@@ -38,6 +43,7 @@ namespace DB
 namespace Setting
 {
 extern const SettingsBool short_circuit_default_implementation_for_nulls;
+extern const SettingsDouble short_circuit_default_implementation_for_nulls_threshold;
 }
 
 namespace ErrorCodes
@@ -244,12 +250,21 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             /// Don't need to evaluate function if each row contains at least one null value and not all input columns are constant.
             return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
         }
-        else if (!mask_info.has_zeros || all_columns_constant || !short_circuit_default_implementation_for_nulls)
+
+        size_t rows_without_nulls  = countBytesInFilter(mask.data(), 0, mask.size());
+        size_t rows_with_nulls = mask.size() - rows_without_nulls;
+        double null_ratio = rows_with_nulls / static_cast<double>(mask.size());
+        bool should_short_circuit = short_circuit_default_implementation_for_nulls && !all_columns_constant
+            && null_ratio >= short_circuit_default_implementation_for_nulls_threshold;
+        ProfileEvents::increment(ProfileEvents::DefaultImplementationForNullsRows, mask.size());
+        ProfileEvents::increment(ProfileEvents::DefaultImplementationForNullsRowsWithNulls, rows_with_nulls);
+
+        ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
+        auto temporary_result_type = removeNullable(result_type);
+
+        if (!should_short_circuit)
         {
             /// Each row should be evaluated if there are no nulls or short circuiting is disabled.
-            ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
-            auto temporary_result_type = removeNullable(result_type);
-
             auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, input_rows_count, dry_run);
 
             /// Invert mask as null map
@@ -263,15 +278,12 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
         else
         {
             /// If short circuit is enabled, we only execute the function on rows with all arguments not null
-            ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
-            auto temporary_result_type = removeNullable(result_type);
 
             /// Filter every column by mask
-            size_t size_hint = countBytesInFilter(mask.data(), 0, mask.size());
             for (auto & col : temporary_columns)
-                col.column = col.column->filter(mask, size_hint);
+                col.column = col.column->filter(mask, rows_without_nulls);
 
-            auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, size_hint, dry_run);
+            auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, rows_without_nulls, dry_run);
             auto mutable_res = IColumn::mutate(std::move(res));
             mutable_res->expand(mask, false);
 
@@ -350,7 +362,10 @@ IExecutableFunction::IExecutableFunction()
     {
         auto query_context = CurrentThread::get().getQueryContext();
         if (query_context && query_context->getSettingsRef()[Setting::short_circuit_default_implementation_for_nulls])
+        {
             short_circuit_default_implementation_for_nulls = true;
+            short_circuit_default_implementation_for_nulls_threshold = query_context->getSettingsRef()[Setting::short_circuit_default_implementation_for_nulls_threshold];
+        }
     }
 }
 
