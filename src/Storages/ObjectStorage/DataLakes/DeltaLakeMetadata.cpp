@@ -205,7 +205,7 @@ struct DeltaLakeMetadataImpl
 
             Poco::JSON::Parser parser;
             Poco::Dynamic::Var json = parser.parse(json_str);
-            Poco::JSON::Object::Ptr object = json.extract<Poco::JSON::Object::Ptr>();
+            const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
             if (!object)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse metadata file");
@@ -353,33 +353,33 @@ struct DeltaLakeMetadataImpl
         WhichDataType which(check_type->getTypeId());
         if (which.isStringOrFixedString())
             return value;
-        else if (isBool(check_type))
+        if (isBool(check_type))
             return parse<bool>(value);
-        else if (which.isInt8())
+        if (which.isInt8())
             return parse<Int8>(value);
-        else if (which.isUInt8())
+        if (which.isUInt8())
             return parse<UInt8>(value);
-        else if (which.isInt16())
+        if (which.isInt16())
             return parse<Int16>(value);
-        else if (which.isUInt16())
+        if (which.isUInt16())
             return parse<UInt16>(value);
-        else if (which.isInt32())
+        if (which.isInt32())
             return parse<Int32>(value);
-        else if (which.isUInt32())
+        if (which.isUInt32())
             return parse<UInt32>(value);
-        else if (which.isInt64())
+        if (which.isInt64())
             return parse<Int64>(value);
-        else if (which.isUInt64())
+        if (which.isUInt64())
             return parse<UInt64>(value);
-        else if (which.isFloat32())
+        if (which.isFloat32())
             return parse<Float32>(value);
-        else if (which.isFloat64())
+        if (which.isFloat64())
             return parse<Float64>(value);
-        else if (which.isDate())
+        if (which.isDate())
             return UInt16{LocalDate{std::string(value)}.getDayNum()};
-        else if (which.isDate32())
+        if (which.isDate32())
             return Int32{LocalDate{std::string(value)}.getExtenedDayNum()};
-        else if (which.isDateTime64())
+        if (which.isDateTime64())
         {
             ReadBufferFromString in(value);
             DateTime64 time = 0;

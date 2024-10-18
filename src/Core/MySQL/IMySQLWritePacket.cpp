@@ -30,18 +30,16 @@ size_t getLengthEncodedNumberSize(uint64_t x)
     {
         return 1;
     }
-    else if (x < (1 << 16))
+    if (x < (1 << 16))
     {
         return 3;
     }
-    else if (x < (1 << 24))
+    if (x < (1 << 24))
     {
         return 4;
     }
-    else
-    {
-        return 9;
-    }
+
+    return 9;
 }
 
 size_t getLengthEncodedStringSize(const String & s)

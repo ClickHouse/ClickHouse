@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import datetime
+import logging
 import os
 import uuid
 import warnings
@@ -8,7 +9,6 @@ import cassandra.cluster
 import pymongo
 import pymysql.cursors
 import redis
-import logging
 
 
 class ExternalSource(object):
@@ -237,7 +237,13 @@ class SourceMongo(ExternalSource):
                 self.converters[field.name] = lambda x: x
 
         self.db = self.connection["test"]
-        self.db.add_user(self.user, self.password)
+        user_info = self.db.command("usersInfo", self.user)
+        if user_info["users"]:
+            self.db.command("updateUser", self.user, pwd=self.password)
+        else:
+            self.db.command(
+                "createUser", self.user, pwd=self.password, roles=["readWrite"]
+            )
         self.prepared = True
 
     def load_data(self, data, table_name):

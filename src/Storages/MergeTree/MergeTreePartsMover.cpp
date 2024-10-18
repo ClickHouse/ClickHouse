@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
+}
+
 namespace ErrorCodes
 {
     extern const int ABORTED;
@@ -211,8 +216,7 @@ bool MergeTreePartsMover::selectPartsForMove(
         LOG_DEBUG(log, "Selected {} parts to move according to storage policy rules and {} parts according to TTL rules, {} total", parts_to_move_by_policy_rules, parts_to_move_by_ttl_rules, ReadableSize(parts_to_move_total_size_bytes));
         return true;
     }
-    else
-        return false;
+    return false;
 }
 
 MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const MergeTreeMoveEntry & moving_part, const ReadSettings & read_settings, const WriteSettings & write_settings) const
@@ -233,7 +237,7 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
 
     MutableDataPartStoragePtr cloned_part_storage;
     bool preserve_blobs = false;
-    if (disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication)
+    if (disk->supportZeroCopyReplication() && (*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
     {
         /// Try zero-copy replication and fallback to default copy if it's not possible
         moving_part.part->assertOnDisk();

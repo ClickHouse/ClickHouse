@@ -25,22 +25,21 @@ FormatSettings::EscapingRule stringToEscapingRule(const String & escaping_rule)
 {
     if (escaping_rule.empty())
         return FormatSettings::EscapingRule::None;
-    else if (escaping_rule == "None")
+    if (escaping_rule == "None")
         return FormatSettings::EscapingRule::None;
-    else if (escaping_rule == "Escaped")
+    if (escaping_rule == "Escaped")
         return FormatSettings::EscapingRule::Escaped;
-    else if (escaping_rule == "Quoted")
+    if (escaping_rule == "Quoted")
         return FormatSettings::EscapingRule::Quoted;
-    else if (escaping_rule == "CSV")
+    if (escaping_rule == "CSV")
         return FormatSettings::EscapingRule::CSV;
-    else if (escaping_rule == "JSON")
+    if (escaping_rule == "JSON")
         return FormatSettings::EscapingRule::JSON;
-    else if (escaping_rule == "XML")
+    if (escaping_rule == "XML")
         return FormatSettings::EscapingRule::XML;
-    else if (escaping_rule == "Raw")
+    if (escaping_rule == "Raw")
         return FormatSettings::EscapingRule::Raw;
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown escaping rule \"{}\"", escaping_rule);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown escaping rule \"{}\"", escaping_rule);
 }
 
 String escapingRuleToString(FormatSettings::EscapingRule escaping_rule)
