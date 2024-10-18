@@ -1,8 +1,9 @@
 #include "Loggers.h"
 
-#include "OwnFormattingChannel.h"
-#include "OwnPatternFormatter.h"
-#include "OwnSplitChannel.h"
+#include <Loggers/OwnFilteringChannel.h>
+#include <Loggers/OwnFormattingChannel.h>
+#include <Loggers/OwnPatternFormatter.h>
+#include <Loggers/OwnSplitChannel.h>
 
 #include <iostream>
 #include <sstream>
@@ -12,6 +13,7 @@
 #include <Poco/Net/RemoteSyslogChannel.h>
 #include <Poco/SyslogChannel.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Common/Exception.h>
 
 #ifndef WITHOUT_TEXT_LOG
     #include <Interpreters/TextLog.h>
@@ -28,6 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 }
@@ -221,7 +224,17 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     split->open();
     logger.close();
 
-    logger.setChannel(split);
+    const std::string global_pos_pattern = config.getRawString("logger.message_regexp", "");
+    const std::string global_neg_pattern = config.getRawString("logger.message_regexp_negative", "");
+
+    Poco::AutoPtr<OwnPatternFormatter> pf;
+    if (config.getString("logger.formatting.type", "") == "json")
+        pf = new OwnJSONPatternFormatter(config);
+    else
+        pf = new OwnPatternFormatter;
+
+    Poco::AutoPtr<DB::OwnFilteringChannel> filter_channel = new DB::OwnFilteringChannel(split, pf, global_pos_pattern, global_neg_pattern, "");
+    logger.setChannel(filter_channel);
     logger.setLevel(max_log_level);
 
     // Global logging level and channel (it can be overridden for specific loggers).
@@ -235,7 +248,10 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     for (const auto & name : names)
     {
         logger.get(name).setLevel(max_log_level);
-        logger.get(name).setChannel(split);
+
+        // Create a new filter channel for each logger that share the same split channel
+        filter_channel = new DB::OwnFilteringChannel(split, pf, global_pos_pattern, global_neg_pattern, name);
+        logger.get(name).setChannel(filter_channel);
     }
 
     // Explicitly specified log levels for specific loggers.
@@ -258,6 +274,37 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
                     // Legacy syntax
                     const std::string level(config.getString("logger.levels." + key, "trace"));
                     logger.root().get(key).setLevel(level);
+                }
+            }
+        }
+    }
+    // Explicitly specified regexp patterns for filtering specific loggers
+    {
+        Poco::Util::AbstractConfiguration::Keys loggers_regexp;
+        config.keys("logger.message_regexps", loggers_regexp);
+
+        if (!loggers_regexp.empty())
+        {
+            for (const auto & key : loggers_regexp)
+            {
+                if (key == "logger" || key.starts_with("logger["))
+                {
+                    const std::string name(config.getString("logger.message_regexps." + key + ".name"));
+                    const std::string pos_pattern = config.getRawString("logger.message_regexps." + key + ".message_regexp", global_pos_pattern);
+                    const std::string neg_pattern = config.getRawString("logger.message_regexps." + key + ".message_regexp_negative", global_neg_pattern);
+
+                    if (auto * regexp_channel = dynamic_cast<DB::OwnFilteringChannel*>(logger.root().get(name).getChannel()))
+                    {
+                        // If this specific logger didn't create it's own OwnFilteringChannel previously, create one using copy constructor
+                        if (regexp_channel->getAssignedLoggerName() != name)
+                        {
+                            regexp_channel = new DB::OwnFilteringChannel(regexp_channel, name);
+                            logger.root().get(name).setChannel(regexp_channel);
+                        }
+                        regexp_channel->setRegexpPatterns(pos_pattern, neg_pattern);
+                    }
+                    else
+                        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Couldn't convert to OwnFilteringChannel.");
                 }
             }
         }
@@ -347,15 +394,28 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
     }
     split->setLevel("syslog", syslog_level);
 
+    const std::string global_pos_pattern = config.getRawString("logger.message_regexp", "");
+    const std::string global_neg_pattern = config.getRawString("logger.message_regexp_negative", "");
+
     // Global logging level (it can be overridden for specific loggers).
     logger.setLevel(max_log_level);
+    if (auto * regexp_channel = dynamic_cast<DB::OwnFilteringChannel*>(logger.getChannel()))
+        regexp_channel->setRegexpPatterns(global_pos_pattern, global_neg_pattern);
+    else
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Couldn't convert to OwnFilteringChannel.");
 
     // Set level to all already created loggers
     std::vector<std::string> names;
-
     logger.root().names(names);
+
+    // Set all to global in case logger.levels are not specified
     for (const auto & name : names)
+    {
         logger.root().get(name).setLevel(max_log_level);
+
+        if (auto * regexp_channel = dynamic_cast<DB::OwnFilteringChannel*>(logger.root().get(name).getChannel()))
+            regexp_channel->setRegexpPatterns(global_pos_pattern, global_neg_pattern);
+    }
 
     logger.root().setLevel(max_log_level);
 
@@ -379,6 +439,30 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
                     // Legacy syntax
                     const std::string level(config.getString("logger.levels." + key, "trace"));
                     logger.root().get(key).setLevel(level);
+                }
+            }
+        }
+    }
+
+    // Explicitly specified regexp patterns for filtering specific loggers
+    {
+        Poco::Util::AbstractConfiguration::Keys loggers_regexp;
+        config.keys("logger.message_regexps", loggers_regexp);
+
+        if (!loggers_regexp.empty())
+        {
+            for (const auto & key : loggers_regexp)
+            {
+                if (key == "logger" || key.starts_with("logger["))
+                {
+                    const std::string name(config.getString("logger.message_regexps." + key + ".name"));
+                    const std::string pos_pattern(config.getRawString("logger.message_regexps." + key + ".message_regexp", global_pos_pattern));
+                    const std::string neg_pattern(config.getRawString("logger.message_regexps." + key + ".message_regexp_negative", global_neg_pattern));
+
+                    if (auto * regexp_channel = dynamic_cast<DB::OwnFilteringChannel*>(logger.root().get(name).getChannel()))
+                        regexp_channel->setRegexpPatterns(pos_pattern, neg_pattern);
+                    else
+                        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Couldn't convert to OwnFilteringChannel.");
                 }
             }
         }
