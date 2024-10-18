@@ -1,3 +1,4 @@
+#include <shared_mutex>
 #include <Loggers/OwnFilteringChannel.h>
 #include <Poco/RegularExpression.h>
 
@@ -7,9 +8,19 @@ namespace DB
 
 void OwnFilteringChannel::log(const Poco::Message & msg)
 {
-    std::string formatted_text;
+    if (regexpFilteredOut(msg))
+        return;
 
-    if (!positive_pattern.empty() || !negative_pattern.empty())
+    pChannel->log(msg);
+}
+
+bool OwnFilteringChannel::regexpFilteredOut(const Poco::Message & msg)
+{
+    std::string formatted_text;
+    auto [pos_pattern, neg_pattern] = safeGetPatterns();
+
+    // Skip checks if both patterns are empty
+    if (!pos_pattern.empty() || !neg_pattern.empty())
     {
         // Apply formatting to the text
         if (pFormatter)
@@ -20,33 +31,28 @@ void OwnFilteringChannel::log(const Poco::Message & msg)
         {
             formatted_text = msg.getText();
         }
-        if (regexpFilteredOut(formatted_text))
-            return;
+
+        // Check for patterns in formatted text
+        Poco::RegularExpression positive_regexp(pos_pattern);
+        if (!pos_pattern.empty() && !positive_regexp.match(formatted_text))
+        {
+            return true;
+        }
+
+        Poco::RegularExpression negative_regexp(neg_pattern);
+        if (!neg_pattern.empty() && negative_regexp.match(formatted_text))
+        {
+            return true;
+        }
     }
 
-    pChannel->log(msg);
+    return false;
 }
 
-bool OwnFilteringChannel::regexpFilteredOut(const std::string & text) const
+std::pair<std::string, std::string> OwnFilteringChannel::safeGetPatterns()
 {
-    if (!positive_pattern.empty())
-    {
-        Poco::RegularExpression positive_regexp(positive_pattern);
-        if (!positive_regexp.match(text))
-        {
-            return true;
-        }
-    }
-
-    if (!negative_pattern.empty())
-    {
-        Poco::RegularExpression negative_regexp(negative_pattern);
-        if (negative_regexp.match(text))
-        {
-            return true;
-        }
-    }
-    return false;
+    std::shared_lock<std::shared_mutex> read_lock(pattern_mutex);
+    return std::make_pair(positive_pattern, negative_pattern);
 }
 
 }
