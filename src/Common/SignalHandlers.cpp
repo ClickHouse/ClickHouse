@@ -71,6 +71,10 @@ void terminateRequestedSignalHandler(int sig, siginfo_t *, void *)
 
 void signalHandler(int sig, siginfo_t * info, void * context)
 {
+#if defined(SANITIZER)
+    if (sig == SIGPIPE)  /// https://github.com/llvm/llvm-project/pull/98200
+        return;
+#endif
     if (asynchronous_stack_unwinding && sig == SIGSEGV)
         siglongjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1);
 
@@ -634,7 +638,7 @@ void HandledSignals::setupCommonDeadlySignalHandlers()
 {
     /// SIGTSTP is added for debugging purposes. To output a stack trace of any running thread at anytime.
     /// NOTE: that it is also used by clickhouse-test wrapper
-    addSignalHandler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGTSTP, SIGTRAP}, signalHandler, true);
+    addSignalHandler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGPIPE, SIGFPE, SIGTSTP, SIGTRAP}, signalHandler, true);
 
 #if defined(SANITIZER)
     __sanitizer_set_death_callback(sanitizerDeathCallback);
