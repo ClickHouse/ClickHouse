@@ -84,11 +84,9 @@ void FileLogDirectoryWatcher::onItemModified(DirectoryWatcherBase::DirectoryEven
         /// Already have MODIFY event for this file
         if (it->second.received_modification_event)
             return;
-        else
-        {
-            it->second.received_modification_event = true;
-            it->second.file_events.emplace_back(info);
-        }
+
+        it->second.received_modification_event = true;
+        it->second.file_events.emplace_back(info);
     }
     else
     {

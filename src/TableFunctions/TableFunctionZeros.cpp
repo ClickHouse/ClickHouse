@@ -66,13 +66,11 @@ StoragePtr TableFunctionZeros<multithreaded>::executeImpl(const ASTPtr & ast_fun
             res->startup();
             return res;
         }
-        else
-        {
-            /// zero-argument, the same as system.zeros
-            auto res = std::make_shared<StorageSystemZeros>(StorageID(getDatabaseName(), table_name), multithreaded);
-            res->startup();
-            return res;
-        }
+
+        /// zero-argument, the same as system.zeros
+        auto res = std::make_shared<StorageSystemZeros>(StorageID(getDatabaseName(), table_name), multithreaded);
+        res->startup();
+        return res;
     }
     throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires 'limit'.", getName());
 }

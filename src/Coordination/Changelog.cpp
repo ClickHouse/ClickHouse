@@ -217,7 +217,7 @@ public:
                     std::move(file_buf),
                     /* compressi)on level = */ 3,
                     /* append_to_existing_file_ = */ mode == WriteMode::Append,
-                    [latest_log_disk, path = current_file_description->path] { return latest_log_disk->readFile(path); });
+                    [latest_log_disk, path = current_file_description->path, read_settings = getReadSettings()] { return latest_log_disk->readFile(path, read_settings); });
 
             prealloc_done = false;
         }
@@ -601,7 +601,7 @@ public:
     explicit ChangelogReader(ChangelogFileDescriptionPtr changelog_description_) : changelog_description(changelog_description_)
     {
         compression_method = chooseCompressionMethod(changelog_description->path, "");
-        auto read_buffer_from_file = changelog_description->disk->readFile(changelog_description->path);
+        auto read_buffer_from_file = changelog_description->disk->readFile(changelog_description->path, getReadSettings());
         read_buf = wrapReadBufferWithCompressionMethod(std::move(read_buffer_from_file), compression_method);
     }
 
@@ -728,7 +728,7 @@ void LogEntryStorage::prefetchCommitLogs()
                     [&]
                     {
                         const auto & [changelog_description, position, count] = prefetch_file_info;
-                        auto file = changelog_description->disk->readFile(changelog_description->path, ReadSettings());
+                        auto file = changelog_description->disk->readFile(changelog_description->path, getReadSettings());
                         file->seek(position, SEEK_SET);
                         LOG_TRACE(
                             log, "Prefetching {} log entries from path {}, from position {}", count, changelog_description->path, position);
@@ -1266,7 +1266,7 @@ LogEntryPtr LogEntryStorage::getEntry(uint64_t index) const
             [&]
             {
                 const auto & [changelog_description, position, size] = it->second;
-                auto file = changelog_description->disk->readFile(changelog_description->path, ReadSettings());
+                auto file = changelog_description->disk->readFile(changelog_description->path, getReadSettings());
                 file->seek(position, SEEK_SET);
                 LOG_TRACE(
                     log,
@@ -1392,7 +1392,7 @@ LogEntriesPtr LogEntryStorage::getLogEntriesBetween(uint64_t start, uint64_t end
             [&]
             {
                 const auto & [file_description, start_position, count] = *read_info;
-                auto file = file_description->disk->readFile(file_description->path);
+                auto file = file_description->disk->readFile(file_description->path, getReadSettings());
                 file->seek(start_position, SEEK_SET);
 
                 for (size_t i = 0; i < count; ++i)
@@ -1687,7 +1687,7 @@ try
                     initialized = true;
                     return;
                 }
-                else if (changelog_description.from_log_index > start_to_read_from)
+                if (changelog_description.from_log_index > start_to_read_from)
                 {
                     /// We don't have required amount of reserved logs, but nothing was lost.
                     LOG_WARNING(
@@ -1890,7 +1890,7 @@ void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
     {
         auto & changelog_description = itr->second;
 
-        if (!disk->exists(timestamp_folder))
+        if (!disk->existsDirectory(timestamp_folder))
         {
             LOG_WARNING(log, "Moving broken logs to {}", timestamp_folder);
             disk->createDirectories(timestamp_folder);

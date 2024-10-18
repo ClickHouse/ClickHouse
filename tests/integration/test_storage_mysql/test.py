@@ -1,12 +1,13 @@
+import threading
+import time
 from contextlib import contextmanager
 
 ## sudo -H pip install PyMySQL
 import pymysql.cursors
 import pytest
-import time
-import threading
-from helpers.cluster import ClickHouseCluster
+
 from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 

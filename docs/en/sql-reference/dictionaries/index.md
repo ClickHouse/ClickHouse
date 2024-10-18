@@ -1680,7 +1680,7 @@ Setting fields:
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 :::
 
-#### Mongodb
+#### MongoDB
 
 Example of settings:
 
@@ -1694,6 +1694,17 @@ Example of settings:
         <db>test</db>
         <collection>dictionary_source</collection>
         <options>ssl=true</options>
+    </mongodb>
+</source>
+```
+
+or
+
+``` xml
+<source>
+    <mongodb>
+        <uri>mongodb://localhost:27017/test?ssl=true</uri>
+        <collection>dictionary_source</collection>
     </mongodb>
 </source>
 ```
@@ -1721,6 +1732,22 @@ Setting fields:
 - `db` – Name of the database.
 - `collection` – Name of the collection.
 - `options` -  MongoDB connection string options (optional parameter).
+
+or
+
+``` sql
+SOURCE(MONGODB(
+    uri 'mongodb://localhost:27017/clickhouse'
+    collection 'dictionary_source'
+))
+```
+
+Setting fields:
+
+- `uri` - URI for establish the connection.
+- `collection` – Name of the collection.
+
+[More information about the engine](../../engines/table-engines/integrations/mongodb.md)
 
 
 #### Redis
@@ -2038,7 +2065,7 @@ Configuration fields:
 | `expression`                                         | [Expression](../../sql-reference/syntax.md#expressions) that ClickHouse executes on the value.<br/>The expression can be a column name in the remote SQL database. Thus, you can use it to create an alias for the remote column.<br/><br/>Default value: no expression.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | No       |
 | <a name="hierarchical-dict-attr"></a> `hierarchical` | If `true`, the attribute contains the value of a parent key for the current key. See [Hierarchical Dictionaries](#hierarchical-dictionaries).<br/><br/>Default value: `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | No       |
 | `injective`                                          | Flag that shows whether the `id -> attribute` image is [injective](https://en.wikipedia.org/wiki/Injective_function).<br/>If `true`, ClickHouse can automatically place after the `GROUP BY` clause the requests to dictionaries with injection. Usually it significantly reduces the amount of such requests.<br/><br/>Default value: `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | No       |
-| `is_object_id`                                       | Flag that shows whether the query is executed for a MongoDB document by `ObjectID`.<br/><br/>Default value: `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
+| `is_object_id`                                       | Flag that shows whether the query is executed for a MongoDB document by `ObjectID`.<br/><br/>Default value: `false`.
 
 ## Hierarchical Dictionaries
 

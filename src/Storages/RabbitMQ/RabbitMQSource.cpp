@@ -184,10 +184,8 @@ Chunk RabbitMQSource::generateImpl()
 
             return 1;
         }
-        else
-        {
-            throw std::move(e);
-        }
+
+        throw std::move(e);
     };
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
@@ -274,7 +272,7 @@ Chunk RabbitMQSource::generateImpl()
         {
             break;
         }
-        else if (new_rows == 0)
+        if (new_rows == 0)
         {
             if (remaining_execution_time)
                 consumer->waitForMessages(remaining_execution_time);

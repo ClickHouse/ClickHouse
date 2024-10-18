@@ -96,8 +96,7 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
         auto hints = getHints(engine_name);
         if (!hints.empty())
             throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine {}. Maybe you meant: {}", engine_name, toString(hints));
-        else
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", create.storage->engine->name);
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", create.storage->engine->name);
     }
 
     /// if the engine is found (i.e. registered with the factory instance), then validate if the
