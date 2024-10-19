@@ -7,7 +7,6 @@
 #include <Common/ProfileEvents.h>
 #include <Core/Types.h>
 #include <memory>
-#include <mutex>
 
 
 namespace DB
@@ -35,19 +34,6 @@ void deleteFileFromS3(
     std::optional<ProfileEvents::Event> profile_event = std::nullopt);
 
 /// Deletes multiple files from S3 using batch requests when it's possible.
-void deleteFilesFromS3(
-    const std::shared_ptr<const S3::Client> & s3_client,
-    const String & bucket,
-    const Strings & keys,
-    bool if_exists = false,
-    std::optional<bool> is_batch_delete_supported = std::nullopt,
-    std::function<void(bool)> set_is_batch_delete_supported = nullptr,
-    size_t batch_size = 1000,
-    BlobStorageLogWriterPtr blob_storage_log = nullptr,
-    const Strings & local_paths_for_blob_storage_log = {},
-    const std::vector<size_t> & file_sizes_for_blob_storage_log = {},
-    std::optional<ProfileEvents::Event> profile_event = std::nullopt);
-
 void deleteFilesFromS3(
     const std::shared_ptr<const S3::Client> & s3_client,
     const String & bucket,

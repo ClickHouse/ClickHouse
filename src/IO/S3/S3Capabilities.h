@@ -27,16 +27,17 @@ public:
     /// because looks like it misses some features:
     /// 1) batch delete (DeleteObjects)
     /// 2) upload part copy (UploadPartCopy)
-    /// If `support_batch_delete` contains `std::nullopt` it means that it isn't clean yet if it's supported or not
-    /// and should be detected from responses of the cloud storage.
-    std::optional<bool> is_batch_delete_supported() const;
-    void set_is_batch_delete_supported(std::optional<bool> support_batch_delete_);
+    /// If `isBatchDeleteSupported()` returns `nullopt` it means that it isn't clear yet if it's supported or not
+    /// and should be detected automatically from responses of the cloud storage.
+    std::optional<bool> isBatchDeleteSupported() const;
+    void setIsBatchDeleteSupported(bool support_batch_delete_);
 
     /// Y.Cloud S3 implementation support proxy for connection
     const bool support_proxy{false};
 
 private:
     /// `support_batch_delete` is guarded by mutex because function deleteFilesFromS3() can update this field from another thread.
+    /// If `support_batch_delete == nullopt` that means it's not clear yet if it's supported or not.
     std::optional<bool> support_batch_delete TSA_GUARDED_BY(mutex);
 
     mutable std::mutex mutex;

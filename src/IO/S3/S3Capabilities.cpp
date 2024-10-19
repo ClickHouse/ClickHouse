@@ -1,22 +1,35 @@
 #include <IO/S3/S3Capabilities.h>
 
+#include <Common/logger_useful.h>
+
+
 namespace DB
 {
 
 S3Capabilities::S3Capabilities(const S3Capabilities & src)
-    : S3Capabilities(src.is_batch_delete_supported(), src.support_proxy)
+    : S3Capabilities(src.isBatchDeleteSupported(), src.support_proxy)
 {
 }
 
-std::optional<bool> S3Capabilities::is_batch_delete_supported() const
+std::optional<bool> S3Capabilities::isBatchDeleteSupported() const
 {
     std::lock_guard lock{mutex};
     return support_batch_delete;
 }
 
-void S3Capabilities::set_is_batch_delete_supported(std::optional<bool> support_batch_delete_)
+void S3Capabilities::setIsBatchDeleteSupported(bool support_batch_delete_)
 {
     std::lock_guard lock{mutex};
+
+    if (support_batch_delete.has_value() && (support_batch_delete.value() != support_batch_delete_))
+    {
+        LOG_ERROR(getLogger("S3Capabilities"),
+                  "Got different results ({} vs {}) from checking if the cloud storage supports batch delete (DeleteObjects), "
+                  "the cloud storage API may be unstable",
+                  support_batch_delete.value(), support_batch_delete_);
+        chassert(false && "Got different results from checking if the cloud storage supports batch delete");
+    }
+
     support_batch_delete = support_batch_delete_;
 }
 
