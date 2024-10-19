@@ -1392,7 +1392,7 @@ bool MergeTask::execute()
 }
 
 
-/// Apply merge strategy (Ordinary, Colapsing, Aggregating, etc) to the stream
+/// Apply merge strategy (Ordinary, Collapsing, Aggregating, etc) to the stream
 class MergePartsStep : public ITransformingStep
 {
 public:
