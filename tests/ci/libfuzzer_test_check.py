@@ -272,7 +272,7 @@ def main():
         else:
             logging.info("Run failed")
 
-    results = process_results(reports_path)
+    results = process_results(result_path)
 
     success = results[1] == 0 and results[2] == 0
 
