@@ -16,7 +16,7 @@ from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPO_COPY, REPORT_PATH, S3_BUILDS_BUCKET, TEMP_PATH
 from pr_info import PRInfo
-from report import JobReport, TestResult
+from report import FAILURE, SUCCESS, JobReport, TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -279,7 +279,7 @@ def main():
     JobReport(
         description=f"OK: {results[0]}, Timeout: {results[1]}, FAIL: {results[2]}",
         test_results=results[3],
-        status="SUCCESS" if success else "FAILURE",
+        status=SUCCESS if success else FAILURE,
         start_time=stopwatch.start_time_str,
         duration=stopwatch.duration_seconds,
         additional_files=[],
