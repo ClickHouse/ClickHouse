@@ -279,7 +279,7 @@ def main():
     JobReport(
         description=f"OK: {results[0]}, Timeout: {results[1]}, FAIL: {results[2]}",
         test_results=results[3],
-        status="OK" if success else "FAILURE",
+        status="SUCCESS" if success else "FAILURE",
         start_time=stopwatch.start_time_str,
         duration=stopwatch.duration_seconds,
         additional_files=[],
