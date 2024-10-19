@@ -191,11 +191,11 @@ async function update(data) {
     const level = +matches[3];
 
     if (data.event_type == 'NewPart' || data.event_type == 'DownloadPart' || data.event_type == 'MergeParts' || data.event_type == 'MutatePart') {
-        if (!currently_active_parts[data.table_uuid]) {
+        if (!(data.table_uuid in currently_active_parts)) {
             currently_active_parts[data.table_uuid] = {};
         }
 
-        if (!currently_active_parts[data.table_uuid][data.part_name]) {
+        if (!(data.part_name in currently_active_parts[data.table_uuid])) {
             currently_active_parts[data.table_uuid][data.part_name] = 1;
             ++num_parts;
 
@@ -251,7 +251,7 @@ async function update(data) {
         }
 
         for (const old_part_name of data.merged_from) {
-            if (currently_active_parts[data.table_uuid][old_part_name]) {
+            if (old_part_name in currently_active_parts[data.table_uuid]) {
                 delete currently_active_parts[data.table_uuid][old_part_name];
                 --num_parts;
                 const old_part = document.getElementById(`part-${data.table_uuid}-${old_part_name}`);
@@ -262,7 +262,7 @@ async function update(data) {
         }
     }
     if (data.event_type == 'RemovePart') {
-        if (currently_active_parts[data.table_uuid][data.part_name]) {
+        if (data.part_name in currently_active_parts[data.table_uuid]) {
             delete currently_active_parts[data.table_uuid][data.part_name];
             --num_parts;
             const old_part = document.getElementById(part_id);
