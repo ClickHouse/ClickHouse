@@ -197,7 +197,7 @@ void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
   * 4. Extract filters from ReadFromDummy query plan steps from query plan leaf nodes.
   */
 
-FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const QueryTreeNodes & table_nodes, const ContextPtr & query_context)
+FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const QueryTreeNodes & table_nodes, const ContextMutablePtr & query_context)
 {
     bool collect_filters = false;
     const auto & settings = query_context->getSettingsRef();
@@ -235,6 +235,11 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         auto * dummy_storage = dummy_table_expression->as<TableNode &>().getStorage().get();
         dummy_storage_to_table.emplace(dummy_storage, from_table_expression);
     }
+
+    // there is no need to build plan with parallel replicas to collect filters
+    // moreover, for queries with global joins it can lead to subquery execution
+    // and creating a fake temporary table because it'll read from StorageDummy
+    query_context->setSetting("enable_parallel_replicas", false);
 
     SelectQueryOptions select_query_options;
     Planner planner(updated_query_tree, select_query_options);
@@ -284,12 +289,12 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
             "Expected QUERY or UNION node. Actual {}",
             query_tree_node->formatASTForErrorMessage());
 
-    auto context = query_node ? query_node->getContext() : union_node->getContext();
+    auto mutable_context = query_node ? query_node->getMutableContext() : union_node->getMutableContext();
 
     auto table_expressions_nodes
         = extractTableExpressions(query_tree_node, false /* add_array_join */, true /* recursive */);
 
-    return collectFiltersForAnalysis(query_tree_node, table_expressions_nodes, context);
+    return collectFiltersForAnalysis(query_tree_node, table_expressions_nodes, mutable_context);
 }
 
 /// Extend lifetime of query context, storages, and table locks
