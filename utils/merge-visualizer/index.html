@@ -276,7 +276,7 @@ async function update(data) {
         }
     }
     if (data.event_type == 'RemovePart') {
-        if (data.part_name in currently_active_parts[data.table_uuid]) {
+        if ((data.table_uuid in currently_active_parts) && (data.part_name in currently_active_parts[data.table_uuid])) {
             delete currently_active_parts[data.table_uuid][data.part_name];
             --num_parts;
             const old_part = document.getElementById(part_id);
