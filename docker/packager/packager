@@ -130,6 +130,7 @@ def parse_env_variables(
     sanitizer: str,
     package_type: str,
     cache: str,
+    chcache_password: str,
     s3_bucket: str,
     s3_directory: str,
     s3_rw_access: bool,
@@ -322,6 +323,12 @@ def parse_env_variables(
         if not s3_rw_access:
             result.append("SCCACHE_S3_NO_CREDENTIALS=true")
 
+    if cache == "chcache":
+        cmake_flags.append("-DCOMPILER_CACHE=chcache")
+        result.append(f"CH_PASSWORD={chcache_password}")
+        result.append("CH_USER=ci_builder")
+        result.append("CH_HOSTNAME=https://lr5v5i0nr3.eu-west-1.aws.clickhouse-staging.com")
+
     if clang_tidy:
         # `CTCACHE_DIR` has the same purpose as the `CCACHE_DIR` above.
         # It's there to have the clang-tidy cache embedded into our standard `CCACHE_DIR`
@@ -437,9 +444,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--clang-tidy", action="store_true")
     parser.add_argument(
         "--cache",
-        choices=("ccache", "sccache", ""),
+        choices=("ccache", "sccache", "chcache", ""),
         default="",
         help="ccache or sccache for objects caching; sccache uses only S3 buckets",
+    )
+    parser.add_argument(
+        "--chcache-password",
+        default="",
+        help="",
     )
     parser.add_argument(
         "--ccache-dir",
@@ -530,6 +542,7 @@ def main() -> None:
         args.sanitizer,
         args.package_type,
         args.cache,
+        args.chcache_password,
         args.s3_bucket,
         args.s3_directory,
         args.s3_rw_access,

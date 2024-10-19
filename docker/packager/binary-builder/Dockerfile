@@ -14,7 +14,7 @@ ENV PATH="/rust/cargo/bin:${PATH}"
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y && \
     chmod 777 -R /rust && \
     rustup toolchain install nightly-2024-04-01 && \
-    rustup default nightly-2024-04-01 && \
+    rustup default nightly-2024-11-01 && \
     rustup toolchain remove stable && \
     rustup component add rust-src && \
     rustup target add x86_64-unknown-linux-gnu && \

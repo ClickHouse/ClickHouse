@@ -12,17 +12,22 @@ struct Config {
 
 #[tokio::main]
 async fn main() {
-    let config_path = xdg::BaseDirectories::with_prefix("chcache")
-        .unwrap()
-        .place_config_file("config.toml")
-        .unwrap();
+    // let config_path = xdg::BaseDirectories::with_prefix("chcache")
+    //     .unwrap()
+    //     .place_config_file("config.toml")
+    //     .unwrap();
+    //
+    // if !config_path.exists() {
+    //     panic!("Config file not found at {}", config_path.display());
+    // }
 
-    if !config_path.exists() {
-        panic!("Config file not found at {}", config_path.display());
-    }
-
-    let config = fs::read_to_string(config_path).expect("Missing config file?");
-    let config: Config = toml::from_str(&config).expect("Unable to load config, is it a valid toml?");
+    // let config = fs::read_to_string(config_path).expect("Missing config file?");
+    // let config: Config = toml::from_str(&config).expect("Unable to load config, is it a valid toml?");
+    let config: Config = Config {
+        hostname: std::env::var("CH_HOSTNAME").unwrap(),
+        user: std::env::var("CH_USER").unwrap(),
+        password: std::env::var("CH_PASSWORD").unwrap(),
+    };
 
     env_logger::init();
 
@@ -77,24 +82,22 @@ fn assume_base_path(args: &Vec<String>) -> String {
     basepath.trim_end_matches('/').to_string()
 }
 
-fn compiler_version() -> String {
-    let find_compiler_vars = vec![
-        "CMAKE_CXX_COMPILER",
-        "CXX",
-        "CMAKE_C_COMPILER",
-        "CC",
-    ];
+fn compiler_version(compiler: String) -> String {
+    // let find_compiler_vars = vec![
+    //     "CXX",
+    //     "CC",
+    // ];
+    //
+    // let compiler_from_env = find_compiler_vars
+    //     .iter()
+    //     .map(|x| std::env::var(x))
+    //     .find(|x| x.is_ok())
+    //     .unwrap_or_else(|| Ok(String::from("clang")))
+    //     .unwrap();
 
-    let compiler_from_env = find_compiler_vars
-        .iter()
-        .map(|x| std::env::var(x))
-        .find(|x| x.is_ok())
-        .unwrap_or_else(|| Ok(String::from("clang")))
-        .unwrap();
+    trace!("Using compiler: {}", compiler);
 
-    trace!("Using compiler: {}", compiler_from_env);
-
-    let compiler_version = std::process::Command::new(compiler_from_env)
+    let compiler_version = std::process::Command::new(compiler)
         .arg("-dM")
         .arg("-E")
         .arg("-x")
@@ -290,7 +293,7 @@ async fn compiler_cache_entrypoint(config: &Config) {
     });
     let args_hash = hasher.finalize().to_string();
 
-    let compiler_version = compiler_version();
+    let compiler_version = compiler_version(compiler.clone());
 
     trace!("Compiler version: {}", compiler_version);
 
