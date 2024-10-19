@@ -7,6 +7,7 @@
 #include <Core/ServerSettings.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 
 #include <DataTypes/DataTypeString.h>
 
@@ -237,9 +238,13 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     }
 
     // there is no need to build plan with parallel replicas to collect filters
+    // so, disable parallel replicas termporary here
     // moreover, for queries with global joins it can lead to subquery execution
-    // and creating a fake temporary table because it'll read from StorageDummy
+    // and registering empty temporary table in context (because it'll read from StorageDummy)
     query_context->setSetting("enable_parallel_replicas", false);
+    SCOPE_EXIT({
+        query_context->setSetting("enable_parallel_replicas", true);
+    });
 
     SelectQueryOptions select_query_options;
     Planner planner(updated_query_tree, select_query_options);
