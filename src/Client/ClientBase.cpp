@@ -1785,6 +1785,9 @@ try
     QueryPipeline pipeline(std::move(pipe));
     PullingAsyncPipelineExecutor executor(pipeline);
 
+    /// Concurrency control in client is not required
+    pipeline.setConcurrencyControl(false);
+
     if (need_render_progress)
     {
         pipeline.setProgressCallback([this](const Progress & progress){ onProgress(progress); });

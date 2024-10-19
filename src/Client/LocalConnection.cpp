@@ -269,6 +269,7 @@ void LocalConnection::sendQuery(
         {
             state->block = state->io.pipeline.getHeader();
             state->executor = std::make_unique<PullingAsyncPipelineExecutor>(state->io.pipeline);
+            state->io.pipeline.setConcurrencyControl(false);
         }
         else if (state->io.pipeline.completed())
         {
