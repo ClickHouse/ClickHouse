@@ -236,7 +236,7 @@ public:
             Func::processFixedString(*input, dst_column, input_rows_count);
             return dst_column;
         }
-        
+
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN,
             "Illegal column {} of first argument of function {}, must be String or FixedString",
