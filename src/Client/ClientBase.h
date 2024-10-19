@@ -243,6 +243,7 @@ protected:
     void adjustSettings();
 
     /// Initializes the client context.
+    void createClientContext();
     void initClientContext();
 
     void setDefaultFormatsAndCompressionFromConfiguration();
