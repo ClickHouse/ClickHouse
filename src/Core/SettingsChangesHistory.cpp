@@ -68,7 +68,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.10",
         {
-            {"check_table_structure_completely", true, false, "Add new setting to allow attach when source table's projections and secondary indices is a subset of those in the target table."},
             {"enforce_strict_identifier_format", false, false, "New setting."},
             {"enable_parsing_to_custom_serialization", false, true, "New setting"},
             {"mongodb_throw_on_unsupported_query", false, true, "New setting."},
@@ -581,6 +580,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.10",
         {
+            {"check_table_structure_completely", true, false, "Add new setting to allow attach when source table's projections and secondary indices is a subset of those in the target table."}
         }
     },
     {"24.9",
