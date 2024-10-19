@@ -32,6 +32,7 @@ def request(command, url, headers={}, data=None):
 
 
 class RequestHandler(http.server.BaseHTTPRequestHandler):
+    # GetObject
     def do_GET(self):
         if self.path == "/":
             self.send_response(200)
@@ -41,12 +42,15 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         else:
             self.do_HEAD()
 
+    # PutObject
     def do_PUT(self):
         self.do_HEAD()
 
+    # DeleteObjects (/root?delete)
     def do_POST(self):
         self.do_HEAD()
 
+    # DeleteObject
     def do_DELETE(self):
         self.do_HEAD()
 
