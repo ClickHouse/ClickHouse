@@ -148,6 +148,7 @@ def process_error(path: Path) -> list:
 
     with open(path, "r", encoding="utf-8") as file:
         for line in file:
+            line = line.rstrip("\n")
             if is_error:
                 error_info.append(line)
                 # match = re.search(TEST_UNIT_LINE, line)
@@ -169,7 +170,7 @@ def read_status(status_path: Path):
     result = []
     with open(status_path, "r", encoding="utf-8") as file:
         for line in file:
-            result.append(line)
+            result.append(line.rstrip("\n"))
     return result
 
 
