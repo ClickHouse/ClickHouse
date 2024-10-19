@@ -27,7 +27,7 @@ class ConfigReloader
 public:
     static constexpr auto DEFAULT_RELOAD_INTERVAL = std::chrono::milliseconds(2000);
 
-    using Updater = std::function<void(ConfigurationPtr, bool)>;
+    using Updater = std::function<void(ConfigurationPtr, ConfigurationPtr, int, bool)>;
 
     ConfigReloader(
         std::string_view path_,
@@ -86,6 +86,9 @@ private:
 
     /// Locked inside reloadIfNewer.
     std::mutex reload_mutex;
+
+    ConfigurationPtr last_config;
+    int num_reloads = 0;
 };
 
 }

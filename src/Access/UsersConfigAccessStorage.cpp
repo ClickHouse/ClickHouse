@@ -889,7 +889,7 @@ void UsersConfigAccessStorage::load(
         preprocessed_dir,
         zkutil::ZooKeeperNodeCache(get_zookeeper_function),
         std::make_shared<Poco::Event>(),
-        [&](Poco::AutoPtr<Poco::Util::AbstractConfiguration> new_config, bool /*initial_loading*/)
+        [&](ConfigurationPtr new_config, ConfigurationPtr /* last_config */, int /* num_reloads */, bool /*initial_loading*/)
         {
             Settings::checkNoSettingNamesAtTopLevel(*new_config, users_config_path);
             parseFromConfig(*new_config);
