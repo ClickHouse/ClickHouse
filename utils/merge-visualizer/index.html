@@ -91,14 +91,19 @@
             border: 1px solid black;
             background: #FED;
             overflow: hidden;
+            position: relative; /* This enables the positioning context for the child elements. */
         }
 
         .part_title {
             text-align: center;
         }
 
+        .part:hover {
+            overflow: visible;
+        }
+
         .part:hover .part_title {
-            z-index: 100;
+            z-index: 1;
             position: absolute;
             background: yellow;
         }
