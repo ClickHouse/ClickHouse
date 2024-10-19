@@ -2,6 +2,7 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/Channel.h>
 #include <Poco/Message.h>
+#include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <shared_mutex>
@@ -20,8 +21,8 @@ public:
     {
     }
 
-    explicit OwnFilteringChannel(OwnFilteringChannel * other, std::string name_)
-    : logger_name(name_), positive_pattern(other->positive_pattern), negative_pattern(other->negative_pattern), pChannel(other->pChannel), pFormatter(other->pFormatter)
+    explicit OwnFilteringChannel(Poco::AutoPtr<OwnFilteringChannel> other, const std::string & positive_pattern_, const std::string & negative_pattern_, const std::string & name_)
+    : logger_name(name_), positive_pattern(positive_pattern_), negative_pattern(negative_pattern_), pChannel(other->pChannel), pFormatter(other->pFormatter)
     {
     }
 
@@ -31,16 +32,7 @@ public:
     void log(const Poco::Message & msg) override;
 
     // Sets the regex patterns to use for filtering. Specifying an empty string pattern "" indicates no filtering
-    void setRegexpPatterns(const std::string & new_pos_pattern, const std::string & new_neg_pattern)
-    {
-        auto [old_pos_pattern, old_neg_pattern] = safeGetPatterns();
-        if (old_pos_pattern != new_pos_pattern || old_neg_pattern != new_neg_pattern)
-        {
-            std::unique_lock<std::shared_mutex> write_lock(pattern_mutex);
-            positive_pattern = new_pos_pattern;
-            negative_pattern = new_neg_pattern;
-        }
-    }
+    void setRegexpPatterns(const std::string & new_pos_pattern, const std::string & new_neg_pattern);
 
     std::string getAssignedLoggerName() const
     {
@@ -85,5 +77,8 @@ private:
     Poco::AutoPtr<OwnPatternFormatter> pFormatter;
     std::shared_mutex pattern_mutex;
 };
+
+// Creates filter channel only if needed or updates if it already exists
+void createOrUpdateFilterChannel(Poco::Logger & logger, const std::string & pos_pattern, const std::string & neg_pattern, Poco::AutoPtr<OwnPatternFormatter> pf, const std::string & name = "");
 
 }
