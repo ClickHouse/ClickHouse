@@ -142,11 +142,11 @@ def process_error(path: Path) -> list:
     # error_source = ""
     # error_reason = ""
     # test_unit = ""
-    TEST_UNIT_LINE = r"artifact_prefix='.*\/'; Test unit written to (.*)"
+    # TEST_UNIT_LINE = r"artifact_prefix='.*\/'; Test unit written to (.*)"
     error_info = []
     is_error = False
 
-    with open(path, "r") as file:
+    with open(path, "r", encoding="utf-8") as file:
         for line in file:
             if is_error:
                 error_info.append(line)
@@ -167,7 +167,7 @@ def process_error(path: Path) -> list:
 
 def read_status(status_path: Path):
     result = []
-    with open(status_path, "r") as file:
+    with open(status_path, "r", encoding="utf-8") as file:
         for line in file:
             result.append(line)
     return result
@@ -279,7 +279,7 @@ def main():
     JobReport(
         description=f"OK: {results[0]}, Timeout: {results[1]}, FAIL: {results[2]}",
         test_results=results[3],
-        status= "OK" if success else "FAILURE",
+        status="OK" if success else "FAILURE",
         start_time=stopwatch.start_time_str,
         duration=stopwatch.duration_seconds,
         additional_files=[],
