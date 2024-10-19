@@ -530,6 +530,80 @@ Example of disk configuration:
 </clickhouse>
 ```
 
+## Using Object Storage Encryption {#encrypted-object-storage}
+
+You can encrypt the data stored on any object storage (e.g. S3, Azure etc).
+The encryption layer can be added on-top of a disk using the configuration file.
+You only need to define a disk with the type `encrypted_os` and choose a disk on which the data will be saved.
+An `encrypted_os` disk ciphers all written files on the fly, and when you read files from an `encrypted` disk it deciphers them automatically.
+So you can work with an `encrypted_os` disk like with a normal object storage disk.
+The main advantage of using this encryption system is that it is possible to cache the files unencrypted.
+If used in conjunction with cache, plain-text files will be cached. If you want the cache to be encrypted as well
+use instead [Virtual File System for Data Encryption](#encrypted-virtual-file-system).
+
+Example of disk configuration:
+
+``` xml
+<disks>
+  <disk1>
+    <type>local_blob_storage</type>
+    <path>/path1/</path>
+  </disk1>
+  <disk2>
+    <type>encrypted_os</type>
+    <disk>disk1</disk>
+    <key_hex>_32_hexadecimal_chars_</key_hex>
+  </disk2>
+</disks>
+```
+
+Required parameters:
+
+- `type` — `encrypted_os`. Otherwise the encrypted disk is not created.
+- `disk` — Name of the disk used for data storage.
+- `key_hex` — The key for encryption and decryption. You can also use `key` parameter to simply use an ASCII key (not recommended).
+    You can specify multiple keys using the `id` attribute (see example below).
+
+Optional parameters:
+
+- `current_key_id` — The key used for encryption. All the specified keys can be used for decryption, and you can always switch to another key while maintaining access to previously encrypted data.
+- `algorithm` — [Algorithm](/docs/en/sql-reference/statements/create/table.md/#create-query-encryption-codecs) for encryption. Possible values: `AES_128_CTR`, `AES_192_CTR` or `AES_256_CTR`. Default value: `AES_128_CTR`. The key length depends on the algorithm: `AES_128_CTR` — 16 bytes, `AES_192_CTR` — 24 bytes, `AES_256_CTR` — 32 bytes.
+- `header_cache_path` — The path where encrypted files' headers will be cached.
+- `header_cache_max_size` — maximum size of the cache in bytes or in readable format, e.g. `ki, Mi, Gi, etc`, example `10Gi` (such format works starting from `22.10` version). When the limit is reached, cache files are evicted according to the cache eviction policy.
+- `cache_header_on_write` — allow to turn on `write-through` cache (caching data on any write operations: `INSERT` queries, background merges). Default: `false`. The `write-through` cache can be disabled per query using setting `enable_filesystem_cache_on_write_operations` (data is cached only if both cache config settings and corresponding query setting are enabled).
+
+Example of disk configuration:
+
+``` xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_s3>
+                <type>s3</type>
+                <endpoint>...
+            </disk_s3>
+            <disk_s3_encrypted>
+                <type>encrypted_os</type>
+                <disk>disk_s3</disk>
+                <algorithm>AES_128_CTR</algorithm>
+                <key_hex id="0">00112233445566778899aabbccddeeff</key_hex>
+                <key_hex id="1">ffeeddccbbaa99887766554433221100</key_hex>
+                <current_key_id>1</current_key_id>
+                <header_cache_path>/path1/</header_cache_path>
+                <header_cache_max_size>100Mi</header_cache_max_size>
+                <cache_header_on_write>1</cache_header_on_write>
+            </disk_s3_encrypted>
+            <cache>
+                <type>cache</type>
+                <disk>disk_s3_encrypted</disk>
+                <path>/path2/</path>
+                <max_size>10Gi</max_size>
+            </cache>
+        </disks>
+    </storage_configuration>
+</clickhouse>
+```
+
 ### Using local cache {#using-local-cache}
 
 It is possible to configure local cache over disks in storage configuration starting from version 22.3.

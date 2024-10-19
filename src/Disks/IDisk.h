@@ -296,11 +296,12 @@ public:
     virtual const String & getCacheName() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no cache"); }
 
     virtual bool supportsCache() const { return false; }
+    virtual bool supportsOverlays() const { return false; }
 
-    virtual NameSet getCacheLayersNames() const
+    virtual NameSet getOverlaysNames() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Method `getCacheLayersNames()` is not implemented for disk: {}",
+            "Method `getOverlayNames()` is not implemented for disk: {}",
             getDataSourceDescription().toString());
     }
 

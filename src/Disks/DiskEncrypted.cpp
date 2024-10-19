@@ -233,22 +233,6 @@ namespace
         }
     }
 
-    /// Reads the header of an encrypted file.
-    FileEncryption::Header readHeader(ReadBufferFromFileBase & read_buffer)
-    {
-        try
-        {
-            FileEncryption::Header header;
-            header.read(read_buffer);
-            return header;
-        }
-        catch (Exception & e)
-        {
-            e.addMessage("While reading the header of encrypted file " + quoteString(read_buffer.getFileName()));
-            throw;
-        }
-    }
-
     bool inline isSameDiskType(const IDisk & one, const IDisk & another)
     {
         return typeid(one) == typeid(another);
