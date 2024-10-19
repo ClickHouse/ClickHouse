@@ -3,6 +3,7 @@
 import argparse
 import logging
 import os
+import re
 import sys
 import zipfile
 from pathlib import Path
@@ -15,6 +16,7 @@ from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPO_COPY, REPORT_PATH, S3_BUILDS_BUCKET, TEMP_PATH
 from pr_info import PRInfo
+from report import JobReport, TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -135,6 +137,67 @@ def upload_corpus(path: str):
     )
 
 
+def process_error(path: Path) -> list:
+    ERROR = r"^==\d+==\s?ERROR: (\S+): (.*)"
+    # error_source = ""
+    # error_reason = ""
+    # test_unit = ""
+    TEST_UNIT_LINE = r"artifact_prefix='.*\/'; Test unit written to (.*)"
+    error_info = []
+    is_error = False
+
+    with open(path, "r") as file:
+        for line in file:
+            if is_error:
+                error_info.append(line)
+                # match = re.search(TEST_UNIT_LINE, line)
+                # if match:
+                #     test_unit = match.group(1)
+                continue
+
+            match = re.search(ERROR, line)
+            if match:
+                error_info.append(line)
+                # error_source = match.group(1)
+                # error_reason = match.group(2)
+                is_error = True
+
+    return error_info
+
+
+def read_status(status_path: Path):
+    result = []
+    with open(status_path, "r") as file:
+        for line in file:
+            result.append(line)
+    return result
+
+
+def process_results(result_path: Path):
+    test_results = []
+    oks = 0
+    timeouts = 0
+    fails = 0
+    for file in result_path.glob("*.status"):
+        fuzzer = file.stem
+        file_path = file.parent.with_stem(fuzzer)
+        file_path_unit = file_path.with_suffix(".unit")
+        file_path_out = file_path.with_suffix(".out")
+        status = read_status(file)
+        if status[0] == "OK":
+            oks += 1
+        elif status[0] == "Timeout":
+            timeouts += 1
+        else:
+            fails += 1
+        result = TestResult(fuzzer, status[0], status[2])
+        if file_path_unit.exists:
+            result.set_raw_logs("\n".join(process_error(file_path_out)))
+        test_results.append(result)
+
+    return [oks, timeouts, fails, test_results]
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
 
@@ -209,7 +272,21 @@ def main():
         else:
             logging.info("Run failed")
 
-    sys.exit(0)
+    results = process_results(reports_path)
+
+    success = results[1] == 0 and results[2] == 0
+
+    JobReport(
+        description=f"OK: {results[0]}, Timeout: {results[1]}, FAIL: {results[2]}",
+        test_results=results[3],
+        status= "OK" if success else "FAILURE",
+        start_time=stopwatch.start_time_str,
+        duration=stopwatch.duration_seconds,
+        additional_files=[],
+    ).dump()
+
+    if not success:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
