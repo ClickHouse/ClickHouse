@@ -167,6 +167,16 @@ def started_cluster():
             with_installed_binary=True,
             use_old_analyzer=True,
         )
+        cluster.add_instance(
+            "node_cloud_mode",
+            with_zookeeper=True,
+            stay_alive=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+            ],
+            user_configs=["configs/cloud_mode.xml"],
+        )
 
         logging.info("Starting cluster...")
         cluster.start()
@@ -2009,3 +2019,30 @@ def test_replicated(started_cluster):
             break
         time.sleep(1)
     assert expected_rows == get_count()
+
+
+def test_bad_settings(started_cluster):
+    node = started_cluster.instances["node_cloud_mode"]
+
+    table_name = f"test_bad_settings_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 10
+
+    try:
+        create_table(
+            started_cluster,
+            node,
+            table_name,
+            "ordered",
+            files_path,
+            additional_settings={
+                "keeper_path": keeper_path,
+                "processing_threads_num": 1,
+                "buckets": 0,
+            },
+        )
+        assert False
+    except Exception as e:
+        assert "Ordered mode in cloud without either" in str(e)
