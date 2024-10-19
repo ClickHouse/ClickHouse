@@ -26,11 +26,7 @@ INSERT INTO users VALUES (1, 'London', 'John');
 INSERT INTO users VALUES (1, 'Berlin', 'Ksenia');
 INSERT INTO users VALUES (2, 'Paris', 'Alice');
 
-SELECT '---- users:';
-SELECT * FROM users;
-
-SELECT '---- users2:';
-SELECT id, uniqMerge(city_name_uniq) FROM users2 GROUP BY id;
+SELECT id, uniqMerge(city_name_uniq) FROM users2 GROUP BY id ORDER BY id;
 
 DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS users2;
