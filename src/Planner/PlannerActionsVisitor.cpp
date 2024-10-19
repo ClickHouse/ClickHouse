@@ -200,7 +200,7 @@ public:
                                 {
                                     if (i != 0)
                                         s << ", ";
-                                    s << names[i];
+                                    s << backQuoteIfNeed(names[i]);
                                 }
                                 s << ")";
                                 result = s.str();
