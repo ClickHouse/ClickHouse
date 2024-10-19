@@ -453,6 +453,9 @@ JoinClausesAndActions buildJoinClausesAndActions(
     auto join_right_table_expressions = extractTableExpressionsSet(join_node.getRightTableExpression());
 
     JoinClausesAndActions result;
+    result.join_expression_actions = join_expression_actions;
+    if (join_expression_actions->hasArrayJoin())
+        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "JOIN ON {} cannot contain arrayJoin", join_node.getJoinExpression()->formatASTForErrorMessage());
 
     bool is_inequal_join = false;
     const auto & function_name = function_node->getFunction()->getName();
