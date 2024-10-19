@@ -191,7 +191,7 @@ def process_results(result_path: Path):
             timeouts += 1
         else:
             fails += 1
-        result = TestResult(fuzzer, status[0], status[2])
+        result = TestResult(fuzzer, status[0], float(status[2]))
         if file_path_unit.exists:
             result.set_raw_logs("\n".join(process_error(file_path_out)))
         test_results.append(result)
