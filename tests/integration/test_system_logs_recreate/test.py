@@ -27,6 +27,7 @@ def test_system_logs_recreate():
     system_logs = [
         # enabled by default
         "query_log",
+        "query_metric_log",
         "query_thread_log",
         "part_log",
         "trace_log",
