@@ -56,8 +56,10 @@ bool MetadataStorageFromPlainObjectStorage::existsFile(const std::string & path)
         return false;
 
     /// The path does not correspond to a directory.
+    /// This check is required for a local object storage since it supports hierarchy.
     auto directory = std::filesystem::path(object_key.serialize()) / "";
-    return !object_storage->existsOrHasAnyChild(directory);
+    ObjectStorageKey directory_key = object_storage->generateObjectKeyForPath(directory, std::nullopt /* key_prefix */);
+    return !object_storage->exists(StoredObject(directory_key.serialize(), directory));
 }
 
 bool MetadataStorageFromPlainObjectStorage::existsDirectory(const std::string & path) const
