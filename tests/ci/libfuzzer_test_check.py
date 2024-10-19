@@ -180,7 +180,7 @@ def process_results(result_path: Path):
     fails = 0
     for file in result_path.glob("*.status"):
         fuzzer = file.stem
-        file_path = file.parent.with_stem(fuzzer)
+        file_path = file.parent / fuzzer
         file_path_unit = file_path.with_suffix(".unit")
         file_path_out = file_path.with_suffix(".out")
         status = read_status(file)
