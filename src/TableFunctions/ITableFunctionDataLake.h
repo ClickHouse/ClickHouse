@@ -89,6 +89,11 @@ struct TableFunctionIcebergLocalName
     static constexpr auto name = "icebergLocal";
 };
 
+struct TableFunctionIcebergHDFSName
+{
+    static constexpr auto name = "icebergHDFS";
+};
+
 struct TableFunctionDeltaLakeName
 {
     static constexpr auto name = "deltaLake";
@@ -108,6 +113,9 @@ using TableFunctionIcebergS3 = ITableFunctionDataLake<TableFunctionIcebergS3Name
 using TableFunctionIcebergAzure = ITableFunctionDataLake<TableFunctionIcebergAzureName, StorageIceberg, TableFunctionAzureBlob>;
 #    endif
 using TableFunctionIcebergLocal = ITableFunctionDataLake<TableFunctionIcebergLocalName, StorageIceberg, TableFunctionLocal>;
+#if USE_HDFS
+using TableFunctionIcebergHDFS = ITableFunctionDataLake<TableFunctionIcebergHDFSName, StorageIceberg, TableFunctionHDFS>;
+#endif
 #endif
 #if USE_AWS_S3
 #    if USE_PARQUET

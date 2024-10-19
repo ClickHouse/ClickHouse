@@ -33,6 +33,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
+    extern const SettingsBool implicit_select;
 }
 
 namespace ErrorCodes
@@ -178,7 +179,7 @@ void LocalConnection::sendQuery(
             parser
                 = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         else
-            parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert]);
+            parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
 
         ASTPtr parsed_query;
         if (dialect == Dialect::kusto)

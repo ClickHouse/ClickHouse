@@ -701,6 +701,9 @@ Move more conditions from WHERE to PREWHERE and do reads from disk and filtering
     M(Bool, move_primary_key_columns_to_end_of_prewhere, true, R"(
 Move PREWHERE conditions containing primary key columns to the end of AND chain. It is likely that these conditions are taken into account during primary key analysis and thus will not contribute a lot to PREWHERE filtering.
 )", 0) \
+    M(Bool, allow_reorder_prewhere_conditions, true, R"(
+When moving conditions from WHERE to PREWHERE, allow reordering them to optimize filtering
+)", 0) \
     \
     M(UInt64, alter_sync, 1, R"(
 Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
@@ -2700,7 +2703,7 @@ The maximum read speed in bytes per second for particular backup on server. Zero
 Log query performance statistics into the query_log, query_thread_log and query_views_log.
 )", 0) \
     M(Bool, log_query_settings, true, R"(
-Log query settings into the query_log.
+Log query settings into the query_log and OpenTelemetry span log.
 )", 0) \
     M(Bool, log_query_threads, false, R"(
 Setting up query threads logging.
@@ -3067,6 +3070,7 @@ Possible values:
     M(Bool, allow_drop_detached, false, R"(
 Allow ALTER TABLE ... DROP DETACHED PART[ITION] ... queries
 )", 0) \
+    M(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0) \
     \
     M(UInt64, max_table_size_to_drop, 50000000000lu, R"(
 Restriction on deleting tables in query time. The value 0 means that you can delete all tables without any restrictions.
@@ -4812,6 +4816,9 @@ Max attempts to read with backoff
     M(Bool, enable_filesystem_cache, true, R"(
 Use cache for remote filesystem. This setting does not turn on/off cache for disks (must be done via disk config), but allows to bypass cache for some queries if intended
 )", 0) \
+    M(String, filesystem_cache_name, "", R"(
+Filesystem cache name to use for stateless table engines or data lakes
+)", 0) \
     M(Bool, enable_filesystem_cache_on_write_operations, false, R"(
 Write into cache on write operations. To actually work this setting requires be added to disk config too
 )", 0) \
@@ -5150,7 +5157,7 @@ SELECT * FROM test_table
 Rewrite count distinct to subquery of group by
 )", 0) \
     M(Bool, throw_if_no_data_to_insert, true, R"(
-Allows or forbids empty INSERTs, enabled by default (throws an error on an empty insert)
+Allows or forbids empty INSERTs, enabled by default (throws an error on an empty insert). Only applies to INSERTs using [`clickhouse-client`](/docs/en/interfaces/cli) or using the [gRPC interface](/docs/en/interfaces/grpc).
 )", 0) \
     M(Bool, compatibility_ignore_auto_increment_in_create_table, false, R"(
 Ignore AUTO_INCREMENT keyword in column declaration if true, otherwise return error. It simplifies migration from MySQL
@@ -5375,7 +5382,7 @@ Result:
 If enabled, server will ignore all DROP table queries with specified probability (for Memory and JOIN engines it will replcase DROP to TRUNCATE). Used for testing purposes
 )", 0) \
     M(Bool, traverse_shadow_remote_data_paths, false, R"(
-Traverse shadow directory when query system.remote_data_paths
+Traverse frozen data (shadow directory) in addition to actual table data when query system.remote_data_paths
 )", 0) \
     M(Bool, geo_distance_returns_float64_on_float64_arguments, true, R"(
 If all four arguments to `geoDistance`, `greatCircleDistance`, `greatCircleAngle` functions are Float64, return Float64 and use double precision for internal calculations. In previous ClickHouse versions, the functions always returned Float32.
@@ -5497,8 +5504,8 @@ Replace external dictionary sources to Null on restore. Useful for testing purpo
     M(Bool, create_if_not_exists, false, R"(
 Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting or `IF NOT EXISTS` is specified and a table with the provided name already exists, no exception will be thrown.
 )", 0) \
-    M(Bool, enable_secure_identifiers, false, R"(
-If enabled, only allow secure identifiers which contain only underscore and alphanumeric characters
+    M(Bool, enforce_strict_identifier_format, false, R"(
+If enabled, only allow identifiers containing alphanumeric characters and underscores.
 )", 0) \
     M(Bool, mongodb_throw_on_unsupported_query, true, R"(
 If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply to the legacy implementation or when 'allow_experimental_analyzer=0'.
@@ -5784,9 +5791,6 @@ The heartbeat interval in seconds to indicate watch query is alive.
 Timeout for waiting for window view fire signal in event time processing
 )", 0) \
     \
-    M(Bool, allow_experimental_refreshable_materialized_view, false, R"(
-Allow refreshable materialized views (CREATE MATERIALIZED VIEW \\<name\\> REFRESH ...).
-)", 0) \
     M(Bool, stop_refreshable_materialized_views_on_startup, false, R"(
 On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with SYSTEM START VIEWS or SYSTEM START VIEW \\<name\\> afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.
 )", 0) \
@@ -5802,8 +5806,10 @@ Allow to create database with Engine=MaterializedPostgreSQL(...).
     M(Bool, allow_experimental_query_deduplication, false, R"(
 Experimental data deduplication for SELECT queries based on part UUIDs
 )", 0) \
+    M(Bool, implicit_select, false, R"(
+Allow writing simple SELECT queries without the leading SELECT keyword, which makes it simple for calculator-style usage, e.g. `1 + 2` becomes a valid query.
+)", 0)
 
-    /** End of experimental features */
 
 // End of COMMON_SETTINGS
 // Please add settings related to formats in FormatFactorySettingsDeclaration.h, move obsolete settings to OBSOLETE_SETTINGS and obsolete format settings to OBSOLETE_FORMAT_SETTINGS.
@@ -5822,6 +5828,7 @@ Experimental data deduplication for SELECT queries based on part UUIDs
     MAKE_OBSOLETE(M, Bool, allow_experimental_alter_materialized_view_structure, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_shared_merge_tree, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_database_replicated, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_refreshable_materialized_view, true) \
     \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_stale_timeout_ms, 0) \
     MAKE_OBSOLETE(M, StreamingHandleErrorMode, handle_kafka_error_mode, StreamingHandleErrorMode::DEFAULT) \
