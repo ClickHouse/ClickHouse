@@ -60,6 +60,10 @@
             font-family: monospace;
         }
 
+        #stats {
+            white-space: pre-wrap;
+        }
+
         #canvas {
             margin-top: 0.25rem;
             font-size: 10pt;
@@ -121,10 +125,10 @@
 const add_http_cors_header = false;
 
 function formatValue(v) {
-    if (v >= 1000000000000) { return Math.round(v / 1000000000000) + 'T'; }
-    if (v >= 1000000000) { return Math.round(v / 1000000000) + 'G'; }
-    if (v >= 1000000) { return Math.round(v / 1000000) + 'M'; }
-    if (v >= 1000) { return Math.round(v / 1000) + 'K'; }
+    if (v >= 1000000000000) { return (v / 1000000000000).toFixed(2) + 'T'; }
+    if (v >= 1000000000) { return (v / 1000000000).toFixed(2) + 'G'; }
+    if (v >= 1000000) { return (v / 1000000).toFixed(2) + 'M'; }
+    if (v >= 1000) { return (v / 1000).toFixed(2) + 'K'; }
     return v;
 }
 
@@ -139,8 +143,10 @@ let stats = document.getElementById('stats');
 let num_parts = 0;
 let inserted_rows = 0;
 let inserted_bytes = 0;
+let inserted_parts = 0;
 let merged_rows = 0;
 let merged_bytes = 0;
+let merged_parts = 0;
 let currently_active_parts = {};
 
 let speed = 100;
@@ -200,9 +206,12 @@ async function update(data) {
             ++num_parts;
 
             if (level == 0) {
+                ++inserted_parts;
                 inserted_rows += +data.rows;
                 inserted_bytes += +data.size_in_bytes;
             } else {
+                playClick(Math.min(1, data.size_in_bytes / 10e9));
+                ++merged_parts;
                 merged_rows += +data.rows;
                 merged_bytes += +data.size_in_bytes;
             }
@@ -272,7 +281,9 @@ async function update(data) {
         }
     }
 
-    stats.innerText = `${num_parts} parts. Inserted ${inserted_rows} rows, ${formatValue(inserted_bytes)}. Merged ${merged_rows} rows, ${formatValue(merged_bytes)}.`;
+    stats.innerText = `${num_parts} parts.
+Inserted ${inserted_parts} parts, ${inserted_rows} rows, ${formatValue(inserted_bytes)}.
+Merged into ${merged_parts} parts, ${merged_rows} rows, ${formatValue(merged_bytes)}. Write aplification: ${((inserted_bytes + merged_bytes) / inserted_bytes).toFixed(2)}`;
 }
 
 let loading = false;
@@ -283,8 +294,10 @@ async function load() {
     num_parts = 0;
     inserted_rows = 0;
     inserted_bytes = 0;
+    inserted_parts = 0;
     merged_rows = 0;
     merged_bytes = 0;
+    merged_parts = 0;
 
     const host = document.getElementById('url').value;
     const user = document.getElementById('user').value;
@@ -380,6 +393,24 @@ document.getElementById('faster').addEventListener('click', _ => {
         updateSpeed();
     }
 });
+
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+let source = null;
+
+function playClick(volume) {
+    if (source) {
+        source.disconnect(audioCtx.destination);
+    }
+    source = audioCtx.createBufferSource();
+    const myArrayBuffer = audioCtx.createBuffer(1, audioCtx.sampleRate / 1000, audioCtx.sampleRate);
+    const nowBuffering = myArrayBuffer.getChannelData(0);
+    for (let i = 0; i < myArrayBuffer.length; ++i) {
+        nowBuffering[i] = volume * (Math.random() * 2 - 1);
+    }
+    source.buffer = myArrayBuffer;
+    source.connect(audioCtx.destination);
+    source.start();
+}
 
 </script>
 </body>
