@@ -185,15 +185,19 @@ def process_results(result_path: Path):
         file_path_unit = file_path.with_suffix(".unit")
         file_path_out = file_path.with_suffix(".out")
         status = read_status(file)
+        result = TestResult(fuzzer, status[0], float(status[2]))
         if status[0] == "OK":
             oks += 1
         elif status[0] == "Timeout":
             timeouts += 1
+            if file_path_out.exists():
+                result.set_log_files([file_path_out])
         else:
             fails += 1
-        result = TestResult(fuzzer, status[0], float(status[2]))
-        if file_path_unit.exists:
-            result.set_raw_logs("\n".join(process_error(file_path_out)))
+            if file_path_out.exists():
+                result.set_raw_logs("\n".join(process_error(file_path_out)))
+            if file_path_unit.exists:
+                result.set_log_files([file_path_unit])
         test_results.append(result)
 
     return [oks, timeouts, fails, test_results]
