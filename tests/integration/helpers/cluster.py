@@ -3000,6 +3000,7 @@ class ClickHouseCluster:
                 os.mkdir(self.minio_dir)
                 if self.minio_certs_dir is None:
                     os.mkdir(os.path.join(self.minio_dir, "certs"))
+                    os.mkdir(os.path.join(self.minio_dir, "certs", "CAs"))
                 else:
                     shutil.copytree(
                         os.path.join(self.base_dir, self.minio_certs_dir),
