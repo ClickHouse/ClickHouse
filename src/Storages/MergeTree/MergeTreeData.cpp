@@ -7878,7 +7878,8 @@ try
 
     part_log_elem.event_type = type;
 
-    if (part_log_elem.event_type == PartLogElement::MERGE_PARTS)
+    if (part_log_elem.event_type == PartLogElement::MERGE_PARTS
+        || part_log_elem.event_type == PartLogElement::MERGE_PARTS_START)
     {
         if (merge_entry)
         {
@@ -7945,10 +7946,6 @@ try
     if (profile_counters)
     {
         part_log_elem.profile_counters = profile_counters;
-    }
-    else
-    {
-        LOG_WARNING(log, "Profile counters are not set");
     }
 
     part_log->add(std::move(part_log_elem));
