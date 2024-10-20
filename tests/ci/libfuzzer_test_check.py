@@ -191,7 +191,7 @@ def process_results(result_path: Path):
         elif status[0] == "Timeout":
             timeouts += 1
             if file_path_out.exists():
-                result.set_log_files(f"['{file_path_unit}']")
+                result.set_log_files(f"['{file_path_out}']")
         else:
             fails += 1
             if file_path_out.exists():
