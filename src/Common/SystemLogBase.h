@@ -15,6 +15,7 @@
     M(AsynchronousMetricLogElement) \
     M(CrashLogElement) \
     M(MetricLogElement) \
+    M(LatencyLogElement) \
     M(OpenTelemetrySpanLogElement) \
     M(PartLogElement) \
     M(QueryLogElement) \
