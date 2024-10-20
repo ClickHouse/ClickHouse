@@ -53,6 +53,9 @@ namespace ErrorCodes
     M(Bool, load_existing_rows_count_for_old_parts, false, "Whether to load existing_rows_count for existing parts. If false, existing_rows_count will be equal to rows_count for existing parts.", 0) \
     M(Bool, use_compact_variant_discriminators_serialization, true, "Use compact version of Variant discriminators serialization.", 0) \
     \
+    /** Merge and insert settings */ \
+    M(UInt64, max_compression_threads, 1, "Maximum number of threads for writing compressed data. This is an expert-level setting, do not change it.", 0) \
+    \
     /** Merge selector settings. */ \
     M(UInt64, merge_selector_blurry_base_scale_factor, 0, "Controls when the logic kicks in relatively to the number of parts in partition. The bigger the factor the more belated reaction will be.", 0) \
     M(UInt64, merge_selector_window_size, 1000, "How many parts to look at once.", 0) \
