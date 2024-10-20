@@ -245,9 +245,10 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     // so, disable parallel replicas temporary here
     // moreover, for queries with global joins it can lead to subquery execution
     // and registering empty temporary table in context (because it'll read from StorageDummy)
-    query_context->setSetting("enable_parallel_replicas", false);
+    const UInt64 enable_parallel_replicas_value = settings[Setting::allow_experimental_parallel_reading_from_replicas];
+    query_context->setSetting("enable_parallel_replicas", UInt64{0});
     SCOPE_EXIT({
-        query_context->setSetting("enable_parallel_replicas", true);
+        query_context->setSetting("enable_parallel_replicas", enable_parallel_replicas_value);
     });
 
     SelectQueryOptions select_query_options;
