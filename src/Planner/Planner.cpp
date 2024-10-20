@@ -238,7 +238,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     }
 
     // there is no need to build plan with parallel replicas to collect filters
-    // so, disable parallel replicas termporary here
+    // so, disable parallel replicas temporary here
     // moreover, for queries with global joins it can lead to subquery execution
     // and registering empty temporary table in context (because it'll read from StorageDummy)
     query_context->setSetting("enable_parallel_replicas", false);
