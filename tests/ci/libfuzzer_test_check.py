@@ -196,7 +196,7 @@ def process_results(result_path: Path):
             fails += 1
             if file_path_out.exists():
                 result.set_raw_logs("\n".join(process_error(file_path_out)))
-            if file_path_unit.exists:
+            if file_path_unit.exists():
                 result.set_log_files(f"['{file_path_unit}']")
         test_results.append(result)
 
