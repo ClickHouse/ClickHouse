@@ -5808,7 +5808,8 @@ Experimental data deduplication for SELECT queries based on part UUIDs
 )", 0) \
     M(Bool, implicit_select, false, R"(
 Allow writing simple SELECT queries without the leading SELECT keyword, which makes it simple for calculator-style usage, e.g. `1 + 2` becomes a valid query.
-)", 0)
+)", 0) \
+    M(SettingBool, skip_busy_buffer_layers, false, "Skip busy buffer layers during read operations")
 
 
 // End of COMMON_SETTINGS
