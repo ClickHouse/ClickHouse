@@ -4,15 +4,6 @@ CREATE TABLE table_3 (uid UUID, date DateTime('Asia/Kamchatka')) ENGINE = Replic
 
 INSERT INTO table_3 VALUES ('4c36abda-8bd8-11eb-8204-005056aa8bf6', '2021-03-24 01:04:27'), ('4c408902-8bd8-11eb-8204-005056aa8bf6', '2021-03-24 01:04:27'), ('4c5bf20a-8bd8-11eb-8204-005056aa8bf6', '2021-03-24 01:04:27'), ('4c61623a-8bd8-11eb-8204-005056aa8bf6', '2021-03-24 01:04:27'), ('4c6efab2-8bd8-11eb-a952-005056aa8bf6', '2021-03-24 01:04:27');
 
--- SELECT
---     uid,
---     date,
---     toDate(date) = toDate('2021-03-24') AS res
--- FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), table_3)
--- WHERE res = 1
--- ORDER BY
---     uid ASC,
-
 SELECT
     uid,
     date,
