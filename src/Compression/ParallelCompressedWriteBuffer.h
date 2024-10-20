@@ -69,8 +69,10 @@ private:
         }
 
         Memory<> uncompressed;
+        size_t uncompressed_size = 0;
         PODArray<char> compressed;
         const BufferPair * previous = nullptr;
+        size_t sequence_num = 0;
         bool busy = false;
     };
 
@@ -80,6 +82,7 @@ private:
 
     using Iterator = std::list<BufferPair>::iterator;
     Iterator current_buffer;
+    size_t current_sequence_num = 0;
 
     void compress(Iterator buffer);
 };
