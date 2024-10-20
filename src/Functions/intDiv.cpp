@@ -26,7 +26,7 @@ struct DivideIntegralByConstantImpl
     static const constexpr bool allow_string_integer = false;
 
     template <OpCase op_case>
-    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap)
+    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap, NullMap * res_nullmap[[maybe_unused]])
     {
         if constexpr (op_case == OpCase::RightConstant)
         {
@@ -51,7 +51,7 @@ struct DivideIntegralByConstantImpl
         }
     }
 
-    static ResultType process(A a, B b) { return Op::template apply<ResultType>(a, b); }
+    static ResultType process(A a, B b, NullMap::value_type * m [[maybe_unused]] = nullptr) { return Op::template apply<ResultType>(a, b); }
 
     static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
     {

@@ -15,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_DIVISION;
+    extern const int LOGICAL_ERROR;
 }
 
 template <typename A, typename B>
@@ -26,8 +27,9 @@ inline void throwIfDivisionLeadsToFPE(A a, B b)
         throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
     /// http://avva.livejournal.com/2548306.html
-    if (unlikely(is_signed_v<A> && is_signed_v<B> && a == std::numeric_limits<A>::min() && b == -1))
-        throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division of minimal signed number by minus one");
+    if constexpr (is_signed_v<A> && is_signed_v<B>)
+        if (unlikely(a == std::numeric_limits<A>::min() && b == -1))
+            throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division of minimal signed number by minus one");
 }
 
 template <typename A, typename B>
@@ -36,8 +38,9 @@ inline bool divisionLeadsToFPE(A a, B b)
     if (unlikely(b == 0))
         return true;
 
-    if (unlikely(is_signed_v<A> && is_signed_v<B> && a == std::numeric_limits<A>::min() && b == -1))
-        return true;
+    if constexpr (is_signed_v<A> && is_signed_v<B>)
+        if (unlikely(a == std::numeric_limits<A>::min() && b == -1))
+            return true;
 
     return false;
 }
@@ -68,7 +71,7 @@ struct DivideIntegralImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static Result apply(A a, B b)
+    static Result apply(A a, B b, NullMap::value_type * m [[maybe_unused]] = nullptr)
     {
         using CastA = std::conditional_t<is_big_int_v<B> && std::is_same_v<A, UInt8>, uint8_t, A>;
         using CastB = std::conditional_t<is_big_int_v<A> && std::is_same_v<B, UInt8>, uint8_t, B>;
@@ -120,7 +123,7 @@ struct ModuloImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static Result apply(A a, B b)
+    static Result apply(A a, B b, NullMap::value_type * m [[maybe_unused]] = nullptr)
     {
         if constexpr (std::is_floating_point_v<ResultType>)
         {
@@ -175,7 +178,7 @@ struct PositiveModuloImpl : ModuloImpl<A, B>
     using ResultType = typename NumberTraits::ResultOfPositiveModulo<A, B>::Type;
 
     template <typename Result = ResultType>
-    static Result apply(A a, B b)
+    static Result apply(A a, B b, NullMap::value_type * m [[maybe_unused]] = nullptr)
     {
         auto res = ModuloImpl<A, B>::template apply<OriginResultType>(a, b);
         if constexpr (is_signed_v<A>)
@@ -194,6 +197,31 @@ struct PositiveModuloImpl : ModuloImpl<A, B>
         }
         return static_cast<ResultType>(res);
     }
+};
+
+template <typename A, typename B>
+struct DivideFloatingImpl
+{
+    using ResultType = typename NumberTraits::ResultOfFloatingPointDivision<A, B>::Type;
+    static const constexpr bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
+
+    template <typename Result = ResultType>
+    static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]], NullMap::value_type * m [[maybe_unused]] = nullptr)
+    {
+        return static_cast<Result>(a) / b;
+    }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    {
+        if (left->getType()->isIntegerTy())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "DivideFloatingImpl expected a floating-point type");
+        return b.CreateFDiv(left, right);
+    }
+#endif
 };
 
 }
