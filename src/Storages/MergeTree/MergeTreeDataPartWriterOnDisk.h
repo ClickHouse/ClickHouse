@@ -44,7 +44,7 @@ public:
 
     /// Helper class, which holds chain of buffers to write data file with marks.
     /// It is used to write: one column, skip index or all columns (in compact format).
-    template<bool only_plain_file>
+    template <bool only_plain_file>
     struct Stream
     {
         Stream(
@@ -76,7 +76,8 @@ public:
         /// compressed_hashing -> compressor -> plain_hashing -> plain_file
         std::unique_ptr<WriteBufferFromFileBase> plain_file;
         HashingWriteBuffer plain_hashing;
-        CompressedWriteBuffer compressor;
+        /// This could be either CompressedWriteBuffer or ParallelCompressedWriteBuffer
+        std::unique_ptr<WriteBuffer> compressor;
         HashingWriteBuffer compressed_hashing;
 
         /// marks_compressed_hashing -> marks_compressor -> marks_hashing -> marks_file
