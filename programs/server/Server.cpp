@@ -1664,11 +1664,14 @@ try
         main_config_zk_changed_event,
         [&, config_file = config().getString("config-file", "config.xml")](ConfigurationPtr config, bool initial_loading)
         {
-            /// Add back "config-file" key which is absent in the reloaded config.
-            config->setString("config-file", config_file);
+            if (!initial_loading)
+            {
+                /// Add back "config-file" key which is absent in the reloaded config.
+                config->setString("config-file", config_file);
 
-            /// Apply config updates in global context.
-            global_context->setConfig(config);
+                /// Apply config updates in global context.
+                global_context->setConfig(config);
+            }
 
             Settings::checkNoSettingNamesAtTopLevel(*config, config_path);
 
