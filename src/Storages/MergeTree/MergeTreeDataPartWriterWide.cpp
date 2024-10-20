@@ -9,6 +9,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
+
 namespace DB
 {
 
@@ -230,7 +231,7 @@ ISerialization::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGett
         if (is_offsets && offset_columns.contains(stream_name))
             return nullptr;
 
-        return &column_streams.at(stream_name)->compressed_hashing;
+        return &column_streams.at(stream_name)->compressed_hashing.value();
     };
 }
 
@@ -399,13 +400,13 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
         auto & stream = *column_streams[stream_name];
 
         /// There could already be enough data to compress into the new block.
-        if (stream.compressed_hashing.offset() >= min_compress_block_size)
-            stream.compressed_hashing.next();
+        if (stream.compressed_hashing->offset() >= min_compress_block_size)
+            stream.compressed_hashing->next();
 
         StreamNameAndMark stream_with_mark;
         stream_with_mark.stream_name = stream_name;
-        stream_with_mark.mark.offset_in_compressed_file = stream.plain_hashing.count();
-        stream_with_mark.mark.offset_in_decompressed_block = stream.compressed_hashing.offset();
+        stream_with_mark.mark.offset_in_compressed_file = stream.plain_hashing->count();
+        stream_with_mark.mark.offset_in_decompressed_block = stream.compressed_hashing->offset();
 
         result.push_back(stream_with_mark);
     }, name_and_type.type, column_sample);
@@ -438,7 +439,7 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
         if (is_offsets && offset_columns.contains(stream_name))
             return;
 
-        column_streams.at(stream_name)->compressed_hashing.nextIfAtEnd();
+        column_streams.at(stream_name)->compressed_hashing->nextIfAtEnd();
     }, name_and_type.type, column.getPtr());
 }
 

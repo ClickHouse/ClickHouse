@@ -103,6 +103,9 @@
     M(IOThreads, "Number of threads in the IO thread pool.") \
     M(IOThreadsActive, "Number of threads in the IO thread pool running a task.") \
     M(IOThreadsScheduled, "Number of queued or active jobs in the IO thread pool.") \
+    M(CompressionThread, "Number of threads in compression thread pools.") \
+    M(CompressionThreadActive, "Number of threads in compression thread pools running a task.") \
+    M(CompressionThreadScheduled, "Number of queued or active jobs in compression thread pools.") \
     M(ThreadPoolRemoteFSReaderThreads, "Number of threads in the thread pool for remote_filesystem_read_method=threadpool.") \
     M(ThreadPoolRemoteFSReaderThreadsActive, "Number of threads in the thread pool for remote_filesystem_read_method=threadpool running a task.") \
     M(ThreadPoolRemoteFSReaderThreadsScheduled, "Number of queued or active jobs in the thread pool for remote_filesystem_read_method=threadpool.") \

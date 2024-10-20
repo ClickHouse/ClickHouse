@@ -27,7 +27,7 @@ struct Granule
     /// this granule can be continuation of the previous one.
     bool mark_on_start;
     /// if true: When this granule will be written to disk all rows for corresponding mark will
-    /// be wrtten. It doesn't mean that rows_to_write == index_granularity.getMarkRows(mark_number),
+    /// be written. It doesn't mean that rows_to_write == index_granularity.getMarkRows(mark_number),
     /// We may have a lot of small blocks between two marks and this may be the last one.
     bool is_complete;
 };
@@ -74,10 +74,10 @@ public:
 
         /// compressed_hashing -> compressor -> plain_hashing -> plain_file
         std::unique_ptr<WriteBufferFromFileBase> plain_file;
-        HashingWriteBuffer plain_hashing;
+        std::optional<HashingWriteBuffer> plain_hashing;
         /// This could be either CompressedWriteBuffer or ParallelCompressedWriteBuffer
         std::unique_ptr<WriteBuffer> compressor;
-        HashingWriteBuffer compressed_hashing;
+        std::optional<HashingWriteBuffer> compressed_hashing;
 
         /// marks_compressed_hashing -> marks_compressor -> marks_hashing -> marks_file
         std::unique_ptr<WriteBufferFromFileBase> marks_file;
@@ -88,10 +88,11 @@ public:
 
         bool is_prefinalized = false;
 
+        /// Thread pool for parallel compression.
+        std::optional<ThreadPool> compression_thread_pool;
+
         void preFinalize();
-
         void finalize();
-
         void sync() const;
 
         void addToChecksums(MergeTreeDataPartChecksums & checksums);
