@@ -191,13 +191,13 @@ def process_results(result_path: Path):
         elif status[0] == "Timeout":
             timeouts += 1
             if file_path_out.exists():
-                result.set_log_files([str(file_path_out)])
+                result.set_log_files(f"[{file_path_unit}]")
         else:
             fails += 1
             if file_path_out.exists():
                 result.set_raw_logs("\n".join(process_error(file_path_out)))
             if file_path_unit.exists:
-                result.set_log_files([str(file_path_unit)])
+                result.set_log_files(f"[{file_path_unit}]")
         test_results.append(result)
 
     return [oks, timeouts, fails, test_results]
