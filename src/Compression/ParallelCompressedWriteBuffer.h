@@ -63,7 +63,7 @@ private:
 
     struct BufferPair
     {
-        BufferPair(size_t input_size)
+        explicit BufferPair(size_t input_size)
             : uncompressed(input_size)
         {
         }
