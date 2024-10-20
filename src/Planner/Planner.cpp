@@ -138,6 +138,10 @@ namespace Setting
     extern const SettingsBool parallel_replicas_local_plan;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 max_entries_for_hash_table_stats;
+}
 
 namespace ErrorCodes
 {
@@ -433,7 +437,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     const auto stats_collecting_params = StatsCollectingParams(
         calculateCacheKey(select_query_info.query),
         settings[Setting::collect_hash_table_stats_during_aggregation],
-        query_context->getServerSettings().max_entries_for_hash_table_stats,
+        query_context->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
         settings[Setting::max_size_to_preallocate_for_aggregation]);
 
     auto aggregate_descriptions = aggregation_analysis_result.aggregate_descriptions;

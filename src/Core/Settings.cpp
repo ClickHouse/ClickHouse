@@ -5806,8 +5806,10 @@ Allow to create database with Engine=MaterializedPostgreSQL(...).
     M(Bool, allow_experimental_query_deduplication, false, R"(
 Experimental data deduplication for SELECT queries based on part UUIDs
 )", 0) \
+    M(Bool, implicit_select, false, R"(
+Allow writing simple SELECT queries without the leading SELECT keyword, which makes it simple for calculator-style usage, e.g. `1 + 2` becomes a valid query.
+)", 0)
 
-    /** End of experimental features */
 
 // End of COMMON_SETTINGS
 // Please add settings related to formats in FormatFactorySettingsDeclaration.h, move obsolete settings to OBSOLETE_SETTINGS and obsolete format settings to OBSOLETE_FORMAT_SETTINGS.
@@ -6199,16 +6201,6 @@ std::vector<std::string_view> Settings::getUnchangedNames() const
 {
     std::vector<std::string_view> setting_names;
     for (const auto & setting : impl->allUnchanged())
-    {
-        setting_names.emplace_back(setting.getName());
-    }
-    return setting_names;
-}
-
-std::vector<std::string_view> Settings::getChangedNames() const
-{
-    std::vector<std::string_view> setting_names;
-    for (const auto & setting : impl->allChanged())
     {
         setting_names.emplace_back(setting.getName());
     }
