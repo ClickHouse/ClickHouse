@@ -7,11 +7,11 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         if self.path != "/":
             return "Wrong Path", 400
 
-        content_type = self.headers.get('Content-Type')
+        content_type = self.headers.get("Content-Type")
         if content_type is None:
             return "No Content-Type", 400
 
-        correct_content_type = self.headers.get('X-Test-Answer')
+        correct_content_type = self.headers.get("X-Test-Answer")
         if correct_content_type is None:
             return "No X-Test-Answer", 400
 

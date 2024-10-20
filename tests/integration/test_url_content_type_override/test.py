@@ -40,15 +40,15 @@ def start_cluster():
 
 def test_url_content_type_override():
     assert (
-            "200"
-            == node.query(
-        f"INSERT INTO FUNCTION url('http://{SERVER_HOSTNAME}:{SERVER_PORT}/', JSONEachRow, 'x UInt8', headers('X-Test-Answer' = 'application/x-ndjson; charset=UTF-8')) SELECT 1)"
-    ).strip()
+        "200"
+        == node.query(
+            f"INSERT INTO FUNCTION url('http://{SERVER_HOSTNAME}:{SERVER_PORT}/', JSONEachRow, 'x UInt8', headers('X-Test-Answer' = 'application/x-ndjson; charset=UTF-8')) SELECT 1)"
+        ).strip()
     )
 
     assert (
-            "200"
-            == node.query(
-        f"INSERT INTO FUNCTION url('http://{SERVER_HOSTNAME}:{SERVER_PORT}/', JSONEachRow, 'x UInt8', headers('Content-Type' = 'upyachka', 'X-Test-Answer' = 'upyachka')) SELECT 1)"
-    ).strip()
+        "200"
+        == node.query(
+            f"INSERT INTO FUNCTION url('http://{SERVER_HOSTNAME}:{SERVER_PORT}/', JSONEachRow, 'x UInt8', headers('Content-Type' = 'upyachka', 'X-Test-Answer' = 'upyachka')) SELECT 1)"
+        ).strip()
     )
