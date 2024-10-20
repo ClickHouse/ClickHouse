@@ -51,6 +51,8 @@ def run_fuzzer(fuzzer: str, timeout: int):
             seed_corpus_dir = ""
 
     active_corpus_dir = f"corpus/{fuzzer}"
+    if not os.path.exists(active_corpus_dir):
+        os.makedirs(active_corpus_dir)
     options_file = f"{fuzzer}.options"
     custom_libfuzzer_options = ""
     fuzzer_arguments = ""
