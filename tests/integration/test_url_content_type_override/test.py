@@ -5,8 +5,8 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers
 
-SERVER_HOSTNAME = "localhost"
-SERVER_PORT = 5001
+SERVER_HOSTNAME = "resolver"
+SERVER_PORT = 8080
 
 cluster = ClickHouseCluster(__file__)
 
