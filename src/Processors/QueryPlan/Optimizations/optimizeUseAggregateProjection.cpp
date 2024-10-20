@@ -394,7 +394,7 @@ std::optional<ActionsDAG> analyzeAggregateProjection(
 
     // LOG_TRACE(getLogger("optimizeUseProjections"), "Folding actions by projection");
 
-    auto proj_dag = query.dag->foldActionsByProjection(new_inputs, query_key_nodes);
+    auto proj_dag = ActionsDAG::foldActionsByProjection(new_inputs, query_key_nodes);
     appendAggregateFunctions(proj_dag, aggregates, *matched_aggregates);
     return proj_dag;
 }
@@ -739,7 +739,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
         AggregateDataPtr place = state.data();
         agg_count->create(place);
         SCOPE_EXIT_MEMORY_SAFE(agg_count->destroy(place));
-        agg_count->set(place, exact_count);
+        AggregateFunctionCount::set(place, exact_count);
 
         auto column = ColumnAggregateFunction::create(agg_count);
         column->insertFrom(place);

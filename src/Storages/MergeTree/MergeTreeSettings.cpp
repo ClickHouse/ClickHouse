@@ -491,7 +491,7 @@ void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
 
 namespace MergeTreeSetting
 {
-    LIST_OF_MERGE_TREE_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
+    LIST_OF_MERGE_TREE_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)  /// NOLINT(misc-use-internal-linkage)
 }
 
 #undef INITIALIZE_SETTING_EXTERN

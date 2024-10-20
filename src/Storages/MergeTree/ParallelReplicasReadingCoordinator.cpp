@@ -151,6 +151,7 @@ public:
     {
         String result = "Statistics: ";
         std::vector<String> stats_by_replica;
+        stats_by_replica.reserve(stats.size());
         for (size_t i = 0; i < stats.size(); ++i)
             stats_by_replica.push_back(fmt::format(
                 "replica {}{} - {{requests: {} marks: {} assigned_to_me: {} stolen_by_hash: {} stolen_unassigned: {}}}",

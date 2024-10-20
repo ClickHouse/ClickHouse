@@ -224,7 +224,7 @@ void SettingsConstraints::clamp(const Settings & current_settings, SettingsChang
 }
 
 template <class T>
-bool getNewValueToCheck(const T & current_settings, SettingChange & change, Field & new_value, bool throw_on_failure)
+static bool getNewValueToCheck(const T & current_settings, SettingChange & change, Field & new_value, bool throw_on_failure)
 {
     Field current_value;
     bool has_current_value = current_settings.tryGet(change.name, current_value);

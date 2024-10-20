@@ -171,7 +171,7 @@ struct HashTableCell
     const value_type & getValue() const { return key; }
 
     /// Get the key (internally).
-    static const Key & getKey(const value_type & value) { return value; }
+    static const Key & getKey(const value_type & value) { return value; }  /// NOLINT(bugprone-return-const-ref-from-parameter)
 
     /// Are the keys at the cells equal?
     bool keyEquals(const Key & key_) const { return bitEquals(key, key_); }

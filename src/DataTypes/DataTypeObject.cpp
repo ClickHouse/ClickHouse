@@ -438,7 +438,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
     /// Get subcolumn for Dynamic type if needed.
     if (!path_subcolumn.empty())
     {
-        res = res->type->getSubcolumnData(path_subcolumn, *res, throw_if_null);
+        res = DB::IDataType::getSubcolumnData(path_subcolumn, *res, throw_if_null);
         if (!res)
             return nullptr;
     }

@@ -934,6 +934,8 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     bool prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
     {
         std::vector<const std::decay_t<decltype(data->maps[0])> * > maps_vector;
+        maps_vector.reserve(table_join->getClauses().size());
+
         for (size_t i = 0; i < table_join->getClauses().size(); ++i)
             maps_vector.push_back(&data->maps[i]);
 

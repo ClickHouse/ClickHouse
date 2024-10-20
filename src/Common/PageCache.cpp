@@ -525,7 +525,7 @@ PageChunk * PageCache::getFreeChunk()
     PageChunk * chunk = &lru.front();
     lru.erase(lru.iterator_to(*chunk));
 
-    size_t prev_pin_count = chunk->pin_count.fetch_add(1);
+    size_t prev_pin_count = chunk->pin_count.fetch_add(1);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
     chassert(prev_pin_count == 0);
 
     evictChunk(chunk);
@@ -537,7 +537,7 @@ void PageCache::evictChunk(PageChunk * chunk)
 {
     if (chunk->key.has_value())
     {
-        size_t erased = chunk_by_key.erase(chunk->key.value());
+        size_t erased = chunk_by_key.erase(chunk->key.value());  /// NOLINT(clang-analyzer-deadcode.DeadStores)
         chassert(erased);
         chunk->key.reset();
     }
