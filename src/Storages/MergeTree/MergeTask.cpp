@@ -1428,7 +1428,7 @@ public:
         ///  that is going in insertion order.
         ProcessorPtr merged_transform;
 
-        const auto &header = pipeline.getHeader();
+        const auto & header = pipeline.getHeader();
         const auto input_streams_count = pipeline.getNumStreams();
 
         WriteBuffer * rows_sources_write_buf = nullptr;
