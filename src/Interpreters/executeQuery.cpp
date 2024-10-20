@@ -5,6 +5,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/FailPoint.h>
+#include <Common/FieldVisitorToString.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryCache.h>
@@ -155,6 +156,7 @@ namespace Setting
     extern const SettingsBool use_query_cache;
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
+    extern const SettingsBool implicit_select;
     extern const SettingsBool enforce_strict_identifier_format;
 }
 
@@ -565,6 +567,21 @@ void logQueryFinish(
         query_span->addAttributeIfNotZero("clickhouse.written_rows", elem.written_rows);
         query_span->addAttributeIfNotZero("clickhouse.written_bytes", elem.written_bytes);
         query_span->addAttributeIfNotZero("clickhouse.memory_usage", elem.memory_usage);
+
+        if (context)
+        {
+            std::string user_name = context->getUserName();
+            query_span->addAttribute("clickhouse.user", user_name);
+        }
+
+        if (settings[Setting::log_query_settings])
+        {
+            auto changes = settings.changes();
+            for (const auto & change : changes)
+            {
+                query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), convertFieldToString(change.value));
+            }
+        }
         query_span->finish();
     }
 }
@@ -841,7 +858,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
         else
         {
-            ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert]);
+            ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
             /// TODO: parser should fail early when max_query_size limit is reached.
             ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 

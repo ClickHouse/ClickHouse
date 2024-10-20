@@ -594,7 +594,10 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
         catch (...)
         {
             tryLogCurrentException(log);
+            out.cancel();
         }
+
+        return;
     }
 
     try
