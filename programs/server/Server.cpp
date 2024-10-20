@@ -1662,19 +1662,13 @@ try
         config().getString("path", DBMS_DEFAULT_PATH),
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
-        [&, &global_config = config()](ConfigurationPtr config, ConfigurationPtr last_config, int num_reloads, bool initial_loading)
+        [&, config_file = config().getString("config-file", "config.xml")](ConfigurationPtr config, bool initial_loading)
         {
-            /// Adding new configuration settings to the global context.
-            /// The second argument '-num_reloads' indicates the priority of the new configuration.
-            /// A lower priority value means a higher priority for this configuration.
-            /// Thus, with each reload, the new configuration will take precedence over previous ones.
-            global_config.add(config, -num_reloads);
+            /// Add back "config-file" key which is absent in the reloaded config.
+            config->setString("config-file", config_file);
 
-            /// If there was a previous configuration loaded, remove it from the global context.
-            /// This prevents piling up multiple configurations during successive reloads,
-            /// ensuring that only the most recent configuration is kept in the global context.
-            if (last_config)
-                global_config.removeConfiguration(last_config);
+            /// Apply config updates in global context.
+            global_context->setConfig(config);
 
             Settings::checkNoSettingNamesAtTopLevel(*config, config_path);
 
