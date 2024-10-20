@@ -27,6 +27,7 @@ def start_server():
         ],
     )
 
+
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
@@ -35,6 +36,7 @@ def start_cluster():
         yield
     finally:
         cluster.shutdown()
+
 
 def test_url_content_type_override():
     assert (
