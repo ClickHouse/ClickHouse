@@ -32,46 +32,6 @@ class Stopwatch:
         self.start_time_str_value = self.start_time.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def report(source: str, reason: str, call_stack: list, test_unit: str):
-    logging.info("########### REPORT: %s %s %s", source, reason, test_unit)
-    logging.info("".join(call_stack))
-    logging.info("########### END OF REPORT ###########")
-
-
-# pylint: disable=unused-argument
-def process_fuzzer_output(output: str):
-    pass
-
-
-def process_error(error: str) -> list:
-    ERROR = r"^==\d+==\s?ERROR: (\S+): (.*)"
-    error_source = ""
-    error_reason = ""
-    test_unit = ""
-    TEST_UNIT_LINE = r"artifact_prefix='.*\/'; Test unit written to (.*)"
-    error_info = []
-    is_error = False
-
-    # pylint: disable=unused-variable
-    for line_num, line in enumerate(error.splitlines(), 1):
-        if is_error:
-            error_info.append(line)
-            match = re.search(TEST_UNIT_LINE, line)
-            if match:
-                test_unit = match.group(1)
-            continue
-
-        match = re.search(ERROR, line)
-        if match:
-            error_info.append(line)
-            error_source = match.group(1)
-            error_reason = match.group(2)
-            is_error = True
-
-    report(error_source, error_reason, error_info, test_unit)
-    return error_info
-
-
 def kill_fuzzer(fuzzer: str):
     with subprocess.Popen(["ps", "-A", "u"], stdout=subprocess.PIPE) as p:
         out, _ = p.communicate()
@@ -91,10 +51,6 @@ def run_fuzzer(fuzzer: str, timeout: int):
             seed_corpus_dir = ""
 
     active_corpus_dir = f"corpus/{fuzzer}"
-    # new_corpus_dir = f"{OUTPUT}/corpus/{fuzzer}"
-    # if not os.path.exists(new_corpus_dir):
-    #     os.makedirs(new_corpus_dir)
-
     options_file = f"{fuzzer}.options"
     custom_libfuzzer_options = ""
     fuzzer_arguments = ""
@@ -139,7 +95,6 @@ def run_fuzzer(fuzzer: str, timeout: int):
     cmd_line = (
         f"{DEBUGGER} ./{fuzzer} {FUZZER_ARGS} {active_corpus_dir} {seed_corpus_dir}"
     )
-    # cmd_line = f"{DEBUGGER} ./{fuzzer} {FUZZER_ARGS} {new_corpus_dir} {active_corpus_dir} {seed_corpus_dir}"
 
     cmd_line += f" -exact_artifact_path={exact_artifact_path}"
 
@@ -169,33 +124,23 @@ def run_fuzzer(fuzzer: str, timeout: int):
                 timeout=timeout,
             )
     except subprocess.CalledProcessError as e:
-        # print("Command failed with error:", e)
-        logging.info("Stderr output: %s", e.stderr)
         with open(status_path, "w", encoding="utf-8") as status:
             status.write(
                 f"FAIL\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
             )
     except subprocess.TimeoutExpired as e:
-        logging.info("Timeout for %s", cmd_line)
         kill_fuzzer(fuzzer)
         sleep(10)
-        process_fuzzer_output(e.stderr)
         with open(status_path, "w", encoding="utf-8") as status:
             status.write(
                 f"Timeout\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
             )
-        os.remove(out_path)
     else:
-        process_fuzzer_output(result.stderr)
         with open(status_path, "w", encoding="utf-8") as status:
             status.write(
                 f"OK\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
             )
         os.remove(out_path)
-
-    # s3.upload_build_directory_to_s3(
-    #     Path(new_corpus_dir), f"fuzzer/corpus/{fuzzer}", False
-    # )
 
 
 def main():
@@ -215,9 +160,6 @@ def main():
                 run_fuzzer(fuzzer.name, timeout)
 
     subprocess.check_call(f"ls -al {OUTPUT}", shell=True)
-
-    # ch_helper = ClickHouseHelper()
-    # ch_helper.insert_events_into(db="default", table="checks", events=prepared_results)
 
 
 if __name__ == "__main__":
