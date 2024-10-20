@@ -113,7 +113,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
     stopwatch = Stopwatch()
     try:
         with open(out_path, "wb") as out:
-            result = subprocess.run(
+            subprocess.run(
                 cmd_line,
                 stderr=out,
                 stdout=subprocess.DEVNULL,
@@ -123,12 +123,12 @@ def run_fuzzer(fuzzer: str, timeout: int):
                 errors="replace",
                 timeout=timeout,
             )
-    except subprocess.CalledProcessError as e:
+    except subprocess.CalledProcessError:
         with open(status_path, "w", encoding="utf-8") as status:
             status.write(
                 f"FAIL\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
             )
-    except subprocess.TimeoutExpired as e:
+    except subprocess.TimeoutExpired:
         kill_fuzzer(fuzzer)
         sleep(10)
         with open(status_path, "w", encoding="utf-8") as status:
