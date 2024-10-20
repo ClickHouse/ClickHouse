@@ -73,7 +73,7 @@ public:
     /// Returns true, if table function is resolved, false otherwise
     bool isResolved() const
     {
-        return storage != nullptr && table_function != nullptr;
+        return storage != nullptr;
     }
 
     /// Get table function, returns nullptr if table function node is not resolved

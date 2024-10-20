@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/IInterpreter.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageSnapshot.h>
@@ -24,6 +25,7 @@ public:
 
 private:
     void fillColumnsFromSubquery(const ASTTableExpression & table_expression);
+    void fillColumnsFromSubqueryImpl(const ASTPtr & select_query, const ContextPtr & current_context);
     void fillColumnsFromTableFunction(const ASTTableExpression & table_expression);
     void fillColumnsFromTable(const ASTTableExpression & table_expression);
 
