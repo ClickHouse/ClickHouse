@@ -274,7 +274,8 @@ size_t IRowInputFormat::countRows(size_t)
 
 void IRowInputFormat::setSerializationHints(const SerializationInfoByName & hints)
 {
-    serializations = getPort().getHeader().getSerializations(hints);
+    if (supportsCustomSerializations())
+        serializations = getPort().getHeader().getSerializations(hints);
 }
 
 
