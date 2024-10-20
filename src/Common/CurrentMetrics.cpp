@@ -41,6 +41,10 @@
     M(PostgreSQLConnection, "Number of client connections using PostgreSQL protocol") \
     M(OpenFileForRead, "Number of files open for reading") \
     M(OpenFileForWrite, "Number of files open for writing") \
+    M(Compressing, "Number of compress operations using internal compression codecs") \
+    M(Decompressing, "Number of decompress operations using internal compression codecs") \
+    M(ParallelCompressedWriteBufferThreads, "Number of threads in all instances of ParallelCompressedWriteBuffer - these threads are doing parallel compression and writing") \
+    M(ParallelCompressedWriteBufferWait, "Number of threads in all instances of ParallelCompressedWriteBuffer that are currently waiting for buffer to become available for writing") \
     M(TotalTemporaryFiles, "Number of temporary files created") \
     M(TemporaryFilesForSort, "Number of temporary files created for external sorting") \
     M(TemporaryFilesForAggregation, "Number of temporary files created for external aggregation") \

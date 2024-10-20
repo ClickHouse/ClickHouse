@@ -2,7 +2,6 @@
 #include <cstring>
 
 #include <base/types.h>
-#include <base/unaligned.h>
 #include <base/defines.h>
 
 #include <IO/WriteHelpers.h>
