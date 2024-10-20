@@ -1284,7 +1284,6 @@ def main() -> int:
                     dump_to_file=True,
                 )
             print(f"Job report url: [{check_url}]")
-            print(job_report)
             prepared_events = prepare_tests_results_for_clickhouse(
                 pr_info,
                 job_report.test_results,
