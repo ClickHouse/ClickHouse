@@ -29,6 +29,8 @@ namespace MergeTreeSetting
 namespace ErrorCodes
 {
     extern const int REPLICA_IS_ALREADY_ACTIVE;
+    extern const int REPLICA_STATUS_CHANGED;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace FailPoints
@@ -205,6 +207,36 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
             std::lock_guard lock(storage.last_queue_update_exception_lock);
             storage.last_queue_update_exception = getCurrentExceptionMessage(false);
             throw;
+        }
+
+        const Int32 replica_metadata_version = fixReplicaMetadataVersionIfNeeded(zookeeper);
+        const bool replica_metadata_version_exists = replica_metadata_version != -1;
+        if (replica_metadata_version_exists)
+        {
+            storage.setInMemoryMetadata(storage.getInMemoryMetadataPtr()->withMetadataVersion(replica_metadata_version));
+        }
+        else
+        {
+            /// Table was created before 20.4 and was never altered,
+            /// let's initialize replica metadata version from global metadata version.
+
+            const String & zookeeper_path = storage.zookeeper_path, & replica_path = storage.replica_path;
+
+            Coordination::Stat table_metadata_version_stat;
+            zookeeper->get(zookeeper_path + "/metadata", &table_metadata_version_stat);
+
+            Coordination::Requests ops;
+            ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/metadata", table_metadata_version_stat.version));
+            ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata_version", toString(table_metadata_version_stat.version), zkutil::CreateMode::Persistent));
+
+            Coordination::Responses res;
+            auto code = zookeeper->tryMulti(ops, res);
+
+            if (code == Coordination::Error::ZBADVERSION)
+                throw Exception(ErrorCodes::REPLICA_STATUS_CHANGED, "Failed to initialize metadata_version "
+                                                                    "because table was concurrently altered, will retry");
+
+            zkutil::KeeperMultiException::check(code, ops, res);
         }
 
         storage.queue.removeCurrentPartsFromMutations();
@@ -422,6 +454,66 @@ void ReplicatedMergeTreeRestartingThread::setNotReadonly()
     }
 
     storage.readonly_start_time.store(0, std::memory_order_relaxed);
+}
+
+
+Int32 ReplicatedMergeTreeRestartingThread::fixReplicaMetadataVersionIfNeeded(zkutil::ZooKeeperPtr zookeeper)
+{
+    const String & zookeeper_path = storage.zookeeper_path;
+    const String & replica_path = storage.replica_path;
+
+    const size_t num_attempts = 2;
+    for (size_t attempt = 0; attempt != num_attempts; ++attempt)
+    {
+        String replica_metadata_version_str;
+        Coordination::Stat replica_stat;
+        const bool replica_metadata_version_exists = zookeeper->tryGet(replica_path + "/metadata_version", replica_metadata_version_str, &replica_stat);
+        if (!replica_metadata_version_exists)
+            return -1;
+
+        const Int32 metadata_version = parse<Int32>(replica_metadata_version_str);
+        if (metadata_version != 0)
+            return metadata_version;
+
+        Coordination::Stat table_stat;
+        zookeeper->get(fs::path(zookeeper_path) / "metadata", &table_stat);
+        if (table_stat.version == 0)
+            return metadata_version;
+
+        ReplicatedMergeTreeQueue & queue = storage.queue;
+        queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::FIX_METADATA_VERSION);
+        if (queue.getStatus().metadata_alters_in_queue != 0)
+        {
+            LOG_INFO(log, "Skipping updating metadata_version as there are ALTER_METADATA entries in the queue");
+            return metadata_version;
+        }
+
+        const Coordination::Requests ops = {
+            zkutil::makeSetRequest(fs::path(replica_path) / "metadata_version", std::to_string(table_stat.version), replica_stat.version),
+            zkutil::makeCheckRequest(fs::path(zookeeper_path) / "metadata", table_stat.version),
+        };
+        Coordination::Responses ops_responses;
+        const Coordination::Error code = zookeeper->tryMulti(ops, ops_responses);
+        if (code == Coordination::Error::ZOK)
+        {
+            LOG_DEBUG(log, "Successfully set metadata_version to {}", table_stat.version);
+            return table_stat.version;
+        }
+
+        if (code == Coordination::Error::ZBADVERSION)
+        {
+            LOG_WARNING(log, "Cannot fix metadata_version because either metadata.version or metadata_version.version changed, attempts left = {}", num_attempts - attempt - 1);
+            continue;
+        }
+
+        throw zkutil::KeeperException(code);
+    }
+
+    /// Second attempt is only possible if either metadata_version.version or metadata.version changed during the first attempt.
+    /// If metadata_version changed to non-zero value during the first attempt, on second attempt we will return the new metadata_version.
+    /// If metadata.version changed during first attempt, on second attempt we will either get metadata_version != 0 and return the new metadata_version or we will get metadata_alters_in_queue != 0 and return 0.
+    /// So either first or second attempt should return unless metadata_version was rewritten from 0 to 0 during the first attempt which is highly unlikely.
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to fix replica metadata_version in ZooKeeper after two attempts");
 }
 
 }
