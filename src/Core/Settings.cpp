@@ -5816,8 +5816,6 @@ Allow writing simple SELECT queries without the leading SELECT keyword, which ma
     (e.g., being written to) during read operations. This can significantly improve query performance
     and reduce contention in high-concurrency scenarios, especially when there are frequent writes
     to the buffer table.)" , 0 )
-
-
 // End of COMMON_SETTINGS
 // Please add settings related to formats in FormatFactorySettingsDeclaration.h, move obsolete settings to OBSOLETE_SETTINGS and obsolete format settings to OBSOLETE_FORMAT_SETTINGS.
 
