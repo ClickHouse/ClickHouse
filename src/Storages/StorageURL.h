@@ -127,7 +127,7 @@ protected:
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
+    bool supportsTrivialCountOptimization() const override { return true; }
 
 private:
     static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromDataImpl(
@@ -141,9 +141,6 @@ private:
     virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
 };
 
-bool urlWithGlobs(const String & uri);
-
-String getSampleURI(String uri, ContextPtr context);
 
 class StorageURLSource : public SourceWithKeyCondition, WithContext
 {
@@ -188,7 +185,7 @@ public:
 
     String getName() const override { return name; }
 
-    void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_) override
+    void setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_) override
     {
         setKeyConditionImpl(filter_actions_dag, context_, block_for_format);
     }
@@ -220,7 +217,6 @@ private:
     String name;
     ColumnsDescription columns_description;
     NamesAndTypesList requested_columns;
-    bool need_headers_virtual_column;
     NamesAndTypesList requested_virtual_columns;
     Block block_for_format;
     std::shared_ptr<IteratorWrapper> uri_iterator;
@@ -232,15 +228,12 @@ private:
     bool need_only_count;
     size_t total_rows_in_file = 0;
 
-    Poco::Net::HTTPBasicCredentials credentials;
-
-    Map http_response_headers;
-    bool http_response_headers_initialized = false;
-
     std::unique_ptr<ReadBuffer> read_buf;
     std::shared_ptr<IInputFormat> input_format;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
+
+    Poco::Net::HTTPBasicCredentials credentials;
 };
 
 class StorageURLSink : public SinkToStorage
@@ -257,19 +250,19 @@ public:
         const HTTPHeaderEntries & headers = {},
         const String & method = Poco::Net::HTTPRequest::HTTP_POST);
 
-    ~StorageURLSink() override;
-
     std::string getName() const override { return "StorageURLSink"; }
-    void consume(Chunk & chunk) override;
+    void consume(Chunk chunk) override;
+    void onCancel() override;
+    void onException(std::exception_ptr exception) override;
     void onFinish() override;
 
 private:
-    void finalizeBuffers();
-    void releaseBuffers();
-    void cancelBuffers();
-
+    void finalize();
+    void release();
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
+    std::mutex cancel_mutex;
+    bool cancelled = false;
 };
 
 class StorageURL : public IStorageURLBase
@@ -301,9 +294,6 @@ public:
     }
 
     bool supportsSubcolumns() const override { return true; }
-    bool supportsOptimizationToSubcolumns() const override { return false; }
-
-    bool supportsDynamicSubcolumns() const override { return true; }
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 

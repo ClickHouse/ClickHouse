@@ -3,12 +3,10 @@
 #include <Access/AccessControl.h>
 #include <Access/User.h>
 
-#include <Core/Settings.h>
-
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/quoteString.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -16,7 +14,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 
 namespace DB
@@ -260,12 +257,6 @@ bool StorageInMemoryMetadata::hasAnyTableTTL() const
     return hasAnyMoveTTL() || hasRowsTTL() || hasAnyRecompressionTTL() || hasAnyGroupByTTL() || hasAnyRowsWhereTTL();
 }
 
-bool StorageInMemoryMetadata::hasOnlyRowsTTL() const
-{
-    bool has_any_other_ttl = hasAnyMoveTTL() || hasAnyRecompressionTTL() || hasAnyGroupByTTL() || hasAnyRowsWhereTTL() || hasAnyColumnTTL();
-    return hasRowsTTL() && !has_any_other_ttl;
-}
-
 TTLColumnsDescription StorageInMemoryMetadata::getColumnTTLs() const
 {
     return column_ttls_by_name;
@@ -341,17 +332,10 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
     NameSet required_ttl_columns;
     NameSet updated_ttl_columns;
 
-    auto add_dependent_columns = [&updated_columns](const Names & required_columns, auto & to_set, bool is_projection = false)
+    auto add_dependent_columns = [&updated_columns](const Names & required_columns, auto & to_set)
     {
         for (const auto & dependency : required_columns)
         {
-            /// useful in the case of lightweight delete with wide part and option of rebuild projection
-            if (is_projection && updated_columns.contains(RowExistsColumn::name))
-            {
-                to_set.insert(required_columns.begin(), required_columns.end());
-                return true;
-            }
-
             if (updated_columns.contains(dependency))
             {
                 to_set.insert(required_columns.begin(), required_columns.end());
@@ -371,7 +355,7 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
     for (const auto & projection : getProjections())
     {
         if (has_dependency(projection.name, ColumnDependency::PROJECTION))
-            add_dependent_columns(projection.getRequiredColumns(), projections_columns, true);
+            add_dependent_columns(projection.getRequiredColumns(), projections_columns);
     }
 
     auto add_for_rows_ttl = [&](const auto & expression, auto & to_set)
@@ -644,7 +628,7 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns) 
 
         const auto * available_type = it->getMapped();
 
-        if (!available_type->hasDynamicSubcolumnsDeprecated()
+        if (!available_type->hasDynamicSubcolumns()
             && !column.type->equals(*available_type)
             && !isCompatibleEnumTypes(available_type, column.type.get()))
             throw Exception(
@@ -692,7 +676,7 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns, 
         const auto * provided_column_type = it->getMapped();
         const auto * available_column_type = jt->getMapped();
 
-        if (!provided_column_type->hasDynamicSubcolumnsDeprecated()
+        if (!provided_column_type->hasDynamicSubcolumns()
             && !provided_column_type->equals(*available_column_type)
             && !isCompatibleEnumTypes(available_column_type, provided_column_type))
             throw Exception(
@@ -736,7 +720,7 @@ void StorageInMemoryMetadata::check(const Block & block, bool need_all) const
                 listOfColumns(available_columns));
 
         const auto * available_type = it->getMapped();
-        if (!available_type->hasDynamicSubcolumnsDeprecated()
+        if (!available_type->hasDynamicSubcolumns()
             && !column.type->equals(*available_type)
             && !isCompatibleEnumTypes(available_type, column.type.get()))
             throw Exception(

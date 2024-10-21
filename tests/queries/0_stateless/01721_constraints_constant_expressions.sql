@@ -20,7 +20,7 @@ CREATE TABLE constraint_constant_number_expression_non_uint8
     CONSTRAINT `c0` CHECK toUInt64(1)
 ) ENGINE = TinyLog();
 
-INSERT INTO constraint_constant_number_expression_non_uint8 VALUES (2); -- {serverError UNSUPPORTED_METHOD}
+INSERT INTO constraint_constant_number_expression_non_uint8 VALUES (2); -- {serverError 1}
 
 SELECT * FROM constraint_constant_number_expression_non_uint8;
 
@@ -33,7 +33,7 @@ CREATE TABLE constraint_constant_nullable_expression_that_contains_null
     CONSTRAINT `c0` CHECK nullIf(1 % 2, 1)
 ) ENGINE = TinyLog();
 
-INSERT INTO constraint_constant_nullable_expression_that_contains_null VALUES (3); -- {serverError VIOLATED_CONSTRAINT}
+INSERT INTO constraint_constant_nullable_expression_that_contains_null VALUES (3); -- {serverError 469}
 
 SELECT * FROM constraint_constant_nullable_expression_that_contains_null;
 

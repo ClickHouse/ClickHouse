@@ -315,9 +315,9 @@ struct SimHashImpl
         return getSimHash(finger_vec);
     }
 
-    static void apply(const ColumnString::Chars & data, const ColumnString::Offsets & offsets, size_t shingle_size, PaddedPODArray<UInt64> & res, size_t input_rows_count)
+    static void apply(const ColumnString::Chars & data, const ColumnString::Offsets & offsets, size_t shingle_size, PaddedPODArray<UInt64> & res)
     {
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < offsets.size(); ++i)
         {
             const UInt8 * one_data = &data[offsets[i - 1]];
             const size_t data_size = offsets[i] - offsets[i - 1] - 1;
@@ -543,13 +543,12 @@ struct MinHashImpl
         PaddedPODArray<UInt64> * res1,
         PaddedPODArray<UInt64> * res2,
         ColumnTuple * res1_strings,
-        ColumnTuple * res2_strings,
-        size_t input_rows_count)
+        ColumnTuple * res2_strings)
     {
         MinHeap min_heap;
         MaxHeap max_heap;
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < offsets.size(); ++i)
         {
             const UInt8 * one_data = &data[offsets[i - 1]];
             const size_t data_size = offsets[i] - offsets[i - 1] - 1;

@@ -1,7 +1,5 @@
 #include <Formats/ReadSchemaUtils.h>
 
-#include <Core/Settings.h>
-
 #include <IO/ReadBufferFromString.h>
 
 #include <Interpreters/Context.h>
@@ -25,10 +23,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 max_block_size;
-}
 
 namespace ErrorCodes
 {
@@ -105,7 +99,7 @@ Block TableFunctionFormat::parseData(const ColumnsDescription & columns, const S
         block.insert({name_and_type.type->createColumn(), name_and_type.type, name_and_type.name});
 
     auto read_buf = std::make_unique<ReadBufferFromString>(data);
-    auto input_format = context->getInputFormat(format_name, *read_buf, block, context->getSettingsRef()[Setting::max_block_size]);
+    auto input_format = context->getInputFormat(format_name, *read_buf, block, context->getSettingsRef().max_block_size);
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
     if (columns.hasDefaults())
@@ -223,7 +217,7 @@ Result:
 
 void registerTableFunctionFormat(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionFormat>({format_table_function_documentation, false}, TableFunctionFactory::Case::Insensitive);
+    factory.registerFunction<TableFunctionFormat>({format_table_function_documentation, false}, TableFunctionFactory::CaseInsensitive);
 }
 
 }

@@ -106,8 +106,8 @@ To work with these states, use:
 - [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) table engine.
 - [finalizeAggregation](../../sql-reference/functions/other-functions.md#function-finalizeaggregation) function.
 - [runningAccumulate](../../sql-reference/functions/other-functions.md#runningaccumulate) function.
-- [-Merge](#-merge) combinator.
-- [-MergeState](#-mergestate) combinator.
+- [-Merge](#aggregate_functions_combinators-merge) combinator.
+- [-MergeState](#aggregate_functions_combinators-mergestate) combinator.
 
 ## -Merge
 
@@ -124,7 +124,7 @@ Converts an aggregate function for tables into an aggregate function for arrays 
 ## -Distinct
 
 Every unique combination of arguments will be aggregated only once. Repeating values are ignored.
-Examples: `sum(DISTINCT x)` (or `sumDistinct(x)`), `groupArray(DISTINCT x)` (or `groupArrayDistinct(x)`), `corrStable(DISTINCT x, y)` (or `corrStableDistinct(x, y)`) and so on.
+Examples: `sum(DISTINCT x)`, `groupArray(DISTINCT x)`, `corrStableDistinct(DISTINCT x, y)` and so on.
 
 ## -OrDefault
 
