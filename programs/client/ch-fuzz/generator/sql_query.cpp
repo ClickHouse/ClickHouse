@@ -698,33 +698,37 @@ int StatementGenerator::GenerateLimit(RandomGenerator &rg, const bool has_order_
 	return 0;
 }
 
+int StatementGenerator::AddCTEs(RandomGenerator &rg, const uint32_t allowed_clauses, sql_query_grammar::CTEs *qctes) {
+	const uint32_t nclauses = std::min<uint32_t>(this->max_width - this->width, (rg.NextRandomUInt32() % 3) + 1);
+
+	this->depth++;
+	for (uint32_t i = 0 ; i < nclauses; i++) {
+		sql_query_grammar::CTEquery *cte = i == 0 ? qctes->mutable_cte() : qctes->add_other_ctes();
+		std::string name;
+
+		name += "cte";
+		name += std::to_string(i);
+		name += "d";
+		name += std::to_string(this->current_level);
+		SQLRelation rel(name);
+
+		cte->mutable_table()->set_table(name);
+		GenerateDerivedTable(rg, rel, allowed_clauses, cte->mutable_query());
+		this->ctes[this->current_level][name] = std::move(rel);
+		this->width++;
+	}
+	this->width -= nclauses;
+	this->depth--;
+	return 0;
+}
+
 int StatementGenerator::GenerateSelect(RandomGenerator &rg, const bool top, const uint32_t ncols, const uint32_t allowed_clauses, sql_query_grammar::Select *sel) {
 	int res = 0;
 
 	if ((allowed_clauses & allow_cte) && this->depth < this->max_depth &&
 		this->width < this->max_width && rg.NextMediumNumber() < 13) {
-		const uint32_t nclauses = std::min<uint32_t>(this->max_width - this->width, (rg.NextRandomUInt32() % 3) + 1);
-
-		this->depth++;
-		for (uint32_t i = 0 ; i < nclauses; i++) {
-			sql_query_grammar::CTEquery *cte = sel->add_ctes();
-			std::string name;
-
-			name += "cte";
-			name += std::to_string(i);
-			name += "d";
-			name += std::to_string(this->current_level);
-			SQLRelation rel(name);
-
-			cte->mutable_table()->set_table(name);
-			GenerateDerivedTable(rg, rel, allowed_clauses, cte->mutable_query());
-			this->ctes[this->current_level][name] = std::move(rel);
-			this->width++;
-		}
-		this->width -= nclauses;
-		this->depth--;
+		this->AddCTEs(rg, allowed_clauses, sel->mutable_ctes());
 	}
-
 	if ((allowed_clauses & allow_set) && this->depth < this->max_depth &&
 		this->max_width > this->width + 1 && rg.NextSmallNumber() < 3) {
 		sql_query_grammar::SetQuery *setq = sel->mutable_set_query();

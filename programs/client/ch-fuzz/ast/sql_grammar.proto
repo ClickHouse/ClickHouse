@@ -2387,8 +2387,13 @@ message CTEquery {
   required Select query = 2;
 }
 
+message CTEs {
+  required CTEquery cte = 1;
+  repeated CTEquery other_ctes = 2;
+}
+
 message Select {
-  repeated CTEquery ctes = 1;
+  optional CTEs ctes = 1;
   oneof select_oneof {
     SelectStatementCore select_core = 2;
     SetQuery set_query = 3;
@@ -2720,15 +2725,16 @@ message InsertFromFile {
 }
 
 message Insert {
+  optional CTEs ctes = 1;
   oneof into_oneof {
-    InsertIntoTable itable = 1;
-    TableFunction tfunction = 2;
+    InsertIntoTable itable = 2;
+    TableFunction tfunction = 3;
   }
   oneof insert_oneof {
-    ValuesStatement values = 3;
-    Select select = 4;
-    InsertFromFile ffile = 5;
-    string query = 6;
+    ValuesStatement values = 4;
+    Select select = 5;
+    InsertFromFile ffile = 6;
+    string query = 7;
   }
 }
 

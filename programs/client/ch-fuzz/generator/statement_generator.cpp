@@ -840,6 +840,9 @@ int StatementGenerator::GenerateNextInsert(RandomGenerator &rg, sql_query_gramma
 		ins->set_query(buf);
 	} else if (noption < 951) {
 		this->levels[this->current_level] = QueryLevel(this->current_level);
+		if (rg.NextMediumNumber() < 13) {
+			this->AddCTEs(rg, std::numeric_limits<uint32_t>::max(), ins->mutable_ctes());
+		}
 		GenerateSelect(rg, true, static_cast<uint32_t>(this->entries.size()), std::numeric_limits<uint32_t>::max(), ins->mutable_select());
 	} else {
 		const uint32_t nrows = (rg.NextSmallNumber() % 3) + 1;

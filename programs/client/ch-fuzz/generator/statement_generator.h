@@ -244,6 +244,7 @@ private:
 	int GenerateJoinConstraint(RandomGenerator &rg, const bool allow_using, sql_query_grammar::JoinConstraint *jc);
 	int GenerateDerivedTable(RandomGenerator &rg, SQLRelation &rel, const uint32_t allowed_clauses, sql_query_grammar::Select *sel);
 	int GenerateFromStatement(RandomGenerator &rg, const uint32_t allowed_clauses, sql_query_grammar::FromStatement *ft);
+	int AddCTEs(RandomGenerator &rg, const uint32_t allowed_clauses, sql_query_grammar::CTEs *qctes);
 	int GenerateSelect(RandomGenerator &rg, const bool top, const uint32_t ncols, const uint32_t allowed_clauses, sql_query_grammar::Select *sel);
 
 	int GenerateTopSelect(RandomGenerator &rg, sql_query_grammar::TopSelect *sq);

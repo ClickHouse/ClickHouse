@@ -1666,16 +1666,19 @@ CONV_FN(CTEquery, cteq) {
   ret += ")";
 }
 
+CONV_FN(CTEs, cteq) {
+  ret += "WITH ";
+  CTEqueryToString(ret, cteq.cte());
+  for (int i = 0 ; i < cteq.other_ctes_size(); i++) {
+    ret += ", ";
+    CTEqueryToString(ret, cteq.other_ctes(i));
+  }
+  ret += " ";
+}
+
 CONV_FN(Select, select) {
-  if (select.ctes_size()) {
-    ret += "WITH ";
-    for (int i = 0 ; i < select.ctes_size(); i++) {
-      if (i != 0) {
-        ret += ", ";
-      }
-      CTEqueryToString(ret, select.ctes(i));
-    }
-    ret += " ";
+  if (select.has_ctes()) {
+    CTEsToString(ret, select.ctes());
   }
   if (select.has_select_core()) {
     SelectStatementCoreToString(ret, select.select_core());
@@ -2017,6 +2020,9 @@ CONV_FN(InsertFromFile, ffile) {
 }
 
 CONV_FN(Insert, insert) {
+  if (insert.has_ctes() && insert.has_itable() && insert.has_select()) {
+    CTEsToString(ret, insert.ctes());
+  }
   ret += "INSERT INTO TABLE ";
   if (insert.has_itable()) {
     InsertIntoTableToString(ret, insert.itable());
