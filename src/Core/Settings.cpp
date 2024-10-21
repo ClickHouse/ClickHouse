@@ -5748,6 +5748,9 @@ File/S3 engines/table function will parse paths with '::' as '\\<archive\\> :: \
     M(Bool, parallel_replicas_local_plan, false, R"(
 Build local plan for local replica
 )", 0) \
+    M(Bool, parallel_replicas_for_cluster_engines, true, R"(
+TODO
+)", 0) \
     \
     M(Bool, allow_experimental_inverted_index, false, R"(
 If it is set to true, allow to use experimental inverted index.
