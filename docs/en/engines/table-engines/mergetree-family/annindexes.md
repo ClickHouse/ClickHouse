@@ -56,7 +56,7 @@ Parameters:
   distance](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance)- the angle between two non-zero vectors).
 - `quantization`: either `f64`, `f32`, `f16`, `bf16`, or `i8` for storing the vector with reduced precision (optional, default: `bf16`)
 - `hnsw_max_connections_per_layer`: the number of neighbors per HNSW graph node, also known as `M` in the [HNSW
-  paper](https://doi.org/10.1109/TPAMI.2018.2889473) (optional, default: 16)
+  paper](https://doi.org/10.1109/TPAMI.2018.2889473) (optional, default: 32)
 - `hnsw_candidate_list_size_for_construction`: the size of the dynamic candidate list when constructing the HNSW graph, also known as
   `ef_construction` in the original [HNSW paper](https://doi.org/10.1109/TPAMI.2018.2889473) (optional, default: 128)
 
@@ -143,7 +143,7 @@ clickhouse-client --param_vec='hello' --query="SELECT * FROM table WHERE L2Dista
 ```
 :::
 
-To search using a different value of HNSW parameter `hnsw_candidate_list_size_for_search` (default: 64), also known as `ef_search` in the
+To search using a different value of HNSW parameter `hnsw_candidate_list_size_for_search` (default: 256), also known as `ef_search` in the
 original [HNSW paper](https://doi.org/10.1109/TPAMI.2018.2889473), run the `SELECT` query with `SETTINGS hnsw_candidate_list_size_for_search
 = <value>`.
 

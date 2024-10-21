@@ -5559,8 +5559,8 @@ Only in ClickHouse Cloud. Allow to create ShareSet and SharedJoin
     M(UInt64, max_limit_for_ann_queries, 1'000'000, R"(
 SELECT queries with LIMIT bigger than this setting cannot use vector similarity indexes. Helps to prevent memory overflows in vector similarity indexes.
 )", 0) \
-    M(UInt64, hnsw_candidate_list_size_for_search, 0, R"(
-The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'. 0 means USearch's default value (64).
+    M(UInt64, hnsw_candidate_list_size_for_search, 256, R"(
+The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'.
 )", 0) \
     M(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction

@@ -42,6 +42,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INCORRECT_QUERY;
+    extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
@@ -110,7 +111,7 @@ USearchIndexWithSerialization::USearchIndexWithSerialization(
 {
     USearchIndex::metric_t metric(dimensions, metric_kind, scalar_kind);
 
-    unum::usearch::index_dense_config_t config(usearch_hnsw_params.connectivity, usearch_hnsw_params.expansion_add, unum::usearch::default_expansion_search());
+    unum::usearch::index_dense_config_t config(usearch_hnsw_params.connectivity, usearch_hnsw_params.expansion_add, default_expansion_search);
     config.enable_key_lookups = false; /// we don't do row-to-vector lookups
 
     auto result = USearchIndex::make(metric, config);
@@ -407,6 +408,9 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
     , metric_kind(metric_kind_)
     , expansion_search(context->getSettingsRef()[Setting::hnsw_candidate_list_size_for_search])
 {
+    if (expansion_search == 0)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'hnsw_candidate_list_size_for_search' must not be 0");
+
 }
 
 bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexGranulePtr) const
@@ -447,7 +451,7 @@ std::vector<UInt64> MergeTreeIndexConditionVectorSimilarity::calculateApproximat
     /// synchronize index access, see https://github.com/unum-cloud/usearch/issues/500. As a workaround, we extended USearch' search method
     /// to accept a custom expansion_add setting. The config value is only used on the fly, i.e. not persisted in the index.
 
-    auto search_result = index->search(reference_vector.data(), limit, USearchIndex::any_thread(), false, (expansion_search == 0) ? unum::usearch::default_expansion_search() : expansion_search);
+    auto search_result = index->search(reference_vector.data(), limit, USearchIndex::any_thread(), false, expansion_search);
     if (!search_result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not search in vector similarity index. Error: {}", String(search_result.error.release()));
 
@@ -558,7 +562,7 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
         /// Call Usearch's own parameter validation method for HNSW-specific parameters
         UInt64 connectivity = index.arguments[3].safeGet<UInt64>();
         UInt64 expansion_add = index.arguments[4].safeGet<UInt64>();
-        UInt64 expansion_search = unum::usearch::default_expansion_search();
+        UInt64 expansion_search = default_expansion_search;
 
         unum::usearch::index_dense_config_t config(connectivity, expansion_add, expansion_search);
         if (auto error = config.validate(); error)
