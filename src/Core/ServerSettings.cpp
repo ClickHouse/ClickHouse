@@ -1,5 +1,6 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/BaseSettings.h>
+#include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/ServerSettings.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/UncompressedCache.h>
@@ -193,13 +194,12 @@ namespace DB
 /// If you add a setting which can be updated at runtime, please update 'changeable_settings' map in dumpToSystemServerSettingsColumns below
 
 DECLARE_SETTINGS_TRAITS(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS)
 
 struct ServerSettingsImpl : public BaseSettings<ServerSettingsTraits>
 {
     void loadSettingsFromConfig(const Poco::Util::AbstractConfiguration & config);
 };
-
-IMPLEMENT_SETTINGS_TRAITS(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS)
 
 void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
@@ -231,7 +231,7 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
 }
 
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) ServerSettings##TYPE NAME = &ServerSettings##Impl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) ServerSettings##TYPE NAME = &ServerSettingsImpl ::NAME;
 
 namespace ServerSetting
 {
@@ -250,18 +250,7 @@ ServerSettings::ServerSettings(const ServerSettings & settings) : impl(std::make
 
 ServerSettings::~ServerSettings() = default;
 
-#define IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR(CLASS_NAME, TYPE) \
-    const SettingField##TYPE & ServerSettings::operator[](CLASS_NAME##TYPE t) const \
-    { \
-        return impl.get()->*t; \
-    } \
-    SettingField##TYPE & ServerSettings::operator[](CLASS_NAME##TYPE t) \
-    { \
-        return impl.get()->*t; \
-    }
-
 SERVER_SETTINGS_SUPPORTED_TYPES(ServerSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
-#undef IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR
 
 void ServerSettings::set(std::string_view name, const Field & value)
 {

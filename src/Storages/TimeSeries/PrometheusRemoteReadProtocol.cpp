@@ -31,6 +31,12 @@
 namespace DB
 {
 
+namespace TimeSeriesSetting
+{
+    extern const TimeSeriesSettingsBool filter_by_min_time_and_max_time;
+    extern const TimeSeriesSettingsMap tags_to_columns;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_REQUEST_PARAMETER;
@@ -160,7 +166,7 @@ namespace
     std::unordered_map<String, String> makeColumnNameByTagNameMap(const TimeSeriesSettings & storage_settings)
     {
         std::unordered_map<String, String> res;
-        const Map & tags_to_columns = storage_settings.tags_to_columns;
+        const Map & tags_to_columns = storage_settings[TimeSeriesSetting::tags_to_columns];
         for (const auto & tag_name_and_column_name : tags_to_columns)
         {
             const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
@@ -196,7 +202,7 @@ namespace
             exp_list->children.push_back(
                 makeASTColumn(tags_table_id, TimeSeriesColumnNames::MetricName));
 
-            const Map & tags_to_columns = time_series_settings.tags_to_columns;
+            const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
             for (const auto & tag_name_and_column_name : tags_to_columns)
             {
                 const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
@@ -255,7 +261,7 @@ namespace
 
         /// WHERE <filter>
         if (auto where = makeASTFilterForReadingTimeSeries(label_matcher, min_timestamp_ms, max_timestamp_ms, data_table_id, tags_table_id,
-                                                           column_name_by_tag_name, time_series_settings.filter_by_min_time_and_max_time))
+                                                           column_name_by_tag_name, time_series_settings[TimeSeriesSetting::filter_by_min_time_and_max_time]))
         {
             select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where));
         }
@@ -267,7 +273,7 @@ namespace
             exp_list->children.push_back(
                 makeASTColumn(tags_table_id, TimeSeriesColumnNames::MetricName));
 
-            const Map & tags_to_columns = time_series_settings.tags_to_columns;
+            const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
             for (const auto & tag_name_and_column_name : tags_to_columns)
             {
                 const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
@@ -329,7 +335,7 @@ namespace
 
         /// Columns corresponding to specific tags specified in the "tags_to_columns" setting.
         std::unordered_map<String, const IColumn *> column_by_tag_name;
-        const Map & tags_to_columns = time_series_settings.tags_to_columns;
+        const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
         for (const auto & tag_name_and_column_name : tags_to_columns)
         {
             const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
@@ -447,12 +453,12 @@ void PrometheusRemoteReadProtocol::readTimeSeries(google::protobuf::RepeatedPtrF
     out_time_series.Clear();
 
     auto time_series_storage_id = time_series_storage->getStorageID();
-    auto time_series_settings = time_series_storage->getStorageSettingsPtr();
+    const auto & time_series_settings = time_series_storage->getStorageSettings();
     auto data_table_id = time_series_storage->getTargetTableId(ViewTarget::Data);
     auto tags_table_id = time_series_storage->getTargetTableId(ViewTarget::Tags);
 
     ASTPtr select_query = buildSelectQueryForReadingTimeSeries(
-        start_timestamp_ms, end_timestamp_ms, label_matcher, *time_series_settings, data_table_id, tags_table_id);
+        start_timestamp_ms, end_timestamp_ms, label_matcher, time_series_settings, data_table_id, tags_table_id);
 
     LOG_TRACE(log, "{}: Executing query {}",
               time_series_storage_id.getNameForLogs(), select_query);
@@ -468,7 +474,7 @@ void PrometheusRemoteReadProtocol::readTimeSeries(google::protobuf::RepeatedPtrF
                   time_series_storage_id.getNameForLogs(), block.columns(), block.rows());
 
         if (block)
-            convertBlockToProtobuf(std::move(block), out_time_series, time_series_storage_id, *time_series_settings);
+            convertBlockToProtobuf(std::move(block), out_time_series, time_series_storage_id, time_series_settings);
     }
 
     LOG_TRACE(log, "{}: {} time series read",

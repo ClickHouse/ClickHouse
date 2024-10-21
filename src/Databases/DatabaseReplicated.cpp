@@ -64,6 +64,12 @@ namespace ServerSetting
     extern const ServerSettingsUInt32 max_database_replicated_create_table_thread_pool_size;
 }
 
+namespace DatabaseReplicatedSetting
+{
+    extern const DatabaseReplicatedSettingsString collection_name;
+    extern const DatabaseReplicatedSettingsFloat max_broken_tables_ratio;
+}
+
 namespace ErrorCodes
 {
     extern const int NO_ZOOKEEPER;
@@ -141,8 +147,8 @@ DatabaseReplicated::DatabaseReplicated(
     if (zookeeper_path.front() != '/')
         zookeeper_path = "/" + zookeeper_path;
 
-    if (!db_settings.collection_name.value.empty())
-        fillClusterAuthInfo(db_settings.collection_name.value, context_->getConfigRef());
+    if (!db_settings[DatabaseReplicatedSetting::collection_name].value.empty())
+        fillClusterAuthInfo(db_settings[DatabaseReplicatedSetting::collection_name].value, context_->getConfigRef());
 
     replica_group_name = context_->getConfigRef().getString("replica_group_name", "");
 
@@ -1220,7 +1226,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     String db_name = getDatabaseName();
     String to_db_name = getDatabaseName() + BROKEN_TABLES_SUFFIX;
     String to_db_name_replicated = getDatabaseName() + BROKEN_REPLICATED_TABLES_SUFFIX;
-    if (total_tables * db_settings.max_broken_tables_ratio < tables_to_detach.size())
+    if (total_tables * db_settings[DatabaseReplicatedSetting::max_broken_tables_ratio] < tables_to_detach.size())
         throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "Too many tables to recreate: {} of {}", tables_to_detach.size(), total_tables);
     if (!tables_to_detach.empty())
     {
