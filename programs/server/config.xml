@@ -1315,6 +1315,16 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </s3queue_log>
 
+    <!-- Log of client certificates seen by the server
+        (only if built with openssl support)
+    -->
+    <tls_log>
+        <database>system</database>
+        <table>tls_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </tls_log>
+
     <!-- Blob storage object operations log.
     -->
     <blob_storage_log>
