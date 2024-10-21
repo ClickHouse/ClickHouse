@@ -122,7 +122,7 @@ void ParallelCompressedWriteBuffer::compress(Iterator buffer)
     if (can_write_directly)
     {
         char * out_compressed_ptr = out.position() + sizeof(CityHash_v1_0_2::uint128);
-        UInt32 compressed_size = codec->compress(working_buffer.begin(), uncompressed_size, out_compressed_ptr);
+        UInt32 compressed_size = codec->compress(buffer->uncompressed.data(), uncompressed_size, out_compressed_ptr);
 
         CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(out_compressed_ptr, compressed_size);
 
