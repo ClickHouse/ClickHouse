@@ -216,8 +216,6 @@ public:
     static consteval bool shouldTurnOffLogger() { return false; }
 
 protected:
-    void stopFlushThread() final;
-
     std::shared_ptr<SystemLogQueue<LogElement>> queue;
 };
 }

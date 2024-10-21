@@ -291,7 +291,6 @@ void IPolygonDictionary::loadData()
     QueryPipeline pipeline(source_ptr->loadAll());
 
     DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-    pipeline.setConcurrencyControl(false);
     Block block;
     while (executor.pull(block))
         blockToAttributes(block);

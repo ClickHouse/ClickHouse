@@ -157,7 +157,8 @@ void SystemLogQueue<LogElement>::waitFlush(SystemLogQueue<LogElement>::Index exp
     {
         if (should_prepare_tables_anyway)
             return (flushed_index >= expected_flushed_index && prepared_tables >= requested_prepare_tables) || is_shutdown;
-        return (flushed_index >= expected_flushed_index) || is_shutdown;
+        else
+            return (flushed_index >= expected_flushed_index) || is_shutdown;
     });
 
     if (!result)
@@ -270,25 +271,6 @@ void SystemLogBase<LogElement>::startup()
 {
     std::lock_guard lock(thread_mutex);
     saving_thread = std::make_unique<ThreadFromGlobalPool>([this] { savingThreadFunction(); });
-}
-
-template <typename LogElement>
-void SystemLogBase<LogElement>::stopFlushThread()
-{
-    {
-        std::lock_guard lock(thread_mutex);
-
-        if (!saving_thread || !saving_thread->joinable())
-            return;
-
-        if (is_shutdown)
-            return;
-
-        is_shutdown = true;
-        queue->shutdown();
-    }
-
-    saving_thread->join();
 }
 
 template <typename LogElement>

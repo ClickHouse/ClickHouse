@@ -19,17 +19,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsSeconds http_receive_timeout;
-    extern const SettingsBool odbc_bridge_use_connection_pooling;
-}
-
-namespace ServerSetting
-{
-    extern const ServerSettingsSeconds keep_alive_timeout;
-}
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -156,7 +145,7 @@ SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMet
         local_context,
         ConnectionTimeouts::getHTTPTimeouts(
             local_context->getSettingsRef(),
-            local_context->getServerSettings()),
+            local_context->getServerSettings().keep_alive_timeout),
         compression_method);
 }
 
@@ -191,11 +180,10 @@ namespace
             for (size_t i = 0; i < 3; ++i)
                 engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.getLocalContext());
 
-            BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(
-                args.getContext(),
-                args.getContext()->getSettingsRef()[Setting::http_receive_timeout].value,
+            BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(args.getContext(),
+                args.getContext()->getSettingsRef().http_receive_timeout.value,
                 checkAndGetLiteralArgument<String>(engine_args[0], "connection_string"),
-                args.getContext()->getSettingsRef()[Setting::odbc_bridge_use_connection_pooling].value);
+                args.getContext()->getSettingsRef().odbc_bridge_use_connection_pooling.value);
             return std::make_shared<StorageXDBC>(
                 args.table_id,
                 checkAndGetLiteralArgument<String>(engine_args[1], "database_name"),

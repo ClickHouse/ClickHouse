@@ -1,7 +1,6 @@
+import pytest
 import logging
 import time
-
-import pytest
 
 from helpers.cluster import ClickHouseCluster, run_and_check
 
