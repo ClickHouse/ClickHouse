@@ -288,8 +288,8 @@ struct ReplaceRegexpImpl
                 res_data.insert(res_data.end(), hs_data, hs_data + hs_length);
                 res_data.push_back(0);
 
-                res_offsets[i] = res_offsets[i - 1] + hs_length + 1;
-                res_offset = res_offsets[i];
+                res_offset += hs_length + 1;
+                res_offsets[i] = res_offset;
                 continue;
             }
 
