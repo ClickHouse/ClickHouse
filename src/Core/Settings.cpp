@@ -5557,7 +5557,10 @@ If it is set to true, allow to specify experimental compression codecs (but we d
 Only in ClickHouse Cloud. Allow to create ShareSet and SharedJoin
 )", 0) \
     M(UInt64, max_limit_for_ann_queries, 1'000'000, R"(
-SELECT queries with LIMIT bigger than this setting cannot use ANN indexes. Helps to prevent memory overflows in ANN search indexes.
+SELECT queries with LIMIT bigger than this setting cannot use vector similarity indexes. Helps to prevent memory overflows in vector similarity indexes.
+)", 0) \
+    M(UInt64, hnsw_candidate_list_size_for_search, 0, R"(
+The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'. 0 means USearch's default value (64).
 )", 0) \
     M(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction
@@ -5807,8 +5810,10 @@ Allow to create database with Engine=MaterializedPostgreSQL(...).
     M(Bool, allow_experimental_query_deduplication, false, R"(
 Experimental data deduplication for SELECT queries based on part UUIDs
 )", 0) \
+    M(Bool, implicit_select, false, R"(
+Allow writing simple SELECT queries without the leading SELECT keyword, which makes it simple for calculator-style usage, e.g. `1 + 2` becomes a valid query.
+)", 0)
 
-    /** End of experimental features */
 
 // End of COMMON_SETTINGS
 // Please add settings related to formats in FormatFactorySettingsDeclaration.h, move obsolete settings to OBSOLETE_SETTINGS and obsolete format settings to OBSOLETE_FORMAT_SETTINGS.
