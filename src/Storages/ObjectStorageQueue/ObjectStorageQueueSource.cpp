@@ -23,6 +23,15 @@ namespace Setting
     extern const SettingsMaxThreads max_parsing_threads;
 }
 
+namespace ObjectStorageQueueSetting
+{
+    extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
+    extern const ObjectStorageQueueSettingsUInt32 max_processed_bytes_before_commit;
+    extern const ObjectStorageQueueSettingsUInt32 max_processed_files_before_commit;
+    extern const ObjectStorageQueueSettingsUInt32 max_processed_rows_before_commit;
+    extern const ObjectStorageQueueSettingsUInt32 max_processing_time_sec_before_commit;
+}
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -565,8 +574,8 @@ Chunk ObjectStorageQueueSource::generateImpl()
         processed_rows_from_file = 0;
         processed_files.push_back(file_metadata);
 
-        if (queue_settings.max_processed_files_before_commit
-            && processed_files.size() == queue_settings.max_processed_files_before_commit)
+        if (queue_settings[ObjectStorageQueueSetting::max_processed_files_before_commit]
+            && processed_files.size() == queue_settings[ObjectStorageQueueSetting::max_processed_files_before_commit])
         {
             LOG_TRACE(log, "Number of max processed files before commit reached "
                       "(rows: {}, bytes: {}, files: {})",
@@ -574,15 +583,15 @@ Chunk ObjectStorageQueueSource::generateImpl()
             break;
         }
 
-        if (queue_settings.max_processed_rows_before_commit
-            && total_processed_rows == queue_settings.max_processed_rows_before_commit)
+        if (queue_settings[ObjectStorageQueueSetting::max_processed_rows_before_commit]
+            && total_processed_rows == queue_settings[ObjectStorageQueueSetting::max_processed_rows_before_commit])
         {
             LOG_TRACE(log, "Number of max processed rows before commit reached "
                       "(rows: {}, bytes: {}, files: {})",
                       total_processed_rows, total_processed_bytes, processed_files.size());
             break;
         }
-        if (queue_settings.max_processed_bytes_before_commit && total_processed_bytes == queue_settings.max_processed_bytes_before_commit)
+        if (queue_settings[ObjectStorageQueueSetting::max_processed_bytes_before_commit] && total_processed_bytes == queue_settings[ObjectStorageQueueSetting::max_processed_bytes_before_commit])
         {
             LOG_TRACE(
                 log,
@@ -593,8 +602,8 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 processed_files.size());
             break;
         }
-        if (queue_settings.max_processing_time_sec_before_commit
-            && total_stopwatch.elapsedSeconds() >= queue_settings.max_processing_time_sec_before_commit)
+        if (queue_settings[ObjectStorageQueueSetting::max_processing_time_sec_before_commit]
+            && total_stopwatch.elapsedSeconds() >= queue_settings[ObjectStorageQueueSetting::max_processing_time_sec_before_commit])
         {
             LOG_TRACE(
                 log,
@@ -648,7 +657,7 @@ void ObjectStorageQueueSource::commit(bool success, const std::string & exceptio
 
 void ObjectStorageQueueSource::applyActionAfterProcessing(const String & path)
 {
-    switch (queue_settings.after_processing.value)
+    switch (queue_settings[ObjectStorageQueueSetting::after_processing].value)
     {
         case ObjectStorageQueueAction::DELETE:
         {
