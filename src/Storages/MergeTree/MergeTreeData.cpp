@@ -2666,6 +2666,10 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
         for (const auto & part : parts)
         {
             part_log_elem.partition_id = part->info.partition_id;
+            {
+                WriteBufferFromString out(part_log_elem.partition);
+                part->partition.serializeText(part->storage, out, {});
+            }
             part_log_elem.part_name = part->name;
             part_log_elem.bytes_compressed_on_disk = part->getBytesOnDisk();
             part_log_elem.bytes_uncompressed = part->getBytesUncompressedOnDisk();
@@ -7920,6 +7924,20 @@ try
     part_log_elem.table_name = table_id.table_name;
     part_log_elem.table_uuid = table_id.uuid;
     part_log_elem.partition_id = MergeTreePartInfo::fromPartName(new_part_name, format_version).partition_id;
+
+    {
+        const DataPart * result_or_source_data_part = nullptr;
+        if (result_part)
+            result_or_source_data_part = result_part.get();
+        else if (!source_parts.empty())
+            result_or_source_data_part = source_parts.at(0).get();
+        if (result_or_source_data_part)
+        {
+            WriteBufferFromString out(part_log_elem.partition);
+            result_or_source_data_part->partition.serializeText(*this, out, {});
+        }
+    }
+
     part_log_elem.part_name = new_part_name;
 
     if (result_part)
