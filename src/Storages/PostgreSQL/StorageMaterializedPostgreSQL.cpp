@@ -1,4 +1,5 @@
-#include "StorageMaterializedPostgreSQL.h"
+#include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
+#include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
 
 #if USE_LIBPQXX
 #include <Common/logger_useful.h>

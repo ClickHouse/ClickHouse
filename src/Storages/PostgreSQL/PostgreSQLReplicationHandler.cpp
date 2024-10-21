@@ -1,4 +1,3 @@
-#include "PostgreSQLReplicationHandler.h"
 
 #include <base/sort.h>
 
@@ -9,6 +8,8 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/Pipe.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
+#include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
+#include <Storages/PostgreSQL/PostgreSQLReplicationHandler.h>
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Interpreters/getTableOverride.h>
 #include <Interpreters/InterpreterDropQuery.h>

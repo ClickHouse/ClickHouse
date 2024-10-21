@@ -1,4 +1,5 @@
 #include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
+#include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
 
 #if USE_LIBPQXX
 
