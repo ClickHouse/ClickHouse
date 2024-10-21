@@ -2062,8 +2062,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                                   !expressions.hasLimitBy() &&
                                   !settings[Setting::extremes] &&
                                   !has_withfill;
-            bool apply_offset = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregation
-                && options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+            bool apply_offset = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
             if (apply_prelimit)
             {
                 executePreLimit(query_plan, /* do_not_skip_offset= */!apply_offset);
@@ -2085,7 +2084,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
             /// If we have 'WITH TIES', we need execute limit before projection,
             /// because in that case columns from 'ORDER BY' are used.
-            if (query.limit_with_ties && apply_offset)
+            if (query.limit_with_ties && apply_limit && apply_offset)
             {
                 executeLimit(query_plan);
             }

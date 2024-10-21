@@ -1795,15 +1795,14 @@ void Planner::buildPlanForQueryNode()
         if (query_node.hasOrderBy())
             addWithFillStepIfNeeded(query_plan, query_analysis_result, planner_context, query_node);
 
-        bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation
-            && query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
-        if (query_node.hasLimit() && query_node.isLimitWithTies() && apply_offset)
+        const bool apply_limit = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation;
+        const bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+        if (query_node.hasLimit() && query_node.isLimitWithTies() && apply_limit && apply_offset)
             addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
 
         addExtremesStepIfNeeded(query_plan, planner_context);
 
         bool limit_applied = applied_prelimit || (query_node.isLimitWithTies() && apply_offset);
-        bool apply_limit = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation;
 
         /** Limit is no longer needed if there is prelimit.
           *
