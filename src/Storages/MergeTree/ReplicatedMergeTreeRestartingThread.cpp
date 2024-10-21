@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/randomSeed.h>
 #include <Core/ServerUUID.h>
 #include <boost/algorithm/string/replace.hpp>
 
@@ -20,11 +21,6 @@ namespace CurrentMetrics
 
 namespace DB
 {
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsSeconds zookeeper_session_expiration_check_period;
-}
 
 namespace ErrorCodes
 {
@@ -49,23 +45,9 @@ ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(Storage
     , active_node_identifier(generateActiveNodeIdentifier())
 {
     const auto storage_settings = storage.getSettings();
-    check_period_ms = (*storage_settings)[MergeTreeSetting::zookeeper_session_expiration_check_period].totalSeconds() * 1000;
+    check_period_ms = storage_settings->zookeeper_session_expiration_check_period.totalSeconds() * 1000;
 
     task = storage.getContext()->getSchedulePool().createTask(log_name, [this]{ run(); });
-}
-
-void ReplicatedMergeTreeRestartingThread::start(bool schedule)
-{
-    LOG_TRACE(log, "Starting the restating thread, schedule: {}", schedule);
-    if (schedule)
-        task->activateAndSchedule();
-    else
-        task->activate();
-}
-
-void ReplicatedMergeTreeRestartingThread::wakeup()
-{
-    task->schedule();
 }
 
 void ReplicatedMergeTreeRestartingThread::run()

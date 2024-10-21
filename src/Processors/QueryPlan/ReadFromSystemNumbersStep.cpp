@@ -18,13 +18,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 max_rows_to_read;
-    extern const SettingsUInt64 max_rows_to_read_leaf;
-    extern const SettingsOverflowMode read_overflow_mode;
-    extern const SettingsOverflowMode read_overflow_mode_leaf;
-}
 
 namespace ErrorCodes
 {
@@ -377,16 +370,18 @@ void shrinkRanges(RangesWithStep & ranges, size_t size)
             size -= static_cast<UInt64>(range_size);
             continue;
         }
-        if (range_size == size)
+        else if (range_size == size)
         {
             last_range_idx = i;
             break;
         }
-
-        auto & range = ranges[i];
-        range.size = static_cast<UInt128>(size);
-        last_range_idx = i;
-        break;
+        else
+        {
+            auto & range = ranges[i];
+            range.size = static_cast<UInt128>(size);
+            last_range_idx = i;
+            break;
+        }
     }
 
     /// delete the additional ranges
@@ -404,7 +399,7 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
     size_t max_block_size_,
     size_t num_streams_)
     : SourceStepWithFilter(
-        storage_snapshot_->getSampleBlockForColumns(column_names_),
+        DataStream{.header = storage_snapshot_->getSampleBlockForColumns(column_names_)},
         column_names_,
         query_info_,
         storage_snapshot_,
@@ -431,8 +426,8 @@ void ReadFromSystemNumbersStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     if (pipe.empty())
     {
-        assert(output_header != std::nullopt);
-        pipe = Pipe(std::make_shared<NullSource>(*output_header));
+        assert(output_stream != std::nullopt);
+        pipe = Pipe(std::make_shared<NullSource>(output_stream->header));
     }
 
     /// Add storage limits.
@@ -619,15 +614,15 @@ void ReadFromSystemNumbersStep::checkLimits(size_t rows)
 {
     const auto & settings = context->getSettingsRef();
 
-    if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
+    if (settings.read_overflow_mode == OverflowMode::THROW && settings.max_rows_to_read)
     {
-        const auto limits = SizeLimits(settings[Setting::max_rows_to_read], 0, settings[Setting::read_overflow_mode]);
+        const auto limits = SizeLimits(settings.max_rows_to_read, 0, settings.read_overflow_mode);
         limits.check(rows, 0, "rows (controlled by 'max_rows_to_read' setting)", ErrorCodes::TOO_MANY_ROWS);
     }
 
-    if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf])
+    if (settings.read_overflow_mode_leaf == OverflowMode::THROW && settings.max_rows_to_read_leaf)
     {
-        const auto leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], 0, settings[Setting::read_overflow_mode_leaf]);
+        const auto leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, 0, settings.read_overflow_mode_leaf);
         leaf_limits.check(rows, 0, "rows (controlled by 'max_rows_to_read_leaf' setting)", ErrorCodes::TOO_MANY_ROWS);
     }
 }

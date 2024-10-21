@@ -1,3 +1,4 @@
+version: '2.3'
 services:
   prometheus_writer:
     image: prom/prometheus:v2.50.1

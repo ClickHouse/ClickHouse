@@ -55,11 +55,13 @@ public:
                 ? is_monotonic
                 : is_not_monotonic;
         }
-
-        return Transform::FactorTransform::execute(UInt32(left.safeGet<UInt64>()), date_lut)
-                == Transform::FactorTransform::execute(UInt32(right.safeGet<UInt64>()), date_lut)
-            ? is_monotonic
-            : is_not_monotonic;
+        else
+        {
+            return Transform::FactorTransform::execute(UInt32(left.safeGet<UInt64>()), date_lut)
+                    == Transform::FactorTransform::execute(UInt32(right.safeGet<UInt64>()), date_lut)
+                ? is_monotonic
+                : is_not_monotonic;
+        }
     }
 
 protected:

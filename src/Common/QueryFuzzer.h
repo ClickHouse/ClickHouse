@@ -9,9 +9,10 @@
 
 #include <Core/Field.h>
 #include <Parsers/ASTExplainQuery.h>
-#include <Parsers/IAST_fwd.h>
+#include <Parsers/IAST.h>
 #include <Parsers/NullsAction.h>
 #include <Common/randomSeed.h>
+#include "Parsers/IAST_fwd.h"
 
 
 namespace DB

@@ -212,8 +212,6 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
         std::make_shared<FourLetterWordCommand>(),
         std::make_shared<GetDirectChildrenNumberCommand>(),
         std::make_shared<GetAllChildrenNumberCommand>(),
-        std::make_shared<CPCommand>(),
-        std::make_shared<MVCommand>(),
     });
 
     String home_path;
@@ -316,7 +314,6 @@ void KeeperClient::runInteractiveReplxx()
         suggest,
         history_file,
         /* multiline= */ false,
-        /* ignore_shell_suspend= */ false,
         query_extenders,
         query_delimiters,
         word_break_characters,
