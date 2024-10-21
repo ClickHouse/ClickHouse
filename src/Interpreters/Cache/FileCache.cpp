@@ -1078,7 +1078,7 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
         if (eviction_candidates.size() > 0)
         {
             LOG_TRACE(log, "Current usage {}/{} in size, {}/{} in elements count "
-                    "(trying to keep size ration at {} and elements ratio at {}). "
+                    "(trying to keep size ratio at {} and elements ratio at {}). "
                     "Collected {} eviction candidates, "
                     "skipped {} candidates while iterating",
                     main_priority->getSize(lock), size_limit,
