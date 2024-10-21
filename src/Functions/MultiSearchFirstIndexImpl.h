@@ -33,8 +33,7 @@ struct MultiSearchFirstIndexImpl
         bool /*allow_hyperscan*/,
         size_t /*max_hyperscan_regexp_length*/,
         size_t /*max_hyperscan_regexp_total_length*/,
-        bool /*reject_expensive_hyperscan_regexps*/,
-        size_t input_rows_count)
+        bool /*reject_expensive_hyperscan_regexps*/)
     {
         // For performance of Volnitsky search, it is crucial to save only one byte for pattern number.
         if (needles_arr.size() > std::numeric_limits<UInt8>::max())
@@ -45,17 +44,18 @@ struct MultiSearchFirstIndexImpl
         std::vector<std::string_view> needles;
         needles.reserve(needles_arr.size());
         for (const auto & needle : needles_arr)
-            needles.emplace_back(needle.safeGet<String>());
+            needles.emplace_back(needle.get<String>());
 
         auto searcher = Impl::createMultiSearcherInBigHaystack(needles);
 
-        res.resize(input_rows_count);
+        const size_t haystack_size = haystack_offsets.size();
+        res.resize(haystack_size);
 
         size_t iteration = 0;
         while (searcher.hasMoreToSearch())
         {
             size_t prev_haystack_offset = 0;
-            for (size_t j = 0; j < input_rows_count; ++j)
+            for (size_t j = 0; j < haystack_size; ++j)
             {
                 const auto * haystack = &haystack_data[prev_haystack_offset];
                 const auto * haystack_end = haystack + haystack_offsets[j] - prev_haystack_offset - 1;
@@ -80,10 +80,10 @@ struct MultiSearchFirstIndexImpl
         bool /*allow_hyperscan*/,
         size_t /*max_hyperscan_regexp_length*/,
         size_t /*max_hyperscan_regexp_total_length*/,
-        bool /*reject_expensive_hyperscan_regexps*/,
-        size_t input_rows_count)
+        bool /*reject_expensive_hyperscan_regexps*/)
     {
-        res.resize(input_rows_count);
+        const size_t haystack_size = haystack_offsets.size();
+        res.resize(haystack_size);
 
         size_t prev_haystack_offset = 0;
         size_t prev_needles_offset = 0;
@@ -92,7 +92,7 @@ struct MultiSearchFirstIndexImpl
 
         std::vector<std::string_view> needles;
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < haystack_size; ++i)
         {
             needles.reserve(needles_offsets[i] - prev_needles_offset);
 

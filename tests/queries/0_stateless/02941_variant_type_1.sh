@@ -2,6 +2,8 @@
 # Tags: long
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# reset --log_comment
+CLICKHOUSE_LOG_COMMENT=
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
@@ -10,7 +12,7 @@ CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_variant_type=1 --allow_suspic
 function test1_insert()
 {
     echo "test1 insert"
-    $CH_CLIENT -mq "insert into test select number, NULL from numbers(3);
+    $CH_CLIENT -nmq "insert into test select number, NULL from numbers(3);
 insert into test select number + 3, number from numbers(3);
 insert into test select number + 6, ('str_' || toString(number))::Variant(String) from numbers(3);
 insert into test select number + 9, ('lc_str_' || toString(number))::LowCardinality(String) from numbers(3);
@@ -21,7 +23,7 @@ insert into test select number + 15, range(number + 1)::Array(UInt64) from numbe
 function test1_select()
 {
     echo "test1 select"
-    $CH_CLIENT -mq "select v from test order by id;
+    $CH_CLIENT -nmq "select v from test order by id;
 select v.String from test order by id;
 select v.UInt64 from test order by id;
 select v.\`LowCardinality(String)\` from test order by id;
@@ -36,7 +38,7 @@ select v.\`Array(UInt64)\`.size0 from test order by id;"
 function test2_insert()
 {
     echo "test2 insert"
-    $CH_CLIENT -mq "insert into test select number, NULL from numbers(3);
+    $CH_CLIENT -nmq "insert into test select number, NULL from numbers(3);
 insert into test select number + 3, number % 2 ? NULL : number from numbers(3);
 insert into test select number + 6, number % 2 ? NULL : ('str_' || toString(number))::Variant(String) from numbers(3);
 insert into test select number + 9, number % 2 ? CAST(NULL, 'Variant(String, UInt64, LowCardinality(String), Tuple(a UInt32, b UInt32), Array(UInt64))') : CAST(('lc_str_' || toString(number))::LowCardinality(String), 'Variant(String, UInt64, LowCardinality(String), Tuple(a UInt32, b UInt32), Array(UInt64))') from numbers(3);
@@ -47,7 +49,7 @@ insert into test select number + 15, number % 2 ? CAST(NULL, 'Variant(String, UI
 function test2_select()
 {
     echo "test2 select"
-    $CH_CLIENT -mq "select v from test order by id;
+    $CH_CLIENT -nmq "select v from test order by id;
 select v.String from test order by id;
 select v.UInt64 from test order by id;
 select v.\`LowCardinality(String)\` from test order by id;
@@ -68,7 +70,7 @@ function test3_insert()
 function test3_select()
 {
     echo "test3 select"
-    $CH_CLIENT -mq "select v from test order by id;
+    $CH_CLIENT -nmq "select v from test order by id;
 select v.String from test order by id;
 select v.UInt64 from test order by id;
 select v.\`LowCardinality(String)\` from test order by id;

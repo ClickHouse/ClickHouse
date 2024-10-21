@@ -245,8 +245,6 @@ public:
     void setAsofInequality(ASOFJoinInequality asof_inequality_);
 
     void logElapsed(double seconds);
-    MergedStats getMergedStats() const override;
-
 private:
     std::optional<Status> handleAnyJoinState();
     Status anyJoin();
@@ -282,7 +280,6 @@ private:
     {
         size_t num_blocks[2] = {0, 0};
         size_t num_rows[2] = {0, 0};
-        size_t num_bytes[2] = {0, 0};
 
         size_t max_blocks_loaded = 0;
     };

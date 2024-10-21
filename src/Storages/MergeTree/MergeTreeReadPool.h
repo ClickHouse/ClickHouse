@@ -26,7 +26,6 @@ public:
 
     MergeTreeReadPool(
         RangesInDataParts && parts_,
-        MutationsSnapshotPtr mutations_snapshot_,
         VirtualFields shared_virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
@@ -74,6 +73,7 @@ private:
     void fillPerThreadInfo(size_t threads, size_t sum_marks);
 
     mutable std::mutex mutex;
+    size_t min_marks_for_concurrent_read = 0;
 
     /// State to track numbers of slow reads.
     struct BackoffState

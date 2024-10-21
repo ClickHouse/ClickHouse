@@ -3,7 +3,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
@@ -12,10 +11,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool cast_keep_nullable;
-}
 
 namespace ErrorCodes
 {
@@ -40,7 +35,7 @@ FunctionBasePtr createFunctionBaseCast(
 class CastOverloadResolverImpl : public IFunctionOverloadResolver
 {
 public:
-    static const char * getNameImpl(CastType cast_type, bool internal)
+    const char * getNameImpl() const
     {
         if (cast_type == CastType::accurate)
             return "accurateCast";
@@ -48,12 +43,13 @@ public:
             return "accurateCastOrNull";
         if (internal)
             return "_CAST";
-        return "CAST";
+        else
+            return "CAST";
     }
 
     String getName() const override
     {
-        return getNameImpl(cast_type, internal);
+        return getNameImpl();
     }
 
     size_t getNumberOfArguments() const override { return 2; }
@@ -73,29 +69,20 @@ public:
     static FunctionOverloadResolverPtr create(ContextPtr context, CastType cast_type, bool internal, std::optional<CastDiagnostic> diagnostic)
     {
         if (internal)
+        {
             return std::make_unique<CastOverloadResolverImpl>(context, cast_type, internal, diagnostic, false /*keep_nullable*/, DataTypeValidationSettings{});
-
-        const auto & settings_ref = context->getSettingsRef();
-        return std::make_unique<CastOverloadResolverImpl>(
-            context, cast_type, internal, diagnostic, settings_ref[Setting::cast_keep_nullable], DataTypeValidationSettings(settings_ref));
-    }
-
-    static FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic)
-    {
-        if (cast_type == CastType::accurateOrNull && !isVariant(to))
-            to = makeNullable(to);
-
-        ColumnsWithTypeAndName arguments;
-        arguments.emplace_back(std::move(from));
-        arguments.emplace_back().type = std::make_unique<DataTypeString>();
-
-        return createFunctionBaseCast(nullptr, getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type);
+        }
+        else
+        {
+            const auto & settings_ref = context->getSettingsRef();
+            return std::make_unique<CastOverloadResolverImpl>(context, cast_type, internal, diagnostic, settings_ref.cast_keep_nullable, DataTypeValidationSettings(settings_ref));
+        }
     }
 
 protected:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
-        return createFunctionBaseCast(context, getNameImpl(cast_type, internal), arguments, return_type, diagnostic, cast_type);
+        return createFunctionBaseCast(context, getNameImpl(), arguments, return_type, diagnostic, cast_type);
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -143,9 +130,9 @@ private:
 };
 
 
-FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic)
+FunctionOverloadResolverPtr createInternalCastOverloadResolver(CastType type, std::optional<CastDiagnostic> diagnostic)
 {
-    return CastOverloadResolverImpl::createInternalCast(std::move(from), std::move(to), cast_type, std::move(diagnostic));
+    return CastOverloadResolverImpl::create(ContextPtr{}, type, true, diagnostic);
 }
 
 REGISTER_FUNCTION(CastOverloadResolvers)

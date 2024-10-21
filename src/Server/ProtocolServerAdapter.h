@@ -38,8 +38,6 @@ public:
     /// Returns the number of currently handled connections.
     size_t currentConnections() const { return impl->currentConnections(); }
 
-    size_t refusedConnections() const { return impl->refusedConnections(); }
-
     /// Returns the number of current threads.
     size_t currentThreads() const { return impl->currentThreads(); }
 
@@ -63,7 +61,6 @@ private:
         virtual UInt16 portNumber() const = 0;
         virtual size_t currentConnections() const = 0;
         virtual size_t currentThreads() const = 0;
-        virtual size_t refusedConnections() const = 0;
     };
     class TCPServerAdapterImpl;
     class GRPCServerAdapterImpl;

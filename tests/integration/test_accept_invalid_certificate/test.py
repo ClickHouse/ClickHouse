@@ -1,10 +1,9 @@
+import pytest
+from helpers.client import Client
+from helpers.cluster import ClickHouseCluster
 import os.path
 from os import remove
 
-import pytest
-
-from helpers.client import Client
-from helpers.cluster import ClickHouseCluster
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 MAX_RETRY = 5
@@ -18,19 +17,6 @@ instance = cluster.add_instance(
         "certs/self-cert.pem",
         "certs/ca-cert.pem",
     ],
-    with_zookeeper=False,
-)
-
-
-node1 = cluster.add_instance(
-    "node1",
-    main_configs=[
-        "configs/ssl_config_strict.xml",
-        "certs/self-key.pem",
-        "certs/self-cert.pem",
-        "certs/ca-cert.pem",
-    ],
-    with_zookeeper=False,
 )
 
 
@@ -104,25 +90,3 @@ def test_connection_accept():
         )
         == "1\n"
     )
-
-
-def test_strict_reject():
-    with pytest.raises(Exception) as err:
-        execute_query_native(node1, "SELECT 1", "<clickhouse></clickhouse>")
-    assert "certificate verify failed" in str(err.value)
-
-
-def test_strict_reject_with_config():
-    with pytest.raises(Exception) as err:
-        execute_query_native(node1, "SELECT 1", config_accept)
-    assert "alert certificate required" in str(err.value)
-
-
-def test_strict_connection_reject():
-    with pytest.raises(Exception) as err:
-        execute_query_native(
-            node1,
-            "SELECT 1",
-            config_connection_accept.format(ip_address=f"{instance.ip_address}"),
-        )
-    assert "certificate verify failed" in str(err.value)
