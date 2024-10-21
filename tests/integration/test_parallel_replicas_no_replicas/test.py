@@ -1,7 +1,7 @@
 import pytest
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
 
@@ -33,10 +33,7 @@ def create_tables(cluster, table_name):
 
 
 @pytest.mark.parametrize("skip_unavailable_shards", [1, 0])
-@pytest.mark.parametrize("max_parallel_replicas", [2, 3, 100])
-def test_skip_all_replicas(
-    start_cluster, skip_unavailable_shards, max_parallel_replicas
-):
+def test_skip_all_replicas(start_cluster, skip_unavailable_shards):
     cluster_name = "test_1_shard_3_unavaliable_replicas"
     table_name = "tt"
     create_tables(cluster_name, table_name)
@@ -45,10 +42,9 @@ def test_skip_all_replicas(
         initiator.query(
             f"SELECT key, count() FROM {table_name}  GROUP BY key ORDER BY key",
             settings={
-                "enable_parallel_replicas": 2,
-                "max_parallel_replicas": max_parallel_replicas,
+                "allow_experimental_parallel_reading_from_replicas": 2,
+                "max_parallel_replicas": 3,
                 "cluster_for_parallel_replicas": cluster_name,
                 "skip_unavailable_shards": skip_unavailable_shards,
-                "parallel_replicas_local_plan": 0,
             },
         )

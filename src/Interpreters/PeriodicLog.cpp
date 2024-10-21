@@ -10,7 +10,7 @@ void PeriodicLog<LogElement>::startCollect(size_t collect_interval_milliseconds_
 {
     collect_interval_milliseconds = collect_interval_milliseconds_;
     is_shutdown_metric_thread = false;
-    collecting_thread = std::make_unique<ThreadFromGlobalPool>([this] { threadFunction(); });
+    flush_thread = std::make_unique<ThreadFromGlobalPool>([this] { threadFunction(); });
 }
 
 template <typename LogElement>
@@ -19,15 +19,15 @@ void PeriodicLog<LogElement>::stopCollect()
     bool old_val = false;
     if (!is_shutdown_metric_thread.compare_exchange_strong(old_val, true))
         return;
-    if (collecting_thread)
-        collecting_thread->join();
+    if (flush_thread)
+        flush_thread->join();
 }
 
 template <typename LogElement>
 void PeriodicLog<LogElement>::shutdown()
 {
     stopCollect();
-    Base::shutdown();
+    this->stopFlushThread();
 }
 
 template <typename LogElement>

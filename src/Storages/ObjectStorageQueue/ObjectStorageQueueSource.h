@@ -128,7 +128,7 @@ private:
     const std::shared_ptr<FileIterator> file_iterator;
     const ConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
-    ReadFromFormatInfo read_from_format_info;
+    const ReadFromFormatInfo read_from_format_info;
     const std::optional<FormatSettings> format_settings;
     const ObjectStorageQueueSettings queue_settings;
     const std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;

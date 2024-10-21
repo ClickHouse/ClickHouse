@@ -93,20 +93,20 @@ jobs:
     with:
       stage: Builds_2
       data: ${{ needs.RunConfig.outputs.data }}
-  Tests_2_ww:
-    needs: [RunConfig, Builds_2]
-    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_2_ww') }}
-    uses: ./.github/workflows/reusable_test_stage.yml
-    with:
-      stage: Tests_2_ww
-      data: ${{ needs.RunConfig.outputs.data }}
   Tests_2:
-    # Test_3 should not wait for Test_1/Test_2 and should not be blocked by them on master branch since all jobs need to run there.
-    needs: [RunConfig, Builds_1]
+    needs: [RunConfig, Builds_2]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_2') }}
     uses: ./.github/workflows/reusable_test_stage.yml
     with:
       stage: Tests_2
+      data: ${{ needs.RunConfig.outputs.data }}
+  Tests_3:
+    # Test_3 should not wait for Test_1/Test_2 and should not be blocked by them on master branch since all jobs need to run there.
+    needs: [RunConfig, Builds_1]
+    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_3') }}
+    uses: ./.github/workflows/reusable_test_stage.yml
+    with:
+      stage: Tests_3
       data: ${{ needs.RunConfig.outputs.data }}
 
   ################################# Reports #################################
@@ -123,7 +123,7 @@ jobs:
 
   FinishCheck:
     if: ${{ !cancelled() }}
-    needs: [RunConfig, Builds_1, Builds_2, Builds_Report, Tests_1, Tests_2_ww, Tests_2]
+    needs: [RunConfig, Builds_1, Builds_2, Builds_Report, Tests_1, Tests_2, Tests_3]
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Check out repository code
@@ -133,7 +133,6 @@ jobs:
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 finish_check.py --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
       - name: Check Workflow results
-        if: ${{ !cancelled() }}
         run: |
           export WORKFLOW_RESULT_FILE="/tmp/workflow_results.json"
           cat > "$WORKFLOW_RESULT_FILE" << 'EOF'

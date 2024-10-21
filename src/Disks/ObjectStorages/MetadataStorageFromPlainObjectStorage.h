@@ -2,20 +2,14 @@
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/ObjectStorages/InMemoryPathMap.h>
 #include <Disks/ObjectStorages/MetadataOperationsHolder.h>
 #include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
-#include <Common/CacheBase.h>
 
 #include <map>
-#include <string>
-#include <unordered_set>
-
 
 namespace DB
 {
 
-struct InMemoryPathMap;
 struct UnlinkMetadataFileOperationOutcome;
 using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
 
@@ -31,9 +25,12 @@ using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFile
 /// structure as on disk MergeTree, and does not require metadata from a local disk to restore.
 class MetadataStorageFromPlainObjectStorage : public IMetadataStorage
 {
+public:
+    /// Local path prefixes mapped to storage key prefixes.
+    using PathMap = std::map<std::filesystem::path, std::string>;
+
 private:
     friend class MetadataStorageFromPlainObjectStorageTransaction;
-    mutable std::optional<CacheBase<String, uint64_t>> file_sizes_cache;
 
 protected:
     ObjectStoragePtr object_storage;
@@ -42,7 +39,7 @@ protected:
     mutable SharedMutex metadata_mutex;
 
 public:
-    MetadataStorageFromPlainObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t file_sizes_cache_size);
+    MetadataStorageFromPlainObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_);
 
     MetadataTransactionPtr createTransaction() override;
 
@@ -50,12 +47,13 @@ public:
 
     MetadataStorageType getType() const override { return MetadataStorageType::Plain; }
 
-    bool existsFile(const std::string & path) const override;
-    bool existsDirectory(const std::string & path) const override;
-    bool existsFileOrDirectory(const std::string & path) const override;
+    bool exists(const std::string & path) const override;
+
+    bool isFile(const std::string & path) const override;
+
+    bool isDirectory(const std::string & path) const override;
 
     uint64_t getFileSize(const String & path) const override;
-    std::optional<uint64_t> getFileSizeIfExists(const String & path) const override;
 
     std::vector<std::string> listDirectory(const std::string & path) const override;
 
@@ -64,7 +62,6 @@ public:
     DiskPtr getDisk() const { return {}; }
 
     StoredObjects getStorageObjects(const std::string & path) const override;
-    std::optional<StoredObjects> getStorageObjectsIfExist(const std::string & path) const override;
 
     Poco::Timestamp getLastModified(const std::string & /* path */) const override
     {
@@ -81,11 +78,10 @@ public:
     bool supportsStat() const override { return false; }
 
 protected:
-    /// Get the object storage prefix for storing metadata files.
-    virtual std::string getMetadataKeyPrefix() const { return object_storage->getCommonKeyPrefix(); }
+    virtual std::shared_ptr<PathMap> getPathMap() const { throwNotImplemented(); }
 
-    /// Returns a map of virtual filesystem paths to paths in the object storage.
-    virtual std::shared_ptr<InMemoryPathMap> getPathMap() const { throwNotImplemented(); }
+    virtual std::vector<std::string> getDirectChildrenOnDisk(
+        const std::string & storage_key, const RelativePathsWithMetadata & remote_paths, const std::string & local_path) const;
 };
 
 class MetadataStorageFromPlainObjectStorageTransaction final : public IMetadataTransaction, private MetadataOperationsHolder

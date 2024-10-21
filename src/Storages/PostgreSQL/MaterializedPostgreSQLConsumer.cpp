@@ -725,7 +725,7 @@ void MaterializedPostgreSQLConsumer::syncTables()
             }
         }
 
-        tables_to_sync.erase(table_name);
+        tables_to_sync.erase(tables_to_sync.begin());
     }
 
     LOG_DEBUG(log, "Table sync end for {} tables, last lsn: {} = {}, (attempted lsn {})",

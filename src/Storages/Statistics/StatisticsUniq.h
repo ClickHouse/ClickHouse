@@ -10,10 +10,10 @@ namespace DB
 class StatisticsUniq : public IStatistics
 {
 public:
-    StatisticsUniq(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
+    StatisticsUniq(const SingleStatisticsDescription & stat_, const DataTypePtr & data_type);
     ~StatisticsUniq() override;
 
-    void build(const ColumnPtr & column) override;
+    void update(const ColumnPtr & column) override;
 
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf) override;
@@ -27,7 +27,7 @@ private:
 
 };
 
-void uniqStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
-StatisticsPtr uniqStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
+void UniqValidator(const SingleStatisticsDescription &, DataTypePtr data_type);
+StatisticsPtr UniqCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type);
 
 }

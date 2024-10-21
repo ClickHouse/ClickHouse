@@ -271,7 +271,8 @@ private:
     {
         if (OnEmpty == ReservoirSamplerDeterministicOnEmpty::THROW)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Quantile of empty ReservoirSamplerDeterministic");
-        return NanLikeValueConstructor<ResultType, std::is_floating_point_v<ResultType>>::getValue();
+        else
+            return NanLikeValueConstructor<ResultType, std::is_floating_point_v<ResultType>>::getValue();
     }
 };
 

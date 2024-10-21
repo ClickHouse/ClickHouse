@@ -12,10 +12,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool aggregate_functions_null_for_empty;
-}
 
 void RewriteCountVariantsVisitor::visit(ASTPtr & node)
 {
@@ -57,8 +53,8 @@ void RewriteCountVariantsVisitor::visit(ASTFunction & func)
     {
         if (first_arg_literal->value.getType() == Field::Types::UInt64)
         {
-            auto constant = first_arg_literal->value.safeGet<UInt64>();
-            if (constant == 1 && !context->getSettingsRef()[Setting::aggregate_functions_null_for_empty])
+            auto constant = first_arg_literal->value.get<UInt64>();
+            if (constant == 1 && !context->getSettingsRef().aggregate_functions_null_for_empty)
                 transform = true;
         }
     }

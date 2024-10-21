@@ -327,7 +327,8 @@ VolumePtr StoragePolicy::getVolume(size_t index) const
 {
     if (index < volume_index_by_volume_name.size())
         return volumes[index];
-    throw Exception(ErrorCodes::UNKNOWN_VOLUME, "No volume with index {} in storage policy {}", std::to_string(index), backQuote(name));
+    else
+        throw Exception(ErrorCodes::UNKNOWN_VOLUME, "No volume with index {} in storage policy {}", std::to_string(index), backQuote(name));
 }
 
 

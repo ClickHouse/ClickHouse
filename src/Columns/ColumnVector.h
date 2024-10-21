@@ -85,7 +85,7 @@ public:
 
     void insertMany(const Field & field, size_t length) override
     {
-        data.resize_fill(data.size() + length, static_cast<T>(field.safeGet<T>()));
+        data.resize_fill(data.size() + length, static_cast<T>(field.get<T>()));
     }
 
     void insertData(const char * pos, size_t) override
@@ -180,11 +180,6 @@ public:
         data.reserve_exact(n);
     }
 
-    size_t capacity() const override
-    {
-        return data.capacity();
-    }
-
     void shrinkToFit() override
     {
         data.shrink_to_fit();
@@ -240,7 +235,7 @@ public:
 
     void insert(const Field & x) override
     {
-        data.push_back(static_cast<T>(x.safeGet<T>()));
+        data.push_back(static_cast<T>(x.get<T>()));
     }
 
     bool tryInsert(const DB::Field & x) override;
