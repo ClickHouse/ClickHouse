@@ -19,6 +19,7 @@ Block JoiningTransform::transformHeader(Block header, const JoinPtr & join)
     join->initialize(header);
     ExtraBlockPtr tmp;
     join->joinBlock(header, tmp);
+    materializeBlockInplace(header);
     LOG_TEST(getLogger("JoiningTransform"), "After join block: '{}'", header.dumpStructure());
     return header;
 }

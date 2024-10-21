@@ -68,6 +68,7 @@ class WriteBuffer;
     M(CLASS_NAME, IntervalOutputFormat) \
     M(CLASS_NAME, JoinAlgorithm) \
     M(CLASS_NAME, JoinStrictness) \
+    M(CLASS_NAME, JoinInnerTableSelectionMode) \
     M(CLASS_NAME, LightweightMutationProjectionMode) \
     M(CLASS_NAME, LoadBalancing) \
     M(CLASS_NAME, LocalFSReadMethod) \
@@ -134,6 +135,7 @@ struct Settings
     std::vector<std::string_view> getAllRegisteredNames() const;
     std::vector<std::string_view> getChangedAndObsoleteNames() const;
     std::vector<std::string_view> getUnchangedNames() const;
+    std::vector<std::string_view> getChangedNames() const;
 
     void dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToMapColumn(IColumn * column, bool changed_only = true) const;

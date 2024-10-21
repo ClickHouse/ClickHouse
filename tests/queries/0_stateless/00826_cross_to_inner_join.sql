@@ -15,9 +15,9 @@ INSERT INTO t2_00826 values (1,1), (1,2);
 INSERT INTO t2_00826 (a) values (2), (3);
 
 SELECT '--- cross ---';
-SELECT * FROM t1_00826 cross join t2_00826 where t1_00826.a = t2_00826.a;
+SELECT * FROM t1_00826 cross join t2_00826 where t1_00826.a = t2_00826.a ORDER BY ALL;
 SELECT '--- cross nullable ---';
-SELECT * FROM t1_00826 cross join t2_00826 where t1_00826.b = t2_00826.b;
+SELECT * FROM t1_00826 cross join t2_00826 where t1_00826.b = t2_00826.b ORDER BY ALL;
 SELECT '--- cross nullable vs not nullable ---';
 SELECT * FROM t1_00826 cross join t2_00826 where t1_00826.a = t2_00826.b ORDER BY t1_00826.a;
 SELECT '--- cross self ---';
@@ -41,14 +41,15 @@ SELECT '--- is null or ---';
 SELECT * FROM t1_00826 cross join t2_00826 where t1_00826.b = t2_00826.a AND (t2_00826.b IS NULL OR t2_00826.b > t2_00826.a) ORDER BY t1_00826.a;
 
 SELECT '--- do not rewrite alias ---';
-SELECT a as b FROM t1_00826 cross join t2_00826 where t1_00826.b = t2_00826.a AND b > 0;
+SELECT a as b FROM t1_00826 cross join t2_00826 where t1_00826.b = t2_00826.a AND b > 0 ORDER BY ALL;
 
 SELECT '--- comma ---';
-SELECT * FROM t1_00826, t2_00826 where t1_00826.a = t2_00826.a;
+SELECT * FROM t1_00826, t2_00826 where t1_00826.a = t2_00826.a ORDER BY ALL;
 SELECT '--- comma nullable ---';
-SELECT * FROM t1_00826, t2_00826 where t1_00826.b = t2_00826.b;
+SELECT * FROM t1_00826, t2_00826 where t1_00826.b = t2_00826.b ORDER BY ALL;
 SELECT '--- comma and or ---';
-SELECT * FROM t1_00826, t2_00826 where t1_00826.a = t2_00826.a AND (t2_00826.b IS NULL OR t2_00826.b < 2);
+SELECT * FROM t1_00826, t2_00826 where t1_00826.a = t2_00826.a AND (t2_00826.b IS NULL OR t2_00826.b < 2)
+ORDER BY ALL;
 
 
 SELECT '--- cross ---';
