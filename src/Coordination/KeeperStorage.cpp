@@ -50,6 +50,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace CoordinationSetting
+{
+    extern const CoordinationSettingsUInt64 log_slow_cpu_threshold_ms;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -1407,7 +1412,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     if (parent_node == nullptr)
         return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
 
-    else if (parent_node->stats.isEphemeral())
+    if (parent_node->stats.isEphemeral())
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNOCHILDRENFOREPHEMERALS}};
 
     std::string path_created = zk_request.path;
@@ -1692,9 +1697,9 @@ std::list<KeeperStorageBase::Delta> preprocess(
         }
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
     }
-    else if (zk_request.version != -1 && zk_request.version != node->stats.version)
+    if (zk_request.version != -1 && zk_request.version != node->stats.version)
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADVERSION}};
-    else if (node->stats.numChildren() != 0)
+    if (node->stats.numChildren() != 0)
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNOTEMPTY}};
 
     if (zk_request.restored_from_zookeeper_log)
@@ -2926,7 +2931,7 @@ void KeeperStorage<Container>::preprocessRequest(
     Stopwatch watch;
     SCOPE_EXIT({
         auto elapsed = watch.elapsedMicroseconds();
-        if (auto elapsed_ms = elapsed / 1000; elapsed_ms > keeper_context->getCoordinationSettings()->log_slow_cpu_threshold_ms)
+        if (auto elapsed_ms = elapsed / 1000; elapsed_ms > keeper_context->getCoordinationSettings()[CoordinationSetting::log_slow_cpu_threshold_ms])
         {
             LOG_INFO(
                 getLogger("KeeperStorage"),
@@ -3116,7 +3121,7 @@ KeeperStorage<Container>::ResponsesForSessions KeeperStorage<Container>::process
     Stopwatch watch;
     SCOPE_EXIT({
         auto elapsed = watch.elapsedMicroseconds();
-        if (auto elapsed_ms = elapsed / 1000; elapsed_ms > keeper_context->getCoordinationSettings()->log_slow_cpu_threshold_ms)
+        if (auto elapsed_ms = elapsed / 1000; elapsed_ms > keeper_context->getCoordinationSettings()[CoordinationSetting::log_slow_cpu_threshold_ms])
         {
             LOG_INFO(
                 getLogger("KeeperStorage"),
@@ -3433,6 +3438,7 @@ template<typename Container>
 void KeeperStorage<Container>::clearGarbageAfterSnapshot()
 {
     container.clearOutdatedNodes();
+    stats.approximate_data_size.store(getApproximateDataSize(), std::memory_order_relaxed);
 }
 
 /// Introspection functions mostly used in 4-letter commands
@@ -3602,6 +3608,7 @@ template<typename Container>
 void KeeperStorage<Container>::recalculateStats()
 {
     container.recalculateDataSize();
+    stats.approximate_data_size.store(getApproximateDataSize(), std::memory_order_relaxed);
 }
 
 bool KeeperStorageBase::checkDigest(const Digest & first, const Digest & second)

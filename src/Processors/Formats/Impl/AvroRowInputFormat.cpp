@@ -189,7 +189,7 @@ static AvroDeserializer::DeserializeFn createDecimalDeserializeFn(const avro::No
                 target_type->getName(),
                 field_type_size,
                 tmp.size());
-        else if (tmp.size() != field_type_size)
+        if (tmp.size() != field_type_size)
         {
             /// Extent value to required size by adding padding.
             /// Check if value is negative or positive.
@@ -221,8 +221,7 @@ static std::string nodeName(avro::NodePtr node)
 {
     if (node->hasName())
         return node->name().simpleName();
-    else
-        return avro::toString(node->type());
+    return avro::toString(node->type());
 }
 
 static bool canBeDeserializedFromFixed(const DataTypePtr & target_type, size_t fixed_size)
@@ -385,8 +384,8 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                     return true;
                 };
             }
-            else if (
-                root_node->leaves() == 2
+
+            if (root_node->leaves() == 2
                 && (root_node->leafAt(0)->type() == avro::AVRO_NULL || root_node->leafAt(1)->type() == avro::AVRO_NULL))
             {
                 int non_null_union_index = root_node->leafAt(0)->type() == avro::AVRO_NULL ? 1 : 0;
@@ -409,7 +408,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                         return true;
                     };
                 }
-                else if (null_as_default)
+                if (null_as_default)
                 {
                     auto nested_deserialize = createDeserializeFn(root_node->leafAt(non_null_union_index), target_type);
                     return [non_null_union_index, nested_deserialize](IColumn & column, avro::Decoder & decoder)
@@ -424,15 +423,13 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                         return false;
                     };
                 }
-                else
-                {
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot insert Avro Union(Null, {}) into non-nullable type {}. To use default value on NULL, enable setting "
-                        "input_format_null_as_default",
-                        avro::toString(root_node->leafAt(non_null_union_index)->type()),
-                        target_type->getName());
-                }
+
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot insert Avro Union(Null, {}) into non-nullable type {}. To use default value on NULL, enable setting "
+                    "input_format_null_as_default",
+                    avro::toString(root_node->leafAt(non_null_union_index)->type()),
+                    target_type->getName());
             }
 
             if (target.isVariant())
@@ -516,16 +513,14 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                         return true;
                     };
                 }
-                else
+
+                return [](IColumn & column, avro::Decoder & decoder)
                 {
-                    return [](IColumn & column, avro::Decoder & decoder)
-                    {
-                        ColumnNullable & col = assert_cast<ColumnNullable &>(column);
-                        decoder.decodeNull();
-                        col.insertDefault();
-                        return true;
-                    };
-                }
+                    ColumnNullable & col = assert_cast<ColumnNullable &>(column);
+                    decoder.decodeNull();
+                    col.insertDefault();
+                    return true;
+                };
             }
             else if (null_as_default)
             {
@@ -862,8 +857,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
         auto resolved_node = avro::resolveSymbol(node);
         if (keep_going)
             return createAction(header, resolved_node, current_path);
-        else
-            return AvroDeserializer::Action(createSkipFn(resolved_node));
+        return AvroDeserializer::Action(createSkipFn(resolved_node));
     }
 
     if (header.has(current_path))
@@ -1153,8 +1147,7 @@ static uint32_t readConfluentSchemaId(ReadBuffer & in)
             /* empty or incomplete message without Avro Confluent magic number or schema id */
             throw Exception(ErrorCodes::INCORRECT_DATA, "Missing AvroConfluent magic byte or schema identifier.");
         }
-        else
-            throw;
+        throw;
     }
 
     if (magic != 0x00)
@@ -1296,7 +1289,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
                     values.emplace_back(node->nameAt(i), i);
                 return std::make_shared<DataTypeEnum8>(std::move(values));
             }
-            else if (node->names() < 32768)
+            if (node->names() < 32768)
             {
                 EnumValues<Int16>::Values values;
                 for (int i = 0; i != static_cast<int>(node->names()); ++i)
