@@ -1813,6 +1813,7 @@ geoip
 geospatial
 getClientHTTPHeader
 getMacro
+getMaxTableNameLengthForDatabase
 getOSKernelVersion
 getServerPort
 getSetting
