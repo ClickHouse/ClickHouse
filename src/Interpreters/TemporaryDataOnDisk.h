@@ -115,7 +115,7 @@ class WrapperGuard
 {
 public:
     template <typename ... Args>
-    WrapperGuard(std::unique_ptr<Holder> holder_, Args && ... args)
+    explicit WrapperGuard(std::unique_ptr<Holder> holder_, Args && ... args)
         : holder(std::move(holder_))
         , impl(std::make_unique<Impl>(*holder, std::forward<Args>(args)...))
     {
@@ -127,7 +127,7 @@ public:
     const Impl * operator->() const { chassert(impl); chassert(holder); return impl.get(); }
     Impl & operator*() { chassert(impl); chassert(holder); return *impl; }
     const Impl & operator*() const { chassert(impl); chassert(holder); return *impl; }
-    operator bool() const { return impl != nullptr; }
+    operator bool() const { return impl != nullptr; } /// NOLINT
 
     const Holder * getHolder() const { return holder.get(); }
     Holder * getHolder() { return holder.get(); }
