@@ -221,6 +221,8 @@ def test_drop_replica(start_cluster):
     )
     assert exists_replica_1_1 == None
 
+    node_1_1.query("ATTACH DATABASE test4")
+
     node_1_2.query("DETACH TABLE test4.test_table")
     node_1_1.query(
         "SYSTEM DROP REPLICA 'node_1_2' FROM ZKPATH '/clickhouse/tables/test4/{shard}/replicated/test_table'".format(
@@ -236,5 +238,5 @@ def test_drop_replica(start_cluster):
     assert exists_replica_1_2 == None
 
     node_1_1.query("ATTACH DATABASE test")
-    for i in range(1, 5):
+    for i in range(1, 4):
         node_1_1.query("ATTACH DATABASE test{}".format(i))
