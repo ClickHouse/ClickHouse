@@ -1,6 +1,5 @@
 #include <Server/HTTPHandler.h>
 
-#include <Access/Credentials.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/ExternalTable.h>
@@ -182,11 +181,12 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 }
 
 
-HTTPHandler::HTTPHandler(IServer & server_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_)
+HTTPHandler::HTTPHandler(IServer & server_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_, const std::optional<BasicCredentials> & config_credentials_)
     : server(server_)
     , log(getLogger(name))
     , default_settings(server.context()->getSettingsRef())
     , http_response_headers_override(http_response_headers_override_)
+    , config_credentials(config_credentials_)
 {
     server_display_name = server.config().getString("display_name", getFQDNOrHostName());
 }
@@ -199,7 +199,7 @@ HTTPHandler::~HTTPHandler() = default;
 
 bool HTTPHandler::authenticateUser(HTTPServerRequest & request, HTMLForm & params, HTTPServerResponse & response)
 {
-    return authenticateUserByHTTP(request, params, response, *session, request_credentials, server.context(), log);
+    return authenticateUserByHTTP(request, params, response, *session, request_credentials, config_credentials, server.context(), log);
 }
 
 
@@ -768,8 +768,12 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 }
 
 DynamicQueryHandler::DynamicQueryHandler(
-    IServer & server_, const std::string & param_name_, const HTTPResponseHeaderSetup & http_response_headers_override_)
-    : HTTPHandler(server_, "DynamicQueryHandler", http_response_headers_override_), param_name(param_name_)
+    IServer & server_,
+    const std::string & param_name_,
+    const HTTPResponseHeaderSetup & http_response_headers_override_,
+    const std::optional<BasicCredentials> & config_credentials)
+    : HTTPHandler(server_, "DynamicQueryHandler", http_response_headers_override_, config_credentials)
+    , param_name(param_name_)
 {
 }
 
@@ -830,8 +834,9 @@ PredefinedQueryHandler::PredefinedQueryHandler(
     const std::string & predefined_query_,
     const CompiledRegexPtr & url_regex_,
     const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_,
-    const HTTPResponseHeaderSetup & http_response_headers_override_)
-    : HTTPHandler(server_, "PredefinedQueryHandler", http_response_headers_override_)
+    const HTTPResponseHeaderSetup & http_response_headers_override_,
+    const std::optional<BasicCredentials> & config_credentials)
+    : HTTPHandler(server_, "PredefinedQueryHandler", http_response_headers_override_, config_credentials)
     , receive_params(receive_params_)
     , predefined_query(predefined_query_)
     , url_regex(url_regex_)
@@ -923,10 +928,18 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
 {
     auto query_param_name = config.getString(config_prefix + ".handler.query_param_name", "query");
 
+    std::optional<BasicCredentials> config_credentials;
+    if (config.has(config_prefix + ".handler.user") || config.has(config_prefix + ".handler.password"))
+    {
+        config_credentials.emplace(
+            config.getString(config_prefix + ".handler.user", "default"),
+            config.getString(config_prefix + ".handler.password", ""));
+    }
+
     HTTPResponseHeaderSetup http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
 
-    auto creator = [&server, query_param_name, http_response_headers_override]() -> std::unique_ptr<DynamicQueryHandler>
-    { return std::make_unique<DynamicQueryHandler>(server, query_param_name, http_response_headers_override); };
+    auto creator = [&server, query_param_name, http_response_headers_override, config_credentials]() -> std::unique_ptr<DynamicQueryHandler>
+    { return std::make_unique<DynamicQueryHandler>(server, query_param_name, http_response_headers_override, config_credentials); };
 
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(creator));
     factory->addFiltersFromConfig(config, config_prefix);
@@ -968,6 +981,14 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     Poco::Util::AbstractConfiguration::Keys headers_name;
     config.keys(config_prefix + ".headers", headers_name);
 
+    std::optional<BasicCredentials> config_credentials;
+    if (config.has(config_prefix + ".handler.user") || config.has(config_prefix + ".handler.password"))
+    {
+        config_credentials.emplace(
+            config.getString(config_prefix + ".handler.user", "default"),
+            config.getString(config_prefix + ".handler.password", ""));
+    }
+
     for (const auto & header_name : headers_name)
     {
         auto expression = config.getString(config_prefix + ".headers." + header_name);
@@ -1001,12 +1022,14 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
                 predefined_query,
                 regex,
                 headers_name_with_regex,
-                http_response_headers_override]
+                http_response_headers_override,
+                config_credentials]
                 -> std::unique_ptr<PredefinedQueryHandler>
             {
                 return std::make_unique<PredefinedQueryHandler>(
                     server, analyze_receive_params, predefined_query, regex,
-                    headers_name_with_regex, http_response_headers_override);
+                    headers_name_with_regex, http_response_headers_override,
+                    config_credentials);
             };
             factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(std::move(creator));
             factory->addFiltersFromConfig(config, config_prefix);
@@ -1019,18 +1042,17 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
         analyze_receive_params,
         predefined_query,
         headers_name_with_regex,
-        http_response_headers_override]
+        http_response_headers_override,
+        config_credentials]
         -> std::unique_ptr<PredefinedQueryHandler>
     {
         return std::make_unique<PredefinedQueryHandler>(
             server, analyze_receive_params, predefined_query, CompiledRegexPtr{},
-            headers_name_with_regex, http_response_headers_override);
+            headers_name_with_regex, http_response_headers_override,
+            config_credentials);
     };
-
     factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(std::move(creator));
-
     factory->addFiltersFromConfig(config, config_prefix);
-
     return factory;
 }
 

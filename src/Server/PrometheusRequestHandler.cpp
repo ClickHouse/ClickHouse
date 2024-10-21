@@ -137,7 +137,7 @@ protected:
 
     bool authenticateUser(HTTPServerRequest & request, HTTPServerResponse & response)
     {
-        return authenticateUserByHTTP(request, *params, response, *session, request_credentials, server().context(), log());
+        return authenticateUserByHTTP(request, *params, response, *session, request_credentials, /*config_credentials=*/ std::nullopt, server().context(), log());
     }
 
     void makeContext(HTTPServerRequest & request)
