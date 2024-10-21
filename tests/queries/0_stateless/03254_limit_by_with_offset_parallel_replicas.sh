@@ -6,6 +6,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 ${CLICKHOUSE_CLIENT} --query="
+DROP TABLE IF EXISTS limit_by;
+DROP TABLE IF EXISTS ties;
+DROP TABLE IF EXISTS test_fetch;
+
 CREATE TABLE limit_by
 (
     id Int,
@@ -24,6 +28,10 @@ ENGINE = MergeTree
 ORDER BY tuple();
 
 INSERT INTO ties VALUES (1), (1), (2), (2), (2), (2) (3), (3);
+
+CREATE TABLE test_fetch(a Int32, b Int32) Engine = MergeTree ORDER BY ();
+
+INSERT INTO test_fetch VALUES(1, 1), (2, 1), (3, 4), (3, 3), (5, 4), (0, 6), (5, 7);
 "
 
 for enable_analyzer in {0..1}; do
@@ -44,6 +52,9 @@ for enable_analyzer in {0..1}; do
     SELECT a FROM ties order by a limit 2, 3 with ties;
     SELECT a FROM ties order by a limit 4 with ties;
 
+    SELECT * FROM (SELECT * FROM test_fetch ORDER BY a, b OFFSET 1 ROW FETCH FIRST 3 ROWS ONLY) ORDER BY a, b;
+    SELECT * FROM (SELECT * FROM test_fetch ORDER BY a OFFSET 1 ROW FETCH FIRST 3 ROWS WITH TIES) ORDER BY a, b;
+
     select * from remote('127.0.0.{1,2}', currentDatabase(), limit_by) order by id, val limit 2 by id;
     select * from remote('127.0.0.{1,2}', currentDatabase(), limit_by) order by id, val limit 3 by id;
     select * from remote('127.0.0.{1,2}', currentDatabase(), limit_by) order by id, val limit 2, 2 by id;
@@ -60,3 +71,9 @@ for enable_analyzer in {0..1}; do
     "
   done
 done
+
+${CLICKHOUSE_CLIENT} --query="
+DROP TABLE limit_by;
+DROP TABLE ties;
+DROP TABLE test_fetch;
+"
