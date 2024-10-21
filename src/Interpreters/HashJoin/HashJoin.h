@@ -337,6 +337,8 @@ public:
     using RawBlockPtr = const Block *;
     using BlockNullmapList = std::deque<std::pair<RawBlockPtr, ColumnPtr>>;
 
+    using ScatteredBlocksList = std::list<ScatteredBlock>;
+
     struct RightTableData
     {
         Type type = Type::EMPTY;
@@ -344,7 +346,7 @@ public:
 
         std::vector<MapsVariant> maps;
         Block sample_block; /// Block as it would appear in the BlockList
-        BlocksList blocks; /// Blocks of "right" table.
+        ScatteredBlocksList blocks; /// Blocks of "right" table.
         BlockNullmapList blocks_nullmaps; /// Nullmaps for blocks of "right" table (if needed)
 
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.

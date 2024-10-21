@@ -6,6 +6,9 @@
 #include <base/defines.h>
 #include <Common/PODArray.h>
 
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
+
 #include <boost/noncopyable.hpp>
 
 namespace DB
@@ -224,6 +227,30 @@ struct ScatteredBlock : private boost::noncopyable
 
     /// Accounts only selected rows
     size_t rows() const { return selector.size(); }
+
+    /// In case of scattered block we account proportional share of the source block bytes.
+    /// For not scattered columns it will be trivial (bytes * N / N) calculation.
+    size_t allocatedBytes() const { return block.rows() ? block.allocatedBytes() * rows() / block.rows() : 0; }
+
+    ScatteredBlock shrinkToFit() const
+    {
+        if (wasScattered())
+        {
+            LOG_TEST(getLogger("HashJoin"), "shrinkToFit() is not supported for ScatteredBlock because blocks are shared");
+            return ScatteredBlock{block};
+        }
+        return ScatteredBlock{block.shrinkToFit()};
+    }
+
+    ScatteredBlock compress() const
+    {
+        chassert(!wasScattered());
+        if (wasScattered())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot compress scattered block");
+        return ScatteredBlock{block.compress()};
+    }
+
+    const auto & getByPosition(size_t i) const { return block.getByPosition(i); }
 
     /// Whether `block` was scattered, i.e. `selector` != [0, block.rows())
     bool wasScattered() const
