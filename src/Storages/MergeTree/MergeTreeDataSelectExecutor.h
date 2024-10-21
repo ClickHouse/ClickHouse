@@ -153,11 +153,7 @@ public:
 
     /// The same as roundRowsOrBytesToMarks, but return no more than max_marks.
     static size_t minMarksForConcurrentRead(
-        size_t rows_setting,
-        size_t bytes_setting,
-        size_t rows_granularity,
-        size_t bytes_granularity,
-        size_t max_marks);
+        size_t rows_setting, size_t bytes_setting, size_t rows_granularity, size_t bytes_granularity, size_t min_marks, size_t max_marks);
 
     /// If possible, construct optional key condition from predicates containing _part_offset column.
     static void buildKeyConditionFromPartOffset(
