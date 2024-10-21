@@ -2069,7 +2069,7 @@ def test_processing_threads(started_cluster):
         },
     )
 
-    assert '"processing_threads_num":32' in node.query(
+    assert '"processing_threads_num":16' in node.query(
         f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
     )
 
@@ -2091,5 +2091,5 @@ def test_processing_threads(started_cluster):
     assert expected_rows == get_count()
 
     assert node.contains_in_log(
-        f"StorageS3Queue (default.{table_name}): Using 32 processing threads"
+        f"StorageS3Queue (default.{table_name}): Using 16 processing threads"
     )
