@@ -33,7 +33,7 @@ SELECT a FROM ties order by a limit 1, 2 with ties;
 SELECT a FROM ties order by a limit 2, 3 with ties;
 SELECT a FROM ties order by a limit 4 with ties;
 
-set enable_analyzer=1;
+set enable_analyzer=0;
 
 select * from limit_by order by id, val limit 2 by id;
 select * from limit_by order by id, val limit 3 by id;
@@ -46,3 +46,16 @@ SELECT a FROM ties order by a limit 1 with ties;
 SELECT a FROM ties order by a limit 1, 2 with ties;
 SELECT a FROM ties order by a limit 2, 3 with ties;
 SELECT a FROM ties order by a limit 4 with ties;
+
+select * from remote('127.0.0.{1,2}', currentDatabase(), limit_by) order by id, val limit 2 by id;
+select * from remote('127.0.0.{1,2}', currentDatabase(), limit_by) order by id, val limit 3 by id;
+select * from remote('127.0.0.{1,2}', currentDatabase(), limit_by) order by id, val limit 2, 2 by id;
+select * from remote('127.0.0.{1,2}', currentDatabase(), limit_by) order by id, val limit 2 offset 1 by id;
+select * from remote('127.0.0.{1,2}', currentDatabase(), limit_by) order by id, val limit 1, 2 by id limit 3;
+select * from remote('127.0.0.{1,2}', currentDatabase(), limit_by) order by id, val limit 1, 2 by id limit 3 offset 1;
+
+SELECT a from remote('127.0.0.{1,2}', currentDatabase(), ties) order by a limit 1 with ties;
+SELECT a from remote('127.0.0.{1,2}', currentDatabase(), ties) order by a limit 1, 2 with ties;
+SELECT a from remote('127.0.0.{1,2}', currentDatabase(), ties) order by a limit 2, 3 with ties;
+SELECT a from remote('127.0.0.{1,2}', currentDatabase(), ties) order by a limit 4 with ties;
+
