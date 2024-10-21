@@ -361,7 +361,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     ObjectStoragePtr object_storage_,
     const ReadFromFormatInfo & read_from_format_info_,
     const std::optional<FormatSettings> & format_settings_,
-    const ObjectStorageQueueSettings & queue_settings_,
+    const CommitSettings & commit_settings_,
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
     ContextPtr context_,
     size_t max_block_size_,
@@ -380,7 +380,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , object_storage(object_storage_)
     , read_from_format_info(read_from_format_info_)
     , format_settings(format_settings_)
-    , queue_settings(queue_settings_)
+    , commit_settings(commit_settings_)
     , files_metadata(files_metadata_)
     , max_block_size(max_block_size_)
     , shutdown_called(shutdown_called_)
@@ -565,8 +565,8 @@ Chunk ObjectStorageQueueSource::generateImpl()
         processed_rows_from_file = 0;
         processed_files.push_back(file_metadata);
 
-        if (queue_settings.max_processed_files_before_commit
-            && processed_files.size() == queue_settings.max_processed_files_before_commit)
+        if (commit_settings.max_processed_files_before_commit
+            && processed_files.size() == commit_settings.max_processed_files_before_commit)
         {
             LOG_TRACE(log, "Number of max processed files before commit reached "
                       "(rows: {}, bytes: {}, files: {})",
@@ -574,15 +574,15 @@ Chunk ObjectStorageQueueSource::generateImpl()
             break;
         }
 
-        if (queue_settings.max_processed_rows_before_commit
-            && total_processed_rows == queue_settings.max_processed_rows_before_commit)
+        if (commit_settings.max_processed_rows_before_commit
+            && total_processed_rows == commit_settings.max_processed_rows_before_commit)
         {
             LOG_TRACE(log, "Number of max processed rows before commit reached "
                       "(rows: {}, bytes: {}, files: {})",
                       total_processed_rows, total_processed_bytes, processed_files.size());
             break;
         }
-        if (queue_settings.max_processed_bytes_before_commit && total_processed_bytes == queue_settings.max_processed_bytes_before_commit)
+        if (commit_settings.max_processed_bytes_before_commit && total_processed_bytes == commit_settings.max_processed_bytes_before_commit)
         {
             LOG_TRACE(
                 log,
@@ -593,8 +593,8 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 processed_files.size());
             break;
         }
-        if (queue_settings.max_processing_time_sec_before_commit
-            && total_stopwatch.elapsedSeconds() >= queue_settings.max_processing_time_sec_before_commit)
+        if (commit_settings.max_processing_time_sec_before_commit
+            && total_stopwatch.elapsedSeconds() >= commit_settings.max_processing_time_sec_before_commit)
         {
             LOG_TRACE(
                 log,
@@ -648,15 +648,9 @@ void ObjectStorageQueueSource::commit(bool success, const std::string & exceptio
 
 void ObjectStorageQueueSource::applyActionAfterProcessing(const String & path)
 {
-    switch (queue_settings.after_processing.value)
+    if (files_metadata->getTableMetadata().after_processing == "delete")
     {
-        case ObjectStorageQueueAction::DELETE:
-        {
-            object_storage->removeObject(StoredObject(path));
-            break;
-        }
-        case ObjectStorageQueueAction::KEEP:
-            break;
+        object_storage->removeObject(StoredObject(path));
     }
 }
 
