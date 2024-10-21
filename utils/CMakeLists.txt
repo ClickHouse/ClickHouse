@@ -24,6 +24,6 @@ if (ENABLE_UTILS)
     add_subdirectory (memcpy-bench)
 endif ()
 
-if (ENABLE_FUZZING)
+if (ENABLE_FUZZING AND ENABLE_FUZZER_TEST)
     add_subdirectory (libfuzzer-test)
 endif ()
