@@ -121,6 +121,7 @@ public:
 
     static inline const auto SUBSTITUTION_ATTRS = {"incl", "from_zk", "from_env"};
 
+    bool is_config_changed;
 private:
     const std::string path;
     std::string preprocessed_path;
