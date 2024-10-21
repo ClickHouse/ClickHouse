@@ -415,7 +415,7 @@ void StorageObjectStorageQueue::threadFunc()
             else
             {
                 /// Increase the reschedule interval.
-                reschedule_processing_interval_ms = std::min(polling_max_timeout_ms, reschedule_processing_interval_ms + polling_backoff_ms);
+                reschedule_processing_interval_ms = std::min<size_t>(polling_max_timeout_ms, reschedule_processing_interval_ms + polling_backoff_ms);
             }
 
             LOG_DEBUG(log, "Stopped streaming to {} attached views", dependencies_count);
