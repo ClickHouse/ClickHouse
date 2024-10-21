@@ -279,100 +279,93 @@ void Set::checkIsCreated() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to use set before it has been built.");
 }
 
-ColumnPtr checkDateTimePrecision(const ColumnPtr & column_to_cast, const ColumnPtr & column_after_cast, const size_t vec_res_size)
+ColumnPtr checkDateTimePrecision(
+    const ColumnPtr & column_to_cast,
+    const ColumnPtr & column_after_cast,
+    const size_t vec_res_size)
 {
     /// Handle nullable columns
     const ColumnNullable * original_nullable_column = typeid_cast<const ColumnNullable *>(column_to_cast.get());
-    const IColumn * original_nested_column = original_nullable_column ? &original_nullable_column->getNestedColumn() : column_to_cast.get();
+    const IColumn * original_nested_column = original_nullable_column
+        ? &original_nullable_column->getNestedColumn()
+        : column_to_cast.get();
+    const NullMap * original_null_map = original_nullable_column
+        ? &original_nullable_column->getNullMapData()
+        : nullptr;
 
     const ColumnNullable * result_nullable_column = typeid_cast<const ColumnNullable *>(column_after_cast.get());
-    const IColumn * result_nested_column = result_nullable_column ? &result_nullable_column->getNestedColumn() : column_after_cast.get();
+    const IColumn * result_nested_column = result_nullable_column
+        ? &result_nullable_column->getNestedColumn()
+        : column_after_cast.get();
 
     /// Check if the original column is of ColumnDecimal type
     const auto * original_decimal_column = typeid_cast<const ColumnDecimal<DateTime64> *>(original_nested_column);
-
     if (!original_decimal_column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ColumnDecimal for DateTime64");
 
     /// Get the data array from the original column
     const auto & original_data = original_decimal_column->getData();
 
-    /// Prepare the final column
-    MutableColumnPtr final_column = column_after_cast->cloneEmpty();
-    final_column->reserve(vec_res_size);
+    /// Prepare the final nested column
+    MutableColumnPtr final_nested_column = result_nested_column->cloneEmpty();
+    final_nested_column->reserve(vec_res_size);
 
-    /// Handle null maps
-    const NullMap * original_null_map = original_nullable_column ? &original_nullable_column->getNullMapData() : nullptr;
-    const NullMap * result_null_map = result_nullable_column ? &result_nullable_column->getNullMapData() : nullptr;
+    /// Prepare the null map
+    MutableColumnPtr final_null_map_column;
+    NullMap * final_null_map = nullptr;
 
-    /// Create a combined null map if necessary
-    NullMap combined_null_map(vec_res_size, false);
-    if (original_null_map || result_null_map)
+    if (result_nullable_column)
+    {
+        /// If result column is nullable, clone its null map
+        final_null_map_column = result_nullable_column->getNullMapColumnPtr()->cloneResized(vec_res_size)->assumeMutable();
+        final_null_map = &assert_cast<ColumnUInt8 &>(*final_null_map_column).getData();
+    }
+    else
+    {
+        /// Result column is not nullable, create a new null map initialized to zeros (not null)
+        final_null_map_column = ColumnUInt8::create(vec_res_size, 0);
+        final_null_map = &assert_cast<ColumnUInt8 &>(*final_null_map_column).getData();
+    }
+
+    /// Combine with original null map if necessary
+    if (original_null_map)
     {
         for (size_t row = 0; row < vec_res_size; ++row)
         {
-            bool is_null = false;
-            if (original_null_map && (*original_null_map)[row])
-                is_null = true;
-            if (result_null_map && (*result_null_map)[row])
-                is_null = true;
-            combined_null_map[row] = is_null;
+            if ((*original_null_map)[row])
+                (*final_null_map)[row] = 1;
         }
     }
 
     /// Decide which value to use for each row
     for (size_t row = 0; row < vec_res_size; ++row)
     {
-        bool is_null = combined_null_map.empty() ? false : combined_null_map[row];
+        bool is_null = (*final_null_map)[row] != 0;
 
         if (is_null)
-            final_column->insertDefault();
+            final_nested_column->insertDefault();
         else
         {
             Int64 value = original_data[row];
-            auto result_value = result_nullable_column->getInt(row);
-            if (!result_value)
-                return column_after_cast;
+            Int64 result_value = result_nested_column->getInt(row);
 
             if (value % result_value != 0)
             {
-                /// Sub-second precision exists; use the original value
-                /// We need to convert the value to the data type of final_column
-
-                if (isDateTime64(result_nested_column->getDataType()))
-                {
-                    final_column->insertData(reinterpret_cast<const char *>(&value), 0);
-                }
-                else if (isUInt32(result_nested_column->getDataType())) // DateTime
-                {
-                    final_column->insert(static_cast<UInt32>(value));
-                }
-                else if (isInt32(result_nested_column->getDataType())) // Date32
-                {
-                    final_column->insert(static_cast<Int32>(value));
-                }
-                else if (isUInt16(result_nested_column->getDataType())) // Date
-                {
-                    final_column->insert(static_cast<UInt16>(value));
-                }
-                else
-                    return column_after_cast;
+                (*final_null_map)[row] = 0; // Ensure null map at this position is zero (not null)
+                final_nested_column->insertDefault();
             }
             else
-                final_column->insertFrom(*column_after_cast, row); /// Didn't lost precision, don't do anything
+                final_nested_column->insertFrom(*result_nested_column, row);
         }
     }
 
-    /// If the original column was nullable, make the final column nullable
-    if (original_nullable_column)
-    {
-        /// Create the null map column as MutableColumnPtr
-        auto null_map_column = ColumnUInt8::create();
-        null_map_column->getData().swap(combined_null_map);
+    /// Create the final column
+    ColumnPtr final_column;
+    if (result_nullable_column || original_nullable_column) /// Avoid creating a nullable over a nullable        
+        final_column = ColumnNullable::create(std::move(final_nested_column), std::move(final_null_map_column));
+    else /// If neither original nor result columns were nullable, we don't need to wrap
+        final_column = std::move(final_nested_column);
 
-        /// Wrap the final column and null map into a ColumnNullable
-        final_column = ColumnNullable::create(std::move(final_column), std::move(null_map_column));
-    }
     return final_column;
 }
 
