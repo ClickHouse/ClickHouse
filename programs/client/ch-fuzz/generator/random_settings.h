@@ -27,6 +27,7 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 		ret += std::to_string(rg.RandomInt<uint32_t>(0, 500000));
 	}},
 	{"allow_experimental_parallel_reading_from_replicas", ZeroOneTwo},
+	{"allow_experimental_shared_set_join", TrueOrFalse},
 	{"allow_nullable_key", TrueOrFalse},
 	{"allow_prefetched_read_pool_for_remote_filesystem", TrueOrFalse},
 	{"allow_suspicious_low_cardinality_types", TrueOrFalse},
@@ -55,8 +56,21 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	{"distributed_aggregation_memory_efficient", TrueOrFalse},
 	{"distributed_group_by_no_merge", ZeroOneTwo},
 	{"enable_analyzer", TrueOrFalse},
+	{"enable_deflate_qpl_codec", TrueOrFalse},
+	{"enable_early_constant_folding", TrueOrFalse},
+	{"enable_early_constant_enable_extended_results_for_datetime_functionsfolding", TrueOrFalse},
+	{"enable_http_compression", TrueOrFalse},
 	{"enable_memory_bound_merging_of_aggregation_results", TrueOrFalse},
 	{"enable_multiple_prewhere_read_steps", TrueOrFalse},
+	{"enable_named_columns_in_function_tuple", TrueOrFalse},
+	{"enable_optimize_predicate_expression", TrueOrFalse},
+	{"enable_optimize_predicate_expression_to_final_subquery", TrueOrFalse},
+	{"enable_parallel_replicas", TrueOrFalse},
+	{"enable_scalar_subquery_optimization", TrueOrFalse},
+	{"enable_sharing_sets_for_mutations", TrueOrFalse},
+	{"enable_software_prefetch_in_aggregation", TrueOrFalse},
+	{"enable_unaligned_array_join", TrueOrFalse},
+	{"enable_vertical_final", TrueOrFalse},
 	{"exact_rows_before_limit", TrueOrFalse},
 	{"input_format_csv_try_infer_numbers_from_strings", TrueOrFalse},
 	{"input_format_import_nested_json", TrueOrFalse},
@@ -170,6 +184,9 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 		const std::vector<std::string> &choices = {"0", "1", "10"};
 		ret += rg.PickRandomlyFromVector(choices);
 	}},
+	{"max_parts_to_move", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.5, 1, UINT32_C(4096)));
+	}},
 	{"max_read_buffer_size", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.RandomInt<uint32_t>(500000, 1048576));
 	}},
@@ -279,6 +296,7 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 
 const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> MergeTreeTableSettings = {
 	{"allow_experimental_block_number_column", TrueOrFalse},
+	{"allow_experimental_replacing_merge_with_cleanup", TrueOrFalse},
 	{"allow_floating_point_partition_key", TrueOrFalse},
 	{"allow_vertical_merges_from_compact_to_wide_parts", TrueOrFalse},
 	{"cache_populated_by_fetch", TrueOrFalse},
