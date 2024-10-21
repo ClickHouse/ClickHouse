@@ -55,12 +55,11 @@ class WriteBuffer;
   *     M(String, s, "default", "Description of s", 0)
   *
   * DECLARE_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS)
+  * IMPLEMENT_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS)
   *
   * struct MySettingsImpl : public BaseSettings<MySettingsTraits>
   * {
   * };
-  *
-  * IMPLEMENT_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS)
   *
   * #define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) MySettings##TYPE NAME = &MySettings##Impl ::NAME;
   *

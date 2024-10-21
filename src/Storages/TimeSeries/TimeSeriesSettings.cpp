@@ -21,15 +21,13 @@ namespace ErrorCodes
     M(Bool, filter_by_min_time_and_max_time, true, "If set to true then the table will use the 'min_time' and 'max_time' columns for filtering time series", 0) \
 
 DECLARE_SETTINGS_TRAITS(TimeSeriesSettingsTraits, LIST_OF_TIME_SERIES_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(TimeSeriesSettingsTraits, LIST_OF_TIME_SERIES_SETTINGS)
 
 struct TimeSeriesSettingsImpl : public BaseSettings<TimeSeriesSettingsTraits>
 {
 };
 
-IMPLEMENT_SETTINGS_TRAITS(TimeSeriesSettingsTraits, LIST_OF_TIME_SERIES_SETTINGS)
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
-    TimeSeriesSettings##TYPE NAME = &TimeSeriesSettings##Impl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) TimeSeriesSettings##TYPE NAME = &TimeSeriesSettingsImpl ::NAME;
 
 namespace TimeSeriesSetting
 {

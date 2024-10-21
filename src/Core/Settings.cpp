@@ -5894,7 +5894,7 @@ Experimental data deduplication for SELECT queries based on part UUIDs
     OBSOLETE_FORMAT_SETTINGS(M, ALIAS) \
 
 DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SettingsTraits, LIST_OF_SETTINGS)
-
+IMPLEMENT_SETTINGS_TRAITS(SettingsTraits, LIST_OF_SETTINGS)
 
 /** Settings of query execution.
   * These settings go to users.xml.
@@ -5927,9 +5927,6 @@ private:
 
     std::unordered_set<std::string_view> settings_changed_by_compatibility_setting;
 };
-
-
-IMPLEMENT_SETTINGS_TRAITS(SettingsTraits, LIST_OF_SETTINGS)
 
 /** Set the settings from the profile (in the server configuration, many settings can be listed in one profile).
     * The profile can also be set using the `set` functions, like the `profile` setting.
@@ -6078,7 +6075,7 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
 }
 
 #define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
-    Settings ## TYPE NAME = & Settings ## Impl :: NAME;
+    Settings ## TYPE NAME = & SettingsImpl :: NAME;
 
 namespace Setting
 {
