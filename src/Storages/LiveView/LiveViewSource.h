@@ -153,10 +153,12 @@ protected:
                         {
                             break;
                         }
-
-                        // heartbeat
-                        last_event_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
-                        return {getPort().getHeader(), true};
+                        else
+                        {
+                            // heartbeat
+                            last_event_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
+                            return { getPort().getHeader(), true };
+                        }
                     }
                 }
             }

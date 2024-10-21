@@ -124,7 +124,7 @@ public:
     AuthResult authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const String & forwarded_address) const;
 
     /// Makes a backup of access entities.
-    void restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup) override;
+    void restoreFromBackup(RestorerFromBackup & restorer) override;
 
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
 

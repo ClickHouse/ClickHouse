@@ -52,10 +52,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool optimize_trivial_approximate_count_query;
-}
 
 namespace ErrorCodes
 {
@@ -570,7 +566,7 @@ public:
         const StorageEmbeddedRocksDB & storage_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
         , storage(storage_)
         , max_block_size(max_block_size_)
         , num_streams(num_streams_)
@@ -608,7 +604,7 @@ void StorageEmbeddedRocksDB::read(
 
 void ReadFromEmbeddedRocksDB::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    const auto & sample_block = getOutputHeader();
+    const auto & sample_block = getOutputStream().header;
 
     if (all_scan)
     {
@@ -655,7 +651,7 @@ void ReadFromEmbeddedRocksDB::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
 
-    const auto & sample_block = getOutputHeader();
+    const auto & sample_block = getOutputStream().header;
     auto primary_key_data_type = sample_block.getByName(storage.primary_key).type;
     std::tie(keys, all_scan) = getFilterKeys(storage.primary_key, primary_key_data_type, filter_actions_dag, context);
 }
@@ -816,7 +812,7 @@ Chunk StorageEmbeddedRocksDB::getBySerializedKeys(
 
 std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(const Settings & query_settings) const
 {
-    if (!query_settings[Setting::optimize_trivial_approximate_count_query])
+    if (!query_settings.optimize_trivial_approximate_count_query)
         return {};
     std::shared_lock lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)

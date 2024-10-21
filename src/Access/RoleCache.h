@@ -1,9 +1,10 @@
 #pragma once
 
-#include <map>
-#include <mutex>
 #include <Access/EnabledRoles.h>
 #include <Poco/AccessExpireCache.h>
+#include <boost/container/flat_set.hpp>
+#include <map>
+#include <mutex>
 
 
 namespace DB

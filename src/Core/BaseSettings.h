@@ -1,13 +1,12 @@
 #pragma once
 
-#include <unordered_map>
 #include <Core/SettingsFields.h>
-#include <Core/SettingsWriteFormat.h>
+#include <Common/SettingsChanges.h>
+#include <Common/FieldVisitorToString.h>
 #include <IO/Operators.h>
 #include <base/range.h>
 #include <boost/blank.hpp>
-#include <Common/FieldVisitorToString.h>
-#include <Common/SettingsChanges.h>
+#include <unordered_map>
 
 
 namespace boost::program_options
@@ -20,6 +19,13 @@ namespace DB
 
 class ReadBuffer;
 class WriteBuffer;
+
+enum class SettingsWriteFormat : uint8_t
+{
+    BINARY = 0,             /// Part of the settings are serialized as strings, and other part as variants. This is the old behaviour.
+    STRINGS_WITH_FLAGS = 1, /// All settings are serialized as strings. Before each value the flag `is_important` is serialized.
+    DEFAULT = STRINGS_WITH_FLAGS,
+};
 
 /** Template class to define collections of settings.
   * Example of usage:
@@ -89,8 +95,6 @@ public:
     static Field castValueUtil(std::string_view name, const Field & value);
     static String valueToStringUtil(std::string_view name, const Field & value);
     static Field stringToValueUtil(std::string_view name, const String & str);
-
-    static std::string_view resolveName(std::string_view name);
 
     void write(WriteBuffer & out, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT) const;
     void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT);
@@ -187,6 +191,8 @@ public:
     MutableRange allMutable(SkipFlags skip_flags = SKIP_NONE) { return MutableRange{*this, skip_flags}; }
     Range allChanged() const { return all(SKIP_UNCHANGED); }
     Range allUnchanged() const { return all(SKIP_CHANGED); }
+    Range allBuiltin() const { return all(SKIP_CUSTOM); }
+    Range allCustom() const { return all(SKIP_BUILTIN); }
 
     Iterator begin() const { return allChanged().begin(); }
     Iterator end() const { return allChanged().end(); }
@@ -235,7 +241,8 @@ Field BaseSettings<TTraits>::get(std::string_view name) const
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getValue(*this, index);
-    return static_cast<Field>(getCustomSetting(name));
+    else
+        return static_cast<Field>(getCustomSetting(name));
 }
 
 template <typename TTraits>
@@ -256,7 +263,8 @@ String BaseSettings<TTraits>::getString(std::string_view name) const
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getValueString(*this, index);
-    return getCustomSetting(name).toString();
+    else
+        return getCustomSetting(name).toString();
 }
 
 template <typename TTraits>
@@ -379,9 +387,10 @@ const char * BaseSettings<TTraits>::getTypeName(std::string_view name) const
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getTypeName(index);
-    if (tryGetCustomSetting(name))
+    else if (tryGetCustomSetting(name))
         return "Custom";
-    BaseSettingsHelpers::throwSettingNotFound(name);
+    else
+        BaseSettingsHelpers::throwSettingNotFound(name);
 }
 
 template <typename TTraits>
@@ -391,9 +400,10 @@ const char * BaseSettings<TTraits>::getDescription(std::string_view name) const
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getDescription(index);
-    if (tryGetCustomSetting(name))
+    else if (tryGetCustomSetting(name))
         return "Custom";
-    BaseSettingsHelpers::throwSettingNotFound(name);
+    else
+        BaseSettingsHelpers::throwSettingNotFound(name);
 }
 
 template <typename TTraits>

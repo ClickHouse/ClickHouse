@@ -10,6 +10,7 @@
 #include <Core/CompareHelper.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
+#include <Core/UUID.h>
 #include <base/DayNum.h>
 #include <base/IPv4andIPv6.h>
 #include <Common/AllocatorWithMemoryTracking.h>
