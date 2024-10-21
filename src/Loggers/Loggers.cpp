@@ -234,7 +234,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     else
         pf = new OwnPatternFormatter;
 
-    DB::createOrUpdateFilterChannel(logger, global_pos_pattern, global_neg_pattern, pf, "");
+    DB::createOrUpdateFilterChannel(logger, global_pos_pattern, global_neg_pattern, pf, Poco::Logger::ROOT);
 
     logger.setLevel(max_log_level);
 
@@ -392,7 +392,7 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
     else
         pf = new OwnPatternFormatter;
 
-    DB::createOrUpdateFilterChannel(logger, global_pos_pattern, global_neg_pattern, pf, "");
+    DB::createOrUpdateFilterChannel(logger, global_pos_pattern, global_neg_pattern, pf, Poco::Logger::ROOT);
 
     // Global logging level (it can be overridden for specific loggers).
     logger.setLevel(max_log_level);
