@@ -31,11 +31,11 @@ ObjectStorageKey FlatDirectoryStructureKeyGenerator::generate(const String & pat
         SharedLockGuard lock(ptr->mutex);
         auto it = ptr->map.find(p);
         if (it != ptr->map.end())
-            return ObjectStorageKey::createAsRelative(key_prefix.has_value() ? *key_prefix : storage_key_prefix, it->second);
+            return ObjectStorageKey::createAsRelative(key_prefix.has_value() ? *key_prefix : storage_key_prefix, it->second.path);
 
         it = ptr->map.find(directory);
         if (it != ptr->map.end())
-            remote_path = it->second;
+            remote_path = it->second.path;
     }
     constexpr size_t part_size = 32;
     std::filesystem::path key = remote_path.has_value() ? *remote_path

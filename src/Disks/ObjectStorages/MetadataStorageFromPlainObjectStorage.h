@@ -8,8 +8,10 @@
 #include <Common/CacheBase.h>
 
 #include <map>
+#include <memory>
 #include <string>
 #include <unordered_set>
+#include <Poco/Timestamp.h>
 
 
 namespace DB
@@ -33,16 +35,23 @@ class MetadataStorageFromPlainObjectStorage : public IMetadataStorage
 {
 private:
     friend class MetadataStorageFromPlainObjectStorageTransaction;
-    mutable std::optional<CacheBase<String, uint64_t>> file_sizes_cache;
 
 protected:
+    struct ObjectMetadataEntry
+    {
+        uint64_t file_size;
+        time_t last_modified;
+    };
+
     ObjectStoragePtr object_storage;
-    String storage_path_prefix;
+    const String storage_path_prefix;
+
+    mutable std::optional<CacheBase<String, ObjectMetadataEntry>> object_metadata_cache;
 
     mutable SharedMutex metadata_mutex;
 
 public:
-    MetadataStorageFromPlainObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t file_sizes_cache_size);
+    MetadataStorageFromPlainObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t object_metadata_cache_size);
 
     MetadataTransactionPtr createTransaction() override;
 
@@ -66,11 +75,8 @@ public:
     StoredObjects getStorageObjects(const std::string & path) const override;
     std::optional<StoredObjects> getStorageObjectsIfExist(const std::string & path) const override;
 
-    Poco::Timestamp getLastModified(const std::string & /* path */) const override
-    {
-        /// Required by MergeTree
-        return {};
-    }
+    Poco::Timestamp getLastModified(const std::string & path) const override;
+    std::optional<Poco::Timestamp> getLastModifiedIfExists(const String & path) const override;
 
     uint32_t getHardlinkCount(const std::string & /* path */) const override
     {
@@ -86,6 +92,8 @@ protected:
 
     /// Returns a map of virtual filesystem paths to paths in the object storage.
     virtual std::shared_ptr<InMemoryPathMap> getPathMap() const { throwNotImplemented(); }
+
+    std::shared_ptr<ObjectMetadataEntry> getObjectMetadataEntryWithCache(const std::string & path) const;
 };
 
 class MetadataStorageFromPlainObjectStorageTransaction final : public IMetadataTransaction, private MetadataOperationsHolder

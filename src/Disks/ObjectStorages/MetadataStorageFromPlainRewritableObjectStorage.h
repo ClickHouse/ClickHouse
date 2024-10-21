@@ -20,10 +20,16 @@ public:
     ~MetadataStorageFromPlainRewritableObjectStorage() override;
 
     MetadataStorageType getType() const override { return MetadataStorageType::PlainRewritable; }
+
     bool existsFile(const std::string & path) const override;
+
     bool existsDirectory(const std::string & path) const override;
+
     bool existsFileOrDirectory(const std::string & path) const override;
+
     std::vector<std::string> listDirectory(const std::string & path) const override;
+
+    std::optional<Poco::Timestamp> getLastModifiedIfExists(const String & path) const override;
 
 protected:
     std::string getMetadataKeyPrefix() const override { return metadata_key_prefix; }
