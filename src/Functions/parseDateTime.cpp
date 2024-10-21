@@ -2162,6 +2162,9 @@ namespace
             }
             else
             {
+                if (!arguments[1].column || !isColumnConst(*arguments[1].column))
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument at index {} for function {} must be constant", 1, getName());
+
                 const auto * col_format = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
                 if (!col_format)
                     throw Exception(
