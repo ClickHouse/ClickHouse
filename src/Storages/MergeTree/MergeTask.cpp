@@ -1392,7 +1392,7 @@ bool MergeTask::execute()
 }
 
 
-/// Apply merge strategy (Ordinary, Colapsing, Aggregating, etc) to the stream
+/// Apply merge strategy (Ordinary, Collapsing, Aggregating, etc) to the stream
 class MergePartsStep : public ITransformingStep
 {
 public:
@@ -1428,7 +1428,7 @@ public:
         ///  that is going in insertion order.
         ProcessorPtr merged_transform;
 
-        const auto &header = pipeline.getHeader();
+        const auto & header = pipeline.getHeader();
         const auto input_streams_count = pipeline.getNumStreams();
 
         WriteBuffer * rows_sources_write_buf = nullptr;
@@ -1697,7 +1697,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             sort_description,
             partition_key_columns,
             global_ctx->merging_params,
-            (is_vertical_merge ? RowsSourcesTemporaryFile::FILE_ID : ""),  /// rows_sources temporaty file is used only for vertical merge
+            (is_vertical_merge ? RowsSourcesTemporaryFile::FILE_ID : ""),  /// rows_sources' temporary file is used only for vertical merge
             (*data_settings)[MergeTreeSetting::merge_max_block_size],
             (*data_settings)[MergeTreeSetting::merge_max_block_size_bytes],
             ctx->blocks_are_granules_size,
