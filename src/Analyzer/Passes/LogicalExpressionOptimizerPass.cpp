@@ -20,6 +20,7 @@ namespace Setting
 {
     extern const SettingsUInt64 optimize_min_equality_disjunction_chain_length;
     extern const SettingsUInt64 optimize_min_inequality_conjunction_chain_length;
+    extern const SettingsBool enable_optimize_query_tree_logical_expression;
 }
 
 namespace ErrorCodes
@@ -806,6 +807,9 @@ private:
 
 void LogicalExpressionOptimizerPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
+    if (!context->getSettingsRef()[Setting::enable_optimize_query_tree_logical_expression])
+        return;
+
     LogicalExpressionOptimizerVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);
 }
