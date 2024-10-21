@@ -7,6 +7,7 @@
 #include <Core/ServerSettings.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 
 #include <DataTypes/DataTypeString.h>
 
@@ -134,6 +135,7 @@ namespace Setting
     extern const SettingsFloat totals_auto_threshold;
     extern const SettingsTotalsMode totals_mode;
     extern const SettingsBool use_with_fill_by_sorting_prefix;
+    extern const SettingsBool parallel_replicas_local_plan;
 }
 
 namespace ServerSetting
@@ -200,13 +202,13 @@ void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
   * 4. Extract filters from ReadFromDummy query plan steps from query plan leaf nodes.
   */
 
-FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const QueryTreeNodes & table_nodes, const ContextPtr & query_context)
+FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const QueryTreeNodes & table_nodes, const ContextMutablePtr & query_context)
 {
     bool collect_filters = false;
     const auto & settings = query_context->getSettingsRef();
 
-    bool parallel_replicas_estimation_enabled
-        = query_context->canUseParallelReplicasOnInitiator() && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0;
+    bool parallel_replicas_estimation_enabled = query_context->canUseParallelReplicasOnInitiator()
+        && (settings[Setting::parallel_replicas_local_plan] || settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0);
 
     for (const auto & table_expression : table_nodes)
     {
@@ -238,6 +240,16 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         auto * dummy_storage = dummy_table_expression->as<TableNode &>().getStorage().get();
         dummy_storage_to_table.emplace(dummy_storage, from_table_expression);
     }
+
+    // there is no need to build plan with parallel replicas to collect filters
+    // so, disable parallel replicas temporary here
+    // moreover, for queries with global joins it can lead to subquery execution
+    // and registering empty temporary table in context (because it'll read from StorageDummy)
+    const UInt64 enable_parallel_replicas_value = settings[Setting::allow_experimental_parallel_reading_from_replicas];
+    query_context->setSetting("enable_parallel_replicas", UInt64{0});
+    SCOPE_EXIT({
+        query_context->setSetting("enable_parallel_replicas", enable_parallel_replicas_value);
+    });
 
     SelectQueryOptions select_query_options;
     Planner planner(updated_query_tree, select_query_options);
@@ -287,12 +299,12 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
             "Expected QUERY or UNION node. Actual {}",
             query_tree_node->formatASTForErrorMessage());
 
-    auto context = query_node ? query_node->getContext() : union_node->getContext();
+    auto mutable_context = query_node ? query_node->getMutableContext() : union_node->getMutableContext();
 
     auto table_expressions_nodes
         = extractTableExpressions(query_tree_node, false /* add_array_join */, true /* recursive */);
 
-    return collectFiltersForAnalysis(query_tree_node, table_expressions_nodes, context);
+    return collectFiltersForAnalysis(query_tree_node, table_expressions_nodes, mutable_context);
 }
 
 /// Extend lifetime of query context, storages, and table locks
