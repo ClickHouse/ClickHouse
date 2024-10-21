@@ -95,20 +95,20 @@ namespace
     std::shared_ptr<ObjectStorageQueueLog> getQueueLog(
         const ObjectStoragePtr & storage,
         const ContextPtr & context,
-        const ObjectStorageQueueSettings & table_settings)
+        bool enable_logging_to_queue_log)
     {
         const auto & settings = context->getSettingsRef();
         switch (storage->getType())
         {
             case DB::ObjectStorageType::S3:
             {
-                if (table_settings.enable_logging_to_queue_log || settings[Setting::s3queue_enable_logging_to_s3queue_log])
+                if (enable_logging_to_queue_log || settings[Setting::s3queue_enable_logging_to_s3queue_log])
                     return context->getS3QueueLog();
                 return nullptr;
             }
             case DB::ObjectStorageType::Azure:
             {
-                if (table_settings.enable_logging_to_queue_log)
+                if (enable_logging_to_queue_log)
                     return context->getAzureQueueLog();
                 return nullptr;
             }
@@ -127,15 +127,26 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     const String & comment,
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_,
-    ASTStorage * /* engine_args */,
+    ASTStorage * engine_args,
     LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_)
-    , queue_settings(std::move(queue_settings_))
-    , zk_path(chooseZooKeeperPath(table_id_, context_->getSettingsRef(), *queue_settings))
+    , type(engine_args->engine->name == "S3Queue" ? StorageObjectStorageQueueType::S3 : StorageObjectStorageQueueType::Azure)
+    , engine_name(engine_args->engine->name)
+    , zk_path(chooseZooKeeperPath(table_id_, context_->getSettingsRef(), *queue_settings_))
+    , enable_logging_to_queue_log(queue_settings_->enable_logging_to_queue_log)
+    , polling_min_timeout_ms(queue_settings_->polling_min_timeout_ms)
+    , polling_max_timeout_ms(queue_settings_->polling_max_timeout_ms)
+    , polling_backoff_ms(queue_settings_->polling_backoff_ms)
+    , commit_settings(CommitSettings{
+        .max_processed_files_before_commit = queue_settings_->max_processed_files_before_commit,
+        .max_processed_rows_before_commit = queue_settings_->max_processed_rows_before_commit,
+        .max_processed_bytes_before_commit = queue_settings_->max_processed_bytes_before_commit,
+        .max_processing_time_sec_before_commit = queue_settings_->max_processing_time_sec_before_commit,
+    })
     , configuration{configuration_}
     , format_settings(format_settings_)
-    , reschedule_processing_interval_ms(queue_settings->polling_min_timeout_ms)
+    , reschedule_processing_interval_ms(queue_settings_->polling_min_timeout_ms)
     , log(getLogger(fmt::format("Storage{}Queue ({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
     if (configuration->getPath().empty())
@@ -152,7 +163,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     }
 
     const bool is_attach = mode > LoadingStrictnessLevel::CREATE;
-    validateSettings(*queue_settings, is_attach);
+    validateSettings(*queue_settings_, is_attach);
 
     object_storage = configuration->createObjectStorage(context_, /* is_readonly */true);
     FormatFactory::instance().checkFormatName(configuration->format);
@@ -167,16 +178,17 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.settings_changes = engine_args->settings->ptr();
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
 
     auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
-        zk_path, *queue_settings, storage_metadata.getColumns(), configuration_->format, context_, is_attach, log);
+        zk_path, *queue_settings_, storage_metadata.getColumns(), configuration_->format, context_, is_attach, log);
 
     auto queue_metadata = std::make_unique<ObjectStorageQueueMetadata>(
-        zk_path, std::move(table_metadata), queue_settings->cleanup_interval_min_ms, queue_settings->cleanup_interval_max_ms);
+        zk_path, std::move(table_metadata), queue_settings_->cleanup_interval_min_ms, queue_settings_->cleanup_interval_max_ms);
 
     files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata));
 
@@ -317,7 +329,7 @@ void StorageObjectStorageQueue::read(
 void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     Pipes pipes;
-    const size_t adjusted_num_streams = storage->queue_settings->processing_threads_num;
+    const size_t adjusted_num_streams = storage->getTableMetadata().processing_threads_num;
 
     createIterator(nullptr);
     for (size_t i = 0; i < adjusted_num_streams; ++i)
@@ -351,9 +363,10 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         getName(), processor_id,
         file_iterator, configuration, object_storage,
         info, format_settings,
-        *queue_settings, files_metadata,
+        commit_settings,
+        files_metadata,
         local_context, max_block_size, shutdown_called, table_is_being_dropped,
-        getQueueLog(object_storage, local_context, *queue_settings),
+        getQueueLog(object_storage, local_context, enable_logging_to_queue_log),
         getStorageID(), log, commit_once_processed);
 }
 
@@ -400,12 +413,12 @@ void StorageObjectStorageQueue::threadFunc()
             if (streamToViews())
             {
                 /// Reset the reschedule interval.
-                reschedule_processing_interval_ms = queue_settings->polling_min_timeout_ms;
+                reschedule_processing_interval_ms = polling_min_timeout_ms;
             }
             else
             {
                 /// Increase the reschedule interval.
-                reschedule_processing_interval_ms += queue_settings->polling_backoff_ms;
+                reschedule_processing_interval_ms = std::min<size_t>(polling_max_timeout_ms, reschedule_processing_interval_ms + polling_backoff_ms);
             }
 
             LOG_DEBUG(log, "Stopped streaming to {} attached views", dependencies_count);
@@ -446,6 +459,9 @@ bool StorageObjectStorageQueue::streamToViews()
 
     auto file_iterator = createFileIterator(queue_context, nullptr);
     size_t total_rows = 0;
+    const size_t processing_threads_num = getTableMetadata().processing_threads_num;
+
+    LOG_TEST(log, "Using {} processing threads", processing_threads_num);
 
     while (!shutdown_called && !file_iterator->isFinished())
     {
@@ -466,10 +482,10 @@ bool StorageObjectStorageQueue::streamToViews()
         Pipes pipes;
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> sources;
 
-        pipes.reserve(queue_settings->processing_threads_num);
-        sources.reserve(queue_settings->processing_threads_num);
+        pipes.reserve(processing_threads_num);
+        sources.reserve(processing_threads_num);
 
-        for (size_t i = 0; i < queue_settings->processing_threads_num; ++i)
+        for (size_t i = 0; i < processing_threads_num; ++i)
         {
             auto source = createSource(
                 i/* processor_id */,
@@ -485,7 +501,7 @@ bool StorageObjectStorageQueue::streamToViews()
         auto pipe = Pipe::unitePipes(std::move(pipes));
 
         block_io.pipeline.complete(std::move(pipe));
-        block_io.pipeline.setNumThreads(queue_settings->processing_threads_num);
+        block_io.pipeline.setNumThreads(processing_threads_num);
         block_io.pipeline.setConcurrencyControl(queue_context->getSettingsRef()[Setting::use_concurrency_control]);
 
         std::atomic_size_t rows = 0;
@@ -527,6 +543,33 @@ std::shared_ptr<StorageObjectStorageQueue::FileIterator> StorageObjectStorageQue
         object_storage, configuration, predicate, getVirtualsList(), local_context, nullptr, settings.list_object_keys_size, settings.throw_on_zero_files_match);
 
     return std::make_shared<FileIterator>(files_metadata, std::move(glob_iterator), shutdown_called, log);
+}
+
+ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
+{
+    /// We do not store queue settings
+    /// (because of the inconbenience of keeping them in sync with ObjectStorageQueueTableMetadata),
+    /// so let's reconstruct.
+    ObjectStorageQueueSettings settings;
+    const auto & table_metadata = getTableMetadata();
+    settings.after_processing = table_metadata.after_processing;
+    settings.keeper_path = zk_path;
+    settings.loading_retries = table_metadata.loading_retries;
+    settings.processing_threads_num = table_metadata.processing_threads_num;
+    settings.enable_logging_to_queue_log = enable_logging_to_queue_log;
+    settings.last_processed_path = table_metadata.last_processed_path;
+    settings.tracked_file_ttl_sec = 0;
+    settings.tracked_files_limit = 0;
+    settings.polling_min_timeout_ms = polling_min_timeout_ms;
+    settings.polling_max_timeout_ms = polling_max_timeout_ms;
+    settings.polling_backoff_ms = polling_backoff_ms;
+    settings.cleanup_interval_min_ms = 0;
+    settings.cleanup_interval_max_ms = 0;
+    settings.buckets = table_metadata.buckets;
+    settings.max_processed_files_before_commit = commit_settings.max_processed_files_before_commit;
+    settings.max_processed_rows_before_commit = commit_settings.max_processed_rows_before_commit;
+    settings.max_processed_bytes_before_commit = commit_settings.max_processed_bytes_before_commit;
+    return settings;
 }
 
 }
