@@ -1795,8 +1795,8 @@ void Planner::buildPlanForQueryNode()
         if (query_node.hasOrderBy())
             addWithFillStepIfNeeded(query_plan, query_analysis_result, planner_context, query_node);
 
-        bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
-
+        bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation
+            && query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
         if (query_node.hasLimit() && query_node.isLimitWithTies() && apply_offset)
             addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
 
