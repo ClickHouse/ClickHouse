@@ -23,7 +23,7 @@ namespace DB
   * Allows to insert, remove columns in arbitrary position, to change order of columns.
   */
 
-class Block
+class alignas(64) Block
 {
 private:
     using Container = ColumnsWithTypeAndName;
