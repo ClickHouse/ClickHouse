@@ -26,6 +26,11 @@ if [ ! -f "/etc/debian_version" ]; then
 fi
 
 if [ "$1" = configure ] || [ -n "$not_deb_os" ]; then
+    installed=$(dpkg -l | grep "^ii\s\+clickhouse-server ")
+    # already installed, use old "is-enabled" status
+    if [ -n "$installed" ]; then
+        status=$(systemctl is-enabled clickhouse-server 2>/dev/null)
+    fi
 
     ${CLICKHOUSE_GENERIC_PROGRAM} install --user "${CLICKHOUSE_USER}" --group "${CLICKHOUSE_GROUP}" --pid-path "${CLICKHOUSE_PIDDIR}" --config-path "${CLICKHOUSE_CONFDIR}" --binary-path "${CLICKHOUSE_BINDIR}" --log-path "${CLICKHOUSE_LOGDIR}" --data-path "${CLICKHOUSE_DATADIR}"
 
@@ -36,7 +41,10 @@ if [ "$1" = configure ] || [ -n "$not_deb_os" ]; then
         fi
 
         /bin/systemctl daemon-reload
-        /bin/systemctl enable clickhouse-server
+        # if service is not disabled, enable it
+        if [ $status != "disabled" ]; then
+            /bin/systemctl enable clickhouse-server
+        fi
     else
         # If you downgrading to version older than 1.1.54336 run: systemctl disable clickhouse-server
         if [ -x "/etc/init.d/clickhouse-server" ]; then
