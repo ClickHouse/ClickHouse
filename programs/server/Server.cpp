@@ -164,6 +164,123 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt32 asynchronous_heavy_metrics_update_period_s;
+    extern const ServerSettingsUInt32 asynchronous_metrics_update_period_s;
+    extern const ServerSettingsBool async_insert_queue_flush_on_shutdown;
+    extern const ServerSettingsUInt64 async_insert_threads;
+    extern const ServerSettingsBool async_load_databases;
+    extern const ServerSettingsUInt64 background_buffer_flush_schedule_pool_size;
+    extern const ServerSettingsUInt64 background_common_pool_size;
+    extern const ServerSettingsUInt64 background_distributed_schedule_pool_size;
+    extern const ServerSettingsUInt64 background_fetches_pool_size;
+    extern const ServerSettingsFloat background_merges_mutations_concurrency_ratio;
+    extern const ServerSettingsString background_merges_mutations_scheduling_policy;
+    extern const ServerSettingsUInt64 background_message_broker_schedule_pool_size;
+    extern const ServerSettingsUInt64 background_move_pool_size;
+    extern const ServerSettingsUInt64 background_pool_size;
+    extern const ServerSettingsUInt64 background_schedule_pool_size;
+    extern const ServerSettingsUInt64 backups_io_thread_pool_queue_size;
+    extern const ServerSettingsDouble cache_size_to_ram_max_ratio;
+    extern const ServerSettingsDouble cannot_allocate_thread_fault_injection_probability;
+    extern const ServerSettingsUInt64 cgroups_memory_usage_observer_wait_time;
+    extern const ServerSettingsUInt64 compiled_expression_cache_elements_size;
+    extern const ServerSettingsUInt64 compiled_expression_cache_size;
+    extern const ServerSettingsUInt64 concurrent_threads_soft_limit_num;
+    extern const ServerSettingsUInt64 concurrent_threads_soft_limit_ratio_to_cores;
+    extern const ServerSettingsUInt64 config_reload_interval_ms;
+    extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
+    extern const ServerSettingsString default_database;
+    extern const ServerSettingsBool disable_internal_dns_cache;
+    extern const ServerSettingsUInt64 disk_connections_soft_limit;
+    extern const ServerSettingsUInt64 disk_connections_store_limit;
+    extern const ServerSettingsUInt64 disk_connections_warn_limit;
+    extern const ServerSettingsBool dns_allow_resolve_names_to_ipv4;
+    extern const ServerSettingsBool dns_allow_resolve_names_to_ipv6;
+    extern const ServerSettingsUInt64 dns_cache_max_entries;
+    extern const ServerSettingsInt32 dns_cache_update_period;
+    extern const ServerSettingsUInt32 dns_max_consecutive_failures;
+    extern const ServerSettingsBool enable_azure_sdk_logging;
+    extern const ServerSettingsBool format_alter_operations_with_parentheses;
+    extern const ServerSettingsUInt64 global_profiler_cpu_time_period_ns;
+    extern const ServerSettingsUInt64 global_profiler_real_time_period_ns;
+    extern const ServerSettingsDouble gwp_asan_force_sample_probability;
+    extern const ServerSettingsUInt64 http_connections_soft_limit;
+    extern const ServerSettingsUInt64 http_connections_store_limit;
+    extern const ServerSettingsUInt64 http_connections_warn_limit;
+    extern const ServerSettingsString index_mark_cache_policy;
+    extern const ServerSettingsUInt64 index_mark_cache_size;
+    extern const ServerSettingsDouble index_mark_cache_size_ratio;
+    extern const ServerSettingsString index_uncompressed_cache_policy;
+    extern const ServerSettingsUInt64 index_uncompressed_cache_size;
+    extern const ServerSettingsDouble index_uncompressed_cache_size_ratio;
+    extern const ServerSettingsUInt64 io_thread_pool_queue_size;
+    extern const ServerSettingsSeconds keep_alive_timeout;
+    extern const ServerSettingsString mark_cache_policy;
+    extern const ServerSettingsUInt64 mark_cache_size;
+    extern const ServerSettingsDouble mark_cache_size_ratio;
+    extern const ServerSettingsUInt64 max_active_parts_loading_thread_pool_size;
+    extern const ServerSettingsUInt64 max_backups_io_thread_pool_free_size;
+    extern const ServerSettingsUInt64 max_backups_io_thread_pool_size;
+    extern const ServerSettingsUInt64 max_concurrent_insert_queries;
+    extern const ServerSettingsUInt64 max_concurrent_queries;
+    extern const ServerSettingsUInt64 max_concurrent_select_queries;
+    extern const ServerSettingsInt32 max_connections;
+    extern const ServerSettingsUInt64 max_database_num_to_warn;
+    extern const ServerSettingsUInt32 max_database_replicated_create_table_thread_pool_size;
+    extern const ServerSettingsUInt64 max_dictionary_num_to_warn;
+    extern const ServerSettingsUInt64 max_io_thread_pool_free_size;
+    extern const ServerSettingsUInt64 max_io_thread_pool_size;
+    extern const ServerSettingsUInt64 max_keep_alive_requests;
+    extern const ServerSettingsUInt64 max_outdated_parts_loading_thread_pool_size;
+    extern const ServerSettingsUInt64 max_partition_size_to_drop;
+    extern const ServerSettingsUInt64 max_part_num_to_warn;
+    extern const ServerSettingsUInt64 max_parts_cleaning_thread_pool_size;
+    extern const ServerSettingsUInt64 max_server_memory_usage;
+    extern const ServerSettingsDouble max_server_memory_usage_to_ram_ratio;
+    extern const ServerSettingsUInt64 max_table_num_to_warn;
+    extern const ServerSettingsUInt64 max_table_size_to_drop;
+    extern const ServerSettingsUInt64 max_temporary_data_on_disk_size;
+    extern const ServerSettingsUInt64 max_thread_pool_free_size;
+    extern const ServerSettingsUInt64 max_thread_pool_size;
+    extern const ServerSettingsUInt64 max_unexpected_parts_loading_thread_pool_size;
+    extern const ServerSettingsUInt64 max_view_num_to_warn;
+    extern const ServerSettingsUInt64 max_waiting_queries;
+    extern const ServerSettingsUInt64 memory_worker_period_ms;
+    extern const ServerSettingsUInt64 merges_mutations_memory_usage_soft_limit;
+    extern const ServerSettingsDouble merges_mutations_memory_usage_to_ram_ratio;
+    extern const ServerSettingsString merge_workload;
+    extern const ServerSettingsUInt64 mmap_cache_size;
+    extern const ServerSettingsString mutation_workload;
+    extern const ServerSettingsUInt64 page_cache_chunk_size;
+    extern const ServerSettingsUInt64 page_cache_mmap_size;
+    extern const ServerSettingsUInt64 page_cache_size;
+    extern const ServerSettingsBool page_cache_use_madv_free;
+    extern const ServerSettingsBool page_cache_use_transparent_huge_pages;
+    extern const ServerSettingsBool prepare_system_log_tables_on_startup;
+    extern const ServerSettingsBool show_addresses_in_stack_traces;
+    extern const ServerSettingsBool shutdown_wait_backups_and_restores;
+    extern const ServerSettingsUInt64 shutdown_wait_unfinished;
+    extern const ServerSettingsBool shutdown_wait_unfinished_queries;
+    extern const ServerSettingsUInt64 storage_connections_soft_limit;
+    extern const ServerSettingsUInt64 storage_connections_store_limit;
+    extern const ServerSettingsUInt64 storage_connections_warn_limit;
+    extern const ServerSettingsUInt64 tables_loader_background_pool_size;
+    extern const ServerSettingsUInt64 tables_loader_foreground_pool_size;
+    extern const ServerSettingsString temporary_data_in_cache;
+    extern const ServerSettingsUInt64 thread_pool_queue_size;
+    extern const ServerSettingsString tmp_policy;
+    extern const ServerSettingsUInt64 total_memory_profiler_sample_max_allocation_size;
+    extern const ServerSettingsUInt64 total_memory_profiler_sample_min_allocation_size;
+    extern const ServerSettingsUInt64 total_memory_profiler_step;
+    extern const ServerSettingsDouble total_memory_tracker_sample_probability;
+    extern const ServerSettingsString uncompressed_cache_policy;
+    extern const ServerSettingsUInt64 uncompressed_cache_size;
+    extern const ServerSettingsDouble uncompressed_cache_size_ratio;
+    extern const ServerSettingsBool use_legacy_mongodb_integration;
+}
+
 }
 
 namespace CurrentMetrics
@@ -672,7 +789,7 @@ static void initializeAzureSDKLogger(
     [[ maybe_unused ]] int server_logs_level)
 {
 #if USE_AZURE_BLOB_STORAGE
-    if (!server_settings.enable_azure_sdk_logging)
+    if (!server_settings[ServerSetting::enable_azure_sdk_logging])
         return;
 
     using AzureLogsLevel = Azure::Core::Diagnostics::Logger::Level;
@@ -746,9 +863,9 @@ try
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
 
-    ASTAlterCommand::setFormatAlterCommandsWithParentheses(server_settings.format_alter_operations_with_parentheses);
+    ASTAlterCommand::setFormatAlterCommandsWithParentheses(server_settings[ServerSetting::format_alter_operations_with_parentheses]);
 
-    StackTrace::setShowAddresses(server_settings.show_addresses_in_stack_traces);
+    StackTrace::setShowAddresses(server_settings[ServerSetting::show_addresses_in_stack_traces]);
 
 #if USE_HDFS
     /// This will point libhdfs3 to the right location for its config.
@@ -794,10 +911,10 @@ try
     registerInterpreters();
     registerFunctions();
     registerAggregateFunctions();
-    registerTableFunctions(server_settings.use_legacy_mongodb_integration);
+    registerTableFunctions(server_settings[ServerSetting::use_legacy_mongodb_integration]);
     registerDatabases();
-    registerStorages(server_settings.use_legacy_mongodb_integration);
-    registerDictionaries(server_settings.use_legacy_mongodb_integration);
+    registerStorages(server_settings[ServerSetting::use_legacy_mongodb_integration]);
+    registerDictionaries(server_settings[ServerSetting::use_legacy_mongodb_integration]);
     registerDisks(/* global_skip_access_check= */ false);
     registerFormats();
     registerRemoteFileMetadatas();
@@ -893,37 +1010,37 @@ try
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
     // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
     GlobalThreadPool::initialize(
-        server_settings.max_thread_pool_size,
-        server_settings.max_thread_pool_free_size,
-        server_settings.thread_pool_queue_size,
-        has_trace_collector ? server_settings.global_profiler_real_time_period_ns : 0,
-        has_trace_collector ? server_settings.global_profiler_cpu_time_period_ns : 0);
+        server_settings[ServerSetting::max_thread_pool_size],
+        server_settings[ServerSetting::max_thread_pool_free_size],
+        server_settings[ServerSetting::thread_pool_queue_size],
+        has_trace_collector ? server_settings[ServerSetting::global_profiler_real_time_period_ns] : 0,
+        has_trace_collector ? server_settings[ServerSetting::global_profiler_cpu_time_period_ns] : 0);
 
     if (has_trace_collector)
     {
         global_context->createTraceCollector();
 
         /// Set up server-wide memory profiler (for total memory tracker).
-        if (server_settings.total_memory_profiler_step)
-            total_memory_tracker.setProfilerStep(server_settings.total_memory_profiler_step);
+        if (server_settings[ServerSetting::total_memory_profiler_step])
+            total_memory_tracker.setProfilerStep(server_settings[ServerSetting::total_memory_profiler_step]);
 
-        if (server_settings.total_memory_tracker_sample_probability > 0.0)
-            total_memory_tracker.setSampleProbability(server_settings.total_memory_tracker_sample_probability);
+        if (server_settings[ServerSetting::total_memory_tracker_sample_probability] > 0.0)
+            total_memory_tracker.setSampleProbability(server_settings[ServerSetting::total_memory_tracker_sample_probability]);
 
-        if (server_settings.total_memory_profiler_sample_min_allocation_size)
-            total_memory_tracker.setSampleMinAllocationSize(server_settings.total_memory_profiler_sample_min_allocation_size);
+        if (server_settings[ServerSetting::total_memory_profiler_sample_min_allocation_size])
+            total_memory_tracker.setSampleMinAllocationSize(server_settings[ServerSetting::total_memory_profiler_sample_min_allocation_size]);
 
-        if (server_settings.total_memory_profiler_sample_max_allocation_size)
-            total_memory_tracker.setSampleMaxAllocationSize(server_settings.total_memory_profiler_sample_max_allocation_size);
+        if (server_settings[ServerSetting::total_memory_profiler_sample_max_allocation_size])
+            total_memory_tracker.setSampleMaxAllocationSize(server_settings[ServerSetting::total_memory_profiler_sample_max_allocation_size]);
     }
 
     Poco::ThreadPool server_pool(
         /* minCapacity */3,
-        /* maxCapacity */server_settings.max_connections,
+        /* maxCapacity */server_settings[ServerSetting::max_connections],
         /* idleTime */60,
         /* stackSize */POCO_THREAD_STACK_SIZE,
-        server_settings.global_profiler_real_time_period_ns,
-        server_settings.global_profiler_cpu_time_period_ns);
+        server_settings[ServerSetting::global_profiler_real_time_period_ns],
+        server_settings[ServerSetting::global_profiler_cpu_time_period_ns]);
 
     std::mutex servers_lock;
     std::vector<ProtocolServerAdapter> servers;
@@ -937,13 +1054,13 @@ try
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
 
-    MemoryWorker memory_worker(global_context->getServerSettings().memory_worker_period_ms);
+    MemoryWorker memory_worker(global_context->getServerSettings()[ServerSetting::memory_worker_period_ms]);
 
     /// This object will periodically calculate some metrics.
     ServerAsynchronousMetrics async_metrics(
         global_context,
-        server_settings.asynchronous_metrics_update_period_s,
-        server_settings.asynchronous_heavy_metrics_update_period_s,
+        server_settings[ServerSetting::asynchronous_metrics_update_period_s],
+        server_settings[ServerSetting::asynchronous_heavy_metrics_update_period_s],
         [&]() -> std::vector<ProtocolServerMetrics>
         {
             std::vector<ProtocolServerMetrics> metrics;
@@ -996,7 +1113,7 @@ try
                 LOG_INFO(log, "Closed all listening sockets.");
 
             if (current_connections > 0)
-                current_connections = waitServersToFinish(servers_to_start_before_tables, servers_lock, server_settings.shutdown_wait_unfinished);
+                current_connections = waitServersToFinish(servers_to_start_before_tables, servers_lock, server_settings[ServerSetting::shutdown_wait_unfinished]);
 
             if (current_connections)
                 LOG_INFO(log, "Closed connections to servers for tables. But {} remain. Probably some tables of other users cannot finish their connections after context shutdown.", current_connections);
@@ -1033,47 +1150,47 @@ try
 #endif
 
     getIOThreadPool().initialize(
-        server_settings.max_io_thread_pool_size,
-        server_settings.max_io_thread_pool_free_size,
-        server_settings.io_thread_pool_queue_size);
+        server_settings[ServerSetting::max_io_thread_pool_size],
+        server_settings[ServerSetting::max_io_thread_pool_free_size],
+        server_settings[ServerSetting::io_thread_pool_queue_size]);
 
     getBackupsIOThreadPool().initialize(
-        server_settings.max_backups_io_thread_pool_size,
-        server_settings.max_backups_io_thread_pool_free_size,
-        server_settings.backups_io_thread_pool_queue_size);
+        server_settings[ServerSetting::max_backups_io_thread_pool_size],
+        server_settings[ServerSetting::max_backups_io_thread_pool_free_size],
+        server_settings[ServerSetting::backups_io_thread_pool_queue_size]);
 
     getActivePartsLoadingThreadPool().initialize(
-        server_settings.max_active_parts_loading_thread_pool_size,
+        server_settings[ServerSetting::max_active_parts_loading_thread_pool_size],
         0, // We don't need any threads once all the parts will be loaded
-        server_settings.max_active_parts_loading_thread_pool_size);
+        server_settings[ServerSetting::max_active_parts_loading_thread_pool_size]);
 
     getOutdatedPartsLoadingThreadPool().initialize(
-        server_settings.max_outdated_parts_loading_thread_pool_size,
+        server_settings[ServerSetting::max_outdated_parts_loading_thread_pool_size],
         0, // We don't need any threads once all the parts will be loaded
-        server_settings.max_outdated_parts_loading_thread_pool_size);
+        server_settings[ServerSetting::max_outdated_parts_loading_thread_pool_size]);
 
     /// It could grow if we need to synchronously wait until all the data parts will be loaded.
     getOutdatedPartsLoadingThreadPool().setMaxTurboThreads(
-        server_settings.max_active_parts_loading_thread_pool_size
+        server_settings[ServerSetting::max_active_parts_loading_thread_pool_size]
     );
 
     getUnexpectedPartsLoadingThreadPool().initialize(
-        server_settings.max_unexpected_parts_loading_thread_pool_size,
+        server_settings[ServerSetting::max_unexpected_parts_loading_thread_pool_size],
         0, // We don't need any threads once all the parts will be loaded
-        server_settings.max_unexpected_parts_loading_thread_pool_size);
+        server_settings[ServerSetting::max_unexpected_parts_loading_thread_pool_size]);
 
     /// It could grow if we need to synchronously wait until all the data parts will be loaded.
     getUnexpectedPartsLoadingThreadPool().setMaxTurboThreads(
-        server_settings.max_active_parts_loading_thread_pool_size
+        server_settings[ServerSetting::max_active_parts_loading_thread_pool_size]
     );
 
     getPartsCleaningThreadPool().initialize(
-        server_settings.max_parts_cleaning_thread_pool_size,
+        server_settings[ServerSetting::max_parts_cleaning_thread_pool_size],
         0, // We don't need any threads one all the parts will be deleted
-        server_settings.max_parts_cleaning_thread_pool_size);
+        server_settings[ServerSetting::max_parts_cleaning_thread_pool_size]);
 
-    auto max_database_replicated_create_table_thread_pool_size = server_settings.max_database_replicated_create_table_thread_pool_size
-        ? server_settings.max_database_replicated_create_table_thread_pool_size
+    auto max_database_replicated_create_table_thread_pool_size = server_settings[ServerSetting::max_database_replicated_create_table_thread_pool_size]
+        ? server_settings[ServerSetting::max_database_replicated_create_table_thread_pool_size]
         : getNumberOfCPUCoresToUse();
     getDatabaseReplicatedCreateTablesThreadPool().initialize(
         max_database_replicated_create_table_thread_pool_size,
@@ -1081,9 +1198,9 @@ try
         max_database_replicated_create_table_thread_pool_size);
 
     getDatabaseCatalogDropTablesThreadPool().initialize(
-        server_settings.database_catalog_drop_table_concurrency,
+        server_settings[ServerSetting::database_catalog_drop_table_concurrency],
         0, // We don't need any threads if there are no DROP queries.
-        server_settings.database_catalog_drop_table_concurrency);
+        server_settings[ServerSetting::database_catalog_drop_table_concurrency]);
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
@@ -1320,18 +1437,18 @@ try
     LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::serverTimezoneInstance().getTimeZone());
 
     /// Storage with temporary data for processing of heavy queries.
-    if (!server_settings.tmp_policy.value.empty())
+    if (!server_settings[ServerSetting::tmp_policy].value.empty())
     {
-        global_context->setTemporaryStoragePolicy(server_settings.tmp_policy, server_settings.max_temporary_data_on_disk_size);
+        global_context->setTemporaryStoragePolicy(server_settings[ServerSetting::tmp_policy], server_settings[ServerSetting::max_temporary_data_on_disk_size]);
     }
-    else if (!server_settings.temporary_data_in_cache.value.empty())
+    else if (!server_settings[ServerSetting::temporary_data_in_cache].value.empty())
     {
-        global_context->setTemporaryStorageInCache(server_settings.temporary_data_in_cache, server_settings.max_temporary_data_on_disk_size);
+        global_context->setTemporaryStorageInCache(server_settings[ServerSetting::temporary_data_in_cache], server_settings[ServerSetting::max_temporary_data_on_disk_size]);
     }
     else
     {
         std::string temporary_path = config().getString("tmp_path", path / "tmp/");
-        global_context->setTemporaryStoragePath(temporary_path, server_settings.max_temporary_data_on_disk_size);
+        global_context->setTemporaryStoragePath(temporary_path, server_settings[ServerSetting::max_temporary_data_on_disk_size]);
     }
 
     /** Directory with 'flags': files indicating temporary settings for the server set by system administrator.
@@ -1420,11 +1537,11 @@ try
 
     /// Set up caches.
 
-    const size_t max_cache_size = static_cast<size_t>(physical_server_memory * server_settings.cache_size_to_ram_max_ratio);
+    const size_t max_cache_size = static_cast<size_t>(physical_server_memory * server_settings[ServerSetting::cache_size_to_ram_max_ratio]);
 
-    String uncompressed_cache_policy = server_settings.uncompressed_cache_policy;
-    size_t uncompressed_cache_size = server_settings.uncompressed_cache_size;
-    double uncompressed_cache_size_ratio = server_settings.uncompressed_cache_size_ratio;
+    String uncompressed_cache_policy = server_settings[ServerSetting::uncompressed_cache_policy];
+    size_t uncompressed_cache_size = server_settings[ServerSetting::uncompressed_cache_size];
+    double uncompressed_cache_size_ratio = server_settings[ServerSetting::uncompressed_cache_size_ratio];
     if (uncompressed_cache_size > max_cache_size)
     {
         uncompressed_cache_size = max_cache_size;
@@ -1432,9 +1549,9 @@ try
     }
     global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size, uncompressed_cache_size_ratio);
 
-    String mark_cache_policy = server_settings.mark_cache_policy;
-    size_t mark_cache_size = server_settings.mark_cache_size;
-    double mark_cache_size_ratio = server_settings.mark_cache_size_ratio;
+    String mark_cache_policy = server_settings[ServerSetting::mark_cache_policy];
+    size_t mark_cache_size = server_settings[ServerSetting::mark_cache_size];
+    double mark_cache_size_ratio = server_settings[ServerSetting::mark_cache_size_ratio];
     if (mark_cache_size > max_cache_size)
     {
         mark_cache_size = max_cache_size;
@@ -1442,16 +1559,16 @@ try
     }
     global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
 
-    size_t page_cache_size = server_settings.page_cache_size;
+    size_t page_cache_size = server_settings[ServerSetting::page_cache_size];
     if (page_cache_size != 0)
         global_context->setPageCache(
-            server_settings.page_cache_chunk_size, server_settings.page_cache_mmap_size,
-            page_cache_size, server_settings.page_cache_use_madv_free,
-            server_settings.page_cache_use_transparent_huge_pages);
+            server_settings[ServerSetting::page_cache_chunk_size], server_settings[ServerSetting::page_cache_mmap_size],
+            page_cache_size, server_settings[ServerSetting::page_cache_use_madv_free],
+            server_settings[ServerSetting::page_cache_use_transparent_huge_pages]);
 
-    String index_uncompressed_cache_policy = server_settings.index_uncompressed_cache_policy;
-    size_t index_uncompressed_cache_size = server_settings.index_uncompressed_cache_size;
-    double index_uncompressed_cache_size_ratio = server_settings.index_uncompressed_cache_size_ratio;
+    String index_uncompressed_cache_policy = server_settings[ServerSetting::index_uncompressed_cache_policy];
+    size_t index_uncompressed_cache_size = server_settings[ServerSetting::index_uncompressed_cache_size];
+    double index_uncompressed_cache_size_ratio = server_settings[ServerSetting::index_uncompressed_cache_size_ratio];
     if (index_uncompressed_cache_size > max_cache_size)
     {
         index_uncompressed_cache_size = max_cache_size;
@@ -1459,9 +1576,9 @@ try
     }
     global_context->setIndexUncompressedCache(index_uncompressed_cache_policy, index_uncompressed_cache_size, index_uncompressed_cache_size_ratio);
 
-    String index_mark_cache_policy = server_settings.index_mark_cache_policy;
-    size_t index_mark_cache_size = server_settings.index_mark_cache_size;
-    double index_mark_cache_size_ratio = server_settings.index_mark_cache_size_ratio;
+    String index_mark_cache_policy = server_settings[ServerSetting::index_mark_cache_policy];
+    size_t index_mark_cache_size = server_settings[ServerSetting::index_mark_cache_size];
+    double index_mark_cache_size_ratio = server_settings[ServerSetting::index_mark_cache_size_ratio];
     if (index_mark_cache_size > max_cache_size)
     {
         index_mark_cache_size = max_cache_size;
@@ -1469,7 +1586,7 @@ try
     }
     global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
 
-    size_t mmap_cache_size = server_settings.mmap_cache_size;
+    size_t mmap_cache_size = server_settings[ServerSetting::mmap_cache_size];
     if (mmap_cache_size > max_cache_size)
     {
         mmap_cache_size = max_cache_size;
@@ -1489,8 +1606,8 @@ try
     global_context->setQueryCache(query_cache_max_size_in_bytes, query_cache_max_entries, query_cache_query_cache_max_entry_size_in_bytes, query_cache_max_entry_size_in_rows);
 
 #if USE_EMBEDDED_COMPILER
-    size_t compiled_expression_cache_max_size_in_bytes = server_settings.compiled_expression_cache_size;
-    size_t compiled_expression_cache_max_elements = server_settings.compiled_expression_cache_elements_size;
+    size_t compiled_expression_cache_max_size_in_bytes = server_settings[ServerSetting::compiled_expression_cache_size];
+    size_t compiled_expression_cache_max_elements = server_settings[ServerSetting::compiled_expression_cache_elements_size];
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
 
@@ -1509,7 +1626,7 @@ try
     std::optional<CgroupsMemoryUsageObserver> cgroups_memory_usage_observer;
     try
     {
-        auto wait_time = server_settings.cgroups_memory_usage_observer_wait_time;
+        auto wait_time = server_settings[ServerSetting::cgroups_memory_usage_observer_wait_time];
         if (wait_time != 0)
             cgroups_memory_usage_observer.emplace(std::chrono::seconds(wait_time));
     }
@@ -1545,15 +1662,24 @@ try
         config().getString("path", DBMS_DEFAULT_PATH),
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
-        [&](ConfigurationPtr config, bool initial_loading)
+        [&, config_file = config().getString("config-file", "config.xml")](ConfigurationPtr config, bool initial_loading)
         {
+            if (!initial_loading)
+            {
+                /// Add back "config-file" key which is absent in the reloaded config.
+                config->setString("config-file", config_file);
+
+                /// Apply config updates in global context.
+                global_context->setConfig(config);
+            }
+
             Settings::checkNoSettingNamesAtTopLevel(*config, config_path);
 
             ServerSettings new_server_settings;
             new_server_settings.loadSettingsFromConfig(*config);
 
-            size_t max_server_memory_usage = new_server_settings.max_server_memory_usage;
-            double max_server_memory_usage_to_ram_ratio = new_server_settings.max_server_memory_usage_to_ram_ratio;
+            size_t max_server_memory_usage = new_server_settings[ServerSetting::max_server_memory_usage];
+            double max_server_memory_usage_to_ram_ratio = new_server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
 
             size_t current_physical_server_memory = getMemoryAmount(); /// With cgroups, the amount of memory available to the server can be changed dynamically.
             size_t default_max_server_memory_usage = static_cast<size_t>(current_physical_server_memory * max_server_memory_usage_to_ram_ratio);
@@ -1583,9 +1709,9 @@ try
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
-            size_t merges_mutations_memory_usage_soft_limit = new_server_settings.merges_mutations_memory_usage_soft_limit;
+            size_t merges_mutations_memory_usage_soft_limit = new_server_settings[ServerSetting::merges_mutations_memory_usage_soft_limit];
 
-            size_t default_merges_mutations_server_memory_usage = static_cast<size_t>(current_physical_server_memory * new_server_settings.merges_mutations_memory_usage_to_ram_ratio);
+            size_t default_merges_mutations_server_memory_usage = static_cast<size_t>(current_physical_server_memory * new_server_settings[ServerSetting::merges_mutations_memory_usage_to_ram_ratio]);
             if (merges_mutations_memory_usage_soft_limit == 0)
             {
                 merges_mutations_memory_usage_soft_limit = default_merges_mutations_server_memory_usage;
@@ -1593,7 +1719,7 @@ try
                     " ({} available * {:.2f} merges_mutations_memory_usage_to_ram_ratio)",
                     formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit),
                     formatReadableSizeWithBinarySuffix(current_physical_server_memory),
-                    new_server_settings.merges_mutations_memory_usage_to_ram_ratio);
+                    new_server_settings[ServerSetting::merges_mutations_memory_usage_to_ram_ratio]);
             }
             else if (merges_mutations_memory_usage_soft_limit > default_merges_mutations_server_memory_usage)
             {
@@ -1602,7 +1728,7 @@ try
                     " ({} available * {:.2f} merges_mutations_memory_usage_to_ram_ratio)",
                     formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit),
                     formatReadableSizeWithBinarySuffix(current_physical_server_memory),
-                    new_server_settings.merges_mutations_memory_usage_to_ram_ratio);
+                    new_server_settings[ServerSetting::merges_mutations_memory_usage_to_ram_ratio]);
             }
 
             LOG_INFO(log, "Merges and mutations memory limit is set to {}",
@@ -1635,31 +1761,32 @@ try
             global_context->setRemoteHostFilter(*config);
             global_context->setHTTPHeaderFilter(*config);
 
-            global_context->setMaxTableSizeToDrop(new_server_settings.max_table_size_to_drop);
-            global_context->setMaxPartitionSizeToDrop(new_server_settings.max_partition_size_to_drop);
-            global_context->setMaxTableNumToWarn(new_server_settings.max_table_num_to_warn);
-            global_context->setMaxViewNumToWarn(new_server_settings.max_view_num_to_warn);
-            global_context->setMaxDictionaryNumToWarn(new_server_settings.max_dictionary_num_to_warn);
-            global_context->setMaxDatabaseNumToWarn(new_server_settings.max_database_num_to_warn);
-            global_context->setMaxPartNumToWarn(new_server_settings.max_part_num_to_warn);
+            global_context->setMaxTableSizeToDrop(new_server_settings[ServerSetting::max_table_size_to_drop]);
+            global_context->setMaxPartitionSizeToDrop(new_server_settings[ServerSetting::max_partition_size_to_drop]);
+            global_context->setMaxTableNumToWarn(new_server_settings[ServerSetting::max_table_num_to_warn]);
+            global_context->setMaxViewNumToWarn(new_server_settings[ServerSetting::max_view_num_to_warn]);
+            global_context->setMaxDictionaryNumToWarn(new_server_settings[ServerSetting::max_dictionary_num_to_warn]);
+            global_context->setMaxDatabaseNumToWarn(new_server_settings[ServerSetting::max_database_num_to_warn]);
+            global_context->setMaxPartNumToWarn(new_server_settings[ServerSetting::max_part_num_to_warn]);
             /// Only for system.server_settings
-            global_context->setConfigReloaderInterval(new_server_settings.config_reload_interval_ms);
+            global_context->setConfigReloaderInterval(new_server_settings[ServerSetting::config_reload_interval_ms]);
 
             SlotCount concurrent_threads_soft_limit = UnlimitedSlots;
-            if (new_server_settings.concurrent_threads_soft_limit_num > 0 && new_server_settings.concurrent_threads_soft_limit_num < concurrent_threads_soft_limit)
-                concurrent_threads_soft_limit = new_server_settings.concurrent_threads_soft_limit_num;
-            if (new_server_settings.concurrent_threads_soft_limit_ratio_to_cores > 0)
+            if (new_server_settings[ServerSetting::concurrent_threads_soft_limit_num] > 0 && new_server_settings[ServerSetting::concurrent_threads_soft_limit_num] < concurrent_threads_soft_limit)
+                concurrent_threads_soft_limit = new_server_settings[ServerSetting::concurrent_threads_soft_limit_num];
+            if (new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores] > 0)
             {
-                auto value = new_server_settings.concurrent_threads_soft_limit_ratio_to_cores * getNumberOfCPUCoresToUse();
+                auto value = new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores] * getNumberOfCPUCoresToUse();
                 if (value > 0 && value < concurrent_threads_soft_limit)
                     concurrent_threads_soft_limit = value;
             }
             ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
+            LOG_INFO(log, "ConcurrencyControl limit is set to {}", concurrent_threads_soft_limit);
 
-            global_context->getProcessList().setMaxSize(new_server_settings.max_concurrent_queries);
-            global_context->getProcessList().setMaxInsertQueriesAmount(new_server_settings.max_concurrent_insert_queries);
-            global_context->getProcessList().setMaxSelectQueriesAmount(new_server_settings.max_concurrent_select_queries);
-            global_context->getProcessList().setMaxWaitingQueriesAmount(new_server_settings.max_waiting_queries);
+            global_context->getProcessList().setMaxSize(new_server_settings[ServerSetting::max_concurrent_queries]);
+            global_context->getProcessList().setMaxInsertQueriesAmount(new_server_settings[ServerSetting::max_concurrent_insert_queries]);
+            global_context->getProcessList().setMaxSelectQueriesAmount(new_server_settings[ServerSetting::max_concurrent_select_queries]);
+            global_context->getProcessList().setMaxWaitingQueriesAmount(new_server_settings[ServerSetting::max_waiting_queries]);
 
             if (config->has("keeper_server"))
                 global_context->updateKeeperConfiguration(*config);
@@ -1670,72 +1797,72 @@ try
             /// This is done for backward compatibility.
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                auto new_pool_size = new_server_settings.background_pool_size;
-                auto new_ratio = new_server_settings.background_merges_mutations_concurrency_ratio;
+                auto new_pool_size = new_server_settings[ServerSetting::background_pool_size];
+                auto new_ratio = new_server_settings[ServerSetting::background_merges_mutations_concurrency_ratio];
                 global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, static_cast<size_t>(new_pool_size * new_ratio));
-                global_context->getMergeMutateExecutor()->updateSchedulingPolicy(new_server_settings.background_merges_mutations_scheduling_policy.toString());
+                global_context->getMergeMutateExecutor()->updateSchedulingPolicy(new_server_settings[ServerSetting::background_merges_mutations_scheduling_policy].toString());
             }
 
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                auto new_pool_size = new_server_settings.background_move_pool_size;
+                auto new_pool_size = new_server_settings[ServerSetting::background_move_pool_size];
                 global_context->getMovesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                auto new_pool_size = new_server_settings.background_fetches_pool_size;
+                auto new_pool_size = new_server_settings[ServerSetting::background_fetches_pool_size];
                 global_context->getFetchesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                auto new_pool_size = new_server_settings.background_common_pool_size;
+                auto new_pool_size = new_server_settings[ServerSetting::background_common_pool_size];
                 global_context->getCommonExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
-            global_context->getBufferFlushSchedulePool().increaseThreadsCount(new_server_settings.background_buffer_flush_schedule_pool_size);
-            global_context->getSchedulePool().increaseThreadsCount(new_server_settings.background_schedule_pool_size);
-            global_context->getMessageBrokerSchedulePool().increaseThreadsCount(new_server_settings.background_message_broker_schedule_pool_size);
-            global_context->getDistributedSchedulePool().increaseThreadsCount(new_server_settings.background_distributed_schedule_pool_size);
+            global_context->getBufferFlushSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_buffer_flush_schedule_pool_size]);
+            global_context->getSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_schedule_pool_size]);
+            global_context->getMessageBrokerSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_message_broker_schedule_pool_size]);
+            global_context->getDistributedSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_distributed_schedule_pool_size]);
 
-            global_context->getAsyncLoader().setMaxThreads(TablesLoaderForegroundPoolId, new_server_settings.tables_loader_foreground_pool_size);
-            global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundLoadPoolId, new_server_settings.tables_loader_background_pool_size);
-            global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundStartupPoolId, new_server_settings.tables_loader_background_pool_size);
+            global_context->getAsyncLoader().setMaxThreads(TablesLoaderForegroundPoolId, new_server_settings[ServerSetting::tables_loader_foreground_pool_size]);
+            global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundLoadPoolId, new_server_settings[ServerSetting::tables_loader_background_pool_size]);
+            global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundStartupPoolId, new_server_settings[ServerSetting::tables_loader_background_pool_size]);
 
             getIOThreadPool().reloadConfiguration(
-                new_server_settings.max_io_thread_pool_size,
-                new_server_settings.max_io_thread_pool_free_size,
-                new_server_settings.io_thread_pool_queue_size);
+                new_server_settings[ServerSetting::max_io_thread_pool_size],
+                new_server_settings[ServerSetting::max_io_thread_pool_free_size],
+                new_server_settings[ServerSetting::io_thread_pool_queue_size]);
 
             getBackupsIOThreadPool().reloadConfiguration(
-                new_server_settings.max_backups_io_thread_pool_size,
-                new_server_settings.max_backups_io_thread_pool_free_size,
-                new_server_settings.backups_io_thread_pool_queue_size);
+                new_server_settings[ServerSetting::max_backups_io_thread_pool_size],
+                new_server_settings[ServerSetting::max_backups_io_thread_pool_free_size],
+                new_server_settings[ServerSetting::backups_io_thread_pool_queue_size]);
 
             getActivePartsLoadingThreadPool().reloadConfiguration(
-                new_server_settings.max_active_parts_loading_thread_pool_size,
+                new_server_settings[ServerSetting::max_active_parts_loading_thread_pool_size],
                 0, // We don't need any threads once all the parts will be loaded
-                new_server_settings.max_active_parts_loading_thread_pool_size);
+                new_server_settings[ServerSetting::max_active_parts_loading_thread_pool_size]);
 
             getOutdatedPartsLoadingThreadPool().reloadConfiguration(
-                new_server_settings.max_outdated_parts_loading_thread_pool_size,
+                new_server_settings[ServerSetting::max_outdated_parts_loading_thread_pool_size],
                 0, // We don't need any threads once all the parts will be loaded
-                new_server_settings.max_outdated_parts_loading_thread_pool_size);
+                new_server_settings[ServerSetting::max_outdated_parts_loading_thread_pool_size]);
 
             /// It could grow if we need to synchronously wait until all the data parts will be loaded.
             getOutdatedPartsLoadingThreadPool().setMaxTurboThreads(
-                new_server_settings.max_active_parts_loading_thread_pool_size
+                new_server_settings[ServerSetting::max_active_parts_loading_thread_pool_size]
             );
 
             getPartsCleaningThreadPool().reloadConfiguration(
-                new_server_settings.max_parts_cleaning_thread_pool_size,
+                new_server_settings[ServerSetting::max_parts_cleaning_thread_pool_size],
                 0, // We don't need any threads one all the parts will be deleted
-                new_server_settings.max_parts_cleaning_thread_pool_size);
+                new_server_settings[ServerSetting::max_parts_cleaning_thread_pool_size]);
 
 
-            global_context->setMergeWorkload(new_server_settings.merge_workload);
-            global_context->setMutationWorkload(new_server_settings.mutation_workload);
+            global_context->setMergeWorkload(new_server_settings[ServerSetting::merge_workload]);
+            global_context->setMutationWorkload(new_server_settings[ServerSetting::mutation_workload]);
 
             if (config->has("resources"))
             {
@@ -1780,28 +1907,28 @@ try
 
             HTTPConnectionPools::instance().setLimits(
                 HTTPConnectionPools::Limits{
-                    new_server_settings.disk_connections_soft_limit,
-                    new_server_settings.disk_connections_warn_limit,
-                    new_server_settings.disk_connections_store_limit,
+                    new_server_settings[ServerSetting::disk_connections_soft_limit],
+                    new_server_settings[ServerSetting::disk_connections_warn_limit],
+                    new_server_settings[ServerSetting::disk_connections_store_limit],
                 },
                 HTTPConnectionPools::Limits{
-                    new_server_settings.storage_connections_soft_limit,
-                    new_server_settings.storage_connections_warn_limit,
-                    new_server_settings.storage_connections_store_limit,
+                    new_server_settings[ServerSetting::storage_connections_soft_limit],
+                    new_server_settings[ServerSetting::storage_connections_warn_limit],
+                    new_server_settings[ServerSetting::storage_connections_store_limit],
                 },
                 HTTPConnectionPools::Limits{
-                    new_server_settings.http_connections_soft_limit,
-                    new_server_settings.http_connections_warn_limit,
-                    new_server_settings.http_connections_store_limit,
+                    new_server_settings[ServerSetting::http_connections_soft_limit],
+                    new_server_settings[ServerSetting::http_connections_warn_limit],
+                    new_server_settings[ServerSetting::http_connections_store_limit],
                 });
 
-            DNSResolver::instance().setFilterSettings(new_server_settings.dns_allow_resolve_names_to_ipv4, new_server_settings.dns_allow_resolve_names_to_ipv6);
+            DNSResolver::instance().setFilterSettings(new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
 
             if (global_context->isServerCompletelyStarted())
-                CannotAllocateThreadFaultInjector::setFaultProbability(new_server_settings.cannot_allocate_thread_fault_injection_probability);
+                CannotAllocateThreadFaultInjector::setFaultProbability(new_server_settings[ServerSetting::cannot_allocate_thread_fault_injection_probability]);
 
 #if USE_GWP_ASAN
-            GWPAsan::setForceSampleProbability(new_server_settings.gwp_asan_force_sample_probability);
+            GWPAsan::setForceSampleProbability(new_server_settings[ServerSetting::gwp_asan_force_sample_probability]);
 #endif
 
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
@@ -1997,7 +2124,7 @@ try
     });
 
     /// Limit on total number of concurrently executed queries.
-    global_context->getProcessList().setMaxSize(server_settings.max_concurrent_queries);
+    global_context->getProcessList().setMaxSize(server_settings[ServerSetting::max_concurrent_queries]);
 
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
@@ -2006,12 +2133,12 @@ try
     /// This is needed to load proper values of background_pool_size etc.
     global_context->initializeBackgroundExecutorsIfNeeded();
 
-    if (server_settings.async_insert_threads)
+    if (server_settings[ServerSetting::async_insert_threads])
     {
         global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
             global_context,
-            server_settings.async_insert_threads,
-            server_settings.async_insert_queue_flush_on_shutdown));
+            server_settings[ServerSetting::async_insert_threads],
+            server_settings[ServerSetting::async_insert_queue_flush_on_shutdown]));
     }
 
     /// Set path for format schema files
@@ -2047,7 +2174,7 @@ try
     /// context is destroyed.
     /// In addition this object has to be created before the loading of the tables.
     std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
-    if (server_settings.disable_internal_dns_cache)
+    if (server_settings[ServerSetting::disable_internal_dns_cache])
     {
         /// Disable DNS caching at all
         DNSResolver::instance().setDisableCacheFlag();
@@ -2055,11 +2182,11 @@ try
     }
     else
     {
-        DNSResolver::instance().setCacheMaxEntries(server_settings.dns_cache_max_entries);
+        DNSResolver::instance().setCacheMaxEntries(server_settings[ServerSetting::dns_cache_max_entries]);
 
         /// Initialize a watcher periodically updating DNS cache
         dns_cache_updater = std::make_unique<DNSCacheUpdater>(
-            global_context, server_settings.dns_cache_update_period, server_settings.dns_max_consecutive_failures);
+            global_context, server_settings[ServerSetting::dns_cache_update_period], server_settings[ServerSetting::dns_max_consecutive_failures]);
     }
 
     if (dns_cache_updater)
@@ -2067,7 +2194,7 @@ try
 
     /// Set current database name before loading tables and databases because
     /// system logs may copy global context.
-    std::string default_database = server_settings.default_database.toString();
+    std::string default_database = server_settings[ServerSetting::default_database].toString();
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
 
     LOG_INFO(log, "Loading metadata from {}", path_str);
@@ -2103,7 +2230,7 @@ try
         waitLoad(TablesLoaderForegroundPoolId, system_startup_tasks);
 
         /// Startup scripts can depend on the system log tables.
-        if (config().has("startup_scripts") && !server_settings.prepare_system_log_tables_on_startup.changed)
+        if (config().has("startup_scripts") && !server_settings[ServerSetting::prepare_system_log_tables_on_startup].changed)
             global_context->setServerSetting("prepare_system_log_tables_on_startup", true);
 
         /// After attaching system databases we can initialize system log.
@@ -2123,7 +2250,7 @@ try
         database_catalog.loadMarkedAsDroppedTables();
         database_catalog.createBackgroundTasks();
         /// Then, load remaining databases (some of them maybe be loaded asynchronously)
-        load_metadata_tasks = loadMetadata(global_context, default_database, server_settings.async_load_databases);
+        load_metadata_tasks = loadMetadata(global_context, default_database, server_settings[ServerSetting::async_load_databases]);
         /// If we need to convert database engines, disable async tables loading
         convertDatabasesEnginesIfNeed(load_metadata_tasks, global_context);
         database_catalog.startupBackgroundTasks();
@@ -2274,11 +2401,11 @@ try
         startup_watch.stop();
         ProfileEvents::increment(ProfileEvents::ServerStartupMilliseconds, startup_watch.elapsedMilliseconds());
 
-        CannotAllocateThreadFaultInjector::setFaultProbability(server_settings.cannot_allocate_thread_fault_injection_probability);
+        CannotAllocateThreadFaultInjector::setFaultProbability(server_settings[ServerSetting::cannot_allocate_thread_fault_injection_probability]);
 
 #if USE_GWP_ASAN
         GWPAsan::initFinished();
-        GWPAsan::setForceSampleProbability(server_settings.gwp_asan_force_sample_probability);
+        GWPAsan::setForceSampleProbability(server_settings[ServerSetting::gwp_asan_force_sample_probability]);
 #endif
 
         try
@@ -2328,15 +2455,15 @@ try
             /// Wait for unfinished backups and restores.
             /// This must be done after closing listening sockets (no more backups/restores) but before ProcessList::killAllQueries
             /// (because killAllQueries() will cancel all running backups/restores).
-            if (server_settings.shutdown_wait_backups_and_restores)
+            if (server_settings[ServerSetting::shutdown_wait_backups_and_restores])
                 global_context->waitAllBackupsAndRestores();
 
             /// Killing remaining queries.
-            if (!server_settings.shutdown_wait_unfinished_queries)
+            if (!server_settings[ServerSetting::shutdown_wait_unfinished_queries])
                 global_context->getProcessList().killAllQueries();
 
             if (current_connections)
-                current_connections = waitServersToFinish(servers, servers_lock, server_settings.shutdown_wait_unfinished);
+                current_connections = waitServersToFinish(servers, servers_lock, server_settings[ServerSetting::shutdown_wait_unfinished]);
 
             if (current_connections)
                 LOG_WARNING(log, "Closed connections. But {} remain."
@@ -2475,8 +2602,8 @@ void Server::createServers(
 
     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
     http_params->setTimeout(settings[Setting::http_receive_timeout]);
-    http_params->setKeepAliveTimeout(global_context->getServerSettings().keep_alive_timeout);
-    http_params->setMaxKeepAliveRequests(static_cast<int>(global_context->getServerSettings().max_keep_alive_requests));
+    http_params->setKeepAliveTimeout(global_context->getServerSettings()[ServerSetting::keep_alive_timeout]);
+    http_params->setMaxKeepAliveRequests(static_cast<int>(global_context->getServerSettings()[ServerSetting::max_keep_alive_requests]));
 
     Poco::Util::AbstractConfiguration::Keys protocols;
     config.keys("protocols", protocols);
@@ -2732,7 +2859,7 @@ void Server::createInterserverServers(
 
     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
     http_params->setTimeout(settings[Setting::http_receive_timeout]);
-    http_params->setKeepAliveTimeout(global_context->getServerSettings().keep_alive_timeout);
+    http_params->setKeepAliveTimeout(global_context->getServerSettings()[ServerSetting::keep_alive_timeout]);
 
     /// Now iterate over interserver_listen_hosts
     for (const auto & interserver_listen_host : interserver_listen_hosts)
