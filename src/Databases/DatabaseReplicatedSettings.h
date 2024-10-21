@@ -8,7 +8,7 @@ namespace DB
 class ASTStorage;
 struct DatabaseReplicatedSettingsImpl;
 
-/// List of available types supported in ServerSettings object
+/// List of available types supported in ReplicatedSettings object
 #define DATABASE_REPLICATED_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, Float) \
@@ -21,7 +21,7 @@ struct DatabaseReplicatedSettings
 {
     DatabaseReplicatedSettings();
     DatabaseReplicatedSettings(const DatabaseReplicatedSettings & settings);
-    DatabaseReplicatedSettings(DatabaseReplicatedSettings && settings);
+    DatabaseReplicatedSettings(DatabaseReplicatedSettings && settings) noexcept;
     ~DatabaseReplicatedSettings();
 
     DATABASE_REPLICATED_SETTINGS_SUPPORTED_TYPES(DatabaseReplicatedSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
