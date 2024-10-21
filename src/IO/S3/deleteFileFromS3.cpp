@@ -165,6 +165,8 @@ void deleteFilesFromS3(
             if (outcome.IsSuccess())
             {
                 /// DeleteObjects succeeded, that means some objects were removed (but maybe not all the objects).
+                /// Multiple threads can call deleteFilesFromS3() with a reference to the same `s3_capabilities`,
+                /// and the following line doesn't cause a race because `s3_capabilities` is protected with mutex.
                 s3_capabilities.setIsBatchDeleteSupported(true);
 
                 const auto & errors = outcome.GetResult().GetErrors();
@@ -227,12 +229,13 @@ void deleteFilesFromS3(
                 /// DeleteObjects didn't succeed, that means either a) this operation isn't supported at all;
                 /// or b) all the objects didn't exist; or c) some failure occurred.
                 const auto & err = outcome.GetError();
-                if (!s3_capabilities.isBatchDeleteSupported().has_value()
-                    && ((err.GetExceptionName() == "InvalidRequest") || (err.GetExceptionName() == "InvalidArgument")
-                        || (err.GetExceptionName() == "NotImplemented")))
+                if ((err.GetExceptionName() == "InvalidRequest") || (err.GetExceptionName() == "InvalidArgument")
+                    || (err.GetExceptionName() == "NotImplemented"))
                 {
                     LOG_TRACE(log, "DeleteObjects is not supported: {} (Code: {}). Retrying with plain DeleteObject.",
                               err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
+                    /// Multiple threads can call deleteFilesFromS3() with a reference to the same `s3_capabilities`,
+                    /// and the following line doesn't cause a race because `s3_capabilities` is protected with mutex.
                     s3_capabilities.setIsBatchDeleteSupported(false);
                     need_retry_with_plain_delete_object = true;
                     break;
