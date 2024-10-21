@@ -4,12 +4,18 @@
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
 #include <Disks/ObjectStorages/StaticDirectoryIterator.h>
 #include <Disks/ObjectStorages/StoredObject.h>
+#include "Common/ObjectStorageKey.h"
+#include "Disks/ObjectStorages/IObjectStorage.h"
 
 #include <Common/filesystemHelpers.h>
 
 #include <filesystem>
+#include <locale>
+#include <memory>
+#include <optional>
 #include <tuple>
 #include <unordered_set>
+#include <Poco/Timestamp.h>
 
 
 namespace DB
@@ -30,12 +36,12 @@ std::filesystem::path normalizeDirectoryPath(const std::filesystem::path & path)
 
 }
 
-MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t file_sizes_cache_size)
-    : object_storage(object_storage_)
-    , storage_path_prefix(std::move(storage_path_prefix_))
+MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(
+    ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t object_metadata_cache_size)
+    : object_storage(object_storage_), storage_path_prefix(std::move(storage_path_prefix_))
 {
-    if (file_sizes_cache_size)
-        file_sizes_cache.emplace(file_sizes_cache_size);
+    if (object_metadata_cache_size)
+        object_metadata_cache.emplace(object_metadata_cache_size);
 }
 
 MetadataTransactionPtr MetadataStorageFromPlainObjectStorage::createTransaction()
@@ -82,28 +88,30 @@ uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path)
 {
     if (auto res = getFileSizeIfExists(path))
         return *res;
-    throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist on plain object storage", path);
+    throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist on {}", path, object_storage->getName());
 }
 
 std::optional<uint64_t> MetadataStorageFromPlainObjectStorage::getFileSizeIfExists(const String & path) const
 {
-    auto get = [&] -> std::shared_ptr<uint64_t>
-    {
-        auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
-        auto metadata = object_storage->tryGetObjectMetadata(object_key.serialize());
-        if (metadata)
-            return std::make_shared<uint64_t>(metadata->size_bytes);
-        return nullptr;
-    };
-
-    std::shared_ptr<uint64_t> res;
-    if (file_sizes_cache)
-        res = file_sizes_cache->getOrSet(path, get).first;
-    else
-        res = get();
-
+    auto res = getObjectMetadataEntryWithCache(path);
     if (res)
+        return res->file_size;
+    return std::nullopt;
+}
+
+Poco::Timestamp MetadataStorageFromPlainObjectStorage::getLastModified(const std::string & path) const
+{
+    if (auto res = getLastModifiedIfExists(path))
         return *res;
+    else
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File or directory {} does not exist on {}", path, object_storage->getName());
+}
+
+std::optional<Poco::Timestamp> MetadataStorageFromPlainObjectStorage::getLastModifiedIfExists(const std::string & path) const
+{
+    /// Since the plain object storage is used for backups only, return the current time.
+    if (existsFileOrDirectory(path))
+        return Poco::Timestamp{};
     return std::nullopt;
 }
 
@@ -159,6 +167,22 @@ std::optional<StoredObjects> MetadataStorageFromPlainObjectStorage::getStorageOb
         return StoredObjects{StoredObject(object_key.serialize(), path, *object_size)};
     }
     return std::nullopt;
+}
+
+std::shared_ptr<MetadataStorageFromPlainObjectStorage::ObjectMetadataEntry>
+MetadataStorageFromPlainObjectStorage::getObjectMetadataEntryWithCache(const std::string & path) const
+{
+    auto get = [&] -> std::shared_ptr<ObjectMetadataEntry>
+    {
+        auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
+        if (auto metadata = object_storage->tryGetObjectMetadata(object_key.serialize()))
+            return std::make_shared<ObjectMetadataEntry>(metadata->size_bytes, metadata->last_modified.epochTime());
+        return nullptr;
+    };
+
+    if (object_metadata_cache)
+        return object_metadata_cache->getOrSet(path, get).first;
+    return get();
 }
 
 const IMetadataStorage & MetadataStorageFromPlainObjectStorageTransaction::getStorageForNonTransactionalReads() const
@@ -225,8 +249,12 @@ void MetadataStorageFromPlainObjectStorageTransaction::addBlobToMetadata(
     /// Noop, local metadata files is only one file, it is the metadata file itself.
 }
 
-UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainObjectStorageTransaction::unlinkMetadata(const std::string &)
+UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainObjectStorageTransaction::unlinkMetadata(const std::string & path)
 {
+    /// The record has become stale, remove it from cache.
+    if (metadata_storage.object_metadata_cache)
+        metadata_storage.object_metadata_cache->remove(path);
+
     /// No hardlinks, so will always remove file.
     return std::make_shared<UnlinkMetadataFileOperationOutcome>(UnlinkMetadataFileOperationOutcome{0});
 }

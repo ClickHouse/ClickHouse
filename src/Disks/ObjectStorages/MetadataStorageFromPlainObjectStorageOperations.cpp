@@ -3,6 +3,7 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Poco/Timestamp.h>
 #include <Common/Exception.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
@@ -71,7 +72,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
     {
         std::lock_guard lock(path_map.mutex);
         auto & map = path_map.map;
-        [[maybe_unused]] auto result = map.emplace(base_path, object_key_prefix);
+        [[maybe_unused]] auto result = map.emplace(base_path, InMemoryPathMap::Remote{object_key_prefix, Poco::Timestamp{}.epochTime()});
         chassert(result.second);
     }
     auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
@@ -139,7 +140,7 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMo
             throw Exception(
                 ErrorCodes::FILE_ALREADY_EXISTS, "Metadata object for the new (destination) path '{}' already exists", new_path);
 
-        remote_path = expected_it->second;
+        remote_path = expected_it->second.path;
     }
 
     auto metadata_object_key = createMetadataObjectKey(remote_path, metadata_key_prefix);
@@ -190,6 +191,7 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute(std::u
         auto & map = path_map.map;
         [[maybe_unused]] auto result = map.emplace(base_path_to, map.extract(base_path_from).mapped());
         chassert(result.second);
+        result.first->second.last_modified = Poco::Timestamp{}.epochTime();
     }
 
     write_finalized = true;
@@ -229,7 +231,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std:
         auto path_it = map.find(base_path);
         if (path_it == map.end())
             return;
-        key_prefix = path_it->second;
+        key_prefix = path_it->second.path;
     }
 
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation"), "Removing directory '{}'", path);
