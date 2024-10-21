@@ -1586,7 +1586,7 @@ The messages logged can be filtered using regular expressions using `message_reg
 ```xml
     <logger>
         <level>trace</level>
-        <!-- Global: Don't log and Trace messages -->
+        <!-- Global: Don't log Trace messages -->
         <message_regexp_negative>.*Trace.*</message_regexp_negative>
 
         <message_regexps>
