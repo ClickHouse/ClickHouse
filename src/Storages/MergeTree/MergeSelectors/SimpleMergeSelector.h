@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/MergeTree/MergeSelector.h>
+#include <Storages/MergeTree/MergeSelectors/MergeSelector.h>
 
 
 /**
@@ -91,6 +91,16 @@ public:
         /// Zero means unlimited. Can be overridden by the same merge tree setting.
         size_t max_parts_to_merge_at_once = 100;
 
+        /// Some sort of a maximum number of parts in partition. Can be overridden by the same merge tree setting.
+        size_t parts_to_throw_insert = 3000;
+
+        /** This mode allows selector algorithm not to perform precise comparisons with base (read the comment below).
+          * Instead, we do it in an epsilon neighborhood, where epsilon is controlled by the number of parts in
+          * the current partition and is a normally distributed random variable.
+          */
+        bool use_blurry_base = false;
+        size_t blurry_base_scale_factor = 42;
+
         /** Minimum ratio of size of one part to all parts in set of parts to merge (for usual cases).
           * For example, if all parts have equal size, it means, that at least 'base' number of parts should be merged.
           * If parts has non-uniform sizes, then minimum number of parts to merge is effectively increased.
@@ -103,6 +113,10 @@ public:
           * We need some balance between write amplification and number of parts.
           */
         double base = 5;
+
+
+        size_t window_size = 1000;
+        bool enable_stochastic_sliding = false;
 
         /** Base is lowered until 1 (effectively means "merge any two parts") depending on several variables:
           *

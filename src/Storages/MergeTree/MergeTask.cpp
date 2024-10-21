@@ -1766,6 +1766,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         auto optimization_settings = QueryPlanOptimizationSettings::fromContext(global_ctx->context);
         auto builder = merge_parts_query_plan.buildQueryPipeline(optimization_settings, pipeline_settings);
 
+        // Merges are not using concurrency control now. Queries and merges running together could lead to CPU overcommit.
+        // TODO(serxa): Enable concurrency control for merges. This should be done after CPU scheduler introduction.
+        builder->setConcurrencyControl(false);
+
         global_ctx->merged_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     }
 

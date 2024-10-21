@@ -701,6 +701,9 @@ Move more conditions from WHERE to PREWHERE and do reads from disk and filtering
     M(Bool, move_primary_key_columns_to_end_of_prewhere, true, R"(
 Move PREWHERE conditions containing primary key columns to the end of AND chain. It is likely that these conditions are taken into account during primary key analysis and thus will not contribute a lot to PREWHERE filtering.
 )", 0) \
+    M(Bool, allow_reorder_prewhere_conditions, true, R"(
+When moving conditions from WHERE to PREWHERE, allow reordering them to optimize filtering
+)", 0) \
     \
     M(UInt64, alter_sync, 1, R"(
 Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
@@ -5803,8 +5806,10 @@ Allow to create database with Engine=MaterializedPostgreSQL(...).
     M(Bool, allow_experimental_query_deduplication, false, R"(
 Experimental data deduplication for SELECT queries based on part UUIDs
 )", 0) \
+    M(Bool, implicit_select, false, R"(
+Allow writing simple SELECT queries without the leading SELECT keyword, which makes it simple for calculator-style usage, e.g. `1 + 2` becomes a valid query.
+)", 0)
 
-    /** End of experimental features */
 
 // End of COMMON_SETTINGS
 // Please add settings related to formats in FormatFactorySettingsDeclaration.h, move obsolete settings to OBSOLETE_SETTINGS and obsolete format settings to OBSOLETE_FORMAT_SETTINGS.
@@ -6196,16 +6201,6 @@ std::vector<std::string_view> Settings::getUnchangedNames() const
 {
     std::vector<std::string_view> setting_names;
     for (const auto & setting : impl->allUnchanged())
-    {
-        setting_names.emplace_back(setting.getName());
-    }
-    return setting_names;
-}
-
-std::vector<std::string_view> Settings::getChangedNames() const
-{
-    std::vector<std::string_view> setting_names;
-    for (const auto & setting : impl->allChanged())
     {
         setting_names.emplace_back(setting.getName());
     }
