@@ -25,19 +25,52 @@ class WriteBuffer;
   * Example of usage:
   *
   * mysettings.h:
+  * #include <Core/BaseSettingsFwdMacros.h>
+  * #include <Core/SettingsFields.h>
+  *
+  * #define MY_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
+  *      M(CLASS_NAME, Float) \
+  *      M(CLASS_NAME, String) \
+  *      M(CLASS_NAME, UInt64)
+  *
+  * MY_SETTINGS_SUPPORTED_TYPES(MySettings, DECLARE_SETTING_TRAIT)
+  *
+  * struct MySettings
+  * {
+  *     MySettings();
+  *     ~MySettings();
+  *
+  *     MY_SETTINGS_SUPPORTED_TYPES(MySettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
+  * private:
+  *     std::unique_ptr<MySettingsImpl> impl;
+  * };
+  *
+  * mysettings.cpp:
+  * #include <Core/BaseSettings.h>
+  * #include <Core/BaseSettingsFwdMacrosImpl.h>
+  *
   * #define APPLY_FOR_MYSETTINGS(M) \
   *     M(UInt64, a, 100, "Description of a", 0) \
   *     M(Float, f, 3.11, "Description of f", IMPORTANT) // IMPORTANT - means the setting can't be ignored by older versions) \
   *     M(String, s, "default", "Description of s", 0)
   *
   * DECLARE_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS)
-
-  * struct MySettings : public BaseSettings<MySettingsTraits>
+  *
+  * struct MySettingsImpl : public BaseSettings<MySettingsTraits>
   * {
   * };
   *
-  * mysettings.cpp:
   * IMPLEMENT_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS)
+  *
+  * #define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) MySettings##TYPE NAME = &MySettings##Impl ::NAME;
+  *
+  * namespace MySetting
+  * {
+  * APPLY_FOR_MYSETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
+  * }
+  * #undef INITIALIZE_SETTING_EXTERN
+  *
+  * MY_SETTINGS_SUPPORTED_TYPES(MySettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
   */
 template <class TTraits>
 class BaseSettings : public TTraits::Data
