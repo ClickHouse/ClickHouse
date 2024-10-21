@@ -212,31 +212,32 @@ MetadataStorageFromPlainRewritableObjectStorage::~MetadataStorageFromPlainRewrit
 
 bool MetadataStorageFromPlainRewritableObjectStorage::existsFileOrDirectory(const std::string & path) const
 {
-    if (MetadataStorageFromPlainObjectStorage::existsFileOrDirectory(path))
+    if (existsDirectory(path))
         return true;
 
-    if (useSeparateLayoutForMetadata())
-    {
-        auto key_prefix = object_storage->generateObjectKeyForPath(path, getMetadataKeyPrefix()).serialize();
-        return object_storage->existsOrHasAnyChild(key_prefix);
-    }
-
-    return false;
+    ObjectStorageKey object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
+    StoredObject object(object_key.serialize(), path);
+    return object_storage->exists(object);
 }
 
 bool MetadataStorageFromPlainRewritableObjectStorage::existsFile(const std::string & path) const
 {
-    return MetadataStorageFromPlainObjectStorage::existsFile(path);
+    if (existsDirectory(path))
+        return false;
+
+    ObjectStorageKey object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
+    StoredObject object(object_key.serialize(), path);
+    return object_storage->exists(object);
 }
 
 bool MetadataStorageFromPlainRewritableObjectStorage::existsDirectory(const std::string & path) const
 {
-    if (useSeparateLayoutForMetadata())
-    {
-        auto directory = std::filesystem::path(object_storage->generateObjectKeyForPath(path, getMetadataKeyPrefix()).serialize()) / "";
-        return object_storage->existsOrHasAnyChild(directory);
-    }
-    return MetadataStorageFromPlainObjectStorage::existsDirectory(path);
+    auto base_path = path;
+    if (base_path.ends_with('/'))
+        base_path.pop_back();
+
+    SharedLockGuard lock(path_map->mutex);
+    return path_map->map.find(base_path) != path_map->map.end();
 }
 
 std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDirectory(const std::string & path) const
