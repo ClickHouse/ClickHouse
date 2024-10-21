@@ -88,6 +88,10 @@ public:
 
     DataTypePtr getPtr() const { return shared_from_this(); }
 
+    /// Return the normalized form of the current type, currently only
+    /// converting named tuples to unnamed tuples.
+    virtual DataTypePtr getNormalizedType() const { return shared_from_this(); }
+
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
 
