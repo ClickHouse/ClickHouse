@@ -7,6 +7,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Names.h>
 #include <Storages/NATS/NATSConnection.h>
+#include <Storages/NATS/NATSHandler.h>
 #include <Storages/IMessageProducer.h>
 #include <Common/ConcurrentBoundedQueue.h>
 
@@ -18,6 +19,7 @@ class NATSProducer : public AsynchronousMessageProducer
 public:
     NATSProducer(
         const NATSConfiguration & configuration_,
+        BackgroundSchedulePool & broker_schedule_pool_,
         const String & subject_,
         std::atomic<bool> & shutdown_called_,
         LoggerPtr log_);
@@ -28,22 +30,22 @@ private:
     String getProducingTaskName() const override { return "NatsProducingTask"; }
 
     void initialize() override;
+
     void stopProducingTask() override;
     void finishImpl() override;
 
     void startProducingTaskLoop() override;
 
-    void iterateEventLoop();
     void publish();
 
-    static void publishThreadFunc(void * arg);
+    NATSConfiguration configuration;
 
-    NATSConnectionManager connection;
+    NATSHandler event_handler;
+    BackgroundSchedulePool::TaskHolder looping_task;
+
+    NATSConnectionPtr connection;
     const String subject;
 
-    /* false: when shutdown is called
-     * true: in all other cases
-     */
     std::atomic<bool> & shutdown_called;
 
     /* payloads.queue:
