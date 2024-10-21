@@ -4453,8 +4453,9 @@ Optimize GROUP BY when all keys in block are constant
     M(Bool, legacy_column_name_of_tuple_literal, false, R"(
 List all names of element of large tuple literals in their column names instead of hash. This settings exists only for compatibility reasons. It makes sense to set to 'true', while doing rolling update of cluster from version lower than 21.7 to higher.
 )", 0) \
-    M(Bool, enable_named_columns_in_function_tuple, true, R"(
+    M(Bool, enable_named_columns_in_function_tuple, false, R"(
 Generate named tuples in function tuple() when all names are unique and can be treated as unquoted identifiers.
+Beware that this setting might currently result in broken queries. It's not recommended to use in production
 )", 0) \
     \
     M(Bool, query_plan_enable_optimizations, true, R"(
@@ -5556,7 +5557,10 @@ If it is set to true, allow to specify experimental compression codecs (but we d
 Only in ClickHouse Cloud. Allow to create ShareSet and SharedJoin
 )", 0) \
     M(UInt64, max_limit_for_ann_queries, 1'000'000, R"(
-SELECT queries with LIMIT bigger than this setting cannot use ANN indexes. Helps to prevent memory overflows in ANN search indexes.
+SELECT queries with LIMIT bigger than this setting cannot use vector similarity indexes. Helps to prevent memory overflows in vector similarity indexes.
+)", 0) \
+    M(UInt64, hnsw_candidate_list_size_for_search, 0, R"(
+The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'. 0 means USearch's default value (64).
 )", 0) \
     M(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction
