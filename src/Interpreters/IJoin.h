@@ -90,6 +90,15 @@ public:
     /// Could be called from different threads in parallel.
     virtual void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) = 0;
 
+    virtual bool supportsJoinWithManyResultBlocks() const { return false; }
+    virtual void joinBlock(
+        [[maybe_unused]] Block & block,
+        [[maybe_unused]] std::vector<Block> & res,
+        [[maybe_unused]] std::shared_ptr<ExtraBlock> & not_processed)
+    {
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Clone method is not supported for {}", getName());
+    }
+
     /** Set/Get totals for right table
       * Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
       */

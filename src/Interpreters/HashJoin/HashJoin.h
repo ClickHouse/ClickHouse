@@ -1,9 +1,11 @@
 #pragma once
 
-#include <memory>
-#include <variant>
-#include <optional>
+#include <algorithm>
 #include <deque>
+#include <memory>
+#include <optional>
+#include <ranges>
+#include <variant>
 #include <vector>
 
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -12,22 +14,19 @@
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/RowRefs.h>
 
-#include <Common/Arena.h>
-#include <Common/ColumnsHashing.h>
-#include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/FixedHashMap.h>
-#include <Storages/TableLockHolder.h>
-
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
-
-#include <QueryPipeline/SizeLimits.h>
-
+#include <Columns/ColumnString.h>
 #include <Core/Block.h>
-
-#include <Storages/IStorage_fwd.h>
+#include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/IKeyValueEntity.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <QueryPipeline/SizeLimits.h>
+#include <Storages/IStorage_fwd.h>
+#include <Storages/TableLockHolder.h>
+#include <Common/Arena.h>
+#include <Common/ColumnsHashing.h>
+#include <Common/HashTable/FixedHashMap.h>
+#include <Common/HashTable/HashMap.h>
 
 namespace DB
 {
@@ -142,12 +141,20 @@ public:
       */
     bool addBlockToJoin(const Block & source_block_, bool check_limits) override;
 
+    /// Called directly from ConcurrentJoin::addBlockToJoin
+    bool addBlockToJoin(ScatteredBlock & source_block_, bool check_limits);
+
     void checkTypesOfKeys(const Block & block) const override;
+
+    using IJoin::joinBlock;
 
     /** Join data from the map (that was previously built by calls to addBlockToJoin) to the block with data from "left" table.
       * Could be called from different threads in parallel.
       */
     void joinBlock(Block & block, ExtraBlockPtr & not_processed) override;
+
+    /// Called directly from ConcurrentJoin::joinBlock
+    void joinBlock(ScatteredBlock & block, ExtraBlockPtr & not_processed);
 
     /// Check joinGet arguments and infer the return type.
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
@@ -389,6 +396,9 @@ public:
 
     void setMaxJoinedBlockRows(size_t value) { max_joined_block_rows = value; }
 
+    void materializeColumnsFromLeftBlock(Block & block) const;
+    Block materializeColumnsFromRightBlock(Block block) const;
+
 private:
     friend class NotJoinedHash;
 
@@ -472,5 +482,4 @@ private:
     void tryRerangeRightTableDataImpl(Map & map);
     void doDebugAsserts() const;
 };
-
 }
