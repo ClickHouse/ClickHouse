@@ -46,7 +46,7 @@ void ParallelCompressedWriteBuffer::nextImpl()
     current_buffer->sequence_num = current_sequence_num;
     ++current_sequence_num;
     current_buffer->uncompressed_size = offset();
-    pool.trySchedule([this, my_current_buffer = current_buffer, thread_group = CurrentThread::getGroup()]
+    pool.scheduleOrThrowOnError([this, my_current_buffer = current_buffer, thread_group = CurrentThread::getGroup()]
     {
         SCOPE_EXIT_SAFE(
             if (thread_group)
