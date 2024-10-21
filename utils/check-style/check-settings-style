@@ -15,6 +15,7 @@ ALL_DECLARATION_FILES="
   $ROOT_PATH/src/Coordination/CoordinationSettings.cpp
   $ROOT_PATH/src/Databases/DatabaseReplicatedSettings.cpp
   $ROOT_PATH/src/Storages/TimeSeries/TimeSeriesSettings.cpp
+  $ROOT_PATH/src/Storages/RocksDB/RocksDBSettings.cpp
   $ROOT_PATH/src/Core/FormatFactorySettingsDeclaration.h"
 
 for settings_file in ${ALL_DECLARATION_FILES};
@@ -30,12 +31,15 @@ cat $ROOT_PATH/src/Storages/MergeTree/MergeTreeSettings.cpp | grep "    M(" | aw
 cat $ROOT_PATH/src/Coordination/CoordinationSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " CoordinationSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
 cat $ROOT_PATH/src/Databases/DatabaseReplicatedSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " DatabaseReplicatedSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
 cat $ROOT_PATH/src/Storages/TimeSeries/TimeSeriesSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " TimeSeriesSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
+cat $ROOT_PATH/src/Storages/RocksDB/RocksDBSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " RocksDBSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
+
 
 # Check that if there are duplicated settings (declared in different objects) they all have the same type (it's simpler to validate style with that assert)
 for setting in $(awk '{print $1 " " $2}' ${SETTINGS_FILE} | \
     sed -e 's/CoordinationSettings//g' \
         -e 's/DatabaseReplicatedSettings//g' \
         -e 's/TimeSeriesSettings//g' \
+        -e 's/RocksDBSettings//g' \
         -e 's/MergeTreeSettings//g' \
         -e 's/ServerSettings//g' \
         -e 's/Settings//g' | \
@@ -50,6 +54,7 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | \
     xargs grep -e "^\s*extern const Settings" \
                -e "^\s**extern const ServerSettings" \
                -e "^\s**extern const MergeTreeSettings" \
+               -e "^\s**extern const RocksDBSettings" \
                -e "^\s**extern const TimeSeriesSettings" \
                -e "^\s**extern const DatabaseReplicatedSettings" \
                -e "^\s**extern const CoordinationSettings" -T | \
@@ -75,6 +80,7 @@ for setting in $(awk '{print $1 " " $2}' ${SETTINGS_FILE} | \
         -e 's/ServerSettings//g' \
         -e 's/CoordinationSettings//g' \
         -e 's/TimeSeriesSettings//g' \
+        -e 's/RocksDBSettings//g' \
         -e 's/DatabaseReplicatedSettings//g' \
         -e 's/Settings//g' | \
     sort | uniq | awk '{ print $1 }' | sort | uniq -d);
