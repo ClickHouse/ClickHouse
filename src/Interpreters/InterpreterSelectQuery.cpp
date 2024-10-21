@@ -188,6 +188,10 @@ namespace Setting
     extern const SettingsBool use_with_fill_by_sorting_prefix;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 max_entries_for_hash_table_stats;
+}
 
 static UInt64 getLimitUIntValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr);
 
@@ -2208,10 +2212,13 @@ RowPolicyFilterPtr InterpreterSelectQuery::getRowPolicyFilter() const
 
 void InterpreterSelectQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
 {
-    for (const auto & row_policy : row_policy_filter->policies)
+    if (row_policy_filter)
     {
-        auto name = row_policy->getFullName().toString();
-        elem.used_row_policies.emplace(std::move(name));
+        for (const auto & row_policy : row_policy_filter->policies)
+        {
+            auto name = row_policy->getFullName().toString();
+            elem.used_row_policies.emplace(std::move(name));
+        }
     }
 }
 
@@ -2743,7 +2750,7 @@ static Aggregator::Params getAggregatorParams(
     const auto stats_collecting_params = StatsCollectingParams(
         calculateCacheKey(query_ptr),
         settings[Setting::collect_hash_table_stats_during_aggregation],
-        context.getServerSettings().max_entries_for_hash_table_stats,
+        context.getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
         settings[Setting::max_size_to_preallocate_for_aggregation]);
 
     return Aggregator::Params
