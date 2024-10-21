@@ -11,6 +11,7 @@
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Common/callOnce.h>
+#include "Access/Common/AuthenticationType.h"
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Poco/UUIDGenerator.h>
@@ -508,9 +509,10 @@ AuthResult IAccessStorage::authenticate(
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators,
     bool allow_no_password,
-    bool allow_plaintext_password) const
+    bool allow_plaintext_password,
+    bool allow_jwt) const
 {
-    return *authenticateImpl(credentials, address, external_authenticators, /* throw_if_user_not_exists = */ true, allow_no_password, allow_plaintext_password);
+    return *authenticateImpl(credentials, address, external_authenticators, /* throw_if_user_not_exists = */ true, allow_no_password, allow_plaintext_password, allow_jwt);
 }
 
 
@@ -520,9 +522,10 @@ std::optional<AuthResult> IAccessStorage::authenticate(
     const ExternalAuthenticators & external_authenticators,
     bool throw_if_user_not_exists,
     bool allow_no_password,
-    bool allow_plaintext_password) const
+    bool allow_plaintext_password,
+    bool allow_jwt) const
 {
-    return authenticateImpl(credentials, address, external_authenticators, throw_if_user_not_exists, allow_no_password, allow_plaintext_password);
+    return authenticateImpl(credentials, address, external_authenticators, throw_if_user_not_exists, allow_no_password, allow_plaintext_password, allow_jwt);
 }
 
 
@@ -532,7 +535,8 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
     const ExternalAuthenticators & external_authenticators,
     bool throw_if_user_not_exists,
     bool allow_no_password,
-    bool allow_plaintext_password) const
+    bool allow_plaintext_password,
+    bool allow_jwt) const
 {
     if (auto id = find<User>(credentials.getUserName()))
     {
@@ -548,7 +552,8 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
             {
                 auto auth_type = auth_method.getType();
                 if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
-                    ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
+                    ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password) ||
+                    ((auth_type == AuthenticationType::JWT) && !(allow_jwt && auth_method.getType() == AuthenticationType::JWT)))
                 {
                     skipped_not_allowed_authentication_methods = true;
                     continue;
