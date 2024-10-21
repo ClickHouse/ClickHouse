@@ -197,6 +197,12 @@ public:
     void setQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { resources.query_id_holders.emplace_back(std::move(query_id_holder)); }
     void addContext(ContextPtr context) { resources.interpreter_context.emplace_back(std::move(context)); }
 
+    template <typename Resource>
+    void addResource(Resource resource, std::vector<Resource> QueryPlanResourceHolder::*field)
+    {
+        (resources.*field).push_back(std::move(resource));
+    }
+
     /// Convert query pipeline to pipe.
     static Pipe getPipe(QueryPipelineBuilder pipeline, QueryPlanResourceHolder & resources);
     static QueryPipeline getPipeline(QueryPipelineBuilder builder);

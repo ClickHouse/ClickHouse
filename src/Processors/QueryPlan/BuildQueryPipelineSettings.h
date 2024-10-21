@@ -20,7 +20,6 @@ struct BuildQueryPipelineSettings
     ExpressionActionsSettings actions_settings;
     QueryStatusPtr process_list_element;
     ProgressCallback progress_callback = nullptr;
-    TemporaryFileLookupPtr temporary_file_lookup;
 
     const ExpressionActionsSettings & getActionsSettings() const { return actions_settings; }
     static BuildQueryPipelineSettings fromContext(ContextPtr from);

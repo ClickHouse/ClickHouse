@@ -5,6 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Common/logger_useful.h>
 
@@ -29,17 +30,18 @@ CollapsingSortedAlgorithm::CollapsingSortedAlgorithm(
     size_t max_block_size_rows_,
     size_t max_block_size_bytes_,
     LoggerPtr log_,
-    WriteBuffer * out_row_sources_buf_,
+    std::shared_ptr<TemporaryDataBuffer> temp_data_buffer_,
     bool use_average_block_sizes)
     : IMergingAlgorithmWithSharedChunks(
         header_,
         num_inputs,
         std::move(description_),
-        out_row_sources_buf_,
+        temp_data_buffer_.get(),
         max_row_refs,
         std::make_unique<MergedData>(use_average_block_sizes, max_block_size_rows_, max_block_size_bytes_))
     , sign_column_number(header_.getPositionByName(sign_column))
     , only_positive_sign(only_positive_sign_)
+    , temp_data_buffer(temp_data_buffer_)
     , log(log_)
 {
 }
