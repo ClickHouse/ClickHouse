@@ -23,7 +23,7 @@ int StatementGenerator::GenerateSettingValues(RandomGenerator &rg,
 int StatementGenerator::GenerateSettingValues(RandomGenerator &rg,
 											  const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> &settings,
 											  sql_query_grammar::SettingValues *vals) {
-	return GenerateSettingValues(rg, settings, std::min<size_t>(settings.size(), static_cast<size_t>((rg.NextRandomUInt32() % 4) + 1)), vals);
+	return GenerateSettingValues(rg, settings, std::min<size_t>(settings.size(), static_cast<size_t>((rg.NextRandomUInt32() % 10) + 1)), vals);
 }
 
 int StatementGenerator::GenerateSettingList(RandomGenerator &rg,

@@ -233,7 +233,7 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	{"optimize_or_like_chain", TrueOrFalse},
 	{"optimize_read_in_order", TrueOrFalse},
 	{"optimize_skip_merged_partitions", TrueOrFalse},
-	{"optimize_skip_unused_shards", ZeroOneTwo},
+	{"optimize_skip_unused_shards", TrueOrFalse},
 	{"optimize_sorting_by_input_stream_properties", TrueOrFalse},
 	{"optimize_substitute_columns", TrueOrFalse},
 	{"optimize_syntax_fuse_functions", TrueOrFalse},
