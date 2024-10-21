@@ -526,18 +526,18 @@ llvm::Value * nativeTenaryCast(llvm::IRBuilderBase & b, const DataTypePtr & from
         auto * tenary_null = llvm::ConstantInt::get(result_type, 1);
         auto * inner = nativeTenaryCast(b, removeNullable(from_type), b.CreateExtractValue(value, {0}));
         auto * is_null = b.CreateExtractValue(value, {1});
-        return b.CreateSelect(b.CreateICmpNE(is_null, llvm::Constant::getNullValue(is_null->getType())), tenary_null, inner);
+        return b.CreateSelect(is_null, tenary_null, inner);
     }
 
     auto * zero = llvm::Constant::getNullValue(value->getType());
     auto * tenary_true = llvm::ConstantInt::get(result_type, 2);
     auto * tenary_false = llvm::ConstantInt::get(result_type, 0);
     if (value->getType()->isIntegerTy())
-        return b.CreateSelect(b.CreateICmpEQ(value, zero), tenary_true, tenary_false);
-    if (value->getType()->isFloatingPointTy())
-        return b.CreateSelect(b.CreateFCmpOEQ(value, zero), tenary_true, tenary_false);
-
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast non-number {} to tenary", from_type->getName());
+        return b.CreateSelect(b.CreateICmpNE(value, zero), tenary_true, tenary_false);
+    else if (value->getType()->isFloatingPointTy())
+        return b.CreateSelect(b.CreateFCmpONE(value, zero), tenary_true, tenary_false);
+    else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast non-number {} to tenary", from_type->getName());
 }
 
 /// Cast LLVM value with type to Tenary

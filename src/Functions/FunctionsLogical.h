@@ -266,7 +266,7 @@ public:
             auto * nullable_result = llvm::Constant::getNullValue(nullable_result_type);
             auto * nullable_result_with_value
                 = b.CreateInsertValue(nullable_result, b.CreateSelect(is_true, b.getInt8(1), b.getInt8(0)), {0});
-            return b.CreateInsertValue(nullable_result_with_value, b.CreateSelect(is_null, b.getInt8(1), b.getInt8(0)), {1});
+            return b.CreateInsertValue(nullable_result_with_value, is_null, {1});
         }
     }
 #endif
