@@ -748,7 +748,7 @@ namespace ErrorCodes
     M(Bool, optimize_group_by_function_keys, true, "Eliminates functions of other keys in GROUP BY section", 0) \
     M(Bool, optimize_group_by_constant_keys, true, "Optimize GROUP BY when all keys in block are constant", 0) \
     M(Bool, legacy_column_name_of_tuple_literal, false, "List all names of element of large tuple literals in their column names instead of hash. This settings exists only for compatibility reasons. It makes sense to set to 'true', while doing rolling update of cluster from version lower than 21.7 to higher.", 0) \
-    M(Bool, enable_named_columns_in_function_tuple, true, "Generate named tuples in function tuple() when all names are unique and can be treated as unquoted identifiers.", 0) \
+    M(Bool, enable_named_columns_in_function_tuple, false, "Generate named tuples in function tuple() when all names are unique and can be treated as unquoted identifiers.", 0) \
     \
     M(Bool, query_plan_enable_optimizations, true, "Globally enable/disable query optimization at the query plan level", 0) \
     M(UInt64, query_plan_max_optimizations_to_apply, 10000, "Limit the total number of optimizations applied to query plan. If zero, ignored. If limit reached, throw exception", 0) \
