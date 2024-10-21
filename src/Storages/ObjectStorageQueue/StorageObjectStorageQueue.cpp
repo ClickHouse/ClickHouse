@@ -18,6 +18,7 @@
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -39,6 +40,18 @@ namespace Setting
     extern const SettingsBool use_concurrency_control;
 }
 
+namespace ObjectStorageQueueSetting
+{
+    extern const ObjectStorageQueueSettingsUInt32 cleanup_interval_max_ms;
+    extern const ObjectStorageQueueSettingsUInt32 cleanup_interval_min_ms;
+    extern const ObjectStorageQueueSettingsUInt32 enable_logging_to_queue_log;
+    extern const ObjectStorageQueueSettingsString keeper_path;
+    extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
+    extern const ObjectStorageQueueSettingsUInt32 polling_min_timeout_ms;
+    extern const ObjectStorageQueueSettingsUInt32 polling_backoff_ms;
+    extern const ObjectStorageQueueSettingsUInt32 processing_threads_num;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -56,10 +69,10 @@ namespace
             zk_path_prefix = "/";
 
         std::string result_zk_path;
-        if (queue_settings.keeper_path.changed)
+        if (queue_settings[ObjectStorageQueueSetting::keeper_path].changed)
         {
             /// We do not add table uuid here on purpose.
-            result_zk_path = fs::path(zk_path_prefix) / queue_settings.keeper_path.value;
+            result_zk_path = fs::path(zk_path_prefix) / queue_settings[ObjectStorageQueueSetting::keeper_path].value;
         }
         else
         {
@@ -73,22 +86,22 @@ namespace
         ObjectStorageQueueSettings & queue_settings,
         bool is_attach)
     {
-        if (!is_attach && !queue_settings.mode.changed)
+        if (!is_attach && !queue_settings[ObjectStorageQueueSetting::mode].changed)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `mode` (Unordered/Ordered) is not specified, but is required.");
         }
         /// In case !is_attach, we leave Ordered mode as default for compatibility.
 
-        if (!queue_settings.processing_threads_num)
+        if (!queue_settings[ObjectStorageQueueSetting::processing_threads_num])
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `processing_threads_num` cannot be set to zero");
         }
 
-        if (queue_settings.cleanup_interval_min_ms > queue_settings.cleanup_interval_max_ms)
+        if (queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] > queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms])
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Setting `cleanup_interval_min_ms` ({}) must be less or equal to `cleanup_interval_max_ms` ({})",
-                            queue_settings.cleanup_interval_min_ms, queue_settings.cleanup_interval_max_ms);
+                            queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms], queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms]);
         }
     }
 
@@ -102,13 +115,13 @@ namespace
         {
             case DB::ObjectStorageType::S3:
             {
-                if (table_settings.enable_logging_to_queue_log || settings[Setting::s3queue_enable_logging_to_s3queue_log])
+                if (table_settings[ObjectStorageQueueSetting::enable_logging_to_queue_log] || settings[Setting::s3queue_enable_logging_to_s3queue_log])
                     return context->getS3QueueLog();
                 return nullptr;
             }
             case DB::ObjectStorageType::Azure:
             {
-                if (table_settings.enable_logging_to_queue_log)
+                if (table_settings[ObjectStorageQueueSetting::enable_logging_to_queue_log])
                     return context->getAzureQueueLog();
                 return nullptr;
             }
@@ -135,7 +148,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , zk_path(chooseZooKeeperPath(table_id_, context_->getSettingsRef(), *queue_settings))
     , configuration{configuration_}
     , format_settings(format_settings_)
-    , reschedule_processing_interval_ms(queue_settings->polling_min_timeout_ms)
+    , reschedule_processing_interval_ms((*queue_settings)[ObjectStorageQueueSetting::polling_min_timeout_ms])
     , log(getLogger(fmt::format("Storage{}Queue ({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
     if (configuration->getPath().empty())
@@ -176,7 +189,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         zk_path, *queue_settings, storage_metadata.getColumns(), configuration_->format, context_, is_attach, log);
 
     auto queue_metadata = std::make_unique<ObjectStorageQueueMetadata>(
-        zk_path, std::move(table_metadata), queue_settings->cleanup_interval_min_ms, queue_settings->cleanup_interval_max_ms);
+        zk_path, std::move(table_metadata), (*queue_settings)[ObjectStorageQueueSetting::cleanup_interval_min_ms], (*queue_settings)[ObjectStorageQueueSetting::cleanup_interval_max_ms]);
 
     files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata));
 
@@ -317,7 +330,7 @@ void StorageObjectStorageQueue::read(
 void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     Pipes pipes;
-    const size_t adjusted_num_streams = storage->queue_settings->processing_threads_num;
+    const size_t adjusted_num_streams = (*storage->queue_settings)[ObjectStorageQueueSetting::processing_threads_num];
 
     createIterator(nullptr);
     for (size_t i = 0; i < adjusted_num_streams; ++i)
@@ -400,12 +413,12 @@ void StorageObjectStorageQueue::threadFunc()
             if (streamToViews())
             {
                 /// Reset the reschedule interval.
-                reschedule_processing_interval_ms = queue_settings->polling_min_timeout_ms;
+                reschedule_processing_interval_ms = (*queue_settings)[ObjectStorageQueueSetting::polling_min_timeout_ms];
             }
             else
             {
                 /// Increase the reschedule interval.
-                reschedule_processing_interval_ms += queue_settings->polling_backoff_ms;
+                reschedule_processing_interval_ms += (*queue_settings)[ObjectStorageQueueSetting::polling_backoff_ms];
             }
 
             LOG_DEBUG(log, "Stopped streaming to {} attached views", dependencies_count);
@@ -466,10 +479,10 @@ bool StorageObjectStorageQueue::streamToViews()
         Pipes pipes;
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> sources;
 
-        pipes.reserve(queue_settings->processing_threads_num);
-        sources.reserve(queue_settings->processing_threads_num);
+        pipes.reserve((*queue_settings)[ObjectStorageQueueSetting::processing_threads_num]);
+        sources.reserve((*queue_settings)[ObjectStorageQueueSetting::processing_threads_num]);
 
-        for (size_t i = 0; i < queue_settings->processing_threads_num; ++i)
+        for (size_t i = 0; i < (*queue_settings)[ObjectStorageQueueSetting::processing_threads_num]; ++i)
         {
             auto source = createSource(
                 i/* processor_id */,
@@ -485,7 +498,7 @@ bool StorageObjectStorageQueue::streamToViews()
         auto pipe = Pipe::unitePipes(std::move(pipes));
 
         block_io.pipeline.complete(std::move(pipe));
-        block_io.pipeline.setNumThreads(queue_settings->processing_threads_num);
+        block_io.pipeline.setNumThreads((*queue_settings)[ObjectStorageQueueSetting::processing_threads_num]);
         block_io.pipeline.setConcurrencyControl(queue_context->getSettingsRef()[Setting::use_concurrency_control]);
 
         std::atomic_size_t rows = 0;
