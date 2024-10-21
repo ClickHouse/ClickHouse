@@ -97,6 +97,15 @@ class CI:
             ),
             runner_type=Runners.BUILDER_ARM,
         ),
+        BuildNames.PACKAGE_AARCH64_ASAN: CommonJobConfigs.BUILD.with_properties(
+            build_config=BuildConfig(
+                name=BuildNames.PACKAGE_AARCH64_ASAN,
+                compiler="clang-18-aarch64",
+                sanitizer="address",
+                package_type="deb",
+            ),
+            runner_type=Runners.BUILDER_ARM,
+        ),
         BuildNames.PACKAGE_ASAN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.PACKAGE_ASAN,

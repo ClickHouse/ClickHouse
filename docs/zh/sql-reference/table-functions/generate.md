@@ -18,9 +18,9 @@ generateRandom('name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_stri
 
 -   `name` — 对应列的名称。
 -   `TypeName` — 对应列的类型。
--   `max_array_length` — 生成数组的最大长度。 默认为10。
--   `max_string_length` — 生成字符串的最大长度。 默认为10。
 -   `random_seed` — 手动指定随机种子以产生稳定的结果。 如果为NULL-种子是随机生成的。
+-   `max_string_length` — 生成字符串的最大长度。 默认为10。
+-   `max_array_length` — 生成数组的最大长度。 默认为10。
 
 **返回值**
 
