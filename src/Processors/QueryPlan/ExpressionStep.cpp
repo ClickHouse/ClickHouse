@@ -38,7 +38,7 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 {
     auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings());
 
-    pipeline.addSimpleTransform([&](const Block & header)
+    pipeline.addSimpleTransform([&](const ConstBlockPtr & header)
     {
         return std::make_shared<ExpressionTransform>(header, expression);
     });
@@ -51,7 +51,7 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
                 ActionsDAG::MatchColumnsMode::Name);
         auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag), settings.getActionsSettings());
 
-        pipeline.addSimpleTransform([&](const Block & header)
+        pipeline.addSimpleTransform([&](const ConstBlockPtr & header)
         {
             return std::make_shared<ExpressionTransform>(header, convert_actions);
         });

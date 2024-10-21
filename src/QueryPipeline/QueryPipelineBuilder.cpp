@@ -135,6 +135,18 @@ void QueryPipelineBuilder::addSimpleTransform(const Pipe::ProcessorGetterWithStr
     pipe.addSimpleTransform(getter);
 }
 
+void QueryPipelineBuilder::addSimpleTransform(const Pipe::ProcessorGetterSharedHeader & getter)
+{
+    checkInitializedAndNotCompleted();
+    pipe.addSimpleTransform(getter);
+}
+
+void QueryPipelineBuilder::addSimpleTransform(const Pipe::ProcessorGetterSharedHeaderWithStreamKind & getter)
+{
+    checkInitializedAndNotCompleted();
+    pipe.addSimpleTransform(getter);
+}
+
 void QueryPipelineBuilder::addTransform(ProcessorPtr transform)
 {
     checkInitializedAndNotCompleted();
