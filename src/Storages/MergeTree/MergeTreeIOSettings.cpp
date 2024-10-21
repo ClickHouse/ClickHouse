@@ -26,6 +26,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString primary_key_compression_codec;
     extern const MergeTreeSettingsBool use_adaptive_write_buffer_for_dynamic_subcolumns;
     extern const MergeTreeSettingsBool use_compact_variant_discriminators_serialization;
+    extern const MergeTreeSettingsUInt64 max_compression_threads;
 }
 
 MergeTreeWriterSettings::MergeTreeWriterSettings(
@@ -54,6 +55,7 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , use_adaptive_write_buffer_for_dynamic_subcolumns((*storage_settings)[MergeTreeSetting::use_adaptive_write_buffer_for_dynamic_subcolumns])
     , adaptive_write_buffer_initial_size((*storage_settings)[MergeTreeSetting::adaptive_write_buffer_initial_size])
 {
+    query_write_settings.max_compression_threads = (*storage_settings)[MergeTreeSetting::max_compression_threads];
 }
 
 }

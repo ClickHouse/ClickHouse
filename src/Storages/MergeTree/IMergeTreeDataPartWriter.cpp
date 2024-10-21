@@ -178,9 +178,24 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         const MergeTreeIndexGranularity & computed_index_granularity)
 {
     if (part_type == MergeTreeDataPartType::Compact)
-        return createMergeTreeDataPartCompactWriter(data_part_name_, logger_name_, serializations_, data_part_storage_,
-            index_granularity_info_, storage_settings_, columns_list, column_positions, metadata_snapshot, virtual_columns, indices_to_recalc, stats_to_recalc_,
-            marks_file_extension_, default_codec_, writer_settings, computed_index_granularity);
+        return createMergeTreeDataPartCompactWriter(
+            data_part_name_,
+            logger_name_,
+            serializations_,
+            data_part_storage_,
+            index_granularity_info_,
+            storage_settings_,
+            columns_list,
+            column_positions,
+            metadata_snapshot,
+            virtual_columns,
+            indices_to_recalc,
+            stats_to_recalc_,
+            marks_file_extension_,
+            default_codec_,
+            writer_settings,
+            computed_index_granularity);
+
     if (part_type == MergeTreeDataPartType::Wide)
         return createMergeTreeDataPartWideWriter(
             data_part_name_,
@@ -198,6 +213,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
             default_codec_,
             writer_settings,
             computed_index_granularity);
+
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown part type: {}", part_type.toString());
 }
 

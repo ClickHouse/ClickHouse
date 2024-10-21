@@ -4,6 +4,7 @@
 #include <Common/Scheduler/ResourceLink.h>
 #include <IO/DistributedCacheSettings.h>
 
+
 namespace DB
 {
 
@@ -27,6 +28,8 @@ struct WriteSettings
 
     bool use_adaptive_write_buffer = false;
     size_t adaptive_write_buffer_initial_size = 16 * 1024;
+
+    size_t max_compression_threads = 1;
 
     bool write_through_distributed_cache = false;
     DistributedCacheSettings distributed_cache_settings;
