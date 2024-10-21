@@ -4,8 +4,8 @@
 #include <optional>
 #include <vector>
 #include <base/scope_guard.h>
-#include <Disks/StoragePolicy.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Disks/StoragePolicy.h>
 #include <Storages/MergeTree/MovesList.h>
 #include <Common/ActionBlocker.h>
 
@@ -43,6 +43,12 @@ class MergeTreePartsMover
 private:
     /// Callback tells that part is not participating in background process
     using AllowedMovingPredicate = std::function<bool(const std::shared_ptr<const IMergeTreeDataPart> &, String * reason)>;
+
+    template<class PartsComparator>
+    bool selectPartsForMoveImpl(
+        MergeTreeMovingParts & parts_to_move,
+        const AllowedMovingPredicate & can_move,
+        const std::lock_guard<std::mutex> & moving_parts_lock);
 
 public:
 
