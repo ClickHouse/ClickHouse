@@ -35,10 +35,6 @@ sudo xcode-select --install
 
 ## Install Required Compilers, Tools, and Libraries {#install-required-compilers-tools-and-libraries}
 
-:::note
-Make sure to use older versions of LLVM (e.g. `brew install llvm@17` or `brew install llvm@18`), as the latest versions may cause errors during the build process.
-:::
-
 ``` bash
 brew update
 brew install ccache cmake ninja libtool gettext llvm gcc binutils grep findutils nasm
