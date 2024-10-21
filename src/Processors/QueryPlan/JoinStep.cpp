@@ -186,7 +186,7 @@ void JoinStep::updateOutputHeader()
         return;
     }
 
-    auto column_permutation = getPermutationForBlock(result_header, input_streams[0].header, input_streams[1].header, required_output);
+    auto column_permutation = getPermutationForBlock(result_header, input_headers[0], input_headers[1], required_output);
     if (!column_permutation.empty())
         result_header = ColumnPermuteTransform::permute(result_header, column_permutation);
 

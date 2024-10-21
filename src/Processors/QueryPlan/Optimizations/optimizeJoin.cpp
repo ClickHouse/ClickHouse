@@ -86,12 +86,12 @@ void optimizeJoin(QueryPlan::Node & node, QueryPlan::Nodes &)
     if (!need_swap)
         return;
 
-    const auto & streams = join_step->getInputStreams();
-    if (streams.size() != 2)
+    const auto & headers = join_step->getInputHeaders();
+    if (headers.size() != 2)
         return;
 
-    const auto & left_stream_input_header = streams.front().header;
-    const auto & right_stream_input_header = streams.back().header;
+    const auto & left_stream_input_header = headers.front();
+    const auto & right_stream_input_header = headers.back();
 
     auto updated_table_join = std::make_shared<TableJoin>(table_join);
     updated_table_join->swapSides();
