@@ -14,7 +14,7 @@ CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similar
 -- Generate random values but with a fixed seed (conceptually), so that the data is deterministic.
 -- Unfortunately, no random functions in ClickHouse accepts a seed. Instead, abuse the numbers table + hash functions to provide
 -- deterministic randomness.
-INSERT INTO tab SELECT number, [sipHash64(number)/18446744073709551615, wyHash64(number)/18446744073709551615] FROM numbers(370000); -- 18446744073709551615 is the biggest pUInt64
+INSERT INTO tab SELECT number, [sipHash64(number)/18446744073709551615, wyHash64(number)/18446744073709551615] FROM numbers(370000); -- 18446744073709551615 is the biggest UInt64
 
 -- hnsw_candidate_list_size_for_search = 0 is illegal
 WITH [0.5, 0.5] AS reference_vec
