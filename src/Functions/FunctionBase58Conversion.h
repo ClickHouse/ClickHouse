@@ -1,8 +1,9 @@
 #pragma once
+
 #include <Columns/ColumnConst.h>
 #include <Common/MemorySanitizer.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -33,7 +34,6 @@ struct Base58Encode
 
         /// Base58 has efficiency of 73% (8/11) [https://monerodocs.org/cryptography/base58/],
         /// and we take double scale to avoid any reallocation.
-
         size_t max_result_size = static_cast<size_t>(ceil(2 * src_column.getChars().size() + 1));
 
         dst_data.resize(max_result_size);
@@ -68,6 +68,8 @@ struct Base58Encode
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
 
+        /// Base58 has efficiency of 73% (8/11) [https://monerodocs.org/cryptography/base58/],
+        /// and we take double scale to avoid any reallocation.
         size_t max_result_size = static_cast<size_t>(ceil(2 * src_column.getChars().size() + 1));
 
         dst_data.resize(max_result_size);
@@ -76,12 +78,12 @@ struct Base58Encode
         const auto * src = src_column.getChars().data();
         auto * dst = dst_data.data();
 
-        size_t fixed_size = src_column.getN();
+        size_t N = src_column.getN();
         size_t current_dst_offset = 0;
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            size_t encoded_size = encodeBase58(&src[row * fixed_size], fixed_size, &dst[current_dst_offset]);
+            size_t encoded_size = encodeBase58(&src[row * N], N, &dst[current_dst_offset]);
             current_dst_offset += encoded_size;
             dst[current_dst_offset] = 0;
             ++current_dst_offset;
@@ -111,7 +113,6 @@ struct Base58Decode
 
         /// Base58 has efficiency of 73% (8/11) [https://monerodocs.org/cryptography/base58/],
         /// and decoded value will be no longer than source.
-
         size_t max_result_size = src_column.getChars().size() + 1;
 
         dst_data.resize(max_result_size);
@@ -154,6 +155,8 @@ struct Base58Decode
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
 
+        /// Base58 has efficiency of 73% (8/11) [https://monerodocs.org/cryptography/base58/],
+        /// and decoded value will be no longer than source.
         size_t max_result_size = src_column.getChars().size() + 1;
 
         dst_data.resize(max_result_size);
@@ -162,12 +165,12 @@ struct Base58Decode
         const auto * src = src_column.getChars().data();
         auto * dst = dst_data.data();
 
-        size_t fixed_size = src_column.getN();
+        size_t N = src_column.getN();
         size_t current_dst_offset = 0;
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            std::optional<size_t>  decoded_size = decodeBase58(&src[row * fixed_size], fixed_size, &dst[current_dst_offset]);
+            std::optional<size_t> decoded_size = decodeBase58(&src[row * N], N, &dst[current_dst_offset]);
             if (!decoded_size)
             {
                 if constexpr (ErrorHandling == Base58DecodeErrorHandling::ThrowException)
@@ -202,14 +205,10 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Wrong number of arguments for function {}: 1 expected.", getName());
-
-        if (!isStringOrFixedString(arguments[0].type))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}. Must be String or FixedString.",
-                arguments[0].type->getName(), getName());
+        FunctionArgumentDescriptors args{
+            {"arg", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
+        };
+        validateFunctionArguments(*this, arguments, args);
 
         return std::make_shared<DataTypeString>();
     }
@@ -221,20 +220,19 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const ColumnPtr column_string = arguments[0].column;
+        const ColumnPtr col = arguments[0].column;
 
-        if (const ColumnString * input = checkAndGetColumn<ColumnString>(column_string.get()))
+        if (const ColumnString * col_string = checkAndGetColumn<ColumnString>(col.get()))
         {
-            auto dst_column = ColumnString::create();
-            Func::processString(*input, dst_column, input_rows_count);
-            return dst_column;
+            auto col_res = ColumnString::create();
+            Func::processString(*col_string, col_res, input_rows_count);
+            return col_res;
         }
-
-        if (const ColumnFixedString * input = checkAndGetColumn<ColumnFixedString>(column_string.get()))
+        else if (const ColumnFixedString * col_fixed_string = checkAndGetColumn<ColumnFixedString>(col.get()))
         {
-            auto dst_column = ColumnString::create();
-            Func::processFixedString(*input, dst_column, input_rows_count);
-            return dst_column;
+            auto col_res = ColumnString::create();
+            Func::processFixedString(*col_fixed_string, col_res, input_rows_count);
+            return col_res;
         }
 
         throw Exception(
