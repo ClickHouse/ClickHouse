@@ -649,13 +649,12 @@ namespace
             ColumnUInt8::MutablePtr col_null_map;
             if constexpr (error_handling == ErrorHandling::Null)
                 col_null_map = ColumnUInt8::create(input_rows_count, 0);
-            PaddedPODArray<UInt8> & null_map_data = col_null_map->getData();
             if constexpr (parseDateTime64)
             {
                 const DataTypeDateTime64 * datatime64_type = checkAndGetDataType<DataTypeDateTime64>(removeNullable(result_type).get());
                 auto col_res = ColumnDateTime64::create(input_rows_count, datatime64_type->getScale());
                 PaddedPODArray<DataTypeDateTime64::FieldType> & res_data = col_res->getData();
-                executeImpl2<DataTypeDateTime64::FieldType>(arguments, result_type, input_rows_count, res_data, null_map_data);
+                executeImpl2<DataTypeDateTime64::FieldType>(arguments, result_type, input_rows_count, res_data, col_null_map);
                 if constexpr (error_handling == ErrorHandling::Null)
                     return ColumnNullable::create(std::move(col_res), std::move(col_null_map));
                 else
@@ -665,7 +664,7 @@ namespace
             {
                 auto col_res = ColumnDateTime::create(input_rows_count);
                 PaddedPODArray<DataTypeDateTime::FieldType> & res_data = col_res->getData();
-                executeImpl2<DataTypeDateTime::FieldType>(arguments, result_type, input_rows_count, res_data, null_map_data);
+                executeImpl2<DataTypeDateTime::FieldType>(arguments, result_type, input_rows_count, res_data, col_null_map);
                 if constexpr (error_handling == ErrorHandling::Null)
                     return ColumnNullable::create(std::move(col_res), std::move(col_null_map));
                 else
@@ -675,7 +674,7 @@ namespace
 
         template<typename T>
         void executeImpl2(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count,
-            PaddedPODArray<T> & res_data, PaddedPODArray<UInt8> & null_map_data) const
+            PaddedPODArray<T> & res_data, ColumnUInt8::MutablePtr & col_null_map) const
         {
             const auto * col_str = checkAndGetColumn<ColumnString>(arguments[0].column.get());
             if (!col_str)
@@ -716,7 +715,7 @@ namespace
                         else if constexpr (error_handling == ErrorHandling::Null)
                         {
                             res_data[i] = 0;
-                            null_map_data[i] = 1;
+                            col_null_map->getData()[i] = 1;
                             error = true;
                             break;
                         }
@@ -768,7 +767,7 @@ namespace
                     else if constexpr (error_handling == ErrorHandling::Null)
                     {
                         res_data[i] = 0;
-                        null_map_data[i] = 1;
+                        col_null_map->getData()[i] = 1;
                     }
                     else
                     {
@@ -1715,7 +1714,7 @@ namespace
                 }
                 const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
                 const DateLUTImpl & date_time_zone = DateLUT::instance(dateTimeZone);
-                const auto timezoneOffset = date_time_zone.getTimeOffsetAtStartOfLUT() - utc_time_zone.getTimeOffsetAtStartOfLUT();
+                const auto timezoneOffset = date_time_zone.getOffsetAtStartOfEpoch() - utc_time_zone.getOffsetAtStartOfEpoch();
                 date.has_time_zone_offset = true;
                 date.time_zone_offset = timezoneOffset;
                 return cur;
