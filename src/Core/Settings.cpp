@@ -5809,7 +5809,13 @@ Experimental data deduplication for SELECT queries based on part UUIDs
     M(Bool, implicit_select, false, R"(
 Allow writing simple SELECT queries without the leading SELECT keyword, which makes it simple for calculator-style usage, e.g. `1 + 2` becomes a valid query.
 )", 0) \
-    M(SettingBool, skip_busy_buffer_layers, false, "Skip busy buffer layers during read operations")
+    M(SettingBool, skip_busy_buffer_layers, false, R"(
+    Enables skipping of busy buffer layers during read operations for StorageBuffer.
+
+    When enabled, this setting allows ClickHouse to skip buffer layers that are currently locked
+    (e.g., being written to) during read operations. This can significantly improve query performance
+    and reduce contention in high-concurrency scenarios, especially when there are frequent writes
+    to the buffer table.)" , 0 )
 
 
 // End of COMMON_SETTINGS
