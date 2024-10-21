@@ -639,6 +639,10 @@ if (TARGET ch_rust::skim)
     dbms_target_link_libraries(PUBLIC ch_rust::skim)
 endif()
 
+if (TARGET ch_contrib::google_cloud)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::google_cloud)
+endif()
+
 if (ENABLE_TESTS)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
         # Cold match files that are not in tests/ directories
