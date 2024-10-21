@@ -1,14 +1,13 @@
 import os
-import re
 import shutil
-import threading
 import time
-
+import re
 import pytest
+import threading
 
 from helpers.cluster import ClickHouseCluster
-from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry, assert_logs_contain
+from helpers.network import PartitionManager
 
 test_recover_staled_replica_run = 1
 
@@ -962,8 +961,8 @@ def test_recover_staled_replica(started_cluster):
 
 
 def test_recover_staled_replica_many_mvs(started_cluster):
-    main_node.query("DROP DATABASE IF EXISTS recover_mvs SYNC")
-    dummy_node.query("DROP DATABASE IF EXISTS recover_mvs SYNC")
+    main_node.query("DROP DATABASE IF EXISTS recover_mvs")
+    dummy_node.query("DROP DATABASE IF EXISTS recover_mvs")
 
     main_node.query_with_retry(
         "CREATE DATABASE IF NOT EXISTS recover_mvs ENGINE = Replicated('/clickhouse/databases/recover_mvs', 'shard1', 'replica1');"
@@ -1104,8 +1103,8 @@ def test_recover_staled_replica_many_mvs(started_cluster):
     query = "SELECT name FROM system.tables WHERE database='recover_mvs' ORDER BY name"
     assert main_node.query(query) == dummy_node.query(query)
 
-    main_node.query("DROP DATABASE IF EXISTS recover_mvs SYNC")
-    dummy_node.query("DROP DATABASE IF EXISTS recover_mvs SYNC")
+    main_node.query("DROP DATABASE IF EXISTS recover_mvs")
+    dummy_node.query("DROP DATABASE IF EXISTS recover_mvs")
 
 
 def test_startup_without_zk(started_cluster):
@@ -1124,10 +1123,8 @@ def test_startup_without_zk(started_cluster):
 
     main_node.query("INSERT INTO startup.rmt VALUES (42)")
     with PartitionManager() as pm:
-        pm.drop_instance_zk_connections(
-            main_node, action="REJECT --reject-with tcp-reset"
-        )
-        main_node.restart_clickhouse(stop_start_wait_sec=120)
+        pm.drop_instance_zk_connections(main_node)
+        main_node.restart_clickhouse(stop_start_wait_sec=60)
         assert main_node.query("SELECT (*,).1 FROM startup.rmt") == "42\n"
 
     # we need to wait until the table is not readonly
@@ -1222,11 +1219,6 @@ def test_sync_replica(started_cluster):
 
 
 def test_force_synchronous_settings(started_cluster):
-    main_node.query("DROP DATABASE IF EXISTS test_force_synchronous_settings SYNC")
-    dummy_node.query("DROP DATABASE IF EXISTS test_force_synchronous_settings SYNC")
-    snapshotting_node.query(
-        "DROP DATABASE IF EXISTS test_force_synchronous_settings SYNC"
-    )
     main_node.query(
         "CREATE DATABASE test_force_synchronous_settings ENGINE = Replicated('/clickhouse/databases/test2', 'shard1', 'replica1');"
     )
@@ -1291,8 +1283,8 @@ def test_force_synchronous_settings(started_cluster):
 
 
 def test_recover_digest_mismatch(started_cluster):
-    main_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch SYNC")
-    dummy_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch SYNC")
+    main_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
+    dummy_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
 
     main_node.query(
         "CREATE DATABASE recover_digest_mismatch ENGINE = Replicated('/clickhouse/databases/recover_digest_mismatch', 'shard1', 'replica1');"
@@ -1337,16 +1329,15 @@ def test_recover_digest_mismatch(started_cluster):
         dummy_node.start_clickhouse()
         assert_eq_with_retry(dummy_node, query, expected)
 
-    main_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch SYNC")
-    dummy_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch SYNC")
+    main_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
+    dummy_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
 
     print("Everything Okay")
 
 
 def test_replicated_table_structure_alter(started_cluster):
-    main_node.query("DROP DATABASE IF EXISTS table_structure SYNC")
-    dummy_node.query("DROP DATABASE IF EXISTS table_structure SYNC")
-    competing_node.query("DROP DATABASE IF EXISTS table_structure SYNC")
+    main_node.query("DROP DATABASE IF EXISTS table_structure")
+    dummy_node.query("DROP DATABASE IF EXISTS table_structure")
 
     main_node.query(
         "CREATE DATABASE table_structure ENGINE = Replicated('/clickhouse/databases/table_structure', 'shard1', 'replica1');"
@@ -1448,8 +1439,8 @@ def test_modify_comment(started_cluster):
 
 
 def test_table_metadata_corruption(started_cluster):
-    main_node.query("DROP DATABASE IF EXISTS table_metadata_corruption SYNC")
-    dummy_node.query("DROP DATABASE IF EXISTS table_metadata_corruption SYNC")
+    main_node.query("DROP DATABASE IF EXISTS table_metadata_corruption")
+    dummy_node.query("DROP DATABASE IF EXISTS table_metadata_corruption")
 
     main_node.query(
         "CREATE DATABASE table_metadata_corruption ENGINE = Replicated('/clickhouse/databases/table_metadata_corruption', 'shard1', 'replica1');"
@@ -1487,18 +1478,13 @@ def test_table_metadata_corruption(started_cluster):
     dummy_node.start_clickhouse()
     assert_eq_with_retry(dummy_node, query, expected)
 
-    main_node.query("DROP DATABASE IF EXISTS table_metadata_corruption SYNC")
-    dummy_node.query("DROP DATABASE IF EXISTS table_metadata_corruption SYNC")
+    main_node.query("DROP DATABASE IF EXISTS table_metadata_corruption")
+    dummy_node.query("DROP DATABASE IF EXISTS table_metadata_corruption")
 
 
 def test_auto_recovery(started_cluster):
-    dummy_node.query("DROP DATABASE IF EXISTS auto_recovery SYNC")
-    bad_settings_node.query(
-        "DROP DATABASE IF EXISTS auto_recovery",
-        settings={
-            "implicit_transaction": 0,
-        },
-    )
+    dummy_node.query("DROP DATABASE IF EXISTS auto_recovery")
+    bad_settings_node.query("DROP DATABASE IF EXISTS auto_recovery")
 
     dummy_node.query(
         "CREATE DATABASE auto_recovery ENGINE = Replicated('/clickhouse/databases/auto_recovery', 'shard1', 'replica1');"
@@ -1545,8 +1531,8 @@ def test_auto_recovery(started_cluster):
 
 
 def test_all_groups_cluster(started_cluster):
-    dummy_node.query("DROP DATABASE IF EXISTS db_cluster SYNC")
-    bad_settings_node.query("DROP DATABASE IF EXISTS db_cluster SYNC")
+    dummy_node.query("DROP DATABASE IF EXISTS db_cluster")
+    bad_settings_node.query("DROP DATABASE IF EXISTS db_cluster")
     dummy_node.query(
         "CREATE DATABASE db_cluster ENGINE = Replicated('/clickhouse/databases/all_groups_cluster', 'shard1', 'replica1');"
     )

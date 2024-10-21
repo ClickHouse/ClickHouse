@@ -266,11 +266,14 @@ public:
         {
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 3, 0, false)));
         }
+        else
+        {
+            auto start_time_scale = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type).getScale();
+            auto duration_scale = assert_cast<const DataTypeDecimal64 &>(*arguments[1].type).getScale();
+            return std::make_shared<DataTypeArray>(
+                std::make_shared<DataTypeDateTime64>(std::max(start_time_scale, duration_scale), extractTimeZoneNameFromFunctionArguments(arguments, 3, 0, false)));
+        }
 
-        auto start_time_scale = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type).getScale();
-        auto duration_scale = assert_cast<const DataTypeDecimal64 &>(*arguments[1].type).getScale();
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime64>(
-            std::max(start_time_scale, duration_scale), extractTimeZoneNameFromFunctionArguments(arguments, 3, 0, false)));
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -302,26 +305,14 @@ public:
                 TimeSlotsImpl::vectorVector(dt_starts->getData(), durations->getData(), time_slot_size, res_values, res->getOffsets(), input_rows_count);
                 return res;
             }
-            if (dt_starts && const_durations)
+            else if (dt_starts && const_durations)
             {
-                TimeSlotsImpl::vectorConstant(
-                    dt_starts->getData(),
-                    const_durations->getValue<UInt32>(),
-                    time_slot_size,
-                    res_values,
-                    res->getOffsets(),
-                    input_rows_count);
+                TimeSlotsImpl::vectorConstant(dt_starts->getData(), const_durations->getValue<UInt32>(), time_slot_size, res_values, res->getOffsets(), input_rows_count);
                 return res;
             }
-            if (dt_const_starts && durations)
+            else if (dt_const_starts && durations)
             {
-                TimeSlotsImpl::constantVector(
-                    dt_const_starts->getValue<UInt32>(),
-                    durations->getData(),
-                    time_slot_size,
-                    res_values,
-                    res->getOffsets(),
-                    input_rows_count);
+                TimeSlotsImpl::constantVector(dt_const_starts->getValue<UInt32>(), durations->getData(), time_slot_size, res_values, res->getOffsets(), input_rows_count);
                 return res;
             }
         }
@@ -359,32 +350,18 @@ public:
                     start_time_scale, duration_scale, time_slot_scale, input_rows_count);
                 return res;
             }
-            if (starts && const_durations)
+            else if (starts && const_durations)
             {
                 TimeSlotsImpl::vectorConstant(
-                    starts->getData(),
-                    const_durations->getValue<Decimal64>(),
-                    time_slot_size,
-                    res_values,
-                    res->getOffsets(),
-                    start_time_scale,
-                    duration_scale,
-                    time_slot_scale,
-                    input_rows_count);
+                    starts->getData(), const_durations->getValue<Decimal64>(), time_slot_size, res_values, res->getOffsets(),
+                    start_time_scale, duration_scale, time_slot_scale, input_rows_count);
                 return res;
             }
-            if (const_starts && durations)
+            else if (const_starts && durations)
             {
                 TimeSlotsImpl::constantVector(
-                    const_starts->getValue<DateTime64>(),
-                    durations->getData(),
-                    time_slot_size,
-                    res_values,
-                    res->getOffsets(),
-                    start_time_scale,
-                    duration_scale,
-                    time_slot_scale,
-                    input_rows_count);
+                    const_starts->getValue<DateTime64>(), durations->getData(), time_slot_size, res_values, res->getOffsets(),
+                    start_time_scale, duration_scale, time_slot_scale, input_rows_count);
                 return res;
             }
         }
@@ -394,13 +371,11 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {}, {}, {} of arguments of function {}",
                 arguments[0].column->getName(), arguments[1].column->getName(), arguments[2].column->getName(), getName());
         }
-
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "Illegal columns {}, {} of arguments of function {}",
-            arguments[0].column->getName(),
-            arguments[1].column->getName(),
-            getName());
+        else
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {}, {} of arguments of function {}",
+                arguments[0].column->getName(), arguments[1].column->getName(), getName());
+        }
     }
 };
 

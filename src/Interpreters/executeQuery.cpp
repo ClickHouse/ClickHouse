@@ -5,7 +5,6 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/FailPoint.h>
-#include <Common/FieldVisitorToString.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryCache.h>
@@ -156,8 +155,6 @@ namespace Setting
     extern const SettingsBool use_query_cache;
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
-    extern const SettingsBool implicit_select;
-    extern const SettingsBool enforce_strict_identifier_format;
 }
 
 namespace ErrorCodes
@@ -567,21 +564,6 @@ void logQueryFinish(
         query_span->addAttributeIfNotZero("clickhouse.written_rows", elem.written_rows);
         query_span->addAttributeIfNotZero("clickhouse.written_bytes", elem.written_bytes);
         query_span->addAttributeIfNotZero("clickhouse.memory_usage", elem.memory_usage);
-
-        if (context)
-        {
-            std::string user_name = context->getUserName();
-            query_span->addAttribute("clickhouse.user", user_name);
-        }
-
-        if (settings[Setting::log_query_settings])
-        {
-            auto changes = settings.changes();
-            for (const auto & change : changes)
-            {
-                query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), convertFieldToString(change.value));
-            }
-        }
         query_span->finish();
     }
 }
@@ -858,7 +840,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
         else
         {
-            ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+            ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert]);
             /// TODO: parser should fail early when max_query_size limit is reached.
             ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
@@ -895,8 +877,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}",
                         formatted1, std::string_view(begin, end-begin));
-
-                throw;
+                else
+                    throw;
             }
 
             chassert(ast2);
@@ -1015,14 +997,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// to allow settings to take effect.
         InterpreterSetQuery::applySettingsFromQuery(ast, context);
         validateAnalyzerSettings(ast, settings[Setting::allow_experimental_analyzer]);
-
-        if (settings[Setting::enforce_strict_identifier_format])
-        {
-            WriteBufferFromOwnString buf;
-            IAST::FormatSettings enforce_strict_identifier_format_settings(buf, true);
-            enforce_strict_identifier_format_settings.enforce_strict_identifier_format = true;
-            ast->format(enforce_strict_identifier_format_settings);
-        }
 
         if (auto * insert_query = ast->as<ASTInsertQuery>())
             insert_query->tail = istr;
@@ -1287,6 +1261,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     if (!interpreter->supportsTransactions())
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", ast->getID());
+
                 }
 
                 // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.

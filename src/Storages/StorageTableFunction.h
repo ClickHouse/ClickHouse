@@ -62,7 +62,6 @@ public:
     /// Avoid loading nested table by returning nullptr/false for all table functions.
     StoragePolicyPtr getStoragePolicy() const override { return nullptr; }
     bool storesDataOnDisk() const override { return false; }
-    bool supportsReplication() const override { return false; }
 
     void startup() override { }
     void shutdown(bool is_drop) override
@@ -102,7 +101,7 @@ public:
                                   processed_stage, max_block_size, num_streams);
         if (add_conversion)
         {
-            auto from_header = query_plan.getCurrentHeader();
+            auto from_header = query_plan.getCurrentDataStream().header;
             auto to_header = getHeaderForProcessingStage(column_names, storage_snapshot,
                                                          query_info, context, processed_stage);
 
@@ -112,7 +111,7 @@ public:
                     ActionsDAG::MatchColumnsMode::Name);
 
             auto step = std::make_unique<ExpressionStep>(
-                query_plan.getCurrentHeader(),
+                query_plan.getCurrentDataStream(),
                 std::move(convert_actions_dag));
 
             step->setStepDescription("Converting columns");

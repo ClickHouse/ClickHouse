@@ -13,8 +13,9 @@ namespace DB
 
 struct UsearchHnswParams
 {
-    size_t connectivity = unum::usearch::default_connectivity();
-    size_t expansion_add = unum::usearch::default_expansion_add();
+    size_t m = unum::usearch::default_connectivity();
+    size_t ef_construction = unum::usearch::default_expansion_add();
+    size_t ef_search = unum::usearch::default_expansion_search();
 };
 
 using USearchIndex = unum::usearch::index_dense_t;
@@ -136,12 +137,11 @@ public:
 
     bool alwaysUnknownOrTrue() const override;
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const override;
-    std::vector<UInt64> calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule) const override;
+    std::vector<size_t> getUsefulRanges(MergeTreeIndexGranulePtr granule) const override;
 
 private:
     const VectorSimilarityCondition vector_similarity_condition;
     const unum::usearch::metric_kind_t metric_kind;
-    const size_t expansion_search;
 };
 
 
