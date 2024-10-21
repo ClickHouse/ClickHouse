@@ -25,7 +25,6 @@ struct RocksDBSettingsImpl : public BaseSettings<RocksDBSettingsTraits>
 {
 };
 
-
 #define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) RocksDBSettings##TYPE NAME = &RocksDBSettingsImpl ::NAME;
 
 namespace RocksDBSetting
