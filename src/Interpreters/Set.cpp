@@ -361,7 +361,7 @@ ColumnPtr checkDateTimePrecision(
 
     /// Create the final column
     ColumnPtr final_column;
-    if (result_nullable_column || original_nullable_column) /// Avoid creating a nullable over a nullable        
+    if (result_nullable_column || original_nullable_column) /// Avoid creating a nullable over a nullable
         final_column = ColumnNullable::create(std::move(final_nested_column), std::move(final_null_map_column));
     else /// If neither original nor result columns were nullable, we don't need to wrap
         final_column = std::move(final_nested_column);
