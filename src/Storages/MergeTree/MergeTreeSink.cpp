@@ -226,7 +226,17 @@ void MergeTreeSink::finishDelayedChunk()
                 }
             }
 
-            added = storage.renameTempPartAndAdd(part, transaction, lock);
+            /// FIXME: renames for MergeTree should be done under the same lock
+            /// to avoid removing extra covered parts after merge.
+            ///
+            /// Image the following:
+            /// - T1: all_2_2_0 is in renameParts()
+            /// - T2: merge assigned for [all_1_1_0, all_3_3_0]
+            /// - T1: renameParts() finished, part had been added as Active
+            /// - T2: merge finished, covered parts removed, and it will include all_2_2_0!
+            ///
+            /// Hence, for now rename_in_transaction is false.
+            added = storage.renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
             transaction.commit(&lock);
         }
 

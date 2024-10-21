@@ -79,7 +79,6 @@ namespace Setting
     extern const SettingsBool optimize_trivial_count_query;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsString parallel_replicas_custom_key;
-    extern const SettingsParallelReplicasCustomKeyFilterType parallel_replicas_custom_key_filter_type;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replica_offset;
 }
@@ -581,7 +580,7 @@ AsynchronousInsertQueue::Milliseconds AsynchronousInsertQueue::getBusyWaitTimeou
     /// that is, if the time since the last insert and the difference between the last two queue flushes were both
     /// long enough (exceeding the adjusted timeout).
     /// This ensures the timeout value converges to the minimum over time for non-frequent inserts.
-    else if (last_insert_time + decreased_timeout_ms < now && t1 + decreased_timeout_ms < t2)
+    if (last_insert_time + decreased_timeout_ms < now && t1 + decreased_timeout_ms < t2)
         return normalize(decreased_timeout_ms);
 
     return normalize(shard.busy_timeout_ms);

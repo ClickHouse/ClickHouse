@@ -107,10 +107,10 @@ WriteBufferFromS3::WriteBufferFromS3(
           std::make_unique<TaskTracker>(
               std::move(schedule_),
               request_settings.max_inflight_parts_for_one_file,
-              limitedLog))
+              limited_log))
     , blob_log(std::move(blob_log_))
 {
-    LOG_TRACE(limitedLog, "Create WriteBufferFromS3, {}", getShortLogDetails());
+    LOG_TRACE(limited_log, "Create WriteBufferFromS3, {}", getShortLogDetails());
 
     allocateBuffer();
 }
@@ -148,7 +148,7 @@ void WriteBufferFromS3::preFinalize()
     if (is_prefinalized)
         return;
 
-    LOG_TEST(limitedLog, "preFinalize WriteBufferFromS3. {}", getShortLogDetails());
+    LOG_TEST(limited_log, "preFinalize WriteBufferFromS3. {}", getShortLogDetails());
 
     /// This function should not be run again if an exception has occurred
     is_prefinalized = true;
@@ -192,7 +192,7 @@ void WriteBufferFromS3::finalizeImpl()
     span.addAttribute("clickhouse.s3_key", key);
     span.addAttribute("clickhouse.total_size", total_size);
 
-    LOG_TRACE(limitedLog, "finalizeImpl WriteBufferFromS3. {}.", getShortLogDetails());
+    LOG_TRACE(limited_log, "finalizeImpl WriteBufferFromS3. {}.", getShortLogDetails());
 
     if (!is_prefinalized)
         preFinalize();
@@ -266,7 +266,7 @@ void WriteBufferFromS3::tryToAbortMultipartUpload() noexcept
 
 WriteBufferFromS3::~WriteBufferFromS3()
 {
-    LOG_TRACE(limitedLog, "Close WriteBufferFromS3. {}.", getShortLogDetails());
+    LOG_TRACE(limited_log, "Close WriteBufferFromS3. {}.", getShortLogDetails());
 
     if (canceled)
     {
@@ -390,7 +390,7 @@ void WriteBufferFromS3::writeMultipartUpload()
 
 void WriteBufferFromS3::createMultipartUpload()
 {
-    LOG_TEST(limitedLog, "Create multipart upload. {}", getShortLogDetails());
+    LOG_TEST(limited_log, "Create multipart upload. {}", getShortLogDetails());
 
     S3::CreateMultipartUploadRequest req;
 
@@ -432,7 +432,7 @@ void WriteBufferFromS3::createMultipartUpload()
         throw Exception(ErrorCodes::S3_ERROR, "Invalid CreateMultipartUpload result: missing UploadId.");
     }
 
-    LOG_TRACE(limitedLog, "Multipart upload was created. {}", getShortLogDetails());
+    LOG_TRACE(limited_log, "Multipart upload was created. {}", getShortLogDetails());
 }
 
 void WriteBufferFromS3::abortMultipartUpload()
@@ -504,13 +504,13 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
 {
     if (data.data_size == 0)
     {
-        LOG_TEST(limitedLog, "Skipping writing part as empty {}", getShortLogDetails());
+        LOG_TEST(limited_log, "Skipping writing part as empty {}", getShortLogDetails());
         return;
     }
 
     multipart_tags.push_back({});
     size_t part_number = multipart_tags.size();
-    LOG_TEST(limitedLog, "writePart {}, part size {}, part number {}", getShortLogDetails(), data.data_size, part_number);
+    LOG_TEST(limited_log, "writePart {}, part size {}, part number {}", getShortLogDetails(), data.data_size, part_number);
 
     if (multipart_upload_id.empty())
         throw Exception(
@@ -548,7 +548,7 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
     {
         auto & data_size = std::get<1>(*worker_data).data_size;
 
-        LOG_TEST(limitedLog, "Write part started {}, part size {}, part number {}",
+        LOG_TEST(limited_log, "Write part started {}, part size {}, part number {}",
                  getShortLogDetails(), data_size, part_number);
 
         ProfileEvents::increment(ProfileEvents::S3UploadPart);
@@ -580,7 +580,7 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
 
         multipart_tags[part_number-1] = outcome.GetResult().GetETag();
 
-        LOG_TEST(limitedLog, "Write part succeeded {}, part size {}, part number {}, etag {}",
+        LOG_TEST(limited_log, "Write part succeeded {}, part size {}, part number {}, etag {}",
                  getShortLogDetails(), data_size, part_number, multipart_tags[part_number-1]);
     };
 
@@ -589,7 +589,7 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
 
 void WriteBufferFromS3::completeMultipartUpload()
 {
-    LOG_TEST(limitedLog, "Completing multipart upload. {}, Parts: {}", getShortLogDetails(), multipart_tags.size());
+    LOG_TEST(limited_log, "Completing multipart upload. {}, Parts: {}", getShortLogDetails(), multipart_tags.size());
 
     if (multipart_tags.empty())
         throw Exception(
@@ -641,7 +641,7 @@ void WriteBufferFromS3::completeMultipartUpload()
 
         if (outcome.IsSuccess())
         {
-            LOG_TRACE(limitedLog, "Multipart upload has completed. {}, Parts: {}", getShortLogDetails(), multipart_tags.size());
+            LOG_TRACE(limited_log, "Multipart upload has completed. {}, Parts: {}", getShortLogDetails(), multipart_tags.size());
             return;
         }
 
@@ -693,14 +693,14 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
 
 void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data)
 {
-    LOG_TEST(limitedLog, "Making single part upload. {}, size {}", getShortLogDetails(), data.data_size);
+    LOG_TEST(limited_log, "Making single part upload. {}, size {}", getShortLogDetails(), data.data_size);
 
     auto req = getPutRequest(data);
     auto worker_data = std::make_shared<std::tuple<S3::PutObjectRequest, WriteBufferFromS3::PartData>>(std::move(req), std::move(data));
 
     auto upload_worker = [&, worker_data] ()
     {
-        LOG_TEST(limitedLog, "writing single part upload started. {}", getShortLogDetails());
+        LOG_TEST(limited_log, "writing single part upload started. {}", getShortLogDetails());
 
         auto & request = std::get<0>(*worker_data);
         size_t content_length = request.GetContentLength();
@@ -725,7 +725,7 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
 
             if (outcome.IsSuccess())
             {
-                LOG_TRACE(limitedLog, "Single part upload has completed. {}, size {}", getShortLogDetails(), content_length);
+                LOG_TRACE(limited_log, "Single part upload has completed. {}, size {}", getShortLogDetails(), content_length);
                 return;
             }
 

@@ -24,6 +24,11 @@
 
 namespace DB
 {
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 max_authentication_methods_per_user;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -264,14 +269,14 @@ BlockIO InterpreterCreateUserQuery::execute()
         if (query.grantees)
             grantees_from_query = RolesOrUsersSet{*query.grantees, access_control};
 
-        auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
+        auto update_func = [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
         {
             auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
             updateUserFromQueryImpl(
                 *updated_user, query, authentication_methods, {}, default_roles_from_query, settings_from_query, grantees_from_query,
                 valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
                 implicit_no_password_allowed, no_password_allowed,
-                plaintext_password_allowed, getContext()->getServerSettings().max_authentication_methods_per_user);
+                plaintext_password_allowed, getContext()->getServerSettings()[ServerSetting::max_authentication_methods_per_user]);
             return updated_user;
         };
 
@@ -293,7 +298,7 @@ BlockIO InterpreterCreateUserQuery::execute()
                 *new_user, query, authentication_methods, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
                 valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
                 implicit_no_password_allowed, no_password_allowed,
-                plaintext_password_allowed, getContext()->getServerSettings().max_authentication_methods_per_user);
+                plaintext_password_allowed, getContext()->getServerSettings()[ServerSetting::max_authentication_methods_per_user]);
             new_users.emplace_back(std::move(new_user));
         }
 
@@ -317,7 +322,7 @@ BlockIO InterpreterCreateUserQuery::execute()
         if (query.grantees)
         {
             RolesOrUsersSet grantees_from_query = RolesOrUsersSet{*query.grantees, access_control};
-            access_control.update(ids, [&](const AccessEntityPtr & entity) -> AccessEntityPtr
+            access_control.update(ids, [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
             {
                 auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
                 updated_user->grantees = grantees_from_query;

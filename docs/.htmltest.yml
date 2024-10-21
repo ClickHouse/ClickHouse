@@ -1,0 +1,9 @@
+DirectoryPath: /test
+IgnoreDirectoryMissingTrailingSlash: true
+CheckExternal: false
+CheckInternal: false
+CheckInternalHash: true
+CheckMailto: false
+IgnoreAltMissing: true
+IgnoreEmptyHref: true
+IgnoreInternalEmptyHash: true

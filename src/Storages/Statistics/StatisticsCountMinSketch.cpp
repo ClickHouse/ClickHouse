@@ -27,7 +27,7 @@ static constexpr auto num_buckets = 2718uz;
 StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
     : IStatistics(description)
     , sketch(num_hashes, num_buckets)
-    , data_type(data_type_)
+    , data_type(removeNullable(data_type_))
 {
 }
 
@@ -52,7 +52,7 @@ Float64 StatisticsCountMinSketch::estimateEqual(const Field & val) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics 'countmin' does not support estimate data type of {}", data_type->getName());
 }
 
-void StatisticsCountMinSketch::update(const ColumnPtr & column)
+void StatisticsCountMinSketch::build(const ColumnPtr & column)
 {
     for (size_t row = 0; row < column->size(); ++row)
     {
