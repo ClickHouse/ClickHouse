@@ -5,7 +5,7 @@
 
 #include "nlimits.h"
 
-namespace chfuzz {
+namespace buzzhouse {
 
 // Forward declaration to allow conversion between hugeint and uhugeint
 struct hugeint_t;

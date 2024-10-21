@@ -7,7 +7,7 @@
 #include <optional>
 #include <sys/types.h>
 
-namespace chfuzz {
+namespace buzzhouse {
 
 int StatementGenerator::GenerateSettingValues(RandomGenerator &rg,
 											  const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> &settings,

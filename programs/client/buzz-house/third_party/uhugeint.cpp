@@ -4,7 +4,7 @@
 #include <cmath>
 #include <cassert>
 
-namespace chfuzz {
+namespace buzzhouse {
 
 uhugeint_t::uhugeint_t(uint64_t value) {
 	this->lower = value;

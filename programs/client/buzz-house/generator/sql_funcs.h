@@ -3,7 +3,7 @@
 #include <vector>
 #include <cstdint>
 
-namespace chfuzz {
+namespace buzzhouse {
 
 class CHAggregate {
 public:

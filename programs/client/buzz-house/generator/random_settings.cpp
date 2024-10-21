@@ -1,6 +1,6 @@
 #include "random_settings.h"
 
-namespace chfuzz {
+namespace buzzhouse {
 
 void SetRandomSetting(RandomGenerator &rg, const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> &settings,
 					  std::string &ret, sql_query_grammar::SetValue *set) {

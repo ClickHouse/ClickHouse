@@ -13,7 +13,7 @@ using namespace sql_query_grammar;
 #define CONV_FN(TYPE, VAR_NAME) void TYPE##ToString(std::string &ret, const TYPE& VAR_NAME)
 #define CONV_FN_QUOTE(TYPE, VAR_NAME) void TYPE##ToString(std::string &ret, const bool quote, const TYPE& VAR_NAME)
 
-namespace chfuzz {
+namespace buzzhouse {
 
 static constexpr char hex_digits[] = "0123456789ABCDEF";
 static constexpr char digits[] = "0123456789";

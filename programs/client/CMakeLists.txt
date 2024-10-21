@@ -1,17 +1,17 @@
-PROTOBUF_GENERATE_CPP(GRAMMAR_SRC GRAMMAR_HDR ch-fuzz/ast/sql_grammar.proto)
+PROTOBUF_GENERATE_CPP(GRAMMAR_SRC GRAMMAR_HDR buzz-house/ast/sql_grammar.proto)
 
 set (CLICKHOUSE_CLIENT_SOURCES
     Client.cpp
-    # CH fuzz
-    ch-fuzz/ast/sql_query_proto_to_string.cpp
-    ch-fuzz/generator/sql_query.cpp
-    ch-fuzz/generator/sql_expression.cpp
-    ch-fuzz/generator/sql_types.cpp
-    ch-fuzz/generator/statement_generator.cpp
-    ch-fuzz/generator/random_settings.cpp
-    ch-fuzz/generator/query_oracle.cpp
-    ch-fuzz/third_party/hugeint.cpp
-    ch-fuzz/third_party/uhugeint.cpp
+    # BuzzHouse
+    buzz-house/ast/sql_query_proto_to_string.cpp
+    buzz-house/generator/sql_query.cpp
+    buzz-house/generator/sql_expression.cpp
+    buzz-house/generator/sql_types.cpp
+    buzz-house/generator/statement_generator.cpp
+    buzz-house/generator/random_settings.cpp
+    buzz-house/generator/query_oracle.cpp
+    buzz-house/third_party/hugeint.cpp
+    buzz-house/third_party/uhugeint.cpp
     ${GRAMMAR_SRC}
 )
 set_source_files_properties(${CLICKHOUSE_CLIENT_SOURCES} PROPERTIES COMPILE_FLAGS "-Wno-reserved-identifier -Wno-extra-semi-stmt -Wno-used-but-marked-unused -Wno-covered-switch-default")
@@ -36,9 +36,9 @@ list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE readpassphrase)
 
 set (CLICKHOUSE_CLIENT_INCLUDE
     PRIVATE
-    ch-fuzz/ast
-    ch-fuzz/generator
-    ch-fuzz/third_party
+    buzz-house/ast
+    buzz-house/generator
+    buzz-house/third_party
     "${CMAKE_CURRENT_BINARY_DIR}"
 )
 

@@ -116,7 +116,7 @@ protected:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query processing with fuzzing is not implemented");
     }
 
-    virtual bool chFuzz()
+    virtual bool buzzHouse()
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query processing with fuzzing is not implemented");
     }
@@ -369,9 +369,9 @@ protected:
     int query_fuzzer_runs = 0;
     int create_query_fuzzer_runs = 0;
 
-    //Options for CH fuzzer
-    String ch_fuzz_options_path;
-    bool ch_fuzz = false;
+    //Options for BuzzHouse
+    String buzz_house_options_path;
+    bool buzz_house = false;
 
     struct
     {

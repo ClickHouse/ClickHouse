@@ -2,7 +2,7 @@
 
 #include "sql_types.h"
 
-namespace chfuzz {
+namespace buzzhouse {
 
 using ColumnSpecial = enum ColumnSpecial {
 	NONE = 0,

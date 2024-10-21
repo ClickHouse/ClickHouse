@@ -5,7 +5,7 @@
 #include "random_generator.h"
 #include "statement_generator.h"
 
-namespace chfuzz {
+namespace buzzhouse {
 
 class QueryOracle {
 private:

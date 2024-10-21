@@ -6,7 +6,7 @@
 
 #include <sys/types.h>
 
-namespace chfuzz {
+namespace buzzhouse {
 
 int StatementGenerator::AddFieldAccess(RandomGenerator &rg, sql_query_grammar::Expr *expr,
 									   const uint32_t nested_prob) {

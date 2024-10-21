@@ -3,7 +3,7 @@
 #include "sql_types.h"
 #include "statement_generator.h"
 
-namespace chfuzz {
+namespace buzzhouse {
 
 SQLType*
 TypeDeepCopy(const SQLType *tp) {

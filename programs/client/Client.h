@@ -24,7 +24,7 @@ protected:
     Poco::Util::LayeredConfiguration & getClientConfiguration() override;
 
     bool processWithFuzzing(const String & full_query) override;
-    bool chFuzz() override;
+    bool buzzHouse() override;
     std::optional<bool> processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query, const bool ignore_deep_recursion);
 
     void connect() override;
@@ -56,7 +56,7 @@ private:
     void printChangedSettings() const;
     void showWarnings();
     void ProcessQueryAndLog(std::ofstream &outf, const std::string &full_query);
-    bool ProcessCHFuzzQuery(const std::string &full_query);
+    bool ProcessBuzzHouseQuery(const std::string &full_query);
     void parseConnectionsCredentials(Poco::Util::AbstractConfiguration & config, const std::string & connection_name);
     std::vector<String> loadWarningMessages();
 };

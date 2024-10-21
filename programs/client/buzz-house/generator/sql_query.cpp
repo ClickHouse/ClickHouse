@@ -1,7 +1,7 @@
 #include "sql_catalog.h"
 #include "statement_generator.h"
 
-namespace chfuzz {
+namespace buzzhouse {
 
 int StatementGenerator::GenerateArrayJoin(RandomGenerator &rg, sql_query_grammar::ArrayJoin *aj) {
 	SQLRelation rel("");

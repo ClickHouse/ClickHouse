@@ -1,12 +1,12 @@
 #pragma once
 
 #include "random_generator.h"
-#include "ch-fuzz/ast/sql_grammar.pb.h"
+#include "buzz-house/ast/sql_grammar.pb.h"
 
 #include <optional>
 #include <memory>
 
-namespace chfuzz {
+namespace buzzhouse {
 
 const constexpr uint32_t allow_nullable = (1 << 0),
 						 allow_dynamic = (1 << 1),

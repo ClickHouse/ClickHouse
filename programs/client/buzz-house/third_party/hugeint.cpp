@@ -4,7 +4,7 @@
 #include <cmath>
 #include <cassert>
 
-namespace chfuzz {
+namespace buzzhouse {
 
 static void NegateInPlace(hugeint_t &input) {
 	input.lower = std::numeric_limits<uint64_t>::max() - input.lower + 1ull;

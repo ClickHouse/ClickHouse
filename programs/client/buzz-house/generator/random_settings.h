@@ -1,13 +1,13 @@
 #pragma once
 
 #include "random_generator.h"
-#include "ch-fuzz/ast/sql_grammar.pb.h"
+#include "buzz-house/ast/sql_grammar.pb.h"
 
 #include <cstdint>
 #include <functional>
 #include <thread>
 
-namespace chfuzz {
+namespace buzzhouse {
 
 const std::function<void(RandomGenerator&,std::string&)> TrueOrFalse = [](RandomGenerator &rg, std::string &ret) {
 	ret += rg.NextBool() ? "1" : "0";

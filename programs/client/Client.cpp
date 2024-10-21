@@ -50,9 +50,9 @@
 
 #include <Poco/Util/Application.h>
 
-#include "ch-fuzz/ast/sql_query_proto_to_string.h"
-#include "ch-fuzz/generator/query_oracle.h"
-#include "ch-fuzz/generator/statement_generator.h"
+#include "buzz-house/ast/sql_query_proto_to_string.h"
+#include "buzz-house/generator/query_oracle.h"
+#include "buzz-house/generator/statement_generator.h"
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -394,7 +394,7 @@ try
     auto & access_control = client_context->getAccessControl();
     access_control.setPasswordComplexityRules(connection->getPasswordComplexityRules());
 
-    if (is_interactive && !delayed_interactive && !ch_fuzz)
+    if (is_interactive && !delayed_interactive && !buzz_house)
     {
         runInteractive();
     }
@@ -946,7 +946,7 @@ void Client::ProcessQueryAndLog(std::ofstream &outf, const std::string &full_que
     outf << full_query << std::endl;
 }
 
-bool Client::ProcessCHFuzzQuery(const std::string &full_query)
+bool Client::ProcessBuzzHouseQuery(const std::string &full_query)
 {
     bool server_up = true;
     ASTPtr orig_ast;
@@ -989,11 +989,11 @@ bool Client::ProcessCHFuzzQuery(const std::string &full_query)
 }
 
 /// Returns false when server is not available.
-bool Client::chFuzz()
+bool Client::buzzHouse()
 {
     bool server_up = true;
     std::string full_query;
-    chfuzz::FuzzConfig fc(ch_fuzz_options_path);
+    buzzhouse::FuzzConfig fc(buzz_house_options_path);
 
     full_query.reserve(8192);
     if (fc.read_log)
@@ -1002,7 +1002,7 @@ bool Client::chFuzz()
 
         while (server_up && std::getline(infile, full_query))
         {
-            server_up &= ProcessCHFuzzQuery(full_query);
+            server_up &= ProcessBuzzHouseQuery(full_query);
             full_query.resize(0);
         }
     }
@@ -1010,9 +1010,9 @@ bool Client::chFuzz()
     {
         std::string full_query2;
         bool has_cloud_features = false;
-        chfuzz::RandomGenerator rg(fc.seed);
+        buzzhouse::RandomGenerator rg(fc.seed);
         std::ofstream outf(fc.log_path, std::ios::out | std::ios::trunc);
-        chfuzz::QueryOracle qo(std::move(fc));
+        buzzhouse::QueryOracle qo(std::move(fc));
         sql_query_grammar::SQLQuery sq1, sq2, sq3, sq4;
         int nsuccessfull_create_database = 0, total_create_database_tries = 0, nsuccessfull_create_table = 0, total_create_table_tries = 0;
 
@@ -1029,7 +1029,7 @@ bool Client::chFuzz()
         ProcessQueryAndLog(outf, "SET engine_file_truncate_on_insert = 1;");
 
         full_query2.reserve(8192);
-        chfuzz::StatementGenerator gen(has_cloud_features);
+        buzzhouse::StatementGenerator gen(has_cloud_features);
         while (server_up)
         {
             sq1.Clear();
@@ -1038,21 +1038,21 @@ bool Client::chFuzz()
             if (total_create_database_tries < 10 && nsuccessfull_create_database < 3)
             {
                 (void) gen.GenerateNextCreateDatabase(rg, sq1.mutable_inner_query()->mutable_create_database());
-                chfuzz::SQLQueryToString(full_query, sq1);
+                buzzhouse::SQLQueryToString(full_query, sq1);
                 outf << full_query << std::endl;
-                server_up &= ProcessCHFuzzQuery(full_query);
+                server_up &= ProcessBuzzHouseQuery(full_query);
 
                 gen.UpdateGenerator(sq1, !have_error);
                 nsuccessfull_create_database += (have_error ? 0 : 1);
                 total_create_database_tries++;
             }
-            else if (gen.CollectionHas<std::shared_ptr<chfuzz::SQLDatabase>>(gen.attached_databases) &&
+            else if (gen.CollectionHas<std::shared_ptr<buzzhouse::SQLDatabase>>(gen.attached_databases) &&
                      total_create_table_tries < 30 && nsuccessfull_create_table < 10)
             {
                 (void) gen.GenerateNextCreateTable(rg, sq1.mutable_inner_query()->mutable_create_table());
-                chfuzz::SQLQueryToString(full_query, sq1);
+                buzzhouse::SQLQueryToString(full_query, sq1);
                 outf << full_query << std::endl;
-                server_up &= ProcessCHFuzzQuery(full_query);
+                server_up &= ProcessBuzzHouseQuery(full_query);
 
                 gen.UpdateGenerator(sq1, !have_error);
                 nsuccessfull_create_table += (have_error ? 0 : 1);
@@ -1066,57 +1066,57 @@ bool Client::chFuzz()
                 {
                     //correctness test query
                     (void) qo.GenerateCorrectnessTestFirstQuery(rg, gen, sq1);
-                    chfuzz::SQLQueryToString(full_query, sq1);
+                    buzzhouse::SQLQueryToString(full_query, sq1);
                     outf << full_query << std::endl;
-                    server_up &= ProcessCHFuzzQuery(full_query);
+                    server_up &= ProcessBuzzHouseQuery(full_query);
                     (void) qo.ProcessOracleQueryResult(true, !have_error, "Correctness query");
 
                     sq2.Clear();
                     full_query.resize(0);
                     (void) qo.GenerateCorrectnessTestSecondQuery(sq1, sq2);
-                    chfuzz::SQLQueryToString(full_query, sq2);
+                    buzzhouse::SQLQueryToString(full_query, sq2);
                     outf << full_query << std::endl;
-                    server_up &= ProcessCHFuzzQuery(full_query);
+                    server_up &= ProcessBuzzHouseQuery(full_query);
                     (void) qo.ProcessOracleQueryResult(false, !have_error, "Correctness query");
                 }
-                else if (gen.CollectionHas<chfuzz::SQLTable>(gen.attached_tables) && noption < 41)
+                else if (gen.CollectionHas<buzzhouse::SQLTable>(gen.attached_tables) && noption < 41)
                 {
                     bool second_success = true;
-                    const chfuzz::SQLTable &t = rg.PickRandomlyFromVector(gen.FilterCollection<chfuzz::SQLTable>(gen.attached_tables));
+                    const buzzhouse::SQLTable &t = rg.PickRandomlyFromVector(gen.FilterCollection<buzzhouse::SQLTable>(gen.attached_tables));
 
                     //test in and out formats
                     full_query2.resize(0);
                     (void) qo.DumpTableContent(t, sq1);
-                    chfuzz::SQLQueryToString(full_query2, sq1);
+                    buzzhouse::SQLQueryToString(full_query2, sq1);
                     outf << full_query2 << std::endl;
-                    server_up &= ProcessCHFuzzQuery(full_query2);
+                    server_up &= ProcessBuzzHouseQuery(full_query2);
                     (void) qo.ProcessOracleQueryResult(true, !have_error, "Dump and read table");
 
                     sq2.Clear();
                     (void) qo.GenerateExportQuery(rg, t, sq2);
-                    chfuzz::SQLQueryToString(full_query, sq2);
+                    buzzhouse::SQLQueryToString(full_query, sq2);
                     outf << full_query << std::endl;
-                    server_up &= ProcessCHFuzzQuery(full_query);
+                    server_up &= ProcessBuzzHouseQuery(full_query);
                     second_success &= !have_error;
 
                     sq3.Clear();
                     full_query.resize(0);
                     (void) qo.GenerateClearQuery(t, sq3);
-                    chfuzz::SQLQueryToString(full_query, sq3);
+                    buzzhouse::SQLQueryToString(full_query, sq3);
                     outf << full_query << std::endl;
-                    server_up &= ProcessCHFuzzQuery(full_query);
+                    server_up &= ProcessBuzzHouseQuery(full_query);
                     second_success &= !have_error;
 
                     sq4.Clear();
                     full_query.resize(0);
                     (void) qo.GenerateImportQuery(t, sq2, sq4);
-                    chfuzz::SQLQueryToString(full_query, sq4);
+                    buzzhouse::SQLQueryToString(full_query, sq4);
                     outf << full_query << std::endl;
-                    server_up &= ProcessCHFuzzQuery(full_query);
+                    server_up &= ProcessBuzzHouseQuery(full_query);
                     second_success &= !have_error;
 
                     outf << full_query2 << std::endl;
-                    server_up &= ProcessCHFuzzQuery(full_query2);
+                    server_up &= ProcessBuzzHouseQuery(full_query2);
                     second_success &= !have_error;
                     (void) qo.ProcessOracleQueryResult(false, second_success, "Dump and read table");
                 }
@@ -1124,35 +1124,35 @@ bool Client::chFuzz()
                 {
                     //test running query with different settings
                     (void) qo.GenerateFirstSetting(rg, sq1);
-                    chfuzz::SQLQueryToString(full_query, sq1);
+                    buzzhouse::SQLQueryToString(full_query, sq1);
                     outf << full_query << std::endl;
-                    server_up &= ProcessCHFuzzQuery(full_query);
+                    server_up &= ProcessBuzzHouseQuery(full_query);
 
                     sq2.Clear();
                     full_query2.resize(0);
                     (void) qo.GenerateSettingQuery(rg, gen, sq2);
-                    chfuzz::SQLQueryToString(full_query2, sq2);
+                    buzzhouse::SQLQueryToString(full_query2, sq2);
                     outf << full_query2 << std::endl;
-                    server_up &= ProcessCHFuzzQuery(full_query2);
+                    server_up &= ProcessBuzzHouseQuery(full_query2);
                     (void) qo.ProcessOracleQueryResult(true, !have_error, "Multi setting query");
 
                     sq3.Clear();
                     full_query.resize(0);
                     (void) qo.GenerateSecondSetting(sq1, sq3);
-                    chfuzz::SQLQueryToString(full_query, sq3);
+                    buzzhouse::SQLQueryToString(full_query, sq3);
                     outf << full_query << std::endl;
-                    server_up &= ProcessCHFuzzQuery(full_query);
+                    server_up &= ProcessBuzzHouseQuery(full_query);
 
                     outf << full_query2 << std::endl;
-                    server_up &= ProcessCHFuzzQuery(full_query2);
+                    server_up &= ProcessBuzzHouseQuery(full_query2);
                     (void) qo.ProcessOracleQueryResult(false, !have_error, "Multi setting query");
                 }
                 else
                 {
                     (void) gen.GenerateNextStatement(rg, sq1);
-                    chfuzz::SQLQueryToString(full_query, sq1);
+                    buzzhouse::SQLQueryToString(full_query, sq1);
                     outf << full_query << std::endl;
-                    server_up &= ProcessCHFuzzQuery(full_query);
+                    server_up &= ProcessBuzzHouseQuery(full_query);
 
                     gen.UpdateGenerator(sq1, !have_error);
                 }
@@ -1195,7 +1195,7 @@ void Client::addOptions(OptionsDescription & options_description)
 
         ("query-fuzzer-runs", po::value<int>()->default_value(0), "After executing every SELECT query, do random mutations in it and run again specified number of times. This is used for testing to discover unexpected corner cases.")
         ("create-query-fuzzer-runs", po::value<int>()->default_value(0), "")
-        ("ch-fuzz-config", po::value<std::string>(), "Path to configuration file for CH fuzzer")
+        ("buzz-house-config", po::value<std::string>(), "Path to configuration file for BuzzHouse")
         ("interleave-queries-file", po::value<std::vector<std::string>>()->multitoken(),
             "file path with queries to execute before every file from 'queries-file'; multiple files can be specified (--queries-file file1 file2...); this is needed to enable more aggressive fuzzing of newly added tests (see 'query-fuzzer-runs' option)")
 
@@ -1354,9 +1354,9 @@ void Client::processOptions(const OptionsDescription & options_description,
         config().setString("openSSL.client.invalidCertificateHandler.name", "RejectCertificateHandler");
 
     query_fuzzer_runs = options["query-fuzzer-runs"].as<int>();
-    ch_fuzz_options_path = options.count("ch-fuzz-config") ? options["ch-fuzz-config"].as<std::string>() : "";
-    ch_fuzz = ch_fuzz_options_path != "";
-    if (query_fuzzer_runs || ch_fuzz)
+    buzz_house_options_path = options.count("buzz-house-config") ? options["buzz-house-config"].as<std::string>() : "";
+    buzz_house = buzz_house_options_path != "";
+    if (query_fuzzer_runs || buzz_house)
     {
         // Ignore errors in parsing queries.
         config().setBool("ignore-error", true);

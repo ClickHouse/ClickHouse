@@ -2,7 +2,7 @@
 
 #include <cstdio>
 
-namespace chfuzz {
+namespace buzzhouse {
 
 /*
 Correctness query oracle

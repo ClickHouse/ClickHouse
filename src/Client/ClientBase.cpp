@@ -2296,7 +2296,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 {
     bool echo_query = echo_queries;
 
-    assert(!ch_fuzz);
+    assert(!buzz_house);
     {
         /// disable logs if expects errors
         TestHint test_hint(all_queries_text);
@@ -2531,7 +2531,7 @@ bool ClientBase::processQueryText(const String & text)
 {
     auto trimmed_input = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
 
-    assert(!ch_fuzz);
+    assert(!buzz_house);
     if (exit_strings.end() != exit_strings.find(trimmed_input))
         return false;
 
@@ -2829,7 +2829,7 @@ void ClientBase::runNonInteractive()
     if (delayed_interactive)
         initQueryIdFormats();
 
-    if (!ch_fuzz && !queries_files.empty())
+    if (!buzz_house && !queries_files.empty())
     {
         for (const auto & queries_file : queries_files)
         {
@@ -2844,12 +2844,12 @@ void ClientBase::runNonInteractive()
         return;
     }
 
-    if (ch_fuzz)
+    if (buzz_house)
     {
-        if (!chFuzz())
+        if (!buzzHouse())
             return;
     }
-    else if (!ch_fuzz && !queries.empty())
+    else if (!buzz_house && !queries.empty())
     {
         for (const auto & query : queries)
         {

@@ -9,7 +9,7 @@
 #include <tuple>
 #include <cassert>
 
-namespace chfuzz {
+namespace buzzhouse {
 
 typedef struct TestSetting {
 	const std::string tsetting;

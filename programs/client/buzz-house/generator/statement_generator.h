@@ -4,7 +4,7 @@
 #include "random_settings.h"
 #include "sql_catalog.h"
 
-namespace chfuzz {
+namespace buzzhouse {
 
 class QueryOracle;
 

@@ -5,7 +5,7 @@
 #include "../third_party/json.h"
 using json = nlohmann::json;
 
-namespace chfuzz {
+namespace buzzhouse {
 
 class FuzzConfig {
 public:

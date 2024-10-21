@@ -2,7 +2,7 @@
 
 #include <limits>
 
-namespace chfuzz {
+namespace buzzhouse {
 
 template <class T>
 struct NumericLimits {
