@@ -229,7 +229,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString storage_policy;
     extern const MergeTreeSettingsFloat zero_copy_concurrent_part_removal_max_postpone_ratio;
     extern const MergeTreeSettingsUInt64 zero_copy_concurrent_part_removal_max_split_times;
-    extern const MergeTreeSettingsBool check_table_structure_completely;
+    extern const MergeTreeSettingsBool enforce_index_structure_match_on_partition_manipulation;
 
 }
 
@@ -7414,8 +7414,9 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different primary key");
     const auto check_definitions = [this](const auto & my_descriptions, const auto & src_descriptions)
     {
-        if (((*getSettings())[MergeTreeSetting::check_table_structure_completely] && my_descriptions.size() != src_descriptions.size())
-        || (!(*getSettings())[MergeTreeSetting::check_table_structure_completely] && my_descriptions.size() < src_descriptions.size()))
+        bool strict_match = (*getSettings())[MergeTreeSetting::enforce_index_structure_match_on_partition_manipulation];
+        if ((my_descriptions.size() < src_descriptions.size()) ||
+            (strict_match && my_descriptions.size() != src_descriptions.size()))
             return false;
 
         std::unordered_set<std::string> my_query_strings;

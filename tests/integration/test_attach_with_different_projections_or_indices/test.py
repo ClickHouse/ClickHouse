@@ -24,7 +24,7 @@ def start_cluster():
 
 
 # def test_setting_check_table_structure_completely(start_cluster):
-#     assert node1.query("""select value from system.merge_tree_settings where name='check_table_structure_completely';""") == "0\n"
+#     assert node1.query("""select value from system.merge_tree_settings where name='enforce_index_structure_match_on_partition_manipulation';""") == "0\n"
 def test_check_completely_attach_with_different_indices(start_cluster):
     node1.query(
         """

@@ -97,7 +97,7 @@ namespace ErrorCodes
     M(String, merge_workload, "", "Name of workload to be used to access resources for merges", 0) \
     M(String, mutation_workload, "", "Name of workload to be used to access resources for mutations", 0) \
     M(Milliseconds, background_task_preferred_step_execution_time_ms, 50, "Target time to execution of one step of merge or mutation. Can be exceeded if one step takes longer time", 0) \
-    M(Bool, check_table_structure_completely, false, "Whether to check table structure completely when manipulate partitions. If true, the source and target tables must have identical definitions including projections and secondary indices. Otherwise, the source table's projections and secondary indices must be a subset of those in the target table.", 0) \
+    M(Bool, enforce_index_structure_match_on_partition_manipulation, false, "If this setting is enabled for destination table of a partition manipulation query (`ATTACH/MOVE/REPLACE PARTITION`), the indices and projections must be identical between the source and destination tables. Otherwise, the destination table can have a superset of the source table's indices and projections.", 0) \
     M(MergeSelectorAlgorithm, merge_selector_algorithm, MergeSelectorAlgorithm::SIMPLE, "The algorithm to select parts for merges assignment", 0) \
     \
     /** Inserts settings. */ \

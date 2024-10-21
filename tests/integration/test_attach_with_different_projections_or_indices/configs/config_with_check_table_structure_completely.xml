@@ -1,5 +1,5 @@
 <clickhouse>
     <merge_tree>
-        <check_table_structure_completely>true</check_table_structure_completely>
+        <enforce_index_structure_match_on_partition_manipulation>true</enforce_index_structure_match_on_partition_manipulation>
     </merge_tree>
 </clickhouse>
