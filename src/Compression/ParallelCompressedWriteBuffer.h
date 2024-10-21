@@ -31,24 +31,11 @@ public:
 
     ~ParallelCompressedWriteBuffer() override;
 
-    /// The amount of compressed data
-    size_t getCompressedBytes()
+    /// This function will be called once after compressing the next data and sending it to the out.
+    /// It can be used to fill information about marks.
+    void setCompletionCallback(std::function<void()> callback_)
     {
-        nextIfAtEnd();
-        return out.count();
-    }
-
-    /// How many uncompressed bytes were written to the buffer
-    size_t getUncompressedBytes()
-    {
-        return count();
-    }
-
-    /// How many bytes are in the buffer (not yet compressed)
-    size_t getRemainingBytes()
-    {
-        nextIfAtEnd();
-        return offset();
+        callback = callback_;
     }
 
 private:
@@ -71,14 +58,17 @@ private:
         Memory<> uncompressed;
         size_t uncompressed_size = 0;
         PODArray<char> compressed;
-        const BufferPair * previous = nullptr;
+        BufferPair * previous = nullptr;
         size_t sequence_num = 0;
         bool busy = false;
+        std::function<void()> out_callback;
     };
 
     std::mutex mutex;
     std::condition_variable cond;
     std::list<BufferPair> buffers;
+
+    std::function<void()> callback;
 
     using Iterator = std::list<BufferPair>::iterator;
     Iterator current_buffer;

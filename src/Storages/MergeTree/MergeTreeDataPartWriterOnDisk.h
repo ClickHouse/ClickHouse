@@ -76,6 +76,7 @@ public:
         std::unique_ptr<WriteBufferFromFileBase> plain_file;
         std::optional<HashingWriteBuffer> plain_hashing;
         /// This could be either CompressedWriteBuffer or ParallelCompressedWriteBuffer
+        bool is_compressor_parallel = false;
         std::unique_ptr<WriteBuffer> compressor;
         std::optional<HashingWriteBuffer> compressed_hashing;
 

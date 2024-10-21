@@ -113,6 +113,8 @@ MergeTreeDataPartWriterOnDisk::Stream::Stream(
             max_compress_block_size_,
             query_write_settings.max_compression_threads,
             *compression_thread_pool);
+
+        is_compressor_parallel = true;
     }
     else
     {

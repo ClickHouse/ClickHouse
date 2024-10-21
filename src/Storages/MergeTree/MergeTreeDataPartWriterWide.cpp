@@ -400,15 +400,22 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
         auto & stream = *column_streams[stream_name];
 
         /// There could already be enough data to compress into the new block.
+        auto push_mark = [&]
+        {
+            StreamNameAndMark stream_with_mark;
+            stream_with_mark.stream_name = stream_name;
+            stream_with_mark.mark.offset_in_compressed_file = stream.plain_hashing->count();
+            stream_with_mark.mark.offset_in_decompressed_block = stream.compressed_hashing->offset();
+            result.push_back(stream_with_mark);
+        };
+
         if (stream.compressed_hashing->offset() >= min_compress_block_size)
+        {
+
             stream.compressed_hashing->next();
+        }
 
-        StreamNameAndMark stream_with_mark;
-        stream_with_mark.stream_name = stream_name;
-        stream_with_mark.mark.offset_in_compressed_file = stream.plain_hashing->count();
-        stream_with_mark.mark.offset_in_decompressed_block = stream.compressed_hashing->offset();
-
-        result.push_back(stream_with_mark);
+        push_mark();
     }, name_and_type.type, column_sample);
 
     return result;
