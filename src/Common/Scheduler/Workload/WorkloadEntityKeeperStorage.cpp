@@ -80,6 +80,8 @@ zkutil::ZooKeeperPtr WorkloadEntityKeeperStorage::getZooKeeper()
         zookeeper->sync(zookeeper_path);
 
         createRootNodes(zookeeper);
+
+        auto lock = getLock();
         refreshEntities(zookeeper);
     }
 
@@ -92,8 +94,8 @@ void WorkloadEntityKeeperStorage::loadEntities()
     /// However the watching thread must be started anyway in case the connection will be established later.
     try
     {
+        auto lock = getLock();
         refreshEntities(getZooKeeper());
-        startWatchingThread();
     }
     catch (...)
     {
@@ -123,6 +125,7 @@ void WorkloadEntityKeeperStorage::processWatchQueue()
                 handled = watch->triggered;
             }
 
+            auto lock = getLock();
             refreshEntities(getZooKeeper());
         }
         catch (...)
