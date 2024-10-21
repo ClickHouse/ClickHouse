@@ -295,11 +295,19 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 };
 
 const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> MergeTreeTableSettings = {
+	{"adaptive_write_buffer_initial_size", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(rg.RandomInt<uint32_t>(1, 32 * 1024 * 1024));
+	}},
 	{"allow_experimental_block_number_column", TrueOrFalse},
 	{"allow_experimental_replacing_merge_with_cleanup", TrueOrFalse},
 	{"allow_floating_point_partition_key", TrueOrFalse},
+	{"allow_remote_fs_zero_copy_replication", TrueOrFalse},
+	{"allow_suspicious_indices", TrueOrFalse},
 	{"allow_vertical_merges_from_compact_to_wide_parts", TrueOrFalse},
+	{"always_use_copy_instead_of_hardlinks", TrueOrFalse},
+	{"assign_part_uuids", TrueOrFalse},
 	{"cache_populated_by_fetch", TrueOrFalse},
+	{"check_sample_column_is_correct", TrueOrFalse},
 	{"compact_parts_max_bytes_to_buffer", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.RandomInt<uint32_t>(1024, UINT32_C(512) * UINT32_C(1024) * UINT32_C(1024)));
 	}},
@@ -309,6 +317,7 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	{"compact_parts_merge_max_bytes_to_prefetch_part", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.RandomInt<uint32_t>(1, 32 * 1024 * 1024));
 	}},
+	{"compatibility_allow_sampling_expression_not_in_primary_key", TrueOrFalse},
 	{"compress_marks", TrueOrFalse},
 	{"compress_primary_key", TrueOrFalse},
 	{"concurrent_part_removal_threshold", [](RandomGenerator &rg, std::string &ret) {
@@ -321,8 +330,17 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 		ret += "'";
 	}},
 	{"detach_not_byte_identical_parts", TrueOrFalse},
+	{"disable_freeze_partition_for_zero_copy_replication", TrueOrFalse},
+	{"disable_detach_partition_for_zero_copy_replication", TrueOrFalse},
+	{"disable_fetch_partition_for_zero_copy_replication", TrueOrFalse},
+	{"enable_block_number_column", TrueOrFalse},
+	{"enable_block_offset_column", TrueOrFalse},
+	{"enable_mixed_granularity_parts", TrueOrFalse},
 	{"enable_vertical_merge_algorithm", TrueOrFalse},
 	{"exclude_deleted_rows_for_part_size_in_merge", TrueOrFalse},
+	{"force_read_through_cache_for_merges", TrueOrFalse},
+	{"fsync_after_insert", TrueOrFalse},
+	{"fsync_part_directory", TrueOrFalse},
 	{"index_granularity", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 18));
 	}},
@@ -339,37 +357,95 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	{"marks_compress_block_size", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.RandomInt<uint32_t>(8000, 100000));
 	}},
+	{"max_bytes_to_merge_at_max_space_in_pool", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.25, 0.25, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
+	}},
+	{"max_bytes_to_merge_at_min_space_in_pool", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.25, 0.25, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
+	}},
 	{"max_file_name_length", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 0, 128));
+	}},
+	{"max_number_of_mutations_for_replica", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.3, 1, 100));
+	}},
+	{"max_parts_to_merge_at_once", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.3, 0, 1000));
+	}},
+	{"max_replicated_merges_in_queue", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 1, 100));
+	}},
+	{"max_replicated_mutations_in_queue", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 1, 100));
 	}},
 	{"merge_max_block_size", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.RandomInt<uint32_t>(1, 8192 * 3));
 	}},
+	{"merge_max_block_size_bytes", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 0, 128 * 1024 * 1024));
+	}},
+	{"min_age_to_force_merge_on_partition_only", TrueOrFalse},
 	{"min_bytes_for_full_part_storage", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 0, 512 * 1024 * 1024));
 	}},
 	{"min_bytes_for_wide_part", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 0, UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
 	}},
+	{"min_compressed_bytes_to_fsync_after_fetch", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 0, 128 * 1024 * 1024));
+	}},
+	{"min_compressed_bytes_to_fsync_after_merge", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 0, 128 * 1024 * 1024));
+	}},
 	{"min_merge_bytes_to_use_direct_io", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.25, 0.25, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
 	}},
+	{"min_rows_for_full_part_storage", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 0, 1000));
+	}},
+	{"min_rows_to_fsync_after_merge", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 0, 1000));
+	}},
 	{"min_rows_for_wide_part", [](RandomGenerator &rg, std::string &ret) {
-		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 0, UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
+		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 0, 1000));
+	}},
+	{"non_replicated_deduplication_window", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 0, 1000));
+	}},
+	{"number_of_free_entries_in_pool_to_lower_max_size_of_merge", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.3, 1, 100));
+	}},
+	{"number_of_free_entries_in_pool_to_execute_mutation", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.3, 1, 100));
+	}},
+	{"number_of_free_entries_in_pool_to_execute_optimize_entire_partition", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.3, 1, 100));
 	}},
 	{"old_parts_lifetime", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.3, 10, 8 * 60));
 	}},
+	{"optimize_row_order", TrueOrFalse},
 	{"prefer_fetch_merged_part_size_threshold", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.5, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
 	}},
 	{"primary_key_compress_block_size", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.RandomInt<uint32_t>(8000, 100000));
 	}},
+	{"primary_key_lazy_load", TrueOrFalse},
+	{"primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(rg.ThresholdGenerator<double>(0.3, 0.5, 0.0, 1.0));
+	}},
 	{"ratio_of_defaults_for_sparse_serialization", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.ThresholdGenerator<double>(0.3, 0.5, 0.0, 1.0));
 	}},
+	{"remote_fs_zero_copy_path_compatible_mode", TrueOrFalse},
+	{"remove_empty_parts", TrueOrFalse},
+	{"remove_rolled_back_parts_immediately", TrueOrFalse},
 	{"replace_long_file_name_to_hash", TrueOrFalse},
+	{"replicated_max_mutations_in_one_entry", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.3, 0, 10000));
+	}},
+	{"use_adaptive_write_buffer_for_dynamic_subcolumns", TrueOrFalse},
 	{"use_async_block_ids_cache", TrueOrFalse},
 	{"use_compact_variant_discriminators_serialization", TrueOrFalse},
 	{"vertical_merge_algorithm_min_bytes_to_activate", [](RandomGenerator &rg, std::string &ret) {
