@@ -59,7 +59,7 @@ public:
     explicit TemporaryFileInLocalCache(FileCache & file_cache, size_t max_file_size = 0)
     {
         const auto key = FileSegment::Key::random();
-        LOG_TRACE(getLogger("TemporaryFileOnLocalDisk"), "Creating temporary file in cache with key {}", key);
+        LOG_TRACE(getLogger("TemporaryFileInLocalCache"), "Creating temporary file in cache with key {}", key);
         segment_holder = file_cache.set(
             key, 0, std::max(10_MiB, max_file_size),
             CreateFileSegmentSettings(FileSegmentKind::Ephemeral), FileCache::getCommonUser());
@@ -269,6 +269,9 @@ TemporaryDataBuffer::Stat TemporaryDataBuffer::finishWriting()
 std::unique_ptr<ReadBuffer> TemporaryDataBuffer::read()
 {
     finishWriting();
+
+    if (stat.compressed_size == 0 && stat.uncompressed_size == 0)
+        return std::make_unique<TemporaryDataReadBuffer>(std::make_unique<ReadBufferFromEmptyFile>());
 
     /// Keep buffer size less that file size, to avoid memory overhead for large amounts of small files
     size_t buffer_size = std::min<size_t>(stat.compressed_size, DBMS_DEFAULT_BUFFER_SIZE);
