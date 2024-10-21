@@ -5511,6 +5511,9 @@ If enabled, only allow identifiers containing alphanumeric characters and unders
     M(Bool, mongodb_throw_on_unsupported_query, true, R"(
 If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply to the legacy implementation or when 'allow_experimental_analyzer=0'.
 )", 0) \
+    M(Bool, push_external_roles_in_interserver_queries, true, R"(
+Enable pushing user roles from originator to other nodes while performing a query
+)", 0) \
     \
     /* ###################################### */ \
     /* ######## EXPERIMENTAL FEATURES ####### */ \

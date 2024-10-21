@@ -363,6 +363,9 @@ void ContextAccess::setUser(const UserPtr & user_) const
         current_roles_with_admin_option = user->granted_roles.findGrantedWithAdminOption(*params.current_roles);
     }
 
+    if (params.external_roles)
+        current_roles.insert(current_roles.end(), params.external_roles->begin(), params.external_roles->end());
+
     subscription_for_roles_changes.reset();
     enabled_roles = access_control->getEnabledRoles(current_roles, current_roles_with_admin_option);
     subscription_for_roles_changes = enabled_roles->subscribeForChanges([weak_ptr = weak_from_this()](const std::shared_ptr<const EnabledRolesInfo> & roles_info_)
@@ -512,7 +515,6 @@ std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
 {
     return getQuota()->getUsage();
 }
-
 
 SettingsChanges ContextAccess::getDefaultSettings() const
 {
