@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeSelectors/SimpleMergeSelector.h>
+#include <Storages/MergeTree/MergeSelectors/LeveledMergeSelector.h>
 #include <Storages/MergeTree/MergeSelectors/AllMergeSelector.h>
 #include <Storages/MergeTree/MergeSelectors/TTLMergeSelector.h>
 #include <Storages/MergeTree/MergeList.h>
@@ -62,6 +63,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsInt64 merge_with_ttl_timeout;
     extern const MergeTreeSettingsUInt64 merge_selector_blurry_base_scale_factor;
     extern const MergeTreeSettingsUInt64 merge_selector_window_size;
+    extern const MergeTreeSettingsUInt64 merge_selector_batch_size_step;
     extern const MergeTreeSettingsBool min_age_to_force_merge_on_partition_only;
     extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_execute_optimize_entire_partition;
@@ -555,6 +557,17 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
             }
 
             merge_settings = simple_merge_settings;
+        }
+
+        if (merge_selector_algorithm == MergeSelectorAlgorithm::LEVELED)
+        {
+            LeveledMergeSelector::Settings leveled_merge_settings;
+
+            leveled_merge_settings.max_parts_to_merge_at_once = (*data_settings)[MergeTreeSetting::max_parts_to_merge_at_once];
+            leveled_merge_settings.batch_size_step = (*data_settings)[MergeTreeSetting::merge_selector_batch_size_step];
+            leveled_merge_settings.windows_to_look_at_single_level = (*data_settings)[MergeTreeSetting::merge_selector_window_size];
+
+            merge_settings = leveled_merge_settings;
         }
 
         parts_to_merge = MergeSelectorFactory::instance().get(merge_selector_algorithm, merge_settings)->select(parts_ranges, max_total_size_to_merge);
