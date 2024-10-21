@@ -46,12 +46,6 @@ def start_cluster():
         cluster.shutdown()
 
 
-def get_log(node):
-    return node.exec_in_container(
-        ["bash", "-c", "cat /var/log/clickhouse-server/clickhouse-server.log"]
-    )
-
-
 def test_regexp_pattern_update(start_cluster):
     # Display config being used
     node.exec_in_container(["cat", "/etc/clickhouse-server/config.d/log.xml"])
@@ -61,26 +55,20 @@ def test_regexp_pattern_update(start_cluster):
         node.query("SYSTEM RELOAD CONFIG")
         node.query("SELECT 1")
 
-    log = get_log(node)
-    assert re.search(r".*Loaded config.*", log)
-    assert re.search(r".*executeQuery.*Read.*", log)
-    assert re.search(r".*executeQuery.*from.*", log)
+    assert node.contains_in_log(r".*Loaded config.*")
+    assert node.contains_in_log(r".*executeQuery.*Read.*")
+    assert node.contains_in_log(r".*executeQuery.*from.*")
 
     node.replace_config("/etc/clickhouse-server/config.d/log.xml", updated_config)
     node.query("SYSTEM RELOAD CONFIG;")
-    node.exec_in_container(
-        ["bash", "-c", "> /var/log/clickhouse-server/clickhouse-server.log"]
-    )
+    node.rotate_logs()
 
     for _ in range(5):
         node.query("SYSTEM RELOAD CONFIG")
         node.query("SELECT 1")
 
-    log = get_log(node)
-    assert len(log) > 0
-
-    assert not re.search(r".*Loaded config.*", log)
-    assert re.search(r".*executeQuery.*Read.*", log)
-    assert not re.search(r".*executeQuery.*from.*", log)
+    assert not node.contains_in_log(r".*Loaded config.*")
+    assert node.contains_in_log(r".*executeQuery.*Read.*")
+    assert not node.contains_in_log(r".*executeQuery.*from.*")
 
     node.replace_config("/etc/clickhouse-server/config.d/log.xml", original_config)
