@@ -85,6 +85,9 @@ void deleteFilesFromS3(
     const std::vector<size_t> & file_sizes_for_blob_storage_log,
     std::optional<ProfileEvents::Event> profile_event)
 {
+    chassert(local_paths_for_blob_storage_log.empty() || (local_paths_for_blob_storage_log.size() == keys.size()));
+    chassert(file_sizes_for_blob_storage_log.empty() || (file_sizes_for_blob_storage_log.size() == keys.size()));
+
     if (keys.empty())
        return; /// Nothing to delete.
 
@@ -101,7 +104,7 @@ void deleteFilesFromS3(
     }
 
     auto log = getLogger("deleteFileFromS3");
-    String empty_string;
+    const String empty_string;
 
     if (try_batch_delete)
     {
