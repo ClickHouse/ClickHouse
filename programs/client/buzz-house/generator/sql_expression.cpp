@@ -566,28 +566,21 @@ int StatementGenerator::GenerateFrameBound(RandomGenerator &rg, sql_query_gramma
 
 int StatementGenerator::GenerateExpression(RandomGenerator &rg, sql_query_grammar::Expr *expr) {
 	const uint32_t noption = rg.NextLargeNumber();
+	sql_query_grammar::ExprColAlias *eca = nullptr;
 
 	if (rg.NextSmallNumber() < 3) {
 		sql_query_grammar::ParenthesesExpr *paren = expr->mutable_comp_expr()->mutable_par_expr();
-		sql_query_grammar::ExprColAlias *eca = paren->mutable_expr();
 
-		if (rg.NextSmallNumber() < 4) {
-			const std::string cname = "c" + std::to_string(this->levels[this->current_level].aliases_counter++);
-
-			SQLRelation rel("");
-			rel.cols.push_back(SQLRelationCol("", cname, std::nullopt));
-			this->levels[this->current_level].rels.push_back(std::move(rel));
-			eca->mutable_col_alias()->set_column(cname);
-		}
+		eca = paren->mutable_expr();
 		expr = eca->mutable_expr();
 	}
 
 	if (noption < (this->inside_projection ? 76 : 151)) {
-		return this->GenerateLiteralValue(rg, expr);
+		(void) this->GenerateLiteralValue(rg, expr);
 	} else if (this->depth >= this->max_depth || noption < 401) {
-		return this->GenerateColRef(rg, expr);
+		(void) this->GenerateColRef(rg, expr);
 	} else if (noption < 451) {
-		return this->GeneratePredicate(rg, expr);
+		(void) this->GeneratePredicate(rg, expr);
 	} else if (noption < 501) {
 		uint32_t col_counter = 0;
 		sql_query_grammar::CastExpr *casexpr = expr->mutable_comp_expr()->mutable_cast_expr();
@@ -793,6 +786,14 @@ int StatementGenerator::GenerateExpression(RandomGenerator &rg, sql_query_gramma
 		this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
 	}
 	AddFieldAccess(rg, expr, 16);
+	if (eca && rg.NextSmallNumber() < 4) {
+		SQLRelation rel("");
+		const std::string cname = "c" + std::to_string(this->levels[this->current_level].aliases_counter++);
+
+		rel.cols.push_back(SQLRelationCol("", cname, std::nullopt));
+		this->levels[this->current_level].rels.push_back(std::move(rel));
+		eca->mutable_col_alias()->set_column(cname);
+	}
 	return 0;
 }
 

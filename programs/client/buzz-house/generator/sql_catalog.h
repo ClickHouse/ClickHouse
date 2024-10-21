@@ -7,7 +7,8 @@ namespace buzzhouse {
 using ColumnSpecial = enum ColumnSpecial {
 	NONE = 0,
 	SIGN = 1,
-	VERSION = 2
+	IS_DELETED = 2,
+	VERSION = 3
 };
 
 struct SQLColumn {

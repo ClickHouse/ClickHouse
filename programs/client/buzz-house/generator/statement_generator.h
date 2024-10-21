@@ -66,13 +66,13 @@ const constexpr uint32_t allow_set = (1 << 0),
 						 allow_limit = (1 << 10);
 
 typedef struct InsertEntry {
-	bool is_sign = false;
+	ColumnSpecial special;
 	uint32_t cname1 = 0;
 	std::optional<uint32_t> cname2;
 	SQLType *tp = nullptr;
 
-	InsertEntry(const bool isgn, const uint32_t c1, std::optional<uint32_t> c2, SQLType *t) :
-		is_sign(isgn), cname1(c1), cname2(c2), tp(t) {}
+	InsertEntry(const ColumnSpecial cs, const uint32_t c1, std::optional<uint32_t> c2, SQLType *t) :
+		special(cs), cname1(c1), cname2(c2), tp(t) {}
 } InsertEntry;
 
 class StatementGenerator {

@@ -28,7 +28,11 @@ int QueryOracle::GenerateCorrectnessTestFirstQuery(RandomGenerator &rg, Statemen
 			   prev_allow_window_funcs = gen.levels[gen.current_level].allow_window_funcs;
 	gen.levels[gen.current_level].allow_aggregates = gen.levels[gen.current_level].allow_window_funcs = false;
 	if (combination != 1) {
-		gen.GenerateWherePredicate(rg, ssc->mutable_where()->mutable_expr()->mutable_expr());
+		sql_query_grammar::BinaryExpr *bexpr = ssc->mutable_where()->mutable_expr()->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
+
+		bexpr->set_op(sql_query_grammar::BinaryOperator::BINOP_EQ);
+		bexpr->mutable_rhs()->mutable_lit_val()->set_special_val(sql_query_grammar::SpecialVal::VAL_TRUE);
+		gen.GenerateWherePredicate(rg, bexpr->mutable_lhs());
 	}
 	if (combination != 0) {
 		gen.GenerateGroupBy(rg, 1, true, true, ssc->mutable_groupby());

@@ -1888,7 +1888,7 @@ CONV_FN(TableEngine, te) {
     if (i != 0) {
       ret += ", ";
     }
-    ColumnToString(ret, true, te.cols(i));
+    ColumnPathToString(ret, true, te.cols(i));
   }
   ret += ")";
   if (te.has_order()) {

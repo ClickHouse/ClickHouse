@@ -2657,7 +2657,7 @@ enum TableEngineOption {
 message TableEngine {
   optional TableEngineOption toption = 1;
   required TableEngineValues engine = 2;
-  repeated Column cols = 3;
+  repeated ColumnPath cols = 3;
   optional TableKey order = 4;
   optional TableKey partition_by = 5;
   optional TableKey primary_key = 6;
