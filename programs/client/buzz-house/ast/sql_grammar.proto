@@ -2753,9 +2753,10 @@ message Insert {
   }
 }
 
-message Delete {
+message LightDelete {
   required ExprSchemaTable est = 1;
-  required WhereStatement where = 2;
+  optional TableKey partition = 2;
+  required WhereStatement where = 3;
 }
 
 message Truncate {
@@ -2810,7 +2811,8 @@ message TopSelect {
 
 message CheckTable {
   required ExprSchemaTable est = 1;
-  optional bool single_result = 2;
+  optional TableKey partition = 2;
+  optional bool single_result = 3;
 }
 
 message DescTable {
@@ -2824,8 +2826,9 @@ message DeduplicateExpr {
 
 message OptimizeTable {
   required ExprSchemaTable est = 1;
-  optional bool final = 2;
-  optional DeduplicateExpr dedup = 3;
+  optional TableKey partition = 2;
+  optional bool final = 3;
+  optional DeduplicateExpr dedup = 4;
 }
 
 message ExchangeTables {
@@ -2841,7 +2844,13 @@ message UpdateSet {
 message Update {
   required UpdateSet update = 1;
   repeated UpdateSet other_updates = 2;
-  required WhereStatement where = 3;
+  optional TableKey partition = 3;
+  required WhereStatement where = 4;
+}
+
+message HeavyDelete {
+  optional TableKey partition = 1;
+  required WhereStatement del = 2;
 }
 
 message AddWhere {
@@ -2862,9 +2871,9 @@ message RenameCol {
   required Column new_name = 2;
 }
 
-message ClearCol {
+message ColInPartition {
   required Column col = 1;
-  required TableKey partition = 2;
+  optional TableKey partition = 2;
 }
 
 message AddStatistics {
@@ -2875,6 +2884,11 @@ message AddStatistics {
 message AddIndex {
   required IndexDef new_idx = 1;
   optional AddWhere add_where = 2;
+}
+
+message IdxInPartition {
+  required Index idx = 1;
+  optional TableKey partition = 2;
 }
 
 message RemoveColumnProperty {
@@ -2944,27 +2958,31 @@ message CreateView {
   required Select select = 9;
 }
 
+message ApplyDeleteMask {
+  optional TableKey partition = 1;
+}
+
 message AlterTableItem {
   oneof alter_oneof {
-    WhereStatement del = 1;
+    HeavyDelete del = 1;
     Update update = 2;
     TableKey order = 3;
-    Column materialize_column = 4;
+    ColInPartition materialize_column = 4;
     AddColumn add_column = 5;
     Column drop_column = 6;
     RenameCol rename_column = 7;
-    ClearCol clear_column = 8;
+    ColInPartition clear_column = 8;
     AddColumn modify_column = 9;
-    bool delete_mask = 10;
+    ApplyDeleteMask delete_mask = 10;
     AddStatistics add_stats = 11;
     AddStatistics mod_stats = 12;
     ColumnList drop_stats = 13;
     ColumnList clear_stats = 14;
     ColumnList mat_stats = 15;
     AddIndex add_index = 16;
-    Index materialize_index = 17;
+    IdxInPartition materialize_index = 17;
     Index drop_index = 18;
-    Index clear_index = 19;
+    IdxInPartition clear_index = 19;
     RemoveColumnProperty column_remove_property = 20;
     ModifyColumnSetting column_modify_setting = 21;
     RemoveColumnSetting column_remove_setting = 22;
@@ -2982,9 +3000,10 @@ message AlterTableItem {
 }
 
 message AlterTable {
-  required ExprSchemaTable est = 1;
-  required AlterTableItem alter = 2;
-  repeated AlterTableItem other_alters = 3;
+  optional bool is_temp = 1;
+  required ExprSchemaTable est = 2;
+  required AlterTableItem alter = 3;
+  repeated AlterTableItem other_alters = 4;
 }
 
 message Attach {
@@ -3005,7 +3024,7 @@ message SQLQueryInner {
     CreateTable create_table = 2;
     Drop drop = 3;
     Insert insert = 4;
-    Delete del = 5;
+    LightDelete del = 5;
     Truncate trunc = 6;
     OptimizeTable opt = 7;
     CheckTable check = 8;

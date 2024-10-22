@@ -2064,9 +2064,13 @@ CONV_FN(Insert, insert) {
   }
 }
 
-CONV_FN(Delete, del) {
+CONV_FN(LightDelete, del) {
   ret += "DELETE FROM ";
   ExprSchemaTableToString(ret, del.est());
+  if (del.has_partition()) {
+    ret += " IN PARTITION ";
+    TableKeyToString(ret, del.partition());
+  }
   ret += " WHERE ";
   WhereStatementToString(ret, del.where());
 }
@@ -2083,6 +2087,10 @@ CONV_FN(Truncate, trunc) {
 CONV_FN(CheckTable, ct) {
   ret += "CHECK TABLE ";
   ExprSchemaTableToString(ret, ct.est());
+  if (ct.has_partition()) {
+    ret += " PARTITION ";
+    TableKeyToString(ret, ct.partition());
+  }
   if (ct.has_single_result()) {
     ret += " SETTINGS check_query_single_value_result = ";
     ret += ct.single_result() ? "1" : "0";
@@ -2109,6 +2117,10 @@ CONV_FN(DeduplicateExpr, de) {
 CONV_FN(OptimizeTable, ot) {
   ret += "OPTIMIZE TABLE ";
   ExprSchemaTableToString(ret, ot.est());
+  if (ot.has_partition()) {
+    ret += " PARTITION ";
+    TableKeyToString(ret, ot.partition());
+  }
   if (ot.final()) {
     ret += " FINAL";
   }
@@ -2135,6 +2147,10 @@ CONV_FN(Update, upt) {
   for (int i = 0; i < upt.other_updates_size(); i++) {
     ret += ", ";
     UpdateSetToString(ret, upt.other_updates(i));
+  }
+  if (upt.has_partition()) {
+    ret += " IN PARTITION ";
+    TableKeyToString(ret, upt.partition());
   }
   ret += " WHERE ";
   WhereStatementToString(ret, upt.where());
@@ -2249,13 +2265,22 @@ CONV_FN(RemoveColumnSetting, rcp) {
   SettingListToString(ret, rcp.settings());
 }
 
+CONV_FN(HeavyDelete, hdel) {
+  if (hdel.has_partition()) {
+    ret += "IN PARTITION ";
+    TableKeyToString(ret, hdel.partition());
+    ret += " ";
+  }
+  WhereStatementToString(ret, hdel.del());
+}
+
 CONV_FN(AlterTableItem, alter) {
   ret += "(";
   using AlterType = AlterTableItem::AlterOneofCase;
   switch (alter.alter_oneof_case()) {
     case AlterType::kDel:
-      ret += "DELETE WHERE ";
-      WhereStatementToString(ret, alter.del());
+      ret += "DELETE ";
+      HeavyDeleteToString(ret, alter.del());
       break;
     case AlterType::kUpdate:
       ret += "UPDATE ";
@@ -2267,7 +2292,11 @@ CONV_FN(AlterTableItem, alter) {
       break;
     case AlterType::kMaterializeColumn:
       ret += "MATERIALIZE COLUMN ";
-      ColumnToString(ret, true, alter.materialize_column());
+      ColumnToString(ret, true, alter.materialize_column().col());
+      if (alter.materialize_column().has_partition()) {
+        ret += " IN PARTITION ";
+        TableKeyToString(ret, alter.materialize_column().partition());
+      }
       break;
     case AlterType::kAddColumn:
       ret += "ADD COLUMN ";
@@ -2286,8 +2315,10 @@ CONV_FN(AlterTableItem, alter) {
     case AlterType::kClearColumn:
       ret += "CLEAR COLUMN ";
       ColumnToString(ret, true, alter.clear_column().col());
-      ret += " IN PARTITION ";
-      TableKeyToString(ret, alter.clear_column().partition());
+      if (alter.clear_column().has_partition()) {
+        ret += " IN PARTITION ";
+        TableKeyToString(ret, alter.clear_column().partition());
+      }
       break;
     case AlterType::kModifyColumn:
       ret += "MODIFY COLUMN ";
@@ -2295,6 +2326,10 @@ CONV_FN(AlterTableItem, alter) {
       break;
     case AlterType::kDeleteMask:
       ret += "APPLY DELETED MASK";
+      if (alter.delete_mask().has_partition()) {
+        ret += " IN PARTITION ";
+        TableKeyToString(ret, alter.delete_mask().partition());
+      }
       break;
     case AlterType::kAddStats:
       ret += "ADD STATISTICS ";
@@ -2318,7 +2353,11 @@ CONV_FN(AlterTableItem, alter) {
       break;
     case AlterType::kMaterializeIndex:
       ret += "MATERIALIZE INDEX ";
-      IndexToString(ret, alter.materialize_index());
+      IndexToString(ret, alter.materialize_index().idx());
+      if (alter.materialize_index().has_partition()) {
+        ret += " IN PARTITION ";
+        TableKeyToString(ret, alter.materialize_index().partition());
+      }
       break;
     case AlterType::kAddIndex:
       ret += "ADD ";
@@ -2330,7 +2369,11 @@ CONV_FN(AlterTableItem, alter) {
       break;
     case AlterType::kClearIndex:
       ret += "CLEAR INDEX ";
-      IndexToString(ret, alter.clear_index());
+      IndexToString(ret, alter.clear_index().idx());
+      if (alter.clear_index().has_partition()) {
+        ret += " IN PARTITION ";
+        TableKeyToString(ret, alter.clear_index().partition());
+      }
       break;
     case AlterType::kColumnRemoveProperty:
       ret += "MODIFY COLUMN ";
@@ -2391,7 +2434,11 @@ CONV_FN(AlterTableItem, alter) {
 }
 
 CONV_FN(AlterTable, alter_table) {
-  ret += "ALTER TABLE ";
+  ret += "ALTER ";
+  if (alter_table.is_temp()) {
+    ret += "TEMPORARY ";
+  }
+  ret += "TABLE ";
   ExprSchemaTableToString(ret, alter_table.est());
   ret += " ";
   AlterTableItemToString(ret, alter_table.alter());
@@ -2469,7 +2516,7 @@ CONV_FN(SQLQueryInner, query) {
       InsertToString(ret, query.insert());
       break;
     case QueryType::kDel:
-      DeleteToString(ret, query.del());
+      LightDeleteToString(ret, query.del());
       break;
     case QueryType::kTrunc:
       TruncateToString(ret, query.trunc());

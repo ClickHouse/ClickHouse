@@ -201,7 +201,7 @@ private:
 	int GenerateNextCreateView(RandomGenerator &rg, sql_query_grammar::CreateView *cv);
 	int GenerateNextDrop(RandomGenerator &rg, sql_query_grammar::Drop *sq);
 	int GenerateNextInsert(RandomGenerator &rg, sql_query_grammar::Insert *sq);
-	int GenerateNextDelete(RandomGenerator &rg, sql_query_grammar::Delete *sq);
+	int GenerateNextDelete(RandomGenerator &rg, sql_query_grammar::LightDelete *sq);
 	int GenerateNextTruncate(RandomGenerator &rg, sql_query_grammar::Truncate *sq);
 	int GenerateNextOptimizeTable(RandomGenerator &rg, sql_query_grammar::OptimizeTable *sq);
 	int GenerateNextCheckTable(RandomGenerator &rg, sql_query_grammar::CheckTable *sq);
