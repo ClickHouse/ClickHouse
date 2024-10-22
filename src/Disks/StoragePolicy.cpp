@@ -343,10 +343,10 @@ VolumePtr StoragePolicy::tryGetVolumeByName(const String & volume_name) const
 void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const
 {
     /// Do not check volumes for temporary policy because their names are automatically generated
-    bool check_volumes = this->getName().starts_with(StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX)
+    bool skip_volume_check = this->getName().starts_with(StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX)
         || new_storage_policy->getName().starts_with(StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX);
 
-    if (!check_volumes)
+    if (!skip_volume_check)
     {
         std::unordered_set<String> new_volume_names;
         for (const auto & volume : new_storage_policy->getVolumes())
