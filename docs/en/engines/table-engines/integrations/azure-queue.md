@@ -36,6 +36,7 @@ SETTINGS
 ## Settings {#settings}
 
 The set of supported settings is the same as for `S3Queue` table engine, but without `s3queue_` prefix. See [full list of settings settings](../../../engines/table-engines/integrations/s3queue.md#settings).
+To get a list of settings, configured for the table, use `system.s3_queue_settings` table. Available from `24.10`.
 
 ## Description {#description}
 
