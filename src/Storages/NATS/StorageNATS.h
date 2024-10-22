@@ -4,7 +4,7 @@
 #include <mutex>
 #include <uv.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/SettingsEnums.h>
+#include <Core/StreamingHandleErrorMode.h>
 #include <Storages/IStorage.h>
 #include <Storages/NATS/NATSConnection.h>
 #include <Poco/Semaphore.h>

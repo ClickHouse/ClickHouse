@@ -2,15 +2,15 @@
 
 #if USE_HIVE
 
-#    include <Core/BaseSettings.h>
-#    include <Core/BaseSettingsFwdMacrosImpl.h>
-#    include <Core/FormatFactorySettingsDeclaration.h>
-#    include <Parsers/ASTCreateQuery.h>
-#    include <Parsers/ASTFunction.h>
-#    include <Parsers/ASTSetQuery.h>
-#    include <Common/Exception.h>
+#include <Core/BaseSettings.h>
+#include <Core/BaseSettingsFwdMacrosImpl.h>
+#include <Core/FormatFactorySettingsDeclaration.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Common/Exception.h>
 
-#    include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {

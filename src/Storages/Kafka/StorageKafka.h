@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/SettingsEnums.h>
+#include <Core/StreamingHandleErrorMode.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer.h>
 #include <Common/Macros.h>
