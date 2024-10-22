@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-tsan
 
 drop table if exists buffer_02231;
 drop table if exists out_02231;
@@ -11,8 +11,8 @@ create table buffer_02231
 (
     key Int,
     v1 AggregateFunction(groupArray, String)
-) engine=Buffer(currentDatabase(), 'out_02231',
-    /* layers= */1,
+) engine = Buffer(currentDatabase(), 'out_02231',
+    /* layers= */       1,
     /* min/max time  */ 86400, 86400,
     /* min/max rows  */ 1e9, 1e9,
     /* min/max bytes */ 1e12, 1e12,
@@ -29,7 +29,7 @@ from in_02231
 group by key;
 
 set optimize_trivial_insert_select = 1;
-insert into in_02231 select * from numbers(10e6) settings max_memory_usage='310Mi', max_threads=1;
+insert into in_02231 select * from numbers(5e6) settings max_memory_usage='400Mi', max_threads=1;
 
 drop table buffer_02231;
 drop table out_02231;

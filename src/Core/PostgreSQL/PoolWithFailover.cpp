@@ -23,11 +23,12 @@ namespace postgres
 {
 
 PoolWithFailover::PoolWithFailover(
-    const DB::ExternalDataSourcesConfigurationByPriority & configurations_by_priority,
+    const ReplicasConfigurationByPriority & configurations_by_priority,
     size_t pool_size,
     size_t pool_wait_timeout_,
     size_t max_tries_,
-    bool auto_close_connection_)
+    bool auto_close_connection_,
+    size_t connection_attempt_timeout_)
     : pool_wait_timeout(pool_wait_timeout_)
     , max_tries(max_tries_)
     , auto_close_connection(auto_close_connection_)
@@ -39,8 +40,13 @@ PoolWithFailover::PoolWithFailover(
     {
         for (const auto & replica_configuration : configurations)
         {
-            auto connection_info = formatConnectionString(replica_configuration.database,
-                replica_configuration.host, replica_configuration.port, replica_configuration.username, replica_configuration.password);
+            auto connection_info = formatConnectionString(
+                replica_configuration.database,
+                replica_configuration.host,
+                replica_configuration.port,
+                replica_configuration.username,
+                replica_configuration.password,
+                connection_attempt_timeout_);
             replicas_with_priority[priority].emplace_back(connection_info, pool_size);
         }
     }
@@ -51,7 +57,8 @@ PoolWithFailover::PoolWithFailover(
     size_t pool_size,
     size_t pool_wait_timeout_,
     size_t max_tries_,
-    bool auto_close_connection_)
+    bool auto_close_connection_,
+    size_t connection_attempt_timeout_)
     : pool_wait_timeout(pool_wait_timeout_)
     , max_tries(max_tries_)
     , auto_close_connection(auto_close_connection_)
@@ -63,7 +70,13 @@ PoolWithFailover::PoolWithFailover(
     for (const auto & [host, port] : configuration.addresses)
     {
         LOG_DEBUG(getLogger("PostgreSQLPoolWithFailover"), "Adding address host: {}, port: {} to connection pool", host, port);
-        auto connection_string = formatConnectionString(configuration.database, host, port, configuration.username, configuration.password);
+        auto connection_string = formatConnectionString(
+            configuration.database,
+            host,
+            port,
+            configuration.username,
+            configuration.password,
+            connection_attempt_timeout_);
         replicas_with_priority[0].emplace_back(connection_string, pool_size);
     }
 }

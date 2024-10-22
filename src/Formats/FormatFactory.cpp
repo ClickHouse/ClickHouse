@@ -16,12 +16,42 @@
 #include <Poco/URI.h>
 #include <Common/Exception.h>
 #include <Common/KnownObjectNames.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
+#include <Core/FormatFactorySettingsDeclaration.h>
+#include <Core/FormatFactorySettings.h>
+#include <Core/Settings.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
 namespace DB
 {
+namespace Setting
+{
+    /// There are way too many format settings to handle extern declarations manually.
+#define DECLARE_FORMAT_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
+    extern Settings ## TYPE NAME;
+FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, SKIP_ALIAS)
+#undef DECLARE_FORMAT_EXTERN
+
+    extern const SettingsBool allow_experimental_object_type;
+    extern const SettingsBool allow_experimental_json_type;
+    extern const SettingsBool http_write_exception_in_output_format;
+    extern const SettingsBool input_format_parallel_parsing;
+    extern const SettingsBool log_queries;
+    extern const SettingsUInt64 max_download_buffer_size;
+    extern const SettingsMaxThreads max_download_threads;
+    extern const SettingsSeconds max_execution_time;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsMaxThreads max_parsing_threads;
+    extern const SettingsUInt64 max_memory_usage;
+    extern const SettingsUInt64 max_memory_usage_for_user;
+    extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 min_chunk_bytes_for_parallel_parsing;
+    extern const SettingsBool output_format_parallel_formatting;
+    extern const SettingsOverflowMode timeout_overflow_mode;
+    extern const SettingsInt64 zstd_window_log_max;
+}
 
 namespace ErrorCodes
 {
@@ -64,227 +94,241 @@ FormatSettings getFormatSettings(const ContextPtr & context)
     return getFormatSettings(context, settings);
 }
 
-template <typename Settings>
 FormatSettings getFormatSettings(const ContextPtr & context, const Settings & settings)
 {
     FormatSettings format_settings;
 
-    format_settings.avro.allow_missing_fields = settings.input_format_avro_allow_missing_fields;
-    format_settings.avro.output_codec = settings.output_format_avro_codec;
-    format_settings.avro.output_sync_interval = settings.output_format_avro_sync_interval;
-    format_settings.avro.schema_registry_url = settings.format_avro_schema_registry_url.toString();
-    format_settings.avro.string_column_pattern = settings.output_format_avro_string_column_pattern.toString();
-    format_settings.avro.output_rows_in_file = settings.output_format_avro_rows_in_file;
-    format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
-    format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
-    format_settings.csv.serialize_tuple_into_separate_columns = settings.output_format_csv_serialize_tuple_into_separate_columns;
-    format_settings.csv.deserialize_separate_columns_into_tuple = settings.input_format_csv_deserialize_separate_columns_into_tuple;
-    format_settings.csv.crlf_end_of_line = settings.output_format_csv_crlf_end_of_line;
-    format_settings.csv.allow_cr_end_of_line = settings.input_format_csv_allow_cr_end_of_line;
-    format_settings.csv.delimiter = settings.format_csv_delimiter;
-    format_settings.csv.tuple_delimiter = settings.format_csv_delimiter;
-    format_settings.csv.empty_as_default = settings.input_format_csv_empty_as_default;
-    format_settings.csv.enum_as_number = settings.input_format_csv_enum_as_number;
-    format_settings.csv.null_representation = settings.format_csv_null_representation;
-    format_settings.csv.arrays_as_nested_csv = settings.input_format_csv_arrays_as_nested_csv;
-    format_settings.csv.use_best_effort_in_schema_inference = settings.input_format_csv_use_best_effort_in_schema_inference;
-    format_settings.csv.skip_first_lines = settings.input_format_csv_skip_first_lines;
-    format_settings.csv.try_detect_header = settings.input_format_csv_detect_header;
-    format_settings.csv.skip_trailing_empty_lines = settings.input_format_csv_skip_trailing_empty_lines;
-    format_settings.csv.trim_whitespaces = settings.input_format_csv_trim_whitespaces;
-    format_settings.csv.allow_whitespace_or_tab_as_delimiter = settings.input_format_csv_allow_whitespace_or_tab_as_delimiter;
-    format_settings.csv.allow_variable_number_of_columns = settings.input_format_csv_allow_variable_number_of_columns;
-    format_settings.csv.use_default_on_bad_values = settings.input_format_csv_use_default_on_bad_values;
-    format_settings.csv.try_infer_numbers_from_strings = settings.input_format_csv_try_infer_numbers_from_strings;
-    format_settings.csv.try_infer_strings_from_quoted_tuples = settings.input_format_csv_try_infer_strings_from_quoted_tuples;
-    format_settings.hive_text.fields_delimiter = settings.input_format_hive_text_fields_delimiter;
-    format_settings.hive_text.collection_items_delimiter = settings.input_format_hive_text_collection_items_delimiter;
-    format_settings.hive_text.map_keys_delimiter = settings.input_format_hive_text_map_keys_delimiter;
-    format_settings.hive_text.allow_variable_number_of_columns = settings.input_format_hive_text_allow_variable_number_of_columns;
-    format_settings.custom.escaping_rule = settings.format_custom_escaping_rule;
-    format_settings.custom.field_delimiter = settings.format_custom_field_delimiter;
-    format_settings.custom.result_after_delimiter = settings.format_custom_result_after_delimiter;
-    format_settings.custom.result_before_delimiter = settings.format_custom_result_before_delimiter;
-    format_settings.custom.row_after_delimiter = settings.format_custom_row_after_delimiter;
-    format_settings.custom.row_before_delimiter = settings.format_custom_row_before_delimiter;
-    format_settings.custom.row_between_delimiter = settings.format_custom_row_between_delimiter;
-    format_settings.custom.try_detect_header = settings.input_format_custom_detect_header;
-    format_settings.custom.skip_trailing_empty_lines = settings.input_format_custom_skip_trailing_empty_lines;
-    format_settings.custom.allow_variable_number_of_columns = settings.input_format_custom_allow_variable_number_of_columns;
-    format_settings.date_time_input_format = settings.date_time_input_format;
-    format_settings.date_time_output_format = settings.date_time_output_format;
-    format_settings.interval.output_format = settings.interval_output_format;
-    format_settings.input_format_ipv4_default_on_conversion_error = settings.input_format_ipv4_default_on_conversion_error;
-    format_settings.input_format_ipv6_default_on_conversion_error = settings.input_format_ipv6_default_on_conversion_error;
-    format_settings.bool_true_representation = settings.bool_true_representation;
-    format_settings.bool_false_representation = settings.bool_false_representation;
-    format_settings.enable_streaming = settings.output_format_enable_streaming;
-    format_settings.import_nested_json = settings.input_format_import_nested_json;
-    format_settings.input_allow_errors_num = settings.input_format_allow_errors_num;
-    format_settings.input_allow_errors_ratio = settings.input_format_allow_errors_ratio;
-    format_settings.json.array_of_rows = settings.output_format_json_array_of_rows;
-    format_settings.json.escape_forward_slashes = settings.output_format_json_escape_forward_slashes;
-    format_settings.json.write_named_tuples_as_objects = settings.output_format_json_named_tuples_as_objects;
-    format_settings.json.skip_null_value_in_named_tuples = settings.output_format_json_skip_null_value_in_named_tuples;
-    format_settings.json.read_named_tuples_as_objects = settings.input_format_json_named_tuples_as_objects;
-    format_settings.json.use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = settings.input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects;
-    format_settings.json.defaults_for_missing_elements_in_named_tuple = settings.input_format_json_defaults_for_missing_elements_in_named_tuple;
-    format_settings.json.ignore_unknown_keys_in_named_tuple = settings.input_format_json_ignore_unknown_keys_in_named_tuple;
-    format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
-    format_settings.json.quote_64bit_floats = settings.output_format_json_quote_64bit_floats;
-    format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
-    format_settings.json.quote_decimals = settings.output_format_json_quote_decimals;
-    format_settings.json.read_bools_as_numbers = settings.input_format_json_read_bools_as_numbers;
-    format_settings.json.read_bools_as_strings = settings.input_format_json_read_bools_as_strings;
-    format_settings.json.read_numbers_as_strings = settings.input_format_json_read_numbers_as_strings;
-    format_settings.json.read_objects_as_strings = settings.input_format_json_read_objects_as_strings;
-    format_settings.json.read_arrays_as_strings = settings.input_format_json_read_arrays_as_strings;
-    format_settings.json.try_infer_numbers_from_strings = settings.input_format_json_try_infer_numbers_from_strings;
-    format_settings.json.infer_incomplete_types_as_strings = settings.input_format_json_infer_incomplete_types_as_strings;
-    format_settings.json.validate_types_from_metadata = settings.input_format_json_validate_types_from_metadata;
-    format_settings.json.validate_utf8 = settings.output_format_json_validate_utf8;
-    format_settings.json_object_each_row.column_for_object_name = settings.format_json_object_each_row_column_for_object_name;
-    format_settings.json.allow_object_type = context->getSettingsRef().allow_experimental_object_type;
-    format_settings.json.compact_allow_variable_number_of_columns = settings.input_format_json_compact_allow_variable_number_of_columns;
-    format_settings.json.try_infer_objects_as_tuples = settings.input_format_json_try_infer_named_tuples_from_objects;
-    format_settings.json.throw_on_bad_escape_sequence = settings.input_format_json_throw_on_bad_escape_sequence;
-    format_settings.json.ignore_unnecessary_fields = settings.input_format_json_ignore_unnecessary_fields;
-    format_settings.json.ignore_key_case = settings.input_format_json_ignore_key_case;
-    format_settings.null_as_default = settings.input_format_null_as_default;
-    format_settings.force_null_for_omitted_fields = settings.input_format_force_null_for_omitted_fields;
-    format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
-    format_settings.parquet.row_group_rows = settings.output_format_parquet_row_group_size;
-    format_settings.parquet.row_group_bytes = settings.output_format_parquet_row_group_size_bytes;
-    format_settings.parquet.output_version = settings.output_format_parquet_version;
-    format_settings.parquet.case_insensitive_column_matching = settings.input_format_parquet_case_insensitive_column_matching;
-    format_settings.parquet.preserve_order = settings.input_format_parquet_preserve_order;
-    format_settings.parquet.filter_push_down = settings.input_format_parquet_filter_push_down;
-    format_settings.parquet.use_native_reader = settings.input_format_parquet_use_native_reader;
-    format_settings.parquet.allow_missing_columns = settings.input_format_parquet_allow_missing_columns;
-    format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference;
-    format_settings.parquet.output_string_as_string = settings.output_format_parquet_string_as_string;
-    format_settings.parquet.output_fixed_string_as_fixed_byte_array = settings.output_format_parquet_fixed_string_as_fixed_byte_array;
-    format_settings.parquet.max_block_size = settings.input_format_parquet_max_block_size;
-    format_settings.parquet.prefer_block_bytes = settings.input_format_parquet_prefer_block_bytes;
-    format_settings.parquet.output_compression_method = settings.output_format_parquet_compression_method;
-    format_settings.parquet.output_compliant_nested_types = settings.output_format_parquet_compliant_nested_types;
-    format_settings.parquet.use_custom_encoder = settings.output_format_parquet_use_custom_encoder;
-    format_settings.parquet.parallel_encoding = settings.output_format_parquet_parallel_encoding;
-    format_settings.parquet.data_page_size = settings.output_format_parquet_data_page_size;
-    format_settings.parquet.write_batch_size = settings.output_format_parquet_batch_size;
-    format_settings.parquet.write_page_index = settings.output_format_parquet_write_page_index;
-    format_settings.parquet.local_read_min_bytes_for_seek = settings.input_format_parquet_local_file_min_bytes_for_seek;
-    format_settings.pretty.charset = settings.output_format_pretty_grid_charset.toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
-    format_settings.pretty.color = settings.output_format_pretty_color;
-    format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
-    format_settings.pretty.max_rows = settings.output_format_pretty_max_rows;
-    format_settings.pretty.max_value_width = settings.output_format_pretty_max_value_width;
-    format_settings.pretty.max_value_width_apply_for_single_value = settings.output_format_pretty_max_value_width_apply_for_single_value;
-    format_settings.pretty.highlight_digit_groups = settings.output_format_pretty_highlight_digit_groups;
-    format_settings.pretty.output_format_pretty_row_numbers = settings.output_format_pretty_row_numbers;
-    format_settings.pretty.output_format_pretty_single_large_number_tip_threshold = settings.output_format_pretty_single_large_number_tip_threshold;
-    format_settings.pretty.output_format_pretty_display_footer_column_names = settings.output_format_pretty_display_footer_column_names;
-    format_settings.pretty.output_format_pretty_display_footer_column_names_min_rows = settings.output_format_pretty_display_footer_column_names_min_rows;
-    format_settings.protobuf.input_flatten_google_wrappers = settings.input_format_protobuf_flatten_google_wrappers;
-    format_settings.protobuf.output_nullables_with_google_wrappers = settings.output_format_protobuf_nullables_with_google_wrappers;
-    format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference;
-    format_settings.protobuf.use_autogenerated_schema = settings.format_protobuf_use_autogenerated_schema;
+    format_settings.avro.allow_missing_fields = settings[Setting::input_format_avro_allow_missing_fields];
+    format_settings.avro.output_codec = settings[Setting::output_format_avro_codec];
+    format_settings.avro.output_sync_interval = settings[Setting::output_format_avro_sync_interval];
+    format_settings.avro.schema_registry_url = settings[Setting::format_avro_schema_registry_url].toString();
+    format_settings.avro.string_column_pattern = settings[Setting::output_format_avro_string_column_pattern].toString();
+    format_settings.avro.output_rows_in_file = settings[Setting::output_format_avro_rows_in_file];
+    format_settings.csv.allow_double_quotes = settings[Setting::format_csv_allow_double_quotes];
+    format_settings.csv.allow_single_quotes = settings[Setting::format_csv_allow_single_quotes];
+    format_settings.csv.serialize_tuple_into_separate_columns = settings[Setting::output_format_csv_serialize_tuple_into_separate_columns];
+    format_settings.csv.deserialize_separate_columns_into_tuple = settings[Setting::input_format_csv_deserialize_separate_columns_into_tuple];
+    format_settings.csv.crlf_end_of_line = settings[Setting::output_format_csv_crlf_end_of_line];
+    format_settings.csv.allow_cr_end_of_line = settings[Setting::input_format_csv_allow_cr_end_of_line];
+    format_settings.csv.delimiter = settings[Setting::format_csv_delimiter];
+    format_settings.csv.tuple_delimiter = settings[Setting::format_csv_delimiter];
+    format_settings.csv.empty_as_default = settings[Setting::input_format_csv_empty_as_default];
+    format_settings.csv.enum_as_number = settings[Setting::input_format_csv_enum_as_number];
+    format_settings.csv.null_representation = settings[Setting::format_csv_null_representation];
+    format_settings.csv.arrays_as_nested_csv = settings[Setting::input_format_csv_arrays_as_nested_csv];
+    format_settings.csv.use_best_effort_in_schema_inference = settings[Setting::input_format_csv_use_best_effort_in_schema_inference];
+    format_settings.csv.skip_first_lines = settings[Setting::input_format_csv_skip_first_lines];
+    format_settings.csv.try_detect_header = settings[Setting::input_format_csv_detect_header];
+    format_settings.csv.skip_trailing_empty_lines = settings[Setting::input_format_csv_skip_trailing_empty_lines];
+    format_settings.csv.trim_whitespaces = settings[Setting::input_format_csv_trim_whitespaces];
+    format_settings.csv.allow_whitespace_or_tab_as_delimiter = settings[Setting::input_format_csv_allow_whitespace_or_tab_as_delimiter];
+    format_settings.csv.allow_variable_number_of_columns = settings[Setting::input_format_csv_allow_variable_number_of_columns];
+    format_settings.csv.use_default_on_bad_values = settings[Setting::input_format_csv_use_default_on_bad_values];
+    format_settings.csv.try_infer_numbers_from_strings = settings[Setting::input_format_csv_try_infer_numbers_from_strings];
+    format_settings.csv.try_infer_strings_from_quoted_tuples = settings[Setting::input_format_csv_try_infer_strings_from_quoted_tuples];
+    format_settings.hive_text.fields_delimiter = settings[Setting::input_format_hive_text_fields_delimiter];
+    format_settings.hive_text.collection_items_delimiter = settings[Setting::input_format_hive_text_collection_items_delimiter];
+    format_settings.hive_text.map_keys_delimiter = settings[Setting::input_format_hive_text_map_keys_delimiter];
+    format_settings.hive_text.allow_variable_number_of_columns = settings[Setting::input_format_hive_text_allow_variable_number_of_columns];
+    format_settings.custom.escaping_rule = settings[Setting::format_custom_escaping_rule];
+    format_settings.custom.field_delimiter = settings[Setting::format_custom_field_delimiter];
+    format_settings.custom.result_after_delimiter = settings[Setting::format_custom_result_after_delimiter];
+    format_settings.custom.result_before_delimiter = settings[Setting::format_custom_result_before_delimiter];
+    format_settings.custom.row_after_delimiter = settings[Setting::format_custom_row_after_delimiter];
+    format_settings.custom.row_before_delimiter = settings[Setting::format_custom_row_before_delimiter];
+    format_settings.custom.row_between_delimiter = settings[Setting::format_custom_row_between_delimiter];
+    format_settings.custom.try_detect_header = settings[Setting::input_format_custom_detect_header];
+    format_settings.custom.skip_trailing_empty_lines = settings[Setting::input_format_custom_skip_trailing_empty_lines];
+    format_settings.custom.allow_variable_number_of_columns = settings[Setting::input_format_custom_allow_variable_number_of_columns];
+    format_settings.date_time_input_format = settings[Setting::date_time_input_format];
+    format_settings.date_time_output_format = settings[Setting::date_time_output_format];
+    format_settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = settings[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands];
+    format_settings.interval.output_format = settings[Setting::interval_output_format];
+    format_settings.input_format_ipv4_default_on_conversion_error = settings[Setting::input_format_ipv4_default_on_conversion_error];
+    format_settings.input_format_ipv6_default_on_conversion_error = settings[Setting::input_format_ipv6_default_on_conversion_error];
+    format_settings.bool_true_representation = settings[Setting::bool_true_representation];
+    format_settings.bool_false_representation = settings[Setting::bool_false_representation];
+    format_settings.enable_streaming = settings[Setting::output_format_enable_streaming];
+    format_settings.import_nested_json = settings[Setting::input_format_import_nested_json];
+    format_settings.input_allow_errors_num = settings[Setting::input_format_allow_errors_num];
+    format_settings.input_allow_errors_ratio = settings[Setting::input_format_allow_errors_ratio];
+    format_settings.json.max_depth = settings[Setting::input_format_json_max_depth];
+    format_settings.json.array_of_rows = settings[Setting::output_format_json_array_of_rows];
+    format_settings.json.escape_forward_slashes = settings[Setting::output_format_json_escape_forward_slashes];
+    format_settings.json.write_named_tuples_as_objects = settings[Setting::output_format_json_named_tuples_as_objects];
+    format_settings.json.skip_null_value_in_named_tuples = settings[Setting::output_format_json_skip_null_value_in_named_tuples];
+    format_settings.json.read_named_tuples_as_objects = settings[Setting::input_format_json_named_tuples_as_objects];
+    format_settings.json.use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = settings[Setting::input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects];
+    format_settings.json.defaults_for_missing_elements_in_named_tuple = settings[Setting::input_format_json_defaults_for_missing_elements_in_named_tuple];
+    format_settings.json.ignore_unknown_keys_in_named_tuple = settings[Setting::input_format_json_ignore_unknown_keys_in_named_tuple];
+    format_settings.json.quote_64bit_integers = settings[Setting::output_format_json_quote_64bit_integers];
+    format_settings.json.quote_64bit_floats = settings[Setting::output_format_json_quote_64bit_floats];
+    format_settings.json.quote_denormals = settings[Setting::output_format_json_quote_denormals];
+    format_settings.json.quote_decimals = settings[Setting::output_format_json_quote_decimals];
+    format_settings.json.read_bools_as_numbers = settings[Setting::input_format_json_read_bools_as_numbers];
+    format_settings.json.read_bools_as_strings = settings[Setting::input_format_json_read_bools_as_strings];
+    format_settings.json.read_numbers_as_strings = settings[Setting::input_format_json_read_numbers_as_strings];
+    format_settings.json.read_objects_as_strings = settings[Setting::input_format_json_read_objects_as_strings];
+    format_settings.json.read_arrays_as_strings = settings[Setting::input_format_json_read_arrays_as_strings];
+    format_settings.json.try_infer_numbers_from_strings = settings[Setting::input_format_json_try_infer_numbers_from_strings];
+    format_settings.json.infer_incomplete_types_as_strings = settings[Setting::input_format_json_infer_incomplete_types_as_strings];
+    format_settings.json.validate_types_from_metadata = settings[Setting::input_format_json_validate_types_from_metadata];
+    format_settings.json.validate_utf8 = settings[Setting::output_format_json_validate_utf8];
+    format_settings.json_object_each_row.column_for_object_name = settings[Setting::format_json_object_each_row_column_for_object_name];
+    format_settings.json.allow_deprecated_object_type = context->getSettingsRef()[Setting::allow_experimental_object_type];
+    format_settings.json.allow_json_type = context->getSettingsRef()[Setting::allow_experimental_json_type];
+    format_settings.json.compact_allow_variable_number_of_columns = settings[Setting::input_format_json_compact_allow_variable_number_of_columns];
+    format_settings.json.try_infer_objects_as_tuples = settings[Setting::input_format_json_try_infer_named_tuples_from_objects];
+    format_settings.json.throw_on_bad_escape_sequence = settings[Setting::input_format_json_throw_on_bad_escape_sequence];
+    format_settings.json.ignore_unnecessary_fields = settings[Setting::input_format_json_ignore_unnecessary_fields];
+    format_settings.json.empty_as_default = settings[Setting::input_format_json_empty_as_default];
+    format_settings.json.type_json_skip_duplicated_paths = settings[Setting::type_json_skip_duplicated_paths];
+    format_settings.null_as_default = settings[Setting::input_format_null_as_default];
+    format_settings.force_null_for_omitted_fields = settings[Setting::input_format_force_null_for_omitted_fields];
+    format_settings.decimal_trailing_zeros = settings[Setting::output_format_decimal_trailing_zeros];
+    format_settings.parquet.row_group_rows = settings[Setting::output_format_parquet_row_group_size];
+    format_settings.parquet.row_group_bytes = settings[Setting::output_format_parquet_row_group_size_bytes];
+    format_settings.parquet.output_version = settings[Setting::output_format_parquet_version];
+    format_settings.parquet.case_insensitive_column_matching = settings[Setting::input_format_parquet_case_insensitive_column_matching];
+    format_settings.parquet.preserve_order = settings[Setting::input_format_parquet_preserve_order];
+    format_settings.parquet.filter_push_down = settings[Setting::input_format_parquet_filter_push_down];
+    format_settings.parquet.bloom_filter_push_down = settings[Setting::input_format_parquet_bloom_filter_push_down];
+    format_settings.parquet.use_native_reader = settings[Setting::input_format_parquet_use_native_reader];
+    format_settings.parquet.allow_missing_columns = settings[Setting::input_format_parquet_allow_missing_columns];
+    format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference];
+    format_settings.parquet.output_string_as_string = settings[Setting::output_format_parquet_string_as_string];
+    format_settings.parquet.output_fixed_string_as_fixed_byte_array = settings[Setting::output_format_parquet_fixed_string_as_fixed_byte_array];
+    format_settings.parquet.max_block_size = settings[Setting::input_format_parquet_max_block_size];
+    format_settings.parquet.prefer_block_bytes = settings[Setting::input_format_parquet_prefer_block_bytes];
+    format_settings.parquet.output_compression_method = settings[Setting::output_format_parquet_compression_method];
+    format_settings.parquet.output_compliant_nested_types = settings[Setting::output_format_parquet_compliant_nested_types];
+    format_settings.parquet.use_custom_encoder = settings[Setting::output_format_parquet_use_custom_encoder];
+    format_settings.parquet.parallel_encoding = settings[Setting::output_format_parquet_parallel_encoding];
+    format_settings.parquet.data_page_size = settings[Setting::output_format_parquet_data_page_size];
+    format_settings.parquet.write_batch_size = settings[Setting::output_format_parquet_batch_size];
+    format_settings.parquet.write_page_index = settings[Setting::output_format_parquet_write_page_index];
+    format_settings.parquet.local_read_min_bytes_for_seek = settings[Setting::input_format_parquet_local_file_min_bytes_for_seek];
+    format_settings.parquet.enable_row_group_prefetch = settings[Setting::input_format_parquet_enable_row_group_prefetch];
+    format_settings.pretty.charset = settings[Setting::output_format_pretty_grid_charset].toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
+    format_settings.pretty.color = settings[Setting::output_format_pretty_color].valueOr(2);
+    format_settings.pretty.max_column_pad_width = settings[Setting::output_format_pretty_max_column_pad_width];
+    format_settings.pretty.max_rows = settings[Setting::output_format_pretty_max_rows];
+    format_settings.pretty.max_value_width = settings[Setting::output_format_pretty_max_value_width];
+    format_settings.pretty.max_value_width_apply_for_single_value = settings[Setting::output_format_pretty_max_value_width_apply_for_single_value];
+    format_settings.pretty.highlight_digit_groups = settings[Setting::output_format_pretty_highlight_digit_groups];
+    format_settings.pretty.output_format_pretty_row_numbers = settings[Setting::output_format_pretty_row_numbers];
+    format_settings.pretty.output_format_pretty_single_large_number_tip_threshold = settings[Setting::output_format_pretty_single_large_number_tip_threshold];
+    format_settings.pretty.output_format_pretty_display_footer_column_names = settings[Setting::output_format_pretty_display_footer_column_names];
+    format_settings.pretty.output_format_pretty_display_footer_column_names_min_rows = settings[Setting::output_format_pretty_display_footer_column_names_min_rows];
+    format_settings.protobuf.input_flatten_google_wrappers = settings[Setting::input_format_protobuf_flatten_google_wrappers];
+    format_settings.protobuf.output_nullables_with_google_wrappers = settings[Setting::output_format_protobuf_nullables_with_google_wrappers];
+    format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference = settings[Setting::input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference];
+    format_settings.protobuf.use_autogenerated_schema = settings[Setting::format_protobuf_use_autogenerated_schema];
     format_settings.protobuf.google_protos_path = context->getGoogleProtosPath();
-    format_settings.regexp.escaping_rule = settings.format_regexp_escaping_rule;
-    format_settings.regexp.regexp = settings.format_regexp;
-    format_settings.regexp.skip_unmatched = settings.format_regexp_skip_unmatched;
-    format_settings.schema.format_schema = settings.format_schema;
+    format_settings.regexp.escaping_rule = settings[Setting::format_regexp_escaping_rule];
+    format_settings.regexp.regexp = settings[Setting::format_regexp];
+    format_settings.regexp.skip_unmatched = settings[Setting::format_regexp_skip_unmatched];
+    format_settings.schema.format_schema = settings[Setting::format_schema];
     format_settings.schema.format_schema_path = context->getFormatSchemaPath();
     format_settings.schema.is_server = context->hasGlobalContext() && (context->getGlobalContext()->getApplicationType() == Context::ApplicationType::SERVER);
-    format_settings.schema.output_format_schema = settings.output_format_schema;
-    format_settings.skip_unknown_fields = settings.input_format_skip_unknown_fields;
-    format_settings.template_settings.resultset_format = settings.format_template_resultset;
-    format_settings.template_settings.row_between_delimiter = settings.format_template_rows_between_delimiter;
-    format_settings.template_settings.row_format = settings.format_template_row;
-    format_settings.template_settings.row_format_template = settings.format_template_row_format;
-    format_settings.template_settings.resultset_format_template = settings.format_template_resultset_format;
-    format_settings.tsv.crlf_end_of_line = settings.output_format_tsv_crlf_end_of_line;
-    format_settings.tsv.empty_as_default = settings.input_format_tsv_empty_as_default;
-    format_settings.tsv.enum_as_number = settings.input_format_tsv_enum_as_number;
-    format_settings.tsv.null_representation = settings.format_tsv_null_representation;
-    format_settings.tsv.use_best_effort_in_schema_inference = settings.input_format_tsv_use_best_effort_in_schema_inference;
-    format_settings.tsv.skip_first_lines = settings.input_format_tsv_skip_first_lines;
-    format_settings.tsv.try_detect_header = settings.input_format_tsv_detect_header;
-    format_settings.tsv.skip_trailing_empty_lines = settings.input_format_tsv_skip_trailing_empty_lines;
-    format_settings.tsv.allow_variable_number_of_columns = settings.input_format_tsv_allow_variable_number_of_columns;
-    format_settings.tsv.crlf_end_of_line_input = settings.input_format_tsv_crlf_end_of_line;
-    format_settings.values.accurate_types_of_literals = settings.input_format_values_accurate_types_of_literals;
-    format_settings.values.allow_data_after_semicolon = settings.input_format_values_allow_data_after_semicolon;
-    format_settings.values.deduce_templates_of_expressions = settings.input_format_values_deduce_templates_of_expressions;
-    format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
-    format_settings.values.escape_quote_with_quote = settings.output_format_values_escape_quote_with_quote;
-    format_settings.with_names_use_header = settings.input_format_with_names_use_header;
-    format_settings.with_types_use_header = settings.input_format_with_types_use_header;
-    format_settings.write_statistics = settings.output_format_write_statistics;
-    format_settings.arrow.low_cardinality_as_dictionary = settings.output_format_arrow_low_cardinality_as_dictionary;
-    format_settings.arrow.use_signed_indexes_for_dictionary = settings.output_format_arrow_use_signed_indexes_for_dictionary;
-    format_settings.arrow.use_64_bit_indexes_for_dictionary = settings.output_format_arrow_use_64_bit_indexes_for_dictionary;
-    format_settings.arrow.allow_missing_columns = settings.input_format_arrow_allow_missing_columns;
-    format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference;
-    format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference;
-    format_settings.arrow.case_insensitive_column_matching = settings.input_format_arrow_case_insensitive_column_matching;
-    format_settings.arrow.output_string_as_string = settings.output_format_arrow_string_as_string;
-    format_settings.arrow.output_fixed_string_as_fixed_byte_array = settings.output_format_arrow_fixed_string_as_fixed_byte_array;
-    format_settings.arrow.output_compression_method = settings.output_format_arrow_compression_method;
-    format_settings.orc.allow_missing_columns = settings.input_format_orc_allow_missing_columns;
-    format_settings.orc.row_batch_size = settings.input_format_orc_row_batch_size;
-    format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_orc_skip_columns_with_unsupported_types_in_schema_inference;
-    format_settings.orc.allow_missing_columns = settings.input_format_orc_allow_missing_columns;
-    format_settings.orc.row_batch_size = settings.input_format_orc_row_batch_size;
-    format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_orc_skip_columns_with_unsupported_types_in_schema_inference;
-    format_settings.orc.case_insensitive_column_matching = settings.input_format_orc_case_insensitive_column_matching;
-    format_settings.orc.output_string_as_string = settings.output_format_orc_string_as_string;
-    format_settings.orc.output_compression_method = settings.output_format_orc_compression_method;
-    format_settings.orc.output_row_index_stride = settings.output_format_orc_row_index_stride;
-    format_settings.orc.use_fast_decoder = settings.input_format_orc_use_fast_decoder;
-    format_settings.orc.filter_push_down = settings.input_format_orc_filter_push_down;
-    format_settings.defaults_for_omitted_fields = settings.input_format_defaults_for_omitted_fields;
-    format_settings.capn_proto.enum_comparing_mode = settings.format_capn_proto_enum_comparising_mode;
-    format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference;
-    format_settings.capn_proto.use_autogenerated_schema = settings.format_capn_proto_use_autogenerated_schema;
-    format_settings.seekable_read = settings.input_format_allow_seeks;
-    format_settings.msgpack.number_of_columns = settings.input_format_msgpack_number_of_columns;
-    format_settings.msgpack.output_uuid_representation = settings.output_format_msgpack_uuid_representation;
-    format_settings.max_rows_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
-    format_settings.max_bytes_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
-    format_settings.column_names_for_schema_inference = settings.column_names_for_schema_inference;
-    format_settings.schema_inference_hints = settings.schema_inference_hints;
-    format_settings.schema_inference_make_columns_nullable = settings.schema_inference_make_columns_nullable;
-    format_settings.mysql_dump.table_name = settings.input_format_mysql_dump_table_name;
-    format_settings.mysql_dump.map_column_names = settings.input_format_mysql_dump_map_column_names;
-    format_settings.sql_insert.max_batch_size = settings.output_format_sql_insert_max_batch_size;
-    format_settings.sql_insert.include_column_names = settings.output_format_sql_insert_include_column_names;
-    format_settings.sql_insert.table_name = settings.output_format_sql_insert_table_name;
-    format_settings.sql_insert.use_replace = settings.output_format_sql_insert_use_replace;
-    format_settings.sql_insert.quote_names = settings.output_format_sql_insert_quote_names;
-    format_settings.try_infer_integers = settings.input_format_try_infer_integers;
-    format_settings.try_infer_dates = settings.input_format_try_infer_dates;
-    format_settings.try_infer_datetimes = settings.input_format_try_infer_datetimes;
-    format_settings.try_infer_exponent_floats = settings.input_format_try_infer_exponent_floats;
-    format_settings.markdown.escape_special_characters = settings.output_format_markdown_escape_special_characters;
-    format_settings.bson.output_string_as_string = settings.output_format_bson_string_as_string;
-    format_settings.bson.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_bson_skip_fields_with_unsupported_types_in_schema_inference;
-    format_settings.max_binary_string_size = settings.format_binary_max_string_size;
-    format_settings.max_binary_array_size = settings.format_binary_max_array_size;
-    format_settings.native.allow_types_conversion = settings.input_format_native_allow_types_conversion;
-    format_settings.max_parser_depth = context->getSettingsRef().max_parser_depth;
+    format_settings.schema.output_format_schema = settings[Setting::output_format_schema];
+    format_settings.skip_unknown_fields = settings[Setting::input_format_skip_unknown_fields];
+    format_settings.template_settings.resultset_format = settings[Setting::format_template_resultset];
+    format_settings.template_settings.row_between_delimiter = settings[Setting::format_template_rows_between_delimiter];
+    format_settings.template_settings.row_format = settings[Setting::format_template_row];
+    format_settings.template_settings.row_format_template = settings[Setting::format_template_row_format];
+    format_settings.template_settings.resultset_format_template = settings[Setting::format_template_resultset_format];
+    format_settings.tsv.crlf_end_of_line = settings[Setting::output_format_tsv_crlf_end_of_line];
+    format_settings.tsv.empty_as_default = settings[Setting::input_format_tsv_empty_as_default];
+    format_settings.tsv.enum_as_number = settings[Setting::input_format_tsv_enum_as_number];
+    format_settings.tsv.null_representation = settings[Setting::format_tsv_null_representation];
+    format_settings.tsv.use_best_effort_in_schema_inference = settings[Setting::input_format_tsv_use_best_effort_in_schema_inference];
+    format_settings.tsv.skip_first_lines = settings[Setting::input_format_tsv_skip_first_lines];
+    format_settings.tsv.try_detect_header = settings[Setting::input_format_tsv_detect_header];
+    format_settings.tsv.skip_trailing_empty_lines = settings[Setting::input_format_tsv_skip_trailing_empty_lines];
+    format_settings.tsv.allow_variable_number_of_columns = settings[Setting::input_format_tsv_allow_variable_number_of_columns];
+    format_settings.tsv.crlf_end_of_line_input = settings[Setting::input_format_tsv_crlf_end_of_line];
+    format_settings.values.accurate_types_of_literals = settings[Setting::input_format_values_accurate_types_of_literals];
+    format_settings.values.deduce_templates_of_expressions = settings[Setting::input_format_values_deduce_templates_of_expressions];
+    format_settings.values.interpret_expressions = settings[Setting::input_format_values_interpret_expressions];
+    format_settings.values.escape_quote_with_quote = settings[Setting::output_format_values_escape_quote_with_quote];
+    format_settings.with_names_use_header = settings[Setting::input_format_with_names_use_header];
+    format_settings.with_types_use_header = settings[Setting::input_format_with_types_use_header];
+    format_settings.write_statistics = settings[Setting::output_format_write_statistics];
+    format_settings.arrow.low_cardinality_as_dictionary = settings[Setting::output_format_arrow_low_cardinality_as_dictionary];
+    format_settings.arrow.use_signed_indexes_for_dictionary = settings[Setting::output_format_arrow_use_signed_indexes_for_dictionary];
+    format_settings.arrow.use_64_bit_indexes_for_dictionary = settings[Setting::output_format_arrow_use_64_bit_indexes_for_dictionary];
+    format_settings.arrow.allow_missing_columns = settings[Setting::input_format_arrow_allow_missing_columns];
+    format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference];
+    format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference];
+    format_settings.arrow.case_insensitive_column_matching = settings[Setting::input_format_arrow_case_insensitive_column_matching];
+    format_settings.arrow.output_string_as_string = settings[Setting::output_format_arrow_string_as_string];
+    format_settings.arrow.output_fixed_string_as_fixed_byte_array = settings[Setting::output_format_arrow_fixed_string_as_fixed_byte_array];
+    format_settings.arrow.output_compression_method = settings[Setting::output_format_arrow_compression_method];
+    format_settings.orc.allow_missing_columns = settings[Setting::input_format_orc_allow_missing_columns];
+    format_settings.orc.row_batch_size = settings[Setting::input_format_orc_row_batch_size];
+    format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_orc_skip_columns_with_unsupported_types_in_schema_inference];
+    format_settings.orc.dictionary_as_low_cardinality = settings[Setting::input_format_orc_dictionary_as_low_cardinality];
+    format_settings.orc.case_insensitive_column_matching = settings[Setting::input_format_orc_case_insensitive_column_matching];
+    format_settings.orc.output_string_as_string = settings[Setting::output_format_orc_string_as_string];
+    format_settings.orc.output_compression_method = settings[Setting::output_format_orc_compression_method];
+    format_settings.orc.output_row_index_stride = settings[Setting::output_format_orc_row_index_stride];
+    format_settings.orc.output_dictionary_key_size_threshold = settings[Setting::output_format_orc_dictionary_key_size_threshold];
+    format_settings.orc.use_fast_decoder = settings[Setting::input_format_orc_use_fast_decoder];
+    format_settings.orc.filter_push_down = settings[Setting::input_format_orc_filter_push_down];
+    format_settings.orc.reader_time_zone_name = settings[Setting::input_format_orc_reader_time_zone_name];
+    format_settings.defaults_for_omitted_fields = settings[Setting::input_format_defaults_for_omitted_fields];
+    format_settings.capn_proto.enum_comparing_mode = settings[Setting::format_capn_proto_enum_comparising_mode];
+    format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference = settings[Setting::input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference];
+    format_settings.capn_proto.use_autogenerated_schema = settings[Setting::format_capn_proto_use_autogenerated_schema];
+    format_settings.seekable_read = settings[Setting::input_format_allow_seeks];
+    format_settings.msgpack.number_of_columns = settings[Setting::input_format_msgpack_number_of_columns];
+    format_settings.msgpack.output_uuid_representation = settings[Setting::output_format_msgpack_uuid_representation];
+    format_settings.max_rows_to_read_for_schema_inference = settings[Setting::input_format_max_rows_to_read_for_schema_inference];
+    format_settings.max_bytes_to_read_for_schema_inference = settings[Setting::input_format_max_bytes_to_read_for_schema_inference];
+    format_settings.column_names_for_schema_inference = settings[Setting::column_names_for_schema_inference];
+    format_settings.schema_inference_hints = settings[Setting::schema_inference_hints];
+    format_settings.schema_inference_make_columns_nullable = settings[Setting::schema_inference_make_columns_nullable].valueOr(2);
+    format_settings.mysql_dump.table_name = settings[Setting::input_format_mysql_dump_table_name];
+    format_settings.mysql_dump.map_column_names = settings[Setting::input_format_mysql_dump_map_column_names];
+    format_settings.sql_insert.max_batch_size = settings[Setting::output_format_sql_insert_max_batch_size];
+    format_settings.sql_insert.include_column_names = settings[Setting::output_format_sql_insert_include_column_names];
+    format_settings.sql_insert.table_name = settings[Setting::output_format_sql_insert_table_name];
+    format_settings.sql_insert.use_replace = settings[Setting::output_format_sql_insert_use_replace];
+    format_settings.sql_insert.quote_names = settings[Setting::output_format_sql_insert_quote_names];
+    format_settings.try_infer_integers = settings[Setting::input_format_try_infer_integers];
+    format_settings.try_infer_dates = settings[Setting::input_format_try_infer_dates];
+    format_settings.try_infer_datetimes = settings[Setting::input_format_try_infer_datetimes];
+    format_settings.try_infer_datetimes_only_datetime64 = settings[Setting::input_format_try_infer_datetimes_only_datetime64];
+    format_settings.try_infer_exponent_floats = settings[Setting::input_format_try_infer_exponent_floats];
+    format_settings.markdown.escape_special_characters = settings[Setting::output_format_markdown_escape_special_characters];
+    format_settings.bson.output_string_as_string = settings[Setting::output_format_bson_string_as_string];
+    format_settings.bson.skip_fields_with_unsupported_types_in_schema_inference = settings[Setting::input_format_bson_skip_fields_with_unsupported_types_in_schema_inference];
+    format_settings.binary.max_binary_string_size = settings[Setting::format_binary_max_string_size];
+    format_settings.binary.max_binary_array_size = settings[Setting::format_binary_max_array_size];
+    format_settings.binary.encode_types_in_binary_format = settings[Setting::output_format_binary_encode_types_in_binary_format];
+    format_settings.binary.decode_types_in_binary_format = settings[Setting::input_format_binary_decode_types_in_binary_format];
+    format_settings.binary.write_json_as_string = settings[Setting::output_format_binary_write_json_as_string];
+    format_settings.binary.read_json_as_string = settings[Setting::input_format_binary_read_json_as_string];
+    format_settings.native.allow_types_conversion = settings[Setting::input_format_native_allow_types_conversion];
+    format_settings.native.encode_types_in_binary_format = settings[Setting::output_format_native_encode_types_in_binary_format];
+    format_settings.native.decode_types_in_binary_format = settings[Setting::input_format_native_decode_types_in_binary_format];
+    format_settings.native.write_json_as_string = settings[Setting::output_format_native_write_json_as_string];
+    format_settings.max_parser_depth = settings[Setting::max_parser_depth];
+    format_settings.date_time_overflow_behavior = settings[Setting::date_time_overflow_behavior];
+    format_settings.try_infer_variant = settings[Setting::input_format_try_infer_variants];
     format_settings.client_protocol_version = context->getClientProtocolVersion();
-    format_settings.date_time_overflow_behavior = settings.date_time_overflow_behavior;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
     {
-        const Poco::URI & avro_schema_registry_url = settings.format_avro_schema_registry_url;
+        const Poco::URI & avro_schema_registry_url = settings[Setting::format_avro_schema_registry_url];
         if (!avro_schema_registry_url.empty())
             context->getRemoteHostFilter().checkURL(avro_schema_registry_url);
     }
 
-    if (context->getClientInfo().interface == ClientInfo::Interface::HTTP && context->getSettingsRef().http_write_exception_in_output_format.value)
+    if (context->getClientInfo().interface == ClientInfo::Interface::HTTP
+        && context->getSettingsRef()[Setting::http_write_exception_in_output_format].value)
     {
         format_settings.json.valid_output_on_exception = true;
         format_settings.xml.valid_output_on_exception = true;
@@ -292,10 +336,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
 
     return format_settings;
 }
-
-template FormatSettings getFormatSettings<FormatFactorySettings>(const ContextPtr & context, const FormatFactorySettings & settings);
-
-template FormatSettings getFormatSettings<Settings>(const ContextPtr & context, const Settings & settings);
 
 
 InputFormatPtr FormatFactory::getInput(
@@ -317,17 +357,17 @@ InputFormatPtr FormatFactory::getInput(
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     const Settings & settings = context->getSettingsRef();
-    size_t max_parsing_threads = _max_parsing_threads.value_or(settings.max_parsing_threads);
-    size_t max_download_threads = _max_download_threads.value_or(settings.max_download_threads);
+    size_t max_parsing_threads = _max_parsing_threads.value_or(settings[Setting::max_parsing_threads]);
+    size_t max_download_threads = _max_download_threads.value_or(settings[Setting::max_download_threads]);
 
     RowInputFormatParams row_input_format_params;
     row_input_format_params.max_block_size = max_block_size;
     row_input_format_params.allow_errors_num = format_settings.input_allow_errors_num;
     row_input_format_params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
-    row_input_format_params.max_execution_time = settings.max_execution_time;
-    row_input_format_params.timeout_overflow_mode = settings.timeout_overflow_mode;
+    row_input_format_params.max_execution_time = settings[Setting::max_execution_time];
+    row_input_format_params.timeout_overflow_mode = settings[Setting::timeout_overflow_mode];
 
-    if (context->hasQueryContext() && settings.log_queries)
+    if (context->hasQueryContext() && settings[Setting::log_queries])
         context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
 
     // Add ParallelReadBuffer and decompression if needed.
@@ -337,13 +377,14 @@ InputFormatPtr FormatFactory::getInput(
 
     // Decide whether to use ParallelParsingInputFormat.
 
-    bool parallel_parsing =
-        max_parsing_threads > 1 && settings.input_format_parallel_parsing && creators.file_segmentation_engine_creator &&
-        !creators.random_access_input_creator && !need_only_count;
+    bool parallel_parsing = max_parsing_threads > 1 && settings[Setting::input_format_parallel_parsing]
+        && creators.file_segmentation_engine_creator && !creators.random_access_input_creator && !need_only_count;
 
-    if (settings.max_memory_usage && settings.min_chunk_bytes_for_parallel_parsing * max_parsing_threads * 2 > settings.max_memory_usage)
+    if (settings[Setting::max_memory_usage]
+        && settings[Setting::min_chunk_bytes_for_parallel_parsing] * max_parsing_threads * 2 > settings[Setting::max_memory_usage])
         parallel_parsing = false;
-    if (settings.max_memory_usage_for_user && settings.min_chunk_bytes_for_parallel_parsing * max_parsing_threads * 2 > settings.max_memory_usage_for_user)
+    if (settings[Setting::max_memory_usage_for_user]
+        && settings[Setting::min_chunk_bytes_for_parallel_parsing] * max_parsing_threads * 2 > settings[Setting::max_memory_usage_for_user])
         parallel_parsing = false;
 
     if (parallel_parsing)
@@ -368,21 +409,23 @@ InputFormatPtr FormatFactory::getInput(
             { return input_getter(input, sample, row_input_format_params, format_settings); };
 
         ParallelParsingInputFormat::Params params{
-            buf, sample, parser_creator, creators.file_segmentation_engine_creator, name, format_settings, max_parsing_threads,
-            settings.min_chunk_bytes_for_parallel_parsing, max_block_size, context->getApplicationType() == Context::ApplicationType::SERVER};
+            buf,
+            sample,
+            parser_creator,
+            creators.file_segmentation_engine_creator,
+            name,
+            format_settings,
+            max_parsing_threads,
+            settings[Setting::min_chunk_bytes_for_parallel_parsing],
+            max_block_size,
+            context->getApplicationType() == Context::ApplicationType::SERVER};
 
         format = std::make_shared<ParallelParsingInputFormat>(params);
     }
     else if (creators.random_access_input_creator)
     {
         format = creators.random_access_input_creator(
-            buf,
-            sample,
-            format_settings,
-            context->getReadSettings(),
-            is_remote_fs,
-            max_download_threads,
-            max_parsing_threads);
+            buf, sample, format_settings, context->getReadSettings(), is_remote_fs, max_download_threads, max_parsing_threads);
     }
     else
     {
@@ -391,7 +434,7 @@ InputFormatPtr FormatFactory::getInput(
 
     if (owned_buf)
         format->addBuffer(std::move(owned_buf));
-    if (!settings.input_format_record_errors_file_path.toString().empty())
+    if (!settings[Setting::input_format_record_errors_file_path].toString().empty())
     {
         if (parallel_parsing)
             format->setErrorsLogger(std::make_shared<ParallelInputFormatErrorsLogger>(context));
@@ -429,7 +472,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
         try
         {
             file_size = getFileSizeFromReadBuffer(buf);
-            parallel_read = file_size >= 2 * settings.max_download_buffer_size;
+            parallel_read = file_size >= 2 * settings[Setting::max_download_buffer_size];
         }
         catch (const Poco::Exception & e)
         {
@@ -448,18 +491,21 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
             getLogger("FormatFactory"),
             "Using ParallelReadBuffer with {} workers with chunks of {} bytes",
             max_download_threads,
-            settings.max_download_buffer_size);
+            settings[Setting::max_download_buffer_size]);
 
         res = wrapInParallelReadBufferIfSupported(
-            buf, threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "ParallelRead"),
-            max_download_threads, settings.max_download_buffer_size, file_size);
+            buf,
+            threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "ParallelRead"),
+            max_download_threads,
+            settings[Setting::max_download_buffer_size],
+            file_size);
     }
 
     if (compression != CompressionMethod::None)
     {
         if (!res)
             res = wrapReadBufferReference(buf);
-        res = wrapReadBufferWithCompressionMethod(std::move(res), compression, static_cast<int>(settings.zstd_window_log_max));
+        res = wrapReadBufferWithCompressionMethod(std::move(res), compression, static_cast<int>(settings[Setting::zstd_window_log_max]));
     }
 
     return res;
@@ -496,17 +542,17 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
 
     const Settings & settings = context->getSettingsRef();
 
-    if (settings.output_format_parallel_formatting && getCreators(name).supports_parallel_formatting
-        && !settings.output_format_json_array_of_rows)
+    if (settings[Setting::output_format_parallel_formatting] && getCreators(name).supports_parallel_formatting
+        && !settings[Setting::output_format_json_array_of_rows])
     {
         auto formatter_creator = [output_getter, sample, format_settings] (WriteBuffer & output) -> OutputFormatPtr
         {
             return output_getter(output, sample, format_settings);
         };
 
-        ParallelFormattingOutputFormat::Params builder{buf, sample, formatter_creator, settings.max_threads};
+        ParallelFormattingOutputFormat::Params builder{buf, sample, formatter_creator, settings[Setting::max_threads]};
 
-        if (context->hasQueryContext() && settings.log_queries)
+        if (context->hasQueryContext() && settings[Setting::log_queries])
             context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
 
         auto format = std::make_shared<ParallelFormattingOutputFormat>(builder);
@@ -529,11 +575,11 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     if (!output_getter)
         throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output", name);
 
-    if (context->hasQueryContext() && context->getSettingsRef().log_queries)
+    if (context->hasQueryContext() && context->getSettingsRef()[Setting::log_queries])
         context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
-    format_settings.max_threads = context->getSettingsRef().max_threads;
+    format_settings.max_threads = context->getSettingsRef()[Setting::max_threads];
     format_settings.is_writing_to_terminal = format_settings.is_writing_to_terminal = isWritingToTerminal(buf);
 
     /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
@@ -854,7 +900,7 @@ bool FormatFactory::checkIfOutputFormatPrefersLargeBlocks(const String & name) c
 bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const
 {
     auto format_name = boost::to_lower_copy(name);
-    if (format_name == "parquet" && context->getSettingsRef().input_format_parquet_preserve_order)
+    if (format_name == "parquet" && context->getSettingsRef()[Setting::input_format_parquet_preserve_order])
         return false;
 
     return true;

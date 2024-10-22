@@ -1,21 +1,23 @@
+import gzip
 import os
-import pytest
 import sys
 import time
-import pytz
 import uuid
-import grpc
-from helpers.cluster import ClickHouseCluster, is_arm, run_and_check
 from threading import Thread
-import gzip
+
+import grpc
 import lz4.frame
+import pytest
+import pytz
+
+from helpers.cluster import ClickHouseCluster, is_arm, run_and_check
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 pb2_dir = os.path.join(script_dir, "pb2")
 if pb2_dir not in sys.path:
     sys.path.append(pb2_dir)
-import clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc  # Execute pb2/generate.py to generate these modules.
-
+import clickhouse_grpc_pb2  # Execute pb2/generate.py to generate these modules.
+import clickhouse_grpc_pb2_grpc
 
 GRPC_PORT = 9100
 DEFAULT_ENCODING = "utf-8"
@@ -39,6 +41,7 @@ node = cluster.add_instance(
         "TSAN_OPTIONS": "report_atomic_races=0 " + os.getenv("TSAN_OPTIONS", default="")
     },
     ipv6_address=IPV6_ADDRESS,
+    stay_alive=True,
 )
 main_channel = None
 
@@ -369,47 +372,33 @@ def test_progress():
         "SELECT number, sleep(0.31) FROM numbers(8) SETTINGS max_block_size=2, interactive_delay=100000",
         stream_output=True,
     )
-    results = list(results)
-    for result in results:
-        result.time_zone = ""
-        result.query_id = ""
-    # print(results)
 
-    # Note: We can't convert those messages to string like `results = str(results)` and then compare it as a string
-    # because str() can serialize a protobuf message with any order of fields.
-    expected_results = [
-        clickhouse_grpc_pb2.Result(
-            output_format="TabSeparated",
-            progress=clickhouse_grpc_pb2.Progress(
-                read_rows=2, read_bytes=16, total_rows_to_read=8
-            ),
-        ),
-        clickhouse_grpc_pb2.Result(output=b"0\t0\n1\t0\n"),
-        clickhouse_grpc_pb2.Result(
-            progress=clickhouse_grpc_pb2.Progress(read_rows=2, read_bytes=16)
-        ),
-        clickhouse_grpc_pb2.Result(output=b"2\t0\n3\t0\n"),
-        clickhouse_grpc_pb2.Result(
-            progress=clickhouse_grpc_pb2.Progress(read_rows=2, read_bytes=16)
-        ),
-        clickhouse_grpc_pb2.Result(output=b"4\t0\n5\t0\n"),
-        clickhouse_grpc_pb2.Result(
-            progress=clickhouse_grpc_pb2.Progress(read_rows=2, read_bytes=16)
-        ),
-        clickhouse_grpc_pb2.Result(output=b"6\t0\n7\t0\n"),
-        clickhouse_grpc_pb2.Result(
-            stats=clickhouse_grpc_pb2.Stats(
-                rows=8,
-                blocks=4,
-                allocated_bytes=1092,
-            )
-        ),
+    # Note: We can't compare results using a statement like `assert results == expected_results`
+    # because `results` can come in slightly different order.
+    # So we compare `outputs` and `progresses` separately and not `results` as a whole.
+
+    outputs = [i.output for i in results if i.output]
+    progresses = [i.progress for i in results if i.HasField("progress")]
+
+    # print(outputs)
+    # print(progresses)
+
+    expected_outputs = [
+        b"0\t0\n1\t0\n",
+        b"2\t0\n3\t0\n",
+        b"4\t0\n5\t0\n",
+        b"6\t0\n7\t0\n",
     ]
 
-    # Stats data can be returned, which broke the test
-    results = [i for i in results if not isinstance(i, clickhouse_grpc_pb2.Stats)]
+    expected_progresses = [
+        clickhouse_grpc_pb2.Progress(read_rows=2, read_bytes=16, total_rows_to_read=8),
+        clickhouse_grpc_pb2.Progress(read_rows=2, read_bytes=16),
+        clickhouse_grpc_pb2.Progress(read_rows=2, read_bytes=16),
+        clickhouse_grpc_pb2.Progress(read_rows=2, read_bytes=16),
+    ]
 
-    assert results == expected_results
+    assert outputs == expected_outputs
+    assert progresses == expected_progresses
 
 
 def test_session_settings():
@@ -763,3 +752,9 @@ def test_opentelemetry_context_propagation():
         )
         == "SELECT 1\tsome custom state\n"
     )
+
+
+def test_restart():
+    assert query("SELECT 1") == "1\n"
+    node.restart_clickhouse()
+    assert query("SELECT 2") == "2\n"

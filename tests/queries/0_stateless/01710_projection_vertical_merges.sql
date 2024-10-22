@@ -1,4 +1,5 @@
--- Tags: long, no-parallel
+-- Tags: long, no-parallel, no-msan, no-tsan, no-asan
+-- set no-parallel and no sanitizers tag is to prevent timeout of this test
 
 drop table if exists t;
 

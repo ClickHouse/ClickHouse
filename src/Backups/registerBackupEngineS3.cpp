@@ -120,32 +120,34 @@ void registerBackupEngineS3(BackupFactory & factory)
                 reader,
                 params.context,
                 params.is_internal_backup,
-                params.use_same_s3_credentials_for_base_backup);
+                params.use_same_s3_credentials_for_base_backup,
+                params.use_same_password_for_base_backup);
         }
-        else
-        {
-            auto writer = std::make_shared<BackupWriterS3>(S3::URI{s3_uri},
-                                                           access_key_id,
-                                                           secret_access_key,
-                                                           params.allow_s3_native_copy,
-                                                           params.s3_storage_class,
-                                                           params.read_settings,
-                                                           params.write_settings,
-                                                           params.context,
-                                                           params.is_internal_backup);
 
-            return std::make_unique<BackupImpl>(
-                params.backup_info,
-                archive_params,
-                params.base_backup_info,
-                writer,
-                params.context,
-                params.is_internal_backup,
-                params.backup_coordination,
-                params.backup_uuid,
-                params.deduplicate_files,
-                params.use_same_s3_credentials_for_base_backup);
-        }
+        auto writer = std::make_shared<BackupWriterS3>(
+            S3::URI{s3_uri},
+            access_key_id,
+            secret_access_key,
+            params.allow_s3_native_copy,
+            params.s3_storage_class,
+            params.read_settings,
+            params.write_settings,
+            params.context,
+            params.is_internal_backup);
+
+        return std::make_unique<BackupImpl>(
+            params.backup_info,
+            archive_params,
+            params.base_backup_info,
+            writer,
+            params.context,
+            params.is_internal_backup,
+            params.backup_coordination,
+            params.backup_uuid,
+            params.deduplicate_files,
+            params.use_same_s3_credentials_for_base_backup,
+            params.use_same_password_for_base_backup);
+
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "S3 support is disabled");
 #endif

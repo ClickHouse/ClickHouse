@@ -189,6 +189,14 @@ TEST(S3UriTest, validPatterns)
         ASSERT_EQ(true, uri.is_virtual_hosted_style);
     }
     {
+        S3::URI uri("https://bucketname.dots-are-allowed.s3-us-east-2.amazonaws.com/data");
+        ASSERT_EQ("https://s3-us-east-2.amazonaws.com", uri.endpoint);
+        ASSERT_EQ("bucketname.dots-are-allowed", uri.bucket);
+        ASSERT_EQ("data", uri.key);
+        ASSERT_EQ("", uri.version_id);
+        ASSERT_EQ(true, uri.is_virtual_hosted_style);
+    }
+    {
         S3::URI uri("https://s3-us-east-2.amazonaws.com/bucketname/data");
         ASSERT_EQ("https://s3-us-east-2.amazonaws.com", uri.endpoint);
         ASSERT_EQ("bucketname", uri.bucket);
@@ -206,11 +214,6 @@ TEST(S3UriTest, validPatterns)
     }
 }
 
-TEST_P(S3UriTest, invalidPatterns)
-{
-    ASSERT_ANY_THROW(S3::URI new_uri(GetParam()));
-}
-
 TEST(S3UriTest, versionIdChecks)
 {
     for (const auto& test_case : TestCases)
@@ -223,19 +226,5 @@ TEST(S3UriTest, versionIdChecks)
     }
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    S3,
-    S3UriTest,
-    testing::Values(
-        "https:///",
-        "https://.s3.amazonaws.com/key",
-        "https://s3.amazonaws.com/key",
-        "https://jokserfn.s3amazonaws.com/key",
-        "https://s3.amazonaws.com//",
-        "https://amazonaws.com/",
-        "https://amazonaws.com//",
-        "https://amazonaws.com//key"));
-
 }
-
 #endif

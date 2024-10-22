@@ -118,10 +118,10 @@ AggregateFunctionPtr createAggregateFunctionAnalysisOfVariance(const std::string
 void registerAggregateFunctionAnalysisOfVariance(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .is_order_dependent = false };
-    factory.registerFunction("analysisOfVariance", {createAggregateFunctionAnalysisOfVariance, properties}, AggregateFunctionFactory::CaseInsensitive);
+    factory.registerFunction("analysisOfVariance", {createAggregateFunctionAnalysisOfVariance, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     /// This is widely used term
-    factory.registerAlias("anova", "analysisOfVariance", AggregateFunctionFactory::CaseInsensitive);
+    factory.registerAlias("anova", "analysisOfVariance", AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

@@ -195,8 +195,8 @@ AggregateFunctionPtr createAggregateFunctionMinMax(
 
 void registerAggregateFunctionsMinMax(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("min", createAggregateFunctionMinMax<true>, AggregateFunctionFactory::CaseInsensitive);
-    factory.registerFunction("max", createAggregateFunctionMinMax<false>, AggregateFunctionFactory::CaseInsensitive);
+    factory.registerFunction("min", createAggregateFunctionMinMax<true>, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("max", createAggregateFunctionMinMax<false>, AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

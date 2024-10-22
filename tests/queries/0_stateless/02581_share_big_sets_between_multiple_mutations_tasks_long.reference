@@ -3,7 +3,11 @@ all_1_1_0
 all_2_2_0
 all_3_3_0
 all_4_4_0
+40000
 5000	all_1_1_0_9
 5000	all_2_2_0_9
 5000	all_3_3_0_9
 5000	all_4_4_0_9
+mutation_version	has_parts_for_which_set_was_built	has_parts_that_shared_set
+8	1	1
+9	1	1

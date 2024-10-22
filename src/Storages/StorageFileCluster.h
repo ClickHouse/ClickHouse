@@ -27,14 +27,7 @@ public:
         const ConstraintsDescription & constraints_);
 
     std::string getName() const override { return "FileCluster"; }
-
     RemoteQueryExecutor::Extension getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const override;
-
-    bool supportsSubcolumns() const override { return true; }
-
-    bool supportsDynamicSubcolumns() const override { return true; }
-
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
 private:
     void updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) override;

@@ -25,6 +25,7 @@
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -37,6 +38,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsMilliseconds storage_system_stack_trace_pipe_read_timeout_ms;
+}
 
 namespace ErrorCodes
 {
@@ -163,8 +168,7 @@ bool wait(int timeout_ms)
         {
             if (notification_num == sequence_num.load(std::memory_order_relaxed))
                 return true;
-            else
-                continue;   /// Drain delayed notifications.
+            continue; /// Drain delayed notifications.
         }
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Read wrong number of bytes from pipe");
@@ -276,7 +280,7 @@ public:
     StackTraceSource(
         const Names & column_names,
         Block header_,
-        ActionsDAGPtr && filter_dag_,
+        std::optional<ActionsDAG> filter_dag_,
         ContextPtr context_,
         UInt64 max_block_size_,
         LoggerPtr log_)
@@ -287,7 +291,7 @@ public:
         , predicate(filter_dag ? filter_dag->getOutputs().at(0) : nullptr)
         , max_block_size(max_block_size_)
         , pipe_read_timeout_ms(
-              static_cast<int>(context->getSettingsRef().storage_system_stack_trace_pipe_read_timeout_ms.totalMilliseconds()))
+              static_cast<int>(context->getSettingsRef()[Setting::storage_system_stack_trace_pipe_read_timeout_ms].totalMilliseconds()))
         , log(log_)
         , proc_it("/proc/self/task")
         /// It shouldn't be possible to do concurrent reads from this table.
@@ -422,7 +426,7 @@ protected:
 private:
     ContextPtr context;
     Block header;
-    const ActionsDAGPtr filter_dag;
+    const std::optional<ActionsDAG> filter_dag;
     const ActionsDAG::Node * predicate;
 
     const size_t max_block_size;
@@ -469,7 +473,7 @@ public:
     {
         Pipe pipe(std::make_shared<StackTraceSource>(
             column_names,
-            getOutputStream().header,
+            getOutputHeader(),
             std::move(filter_actions_dag),
             context,
             max_block_size,
@@ -485,7 +489,7 @@ public:
         Block sample_block,
         size_t max_block_size_,
         LoggerPtr log_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
         , column_names(column_names_)
         , max_block_size(max_block_size_)
         , log(log_)

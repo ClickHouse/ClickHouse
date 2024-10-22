@@ -2,6 +2,7 @@
 
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
+#include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
@@ -15,7 +16,12 @@
 using namespace Coordination;
 using namespace DB;
 
-void dumpMachine(std::shared_ptr<KeeperStateMachine> machine)
+namespace DB::CoordinationSetting
+{
+    extern const CoordinationSettingsBool compress_logs;
+}
+
+void dumpMachine(std::shared_ptr<KeeperStateMachine<DB::KeeperMemoryStorage>> machine)
 {
     auto & storage = machine->getStorageUnsafe();
     std::queue<std::string> keys;
@@ -27,13 +33,13 @@ void dumpMachine(std::shared_ptr<KeeperStateMachine> machine)
         keys.pop();
         std::cout << key << "\n";
         auto value = storage.container.getValue(key);
-        std::cout << "\tStat: {version: " << value.version <<
-            ", mtime: " << value.mtime <<
-            ", emphemeralOwner: " << value.ephemeralOwner() <<
-            ", czxid: " << value.czxid <<
-            ", mzxid: " << value.mzxid <<
-            ", numChildren: " << value.numChildren() <<
-            ", dataLength: " << value.data_size <<
+        std::cout << "\tStat: {version: " << value.stats.version <<
+            ", mtime: " << value.stats.mtime <<
+            ", emphemeralOwner: " << value.stats.ephemeralOwner() <<
+            ", czxid: " << value.stats.czxid <<
+            ", mzxid: " << value.stats.mzxid <<
+            ", numChildren: " << value.stats.numChildren() <<
+            ", dataLength: " << value.stats.data_size <<
             "}" << std::endl;
         std::cout << "\tData: " << storage.container.getValue(key).getData() << std::endl;
 
@@ -55,12 +61,11 @@ int main(int argc, char *argv[])
         std::cerr << "usage: " << argv[0] << " snapshotpath logpath" << std::endl;
         return 3;
     }
-    else
-    {
-        Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
-        Poco::Logger::root().setChannel(channel);
-        Poco::Logger::root().setLevel("trace");
-    }
+
+    Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
+    Poco::Logger::root().setChannel(channel);
+    Poco::Logger::root().setLevel("trace");
+
     auto logger = getLogger("keeper-dumper");
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
@@ -69,14 +74,14 @@ int main(int argc, char *argv[])
     keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", argv[2]));
     keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", argv[1]));
 
-    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine<DB::KeeperMemoryStorage>>(queue, snapshots_queue, keeper_context, nullptr);
     state_machine->init();
     size_t last_commited_index = state_machine->last_commit_index();
 
     LOG_INFO(logger, "Last committed index: {}", last_commited_index);
 
     DB::KeeperLogStore changelog(
-        LogFileSettings{.force_sync = true, .compress_logs = settings->compress_logs, .rotate_interval = 10000000},
+        LogFileSettings{.force_sync = true, .compress_logs = (*settings)[DB::CoordinationSetting::compress_logs], .rotate_interval = 10000000},
         FlushSettings(),
         keeper_context);
     changelog.init(last_commited_index, 10000000000UL); /// collect all logs

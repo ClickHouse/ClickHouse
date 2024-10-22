@@ -15,14 +15,14 @@ jobs:
     outputs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
-      - name: DebugInfo
-        uses: hmarr/debug-action@f7318c783045ac39ed9bb497e22ce835fdafbfe6
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
         with:
           clear-repository: true # to ensure correct digests
           fetch-depth: 0 # to get version
           filter: tree:0
+      - name: Debug Info
+        uses: ./.github/actions/debug
       - name: PrepareRunConfig
         id: runconfig
         run: |
@@ -40,7 +40,22 @@ jobs:
             } >> "$GITHUB_OUTPUT"
   BuildDockers:
     needs: [RunConfig]
-    uses: ./.github/workflows/reusable_docker.yml
+    uses: ./.github/workflows/docker_test_images.yml
     with:
       data: "${{ needs.RunConfig.outputs.data }}"
       set_latest: true
+  CheckWorkflow:
+    if: ${{ !cancelled() }}
+    needs: [RunConfig, BuildDockers]
+    runs-on: [self-hosted, style-checker-aarch64]
+    steps:
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+      - name: Check Workflow results
+        if: ${{ !cancelled() }}
+        run: |
+          export WORKFLOW_RESULT_FILE="/tmp/workflow_results.json"
+          cat > "$WORKFLOW_RESULT_FILE" << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          python3 ./tests/ci/ci_buddy.py --check-wf-status

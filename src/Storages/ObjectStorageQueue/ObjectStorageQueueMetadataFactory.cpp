@@ -14,19 +14,23 @@ ObjectStorageQueueMetadataFactory & ObjectStorageQueueMetadataFactory::instance(
     return ret;
 }
 
-ObjectStorageQueueMetadataFactory::FilesMetadataPtr
-ObjectStorageQueueMetadataFactory::getOrCreate(const std::string & zookeeper_path, const ObjectStorageQueueSettings & settings)
+ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFactory::getOrCreate(
+    const std::string & zookeeper_path,
+    ObjectStorageQueueMetadataPtr metadata)
 {
     std::lock_guard lock(mutex);
     auto it = metadata_by_path.find(zookeeper_path);
     if (it == metadata_by_path.end())
     {
-        auto files_metadata = std::make_shared<ObjectStorageQueueMetadata>(zookeeper_path, settings);
-        it = metadata_by_path.emplace(zookeeper_path, std::move(files_metadata)).first;
+        it = metadata_by_path.emplace(zookeeper_path, std::move(metadata)).first;
     }
     else
     {
-        it->second.metadata->checkSettings(settings);
+        auto & metadata_from_table = metadata->getTableMetadata();
+        auto & metadata_from_keeper = it->second.metadata->getTableMetadata();
+
+        metadata_from_table.checkEquals(metadata_from_keeper);
+
         it->second.ref_count += 1;
     }
     return it->second.metadata;

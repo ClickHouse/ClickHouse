@@ -29,6 +29,6 @@ REGISTER_FUNCTION(Locate)
     FunctionDocumentation::Categories doc_categories = {"String search"};
 
 
-    factory.registerFunction<FunctionLocate>({doc_description, doc_syntax, doc_arguments, doc_returned_value, doc_examples, doc_categories}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionLocate>({doc_description, doc_syntax, doc_arguments, doc_returned_value, doc_examples, doc_categories}, FunctionFactory::Case::Insensitive);
 }
 }

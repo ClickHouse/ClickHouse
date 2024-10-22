@@ -332,12 +332,13 @@ SETTINGS optimize_aggregators_of_group_by_keys=0 -- avoid removing any() as it d
 Expression (Projection)
   Sorting (Sorting for ORDER BY)
     Expression (Before ORDER BY)
-      Filter (((WHERE + (Projection + Before ORDER BY)) + HAVING))
-        Aggregating
-          Expression ((Before GROUP BY + Projection))
-            Sorting (Sorting for ORDER BY)
-              Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
-                ReadFromSystemNumbers
+      Filter ((WHERE + (Projection + Before ORDER BY)))
+        Filter (HAVING)
+          Aggregating
+            Expression ((Before GROUP BY + Projection))
+              Sorting (Sorting for ORDER BY)
+                Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
+                  ReadFromSystemNumbers
 -- execute
 1
 2
@@ -394,9 +395,9 @@ Expression ((Projection + Before ORDER BY))
         Union
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
-          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
-          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
 -- execute
 Float64	9007199254740994
@@ -426,9 +427,9 @@ Expression ((Projection + Before ORDER BY))
         Union
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
-          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
-          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
 -- execute
 Nullable(Float64)	9007199254740994
@@ -458,12 +459,43 @@ Expression ((Projection + Before ORDER BY))
         Union
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
-          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
-          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
             ReadFromStorage (SystemOne)
 -- execute
 Float64	9007199254740994
+-- presence of an inner OFFSET retains the ORDER BY
+-- query
+WITH
+  t1 AS (
+    SELECT a, b
+    FROM
+      VALUES (
+        'b UInt32, a Int32',
+        (1, 1),
+        (2, 0)
+      )
+  )
+SELECT
+  SUM(a)
+FROM (
+  SELECT a, b
+  FROM t1
+  ORDER BY 1 DESC, 2
+  OFFSET 1
+) t2
+-- explain
+Expression ((Projection + Before ORDER BY))
+  Aggregating
+    Expression (Before GROUP BY)
+      Offset
+        Expression (Projection)
+          Sorting (Sorting for ORDER BY)
+            Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
+              ReadFromStorage (Values)
+-- execute
+0
 -- disable common optimization to avoid functions to be lifted up (liftUpFunctions optimization), needed for testing with stateful function
 -- neighbor() as stateful function prevents removing inner ORDER BY since its result depends on order
 -- query

@@ -57,14 +57,14 @@ public:
 
     void resetParser() override;
 
-    const BlockMissingValues & getMissingValues() const override;
+    const BlockMissingValues * getMissingValues() const override;
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
 protected:
     Chunk read() override;
 
-    void onCancel() override { is_stopped = 1; }
+    void onCancel() noexcept override { is_stopped = 1; }
 
 private:
     void prepareFileReader();
@@ -111,7 +111,12 @@ public:
     using ORCColumnWithType = std::pair<ORCColumnPtr, ORCTypePtr>;
     using NameToColumnPtr = std::unordered_map<std::string, ORCColumnWithType>;
 
-    ORCColumnToCHColumn(const Block & header_, bool allow_missing_columns_, bool null_as_default_, bool case_insensitive_matching_ = false);
+    ORCColumnToCHColumn(
+        const Block & header_,
+        bool allow_missing_columns_,
+        bool null_as_default_,
+        bool case_insensitive_matching_ = false,
+        bool dictionary_as_low_cardinality_ = false);
 
     void orcTableToCHChunk(
         Chunk & res,
@@ -124,11 +129,19 @@ public:
         Chunk & res, NameToColumnPtr & name_to_column_ptr, size_t num_rows, BlockMissingValues * block_missing_values = nullptr);
 
 private:
+    ColumnWithTypeAndName readColumnFromORCColumn(
+        const orc::ColumnVectorBatch * orc_column,
+        const orc::Type * orc_type,
+        const std::string & column_name,
+        bool inside_nullable,
+        DataTypePtr type_hint = nullptr) const;
+
     const Block & header;
     /// If false, throw exception if some columns in header not exists in arrow table.
     bool allow_missing_columns;
     bool null_as_default;
     bool case_insensitive_matching;
+    bool dictionary_as_low_cardinality;
 };
 }
 #endif

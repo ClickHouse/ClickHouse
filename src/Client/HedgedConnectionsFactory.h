@@ -8,12 +8,13 @@
 #include <Common/Fiber.h>
 #include <Client/ConnectionEstablisher.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#include <Core/Settings.h>
 #include <unordered_map>
 #include <memory>
 
 namespace DB
 {
+
+struct Settings;
 
 /** Class for establishing hedged connections with replicas.
   * The process of establishing connection is divided on stages, on each stage if

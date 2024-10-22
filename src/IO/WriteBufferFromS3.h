@@ -64,7 +64,6 @@ private:
     void reallocateFirstBuffer();
     void detachBuffer();
     void allocateBuffer();
-    void allocateFirstBuffer();
     void setFakeBufferWhenPreFinalized();
 
     S3::UploadPartRequest getUploadRequest(size_t part_number, PartData & data);
@@ -85,7 +84,7 @@ private:
     const std::shared_ptr<const S3::Client> client_ptr;
     const std::optional<std::map<String, String>> object_metadata;
     LoggerPtr log = getLogger("WriteBufferFromS3");
-    LogSeriesLimiterPtr limitedLog = std::make_shared<LogSeriesLimiter>(log, 1, 5);
+    LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 
     BufferAllocationPolicyPtr buffer_allocation_policy;
 

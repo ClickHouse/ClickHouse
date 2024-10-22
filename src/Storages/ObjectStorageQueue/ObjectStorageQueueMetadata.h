@@ -2,21 +2,20 @@
 #include "config.h"
 
 #include <filesystem>
-#include <Core/Types.h>
-#include <Core/SettingsEnums.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Core/Types.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 namespace fs = std::filesystem;
 namespace Poco { class Logger; }
 
 namespace DB
 {
-struct ObjectStorageQueueSettings;
 class StorageObjectStorageQueue;
 struct ObjectStorageQueueTableMetadata;
 struct StorageInMemoryMetadata;
@@ -54,11 +53,23 @@ public:
     using Bucket = size_t;
     using Processor = std::string;
 
-    ObjectStorageQueueMetadata(const fs::path & zookeeper_path_, const ObjectStorageQueueSettings & settings_);
+    ObjectStorageQueueMetadata(
+        const fs::path & zookeeper_path_,
+        const ObjectStorageQueueTableMetadata & table_metadata_,
+        size_t cleanup_interval_min_ms_,
+        size_t cleanup_interval_max_ms_);
+
     ~ObjectStorageQueueMetadata();
 
-    void initialize(const ConfigurationPtr & configuration, const StorageInMemoryMetadata & storage_metadata);
-    void checkSettings(const ObjectStorageQueueSettings & settings) const;
+    static ObjectStorageQueueTableMetadata syncWithKeeper(
+        const fs::path & zookeeper_path,
+        const ObjectStorageQueueSettings & settings,
+        const ColumnsDescription & columns,
+        const std::string & format,
+        const ContextPtr & context,
+        bool is_attach,
+        LoggerPtr log);
+
     void shutdown();
 
     FileMetadataPtr getFileMetadata(const std::string & path, ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {});
@@ -71,16 +82,22 @@ public:
     Bucket getBucketForPath(const std::string & path) const;
     ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket, const Processor & processor);
 
-    static size_t getBucketsNum(const ObjectStorageQueueSettings & settings);
-    static size_t getBucketsNum(const ObjectStorageQueueTableMetadata & settings);
+    static size_t getBucketsNum(const ObjectStorageQueueTableMetadata & metadata);
+
+    void checkTableMetadataEquals(const ObjectStorageQueueMetadata & other);
+
+    const ObjectStorageQueueTableMetadata & getTableMetadata() const { return table_metadata; }
+    ObjectStorageQueueTableMetadata & getTableMetadata() { return table_metadata; }
 
 private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
 
-    const ObjectStorageQueueSettings settings;
+    ObjectStorageQueueTableMetadata table_metadata;
+    const ObjectStorageQueueMode mode;
     const fs::path zookeeper_path;
     const size_t buckets_num;
+    const size_t cleanup_interval_min_ms, cleanup_interval_max_ms;
 
     LoggerPtr log;
 
@@ -90,5 +107,7 @@ private:
     class LocalFileStatuses;
     std::shared_ptr<LocalFileStatuses> local_file_statuses;
 };
+
+using ObjectStorageQueueMetadataPtr = std::unique_ptr<ObjectStorageQueueMetadata>;
 
 }

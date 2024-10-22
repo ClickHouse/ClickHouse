@@ -35,7 +35,7 @@ public:
         const String & blob_path_,
         size_t buf_size_,
         const WriteSettings & write_settings_,
-        std::shared_ptr<const AzureObjectStorageSettings> settings_,
+        std::shared_ptr<const AzureBlobStorage::RequestSettings> settings_,
         ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {});
 
     ~WriteBufferFromAzureBlobStorage() override;
@@ -61,7 +61,7 @@ private:
     void uploadBlock(const char * data, size_t size);
 
     LoggerPtr log;
-    LogSeriesLimiterPtr limitedLog = std::make_shared<LogSeriesLimiter>(log, 1, 5);
+    LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 
     BufferAllocationPolicyPtr buffer_allocation_policy;
 

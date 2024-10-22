@@ -7,8 +7,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ParserDataType.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+
 
 namespace DB
 {
@@ -21,7 +21,7 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
     ParserToken close_p(TokenType::ClosingRoundBracket);
     ParserOrderByExpressionList order_list_p;
 
-    ParserDataType data_type_p;
+    ParserExpressionWithOptionalArguments type_p;
     ParserExpression expression_p;
     ParserUnsignedInteger granularity_p;
 
@@ -68,7 +68,7 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
 
     if (s_type.ignore(pos, expected))
     {
-        if (!data_type_p.parse(pos, type, expected))
+        if (!type_p.parse(pos, type, expected))
             return false;
     }
 
@@ -89,10 +89,8 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
     else
     {
         auto index_type = index->getType();
-        if (index_type && index_type->name == "annoy")
-            index->granularity = ASTIndexDeclaration::DEFAULT_ANNOY_INDEX_GRANULARITY;
-        else if (index_type && index_type->name == "usearch")
-            index->granularity = ASTIndexDeclaration::DEFAULT_USEARCH_INDEX_GRANULARITY;
+        if (index_type && index_type->name == "vector_similarity")
+            index->granularity = ASTIndexDeclaration::DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY;
         else
             index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
     }

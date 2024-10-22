@@ -1,14 +1,20 @@
-#include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
-#include <Processors/Formats/ISchemaReader.h>
-#include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <IO/ReadHelpers.h>
-#include <IO/Operators.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/PeekableReadBuffer.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <IO/Operators.h>
+#include <IO/PeekableReadBuffer.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Formats/Impl/BinaryRowInputFormat.h>
+#include <Processors/Formats/Impl/CSVRowInputFormat.h>
+#include <Processors/Formats/Impl/CustomSeparatedRowInputFormat.h>
+#include <Processors/Formats/Impl/HiveTextRowInputFormat.h>
+#include <Processors/Formats/Impl/JSONCompactRowInputFormat.h>
+#include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
+#include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
 
 
 namespace DB
@@ -44,7 +50,8 @@ namespace
     }
 }
 
-RowInputFormatWithNamesAndTypes::RowInputFormatWithNamesAndTypes(
+template <typename FormatReaderImpl>
+RowInputFormatWithNamesAndTypes<FormatReaderImpl>::RowInputFormatWithNamesAndTypes(
     const Block & header_,
     ReadBuffer & in_,
     const Params & params_,
@@ -52,7 +59,7 @@ RowInputFormatWithNamesAndTypes::RowInputFormatWithNamesAndTypes(
     bool with_names_,
     bool with_types_,
     const FormatSettings & format_settings_,
-    std::unique_ptr<FormatWithNamesAndTypesReader> format_reader_,
+    std::unique_ptr<FormatReaderImpl> format_reader_,
     bool try_detect_header_)
     : RowInputFormatWithDiagnosticInfo(header_, in_, params_)
     , format_settings(format_settings_)
@@ -66,7 +73,8 @@ RowInputFormatWithNamesAndTypes::RowInputFormatWithNamesAndTypes(
     column_indexes_by_names = getPort().getHeader().getNamesToIndexesMap();
 }
 
-void RowInputFormatWithNamesAndTypes::readPrefix()
+template <typename FormatReaderImpl>
+void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readPrefix()
 {
     /// Search and remove BOM only in textual formats (CSV, TSV etc), not in binary ones (RowBinary*).
     /// Also, we assume that column name or type cannot contain BOM, so, if format has header,
@@ -138,7 +146,8 @@ void RowInputFormatWithNamesAndTypes::readPrefix()
     }
 }
 
-void RowInputFormatWithNamesAndTypes::tryDetectHeader(std::vector<String> & column_names_out, std::vector<String> & type_names_out)
+template <typename FormatReaderImpl>
+void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::tryDetectHeader(std::vector<String> & column_names_out, std::vector<String> & type_names_out)
 {
     auto & read_buf = getReadBuffer();
     PeekableReadBuffer * peekable_buf = dynamic_cast<PeekableReadBuffer *>(&read_buf);
@@ -201,7 +210,8 @@ void RowInputFormatWithNamesAndTypes::tryDetectHeader(std::vector<String> & colu
     peekable_buf->dropCheckpoint();
 }
 
-bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadExtension & ext)
+template <typename FormatReaderImpl>
+bool RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
     if (unlikely(end_of_stream))
         return false;
@@ -280,7 +290,8 @@ bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadE
     return true;
 }
 
-size_t RowInputFormatWithNamesAndTypes::countRows(size_t max_block_size)
+template <typename FormatReaderImpl>
+size_t RowInputFormatWithNamesAndTypes<FormatReaderImpl>::countRows(size_t max_block_size)
 {
     if (unlikely(end_of_stream))
         return 0;
@@ -304,7 +315,8 @@ size_t RowInputFormatWithNamesAndTypes::countRows(size_t max_block_size)
     return num_rows;
 }
 
-void RowInputFormatWithNamesAndTypes::resetParser()
+template <typename FormatReaderImpl>
+void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::resetParser()
 {
     RowInputFormatWithDiagnosticInfo::resetParser();
     column_mapping->column_indexes_for_input_fields.clear();
@@ -313,7 +325,8 @@ void RowInputFormatWithNamesAndTypes::resetParser()
     end_of_stream = false;
 }
 
-void RowInputFormatWithNamesAndTypes::tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column)
+template <typename FormatReaderImpl>
+void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column)
 {
     const auto & index = column_mapping->column_indexes_for_input_fields[file_column];
     if (index)
@@ -328,7 +341,8 @@ void RowInputFormatWithNamesAndTypes::tryDeserializeField(const DataTypePtr & ty
     }
 }
 
-bool RowInputFormatWithNamesAndTypes::parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out)
+template <typename FormatReaderImpl>
+bool RowInputFormatWithNamesAndTypes<FormatReaderImpl>::parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out)
 {
     if (in->eof())
     {
@@ -374,12 +388,14 @@ bool RowInputFormatWithNamesAndTypes::parseRowAndPrintDiagnosticInfo(MutableColu
     return format_reader->parseRowEndWithDiagnosticInfo(out);
 }
 
-bool RowInputFormatWithNamesAndTypes::isGarbageAfterField(size_t index, ReadBuffer::Position pos)
+template <typename FormatReaderImpl>
+bool RowInputFormatWithNamesAndTypes<FormatReaderImpl>::isGarbageAfterField(size_t index, ReadBuffer::Position pos)
 {
     return format_reader->isGarbageAfterField(index, pos);
 }
 
-void RowInputFormatWithNamesAndTypes::setReadBuffer(ReadBuffer & in_)
+template <typename FormatReaderImpl>
+void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::setReadBuffer(ReadBuffer & in_)
 {
     format_reader->setReadBuffer(in_);
     IInputFormat::setReadBuffer(in_);
@@ -582,5 +598,12 @@ void FormatWithNamesAndTypesSchemaReader::transformTypesIfNeeded(DB::DataTypePtr
     transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
+template class RowInputFormatWithNamesAndTypes<JSONCompactFormatReader>;
+template class RowInputFormatWithNamesAndTypes<JSONCompactEachRowFormatReader>;
+template class RowInputFormatWithNamesAndTypes<TabSeparatedFormatReader>;
+template class RowInputFormatWithNamesAndTypes<CSVFormatReader>;
+template class RowInputFormatWithNamesAndTypes<CustomSeparatedFormatReader>;
+template class RowInputFormatWithNamesAndTypes<BinaryFormatReader<true>>;
+template class RowInputFormatWithNamesAndTypes<BinaryFormatReader<false>>;
 }
 

@@ -17,7 +17,7 @@ public:
         StorageEmbeddedRocksDB & storage_,
         const StorageMetadataPtr & metadata_snapshot_);
 
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
     String getName() const override { return "EmbeddedRocksDBSink"; }
 
 private:

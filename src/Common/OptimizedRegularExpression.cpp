@@ -244,33 +244,43 @@ const char * analyzeImpl(
                 is_trivial = false;
                 if (!in_square_braces)
                 {
-                    /// Check for case-insensitive flag.
-                    if (pos + 1 < end && pos[1] == '?')
+                    /// it means flag negation
+                    /// there are various possible flags
+                    /// actually only imsU are supported by re2
+                    auto is_flag_char = [](char x)
                     {
-                        for (size_t offset = 2; pos + offset < end; ++offset)
+                        return x == '-' || x == 'i' || x == 'm' || x == 's' || x == 'U' || x == 'u';
+                    };
+                    /// Check for case-insensitive flag.
+                    if (pos + 2 < end && pos[1] == '?' && is_flag_char(pos[2]))
+                    {
+                        size_t offset = 2;
+                        for (; pos + offset < end; ++offset)
                         {
-                            if (pos[offset] == '-'  /// it means flag negation
-                                /// various possible flags, actually only imsU are supported by re2
-                                || (pos[offset] >= 'a' && pos[offset] <= 'z')
-                                || (pos[offset] >= 'A' && pos[offset] <= 'Z'))
+                            if (pos[offset] == 'i')
                             {
-                                if (pos[offset] == 'i')
-                                {
-                                    /// Actually it can be negated case-insensitive flag. But we don't care.
-                                    has_case_insensitive_flag = true;
-                                    break;
-                                }
+                                /// Actually it can be negated case-insensitive flag. But we don't care.
+                                has_case_insensitive_flag = true;
                             }
-                            else
+                            else if (!is_flag_char(pos[offset]))
                                 break;
+                        }
+                        pos += offset;
+                        if (pos == end)
+                            return pos;
+                        /// if this group only contains flags, we have nothing to do.
+                        if (*pos == ')')
+                        {
+                            ++pos;
+                            break;
                         }
                     }
                     /// (?:regex) means non-capturing parentheses group
-                    if (pos + 2 < end && pos[1] == '?' && pos[2] == ':')
+                    else if (pos + 2 < end && pos[1] == '?' && pos[2] == ':')
                     {
                         pos += 2;
                     }
-                    if (pos + 3 < end && pos[1] == '?' && (pos[2] == '<' || pos[2] == '\'' || (pos[2] == 'P' && pos[3] == '<')))
+                    else if (pos + 3 < end && pos[1] == '?' && (pos[2] == '<' || pos[2] == '\'' || (pos[2] == 'P' && pos[3] == '<')))
                     {
                         pos = skipNameCapturingGroup(pos, pos[2] == 'P' ? 3: 2, end);
                     }
@@ -561,27 +571,24 @@ bool OptimizedRegularExpression::match(const char * subject, size_t subject_size
 
         if (is_case_insensitive)
             return haystack_end != case_insensitive_substring_searcher->search(haystack, subject_size);
-        else
-            return haystack_end != case_sensitive_substring_searcher->search(haystack, subject_size);
+        return haystack_end != case_sensitive_substring_searcher->search(haystack, subject_size);
     }
-    else
-    {
-        if (!required_substring.empty())
-        {
-            if (is_case_insensitive)
-            {
-                if (haystack_end == case_insensitive_substring_searcher->search(haystack, subject_size))
-                    return false;
-            }
-            else
-            {
-                if (haystack_end == case_sensitive_substring_searcher->search(haystack, subject_size))
-                    return false;
-            }
-        }
 
-        return re2->Match({subject, subject_size}, 0, subject_size, re2::RE2::UNANCHORED, nullptr, 0);
+    if (!required_substring.empty())
+    {
+        if (is_case_insensitive)
+        {
+            if (haystack_end == case_insensitive_substring_searcher->search(haystack, subject_size))
+                return false;
+        }
+        else
+        {
+            if (haystack_end == case_sensitive_substring_searcher->search(haystack, subject_size))
+                return false;
+        }
     }
+
+    return re2->Match({subject, subject_size}, 0, subject_size, re2::RE2::UNANCHORED, nullptr, 0);
 }
 
 
@@ -603,38 +610,32 @@ bool OptimizedRegularExpression::match(const char * subject, size_t subject_size
 
         if (haystack_end == pos)
             return false;
-        else
-        {
-            match.offset = pos - haystack;
-            match.length = required_substring.size();
-            return true;
-        }
+
+        match.offset = pos - haystack;
+        match.length = required_substring.size();
+        return true;
     }
-    else
+
+    if (!required_substring.empty())
     {
-        if (!required_substring.empty())
-        {
-            const UInt8 * pos;
-            if (is_case_insensitive)
-                pos = case_insensitive_substring_searcher->search(haystack, subject_size);
-            else
-                pos = case_sensitive_substring_searcher->search(haystack, subject_size);
-
-            if (haystack_end == pos)
-                return false;
-        }
-
-        std::string_view piece;
-
-        if (!re2::RE2::PartialMatch({subject, subject_size}, *re2, &piece))
-            return false;
+        const UInt8 * pos;
+        if (is_case_insensitive)
+            pos = case_insensitive_substring_searcher->search(haystack, subject_size);
         else
-        {
-            match.offset = piece.data() - subject;
-            match.length = piece.length();
-            return true;
-        }
+            pos = case_sensitive_substring_searcher->search(haystack, subject_size);
+
+        if (haystack_end == pos)
+            return false;
     }
+
+    std::string_view piece;
+
+    if (!re2::RE2::PartialMatch({subject, subject_size}, *re2, &piece))
+        return false;
+
+    match.offset = piece.data() - subject;
+    match.length = piece.length();
+    return true;
 }
 
 
@@ -666,58 +667,46 @@ unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_
 
         if (haystack_end == pos)
             return 0;
-        else
-        {
-            Match match;
-            match.offset = pos - haystack;
-            match.length = required_substring.size();
-            matches.push_back(match);
-            return 1;
-        }
+
+        Match match;
+        match.offset = pos - haystack;
+        match.length = required_substring.size();
+        matches.push_back(match);
+        return 1;
     }
-    else
+
+    if (!required_substring.empty())
     {
-        if (!required_substring.empty())
-        {
-            const UInt8 * pos;
-            if (is_case_insensitive)
-                pos = case_insensitive_substring_searcher->search(haystack, subject_size);
-            else
-                pos = case_sensitive_substring_searcher->search(haystack, subject_size);
+        const UInt8 * pos;
+        if (is_case_insensitive)
+            pos = case_insensitive_substring_searcher->search(haystack, subject_size);
+        else
+            pos = case_sensitive_substring_searcher->search(haystack, subject_size);
 
-            if (haystack_end == pos)
-                return 0;
-        }
-
-        DB::PODArrayWithStackMemory<std::string_view, 128> pieces(limit);
-
-        if (!re2->Match(
-            {subject, subject_size},
-            0,
-            subject_size,
-            re2::RE2::UNANCHORED,
-            pieces.data(),
-            static_cast<int>(pieces.size())))
-        {
+        if (haystack_end == pos)
             return 0;
+    }
+
+    DB::PODArrayWithStackMemory<std::string_view, 128> pieces(limit);
+
+    if (!re2->Match({subject, subject_size}, 0, subject_size, re2::RE2::UNANCHORED, pieces.data(), static_cast<int>(pieces.size())))
+    {
+        return 0;
+    }
+
+    matches.resize(limit);
+    for (size_t i = 0; i < limit; ++i)
+    {
+        if (pieces[i].empty())
+        {
+            matches[i].offset = std::string::npos;
+            matches[i].length = 0;
         }
         else
         {
-            matches.resize(limit);
-            for (size_t i = 0; i < limit; ++i)
-            {
-                if (pieces[i].empty())
-                {
-                    matches[i].offset = std::string::npos;
-                    matches[i].length = 0;
-                }
-                else
-                {
-                    matches[i].offset = pieces[i].data() - subject;
-                    matches[i].length = pieces[i].length();
-                }
-            }
-            return limit;
+            matches[i].offset = pieces[i].data() - subject;
+            matches[i].length = pieces[i].length();
         }
     }
+    return limit;
 }

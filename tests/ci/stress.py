@@ -47,6 +47,8 @@ def get_options(i: int, upgrade_check: bool) -> str:
 
     if i > 0 and random.random() < 1 / 3:
         client_options.append("use_query_cache=1")
+        client_options.append("query_cache_nondeterministic_function_handling='ignore'")
+        client_options.append("query_cache_system_table_handling='ignore'")
 
     if i % 5 == 1:
         client_options.append("memory_tracker_fault_probability=0.001")
@@ -76,7 +78,7 @@ def get_options(i: int, upgrade_check: bool) -> str:
         client_options.append("ignore_drop_queries_probability=0.5")
 
     if random.random() < 0.2:
-        client_options.append("allow_experimental_parallel_reading_from_replicas=1")
+        client_options.append("enable_parallel_replicas=1")
         client_options.append("max_parallel_replicas=3")
         client_options.append("cluster_for_parallel_replicas='parallel_replicas'")
         client_options.append("parallel_replicas_for_non_replicated_merge_tree=1")
@@ -139,7 +141,8 @@ def call_with_retry(query: str, timeout: int = 30, retry_count: int = 5) -> None
 def make_query_command(query: str) -> str:
     return (
         f'clickhouse client -q "{query}" --max_untracked_memory=1Gi '
-        "--memory_profiler_step=1Gi --max_memory_usage_for_user=0 --max_memory_usage_in_client=1000000000"
+        "--memory_profiler_step=1Gi --max_memory_usage_for_user=0 --max_memory_usage_in_client=1000000000 "
+        "--enable-progress-table-toggle=0"
     )
 
 

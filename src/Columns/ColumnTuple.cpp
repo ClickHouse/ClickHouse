@@ -141,7 +141,7 @@ void ColumnTuple::get(size_t n, Field & res) const
     const size_t tuple_size = columns.size();
 
     res = Tuple();
-    Tuple & res_tuple = res.get<Tuple &>();
+    Tuple & res_tuple = res.safeGet<Tuple &>();
     res_tuple.reserve(tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)
@@ -169,7 +169,7 @@ void ColumnTuple::insertData(const char *, size_t)
 
 void ColumnTuple::insert(const Field & x)
 {
-    const auto & tuple = x.get<const Tuple &>();
+    const auto & tuple = x.safeGet<const Tuple &>();
 
     const size_t tuple_size = columns.size();
     if (tuple.size() != tuple_size)
@@ -185,7 +185,7 @@ bool ColumnTuple::tryInsert(const Field & x)
     if (x.getType() != Field::Types::Which::Tuple)
         return false;
 
-    const auto & tuple = x.get<const Tuple &>();
+    const auto & tuple = x.safeGet<const Tuple &>();
 
     const size_t tuple_size = columns.size();
     if (tuple.size() != tuple_size)
@@ -201,11 +201,16 @@ bool ColumnTuple::tryInsert(const Field & x)
             return false;
         }
     }
+    ++column_length;
 
     return true;
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnTuple::insertFrom(const IColumn & src_, size_t n)
+#else
+void ColumnTuple::doInsertFrom(const IColumn & src_, size_t n)
+#endif
 {
     const ColumnTuple & src = assert_cast<const ColumnTuple &>(src_);
 
@@ -218,7 +223,11 @@ void ColumnTuple::insertFrom(const IColumn & src_, size_t n)
         columns[i]->insertFrom(*src.columns[i], n);
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnTuple::insertManyFrom(const IColumn & src, size_t position, size_t length)
+#else
+void ColumnTuple::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
+#endif
 {
     const ColumnTuple & src_tuple = assert_cast<const ColumnTuple &>(src);
 
@@ -228,6 +237,7 @@ void ColumnTuple::insertManyFrom(const IColumn & src, size_t position, size_t le
 
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insertManyFrom(*src_tuple.columns[i], position, length);
+    column_length += length;
 }
 
 void ColumnTuple::insertDefault()
@@ -300,16 +310,15 @@ void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const
         column->updateHashWithValue(n, hash);
 }
 
-void ColumnTuple::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnTuple::getWeakHash32() const
 {
     auto s = size();
-
-    if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
+    WeakHash32 hash(s);
 
     for (const auto & column : columns)
-        column->updateWeakHash32(hash);
+        hash.update(column->getWeakHash32());
+
+    return hash;
 }
 
 void ColumnTuple::updateHashFast(SipHash & hash) const
@@ -318,7 +327,11 @@ void ColumnTuple::updateHashFast(SipHash & hash) const
         column->updateHashFast(hash);
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnTuple::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
+void ColumnTuple::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     column_length += length;
     const size_t tuple_size = columns.size();
@@ -470,7 +483,11 @@ int ColumnTuple::compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_
     return 0;
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnTuple::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+#else
+int ColumnTuple::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+#endif
 {
     return compareAtImpl(n, m, rhs, nan_direction_hint);
 }
@@ -503,7 +520,7 @@ struct ColumnTuple::Less
                 res = column->compareAt(a, b, *column, nan_direction_hint);
             if (res < 0)
                 return positive;
-            else if (res > 0)
+            if (res > 0)
                 return !positive;
         }
         return false;
@@ -576,6 +593,27 @@ void ColumnTuple::reserve(size_t n)
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
         getColumn(i).reserve(n);
+}
+
+size_t ColumnTuple::capacity() const
+{
+    if (columns.empty())
+        return size();
+
+    return getColumn(0).capacity();
+}
+
+void ColumnTuple::prepareForSquashing(const Columns & source_columns)
+{
+    const size_t tuple_size = columns.size();
+    for (size_t i = 0; i < tuple_size; ++i)
+    {
+        Columns nested_columns;
+        nested_columns.reserve(source_columns.size());
+        for (const auto & source_column : source_columns)
+            nested_columns.push_back(assert_cast<const ColumnTuple &>(*source_column).getColumnPtr(i));
+        getColumn(i).prepareForSquashing(nested_columns);
+    }
 }
 
 void ColumnTuple::shrinkToFit()
@@ -665,8 +703,7 @@ bool ColumnTuple::structureEquals(const IColumn & rhs) const
 
         return true;
     }
-    else
-        return false;
+    return false;
 }
 
 bool ColumnTuple::isCollationSupported() const
@@ -711,7 +748,13 @@ void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_c
 ColumnPtr ColumnTuple::compress() const
 {
     if (columns.empty())
-        return Ptr();
+    {
+        return ColumnCompressed::create(size(), 0,
+            [n = column_length]
+            {
+                return ColumnTuple::create(n);
+            });
+    }
 
     size_t byte_size = 0;
     Columns compressed;
@@ -726,9 +769,11 @@ ColumnPtr ColumnTuple::compress() const
     return ColumnCompressed::create(size(), byte_size,
         [my_compressed = std::move(compressed)]() mutable
         {
-            for (auto & column : my_compressed)
-                column = column->decompress();
-            return ColumnTuple::create(my_compressed);
+            Columns decompressed;
+            decompressed.reserve(my_compressed.size());
+            for (const auto & column : my_compressed)
+                decompressed.push_back(column->decompress());
+            return ColumnTuple::create(decompressed);
         });
 }
 

@@ -15,14 +15,14 @@ jobs:
     outputs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
-      - name: DebugInfo
-        uses: hmarr/debug-action@f7318c783045ac39ed9bb497e22ce835fdafbfe6
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
         with:
           clear-repository: true # to ensure correct digests
           fetch-depth: 0 # to get version
           filter: tree:0
+      - name: Debug Info
+        uses: ./.github/actions/debug
       - name: Merge sync PR
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -33,10 +33,6 @@ jobs:
 #          cd "$GITHUB_WORKSPACE/tests/ci"
 #          echo "Testing the main ci directory"
 #          python3 -m unittest discover -s . -p 'test_*.py'
-#          for dir in *_lambda/; do
-#            echo "Testing $dir"
-#            python3 -m unittest discover -s "$dir" -p 'test_*.py'
-#          done
       - name: PrepareRunConfig
         id: runconfig
         run: |
@@ -58,7 +54,7 @@ jobs:
 #  BuildDockers:
 #    needs: [RunConfig]
 #    if: ${{ !failure() && !cancelled() }}
-#    uses: ./.github/workflows/reusable_docker.yml
+#    uses: ./.github/workflows/docker_test_images.yml
 #    with:
 #      data: ${{ needs.RunConfig.outputs.data }}
   # StyleCheck:
@@ -97,20 +93,20 @@ jobs:
     with:
       stage: Builds_2
       data: ${{ needs.RunConfig.outputs.data }}
-  Tests_2:
+  Tests_2_ww:
     needs: [RunConfig, Builds_2]
+    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_2_ww') }}
+    uses: ./.github/workflows/reusable_test_stage.yml
+    with:
+      stage: Tests_2_ww
+      data: ${{ needs.RunConfig.outputs.data }}
+  Tests_2:
+    # Test_3 should not wait for Test_1/Test_2 and should not be blocked by them on master branch since all jobs need to run there.
+    needs: [RunConfig, Builds_1]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_2') }}
     uses: ./.github/workflows/reusable_test_stage.yml
     with:
       stage: Tests_2
-      data: ${{ needs.RunConfig.outputs.data }}
-  Tests_3:
-    # Test_3 should not wait for Test_1/Test_2 and should not be blocked by them on master branch since all jobs need to run there.
-    needs: [RunConfig, Builds_1]
-    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_3') }}
-    uses: ./.github/workflows/reusable_test_stage.yml
-    with:
-      stage: Tests_3
       data: ${{ needs.RunConfig.outputs.data }}
 
   ################################# Reports #################################
@@ -125,37 +121,9 @@ jobs:
       runner_type: style-checker-aarch64
       data: ${{ needs.RunConfig.outputs.data }}
 
-  MarkReleaseReady:
-    if: ${{ !failure() && !cancelled() }}
-    needs: [RunConfig, Builds_1, Builds_2]
-    runs-on: [self-hosted, style-checker-aarch64]
-    steps:
-      - name: Debug
-        run: |
-          echo need with different filters
-          cat << 'EOF'
-          ${{ toJSON(needs) }}
-          ${{ toJSON(needs.*.result) }}
-          no failures ${{ !contains(needs.*.result, 'failure') }}
-          no skips ${{ !contains(needs.*.result, 'skipped') }}
-          no both ${{ !(contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure')) }}
-          EOF
-      - name: Not ready
-        # fail the job to be able to restart it
-        if: ${{ contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure') }}
-        run: exit 1
-      - name: Check out repository code
-        if: ${{ ! (contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure')) }}
-        uses: ClickHouse/checkout@v1
-      - name: Mark Commit Release Ready
-        if: ${{ ! (contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure')) }}
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 mark_release_ready.py
-
   FinishCheck:
     if: ${{ !cancelled() }}
-    needs: [RunConfig, Builds_1, Builds_2, Builds_Report, Tests_1, Tests_2, Tests_3]
+    needs: [RunConfig, Builds_1, Builds_2, Builds_Report, Tests_1, Tests_2_ww, Tests_2]
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Check out repository code
@@ -164,3 +132,11 @@ jobs:
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 finish_check.py --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+      - name: Check Workflow results
+        if: ${{ !cancelled() }}
+        run: |
+          export WORKFLOW_RESULT_FILE="/tmp/workflow_results.json"
+          cat > "$WORKFLOW_RESULT_FILE" << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          python3 ./tests/ci/ci_buddy.py --check-wf-status

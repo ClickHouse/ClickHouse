@@ -226,15 +226,59 @@ Other IDEs you can use are [Sublime Text](https://www.sublimetext.com/), [Visual
 
 ## Writing Code {#writing-code}
 
-The description of ClickHouse architecture can be found here: https://clickhouse.com/docs/en/development/architecture/
+Below you can find some quick links which may be useful when writing code for ClickHouse:
 
-The Code Style Guide: https://clickhouse.com/docs/en/development/style/
+- [ClickHouse architecture description](https://clickhouse.com/docs/en/development/architecture/). 
+- [The code style guide](https://clickhouse.com/docs/en/development/style/).
+- [Adding third-party libraries](https://clickhouse.com/docs/en/development/contrib/#adding-third-party-libraries)
+- [Writing tests](https://clickhouse.com/docs/en/development/tests/)
+- [List of open issues](https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22)
 
-Adding third-party libraries: https://clickhouse.com/docs/en/development/contrib/#adding-third-party-libraries
+## Writing Documentation {#writing-documentation}
 
-Writing tests: https://clickhouse.com/docs/en/development/tests/
+As part of every pull request which adds a new feature, it is necessary to write documentation for it. If you'd like to preview your documentation changes the instructions for how to build the documentation page locally are available in the README.md file [here](https://github.com/ClickHouse/clickhouse-docs). When adding a new function to ClickHouse you can use the template below as a guide:
 
-List of tasks: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3Ahacktoberfest
+```markdown
+# newFunctionName
+
+A short description of the function goes here. It should describe briefly what it does and a typical usage case.
+
+**Syntax**
+
+\```sql
+newFunctionName(arg1, arg2[, arg3])
+\```
+
+**Arguments**
+
+- `arg1` — Description of the argument. [DataType](../data-types/float.md)
+- `arg2` — Description of the argument. [DataType](../data-types/float.md)
+- `arg3` — Description of optional argument (optional). [DataType](../data-types/float.md)
+
+**Implementation Details**
+
+A description of implementation details if relevant.
+
+**Returned value**
+
+- Returns {insert what the function returns here}. [DataType](../data-types/float.md)
+
+**Example**
+
+Query:
+
+\```sql
+SELECT 'write your example query here';
+\```
+
+Response:
+
+\```response
+┌───────────────────────────────────┐
+│ the result of the query           │
+└───────────────────────────────────┘
+\```
+```
 
 ## Test Data {#test-data}
 

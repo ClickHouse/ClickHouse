@@ -321,7 +321,7 @@ public:
     off_t getPosition() override { throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "getPosition not supported when reading from archive"); }
     String getFileName() const override { return handle.getFileName(); }
 
-    size_t getFileSize() override { return handle.getFileInfo().uncompressed_size; }
+    std::optional<size_t> tryGetFileSize() override { return handle.getFileInfo().uncompressed_size; }
 
     Handle releaseHandle() && { return std::move(handle); }
 

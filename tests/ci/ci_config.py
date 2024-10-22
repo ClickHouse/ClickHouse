@@ -1,10 +1,10 @@
 import random
 import re
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
-from typing import Dict, Optional, List
+from typing import Dict, List, Optional
 
-from ci_utils import normalize_string
-from ci_definitions import *
+from ci_definitions import *  # pylint:disable=unused-wildcard-import
+from ci_utils import Utils
 
 
 class CI:
@@ -13,25 +13,41 @@ class CI:
     each config item in the below dicts should be an instance of JobConfig class or inherited from it
     """
 
+    MAX_TOTAL_FAILURES_PER_JOB_BEFORE_BLOCKING_CI = 2
+
     # reimport types to CI class so that they visible as CI.* and mypy is happy
     # pylint:disable=useless-import-alias,reimported,import-outside-toplevel
+    from ci_definitions import MQ_JOBS as MQ_JOBS
+    from ci_definitions import REQUIRED_CHECKS as REQUIRED_CHECKS
     from ci_definitions import BuildConfig as BuildConfig
+    from ci_definitions import BuildNames as BuildNames
     from ci_definitions import DigestConfig as DigestConfig
     from ci_definitions import JobConfig as JobConfig
-    from ci_definitions import CheckDescription as CheckDescription
-    from ci_definitions import Tags as Tags
     from ci_definitions import JobNames as JobNames
-    from ci_definitions import BuildNames as BuildNames
-    from ci_definitions import StatusNames as StatusNames
-    from ci_definitions import CHECK_DESCRIPTIONS as CHECK_DESCRIPTIONS
-    from ci_definitions import REQUIRED_CHECKS as REQUIRED_CHECKS
-    from ci_definitions import SyncState as SyncState
-    from ci_definitions import MQ_JOBS as MQ_JOBS
-    from ci_definitions import WorkflowStages as WorkflowStages
+    from ci_definitions import Labels as Labels
     from ci_definitions import Runners as Runners
+    from ci_definitions import StatusNames as StatusNames
+    from ci_definitions import SyncState as SyncState
+    from ci_definitions import Tags as Tags
+    from ci_definitions import WorkFlowNames as WorkFlowNames
+    from ci_definitions import WorkflowStages as WorkflowStages
+    from ci_utils import GH as GH
+    from ci_utils import Envs as Envs
+    from ci_utils import Shell as Shell
+    from ci_utils import Utils as Utils
 
     # Jobs that run for doc related updates
     _DOCS_CHECK_JOBS = [JobNames.DOCS_CHECK, JobNames.STYLE_CHECK]
+
+    WORKFLOW_CONFIGS = {
+        WorkFlowNames.JEPSEN: LabelConfig(
+            run_jobs=[
+                BuildNames.BINARY_RELEASE,
+                JobNames.JEPSEN_KEEPER,
+                JobNames.JEPSEN_SERVER,
+            ]
+        )
+    }  # type: Dict[str, LabelConfig]
 
     TAG_CONFIGS = {
         Tags.DO_NOT_TEST_LABEL: LabelConfig(run_jobs=[JobNames.STYLE_CHECK]),
@@ -42,23 +58,13 @@ class CI:
                 JobNames.INTEGRATION_TEST_ARM,
             ]
         ),
-        Tags.CI_SET_REQUIRED: LabelConfig(run_jobs=REQUIRED_CHECKS),
+        Tags.CI_SET_REQUIRED: LabelConfig(
+            run_jobs=REQUIRED_CHECKS
+            + [build for build in BuildNames if build != BuildNames.FUZZERS]
+        ),
         Tags.CI_SET_BUILDS: LabelConfig(
             run_jobs=[JobNames.STYLE_CHECK, JobNames.BUILD_CHECK]
             + [build for build in BuildNames if build != BuildNames.FUZZERS]
-        ),
-        Tags.CI_SET_NON_REQUIRED: LabelConfig(
-            run_jobs=[job for job in JobNames if job not in REQUIRED_CHECKS]
-        ),
-        Tags.CI_SET_OLD_ANALYZER: LabelConfig(
-            run_jobs=[
-                JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
-                BuildNames.PACKAGE_RELEASE,
-                BuildNames.PACKAGE_ASAN,
-                JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
-                JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
-            ]
         ),
         Tags.CI_SET_SYNC: LabelConfig(
             run_jobs=[
@@ -69,7 +75,7 @@ class CI:
                 JobNames.STATEFUL_TEST_ASAN,
             ]
         ),
-    }
+    }  # type: Dict[str, LabelConfig]
 
     JOB_CONFIGS: Dict[str, JobConfig] = {
         BuildNames.PACKAGE_RELEASE: CommonJobConfigs.BUILD.with_properties(
@@ -88,7 +94,17 @@ class CI:
                 package_type="deb",
                 static_binary_name="aarch64",
                 additional_pkgs=True,
-            )
+            ),
+            runner_type=Runners.BUILDER_ARM,
+        ),
+        BuildNames.PACKAGE_AARCH64_ASAN: CommonJobConfigs.BUILD.with_properties(
+            build_config=BuildConfig(
+                name=BuildNames.PACKAGE_AARCH64_ASAN,
+                compiler="clang-18-aarch64",
+                sanitizer="address",
+                package_type="deb",
+            ),
+            runner_type=Runners.BUILDER_ARM,
         ),
         BuildNames.PACKAGE_ASAN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
@@ -156,6 +172,7 @@ class CI:
                 tidy=True,
                 comment="clang-tidy is used for static analysis",
             ),
+            timeout=14400,
         ),
         BuildNames.BINARY_DARWIN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
@@ -253,7 +270,7 @@ class CI:
                 compiler="clang-18",
                 package_type="fuzzers",
             ),
-            run_by_label=Tags.libFuzzer,
+            run_by_labels=[Tags.libFuzzer],
         ),
         JobNames.BUILD_CHECK: CommonJobConfigs.BUILD_REPORT.with_properties(),
         JobNames.INSTALL_TEST_AMD: CommonJobConfigs.INSTALL_TEST.with_properties(
@@ -309,21 +326,22 @@ class CI:
         JobNames.STATEFUL_TEST_PARALLEL_REPL_TSAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN],
             random_bucket="parrepl_with_sanitizer",
+            timeout=3600,
         ),
         JobNames.STATELESS_TEST_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN], num_batches=4
+            required_builds=[BuildNames.PACKAGE_ASAN], num_batches=2
         ),
         JobNames.STATELESS_TEST_TSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_TSAN], num_batches=5
+            required_builds=[BuildNames.PACKAGE_TSAN], num_batches=4
         ),
         JobNames.STATELESS_TEST_MSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_MSAN], num_batches=6
+            required_builds=[BuildNames.PACKAGE_MSAN], num_batches=4
         ),
         JobNames.STATELESS_TEST_UBSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_UBSAN], num_batches=2
         ),
         JobNames.STATELESS_TEST_DEBUG: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=5
+            required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=2
         ),
         JobNames.STATELESS_TEST_RELEASE: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
@@ -336,17 +354,17 @@ class CI:
             runner_type=Runners.FUNC_TESTER_ARM,
         ),
         JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=4
+            required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=2
         ),
         JobNames.STATELESS_TEST_S3_DEBUG: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=6
+            required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=1
         ),
         JobNames.STATELESS_TEST_AZURE_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN], num_batches=4, release_only=True
+            required_builds=[BuildNames.PACKAGE_ASAN], num_batches=3, release_only=True
         ),
         JobNames.STATELESS_TEST_S3_TSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN],
-            num_batches=5,
+            num_batches=3,
         ),
         JobNames.STRESS_TEST_DEBUG: CommonJobConfigs.STRESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_DEBUG],
@@ -391,13 +409,19 @@ class CI:
             required_builds=[BuildNames.PACKAGE_DEBUG], pr_only=True
         ),
         JobNames.INTEGRATION_TEST_ASAN: CommonJobConfigs.INTEGRATION_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN], release_only=True, num_batches=4
+            required_builds=[BuildNames.PACKAGE_ASAN],
+            release_only=True,
+            num_batches=4,
+            timeout=10800,
         ),
         JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER: CommonJobConfigs.INTEGRATION_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN], num_batches=6
+            required_builds=[BuildNames.PACKAGE_ASAN],
+            num_batches=6,
         ),
         JobNames.INTEGRATION_TEST_TSAN: CommonJobConfigs.INTEGRATION_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_TSAN], num_batches=6
+            required_builds=[BuildNames.PACKAGE_TSAN],
+            num_batches=6,
+            timeout=9000,  # the job timed out with default value (7200)
         ),
         JobNames.INTEGRATION_TEST_ARM: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
@@ -410,7 +434,11 @@ class CI:
             release_only=True,
         ),
         JobNames.INTEGRATION_TEST_FLAKY: CommonJobConfigs.INTEGRATION_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN], pr_only=True
+            required_builds=[BuildNames.PACKAGE_ASAN],
+            pr_only=True,
+            # TODO: approach with reference job names does not work because digest may not be calculated if job skipped in wf
+            # reference_job_name=JobNames.INTEGRATION_TEST_TSAN,
+            timeout=4 * 3600,  # to be able to process many updated tests
         ),
         JobNames.COMPATIBILITY_TEST: CommonJobConfigs.COMPATIBILITY_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
@@ -452,17 +480,21 @@ class CI:
             required_builds=[BuildNames.PACKAGE_UBSAN],
         ),
         JobNames.STATELESS_TEST_FLAKY_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN], pr_only=True, timeout=3600
+            required_builds=[BuildNames.PACKAGE_ASAN],
+            pr_only=True,
+            timeout=3 * 3600,
+            # TODO: approach with reference job names does not work because digest may not be calculated if job skipped in wf
+            # reference_job_name=JobNames.STATELESS_TEST_RELEASE,
         ),
         JobNames.JEPSEN_KEEPER: JobConfig(
             required_builds=[BuildNames.BINARY_RELEASE],
-            run_by_label="jepsen-test",
+            run_by_labels=[Labels.JEPSEN_TEST],
             run_command="jepsen_check.py keeper",
             runner_type=Runners.STYLE_CHECKER_ARM,
         ),
         JobNames.JEPSEN_SERVER: JobConfig(
             required_builds=[BuildNames.BINARY_RELEASE],
-            run_by_label="jepsen-test",
+            run_by_labels=[Labels.JEPSEN_TEST],
             run_command="jepsen_check.py server",
             runner_type=Runners.STYLE_CHECKER_ARM,
         ),
@@ -472,7 +504,7 @@ class CI:
         JobNames.PERFORMANCE_TEST_ARM64: CommonJobConfigs.PERF_TESTS.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
             num_batches=4,
-            run_by_label="pr-performance",
+            run_by_labels=[Labels.PR_PERFORMANCE],
             runner_type=Runners.FUNC_TESTER_ARM,
         ),
         JobNames.SQLANCER: CommonJobConfigs.SQLLANCER_TEST.with_properties(
@@ -481,9 +513,10 @@ class CI:
         JobNames.SQLANCER_DEBUG: CommonJobConfigs.SQLLANCER_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_DEBUG],
         ),
-        JobNames.SQL_LOGIC_TEST: CommonJobConfigs.SQLLOGIC_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_RELEASE],
-        ),
+        # TODO: job does not work at all, uncomment and fix
+        # JobNames.SQL_LOGIC_TEST: CommonJobConfigs.SQLLOGIC_TEST.with_properties(
+        #     required_builds=[BuildNames.PACKAGE_RELEASE],
+        # ),
         JobNames.SQLTEST: CommonJobConfigs.SQL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
         ),
@@ -496,16 +529,16 @@ class CI:
         ),
         JobNames.LIBFUZZER_TEST: JobConfig(
             required_builds=[BuildNames.FUZZERS],
-            run_by_label=Tags.libFuzzer,
+            run_by_labels=[Tags.libFuzzer],
             timeout=10800,
             run_command='libfuzzer_test_check.py "$CHECK_NAME"',
             runner_type=Runners.STYLE_CHECKER,
         ),
         JobNames.DOCKER_SERVER: CommonJobConfigs.DOCKER_SERVER.with_properties(
-            required_builds=[BuildNames.PACKAGE_RELEASE]
+            required_builds=[BuildNames.PACKAGE_RELEASE, BuildNames.PACKAGE_AARCH64]
         ),
         JobNames.DOCKER_KEEPER: CommonJobConfigs.DOCKER_SERVER.with_properties(
-            required_builds=[BuildNames.PACKAGE_RELEASE]
+            required_builds=[BuildNames.PACKAGE_RELEASE, BuildNames.PACKAGE_AARCH64]
         ),
         JobNames.DOCS_CHECK: JobConfig(
             digest=DigestConfig(
@@ -518,7 +551,10 @@ class CI:
         JobNames.FAST_TEST: JobConfig(
             pr_only=True,
             digest=DigestConfig(
-                include_paths=["./tests/queries/0_stateless/"],
+                include_paths=[
+                    "./tests/queries/0_stateless/",
+                    "./tests/docker_scripts/",
+                ],
                 exclude_files=[".md"],
                 docker=["clickhouse/fasttest"],
             ),
@@ -530,9 +566,9 @@ class CI:
             runner_type=Runners.STYLE_CHECKER_ARM,
         ),
         JobNames.BUGFIX_VALIDATE: JobConfig(
-            run_by_label="pr-bugfix",
+            run_by_labels=[Labels.PR_BUGFIX, Labels.PR_CRITICAL_BUGFIX],
             run_command="bugfix_validate_check.py",
-            timeout=900,
+            timeout=2400,
             runner_type=Runners.STYLE_CHECKER,
         ),
     }
@@ -540,7 +576,7 @@ class CI:
     @classmethod
     def get_tag_config(cls, label_name: str) -> Optional[LabelConfig]:
         for label, config in cls.TAG_CONFIGS.items():
-            if normalize_string(label_name) == normalize_string(label):
+            if Utils.normalize_string(label_name) == Utils.normalize_string(label):
                 return config
         return None
 
@@ -570,10 +606,10 @@ class CI:
                 if job_name in REQUIRED_CHECKS:
                     stage_type = WorkflowStages.TESTS_1
                 else:
-                    stage_type = WorkflowStages.TESTS_3
+                    stage_type = WorkflowStages.TESTS_2
         assert stage_type, f"BUG [{job_name}]"
-        if non_blocking_ci and stage_type == WorkflowStages.TESTS_3:
-            stage_type = WorkflowStages.TESTS_2
+        if non_blocking_ci and stage_type == WorkflowStages.TESTS_2:
+            stage_type = WorkflowStages.TESTS_2_WW
         return stage_type
 
     @classmethod
@@ -593,16 +629,25 @@ class CI:
 
     @classmethod
     def get_workflow_jobs_with_configs(
-        cls, is_mq: bool, is_docs_only: bool, is_master: bool, is_pr: bool
+        cls,
+        is_mq: bool,
+        is_docs_only: bool,
+        is_master: bool,
+        is_pr: bool,
+        workflow_name: str,
     ) -> Dict[str, JobConfig]:
         """
         get a list of all jobs for a workflow with configs
         """
-        jobs = []
         if is_mq:
             jobs = MQ_JOBS
         elif is_docs_only:
             jobs = cls._DOCS_CHECK_JOBS
+        elif workflow_name:
+            assert (
+                workflow_name in cls.WORKFLOW_CONFIGS
+            ), "Workflow name if provided must be configured in WORKFLOW_CONFIGS"
+            jobs = list(cls.WORKFLOW_CONFIGS[workflow_name].run_jobs)
         else:
             # add all jobs
             jobs = list(cls.JOB_CONFIGS)
@@ -637,7 +682,7 @@ class CI:
 
     @classmethod
     def is_test_job(cls, job: str) -> bool:
-        return not cls.is_build_job(job) and job != cls.JobNames.STYLE_CHECK
+        return not cls.is_build_job(job)
 
     @classmethod
     def is_docs_job(cls, job: str) -> bool:
@@ -659,6 +704,34 @@ class CI:
         res = cls.JOB_CONFIGS[build_name].build_config
         assert res, f"not a build [{build_name}] or invalid JobConfig"
         return res
+
+    @classmethod
+    def is_workflow_ok(cls) -> bool:
+        # TODO: temporary method to make Mergeable check working
+        res = cls.GH.get_workflow_results()
+        if not res:
+            print("ERROR: no workflow results found")
+            return False
+        for workflow_job, workflow_data in res.items():
+            status = workflow_data["result"]
+            if status in (
+                cls.GH.ActionStatuses.SUCCESS,
+                cls.GH.ActionStatuses.SKIPPED,
+            ):
+                print(f"Workflow status for [{workflow_job}] is [{status}] - continue")
+            elif status in (cls.GH.ActionStatuses.FAILURE,):
+                if workflow_job in (
+                    WorkflowStages.TESTS_2,
+                    WorkflowStages.TESTS_2_WW,
+                ):
+                    print(
+                        f"Failed Workflow status for [{workflow_job}], it's not required - continue"
+                    )
+                    continue
+
+                print(f"Failed Workflow status for [{workflow_job}]")
+                return False
+        return True
 
 
 if __name__ == "__main__":

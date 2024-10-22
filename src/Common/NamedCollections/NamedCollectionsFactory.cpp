@@ -1,7 +1,9 @@
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
-#include <Common/NamedCollections/NamedCollectionConfiguration.h>
-#include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
+#include <Core/Settings.h>
 #include <base/sleep.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/NamedCollections/NamedCollectionConfiguration.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
 
 namespace DB
 {
@@ -91,7 +93,7 @@ MutableNamedCollectionPtr NamedCollectionFactory::getMutable(
             "There is no named collection `{}`",
             collection_name);
     }
-    else if (!collection->isMutable())
+    if (!collection->isMutable())
     {
         throw Exception(
             ErrorCodes::NAMED_COLLECTION_IS_IMMUTABLE,
@@ -235,7 +237,7 @@ bool NamedCollectionFactory::loadIfNot(std::lock_guard<std::mutex> & lock)
     loadFromConfig(context->getConfigRef(), lock);
     loadFromSQL(lock);
 
-    if (metadata_storage->supportsPeriodicUpdate())
+    if (metadata_storage->isReplicated())
     {
         update_task = context->getSchedulePool().createTask("NamedCollectionsMetadataStorage", [this]{ updateFunc(); });
         update_task->activate();
@@ -355,6 +357,13 @@ void NamedCollectionFactory::reloadFromSQL()
     auto collections = metadata_storage->getAll();
     removeById(NamedCollection::SourceId::SQL, lock);
     add(std::move(collections), lock);
+}
+
+bool NamedCollectionFactory::usesReplicatedStorage()
+{
+    std::lock_guard lock(mutex);
+    loadIfNot(lock);
+    return metadata_storage->isReplicated();
 }
 
 void NamedCollectionFactory::updateFunc()

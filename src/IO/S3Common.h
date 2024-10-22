@@ -8,7 +8,7 @@
 #include <Common/Exception.h>
 #include <Common/Throttler_fwd.h>
 #include <Common/Throttler.h>
-#include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 #include <Core/BaseSettings.h>
 #include <Interpreters/Context.h>
 #include <unordered_set>
@@ -29,6 +29,8 @@ namespace ErrorCodes
 {
     extern const int S3_ERROR;
 }
+
+struct Settings;
 
 class S3Exception : public Exception
 {

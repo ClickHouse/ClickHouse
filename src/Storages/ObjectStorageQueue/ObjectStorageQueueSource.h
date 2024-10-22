@@ -21,7 +21,6 @@ class ObjectStorageQueueSource : public ISource, WithContext
 public:
     using Storage = StorageObjectStorage;
     using Source = StorageObjectStorageSource;
-    using RemoveFileFunc = std::function<void(std::string)>;
     using BucketHolderPtr = ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr;
     using BucketHolder = ObjectStorageQueueOrderedFileMetadata::BucketHolder;
 
@@ -94,25 +93,31 @@ public:
         bool hasKeysForProcessor(const Processor & processor) const;
     };
 
+    struct CommitSettings
+    {
+        size_t max_processed_files_before_commit;
+        size_t max_processed_rows_before_commit;
+        size_t max_processed_bytes_before_commit;
+        size_t max_processing_time_sec_before_commit;
+    };
+
     ObjectStorageQueueSource(
         String name_,
         size_t processor_id_,
-        const Block & header_,
-        std::unique_ptr<StorageObjectStorageSource> internal_source_,
+        std::shared_ptr<FileIterator> file_iterator_,
+        ConfigurationPtr configuration_,
+        ObjectStoragePtr object_storage_,
+        const ReadFromFormatInfo & read_from_format_info_,
+        const std::optional<FormatSettings> & format_settings_,
+        const CommitSettings & commit_settings_,
         std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
-        const ObjectStorageQueueAction & action_,
-        RemoveFileFunc remove_file_func_,
-        const NamesAndTypesList & requested_virtual_columns_,
         ContextPtr context_,
+        size_t max_block_size_,
         const std::atomic<bool> & shutdown_called_,
         const std::atomic<bool> & table_is_being_dropped_,
         std::shared_ptr<ObjectStorageQueueLog> system_queue_log_,
         const StorageID & storage_id_,
         LoggerPtr log_,
-        size_t max_processed_files_before_commit_,
-        size_t max_processed_rows_before_commit_,
-        size_t max_processed_bytes_before_commit_,
-        size_t max_processing_time_sec_before_commit_,
         bool commit_once_processed_);
 
     static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
@@ -128,29 +133,27 @@ public:
 private:
     const String name;
     const size_t processor_id;
-    const ObjectStorageQueueAction action;
+    const std::shared_ptr<FileIterator> file_iterator;
+    const ConfigurationPtr configuration;
+    const ObjectStoragePtr object_storage;
+    ReadFromFormatInfo read_from_format_info;
+    const std::optional<FormatSettings> format_settings;
+    const CommitSettings commit_settings;
     const std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
-    const std::shared_ptr<StorageObjectStorageSource> internal_source;
-    const NamesAndTypesList requested_virtual_columns;
+    const size_t max_block_size;
+
     const std::atomic<bool> & shutdown_called;
     const std::atomic<bool> & table_is_being_dropped;
     const std::shared_ptr<ObjectStorageQueueLog> system_queue_log;
     const StorageID storage_id;
-    const size_t max_processed_files_before_commit;
-    const size_t max_processed_rows_before_commit;
-    const size_t max_processed_bytes_before_commit;
-    const size_t max_processing_time_sec_before_commit;
     const bool commit_once_processed;
 
-    RemoveFileFunc remove_file_func;
     LoggerPtr log;
 
     std::vector<ObjectStorageQueueMetadata::FileMetadataPtr> processed_files;
     std::vector<ObjectStorageQueueMetadata::FileMetadataPtr> failed_during_read_files;
 
     Source::ReaderHolder reader;
-    std::future<Source::ReaderHolder> reader_future;
-    std::atomic<bool> initialized{false};
 
     size_t processed_rows_from_file = 0;
     size_t total_processed_rows = 0;
@@ -165,8 +168,6 @@ private:
         ObjectStorageQueueMetadata::FileStatus & file_status_,
         size_t processed_rows,
         bool processed);
-
-    void lazyInitialize(size_t processor);
 };
 
 }

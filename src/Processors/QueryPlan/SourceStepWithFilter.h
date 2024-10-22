@@ -19,12 +19,12 @@ public:
     using Base::Base;
 
     SourceStepWithFilter(
-        DataStream output_stream_,
+        Header output_header_,
         const Names & column_names_,
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_)
-        : ISourceStep(std::move(output_stream_))
+        : ISourceStep(std::move(output_header_))
         , required_source_columns(column_names_)
         , query_info(query_info_)
         , prewhere_info(query_info.prewhere_info)
@@ -33,7 +33,8 @@ public:
     {
     }
 
-    const ActionsDAGPtr & getFilterActionsDAG() const { return filter_actions_dag; }
+    const std::optional<ActionsDAG> & getFilterActionsDAG() const { return filter_actions_dag; }
+    std::optional<ActionsDAG> detachFilterActionsDAG() { return std::move(filter_actions_dag); }
 
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
     const PrewhereInfoPtr & getPrewhereInfo() const { return prewhere_info; }
@@ -44,9 +45,9 @@ public:
 
     const Names & requiredSourceColumns() const { return required_source_columns; }
 
-    void addFilter(ActionsDAGPtr filter_dag, std::string column_name)
+    void addFilter(ActionsDAG filter_dag, std::string column_name)
     {
-        filter_nodes.nodes.push_back(&filter_dag->findInOutputs(column_name));
+        filter_nodes.nodes.push_back(&filter_dag.findInOutputs(column_name));
         filter_dags.push_back(std::move(filter_dag));
     }
 
@@ -59,7 +60,7 @@ public:
     void applyFilters()
     {
         applyFilters(std::move(filter_nodes));
-        filter_dags = {};
+        filter_dags.clear();
     }
 
     virtual void applyFilters(ActionDAGNodes added_filter_nodes);
@@ -80,12 +81,12 @@ protected:
     ContextPtr context;
     std::optional<size_t> limit;
 
-    ActionsDAGPtr filter_actions_dag;
+    std::optional<ActionsDAG> filter_actions_dag;
 
 private:
     /// Will be cleared after applyFilters() is called.
     ActionDAGNodes filter_nodes;
-    std::vector<ActionsDAGPtr> filter_dags;
+    std::vector<ActionsDAG> filter_dags;
 };
 
 }

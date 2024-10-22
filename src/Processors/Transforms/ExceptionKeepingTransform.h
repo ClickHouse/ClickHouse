@@ -52,7 +52,7 @@ protected:
     virtual void onConsume(Chunk chunk) = 0;
     virtual GenerateResult onGenerate() = 0;
     virtual void onFinish() {}
-    virtual void onException(std::exception_ptr /* exception */) {}
+    virtual void onException(std::exception_ptr /* exception */) { }
 
 public:
     ExceptionKeepingTransform(const Block & in_header, const Block & out_header, bool ignore_on_start_and_finish_ = true);

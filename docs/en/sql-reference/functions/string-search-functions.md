@@ -150,15 +150,15 @@ A case insensitive invariant of [position](#position).
 Query:
 
 ``` sql
-SELECT position('Hello, world!', 'hello');
+SELECT positionCaseInsensitive('Hello, world!', 'hello');
 ```
 
 Result:
 
 ``` text
-┌─position('Hello, world!', 'hello')─┐
-│                                  0 │
-└────────────────────────────────────┘
+┌─positionCaseInsensitive('Hello, world!', 'hello')─┐
+│                                                 1 │
+└───────────────────────────────────────────────────┘
 ```
 
 ## positionUTF8
@@ -755,7 +755,7 @@ Result:
 
 ## match {#match}
 
-Returns whether string `haystack` matches the regular expression `pattern` in [re2 regular syntax](https://github.com/google/re2/wiki/Syntax).
+Returns whether string `haystack` matches the regular expression `pattern` in [re2 regular expression syntax](https://github.com/google/re2/wiki/Syntax).
 
 Matching is based on UTF-8, e.g. `.` matches the Unicode code point `¥` which is represented in UTF-8 using two bytes. The regular
 expression must not contain null bytes. If the haystack or the pattern are not valid UTF-8, then the behavior is undefined.
@@ -852,9 +852,10 @@ multiFuzzyMatchAllIndices(haystack, distance, \[pattern<sub>1</sub>, pattern<sub
 
 ## extract
 
-Extracts a fragment of a string using a regular expression. If `haystack` does not match the `pattern` regex, an empty string is returned.
+Returns the first match of a regular expression in a string.
+If `haystack` does not match the `pattern` regex, an empty string is returned. 
 
-For regex without subpatterns, the function uses the fragment that matches the entire regex. Otherwise, it uses the fragment that matches the first subpattern.
+If the regular expression has capturing groups, the function matches the input string against the first capturing group.
 
 **Syntax**
 
@@ -862,18 +863,66 @@ For regex without subpatterns, the function uses the fragment that matches the e
 extract(haystack, pattern)
 ```
 
+*Arguments**
+
+- `haystack` — Input string. [String](../data-types/string.md).
+- `pattern` — Regular expression with [re2 regular expression syntax](https://github.com/google/re2/wiki/Syntax).
+
+**Returned value**
+
+- The first match of the regular expression in the haystack string. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT extract('number: 1, number: 2, number: 3', '\\d+') AS result;
+```
+
+Result:
+
+```response
+┌─result─┐
+│ 1      │
+└────────┘
+```
+
 ## extractAll
 
-Extracts all fragments of a string using a regular expression. If `haystack` does not match the `pattern` regex, an empty string is returned.
+Returns an array of all matches of a regular expression in a string. If `haystack` does not match the `pattern` regex, an empty string is returned.
 
-Returns an array of strings consisting of all matches of the regex.
-
-The behavior with respect to subpatterns is the same as in function `extract`.
+The behavior with respect to sub-patterns is the same as in function [`extract`](#extract).
 
 **Syntax**
 
 ```sql
 extractAll(haystack, pattern)
+```
+
+*Arguments**
+
+- `haystack` — Input string. [String](../data-types/string.md).
+- `pattern` — Regular expression with [re2 regular expression syntax](https://github.com/google/re2/wiki/Syntax).
+
+**Returned value**
+
+- Array of matches of the regular expression in the haystack string. [Array](../data-types/array.md)([String](../data-types/string.md)).
+
+**Example**
+
+Query:
+
+```sql
+SELECT extractAll('number: 1, number: 2, number: 3', '\\d+') AS result;
+```
+
+Result:
+
+```response
+┌─result────────┐
+│ ['1','2','3'] │
+└───────────────┘
 ```
 
 ## extractAllGroupsHorizontal
@@ -891,7 +940,7 @@ extractAllGroupsHorizontal(haystack, pattern)
 **Arguments**
 
 - `haystack` — Input string. [String](../data-types/string.md).
-- `pattern` — Regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. [String](../data-types/string.md).
+- `pattern` — Regular expression with [re2 regular expression syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -915,6 +964,39 @@ Result:
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## extractGroups
+
+Match all groups of given input string with a given regular expression, returns an array of arrays of matches.
+
+**Syntax**
+
+``` sql
+extractGroups(haystack, pattern)
+```
+
+**Arguments**
+
+- `haystack` — Input string. [String](../data-types/string.md).
+- `pattern` — Regular expression with [re2 regular expression syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. [String](../data-types/string.md).
+
+**Returned value**
+
+- Array of arrays of matches. [Array](../data-types/array.md).
+
+**Example**
+
+``` sql
+SELECT extractGroups('hello abc=111 world', '("[^"]+"|\\w+)=("[^"]+"|\\w+)') AS result;
+```
+
+Result:
+
+``` text
+┌─result────────┐
+│ ['abc','111'] │
+└───────────────┘
+```
+
 ## extractAllGroupsVertical
 
 Matches all groups of the `haystack` string using the `pattern` regular expression. Returns an array of arrays, where each array includes matching fragments from every group. Fragments are grouped in order of appearance in the `haystack`.
@@ -928,7 +1010,7 @@ extractAllGroupsVertical(haystack, pattern)
 **Arguments**
 
 - `haystack` — Input string. [String](../data-types/string.md).
-- `pattern` — Regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. [String](../data-types/string.md).
+- `pattern` — Regular expression with [re2 regular expression syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -1484,7 +1566,7 @@ countMatches(haystack, pattern)
 **Arguments**
 
 - `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
-- `pattern` — The regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). [String](../data-types/string.md).
+- `pattern` — The regular expression with [re2 regular expression syntax](https://github.com/google/re2/wiki/Syntax). [String](../data-types/string.md).
 
 **Returned value**
 
@@ -1529,7 +1611,7 @@ countMatchesCaseInsensitive(haystack, pattern)
 **Arguments**
 
 - `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
-- `pattern` — The regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). [String](../data-types/string.md).
+- `pattern` — The regular expression with [re2 regular expression syntax](https://github.com/google/re2/wiki/Syntax). [String](../data-types/string.md).
 
 **Returned value**
 

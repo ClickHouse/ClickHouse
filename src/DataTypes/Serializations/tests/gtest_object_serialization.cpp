@@ -1,80 +1,98 @@
-#include <DataTypes/Serializations/SerializationString.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
-#include <DataTypes/DataTypeObject.h>
-#include <DataTypes/Serializations/SerializationObject.h>
 #include <Columns/ColumnObject.h>
-#include <Columns/ColumnString.h>
-#include <Common/FieldVisitorToString.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/Serializations/SerializationObject.h>
+#include <IO/ReadBufferFromString.h>
 
 #include <gtest/gtest.h>
 
-#if USE_SIMDJSON
-
 using namespace DB;
 
-TEST(SerializationObject, FromString)
+TEST(ObjectSerialization, FieldBinarySerialization)
 {
-    WriteBufferFromOwnString out;
-
-    auto column_string = ColumnString::create();
-    column_string->insert(R"({"k1" : 1, "k2" : [{"k3" : "aa", "k4" : 2}, {"k3": "bb", "k4": 3}]})");
-    column_string->insert(R"({"k1" : 2, "k2" : [{"k3" : "cc", "k5" : 4}, {"k4": 5}, {"k4": 6}]})");
-
-    {
-        auto serialization = std::make_shared<SerializationString>();
-
-        ISerialization::SerializeBinaryBulkSettings settings;
-        ISerialization::SerializeBinaryBulkStatePtr state;
-        settings.position_independent_encoding = false;
-        settings.getter = [&out](const auto &) { return &out; };
-
-        writeIntBinary(static_cast<UInt8>(1), out);
-        serialization->serializeBinaryBulkStatePrefix(*column_string, settings, state);
-        serialization->serializeBinaryBulkWithMultipleStreams(*column_string, 0, column_string->size(), settings, state);
-        serialization->serializeBinaryBulkStateSuffix(settings, state);
-    }
-
-    auto type_object = std::make_shared<DataTypeObject>("json", false);
-    ColumnPtr result_column = type_object->createColumn();
-
-    ReadBufferFromOwnString in(out.str());
-
-    {
-        auto serialization = type_object->getDefaultSerialization();
-
-        ISerialization::DeserializeBinaryBulkSettings settings;
-        ISerialization::DeserializeBinaryBulkStatePtr state;
-        settings.position_independent_encoding = false;
-        settings.getter = [&in](const auto &) { return &in; };
-
-        serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-        serialization->deserializeBinaryBulkWithMultipleStreams(result_column, column_string->size(), settings, state, nullptr);
-    }
-
-    auto & column_object = assert_cast<ColumnObject &>(*result_column->assumeMutable());
-    column_object.finalize();
-
-    ASSERT_TRUE(column_object.size() == 2);
-    ASSERT_TRUE(column_object.getSubcolumns().size() == 4);
-
-    auto check_subcolumn = [&](const auto & name, const auto & type_name, const std::vector<Field> & expected)
-    {
-        const auto & subcolumn = column_object.getSubcolumn(PathInData{name});
-        ASSERT_EQ(subcolumn.getLeastCommonType()->getName(), type_name);
-
-        const auto & data = subcolumn.getFinalizedColumn();
-        for (size_t i = 0; i < expected.size(); ++i)
-            ASSERT_EQ(
-                applyVisitor(FieldVisitorToString(), data[i]),
-                applyVisitor(FieldVisitorToString(), expected[i]));
-    };
-
-    check_subcolumn("k1", "Int8", {1, 2});
-    check_subcolumn("k2.k3", "Array(String)", {Array{"aa", "bb"}, Array{"cc", "", ""}});
-    check_subcolumn("k2.k4", "Array(Int8)", {Array{2, 3}, Array{0, 5, 6}});
-    check_subcolumn("k2.k5", "Array(Int8)", {Array{0, 0}, Array{4, 0, 0}});
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=2, a.b UInt32, a.c Array(String))");
+    auto serialization = type->getDefaultSerialization();
+    Object object1 = Object{{"a.c", Array{"Str1", "Str2"}}, {"a.d", Field(42)}, {"a.e", Tuple{Field(43), "Str3"}}};
+    WriteBufferFromOwnString ostr;
+    serialization->serializeBinary(object1, ostr, FormatSettings());
+    ReadBufferFromString istr(ostr.str());
+    Field object2;
+    serialization->deserializeBinary(object2, istr, FormatSettings());
+    ASSERT_EQ(object1, object2.safeGet<Object>());
 }
 
-#endif
+
+TEST(ObjectSerialization, ColumnBinarySerialization)
+{
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=2, a.b UInt32, a.c Array(String))");
+    auto serialization = type->getDefaultSerialization();
+    auto col = type->createColumn();
+    auto & col_object = assert_cast<ColumnObject &>(*col);
+    col_object.insert(Object{{"a.c", Array{"Str1", "Str2"}}, {"a.d", Field(42)}, {"a.e", Tuple{Field(43), "Str3"}}});
+    WriteBufferFromOwnString ostr1;
+    serialization->serializeBinary(col_object, 0, ostr1, FormatSettings());
+    ReadBufferFromString istr1(ostr1.str());
+    serialization->deserializeBinary(col_object, istr1, FormatSettings());
+    ASSERT_EQ(col_object[0], col_object[1]);
+    col_object.insert(Object{{"a.c", Array{"Str1", "Str2"}}, {"a.e", Field(42)}, {"b.d", Field(42)}, {"b.e", Tuple{Field(43), "Str3"}}, {"b.g", Field("Str4")}});
+    WriteBufferFromOwnString ostr2;
+    serialization->serializeBinary(col_object, 2, ostr2, FormatSettings());
+    ReadBufferFromString istr2(ostr2.str());
+    serialization->deserializeBinary(col_object, istr2, FormatSettings());
+    ASSERT_EQ(col_object[2], col_object[3]);
+}
+
+TEST(ObjectSerialization, JSONSerialization)
+{
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=2, a.b UInt32, a.c Array(String))");
+    auto serialization = type->getDefaultSerialization();
+    auto col = type->createColumn();
+    auto & col_object = assert_cast<ColumnObject &>(*col);
+    col_object.insert(Object{{"a.c", Array{"Str1", "Str2"}}, {"a.d", Field(42)}, {"a.e", Tuple{Field(43), "Str3"}}});
+    col_object.insert(Object{{"a.c", Array{"Str1", "Str2"}}, {"a", Tuple{Field(43), "Str3"}}, {"a.b.c", Field(42)}, {"a.b.e", Field(43)}, {"b.c.d.e", Field(42)}, {"b.c.d.g", Field(43)}, {"b.c.h.r", Field(44)}, {"c.g.h.t", Array{Field("Str"), Field("Str2")}}, {"h", Field("Str")}, {"j", Field("Str")}});
+    WriteBufferFromOwnString buf1;
+    serialization->serializeTextJSON(col_object, 1, buf1, FormatSettings());
+    ASSERT_EQ(buf1.str(), R"({"a":[43,"Str3"],"a":{"b":0,"b":{"c":42,"e":43},"c":["Str1","Str2"]},"b":{"c":{"d":{"e":42,"g":43},"h":{"r":44}}},"c":{"g":{"h":{"t":["Str","Str2"]}}},"h":"Str","j":"Str"})");
+    WriteBufferFromOwnString buf2;
+    serialization->serializeTextJSONPretty(col_object, 1, buf2, FormatSettings(), 0);
+    ASSERT_EQ(buf2.str(), R"({
+    "a" : [
+        43,
+        "Str3"
+    ],
+    "a" : {
+        "b" : 0,
+        "b" : {
+            "c" : 42,
+            "e" : 43
+        },
+        "c" : [
+            "Str1",
+            "Str2"
+        ]
+    },
+    "b" : {
+        "c" : {
+            "d" : {
+                "e" : 42,
+                "g" : 43
+            },
+            "h" : {
+                "r" : 44
+            }
+        }
+    },
+    "c" : {
+        "g" : {
+            "h" : {
+                "t" : [
+                    "Str",
+                    "Str2"
+                ]
+            }
+        }
+    },
+    "h" : "Str",
+    "j" : "Str"
+})");
+
+}

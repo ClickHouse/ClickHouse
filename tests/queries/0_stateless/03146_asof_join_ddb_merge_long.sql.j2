@@ -1,0 +1,39 @@
+-- Tags: long
+
+SET allow_experimental_analyzer=1;
+
+SET session_timezone = 'UTC';
+
+{% for join_algorithm in ['default', 'full_sorting_merge'] -%}
+
+SET join_algorithm = '{{ join_algorithm }}';
+
+-- TODO: enable once USING and `join_use_nulls` is supported by `full_sorting_merge`
+-- SET join_use_nulls = 1;
+
+WITH build AS (
+    SELECT
+        tk.number AS k,
+        toDateTime('2021-01-01 00:00:00') + INTERVAL i.number SECONDS AS t,
+        i.number % 37 AS v
+    FROM numbers(3000000) AS i
+    CROSS JOIN numbers(2) AS tk
+    SETTINGS join_algorithm = 'hash', join_use_nulls = 0
+),
+probe AS (
+    SELECT
+        tk.number AS k,
+        toDateTime('2021-01-01 00:00:30') + INTERVAL tt.number HOUR AS t
+    FROM numbers(2) AS tk
+    CROSS JOIN numbers(toUInt32((toDateTime('2021-02-01 00:00:30') - toDateTime('2021-01-01 00:00:30')) / 3600)) AS tt
+    SETTINGS join_algorithm = 'hash', join_use_nulls = 0
+)
+SELECT
+    SUM(v) AS v,
+    COUNT(*) AS n
+FROM probe
+ASOF LEFT JOIN build
+USING (k, t)
+;
+
+{% endfor -%}

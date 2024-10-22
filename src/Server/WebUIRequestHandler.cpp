@@ -5,8 +5,10 @@
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
-#include <Interpreters/Context.h>
+#include <Core/ServerSettings.h>
 #include <IO/HTTPCommon.h>
+#include <IO/Operators.h>
+#include <Interpreters/Context.h>
 #include <Common/re2.h>
 
 #include <incbin.h>
@@ -29,23 +31,20 @@ DashboardWebUIRequestHandler::DashboardWebUIRequestHandler(IServer & server_) : 
 BinaryWebUIRequestHandler::BinaryWebUIRequestHandler(IServer & server_) : server(server_) {}
 JavaScriptWebUIRequestHandler::JavaScriptWebUIRequestHandler(IServer & server_) : server(server_) {}
 
-static void handle(const IServer & server, HTTPServerRequest & request, HTTPServerResponse & response, std::string_view html)
+static void handle(HTTPServerRequest & request, HTTPServerResponse & response, std::string_view html)
 {
-    auto keep_alive_timeout = server.context()->getServerSettings().keep_alive_timeout.totalSeconds();
-
     response.setContentType("text/html; charset=UTF-8");
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
 
-    setResponseDefaultHeaders(response, keep_alive_timeout);
+    setResponseDefaultHeaders(response);
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-    WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout).write(html.data(), html.size());
-
+    WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD).write(html.data(), html.size());
 }
 
 void PlayWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    handle(server, request, response, {reinterpret_cast<const char *>(gresource_play_htmlData), gresource_play_htmlSize});
+    handle(request, response, {reinterpret_cast<const char *>(gresource_play_htmlData), gresource_play_htmlSize});
 }
 
 void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
@@ -63,23 +62,23 @@ void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HT
     static re2::RE2 lz_string_url = R"(https://[^\s"'`]+lz-string[^\s"'`]*\.js)";
     RE2::Replace(&html, lz_string_url, "/js/lz-string.js");
 
-    handle(server, request, response, html);
+    handle(request, response, html);
 }
 
 void BinaryWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    handle(server, request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize});
+    handle(request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize});
 }
 
 void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
     if (request.getURI() == "/js/uplot.js")
     {
-        handle(server, request, response, {reinterpret_cast<const char *>(gresource_uplot_jsData), gresource_uplot_jsSize});
+        handle(request, response, {reinterpret_cast<const char *>(gresource_uplot_jsData), gresource_uplot_jsSize});
     }
     else if (request.getURI() == "/js/lz-string.js")
     {
-        handle(server, request, response, {reinterpret_cast<const char *>(gresource_lz_string_jsData), gresource_lz_string_jsSize});
+        handle(request, response, {reinterpret_cast<const char *>(gresource_lz_string_jsData), gresource_lz_string_jsSize});
     }
     else
     {
@@ -87,7 +86,7 @@ void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, H
         *response.send() << "Not found.\n";
     }
 
-    handle(server, request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize});
+    handle(request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize});
 }
 
 }

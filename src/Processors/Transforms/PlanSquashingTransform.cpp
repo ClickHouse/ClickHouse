@@ -10,20 +10,20 @@ namespace ErrorCodes
 }
 
 PlanSquashingTransform::PlanSquashingTransform(
-    const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
-    : IInflatingTransform(header, header), squashing(header, min_block_size_rows, min_block_size_bytes)
+    Block header_, size_t min_block_size_rows, size_t min_block_size_bytes)
+    : IInflatingTransform(header_, header_)
+    , squashing(header_, min_block_size_rows, min_block_size_bytes)
 {
 }
 
 void PlanSquashingTransform::consume(Chunk chunk)
 {
-    if (Chunk current_chunk = squashing.add(std::move(chunk)); current_chunk.hasChunkInfo())
-        squashed_chunk.swap(current_chunk);
+    squashed_chunk = squashing.add(std::move(chunk));
 }
 
 Chunk PlanSquashingTransform::generate()
 {
-    if (!squashed_chunk.hasChunkInfo())
+    if (!squashed_chunk)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't generate chunk in SimpleSquashingChunksTransform");
 
     Chunk result_chunk;
@@ -33,12 +33,11 @@ Chunk PlanSquashingTransform::generate()
 
 bool PlanSquashingTransform::canGenerate()
 {
-    return squashed_chunk.hasChunkInfo();
+    return bool(squashed_chunk);
 }
 
 Chunk PlanSquashingTransform::getRemaining()
 {
-    Chunk current_chunk = squashing.flush();
-    return current_chunk;
+    return squashing.flush();
 }
 }

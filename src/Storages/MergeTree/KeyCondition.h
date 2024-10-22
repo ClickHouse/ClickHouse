@@ -2,11 +2,12 @@
 
 #include <optional>
 
+#include <boost/geometry.hpp>
+
 #include <Core/SortDescription.h>
 #include <Core/Range.h>
-#include <Core/PlainRanges.h>
 
-#include <Parsers/ASTExpressionList.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 #include <Interpreters/Set.h>
 #include <Interpreters/ActionsDAG.h>
@@ -41,7 +42,7 @@ class KeyCondition
 public:
     /// Construct key condition from ActionsDAG nodes
     KeyCondition(
-        ActionsDAGPtr filter_dag,
+        const ActionsDAG * filter_dag,
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
@@ -133,7 +134,7 @@ public:
         DataTypePtr current_type,
         bool single_point = false);
 
-    static ActionsDAGPtr cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context);
+    static ActionsDAG cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context);
 
     bool matchesExactContinuousRange() const;
 
@@ -166,6 +167,9 @@ public:
             /// this expression will be analyzed and then represented by following:
             ///   args in hyperrectangle [10, 20] × [20, 30].
             FUNCTION_ARGS_IN_HYPERRECTANGLE,
+            /// Special for pointInPolygon to utilize minmax indices.
+            /// For example: pointInPolygon((x, y), [(0, 0), (0, 2), (2, 2), (2, 0)])
+            FUNCTION_POINT_IN_POLYGON,
             /// Can take any value.
             FUNCTION_UNKNOWN,
             /// Operators of the logical expression.
@@ -203,6 +207,21 @@ public:
 
         /// For FUNCTION_ARGS_IN_HYPERRECTANGLE
         Hyperrectangle space_filling_curve_args_hyperrectangle;
+
+        /// For FUNCTION_POINT_IN_POLYGON.
+        /// Function like 'pointInPolygon' has multiple columns.
+        /// This struct description column part of the function, such as (x, y) in 'pointInPolygon'.
+        struct MultiColumnsFunctionDescription
+        {
+            String function_name;
+            std::vector<size_t> key_column_positions;
+            std::vector<String> key_columns;
+        };
+        std::optional<MultiColumnsFunctionDescription> point_in_polygon_column_description;
+
+        using Point = boost::geometry::model::d2::point_xy<Float64>;
+        using Polygon = boost::geometry::model::polygon<Point>;
+        Polygon polygon;
 
         MonotonicFunctionsChain monotonic_functions_chain;
     };
@@ -253,13 +272,12 @@ private:
         DataTypePtr & out_key_column_type,
         std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain);
 
-    bool transformConstantWithValidFunctions(
+    bool extractMonotonicFunctionsChainFromKey(
         ContextPtr context,
         const String & expr_name,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
-        Field & out_value,
-        DataTypePtr & out_type,
+        MonotonicFunctionsChain & out_functions_chain,
         std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
 
     bool canConstantBeWrappedByMonotonicFunctions(
@@ -276,13 +294,25 @@ private:
         Field & out_value,
         DataTypePtr & out_type);
 
+    /// Checks if node is a subexpression of any of key columns expressions,
+    /// wrapped by deterministic functions, and if so, returns `true`, and
+    /// specifies key column position / type. Besides that it produces the
+    /// chain of functions which should be executed on set, to transform it
+    /// into key column values.
+    bool canSetValuesBeWrappedByFunctions(
+        const RPNBuilderTreeNode & node,
+        size_t & out_key_column_num,
+        DataTypePtr & out_key_res_column_type,
+        MonotonicFunctionsChain & out_functions_chain);
+
     /// If it's possible to make an RPNElement
     /// that will filter values (possibly tuples) by the content of 'prepared_set',
     /// do it and return true.
     bool tryPrepareSetIndex(
         const RPNBuilderFunctionTreeNode & func,
         RPNElement & out,
-        size_t & out_key_column_num);
+        size_t & out_key_column_num,
+        bool & is_constant_transformed);
 
     /// Checks that the index can not be used.
     ///

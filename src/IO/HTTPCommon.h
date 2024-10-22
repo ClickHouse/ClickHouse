@@ -27,9 +27,9 @@ public:
         const std::string & uri,
         Poco::Net::HTTPResponse::HTTPStatus http_status_,
         const std::string & reason,
-        const std::string & body
+        size_t body_length = 0
     )
-        : Exception(makeExceptionMessage(code, uri, http_status_, reason, body))
+        : Exception(makeExceptionMessage(code, uri, http_status_, reason, body_length))
         , http_status(http_status_)
     {}
 
@@ -46,7 +46,7 @@ private:
         const std::string & uri,
         Poco::Net::HTTPResponse::HTTPStatus http_status,
         const std::string & reason,
-        const std::string & body);
+        size_t body_length);
 
     const char * name() const noexcept override { return "DB::HTTPException"; }
     const char * className() const noexcept override { return "DB::HTTPException"; }
@@ -54,7 +54,7 @@ private:
 
 using HTTPSessionPtr = std::shared_ptr<Poco::Net::HTTPClientSession>;
 
-void setResponseDefaultHeaders(HTTPServerResponse & response, size_t keep_alive_timeout);
+void setResponseDefaultHeaders(HTTPServerResponse & response);
 
 /// Create session object to perform requests and set required parameters.
 HTTPSessionPtr makeHTTPSession(

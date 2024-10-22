@@ -299,12 +299,16 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
 
 void FillingRightJoinSideTransform::work()
 {
-    auto block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
+    auto & input = inputs.front();
+    auto block = input.getHeader().cloneWithColumns(chunk.detachColumns());
 
     if (for_totals)
         join->setTotals(block);
     else
         stop_reading = !join->addBlockToJoin(block);
+
+    if (input.isFinished())
+        join->tryRerangeRightTableData();
 
     set_totals = for_totals;
 }
@@ -365,10 +369,9 @@ IProcessor::Status DelayedJoinedBlocksWorkerTransform::prepare()
             return Status::Finished;
         }
 
-        if (!data.chunk.hasChunkInfo())
+        task = data.chunk.getChunkInfos().get<DelayedBlocksTask>();
+        if (!task)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "DelayedJoinedBlocksWorkerTransform must have chunk info");
-
-        task = std::dynamic_pointer_cast<const DelayedBlocksTask>(data.chunk.getChunkInfo());
     }
     else
     {
@@ -479,7 +482,7 @@ IProcessor::Status DelayedJoinedBlocksTransform::prepare()
             if (output.isFinished())
                 continue;
             Chunk chunk;
-            chunk.setChunkInfo(std::make_shared<DelayedBlocksTask>());
+            chunk.getChunkInfos().add(std::make_shared<DelayedBlocksTask>());
             output.push(std::move(chunk));
             output.finish();
         }
@@ -496,7 +499,7 @@ IProcessor::Status DelayedJoinedBlocksTransform::prepare()
         {
             Chunk chunk;
             auto task = std::make_shared<DelayedBlocksTask>(delayed_blocks, left_delayed_stream_finished_counter);
-            chunk.setChunkInfo(task);
+            chunk.getChunkInfos().add(std::move(task));
             output.push(std::move(chunk));
         }
         delayed_blocks = nullptr;

@@ -34,11 +34,11 @@ from typing import List, Optional
 
 import __main__
 
+from ci_config import Labels
 from env_helper import TEMP_PATH
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, git_runner, is_shallow
 from github_helper import GitHub, PullRequest, PullRequests, Repository
-from lambda_shared_package.lambda_shared.pr import Labels
 from ssh import SSHKey
 
 
@@ -417,10 +417,13 @@ class Backport:
                 f"v{branch}-must-backport" for branch in self.release_branches
             ]
         else:
-            fetch_release_prs = self.gh.get_release_pulls(self._fetch_from)
-            fetch_release_branches = [pr.head.ref for pr in fetch_release_prs]
             self.labels_to_backport = [
-                f"v{branch}-must-backport" for branch in fetch_release_branches
+                (
+                    f"v{branch}-must-backport"
+                    if self._repo_name == "ClickHouse/ClickHouse"
+                    else f"v{branch.replace('release/','')}-must-backport"
+                )
+                for branch in self.release_branches
             ]
 
             logging.info("Fetching from %s", self._fetch_from)
@@ -490,17 +493,23 @@ class Backport:
     def process_pr(self, pr: PullRequest) -> None:
         pr_labels = [label.name for label in pr.labels]
 
-        if (
-            any(label in pr_labels for label in self.must_create_backport_labels)
-            or self._repo_name != self._fetch_from
-        ):
+        if any(label in pr_labels for label in self.must_create_backport_labels):
             branches = [
                 ReleaseBranch(br, pr, self.repo, self.backport_created_label)
                 for br in self.release_branches
             ]  # type: List[ReleaseBranch]
         else:
             branches = [
-                ReleaseBranch(br, pr, self.repo, self.backport_created_label)
+                ReleaseBranch(
+                    (
+                        br
+                        if self._repo_name == "ClickHouse/ClickHouse"
+                        else f"release/{br}"
+                    ),
+                    pr,
+                    self.repo,
+                    self.backport_created_label,
+                )
                 for br in [
                     label.split("-", 1)[0][1:]  # v21.8-must-backport
                     for label in pr_labels

@@ -1,15 +1,17 @@
--- Tags: no-tsan
--- Tag no-tsan: Too long for TSan
+-- Tags: long, no-tsan, no-msan, no-distributed-cache
+-- Too long for TSan and MSan
 
 set enable_filesystem_cache=0;
 set enable_filesystem_cache_on_write_operations=0;
+set max_rows_to_read = '30M';
+
 drop table if exists t;
 
 create table t (x UInt64, s String) engine = MergeTree order by x SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 INSERT INTO t SELECT
     number,
     if(number < (8129 * 1024), arrayStringConcat(arrayMap(x -> toString(x), range(number % 128)), ' '), '')
-FROM numbers_mt((8129 * 1024) * 3) settings max_insert_threads=8;
+FROM numbers_mt((8129 * 1024) * 3) settings max_insert_threads=8, max_rows_to_read=0, max_memory_usage='10Gi';
 
 -- optimize table t final;
 

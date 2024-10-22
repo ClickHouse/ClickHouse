@@ -1,18 +1,19 @@
 import io
+import json
 import logging
 import random
+import string
 import time
+import uuid
 
 import pytest
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-import json
-
 
 AVAILABLE_MODES = ["unordered", "ordered"]
 DEFAULT_AUTH = ["'minio'", "'minio123'"]
 NO_AUTH = ["NOSIGN"]
-AZURE_CONTAINER_NAME = "cont"
 
 
 def prepare_public_s3_bucket(started_cluster):
@@ -67,13 +68,24 @@ def s3_queue_setup_teardown(started_cluster):
     instance = started_cluster.instances["instance"]
     instance_2 = started_cluster.instances["instance2"]
 
-    instance.query("DROP DATABASE IF EXISTS test; CREATE DATABASE test;")
-    instance_2.query("DROP DATABASE IF EXISTS test; CREATE DATABASE test;")
+    instance.query("DROP DATABASE IF EXISTS default; CREATE DATABASE default;")
+    instance_2.query("DROP DATABASE IF EXISTS default; CREATE DATABASE default;")
 
     minio = started_cluster.minio_client
     objects = list(minio.list_objects(started_cluster.minio_bucket, recursive=True))
     for obj in objects:
         minio.remove_object(started_cluster.minio_bucket, obj.object_name)
+
+    container_client = started_cluster.blob_service_client.get_container_client(
+        started_cluster.azurite_container
+    )
+
+    if container_client.exists():
+        blob_names = [b.name for b in container_client.list_blobs()]
+        logging.debug(f"Deleting blobs: {blob_names}")
+        for b in blob_names:
+            container_client.delete_blob(b)
+
     yield  # run test
 
 
@@ -113,6 +125,26 @@ def started_cluster():
             use_old_analyzer=True,
         )
         cluster.add_instance(
+            "node1",
+            with_zookeeper=True,
+            stay_alive=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+                "configs/remote_servers.xml",
+            ],
+        )
+        cluster.add_instance(
+            "node2",
+            with_zookeeper=True,
+            stay_alive=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+                "configs/remote_servers.xml",
+            ],
+        )
+        cluster.add_instance(
             "instance_too_many_parts",
             user_configs=["configs/users.xml"],
             with_minio=True,
@@ -123,15 +155,32 @@ def started_cluster():
             ],
             stay_alive=True,
         )
+        cluster.add_instance(
+            "instance_24.5",
+            with_zookeeper=True,
+            image="clickhouse/clickhouse-server",
+            tag="24.5",
+            stay_alive=True,
+            user_configs=[
+                "configs/users.xml",
+            ],
+            with_installed_binary=True,
+            use_old_analyzer=True,
+        )
+        cluster.add_instance(
+            "node_cloud_mode",
+            with_zookeeper=True,
+            stay_alive=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+            ],
+            user_configs=["configs/cloud_mode.xml"],
+        )
 
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
-
-        container_client = cluster.blob_service_client.get_container_client(
-            AZURE_CONTAINER_NAME
-        )
-        container_client.create_container()
 
         yield cluster
     finally:
@@ -189,7 +238,7 @@ def put_s3_file_content(started_cluster, filename, data, bucket=None):
 
 def put_azure_file_content(started_cluster, filename, data, bucket=None):
     client = started_cluster.blob_service_client.get_blob_client(
-        AZURE_CONTAINER_NAME, filename
+        started_cluster.azurite_container, filename
     )
     buf = io.BytesIO(data)
     client.upload_blob(buf, "BlockBlob", len(data))
@@ -208,6 +257,7 @@ def create_table(
     auth=DEFAULT_AUTH,
     bucket=None,
     expect_error=False,
+    database_name="default",
 ):
     auth_params = ",".join(auth)
     bucket = started_cluster.minio_bucket if bucket is None else bucket
@@ -225,11 +275,11 @@ def create_table(
         url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/"
         engine_def = f"{engine_name}('{url}', {auth_params}, {file_format})"
     else:
-        engine_def = f"{engine_name}('{started_cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{files_path}/', 'CSV')"
+        engine_def = f"{engine_name}('{started_cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{started_cluster.azurite_container}', '{files_path}/', 'CSV')"
 
     node.query(f"DROP TABLE IF EXISTS {table_name}")
     create_query = f"""
-        CREATE TABLE {table_name} ({format})
+        CREATE TABLE {database_name}.{table_name} ({format})
         ENGINE = {engine_def}
         SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
         """
@@ -261,15 +311,21 @@ def create_mv(
     )
 
 
+def generate_random_string(length=6):
+    return "".join(random.choice(string.ascii_lowercase) for i in range(length))
+
+
 @pytest.mark.parametrize("mode", ["unordered", "ordered"])
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
 def test_delete_after_processing(started_cluster, mode, engine_name):
     node = started_cluster.instances["instance"]
-    table_name = f"test.delete_after_processing_{mode}_{engine_name}"
+    table_name = f"delete_after_processing_{mode}_{engine_name}"
     dst_table_name = f"{table_name}_dst"
     files_path = f"{table_name}_data"
     files_num = 5
     row_num = 10
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     if engine_name == "S3Queue":
         storage = "s3"
     else:
@@ -284,7 +340,7 @@ def test_delete_after_processing(started_cluster, mode, engine_name):
         table_name,
         mode,
         files_path,
-        additional_settings={"after_processing": "delete"},
+        additional_settings={"after_processing": "delete", "keeper_path": keeper_path},
         engine_name=engine_name,
     )
     create_mv(node, table_name, dst_table_name)
@@ -312,7 +368,7 @@ def test_delete_after_processing(started_cluster, mode, engine_name):
         assert len(objects) == 0
     else:
         client = started_cluster.blob_service_client.get_container_client(
-            AZURE_CONTAINER_NAME
+            started_cluster.azurite_container
         )
         objects_iterator = client.list_blobs(files_path)
         for objects in objects_iterator:
@@ -323,11 +379,12 @@ def test_delete_after_processing(started_cluster, mode, engine_name):
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
 def test_failed_retry(started_cluster, mode, engine_name):
     node = started_cluster.instances["instance"]
-    table_name = f"test.failed_retry_{mode}_{engine_name}"
+    table_name = f"failed_retry_{mode}_{engine_name}"
     dst_table_name = f"{table_name}_dst"
     files_path = f"{table_name}_data"
     file_path = f"{files_path}/trash_test.csv"
-    keeper_path = f"/clickhouse/test_{table_name}"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     retries_num = 3
 
     values = [
@@ -384,8 +441,9 @@ def test_failed_retry(started_cluster, mode, engine_name):
 @pytest.mark.parametrize("mode", AVAILABLE_MODES)
 def test_direct_select_file(started_cluster, mode):
     node = started_cluster.instances["instance"]
-    table_name = f"test.direct_select_file_{mode}"
-    keeper_path = f"/clickhouse/test_{table_name}"
+    table_name = f"direct_select_file_{mode}"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{mode}_{generate_random_string()}"
     files_path = f"{table_name}_data"
     file_path = f"{files_path}/test.csv"
 
@@ -446,7 +504,7 @@ def test_direct_select_file(started_cluster, mode):
     ] == []
 
     # New table with different zookeeper path
-    keeper_path = f"/clickhouse/test_{table_name}_{mode}_2"
+    keeper_path = f"{keeper_path}_2"
     create_table(
         started_cluster,
         node,
@@ -490,8 +548,17 @@ def test_direct_select_multiple_files(started_cluster, mode):
     node = started_cluster.instances["instance"]
     table_name = f"direct_select_multiple_files_{mode}"
     files_path = f"{table_name}_data"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
 
-    create_table(started_cluster, node, table_name, mode, files_path)
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        mode,
+        files_path,
+        additional_settings={"keeper_path": keeper_path, "processing_threads_num": 3},
+    )
     for i in range(5):
         rand_values = [[random.randint(0, 50) for _ in range(3)] for _ in range(10)]
         values_csv = (
@@ -514,14 +581,23 @@ def test_direct_select_multiple_files(started_cluster, mode):
 
 
 @pytest.mark.parametrize("mode", AVAILABLE_MODES)
-def test_streaming_to_view_(started_cluster, mode):
+def test_streaming_to_view(started_cluster, mode):
     node = started_cluster.instances["instance"]
     table_name = f"streaming_to_view_{mode}"
     dst_table_name = f"{table_name}_dst"
     files_path = f"{table_name}_data"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
 
     total_values = generate_random_files(started_cluster, files_path, 10)
-    create_table(started_cluster, node, table_name, mode, files_path)
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        mode,
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+    )
     create_mv(node, table_name, dst_table_name)
 
     expected_values = set([tuple(i) for i in total_values])
@@ -543,7 +619,8 @@ def test_streaming_to_many_views(started_cluster, mode):
     node = started_cluster.instances["instance"]
     table_name = f"streaming_to_many_views_{mode}"
     dst_table_name = f"{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
 
     for i in range(3):
@@ -581,7 +658,8 @@ def test_streaming_to_many_views(started_cluster, mode):
 def test_multiple_tables_meta_mismatch(started_cluster):
     node = started_cluster.instances["instance"]
     table_name = f"multiple_tables_meta_mismatch"
-    keeper_path = f"/clickhouse/test_{table_name}"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
 
     create_table(
@@ -627,10 +705,7 @@ def test_multiple_tables_meta_mismatch(started_cluster):
             },
         )
     except QueryRuntimeException as e:
-        assert (
-            "Table columns structure in ZooKeeper is different from local table structure"
-            in str(e)
-        )
+        assert "Existing table metadata in ZooKeeper differs in columns" in str(e)
         failed = True
 
     assert failed is True
@@ -674,7 +749,8 @@ def test_multiple_tables_streaming_sync(started_cluster, mode):
     node = started_cluster.instances["instance"]
     table_name = f"multiple_tables_streaming_sync_{mode}"
     dst_table_name = f"{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
     files_to_generate = 300
 
@@ -755,7 +831,10 @@ def test_multiple_tables_streaming_sync(started_cluster, mode):
 def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
     node = started_cluster.instances["instance"]
     node_2 = started_cluster.instances["instance2"]
-    table_name = f"multiple_tables_streaming_sync_distributed_{mode}"
+    # A unique table name is necessary for repeatable tests
+    table_name = (
+        f"multiple_tables_streaming_sync_distributed_{mode}_{generate_random_string()}"
+    )
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
@@ -770,7 +849,11 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
             table_name,
             mode,
             files_path,
-            additional_settings={"keeper_path": keeper_path, "s3queue_buckets": 2},
+            additional_settings={
+                "keeper_path": keeper_path,
+                "s3queue_buckets": 2,
+                **({"s3queue_processing_threads_num": 1} if mode == "ordered" else {}),
+            },
         )
 
     for instance in [node, node_2]:
@@ -805,6 +888,10 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
         list(map(int, l.split())) for l in run_query(node_2, get_query).splitlines()
     ]
 
+    logging.debug(
+        f"res1 size: {len(res1)}, res2 size: {len(res2)}, total_rows: {total_rows}"
+    )
+
     assert len(res1) + len(res2) == total_rows
 
     # Checking that all engines have made progress
@@ -822,11 +909,12 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
 
 def test_max_set_age(started_cluster):
     node = started_cluster.instances["instance"]
-    table_name = f"max_set_age"
+    table_name = "max_set_age"
     dst_table_name = f"{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
-    max_age = 10
+    max_age = 20
     files_to_generate = 10
 
     create_table(
@@ -847,11 +935,9 @@ def test_max_set_age(started_cluster):
     )
     create_mv(node, table_name, dst_table_name)
 
-    total_values = generate_random_files(
-        started_cluster, files_path, files_to_generate, row_num=1
-    )
+    _ = generate_random_files(started_cluster, files_path, files_to_generate, row_num=1)
 
-    expected_rows = 10
+    expected_rows = files_to_generate
 
     node.wait_for_log_line("Checking node limits")
     node.wait_for_log_line("Node limits check finished")
@@ -859,25 +945,24 @@ def test_max_set_age(started_cluster):
     def get_count():
         return int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
-    for _ in range(20):
-        if expected_rows == get_count():
-            break
-        time.sleep(1)
+    def wait_for_condition(check_function, max_wait_time=1.5 * max_age):
+        before = time.time()
+        while time.time() - before < max_wait_time:
+            if check_function():
+                return
+            time.sleep(0.25)
+        assert False
 
-    assert expected_rows == get_count()
-    assert 10 == int(node.query(f"SELECT uniq(_path) from {dst_table_name}"))
+    wait_for_condition(lambda: get_count() == expected_rows)
+    assert files_to_generate == int(
+        node.query(f"SELECT uniq(_path) from {dst_table_name}")
+    )
 
-    time.sleep(max_age + 5)
-
-    expected_rows = 20
-
-    for _ in range(20):
-        if expected_rows == get_count():
-            break
-        time.sleep(1)
-
-    assert expected_rows == get_count()
-    assert 10 == int(node.query(f"SELECT uniq(_path) from {dst_table_name}"))
+    expected_rows *= 2
+    wait_for_condition(lambda: get_count() == expected_rows)
+    assert files_to_generate == int(
+        node.query(f"SELECT uniq(_path) from {dst_table_name}")
+    )
 
     paths_count = [
         int(x)
@@ -885,15 +970,18 @@ def test_max_set_age(started_cluster):
             f"SELECT count() from {dst_table_name} GROUP BY _path"
         ).splitlines()
     ]
-    assert 10 == len(paths_count)
+    assert files_to_generate == len(paths_count)
     for path_count in paths_count:
         assert 2 == path_count
 
-    failed_count = int(
-        node.query(
-            "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueFailedFiles' SETTINGS system_events_show_zero_values=1"
+    def get_object_storage_failures():
+        return int(
+            node.query(
+                "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueFailedFiles' SETTINGS system_events_show_zero_values=1"
+            )
         )
-    )
+
+    failed_count = get_object_storage_failures()
 
     values = [
         ["failed", 1, 1],
@@ -901,64 +989,51 @@ def test_max_set_age(started_cluster):
     values_csv = (
         "\n".join((",".join(map(str, row)) for row in values)) + "\n"
     ).encode()
-    put_s3_file_content(started_cluster, f"{files_path}/fff.csv", values_csv)
 
-    for _ in range(30):
-        if failed_count + 1 == int(
-            node.query(
-                "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueFailedFiles' SETTINGS system_events_show_zero_values=1"
-            )
-        ):
-            break
-        time.sleep(1)
+    # use a different filename for each test to allow running a bunch of them sequentially with --count
+    file_with_error = f"max_set_age_fail_{uuid.uuid4().hex[:8]}.csv"
+    put_s3_file_content(started_cluster, f"{files_path}/{file_with_error}", values_csv)
 
-    assert failed_count + 1 == int(
-        node.query(
-            "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueFailedFiles' SETTINGS system_events_show_zero_values=1"
-        )
-    )
+    wait_for_condition(lambda: failed_count + 1 == get_object_storage_failures())
 
     node.query("SYSTEM FLUSH LOGS")
     assert "Cannot parse input" in node.query(
-        "SELECT exception FROM system.s3queue WHERE file_name ilike '%fff.csv'"
+        f"SELECT exception FROM system.s3queue WHERE file_name ilike '%{file_with_error}'"
     )
+
     assert 1 == int(
         node.query(
-            "SELECT count() FROM system.s3queue_log WHERE file_name ilike '%fff.csv'"
-        )
-    )
-    assert 1 == int(
-        node.query(
-            "SELECT count() FROM system.s3queue_log WHERE file_name ilike '%fff.csv' AND notEmpty(exception)"
+            f"SELECT count() FROM system.s3queue_log WHERE file_name ilike '%{file_with_error}' AND notEmpty(exception)"
         )
     )
 
-    time.sleep(max_age + 1)
-
-    assert failed_count + 2 == int(
-        node.query(
-            "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueFailedFiles'"
-        )
-    )
+    wait_for_condition(lambda: failed_count + 2 == get_object_storage_failures())
 
     node.query("SYSTEM FLUSH LOGS")
     assert "Cannot parse input" in node.query(
-        "SELECT exception FROM system.s3queue WHERE file_name ilike '%fff.csv' ORDER BY processing_end_time DESC LIMIT 1"
+        f"SELECT exception FROM system.s3queue WHERE file_name ilike '%{file_with_error}' ORDER BY processing_end_time DESC LIMIT 1"
     )
     assert 1 < int(
         node.query(
-            "SELECT count() FROM system.s3queue_log WHERE file_name ilike '%fff.csv' AND notEmpty(exception)"
+            f"SELECT count() FROM system.s3queue_log WHERE file_name ilike '%{file_with_error}' AND notEmpty(exception)"
         )
+    )
+
+    node.restart_clickhouse()
+
+    expected_rows *= 2
+    wait_for_condition(lambda: get_count() == expected_rows)
+    assert files_to_generate == int(
+        node.query(f"SELECT uniq(_path) from {dst_table_name}")
     )
 
 
 def test_max_set_size(started_cluster):
     node = started_cluster.instances["instance"]
     table_name = f"max_set_size"
-    dst_table_name = f"{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
-    max_age = 10
     files_to_generate = 10
 
     create_table(
@@ -1002,7 +1077,8 @@ def test_drop_table(started_cluster):
     node = started_cluster.instances["instance"]
     table_name = f"test_drop"
     dst_table_name = f"{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
     files_to_generate = 300
 
@@ -1021,7 +1097,7 @@ def test_drop_table(started_cluster):
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=100000
     )
     create_mv(node, table_name, dst_table_name)
-    node.wait_for_log_line(f"Reading from file: test_drop_data")
+    node.wait_for_log_line(f"rows from file: test_drop_data")
     node.query(f"DROP TABLE {table_name} SYNC")
     assert node.contains_in_log(
         f"StorageS3Queue (default.{table_name}): Table is being dropped"
@@ -1032,9 +1108,11 @@ def test_drop_table(started_cluster):
 
 def test_s3_client_reused(started_cluster):
     node = started_cluster.instances["instance"]
-    table_name = f"test.test_s3_client_reused"
+    table_name = f"test_s3_client_reused"
     dst_table_name = f"{table_name}_dst"
     files_path = f"{table_name}_data"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     row_num = 10
 
     def get_created_s3_clients_count():
@@ -1068,6 +1146,7 @@ def test_s3_client_reused(started_cluster):
         additional_settings={
             "after_processing": "delete",
             "s3queue_processing_threads_num": 1,
+            "keeper_path": keeper_path,
         },
         auth=NO_AUTH,
         bucket=started_cluster.minio_public_bucket,
@@ -1125,7 +1204,8 @@ def test_processing_threads(started_cluster, mode):
     node = started_cluster.instances["instance"]
     table_name = f"processing_threads_{mode}"
     dst_table_name = f"{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
     files_to_generate = 300
     processing_threads = 32
@@ -1192,7 +1272,8 @@ def test_shards(started_cluster, mode, processing_threads):
     node = started_cluster.instances["instance"]
     table_name = f"test_shards_{mode}_{processing_threads}"
     dst_table_name = f"{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
     files_to_generate = 300
     shards_num = 3
@@ -1311,7 +1392,7 @@ where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_pr
         pytest.param("unordered", 1),
         pytest.param("unordered", 8),
         pytest.param("ordered", 1),
-        pytest.param("ordered", 8),
+        pytest.param("ordered", 2),
     ],
 )
 def test_shards_distributed(started_cluster, mode, processing_threads):
@@ -1319,10 +1400,11 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
     node_2 = started_cluster.instances["instance2"]
     table_name = f"test_shards_distributed_{mode}_{processing_threads}"
     dst_table_name = f"{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
     files_to_generate = 300
-    row_num = 50
+    row_num = 300
     total_rows = row_num * files_to_generate
     shards_num = 2
 
@@ -1352,16 +1434,7 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
     def get_count(node, table_name):
         return int(run_query(node, f"SELECT count() FROM {table_name}"))
 
-    for _ in range(30):
-        if (
-            get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
-        ) == total_rows:
-            break
-        time.sleep(1)
-
-    if (
-        get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
-    ) != total_rows:
+    def print_debug_info():
         processed_files = (
             node.query(
                 f"""
@@ -1388,7 +1461,7 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeep
         )
 
         count = get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
-        logging.debug(f"Processed rows: {count}/{files_to_generate}")
+        logging.debug(f"Processed rows: {count}/{total_rows}")
 
         info = node.query(
             f"""
@@ -1425,6 +1498,18 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeep
 
         logging.debug(f"Intersecting files: {intersection(files1, files2)}")
 
+    for _ in range(30):
+        if (
+            get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
+        ) == total_rows:
+            break
+        time.sleep(1)
+
+    if (
+        get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
+    ) != total_rows:
+        print_debug_info()
+
         assert False
 
     get_query = f"SELECT column1, column2, column3 FROM {dst_table_name}"
@@ -1432,6 +1517,12 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeep
     res2 = [
         list(map(int, l.split())) for l in run_query(node_2, get_query).splitlines()
     ]
+
+    if len(res1) + len(res2) != total_rows or len(res1) <= 0 or len(res2) <= 0 or True:
+        logging.debug(
+            f"res1 size: {len(res1)}, res2 size: {len(res2)}, total_rows: {total_rows}"
+        )
+        print_debug_info()
 
     assert len(res1) + len(res2) == total_rows
 
@@ -1463,8 +1554,8 @@ def test_settings_check(started_cluster):
     node = started_cluster.instances["instance"]
     node_2 = started_cluster.instances["instance2"]
     table_name = f"test_settings_check"
-    dst_table_name = f"{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
     mode = "ordered"
 
@@ -1506,7 +1597,10 @@ def test_processed_file_setting(started_cluster, processing_threads):
     node = started_cluster.instances["instance"]
     table_name = f"test_processed_file_setting_{processing_threads}"
     dst_table_name = f"{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}_{processing_threads}"
+    # A unique path is necessary for repeatable tests
+    keeper_path = (
+        f"/clickhouse/test_{table_name}_{processing_threads}_{generate_random_string()}"
+    )
     files_path = f"{table_name}_data"
     files_to_generate = 10
 
@@ -1557,7 +1651,10 @@ def test_processed_file_setting_distributed(started_cluster, processing_threads)
     node_2 = started_cluster.instances["instance2"]
     table_name = f"test_processed_file_setting_distributed_{processing_threads}"
     dst_table_name = f"{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}"
+    # A unique path is necessary for repeatable tests
+    keeper_path = (
+        f"/clickhouse/test_{table_name}_{processing_threads}_{generate_random_string()}"
+    )
     files_path = f"{table_name}_data"
     files_to_generate = 10
 
@@ -1611,7 +1708,8 @@ def test_upgrade(started_cluster):
 
     table_name = f"test_upgrade"
     dst_table_name = f"{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
     files_to_generate = 10
 
@@ -1650,7 +1748,8 @@ def test_upgrade(started_cluster):
 def test_exception_during_insert(started_cluster):
     node = started_cluster.instances["instance_too_many_parts"]
 
-    table_name = f"test_exception_during_insert"
+    # A unique table name is necessary for repeatable tests
+    table_name = f"test_exception_during_insert_{generate_random_string()}"
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
@@ -1666,6 +1765,7 @@ def test_exception_during_insert(started_cluster):
             "keeper_path": keeper_path,
         },
     )
+    node.rotate_logs()
     total_values = generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
@@ -1682,33 +1782,49 @@ def test_exception_during_insert(started_cluster):
     )
     assert "Too many parts" in exception
 
+    original_parts_to_throw_insert = 0
+    modified_parts_to_throw_insert = 10
     node.replace_in_config(
         "/etc/clickhouse-server/config.d/merge_tree.xml",
-        "parts_to_throw_insert>0",
-        "parts_to_throw_insert>10",
+        f"parts_to_throw_insert>{original_parts_to_throw_insert}",
+        f"parts_to_throw_insert>{modified_parts_to_throw_insert}",
     )
-    node.restart_clickhouse()
+    try:
+        node.restart_clickhouse()
 
-    def get_count():
-        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+        def get_count():
+            return int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
-    expected_rows = 10
-    for _ in range(20):
-        if expected_rows == get_count():
-            break
-        time.sleep(1)
-    assert expected_rows == get_count()
+        expected_rows = 10
+        for _ in range(20):
+            if expected_rows == get_count():
+                break
+            time.sleep(1)
+        assert expected_rows == get_count()
+    finally:
+        node.replace_in_config(
+            "/etc/clickhouse-server/config.d/merge_tree.xml",
+            f"parts_to_throw_insert>{modified_parts_to_throw_insert}",
+            f"parts_to_throw_insert>{original_parts_to_throw_insert}",
+        )
+        node.restart_clickhouse()
 
 
 def test_commit_on_limit(started_cluster):
     node = started_cluster.instances["instance"]
 
-    table_name = f"test_commit_on_limit"
+    # A unique table name is necessary for repeatable tests
+    table_name = f"test_commit_on_limit_{generate_random_string()}"
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     files_to_generate = 10
 
+    failed_files_event_before = int(
+        node.query(
+            "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueFailedFiles' SETTINGS system_events_show_zero_values=1"
+        )
+    )
     create_table(
         started_cluster,
         node,
@@ -1780,9 +1896,13 @@ def test_commit_on_limit(started_cluster):
         if "test_999999.csv" in get_processed_files():
             break
         time.sleep(1)
+
     assert "test_999999.csv" in get_processed_files()
 
     assert 1 == int(
+        node.count_in_log(f"Setting file {files_path}/test_9999.csv as failed")
+    )
+    assert failed_files_event_before + 1 == int(
         node.query(
             "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueFailedFiles' SETTINGS system_events_show_zero_values=1"
         )
@@ -1798,3 +1918,178 @@ def test_commit_on_limit(started_cluster):
     for value in expected_failed:
         assert value not in processed
         assert value in failed
+
+
+def test_upgrade_2(started_cluster):
+    node = started_cluster.instances["instance_24.5"]
+
+    table_name = f"test_upgrade_2_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 10
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_current_shard_num": 0,
+            "s3queue_processing_threads_num": 2,
+        },
+    )
+    total_values = generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    def get_count():
+        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    expected_rows = 10
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+
+    assert expected_rows == get_count()
+
+    node.restart_with_latest_version()
+    assert table_name in node.query("SHOW TABLES")
+
+
+def test_replicated(started_cluster):
+    node1 = started_cluster.instances["node1"]
+    node2 = started_cluster.instances["node2"]
+
+    table_name = f"test_replicated_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 1000
+
+    node1.query("DROP DATABASE IF EXISTS r")
+    node2.query("DROP DATABASE IF EXISTS r")
+
+    node1.query(
+        "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node1')"
+    )
+    node2.query(
+        "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node2')"
+    )
+
+    create_table(
+        started_cluster,
+        node1,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+        },
+        database_name="r",
+    )
+
+    assert '"processing_threads_num":16' in node1.query(
+        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    )
+
+    total_values = generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+
+    create_mv(node1, f"r.{table_name}", dst_table_name)
+    create_mv(node2, f"r.{table_name}", dst_table_name)
+
+    def get_count():
+        return int(
+            node1.query(
+                f"SELECT count() FROM clusterAllReplicas(cluster, default.{dst_table_name})"
+            )
+        )
+
+    expected_rows = files_to_generate
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+    assert expected_rows == get_count()
+
+
+def test_bad_settings(started_cluster):
+    node = started_cluster.instances["node_cloud_mode"]
+
+    table_name = f"test_bad_settings_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 10
+
+    try:
+        create_table(
+            started_cluster,
+            node,
+            table_name,
+            "ordered",
+            files_path,
+            additional_settings={
+                "keeper_path": keeper_path,
+                "processing_threads_num": 1,
+                "buckets": 0,
+            },
+        )
+        assert False
+    except Exception as e:
+        assert "Ordered mode in cloud without either" in str(e)
+
+
+def test_processing_threads(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    table_name = f"test_processing_threads_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 10
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+        },
+    )
+
+    assert '"processing_threads_num":16' in node.query(
+        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    )
+
+    total_values = generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    def get_count():
+        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    expected_rows = 10
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+
+    assert expected_rows == get_count()
+
+    assert node.contains_in_log(
+        f"StorageS3Queue (default.{table_name}): Using 16 processing threads"
+    )

@@ -114,13 +114,12 @@ public:
 
     ~ZooKeeper() override;
 
-
     /// If expired, you can only destroy the object. All other methods will throw exception.
     bool isExpired() const override { return requests_queue.isFinished(); }
 
-    Int8 getConnectedNodeIdx() const override { return original_index; }
-    String getConnectedHostPort() const override { return (original_index == -1) ? "" : args.hosts[original_index]; }
-    int32_t getConnectionXid() const override { return next_xid.load(); }
+    std::optional<int8_t> getConnectedNodeIdx() const override;
+    String getConnectedHostPort() const override;
+    int64_t getConnectionXid() const override;
 
     String tryGetAvailabilityZone() override;
 
@@ -146,6 +145,11 @@ public:
         const String & path,
         int32_t version,
         RemoveCallback callback) override;
+
+    void removeRecursive(
+        const String &path,
+        uint32_t remove_nodes_limit,
+        RemoveRecursiveCallback callback) override;
 
     void exists(
         const String & path,
@@ -219,7 +223,7 @@ private:
     ACLs default_acls;
 
     zkutil::ZooKeeperArgs args;
-    Int8 original_index = -1;
+    std::atomic<int8_t> original_index{-1};
 
     /// Fault injection
     void maybeInjectSendFault();
@@ -243,6 +247,9 @@ private:
     std::optional<CompressedWriteBuffer> compressed_out;
 
     bool use_compression = false;
+    bool use_xid_64 = false;
+
+    int64_t close_xid = CLOSE_XID;
 
     int64_t session_id = 0;
 
