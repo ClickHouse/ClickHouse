@@ -137,7 +137,7 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
             return std::move(*properties);
     }
 
-    if (auto * union_step = typeid_cast<UnionStep *>(parent->step.get()))
+    if (auto * /*union_step*/ _ = typeid_cast<UnionStep *>(parent->step.get()))
     {
         SortDescription common_sort_description = std::move(properties->sort_description);
         auto sort_scope = properties->sort_scope;

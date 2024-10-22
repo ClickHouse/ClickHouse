@@ -181,7 +181,7 @@ ZooKeeperPtr DDLWorker::getAndSetZooKeeper()
 }
 
 
-DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper)
+DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper, bool /*dry_run*/)
 {
     if (entries_to_skip.contains(entry_name))
         return {};
@@ -389,7 +389,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     {
         /// We should return true if some invariants are violated.
         String reason;
-        auto task = initAndCheckTask(entry_name, reason, zookeeper);
+        auto task = initAndCheckTask(entry_name, reason, zookeeper, /*dry_run*/ true);
         bool maybe_currently_processing = current_tasks.end() != std::find_if(current_tasks.begin(), current_tasks.end(), [&](const auto & t)
         {
             return t->entry_name == entry_name;
@@ -403,18 +403,16 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             bool maybe_concurrently_deleting = task && !zookeeper->exists(fs::path(task->entry_path) / "active");
             return task && !maybe_concurrently_deleting && !maybe_currently_processing;
         }
-        else if (last_skipped_entry_name.has_value() && !queue_fully_loaded_after_initialization_debug_helper)
+        if (last_skipped_entry_name.has_value() && !queue_fully_loaded_after_initialization_debug_helper)
         {
             /// If connection was lost during queue loading
             /// we may start processing from finished task (because we don't know yet that it's finished) and it's ok.
             return false;
         }
-        else
-        {
-            /// Return true if entry should not be scheduled.
-            bool processed = !task && reason == TASK_PROCESSED_OUT_REASON;
-            return processed || maybe_currently_processing;
-        }
+
+        /// Return true if entry should not be scheduled.
+        bool processed = !task && reason == TASK_PROCESSED_OUT_REASON;
+        return processed || maybe_currently_processing;
     }));
 
     for (auto it = begin_node; it != queue_nodes.end() && !stop_flag; ++it)
@@ -423,7 +421,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         LOG_TRACE(log, "Checking task {}", entry_name);
 
         String reason;
-        auto task = initAndCheckTask(entry_name, reason, zookeeper);
+        auto task = initAndCheckTask(entry_name, reason, zookeeper, /*dry_run*/ false);
         if (task)
         {
             queue_fully_loaded_after_initialization_debug_helper = true;
@@ -693,12 +691,10 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
             {
                 throw Exception(ErrorCodes::UNFINISHED, "Unexpected error: {}", task.execution_status.message);
             }
-            else
-            {
-                /// task.ops where not executed by table or database engine, so DDLWorker is responsible for
-                /// writing query execution status into ZooKeeper.
-                task.ops.emplace_back(zkutil::makeSetRequest(finished_node_path, task.execution_status.serializeText(), -1));
-            }
+
+            /// task.ops where not executed by table or database engine, so DDLWorker is responsible for
+            /// writing query execution status into ZooKeeper.
+            task.ops.emplace_back(zkutil::makeSetRequest(finished_node_path, task.execution_status.serializeText(), -1));
         }
 
         /// We need to distinguish ZK errors occurred before and after query executing
@@ -872,7 +868,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
                 executed_by_us = true;
                 break;
             }
-            else if (extra_attempt_for_replicated_database)
+            if (extra_attempt_for_replicated_database)
                 break;
         }
 
@@ -885,22 +881,19 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
                 task.ops.push_back(op);
             break;
         }
-        else
+
+        String tries_count;
+        zookeeper->tryGet(tries_to_execute_path, tries_count);
+        if (parse<int>(tries_count) > MAX_TRIES_TO_EXECUTE)
         {
-            String tries_count;
-            zookeeper->tryGet(tries_to_execute_path, tries_count);
-            if (parse<int>(tries_count) > MAX_TRIES_TO_EXECUTE)
-            {
-                /// Nobody will try to execute query again
-                LOG_WARNING(log, "Maximum retries count for task {} exceeded, cannot execute replicated DDL query", task.entry_name);
-                break;
-            }
-            else
-            {
-                /// Will try to wait or execute
-                LOG_TRACE(log, "Task {} still not executed, will try to wait for it or execute ourselves, tries count {}", task.entry_name, tries_count);
-            }
+            /// Nobody will try to execute query again
+            LOG_WARNING(log, "Maximum retries count for task {} exceeded, cannot execute replicated DDL query", task.entry_name);
+            break;
         }
+
+        /// Will try to wait or execute
+        LOG_TRACE(
+            log, "Task {} still not executed, will try to wait for it or execute ourselves, tries count {}", task.entry_name, tries_count);
     }
 
     chassert(!(executed_by_us && executed_by_other_leader));

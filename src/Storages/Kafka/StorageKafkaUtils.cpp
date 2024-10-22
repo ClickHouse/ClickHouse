@@ -104,7 +104,6 @@ void registerStorageKafka(StorageFactory & factory)
     { \
         /* The same argument is given in two places */ \
         if (has_settings && kafka_settings->PAR_NAME.changed) \
-        { \
             throw Exception( \
                 ErrorCodes::BAD_ARGUMENTS, \
                 "The argument №{} of storage Kafka " \
@@ -112,21 +111,17 @@ void registerStorageKafka(StorageFactory & factory)
                 "in SETTINGS cannot be specified at the same time", \
                 #ARG_NUM, \
                 #PAR_NAME); \
-        } \
         /* move engine args to settings */ \
-        else \
+        if constexpr ((EVAL) == 1) \
         { \
-            if constexpr ((EVAL) == 1) \
-            { \
-                engine_args[(ARG_NUM)-1] = evaluateConstantExpressionAsLiteral(engine_args[(ARG_NUM)-1], args.getLocalContext()); \
-            } \
-            if constexpr ((EVAL) == 2) \
-            { \
-                engine_args[(ARG_NUM)-1] \
-                    = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[(ARG_NUM)-1], args.getLocalContext()); \
-            } \
-            kafka_settings->PAR_NAME = engine_args[(ARG_NUM)-1]->as<ASTLiteral &>().value; \
+            engine_args[(ARG_NUM)-1] = evaluateConstantExpressionAsLiteral(engine_args[(ARG_NUM)-1], args.getLocalContext()); \
         } \
+        if constexpr ((EVAL) == 2) \
+        { \
+            engine_args[(ARG_NUM)-1] \
+                = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[(ARG_NUM)-1], args.getLocalContext()); \
+        } \
+        kafka_settings->PAR_NAME = engine_args[(ARG_NUM)-1]->as<ASTLiteral &>().value; \
     }
 
         /** Arguments of engine is following:
@@ -185,7 +180,7 @@ void registerStorageKafka(StorageFactory & factory)
                 "See also https://clickhouse.com/docs/integrations/kafka/kafka-table-engine#tuning-performance",
                 max_consumers);
         }
-        else if (num_consumers < 1)
+        if (num_consumers < 1)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of consumers can not be lower than 1");
         }
@@ -332,11 +327,9 @@ void drainConsumer(
             {
                 break;
             }
-            else
-            {
-                LOG_ERROR(log, "Error during draining: {}", error);
-                error_handler(error);
-            }
+
+            LOG_ERROR(log, "Error during draining: {}", error);
+            error_handler(error);
         }
 
         // i don't stop draining on first error,
