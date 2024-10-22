@@ -48,6 +48,7 @@ protected:
     bool isGarbageAfterField(size_t index, ReadBuffer::Position pos) override;
     void setReadBuffer(ReadBuffer & in_) override;
     void readPrefix() override;
+    bool supportsCustomSerializations() const override { return true; }
 
     const FormatSettings format_settings;
     DataTypes data_types;

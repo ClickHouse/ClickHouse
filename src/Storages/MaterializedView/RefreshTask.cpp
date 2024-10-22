@@ -32,6 +32,12 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsString default_replica_name;
+    extern const ServerSettingsString default_replica_path;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -62,8 +68,8 @@ RefreshTask::RefreshTask(
         const auto macros = context->getMacros();
         Macros::MacroExpansionInfo info;
         info.table_id = view->getStorageID();
-        coordination.path = macros->expand(server_settings.default_replica_path, info);
-        coordination.replica_name = context->getMacros()->expand(server_settings.default_replica_name, info);
+        coordination.path = macros->expand(server_settings[ServerSetting::default_replica_path], info);
+        coordination.replica_name = context->getMacros()->expand(server_settings[ServerSetting::default_replica_name], info);
 
         auto zookeeper = context->getZooKeeper();
         String replica_path = coordination.path + "/replicas/" + coordination.replica_name;
@@ -299,9 +305,11 @@ std::chrono::sys_seconds RefreshTask::getNextRefreshTimeslot() const
     return refresh_schedule.advance(coordination.root_znode.last_completed_timeslot);
 }
 
-void RefreshTask::notifyDependencyProgress()
+void RefreshTask::notify()
 {
     std::lock_guard guard(mutex);
+    if (view && view->getContext()->getRefreshSet().refreshesStopped())
+        interruptExecution();
     scheduling.dependencies_satisfied_until = std::chrono::sys_seconds(std::chrono::seconds(-1));
     refresh_task->schedule();
 }
@@ -367,7 +375,7 @@ void RefreshTask::refreshTask()
 
             chassert(lock.owns_lock());
 
-            if (scheduling.stop_requested || coordination.read_only)
+            if (scheduling.stop_requested || view->getContext()->getRefreshSet().refreshesStopped() || coordination.read_only)
             {
                 /// Exit the task and wait for the user to start or resume, which will schedule the task again.
                 setState(RefreshState::Disabled, lock);
@@ -863,7 +871,7 @@ std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const
         std::lock_guard lock(replica_sync_mutex);
         if (uuid != last_synced_inner_uuid)
         {
-            InterpreterSystemQuery::trySyncReplica(storage.get(), SyncReplicaMode::DEFAULT, {}, context);
+            InterpreterSystemQuery::trySyncReplica(storage, SyncReplicaMode::DEFAULT, {}, context);
 
             /// (Race condition: this may revert from a newer uuid to an older one. This doesn't break
             ///  anything, just causes an unnecessary sync. Should be rare.)
@@ -879,8 +887,7 @@ std::chrono::system_clock::time_point RefreshTask::currentTime() const
     Int64 fake = scheduling.fake_clock.load(std::memory_order::relaxed);
     if (fake == INT64_MIN)
         return std::chrono::system_clock::now();
-    else
-        return std::chrono::system_clock::time_point(std::chrono::seconds(fake));
+    return std::chrono::system_clock::time_point(std::chrono::seconds(fake));
 }
 
 void RefreshTask::setRefreshSetHandleUnlock(RefreshSet::Handle && set_handle_)

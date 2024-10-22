@@ -52,6 +52,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_nondeterministic_mutations;
     extern const SettingsUInt64 max_block_size;
+    extern const SettingsBool use_concurrency_control;
 }
 
 namespace MergeTreeSetting
@@ -221,13 +222,14 @@ bool isStorageTouchedByMutations(
     }
 
     PullingAsyncPipelineExecutor executor(io.pipeline);
+    io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
     Block block;
     while (block.rows() == 0 && executor.pull(block));
 
     if (!block.rows())
         return false;
-    else if (block.rows() != 1)
+    if (block.rows() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "count() expression returned {} rows, not 1", block.rows());
 
     Block tmp_block;
@@ -265,8 +267,7 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
 
     if (command.predicate && command.partition)
         return makeASTFunction("and", command.predicate->clone(), std::move(partition_predicate_as_ast_func));
-    else
-        return command.predicate ? command.predicate->clone() : partition_predicate_as_ast_func;
+    return command.predicate ? command.predicate->clone() : partition_predicate_as_ast_func;
 }
 
 
@@ -437,7 +438,7 @@ MutationsInterpreter::MutationsInterpreter(
     if (new_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         new_context->setSetting("allow_experimental_analyzer", false);
-        LOG_DEBUG(logger, "Will use old analyzer to prepare mutation");
+        LOG_TEST(logger, "Will use old analyzer to prepare mutation");
     }
     context = std::move(new_context);
 
@@ -1296,6 +1297,10 @@ void MutationsInterpreter::Source::read(
 
 void MutationsInterpreter::initQueryPlan(Stage & first_stage, QueryPlan & plan)
 {
+    // Mutations are not using concurrency control now. Queries, merges and mutations running together could lead to CPU overcommit.
+    // TODO(serxa): Enable concurrency control for mutation queries and mutations. This should be done after CPU scheduler introduction.
+    plan.setConcurrencyControl(false);
+
     source.read(first_stage, plan, metadata_snapshot, context, settings.apply_deleted_mask, settings.can_execute);
     addCreatingSetsStep(plan, first_stage.analyzer->getPreparedSets(), context);
 }
@@ -1314,17 +1319,17 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
             {
                 auto dag = step->actions()->dag.clone();
                 if (step->actions()->project_input)
-                    dag.appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
+                    dag.appendInputsForUnusedColumns(plan.getCurrentHeader());
                 /// Execute DELETEs.
-                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), std::move(dag), stage.filter_column_names[i], false));
+                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentHeader(), std::move(dag), stage.filter_column_names[i], false));
             }
             else
             {
                 auto dag = step->actions()->dag.clone();
                 if (step->actions()->project_input)
-                    dag.appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
+                    dag.appendInputsForUnusedColumns(plan.getCurrentHeader());
                 /// Execute UPDATE or final projection.
-                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), std::move(dag)));
+                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(dag)));
             }
         }
 

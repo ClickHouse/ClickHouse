@@ -2164,6 +2164,7 @@ bool MutateTask::prepare()
     context_for_reading->setSetting("apply_mutations_on_fly", false);
     /// Skip using large sets in KeyCondition
     context_for_reading->setSetting("use_index_for_in_with_subqueries_max_values", 100000);
+    context_for_reading->setSetting("use_concurrency_control", false);
 
     for (const auto & command : *ctx->commands)
         if (!canSkipMutationCommandForPart(ctx->source_part, command, context_for_reading))
@@ -2214,10 +2215,9 @@ bool MutateTask::prepare()
         promise.set_value(std::move(part));
         return false;
     }
-    else
-    {
-        LOG_TRACE(ctx->log, "Mutating part {} to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
-    }
+
+    LOG_TRACE(ctx->log, "Mutating part {} to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
+
 
     /// We must read with one thread because it guarantees that output stream will be sorted.
     /// Disable all settings that can enable reading with several streams.

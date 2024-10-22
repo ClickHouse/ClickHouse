@@ -480,27 +480,23 @@ void Client::connect()
         }
         catch (const Exception & e)
         {
+            /// This problem can't be fixed with reconnection so it is not attempted
             if (e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
-            {
-                /// This problem can't be fixed with reconnection so it is not attempted
                 throw;
-            }
-            else
-            {
-                if (attempted_address_index == hosts_and_ports.size() - 1)
-                    throw;
 
-                if (is_interactive)
-                {
-                    std::cerr << "Connection attempt to database at "
-                              << connection_parameters.host << ":" << connection_parameters.port
-                              << " resulted in failure"
-                              << std::endl
-                              << getExceptionMessage(e, false)
-                              << std::endl
-                              << "Attempting connection to the next provided address"
-                              << std::endl;
-                }
+            if (attempted_address_index == hosts_and_ports.size() - 1)
+                throw;
+
+            if (is_interactive)
+            {
+                std::cerr << "Connection attempt to database at "
+                          << connection_parameters.host << ":" << connection_parameters.port
+                          << " resulted in failure"
+                          << std::endl
+                          << getExceptionMessage(e, false)
+                          << std::endl
+                          << "Attempting connection to the next provided address"
+                          << std::endl;
             }
         }
     }
@@ -516,6 +512,7 @@ void Client::connect()
     {
         std::cout << "Connected to " << server_name << " server version " << server_version << "." << std::endl << std::endl;
 
+#ifndef CLICKHOUSE_CLOUD
         auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
         auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
 
@@ -531,6 +528,7 @@ void Client::connect()
                         << "It may indicate that the server is out of date and can be upgraded." << std::endl
                         << std::endl;
         }
+#endif
     }
 
     if (!client_context->getSettingsRef()[Setting::use_client_time_zone])

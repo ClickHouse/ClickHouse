@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
+#include <Storages/MergeTree/MergeSelectors/registerMergeSelectors.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -46,6 +47,12 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 index_granularity;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsString default_replica_name;
+    extern const ServerSettingsString default_replica_path;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -75,10 +82,8 @@ static Names extractColumnNames(const ASTPtr & node)
 
         return res;
     }
-    else
-    {
-        return {getIdentifierName(node)};
-    }
+
+    return {getIdentifierName(node)};
 }
 
 constexpr auto verbose_help_message = R"(
@@ -240,10 +245,12 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
                             "specify them explicitly, enable setting "
                             "database_replicated_allow_replicated_engine_arguments.");
         }
-        else if (!query.attach && is_replicated_database && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 1)
+        if (!query.attach && is_replicated_database && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 1)
         {
-            LOG_WARNING(&Poco::Logger::get("registerStorageMergeTree"), "It's not recommended to explicitly specify "
-                                                            "zookeeper_path and replica_name in ReplicatedMergeTree arguments");
+            LOG_WARNING(
+                &Poco::Logger::get("registerStorageMergeTree"),
+                "It's not recommended to explicitly specify "
+                "zookeeper_path and replica_name in ReplicatedMergeTree arguments");
         }
 
         /// Get path and name from engine arguments
@@ -259,13 +266,13 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         {
             LOG_WARNING(&Poco::Logger::get("registerStorageMergeTree"), "Replacing user-provided ZooKeeper path and replica name ({}, {}) "
                                                                      "with default arguments", ast_zk_path->value.safeGet<String>(), ast_replica_name->value.safeGet<String>());
-            ast_zk_path->value = server_settings.default_replica_path;
-            ast_replica_name->value = server_settings.default_replica_name;
+            ast_zk_path->value = server_settings[ServerSetting::default_replica_path];
+            ast_replica_name->value = server_settings[ServerSetting::default_replica_name];
         }
 
         return expand_macro(ast_zk_path, ast_replica_name, ast_zk_path->value.safeGet<String>(), ast_replica_name->value.safeGet<String>());
     }
-    else if (is_extended_storage_def
+    if (is_extended_storage_def
         && (arg_cnt == 0
             || !engine_args[arg_num]->as<ASTLiteral>()
             || (arg_cnt == 1 && (getNamePart(engine_name) == "Graphite"))))
@@ -283,7 +290,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         auto * ast_zk_path = path_arg.get();
         auto * ast_replica_name = name_arg.get();
 
-        auto res = expand_macro(ast_zk_path, ast_replica_name, server_settings.default_replica_path, server_settings.default_replica_name);
+        auto res = expand_macro(ast_zk_path, ast_replica_name, server_settings[ServerSetting::default_replica_path], server_settings[ServerSetting::default_replica_name]);
 
         engine_args.emplace_back(std::move(path_arg));
         engine_args.emplace_back(std::move(name_arg));
@@ -291,8 +298,8 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
 
         return res;
     }
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected two string literal arguments: zookeeper_path and replica_name");
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected two string literal arguments: zookeeper_path and replica_name");
 }
 
 /// Extracts a zookeeper path from a specified CREATE TABLE query.
@@ -474,11 +481,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (is_extended_storage_def)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "With extended storage definition syntax storage {} requires {}{}",
                             args.engine_name, msg, verbose_help_message);
-        else
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "ORDER BY or PRIMARY KEY clause is missing. "
-                            "Consider using extended storage definition syntax with ORDER BY or PRIMARY KEY clause. "
-                            "With deprecated old syntax (highly not recommended) storage {} requires {}{}",
-                            args.engine_name, msg, verbose_help_message);
+        throw Exception(
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "ORDER BY or PRIMARY KEY clause is missing. "
+            "Consider using extended storage definition syntax with ORDER BY or PRIMARY KEY clause. "
+            "With deprecated old syntax (highly not recommended) storage {} requires {}{}",
+            args.engine_name,
+            msg,
+            verbose_help_message);
     }
 
     if (is_extended_storage_def)
@@ -833,21 +843,23 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             std::move(storage_settings),
             need_check_table_structure);
     }
-    else
-        return std::make_shared<StorageMergeTree>(
-            args.table_id,
-            args.relative_data_path,
-            metadata,
-            args.mode,
-            context,
-            date_column_name,
-            merging_params,
-            std::move(storage_settings));
+    return std::make_shared<StorageMergeTree>(
+        args.table_id,
+        args.relative_data_path,
+        metadata,
+        args.mode,
+        context,
+        date_column_name,
+        merging_params,
+        std::move(storage_settings));
 }
 
 
 void registerStorageMergeTree(StorageFactory & factory)
 {
+    /// Part of MergeTree
+    registerMergeSelectors();
+
     StorageFactory::StorageFeatures features{
         .supports_settings = true,
         .supports_skipping_indices = true,

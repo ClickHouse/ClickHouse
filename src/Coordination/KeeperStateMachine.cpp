@@ -4,6 +4,7 @@
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Coordination/KeeperReconfiguration.h>
+#include <Common/thread_local_rng.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStorage.h>
@@ -44,6 +45,14 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace CoordinationSetting
+{
+    extern const CoordinationSettingsBool compress_snapshots_with_zstd_format;
+    extern const CoordinationSettingsMilliseconds dead_session_check_period_ms;
+    extern const CoordinationSettingsUInt64 min_request_size_for_cache;
+    extern const CoordinationSettingsUInt64 snapshots_to_keep;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -59,7 +68,7 @@ IKeeperStateMachine::IKeeperStateMachine(
     : commit_callback(commit_callback_)
     , responses_queue(responses_queue_)
     , snapshots_queue(snapshots_queue_)
-    , min_request_size_to_cache(keeper_context_->getCoordinationSettings()->min_request_size_for_cache)
+    , min_request_size_to_cache(keeper_context_->getCoordinationSettings()[CoordinationSetting::min_request_size_for_cache])
     , log(getLogger("KeeperStateMachine"))
     , read_pool(CurrentMetrics::KeeperAliveConnections, CurrentMetrics::KeeperAliveConnections, CurrentMetrics::KeeperAliveConnections, 100, 10000, 10000)
     , superdigest(superdigest_)
@@ -86,11 +95,11 @@ KeeperStateMachine<Storage>::KeeperStateMachine(
         commit_callback_,
         superdigest_),
         snapshot_manager(
-          keeper_context_->getCoordinationSettings()->snapshots_to_keep,
+          keeper_context_->getCoordinationSettings()[CoordinationSetting::snapshots_to_keep],
           keeper_context_,
-          keeper_context_->getCoordinationSettings()->compress_snapshots_with_zstd_format,
+          keeper_context_->getCoordinationSettings()[CoordinationSetting::compress_snapshots_with_zstd_format],
           superdigest_,
-          keeper_context_->getCoordinationSettings()->dead_session_check_period_ms.totalMilliseconds())
+          keeper_context_->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds())
 {
 }
 
@@ -151,7 +160,7 @@ void KeeperStateMachine<Storage>::init()
 
     if (!storage)
         storage = std::make_unique<Storage>(
-            keeper_context->getCoordinationSettings()->dead_session_check_period_ms.totalMilliseconds(), superdigest, keeper_context);
+            keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds(), superdigest, keeper_context);
 }
 
 namespace
@@ -202,6 +211,18 @@ struct LockGuardWithStats final
 template<typename Storage>
 nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log_idx, nuraft::buffer & data)
 {
+    double sleep_probability = keeper_context->getPrecommitSleepProbabilityForTesting();
+    int64_t sleep_ms = keeper_context->getPrecommitSleepMillisecondsForTesting();
+    if (sleep_ms != 0 && sleep_probability != 0)
+    {
+        std::uniform_real_distribution<double> distribution{0., 1.};
+        if (distribution(thread_local_rng) > (1 - sleep_probability))
+        {
+            LOG_WARNING(log, "Precommit sleep enabled, will pause for {} ms", sleep_ms);
+            std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
+        }
+    }
+
     auto result = nuraft::buffer::alloc(sizeof(log_idx));
     nuraft::buffer_serializer ss(result);
     ss.put_u64(log_idx);
@@ -348,8 +369,7 @@ IKeeperStateMachine::parseRequest(nuraft::buffer & data, bool final, ZooKeeperLo
                     xid_to_request.erase(request_it);
                     return request;
                 }
-                else
-                    return request_it->second;
+                return request_it->second;
             }
         }
     }
@@ -600,9 +620,12 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
                 s.get_last_log_idx(),
                 latest_snapshot_meta->get_last_log_idx());
         }
-        else if (s.get_last_log_idx() < latest_snapshot_meta->get_last_log_idx())
+        if (s.get_last_log_idx() < latest_snapshot_meta->get_last_log_idx())
         {
-            LOG_INFO(log, "A snapshot with a larger last log index ({}) was created, skipping applying this snapshot", latest_snapshot_meta->get_last_log_idx());
+            LOG_INFO(
+                log,
+                "A snapshot with a larger last log index ({}) was created, skipping applying this snapshot",
+                latest_snapshot_meta->get_last_log_idx());
             return true;
         }
 

@@ -34,6 +34,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsLightweightMutationProjectionMode lightweight_mutation_projection_mode;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsBool disable_insertion_and_mutation;
+}
+
 namespace ErrorCodes
 {
     extern const int TABLE_IS_READ_ONLY;
@@ -64,7 +69,7 @@ BlockIO InterpreterDeleteQuery::execute()
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
 
-    if (getContext()->getGlobalContext()->getServerSettings().disable_insertion_and_mutation)
+    if (getContext()->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation])
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Delete queries are prohibited");
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
@@ -95,7 +100,7 @@ BlockIO InterpreterDeleteQuery::execute()
         table->mutate(mutation_commands, getContext());
         return {};
     }
-    else if (table->supportsLightweightDelete())
+    if (table->supportsLightweightDelete())
     {
         if (!getContext()->getSettingsRef()[Setting::enable_lightweight_delete])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -115,12 +120,10 @@ BlockIO InterpreterDeleteQuery::execute()
         }
 
         /// Build "ALTER ... UPDATE _row_exists = 0 WHERE predicate" query
-        String alter_query =
-            "ALTER TABLE " + table->getStorageID().getFullTableName()
-            + (delete_query.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(delete_query.cluster))
-            + " UPDATE `_row_exists` = 0"
-            + (delete_query.partition ? " IN PARTITION " + serializeAST(*delete_query.partition) : "")
-            + " WHERE " + serializeAST(*delete_query.predicate);
+        String alter_query = "ALTER TABLE " + table->getStorageID().getFullTableName()
+            + (delete_query.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(delete_query.cluster)) + " UPDATE `_row_exists` = 0"
+            + (delete_query.partition ? " IN PARTITION " + serializeAST(*delete_query.partition) : "") + " WHERE "
+            + serializeAST(*delete_query.predicate);
 
         ParserAlterQuery parser;
         ASTPtr alter_ast = parseQuery(
@@ -137,12 +140,8 @@ BlockIO InterpreterDeleteQuery::execute()
         InterpreterAlterQuery alter_interpreter(alter_ast, context);
         return alter_interpreter.execute();
     }
-    else
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "DELETE query is not supported for table {}",
-            table->getStorageID().getFullTableName());
-    }
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "DELETE query is not supported for table {}", table->getStorageID().getFullTableName());
 }
 
 void registerInterpreterDeleteQuery(InterpreterFactory & factory)
