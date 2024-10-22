@@ -108,8 +108,6 @@ def run_fuzzer(fuzzer: str, timeout: int):
     if not "-dict=" in cmd_line and Path(f"{fuzzer}.dict").exists():
         cmd_line += f" -dict={fuzzer}.dict"
 
-    cmd_line += " < /dev/null"
-
     logging.info("...will execute: %s", cmd_line)
 
     stopwatch = Stopwatch()
@@ -117,8 +115,9 @@ def run_fuzzer(fuzzer: str, timeout: int):
         with open(out_path, "wb") as out:
             subprocess.run(
                 cmd_line.split(),
-                stderr=out,
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
+                stderr=out,
                 text=True,
                 check=True,
                 shell=False,
