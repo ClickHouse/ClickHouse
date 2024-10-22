@@ -33,8 +33,17 @@ Then, generate the data. Parameter `-s` specifies the scale factor. For example,
 ./dbgen -s 100
 ```
 
-Now create tables in ClickHouse. Note that we stick to the rules of the TPC-H benchmark and create primary key constraints only for the
-columns mentioned in section 1.4.2.2 of the the TPC-H specification.
+Now create tables in ClickHouse.
+
+We stick as closely as possible to the rules of the TPC-H specification:
+- Primary keys are created only for the columns mentioned in section 1.4.2.2 of the specification.
+- Substitution parameters were replaced by the values for query validation in sections 2.1.x.4 of the specification.
+- As per section 1.4.2.1, the table definitions do not use the optional `NOT NULL` constraints, even if `dbgen` generates them by default.
+  The performance of `SELECT` queries in ClickHouse is not affected by the presence or absence of `NOT NULL` constraints.
+- As per section 1.3.1, we use ClickHouse's native datatypes (e.g. `Int32`, `String`) to implement the abstract datatypes mentioned in the
+  specification (e.g. `Identifier`, `Variable text, size N`). The only effect of this is better readability, the SQL-92 datatypes generated
+  by `dbgen` (e.g. `INTEGER`, `VARCHAR(40)`) would also work in ClickHouse.
+
 
 ```sql
 CREATE TABLE nation (
