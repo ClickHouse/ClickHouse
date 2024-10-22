@@ -39,6 +39,12 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace CoordinationSetting
+{
+    extern const CoordinationSettingsUInt64 log_slow_connection_operation_threshold_ms;
+    extern const CoordinationSettingsUInt64 log_slow_total_threshold_ms;
+}
+
 struct LastOp
 {
 public:
@@ -429,7 +435,7 @@ void KeeperTCPHandler::runImpl()
     keeper_dispatcher->registerSession(session_id, response_callback);
 
     Stopwatch logging_stopwatch;
-    auto operation_max_ms = keeper_dispatcher->getKeeperContext()->getCoordinationSettings()->log_slow_connection_operation_threshold_ms;
+    auto operation_max_ms = keeper_dispatcher->getKeeperContext()->getCoordinationSettings()[CoordinationSetting::log_slow_connection_operation_threshold_ms];
     auto log_long_operation = [&](const String & operation)
     {
         auto elapsed_ms = logging_stopwatch.elapsedMilliseconds();
@@ -449,7 +455,6 @@ void KeeperTCPHandler::runImpl()
             using namespace std::chrono_literals;
 
             PollResult result = poll_wrapper->poll(session_timeout, *in);
-            log_long_operation("Polling socket");
             if (result.has_requests && !close_received)
             {
                 if (in->eof())
@@ -547,29 +552,27 @@ bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command)
         LOG_WARNING(log, "invalid four letter command {}", IFourLetterCommand::toName(command));
         return false;
     }
-    else if (!FourLetterCommandFactory::instance().isEnabled(command))
+    if (!FourLetterCommandFactory::instance().isEnabled(command))
     {
         LOG_WARNING(log, "Not enabled four letter command {}", IFourLetterCommand::toName(command));
         return false;
     }
-    else
+
+    auto command_ptr = FourLetterCommandFactory::instance().get(command);
+    LOG_DEBUG(log, "Receive four letter command {}", command_ptr->name());
+
+    try
     {
-        auto command_ptr = FourLetterCommandFactory::instance().get(command);
-        LOG_DEBUG(log, "Receive four letter command {}", command_ptr->name());
-
-        try
-        {
-            String res = command_ptr->run();
-            out->write(res.data(),res.size());
-            out->next();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Error when executing four letter command " + command_ptr->name());
-        }
-
-        return true;
+        String res = command_ptr->run();
+        out->write(res.data(), res.size());
+        out->next();
     }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Error when executing four letter command " + command_ptr->name());
+    }
+
+    return true;
 }
 
 WriteBuffer & KeeperTCPHandler::getWriteBuffer()
@@ -641,7 +644,7 @@ void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response
         ProfileEvents::increment(ProfileEvents::KeeperTotalElapsedMicroseconds, elapsed);
         Int64 elapsed_ms = elapsed / 1000;
 
-        if (request && elapsed_ms > static_cast<Int64>(keeper_dispatcher->getKeeperContext()->getCoordinationSettings()->log_slow_total_threshold_ms))
+        if (request && elapsed_ms > static_cast<Int64>(keeper_dispatcher->getKeeperContext()->getCoordinationSettings()[CoordinationSetting::log_slow_total_threshold_ms]))
         {
             LOG_INFO(
                 log,

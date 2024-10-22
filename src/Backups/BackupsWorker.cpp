@@ -90,10 +90,8 @@ namespace
                 backup_settings.internal,
                 context->getProcessListElement());
         }
-        else
-        {
-            return std::make_shared<BackupCoordinationLocal>(!backup_settings.deduplicate_files);
-        }
+
+        return std::make_shared<BackupCoordinationLocal>(!backup_settings.deduplicate_files);
     }
 
     std::shared_ptr<IRestoreCoordination>
@@ -128,10 +126,8 @@ namespace
                 restore_settings.internal,
                 context->getProcessListElement());
         }
-        else
-        {
-            return std::make_shared<RestoreCoordinationLocal>();
-        }
+
+        return std::make_shared<RestoreCoordinationLocal>();
     }
 
     /// Sends information about an exception to IBackupCoordination or IRestoreCoordination.
@@ -200,16 +196,14 @@ namespace
     {
         if (getCurrentExceptionCode() == ErrorCodes::QUERY_WAS_CANCELLED)
             return BackupStatus::BACKUP_CANCELLED;
-        else
-            return BackupStatus::BACKUP_FAILED;
+        return BackupStatus::BACKUP_FAILED;
     }
 
     BackupStatus getRestoreStatusFromCurrentException()
     {
         if (getCurrentExceptionCode() == ErrorCodes::QUERY_WAS_CANCELLED)
             return BackupStatus::RESTORE_CANCELLED;
-        else
-            return BackupStatus::RESTORE_FAILED;
+        return BackupStatus::RESTORE_FAILED;
     }
 
     /// Used to change num_active_backups.
@@ -416,8 +410,7 @@ OperationID BackupsWorker::start(const ASTPtr & backup_or_restore_query, Context
     const ASTBackupQuery & backup_query = typeid_cast<const ASTBackupQuery &>(*backup_or_restore_query);
     if (backup_query.kind == ASTBackupQuery::Kind::BACKUP)
         return startMakingBackup(backup_or_restore_query, context);
-    else
-        return startRestoring(backup_or_restore_query, context);
+    return startRestoring(backup_or_restore_query, context);
 }
 
 
@@ -1077,8 +1070,7 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
     {
         if (throw_if_error)
            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown backup ID {}", id);
-        else
-            return;
+        return;
     }
 
     auto & extended_info = it->second;
