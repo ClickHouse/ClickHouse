@@ -218,7 +218,7 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
         refresh_task->schedule();
         scheduling.dependencies_satisfied_until = std::chrono::sys_seconds(std::chrono::seconds(-1));
 
-        refresh_settings = std::move(RefreshSettings{});
+        refresh_settings = {};
         if (new_strategy.settings != nullptr)
             refresh_settings.applyChanges(new_strategy.settings->changes);
     }
