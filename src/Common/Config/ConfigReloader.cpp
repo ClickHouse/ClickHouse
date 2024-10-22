@@ -117,8 +117,6 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
         ConfigProcessor config_processor(config_path);
         ConfigProcessor::LoadedConfig loaded_config;
 
-        config_processor.is_config_changed = new_files.isDifferOrNewerThan(files);
-
         LOG_DEBUG(log, "Loading config '{}'", config_path);
 
         try
