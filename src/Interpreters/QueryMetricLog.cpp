@@ -1,5 +1,4 @@
 #include <base/getFQDNOrHostName.h>
-#include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeDate.h>
@@ -92,10 +91,6 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_t
     QueryMetricLogStatus status;
     status.interval_milliseconds = interval_milliseconds;
     status.next_collect_time = query_start_time + std::chrono::milliseconds(interval_milliseconds);
-
-    const auto & profile_events = CurrentThread::getProfileEvents();
-    for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
-        status.last_profile_events[i] = profile_events[i].load(std::memory_order_relaxed);
 
     auto context = getContext();
     const auto & process_list = context->getProcessList();
