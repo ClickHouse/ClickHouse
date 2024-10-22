@@ -52,7 +52,7 @@ protected:
     const PrometheusRequestHandlerConfig & config() { return parent().config; }
     PrometheusMetricsWriter & metrics_writer() { return *parent().metrics_writer; }
     LoggerPtr log() { return parent().log; }
-    WriteBuffer & getOutputHeader(HTTPServerResponse & response) { return parent().getOutputHeader(response); }
+    WriteBuffer & getOutputStream(HTTPServerResponse & response) { return parent().getOutputStream(response); }
 
 private:
     PrometheusRequestHandler & parent_ref;
@@ -74,7 +74,7 @@ public:
     void handleRequest(HTTPServerRequest & /* request */, HTTPServerResponse & response) override
     {
         response.setContentType("text/plain; version=0.0.4; charset=UTF-8");
-        auto & out = getOutputHeader(response);
+        auto & out = getOutputStream(response);
 
         if (config().expose_events)
             metrics_writer().writeEvents(out);
@@ -288,7 +288,7 @@ public:
         response.setContentType("application/x-protobuf");
         response.set("Content-Encoding", "snappy");
 
-        ProtobufZeroCopyOutputStreamFromWriteBuffer zero_copy_output_stream{std::make_unique<SnappyWriteBuffer>(getOutputHeader(response))};
+        ProtobufZeroCopyOutputStreamFromWriteBuffer zero_copy_output_stream{std::make_unique<SnappyWriteBuffer>(getOutputStream(response))};
         read_response.SerializeToZeroCopyStream(&zero_copy_output_stream);
         zero_copy_output_stream.finalize();
 
@@ -370,7 +370,7 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     }
 }
 
-WriteBufferFromHTTPServerResponse & PrometheusRequestHandler::getOutputHeader(HTTPServerResponse & response)
+WriteBufferFromHTTPServerResponse & PrometheusRequestHandler::getOutputStream(HTTPServerResponse & response)
 {
     if (write_buffer_from_response)
         return *write_buffer_from_response;

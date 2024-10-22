@@ -29,7 +29,7 @@ private:
     void createImpl();
 
     /// Returns the write buffer used for the current HTTP response.
-    WriteBufferFromHTTPServerResponse & getOutputHeader(HTTPServerResponse & response);
+    WriteBufferFromHTTPServerResponse & getOutputStream(HTTPServerResponse & response);
 
     /// Calls onException() in a try-catch block.
     void tryCallOnException();

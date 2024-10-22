@@ -142,7 +142,6 @@ namespace DB::ErrorCodes
     extern const int CLIENT_INFO_DOES_NOT_MATCH;
     extern const int LOGICAL_ERROR;
     extern const int NETWORK_ERROR;
-    extern const int POCO_EXCEPTION;
     extern const int QUERY_WAS_CANCELLED;
     extern const int SOCKET_TIMEOUT;
     extern const int SUPPORT_IS_DISABLED;
@@ -800,7 +799,7 @@ void TCPHandler::runImpl()
             {
                 exception->rethrow();
             }
-            catch(...)
+            catch (...)
             {
                 LOG_DEBUG(log, "query_state->io.onException()");
                 query_state->io.onException(log_as_error);
@@ -1017,7 +1016,7 @@ void TCPHandler::readData(QueryState & state)
         sendLogs(state);
     }
 
-    /// no sence in partial_result_on_first_cancel setting when temporary data is read.
+    /// no sense in partial_result_on_first_cancel setting when temporary data is read.
     auto off_setting_guard = TurnOffBoolSettingTemporary(state.allow_partial_result_on_first_cancel);
 
     while (receivePacketsExpectData(state))
@@ -1235,7 +1234,7 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 
     {
         PullingAsyncPipelineExecutor executor(pipeline);
-        pipeline.setConcurrencyControl(query_context->getSettingsRef()[Setting::use_concurrency_control]);
+        pipeline.setConcurrencyControl(state.query_context->getSettingsRef()[Setting::use_concurrency_control]);
         CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
 
         try
