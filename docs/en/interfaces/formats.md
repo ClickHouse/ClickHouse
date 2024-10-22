@@ -877,7 +877,7 @@ INSERT INTO json_as_object (json) FORMAT JSONAsObject {"any json stucture":1}
 SELECT time, json FROM json_as_object FORMAT JSONEachRow
 ```
 
-```resonse
+```response
 {"time":"2024-09-16 12:18:10","json":{}}
 {"time":"2024-09-16 12:18:13","json":{"any json stucture":"1"}}
 {"time":"2024-09-16 12:18:08","json":{"foo":{"bar":{"x":"y"},"baz":"1"}}}

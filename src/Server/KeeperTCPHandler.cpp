@@ -39,6 +39,12 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace CoordinationSetting
+{
+    extern const CoordinationSettingsUInt64 log_slow_connection_operation_threshold_ms;
+    extern const CoordinationSettingsUInt64 log_slow_total_threshold_ms;
+}
+
 struct LastOp
 {
 public:
@@ -429,7 +435,7 @@ void KeeperTCPHandler::runImpl()
     keeper_dispatcher->registerSession(session_id, response_callback);
 
     Stopwatch logging_stopwatch;
-    auto operation_max_ms = keeper_dispatcher->getKeeperContext()->getCoordinationSettings()->log_slow_connection_operation_threshold_ms;
+    auto operation_max_ms = keeper_dispatcher->getKeeperContext()->getCoordinationSettings()[CoordinationSetting::log_slow_connection_operation_threshold_ms];
     auto log_long_operation = [&](const String & operation)
     {
         auto elapsed_ms = logging_stopwatch.elapsedMilliseconds();
@@ -449,7 +455,6 @@ void KeeperTCPHandler::runImpl()
             using namespace std::chrono_literals;
 
             PollResult result = poll_wrapper->poll(session_timeout, *in);
-            log_long_operation("Polling socket");
             if (result.has_requests && !close_received)
             {
                 if (in->eof())
@@ -639,7 +644,7 @@ void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response
         ProfileEvents::increment(ProfileEvents::KeeperTotalElapsedMicroseconds, elapsed);
         Int64 elapsed_ms = elapsed / 1000;
 
-        if (request && elapsed_ms > static_cast<Int64>(keeper_dispatcher->getKeeperContext()->getCoordinationSettings()->log_slow_total_threshold_ms))
+        if (request && elapsed_ms > static_cast<Int64>(keeper_dispatcher->getKeeperContext()->getCoordinationSettings()[CoordinationSetting::log_slow_total_threshold_ms]))
         {
             LOG_INFO(
                 log,
