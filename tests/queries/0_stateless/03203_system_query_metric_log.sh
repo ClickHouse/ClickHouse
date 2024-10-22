@@ -31,11 +31,13 @@ function check_log()
             first_value(event_time_microseconds) OVER (ORDER BY event_time_microseconds ROWS BETWEEN 1 PRECEDING AND 0 FOLLOWING) as prev,
             dateDiff('ms', prev, event_time_microseconds) AS diff
         FROM system.query_metric_log
-        WHERE query_id = '${query_prefix}_${interval}'
+        WHERE event_date >= yesterday() AND query_id = '${query_prefix}_${interval}'
         ORDER BY event_time_microseconds
         OFFSET 1
     )
-    SELECT count() BETWEEN ((ceil(2500 / $interval) - 2) * 0.8) AND ((ceil(2500 / $interval) - 2) * 1.2), avg(diff) BETWEEN $interval * 0.8 AND $interval * 1.2 FROM diff WHERE row < total_rows
+    SELECT if(count() BETWEEN ((ceil(2500 / $interval) - 2) * 0.8) AND ((ceil(2500 / $interval) - 2) * 1.2), 'number_of_metrics_${interval}_ok', 'number_of_metrics_${interval}_error'),
+           if(avg(diff) BETWEEN $interval * 0.8 AND $interval * 1.2, 'timestamp_diff_in_metrics_${interval}_ok', 'timestamp_diff_in_metrics_${interval}_error')
+    FROM diff WHERE row < total_rows
     """
 }
 
@@ -44,10 +46,10 @@ check_log 1234
 check_log 123
 
 # query_metric_log_interval=0 disables the collection altogether
-$CLICKHOUSE_CLIENT -m -q """SELECT count() FROM system.query_metric_log WHERE query_id = '${query_prefix}_0'"""
+$CLICKHOUSE_CLIENT -m -q """SELECT count() FROM system.query_metric_log WHERE event_date >= yesterday() AND query_id = '${query_prefix}_0'"""
 
 # a quick query that takes less than query_metric_log_interval is never collected
-$CLICKHOUSE_CLIENT -m -q """SELECT count() FROM system.query_metric_log WHERE query_id = '${query_prefix}_fast'"""
+$CLICKHOUSE_CLIENT -m -q """SELECT count() FROM system.query_metric_log WHERE event_date >= yesterday() AND query_id = '${query_prefix}_fast'"""
 
 # a query that takes more than query_metric_log_interval is collected including the final row
-$CLICKHOUSE_CLIENT -m -q """SELECT count() FROM system.query_metric_log WHERE query_id = '${query_prefix}_1000'"""
+$CLICKHOUSE_CLIENT -m -q """SELECT count() FROM system.query_metric_log WHERE event_date >= yesterday() AND query_id = '${query_prefix}_1000'"""

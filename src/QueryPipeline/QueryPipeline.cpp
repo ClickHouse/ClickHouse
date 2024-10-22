@@ -26,6 +26,7 @@
 #include <Processors/Transforms/StreamInQueryCacheTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <QueryPipeline/Chain.h>
+#include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <QueryPipeline/printPipeline.h>
 

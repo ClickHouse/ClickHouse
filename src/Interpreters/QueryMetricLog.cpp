@@ -160,8 +160,8 @@ void QueryMetricLog::finishQuery(const String & query_id, QueryStatusInfoPtr que
 
 std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint current_time, bool schedule_next)
 {
-    std::lock_guard lock(queries_mutex);
     LOG_DEBUG(logger, "Collecting query_metric_log for query {}. Schedule next: {}", query_id, schedule_next);
+    std::lock_guard lock(queries_mutex);
     auto query_status_it = queries.find(query_id);
 
     /// The query might have finished while the scheduled task is running.
