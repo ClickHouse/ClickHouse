@@ -61,7 +61,7 @@ void FilterHelper::filterPlainFixedData(const S* src, PaddedPODArray<T> & dst, c
     for (size_t i = 0; i < num_batched; ++i)
     {
         auto rows = i * increment;
-        bool_type mask = bool_type::load_aligned(row_set.maskReference().data() + rows);
+        bool_type mask = bool_type::load_aligned(row_set.activeAddress() + rows);
         auto old_size = dst.size();
         if (xsimd::none(mask))
             continue;
@@ -148,7 +148,7 @@ void FilterHelper::filterDictFixedData(const PaddedPODArray<T> & dict, PaddedPOD
     for (size_t i = 0; i < num_batched; ++i)
     {
         auto rows = i * increment;
-        bool_type mask = bool_type::load_aligned(row_set.maskReference().data() + rows);
+        bool_type mask = bool_type::load_aligned(row_set.activeAddress() + rows);
         if (xsimd::none(mask))
             continue;
         else if (xsimd::all(mask))
@@ -183,7 +183,7 @@ template void FilterHelper::filterDictFixedData(const PaddedPODArray<Int16> & di
 
 
 template <class T, bool negated>
-void BigIntRangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t len, const T * data) const
+void BigIntRangeFilter::testIntValues(RowSet & row_set, size_t len, const T * data) const
 {
     using batch_type = xsimd::batch<T>;
     using bool_type = xsimd::batch_bool<T>;
@@ -202,11 +202,11 @@ void BigIntRangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t le
         else
             UNREACHABLE();
     }
-    bool aligned = offset % increment == 0;
+    bool aligned = row_set.getOffset() % increment == 0;
     for (size_t i = 0; i < num_batched; ++i)
     {
         batch_type value;
-        const auto rows = offset + (i * increment);
+        const auto rows = i * increment;
         if (aligned)
             value = batch_type::load_aligned(data + rows);
         else
@@ -238,35 +238,35 @@ void BigIntRangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t le
         if constexpr (negated)
             mask = ~mask;
         if (aligned)
-            mask.store_aligned(row_set.maskReference().data() + rows);
+            mask.store_aligned(row_set.activeAddress() + rows);
         else
-            mask.store_unaligned(row_set.maskReference().data() + rows);
+            mask.store_unaligned(row_set.activeAddress() + rows);
     }
-    for (size_t i = offset + (num_batched * increment); i < offset + len ; ++i)
+    for (size_t i = num_batched * increment; i < len ; ++i)
     {
         bool value = data[i] >= lower & data[i] <= upper;
         if (negated)
             value = !value;
-        row_set.maskReference()[i] = value;
+        row_set.set(i, value);
     }
 }
 
-template void BigIntRangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t len, const Int64 * data) const;
-template void BigIntRangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t len, const Int32 * data) const;
-template void BigIntRangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t len, const Int16 * data) const;
+template void BigIntRangeFilter::testIntValues(RowSet & row_set, size_t len, const Int64 * data) const;
+template void BigIntRangeFilter::testIntValues(RowSet & row_set, size_t len, const Int32 * data) const;
+template void BigIntRangeFilter::testIntValues(RowSet & row_set, size_t len, const Int16 * data) const;
 
-void BigIntRangeFilter::testInt64Values(DB::RowSet & row_set, size_t offset, size_t len, const Int64 * data) const
+void BigIntRangeFilter::testInt64Values(DB::RowSet & row_set, size_t len, const Int64 * data) const
 {
-    testIntValues(row_set, offset, len, data);
+    testIntValues(row_set, len, data);
 }
 
-void BigIntRangeFilter::testInt32Values(RowSet & row_set, size_t offset, size_t len, const Int32 * data) const
+void BigIntRangeFilter::testInt32Values(RowSet & row_set, size_t len, const Int32 * data) const
 {
-    testIntValues(row_set, offset, len, data);
+    testIntValues(row_set, len, data);
 }
-void BigIntRangeFilter::testInt16Values(RowSet & row_set, size_t offset, size_t len, const Int16 * data) const
+void BigIntRangeFilter::testInt16Values(RowSet & row_set, size_t len, const Int16 * data) const
 {
-    testIntValues(row_set, offset, len, data);
+    testIntValues(row_set, len, data);
 }
 
 bool isFunctionNode(const ActionsDAG::Node & node)

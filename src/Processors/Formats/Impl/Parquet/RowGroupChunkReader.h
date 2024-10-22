@@ -55,6 +55,7 @@ public:
     void prefetchRange(const arrow::io::ReadRange& range);
     void startPrefetch();
     ColumnChunkData readRange(const arrow::io::ReadRange& range);
+    bool isEmpty() const { return ranges.empty(); }
 private:
     struct TaskEntry
     {
@@ -73,7 +74,7 @@ private:
     bool fetched = false;
 };
 
-using RowGroupPrefetchPtr = std::unique_ptr<RowGroupPrefetch>;
+using RowGroupPrefetchPtr = std::shared_ptr<RowGroupPrefetch>;
 
 class RowGroupChunkReader
 {
@@ -87,11 +88,12 @@ public:
     RowGroupChunkReader(
         ParquetReader * parquetReader,
         size_t row_group_idx,
+        RowGroupPrefetchPtr prefetch_conditions,
         RowGroupPrefetchPtr prefetch,
         std::unordered_map<String, ColumnFilterPtr> filters);
     ~RowGroupChunkReader()
     {
-        //        printMetrics(std::cerr);
+                printMetrics(std::cerr);
     }
     Chunk readChunk(size_t rows);
     bool hasMoreRows() const { return remain_rows > 0; }
@@ -103,6 +105,7 @@ private:
     ParquetReader * parquet_reader;
     std::shared_ptr<parquet::RowGroupMetaData> row_group_meta;
     std::vector<String> filter_columns;
+    RowGroupPrefetchPtr prefetch_conditions;
     RowGroupPrefetchPtr prefetch;
     std::unordered_map<String, SelectiveColumnReaderPtr> reader_columns_mapping;
     std::vector<SelectiveColumnReaderPtr> column_readers;

@@ -24,6 +24,8 @@ class SelectiveColumnReader;
 
 using SelectiveColumnReaderPtr = std::shared_ptr<SelectiveColumnReader>;
 
+using PageReaderCreator = std::function<std::unique_ptr<LazyPageReader>()>;
+
 struct ScanSpec
 {
     String column_name;
@@ -117,7 +119,7 @@ Int32 loadLength(const uint8_t * data);
 class PlainDecoder
 {
 public:
-    PlainDecoder(ParquetData& data_, size_t & remain_rows_) : data(data_), remain_rows(remain_rows_) { }
+    PlainDecoder(ParquetData& data_, size_t & remain_rows_) : page_data(data_), remain_rows(remain_rows_) { }
 
     template <typename T, typename S>
     void decodeFixedValue(PaddedPODArray<T> & data, const OptionalRowSet & row_set, size_t rows_to_read);
@@ -151,7 +153,7 @@ private:
                     total_size++;
                 return;
             }
-            data.checkSize(offset +4)
+            data.checkSize(offset +4);
             auto len = loadLength(data.buffer + offset);
             offset += 4 + len;
             data.checkSize(offset);
@@ -165,7 +167,7 @@ private:
                 total_size++;
                 return;
             }
-            data.checkSize(offset +4)
+            data.checkSize(offset +4);
             auto len = loadLength(data.buffer + offset);
             offset += 4 + len;
             data.checkSize(offset);
@@ -219,15 +221,20 @@ class SelectiveColumnReader
     friend class OptionalColumnReader;
 
 public:
-    SelectiveColumnReader(std::unique_ptr<LazyPageReader> page_reader_, const ScanSpec & scan_spec_)
-        : page_reader(std::move(page_reader_)), scan_spec(scan_spec_)
+    SelectiveColumnReader(PageReaderCreator page_reader_creator_, const ScanSpec & scan_spec_)
+        : page_reader_creator(std::move(page_reader_creator_)), scan_spec(scan_spec_)
     {
     }
     virtual ~SelectiveColumnReader() = default;
+    void initPageReaderIfNeed()
+    {
+        if (!page_reader)
+            page_reader = page_reader_creator();
+    }
     virtual void computeRowSet(std::optional<RowSet> & row_set, size_t rows_to_read) = 0;
     virtual void computeRowSetSpace(OptionalRowSet &, PaddedPODArray<UInt8> &, size_t, size_t) { }
-    virtual void read(MutableColumnPtr & column, const OptionalRowSet & row_set, size_t rows_to_read) = 0;
-    virtual void readSpace(MutableColumnPtr &, const OptionalRowSet &, PaddedPODArray<UInt8> &, size_t, size_t) { }
+    virtual void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) = 0;
+    virtual void readSpace(MutableColumnPtr &, OptionalRowSet &, PaddedPODArray<UInt8> &, size_t, size_t) { }
     virtual void readPageIfNeeded();
     void readAndDecodePage()
     {
@@ -266,6 +273,7 @@ protected:
     virtual void createDictDecoder() { }
     virtual void downgradeToPlain() { }
 
+    PageReaderCreator page_reader_creator;
     std::unique_ptr<LazyPageReader> page_reader;
     ScanState state;
     ScanSpec scan_spec;
@@ -277,14 +285,14 @@ template <typename DataType, typename SerializedType>
 class NumberColumnDirectReader : public SelectiveColumnReader
 {
 public:
-    NumberColumnDirectReader(std::unique_ptr<LazyPageReader> page_reader_, ScanSpec scan_spec_, DataTypePtr datatype_);
+    NumberColumnDirectReader(PageReaderCreator page_reader_creator_, ScanSpec scan_spec_, DataTypePtr datatype_);
     ~NumberColumnDirectReader() override = default;
     MutableColumnPtr createColumn() override;
     void computeRowSet(OptionalRowSet & row_set, size_t rows_to_read) override;
     void computeRowSetSpace(OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read) override;
-    void read(MutableColumnPtr & column, const OptionalRowSet & row_set, size_t rows_to_read) override;
+    void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) override;
     void readSpace(
-        MutableColumnPtr & column, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read) override;
+        MutableColumnPtr & column, OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read) override;
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
 
 private:
@@ -295,12 +303,12 @@ template <typename DataType, typename SerializedType>
 class NumberDictionaryReader : public SelectiveColumnReader
 {
 public:
-    NumberDictionaryReader(std::unique_ptr<LazyPageReader> page_reader_, ScanSpec scan_spec_, DataTypePtr datatype_);
+    NumberDictionaryReader(PageReaderCreator page_reader_creator_, ScanSpec scan_spec_, DataTypePtr datatype_);
     ~NumberDictionaryReader() override = default;
     void computeRowSet(OptionalRowSet & row_set, size_t rows_to_read) override;
     void computeRowSetSpace(OptionalRowSet & set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read) override;
-    void read(MutableColumnPtr & column, const OptionalRowSet & row_set, size_t rows_to_read) override;
-    void readSpace(MutableColumnPtr & ptr, const OptionalRowSet & set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t size) override;
+    void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) override;
+    void readSpace(MutableColumnPtr & ptr, OptionalRowSet & set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t size) override;
     MutableColumnPtr createColumn() override { return datatype->createColumn(); }
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
 
@@ -313,7 +321,7 @@ protected:
         uint8_t bit_width = *state.data.buffer;
         state.data.checkSize(1);
         state.data.consume(1);
-        idx_decoder = arrow::util::RleDecoder(++state.data.buffer, static_cast<int>(--state.data.buffer_size), bit_width);
+        idx_decoder = arrow::util::RleDecoder(state.data.buffer, static_cast<int>(state.data.buffer_size), bit_width);
     }
     void nextIdxBatchIfEmpty(size_t rows_to_read);
 
@@ -339,17 +347,17 @@ void computeRowSetPlainStringSpace(
 class StringDirectReader : public SelectiveColumnReader
 {
 public:
-    StringDirectReader(std::unique_ptr<LazyPageReader> page_reader_, const ScanSpec & scan_spec_)
-        : SelectiveColumnReader(std::move(page_reader_), scan_spec_)
+    StringDirectReader(PageReaderCreator page_reader_creator_, const ScanSpec & scan_spec_)
+        : SelectiveColumnReader(std::move(page_reader_creator_), scan_spec_)
     {
     }
 
     void computeRowSet(OptionalRowSet & row_set, size_t rows_to_read) override;
     void computeRowSetSpace(OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t /*null_count*/, size_t rows_to_read) override;
-    void read(MutableColumnPtr & column, const OptionalRowSet & row_set, size_t rows_to_read) override;
+    void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) override;
 
     void readSpace(
-        MutableColumnPtr & column, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read) override;
+        MutableColumnPtr & column, OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read) override;
 
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
 
@@ -359,8 +367,8 @@ public:
 class StringDictionaryReader : public SelectiveColumnReader
 {
 public:
-    StringDictionaryReader(std::unique_ptr<LazyPageReader> page_reader_, const ScanSpec & scan_spec_)
-        : SelectiveColumnReader(std::move(page_reader_), scan_spec_)
+    StringDictionaryReader(PageReaderCreator page_reader_creator_, const ScanSpec & scan_spec_)
+        : SelectiveColumnReader(std::move(page_reader_creator_), scan_spec_)
     {
     }
 
@@ -370,9 +378,9 @@ public:
 
     void computeRowSetSpace(OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read) override;
 
-    void read(MutableColumnPtr & column, const OptionalRowSet & row_set, size_t rows_to_read) override;
+    void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) override;
 
-    void readSpace(MutableColumnPtr & column, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read) override;
+    void readSpace(MutableColumnPtr & column, OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read) override;
 
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
 
@@ -410,7 +418,7 @@ public:
     MutableColumnPtr createColumn() override;
     size_t currentRemainRows() const override;
     void computeRowSet(OptionalRowSet & row_set, size_t rows_to_read) override;
-    void read(MutableColumnPtr & column, const OptionalRowSet & row_set, size_t rows_to_read) override;
+    void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) override;
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
     int16_t max_definition_level() const override { return child->max_definition_level(); }
     int16_t max_repetition_level() const override { return child->max_repetition_level(); }

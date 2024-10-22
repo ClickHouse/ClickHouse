@@ -75,24 +75,17 @@ Block ParquetReader::read()
 void ParquetReader::addFilter(const String & column_name, const ColumnFilterPtr filter)
 {
 //    std::cerr << "add filter to column " << column_name << ": " << filter->toString() << std::endl;
+    condition_columns.insert(column_name);
     if (!filters.contains(column_name))
         filters[column_name] = filter;
     else
         filters[column_name] = filters[column_name]->merge(filter.get());
 //    std::cerr << "filter on column " << column_name << ": " << filters[column_name]->toString() << std::endl;
 }
-void ParquetReader::setRemainFilter(std::optional<ActionsDAG> & expr)
+
+std::unique_ptr<RowGroupChunkReader> ParquetReader::getRowGroupChunkReader(size_t row_group_idx, RowGroupPrefetchPtr conditions_prefetch, RowGroupPrefetchPtr prefetch)
 {
-    if (expr.has_value())
-    {
-        ExpressionActionsSettings settings;
-        ExpressionActions actions = ExpressionActions(std::move(expr.value()), settings);
-        remain_filter = std::optional<ExpressionActions>(std::move(actions));
-    }
-}
-std::unique_ptr<RowGroupChunkReader> ParquetReader::getRowGroupChunkReader(size_t row_group_idx, RowGroupPrefetchPtr prefetch)
-{
-    return std::make_unique<RowGroupChunkReader>(this, row_group_idx, std::move(prefetch), filters);
+    return std::make_unique<RowGroupChunkReader>(this, row_group_idx, std::move(conditions_prefetch), std::move(prefetch), filters);
 }
 
 extern arrow::io::ReadRange getColumnRange(const parquet::ColumnChunkMetaData & column_metadata);
@@ -101,9 +94,11 @@ extern arrow::io::ReadRange getColumnRange(const parquet::ColumnChunkMetaData & 
 std::unique_ptr<SubRowGroupRangeReader> ParquetReader::getSubRowGroupRangeReader(std::vector<Int32> row_group_indices_)
 {
     std::vector<RowGroupPrefetchPtr> row_group_prefetches;
+    std::vector<RowGroupPrefetchPtr> row_group_condition_prefetches;
     for (auto row_group_idx : row_group_indices_)
     {
-        RowGroupPrefetchPtr prefetch = std::make_unique<RowGroupPrefetch>(file, file_mutex, arrow_properties);
+        RowGroupPrefetchPtr prefetch = std::make_shared<RowGroupPrefetch>(file, file_mutex, arrow_properties);
+        RowGroupPrefetchPtr condition_prefetch = std::make_unique<RowGroupPrefetch>(file, file_mutex, arrow_properties);
         auto row_group_meta = meta_data->RowGroup(row_group_idx);
         for (const auto & name : header.getNames())
         {
@@ -111,20 +106,34 @@ std::unique_ptr<SubRowGroupRangeReader> ParquetReader::getSubRowGroupRangeReader
                 throw Exception(ErrorCodes::PARQUET_EXCEPTION, "no column with '{}' in parquet file", name);
             auto idx = meta_data->schema()->ColumnIndex(*parquet_columns[name]);
             auto range = getColumnRange(*row_group_meta->ColumnChunk(idx));
-            prefetch->prefetchRange(range);
+            if (condition_columns.contains(name))
+                condition_prefetch->prefetchRange(range);
+            else
+                prefetch->prefetchRange(range);
         }
         row_group_prefetches.push_back(std::move(prefetch));
+        if (!condition_prefetch->isEmpty())
+            row_group_condition_prefetches.push_back(std::move(condition_prefetch));
     }
-    return std::make_unique<SubRowGroupRangeReader>(row_group_indices_, std::move(row_group_prefetches), [&](const size_t idx, RowGroupPrefetchPtr prefetch) { return getRowGroupChunkReader(idx, std::move(prefetch)); });
+    return std::make_unique<SubRowGroupRangeReader>(
+        row_group_indices_,
+        std::move(row_group_condition_prefetches),
+        std::move(row_group_prefetches),
+        [&](const size_t idx, RowGroupPrefetchPtr condition_prefetch, RowGroupPrefetchPtr prefetch) { return getRowGroupChunkReader(idx, std::move(condition_prefetch), std::move(prefetch)); });
 }
 void ParquetReader::addExpressionFilter(std::shared_ptr<ExpressionFilter> filter)
 {
+    if (!filter) return;
+    for (const auto & item : filter->getInputs())
+    {
+        condition_columns.insert(item);
+    }
     expression_filters.emplace_back(filter);
 }
 
 
-SubRowGroupRangeReader::SubRowGroupRangeReader(const std::vector<Int32> & rowGroupIndices, std::vector<RowGroupPrefetchPtr>&& row_group_prefetches_, RowGroupReaderCreator && creator)
-    : row_group_indices(rowGroupIndices), row_group_prefetches(std::move(row_group_prefetches_)), row_group_reader_creator(creator)
+SubRowGroupRangeReader::SubRowGroupRangeReader(const std::vector<Int32> & rowGroupIndices, std::vector<RowGroupPrefetchPtr> && row_group_condition_prefetches_, std::vector<RowGroupPrefetchPtr>&& row_group_prefetches_, RowGroupReaderCreator && creator)
+    : row_group_indices(rowGroupIndices), row_group_condition_prefetches(std::move(row_group_condition_prefetches_)), row_group_prefetches(std::move(row_group_prefetches_)), row_group_reader_creator(creator)
 {
     if (row_group_indices.size() != row_group_prefetches.size())
         throw Exception(ErrorCodes::PARQUET_EXCEPTION, "row group indices and prefetches size mismatch");
@@ -145,11 +154,22 @@ bool SubRowGroupRangeReader::loadRowGroupChunkReaderIfNeeded()
         return false;
     if ((!row_group_chunk_reader || !row_group_chunk_reader->hasMoreRows()) && next_row_group_idx < row_group_indices.size())
     {
-        if (next_row_group_idx == 0) row_group_prefetches.front()->startPrefetch();
-        row_group_chunk_reader = row_group_reader_creator(row_group_indices[next_row_group_idx], std::move(row_group_prefetches[next_row_group_idx]));
+        if (next_row_group_idx == 0)
+        {
+            if (row_group_condition_prefetches.empty())
+                row_group_prefetches.front()->startPrefetch();
+            else
+                row_group_condition_prefetches.front()->startPrefetch();
+        }
+        row_group_chunk_reader = row_group_reader_creator(row_group_indices[next_row_group_idx], row_group_condition_prefetches.empty()? nullptr : std::move(row_group_condition_prefetches[next_row_group_idx]), std::move(row_group_prefetches[next_row_group_idx]));
         next_row_group_idx++;
         if (next_row_group_idx < row_group_indices.size())
-            row_group_prefetches[next_row_group_idx]->startPrefetch();
+        {
+            if (row_group_condition_prefetches.empty())
+                row_group_prefetches[next_row_group_idx]->startPrefetch();
+            else
+                row_group_condition_prefetches[next_row_group_idx]->startPrefetch();
+        }
     }
     return true;
 }

@@ -26,14 +26,17 @@ public:
         std::fill(mask.begin(), mask.end(), true);
     }
 
-    inline void set(size_t i, bool value) { mask[i] = value; }
+    inline void set(size_t i, bool value) { mask[offset + i] = value; }
     inline bool get(size_t i) const
     {
-        if (i >= max_rows)
+        auto position = offset + i;
+        if (position >= max_rows)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "RowSet index out of bound: {} >= {}", i, max_rows);
-        return mask[i];
+        return mask[position];
     }
     inline size_t totalRows() const { return max_rows; }
+    inline void setOffset(size_t offset_) { offset = offset_; }
+    inline size_t getOffset() const { return offset; }
     bool none() const;
     bool all() const;
     bool any() const;
@@ -43,11 +46,14 @@ public:
     {
         return countBytesInFilter(reinterpret_cast<const UInt8 *>(mask.data()), 0, mask.size());
     }
-    PaddedPODArray<bool> & maskReference() { return mask; }
-    const PaddedPODArray<bool> & maskReference() const { return mask; }
+//    PaddedPODArray<bool> & maskReference() { return mask; }
+//    const PaddedPODArray<bool> & maskReference() const { return mask; }
+    const bool * activeAddress() const { return mask.data() + offset; }
+    bool * activeAddress() { return mask.data() + offset; }
 
 private:
     size_t max_rows = 0;
+    size_t offset = 0;
     PaddedPODArray<bool> mask;
 };
 using OptionalRowSet = std::optional<RowSet>;
@@ -135,41 +141,41 @@ public:
     {
         throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testFloat64Range not implemented");
     }
-    virtual void testInt64Values(RowSet & row_set, size_t offset, size_t len, const Int64 * data) const
+    virtual void testInt64Values(RowSet & row_set, size_t len, const Int64 * data) const
     {
-        for (size_t i = offset; i < offset + len; ++i)
+        for (size_t i = 0; i < len; ++i)
         {
             row_set.set(i, testInt64(data[i]));
         }
     }
 
-    virtual void testInt32Values(RowSet & row_set, size_t offset, size_t len, const Int32 * data) const
+    virtual void testInt32Values(RowSet & row_set, size_t len, const Int32 * data) const
     {
-        for (size_t i = offset; i < offset + len; ++i)
+        for (size_t i = 0; i < len; ++i)
         {
             row_set.set(i, testInt32(data[i]));
         }
     }
 
-    virtual void testInt16Values(RowSet & row_set, size_t offset, size_t len, const Int16 * data) const
+    virtual void testInt16Values(RowSet & row_set, size_t len, const Int16 * data) const
     {
-        for (size_t i = offset; i < offset + len; ++i)
+        for (size_t i = 0; i < len; ++i)
         {
             row_set.set(i, testInt16(data[i]));
         }
     }
 
-    virtual void testFloat32Values(RowSet & row_set, size_t offset, size_t len, const Float32 * data) const
+    virtual void testFloat32Values(RowSet & row_set, size_t len, const Float32 * data) const
     {
-        for (size_t i = offset; i < offset + len; ++i)
+        for (size_t i = 0; i < len; ++i)
         {
             row_set.set(i, testFloat32(data[i]));
         }
     }
 
-    virtual void testFloat64Values(RowSet & row_set, size_t offset, size_t len, const Float64 * data) const
+    virtual void testFloat64Values(RowSet & row_set, size_t len, const Float64 * data) const
     {
-        for (size_t i = offset; i < offset + len; ++i)
+        for (size_t i = 0; i < len; ++i)
         {
             row_set.set(i, testFloat64(data[i]));
         }
@@ -221,7 +227,7 @@ public:
     bool testInt64Range(Int64, Int64) const override { return true; }
     bool testFloat32Range(Float32, Float32) const override { return true; }
     bool testFloat64Range(Float64, Float64) const override { return true; }
-    void testInt64Values(RowSet & set, size_t, size_t, const Int64 *) const override { set.setAllTrue(); }
+    void testInt64Values(RowSet & set, size_t, const Int64 *) const override { set.setAllTrue(); }
     bool testString(const String & /*value*/) const override { return true; }
     ColumnFilterPtr merge(const ColumnFilter * /*filter*/) const override { return std::make_shared<AlwaysTrueFilter>(); }
     ColumnFilterPtr clone(std::optional<bool>) const override { return std::make_shared<AlwaysTrueFilter>(); }
@@ -240,7 +246,7 @@ public:
     bool testInt64Range(Int64, Int64) const override { return false; }
     bool testFloat32Range(Float32, Float32) const override { return false; }
     bool testFloat64Range(Float64, Float64) const override { return false; }
-    void testInt64Values(RowSet & set, size_t, size_t, const Int64 *) const override { set.setAllFalse(); }
+    void testInt64Values(RowSet & set, size_t, const Int64 *) const override { set.setAllFalse(); }
     bool testString(const String & /*value*/) const override { return false; }
     ColumnFilterPtr merge(const ColumnFilter * /*filter*/) const override { return std::make_shared<AlwaysFalseFilter>(); }
     ColumnFilterPtr clone(std::optional<bool>) const override { return std::make_shared<AlwaysFalseFilter>(); }
@@ -267,9 +273,9 @@ public:
     bool testInt32(Int32 int32) const override { return int32 >= lower && int32 <= upper; }
     bool testInt16(Int16 int16) const override { return int16 >= lower && int16 <= upper; }
     bool testInt64Range(Int64 lower_, Int64 upper_) const override { return lower >= lower_ && upper_ <= upper; }
-    void testInt64Values(RowSet & row_set, size_t offset, size_t len, const Int64 * data) const override;
-    void testInt32Values(RowSet & row_set, size_t offset, size_t len, const Int32 * data) const override;
-    void testInt16Values(RowSet & row_set, size_t offset, size_t len, const Int16 * data) const override;
+    void testInt64Values(RowSet & row_set, size_t len, const Int64 * data) const override;
+    void testInt32Values(RowSet & row_set, size_t len, const Int32 * data) const override;
+    void testInt16Values(RowSet & row_set, size_t len, const Int16 * data) const override;
     ColumnFilterPtr merge(const ColumnFilter * filter) const override;
     ColumnFilterPtr clone(std::optional<bool> null_allowed_) const override
     {
@@ -286,7 +292,7 @@ public:
 
 private:
     template <class T, bool negated = false>
-    void testIntValues(RowSet & row_set, size_t offset, size_t len, const T * data) const;
+    void testIntValues(RowSet & row_set, size_t len, const T * data) const;
 
     const Int64 upper;
     const Int64 lower;
@@ -309,17 +315,17 @@ public:
     bool testInt64(Int64 int64) const override { return !non_negated->testInt64(int64); }
     bool testInt32(Int32 int32) const override { return !non_negated->testInt32(int32); }
     bool testInt16(Int16 int16) const override { return !non_negated->testInt16(int16); }
-    void testInt64Values(RowSet & row_set, size_t offset, size_t len, const Int64 * data) const override
+    void testInt64Values(RowSet & row_set, size_t len, const Int64 * data) const override
     {
-        non_negated->testIntValues<Int64, true>(row_set, offset, len, data);
+        non_negated->testIntValues<Int64, true>(row_set, len, data);
     }
-    void testInt32Values(RowSet & row_set, size_t offset, size_t len, const Int32 * data) const override
+    void testInt32Values(RowSet & row_set, size_t len, const Int32 * data) const override
     {
-        non_negated->testIntValues<Int32, true>(row_set, offset, len, data);
+        non_negated->testIntValues<Int32, true>(row_set, len, data);
     }
-    void testInt16Values(RowSet & row_set, size_t offset, size_t len, const Int16 * data) const override
+    void testInt16Values(RowSet & row_set, size_t len, const Int16 * data) const override
     {
-        non_negated->testIntValues<Int16, true>(row_set, offset, len, data);
+        non_negated->testIntValues<Int16, true>(row_set, len, data);
     }
 
     ColumnFilterPtr merge(const ColumnFilter * filter) const override;

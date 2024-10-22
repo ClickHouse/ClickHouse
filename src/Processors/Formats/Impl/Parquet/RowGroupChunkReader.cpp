@@ -21,8 +21,9 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
         size_t rows_to_read = std::min(rows - rows_read, remain_rows);
         if (!rows_to_read)
             break;
-        for (auto & reader : column_readers)
+        for (const auto & column : parquet_reader->condition_columns)
         {
+            auto reader = reader_columns_mapping.at(column);
             if (!reader->availableRows())
             {
                 reader->readPageIfNeeded();
@@ -57,6 +58,7 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
         }
         else
         {
+            prefetch->startPrefetch();
             for (const auto & name : column_names)
             {
                 if (select_result.intermediate_columns.contains(name))
@@ -195,9 +197,10 @@ ColumnChunkData RowGroupPrefetch::readRange(const arrow::io::ReadRange & range)
 
 
 RowGroupChunkReader::RowGroupChunkReader(
-    ParquetReader * parquetReader, size_t row_group_idx, RowGroupPrefetchPtr prefetch_, std::unordered_map<String, ColumnFilterPtr> filters)
+    ParquetReader * parquetReader, size_t row_group_idx, RowGroupPrefetchPtr prefetch_conditions_, RowGroupPrefetchPtr prefetch_, std::unordered_map<String, ColumnFilterPtr> filters)
     : parquet_reader(parquetReader)
     , row_group_meta(parquetReader->meta_data->RowGroup(static_cast<int>(row_group_idx)))
+    , prefetch_conditions(std::move(prefetch_conditions_))
     , prefetch(std::move(prefetch_))
 {
     column_readers.reserve(parquet_reader->header.columns());
@@ -214,21 +217,51 @@ RowGroupChunkReader::RowGroupChunkReader(
         auto idx = parquet_reader->meta_data->schema()->ColumnIndex(*node);
         auto filter = filters.contains(col_with_name.name) ? filters.at(col_with_name.name) : nullptr;
         remain_rows = row_group_meta->ColumnChunk(idx)->num_values();
-        auto data = prefetch->readRange(getColumnRange(*row_group_meta->ColumnChunk(idx)));
-        auto page_reader = std::make_unique<LazyPageReader>(
-            std::make_shared<ReadBufferFromMemory>(reinterpret_cast<char *>(data.data), data.size),
-            parquet_reader->properties,
-            remain_rows,
-            row_group_meta->ColumnChunk(idx)->compression());
-        const auto * column_desc = parquet_reader->meta_data->schema()->Column(idx);
-        auto column_reader = ParquetColumnReaderFactory::builder()
-                                 .nullable(node->is_optional())
-                                 .dictionary(row_group_meta->ColumnChunk(idx)->has_dictionary_page())
-                                 .columnDescriptor(column_desc)
-                                 .pageReader(std::move(page_reader))
-                                 .targetType(col_with_name.type)
-                                 .filter(filter)
-                                 .build();
+        SelectiveColumnReaderPtr column_reader;
+        if (parquet_reader->condition_columns.contains(col_with_name.name))
+        {
+            PageReaderCreator creator = [&, idx]
+            {
+                auto data = prefetch_conditions->readRange(getColumnRange(*row_group_meta->ColumnChunk(idx)));
+                auto page_reader = std::make_unique<LazyPageReader>(
+                    std::make_shared<ReadBufferFromMemory>(reinterpret_cast<char *>(data.data), data.size),
+                    parquet_reader->properties,
+                    remain_rows,
+                    row_group_meta->ColumnChunk(idx)->compression());
+                return page_reader;
+            };
+            const auto * column_desc = parquet_reader->meta_data->schema()->Column(idx);
+            column_reader = ParquetColumnReaderFactory::builder()
+                                     .nullable(node->is_optional())
+                                     .dictionary(row_group_meta->ColumnChunk(idx)->has_dictionary_page())
+                                     .columnDescriptor(column_desc)
+                                     .pageReader(std::move(creator))
+                                     .targetType(col_with_name.type)
+                                     .filter(filter)
+                                     .build();
+        }
+        else
+        {
+            PageReaderCreator creator = [&, idx]
+            {
+                auto data = prefetch->readRange(getColumnRange(*row_group_meta->ColumnChunk(idx)));
+                auto page_reader = std::make_unique<LazyPageReader>(
+                    std::make_shared<ReadBufferFromMemory>(reinterpret_cast<char *>(data.data), data.size),
+                    parquet_reader->properties,
+                    remain_rows,
+                    row_group_meta->ColumnChunk(idx)->compression());
+                return page_reader;
+            };
+            const auto * column_desc = parquet_reader->meta_data->schema()->Column(idx);
+            column_reader = ParquetColumnReaderFactory::builder()
+                                     .nullable(node->is_optional())
+                                     .dictionary(row_group_meta->ColumnChunk(idx)->has_dictionary_page())
+                                     .columnDescriptor(column_desc)
+                                     .pageReader(std::move(creator))
+                                     .targetType(col_with_name.type)
+                                     .filter(filter)
+                                     .build();
+        }
         column_readers.push_back(column_reader);
         reader_columns_mapping[col_with_name.name] = column_reader;
         chassert(idx >= 0);
@@ -313,7 +346,10 @@ SelectResult SelectConditions::selectRows(size_t rows)
                 auto reader = readers.at(name);
                 auto column = reader->createColumn();
                 if (count == rows)
-                    reader->read(column, std::nullopt, rows);
+                {
+                    OptionalRowSet set;
+                    reader->read(column, set, rows);
+                }
                 else
                     reader->read(column, total_set, rows);
                 intermediate_columns.emplace(name, std::move(column));
