@@ -244,9 +244,8 @@ struct ScatteredBlock : private boost::noncopyable
 
     ScatteredBlock compress() const
     {
-        chassert(!wasScattered());
         if (wasScattered())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot compress scattered block");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot compress ScatteredBlock");
         return ScatteredBlock{block.compress()};
     }
 

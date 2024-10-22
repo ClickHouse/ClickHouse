@@ -30,9 +30,6 @@
 #include <Common/assert_cast.h>
 #include <Common/formatReadable.h>
 #include <Common/typeid_cast.h>
-#include "Core/Block.h"
-#include "Interpreters/HashJoin/ScatteredBlock.h"
-
 
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
@@ -579,11 +576,11 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
         && (tmp_stream || (max_bytes_in_join && getTotalByteCount() + block_to_save.allocatedBytes() >= max_bytes_in_join)
             || (max_rows_in_join && getTotalRowCount() + block_to_save.rows() >= max_rows_in_join)))
     {
-        chassert(!source_block.wasScattered()); /// We don't run parallel_hash for cross join
         if (tmp_stream == nullptr)
         {
             tmp_stream = &tmp_data->createStream(right_sample_block);
         }
+        chassert(!source_block.wasScattered()); /// We don't run parallel_hash for cross join
         tmp_stream->write(block_to_save.getSourceBlock());
         return true;
     }
@@ -613,7 +610,7 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
         data->blocks_allocated_size += block_to_save.allocatedBytes();
         doDebugAsserts();
         data->blocks.emplace_back(std::move(block_to_save));
-        auto * stored_block = &data->blocks.back();
+        const auto * stored_block = &data->blocks.back();
         doDebugAsserts();
 
         if (rows)
@@ -874,7 +871,7 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
                 process_right_block(block_right.getSourceBlock());
             else
             {
-                chassert(!block_right.wasScattered()); /// Compression only happens for cross join
+                chassert(!block_right.wasScattered()); /// Compression only happens for cross join and scattering only for concurrent hash
                 process_right_block(block_right.getSourceBlock().decompress());
             }
 

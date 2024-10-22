@@ -19,7 +19,7 @@ template <typename HashMap, typename KeyGetter>
 struct Inserter
 {
     static ALWAYS_INLINE bool
-    insertOne(const HashJoin & join, HashMap & map, KeyGetter & key_getter, Block * stored_block, size_t i, Arena & pool)
+    insertOne(const HashJoin & join, HashMap & map, KeyGetter & key_getter, const Block * stored_block, size_t i, Arena & pool)
     {
         auto emplace_result = key_getter.emplaceKey(map, i, pool);
 
@@ -31,7 +31,8 @@ struct Inserter
         return false;
     }
 
-    static ALWAYS_INLINE void insertAll(const HashJoin &, HashMap & map, KeyGetter & key_getter, Block * stored_block, size_t i, Arena & pool)
+    static ALWAYS_INLINE void
+    insertAll(const HashJoin &, HashMap & map, KeyGetter & key_getter, const Block * stored_block, size_t i, Arena & pool)
     {
         auto emplace_result = key_getter.emplaceKey(map, i, pool);
 
@@ -45,7 +46,13 @@ struct Inserter
     }
 
     static ALWAYS_INLINE void insertAsof(
-        HashJoin & join, HashMap & map, KeyGetter & key_getter, Block * stored_block, size_t i, Arena & pool, const IColumn & asof_column)
+        HashJoin & join,
+        HashMap & map,
+        KeyGetter & key_getter,
+        const Block * stored_block,
+        size_t i,
+        Arena & pool,
+        const IColumn & asof_column)
     {
         auto emplace_result = key_getter.emplaceKey(map, i, pool);
         typename HashMap::mapped_type * time_series_map = &emplace_result.getMapped();
@@ -68,7 +75,7 @@ public:
         MapsTemplate & maps,
         const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes,
-        Block * stored_block,
+        const Block * stored_block,
         const ScatteredBlock::Selector & selector,
         ConstNullMapPtr null_map,
         UInt8ColumnDataPtr join_mask,
@@ -101,7 +108,7 @@ private:
         HashMap & map,
         const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes,
-        Block * stored_block,
+        const Block * stored_block,
         const Selector & selector,
         ConstNullMapPtr null_map,
         UInt8ColumnDataPtr join_mask,
