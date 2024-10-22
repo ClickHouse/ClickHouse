@@ -385,7 +385,7 @@ size_t HashJoin::getTotalRowCount() const
 
 void HashJoin::doDebugAsserts() const
 {
-#if !defined(NDEBUG) && 0
+#ifndef NDEBUG
     size_t debug_blocks_allocated_size = 0;
     for (const auto & block : data->blocks)
         debug_blocks_allocated_size += block.allocatedBytes();
@@ -607,8 +607,8 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
             have_compressed = true;
         }
 
-        data->blocks_allocated_size += block_to_save.allocatedBytes();
         doDebugAsserts();
+        data->blocks_allocated_size += block_to_save.allocatedBytes();
         data->blocks.emplace_back(std::move(block_to_save));
         const auto * stored_block = &data->blocks.back();
         doDebugAsserts();
