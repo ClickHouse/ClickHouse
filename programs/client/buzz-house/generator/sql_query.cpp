@@ -116,7 +116,9 @@ int StatementGenerator::GenerateFromElement(RandomGenerator &rg, const uint32_t 
 		sql_query_grammar::ExprSchemaTable *est = jt->mutable_est();
 		const SQLTable &t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
 
-		est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
+		if (t.db) {
+			est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
+		}
 		est->mutable_table()->set_table("t" + std::to_string(t.tname));
 		jt->mutable_table_alias()->set_table(name);
 		jt->set_final(t.SupportsFinal() && (this->enforce_final || rg.NextSmallNumber() < 3));

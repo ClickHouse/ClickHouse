@@ -60,13 +60,13 @@ public:
 struct SQLDatabase {
 public:
 	bool attached = true;
-	uint32_t dname = 0, table_counter = 0;
+	uint32_t dname = 0;
 	sql_query_grammar::DatabaseEngineValues deng;
 };
 
 struct SQLBase {
 public:
-	std::shared_ptr<SQLDatabase> db;
+	std::shared_ptr<SQLDatabase> db = nullptr;
 	bool attached = true;
 	std::optional<sql_query_grammar::TableEngineOption> toption;
 	sql_query_grammar::TableEngineValues teng;
