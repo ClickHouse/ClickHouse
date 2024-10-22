@@ -18,7 +18,6 @@
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
 #include <Common/TypePromotion.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <optional>
 
@@ -104,7 +103,7 @@ public:
     IStorage(const IStorage &) = delete;
     IStorage & operator=(const IStorage &) = delete;
 
-    /// The main name of the table type (e.g. Memory, MergeTree, CollapsingMergeTree).
+    /// The main name of the table type (for example, StorageMergeTree).
     virtual std::string getName() const = 0;
 
     /// The name of the table.
@@ -136,7 +135,7 @@ public:
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
 
-    virtual ConditionSelectivityEstimator getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const;
+    virtual ConditionSelectivityEstimator getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAGPtr &, ContextPtr) const;
 
     /// Returns which columns supports PREWHERE, or empty std::nullopt if all columns is supported.
     /// This is needed for engines whose aggregates data from multiple tables, like Merge.
@@ -270,19 +269,12 @@ public:
     /// because those are internally translated into 'ALTER UDPATE' mutations.
     virtual bool supportsDelete() const { return false; }
 
-    /// Returns true if storage can store columns in sparse serialization.
-    virtual bool supportsSparseSerialization() const { return false; }
-
     /// Return true if the trivial count query could be optimized without reading the data at all
     /// in totalRows() or totalRowsByPartitionPredicate() methods or with optimized reading in read() method.
-    /// 'storage_snapshot' may be nullptr.
     virtual bool supportsTrivialCountOptimization(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr /*query_context*/) const
     {
         return false;
     }
-
-    /// Returns hints for serialization of columns accorsing to statistics accumulated by storage.
-    virtual SerializationInfoByName getSerializationHints() const { return {}; }
 
 private:
     StorageID storage_id;
@@ -692,7 +684,7 @@ public:
     virtual std::optional<UInt64> totalRows(const Settings &) const { return {}; }
 
     /// Same as above but also take partition predicate into account.
-    virtual std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG &, ContextPtr) const { return {}; }
+    virtual std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAGPtr &, ContextPtr) const { return {}; }
 
     /// If it is possible to quickly determine exact number of bytes for the table on storage:
     /// - memory (approximated, resident)

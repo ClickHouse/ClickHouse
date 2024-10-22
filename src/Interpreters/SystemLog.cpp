@@ -1,7 +1,6 @@
 #include <Interpreters/SystemLog.h>
 
 #include <base/scope_guard.h>
-#include <Common/SystemLogBase.h>
 #include <Common/logger_useful.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/quoteString.h>
@@ -49,7 +48,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <fmt/core.h>
-
 
 namespace DB
 {
@@ -284,21 +282,85 @@ ASTPtr getCreateTableQueryClean(const StorageID & table_id, ContextPtr context)
 
 SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config)
 {
-/// NOLINTBEGIN(bugprone-macro-parentheses)
-#define CREATE_PUBLIC_MEMBERS(log_type, member, descr) \
-    member = createSystemLog<log_type>(global_context, "system", #member, config, #member, descr); \
+    query_log = createSystemLog<QueryLog>(global_context, "system", "query_log", config, "query_log", "Contains information about executed queries, for example, start time, duration of processing, error messages.");
+    query_thread_log = createSystemLog<QueryThreadLog>(global_context, "system", "query_thread_log", config, "query_thread_log", "Contains information about threads that execute queries, for example, thread name, thread start time, duration of query processing.");
+    part_log = createSystemLog<PartLog>(global_context, "system", "part_log", config, "part_log", "This table contains information about events that occurred with data parts in the MergeTree family tables, such as adding or merging data.");
+    trace_log = createSystemLog<TraceLog>(global_context, "system", "trace_log", config, "trace_log", "Contains stack traces collected by the sampling query profiler.");
+    crash_log = createSystemLog<CrashLog>(global_context, "system", "crash_log", config, "crash_log", "Contains information about stack traces for fatal errors. The table does not exist in the database by default, it is created only when fatal errors occur.");
+    text_log = createSystemLog<TextLog>(global_context, "system", "text_log", config, "text_log", "Contains logging entries which are normally written to a log file or to stdout.");
+    metric_log = createSystemLog<MetricLog>(global_context, "system", "metric_log", config, "metric_log", "Contains history of metrics values from tables system.metrics and system.events, periodically flushed to disk.");
+    error_log = createSystemLog<ErrorLog>(global_context, "system", "error_log", config, "error_log", "Contains history of error values from table system.errors, periodically flushed to disk.");
+    filesystem_cache_log = createSystemLog<FilesystemCacheLog>(global_context, "system", "filesystem_cache_log", config, "filesystem_cache_log", "Contains a history of all events occurred with filesystem cache for objects on a remote filesystem.");
+    filesystem_read_prefetches_log = createSystemLog<FilesystemReadPrefetchesLog>(
+        global_context, "system", "filesystem_read_prefetches_log", config, "filesystem_read_prefetches_log", "Contains a history of all prefetches done during reading from MergeTables backed by a remote filesystem.");
+    asynchronous_metric_log = createSystemLog<AsynchronousMetricLog>(
+        global_context, "system", "asynchronous_metric_log", config,
+        "asynchronous_metric_log", "Contains the historical values for system.asynchronous_metrics, once per time interval (one second by default).");
+    opentelemetry_span_log = createSystemLog<OpenTelemetrySpanLog>(
+        global_context, "system", "opentelemetry_span_log", config,
+        "opentelemetry_span_log", "Contains information about trace spans for executed queries.");
+    query_views_log = createSystemLog<QueryViewsLog>(global_context, "system", "query_views_log", config, "query_views_log", "Contains information about the dependent views executed when running a query, for example, the view type or the execution time.");
+    zookeeper_log = createSystemLog<ZooKeeperLog>(global_context, "system", "zookeeper_log", config, "zookeeper_log", "This table contains information about the parameters of the request to the ZooKeeper server and the response from it.");
+    session_log = createSystemLog<SessionLog>(global_context, "system", "session_log", config, "session_log", "Contains information about all successful and failed login and logout events.");
+    transactions_info_log = createSystemLog<TransactionsInfoLog>(
+        global_context, "system", "transactions_info_log", config, "transactions_info_log", "Contains information about all transactions executed on a current server.");
+    processors_profile_log = createSystemLog<ProcessorsProfileLog>(global_context, "system", "processors_profile_log", config, "processors_profile_log", "Contains profiling information on processors level (building blocks for a pipeline for query execution.");
+    asynchronous_insert_log = createSystemLog<AsynchronousInsertLog>(global_context, "system", "asynchronous_insert_log", config, "asynchronous_insert_log", "Contains a history for all asynchronous inserts executed on current server.");
+    backup_log = createSystemLog<BackupLog>(global_context, "system", "backup_log", config, "backup_log", "Contains logging entries with the information about BACKUP and RESTORE operations.");
+    s3_queue_log = createSystemLog<ObjectStorageQueueLog>(global_context, "system", "s3queue_log", config, "s3queue_log", "Contains logging entries with the information files processes by S3Queue engine.");
+    azure_queue_log = createSystemLog<ObjectStorageQueueLog>(global_context, "system", "azure_queue_log", config, "azure_queue_log", "Contains logging entries with the information files processes by S3Queue engine.");
+    blob_storage_log = createSystemLog<BlobStorageLog>(global_context, "system", "blob_storage_log", config, "blob_storage_log", "Contains logging entries with information about various blob storage operations such as uploads and deletes.");
 
-    LIST_OF_ALL_SYSTEM_LOGS(CREATE_PUBLIC_MEMBERS)
-#undef CREATE_PUBLIC_MEMBERS
-/// NOLINTEND(bugprone-macro-parentheses)
-
+    if (query_log)
+        logs.emplace_back(query_log.get());
+    if (query_thread_log)
+        logs.emplace_back(query_thread_log.get());
+    if (part_log)
+        logs.emplace_back(part_log.get());
+    if (trace_log)
+        logs.emplace_back(trace_log.get());
+    if (crash_log)
+        logs.emplace_back(crash_log.get());
+    if (text_log)
+        logs.emplace_back(text_log.get());
+    if (metric_log)
+        logs.emplace_back(metric_log.get());
+    if (error_log)
+        logs.emplace_back(error_log.get());
+    if (asynchronous_metric_log)
+        logs.emplace_back(asynchronous_metric_log.get());
+    if (opentelemetry_span_log)
+        logs.emplace_back(opentelemetry_span_log.get());
+    if (query_views_log)
+        logs.emplace_back(query_views_log.get());
+    if (zookeeper_log)
+        logs.emplace_back(zookeeper_log.get());
     if (session_log)
+    {
+        logs.emplace_back(session_log.get());
         global_context->addWarningMessage("Table system.session_log is enabled. It's unreliable and may contain garbage. Do not use it for any kind of security monitoring.");
+    }
+    if (transactions_info_log)
+        logs.emplace_back(transactions_info_log.get());
+    if (processors_profile_log)
+        logs.emplace_back(processors_profile_log.get());
+    if (filesystem_cache_log)
+        logs.emplace_back(filesystem_cache_log.get());
+    if (filesystem_read_prefetches_log)
+        logs.emplace_back(filesystem_read_prefetches_log.get());
+    if (asynchronous_insert_log)
+        logs.emplace_back(asynchronous_insert_log.get());
+    if (backup_log)
+        logs.emplace_back(backup_log.get());
+    if (s3_queue_log)
+        logs.emplace_back(s3_queue_log.get());
+    if (blob_storage_log)
+        logs.emplace_back(blob_storage_log.get());
 
     bool should_prepare = global_context->getServerSettings().prepare_system_log_tables_on_startup;
     try
     {
-        for (auto & log : getAllLogs())
+        for (auto & log : logs)
         {
             log->startup();
             if (should_prepare)
@@ -332,54 +394,20 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     }
 }
 
-std::vector<ISystemLog *> SystemLogs::getAllLogs() const
+
+SystemLogs::~SystemLogs()
 {
-#define GET_RAW_POINTERS(log_type, member, descr) \
-    (member).get(), \
-
-    std::vector<ISystemLog *> result = {
-        LIST_OF_ALL_SYSTEM_LOGS(GET_RAW_POINTERS)
-    };
-#undef GET_RAW_POINTERS
-
-    auto last_it = std::remove(result.begin(), result.end(), nullptr);
-    result.erase(last_it, result.end());
-
-    return result;
-}
-
-void SystemLogs::flush(bool should_prepare_tables_anyway)
-{
-    auto logs = getAllLogs();
-    std::vector<ISystemLog::Index> logs_indexes(logs.size(), 0);
-
-    for (size_t i = 0; i < logs.size(); ++i)
-    {
-        auto last_log_index = logs[i]->getLastLogIndex();
-        logs_indexes[i] = last_log_index;
-        logs[i]->notifyFlush(last_log_index, should_prepare_tables_anyway);
-    }
-
-    for (size_t i = 0; i < logs.size(); ++i)
-        logs[i]->flush(logs_indexes[i], should_prepare_tables_anyway);
-}
-
-void SystemLogs::flushAndShutdown()
-{
-    flush(/* should_prepare_tables_anyway */ false);
     shutdown();
 }
 
 void SystemLogs::shutdown()
 {
-    auto logs = getAllLogs();
     for (auto & log : logs)
         log->shutdown();
 }
 
 void SystemLogs::handleCrash()
 {
-    auto logs = getAllLogs();
     for (auto & log : logs)
         log->handleCrash();
 }
@@ -402,11 +430,30 @@ SystemLog<LogElement>::SystemLog(
 template <typename LogElement>
 void SystemLog<LogElement>::shutdown()
 {
-    Base::stopFlushThread();
+    stopFlushThread();
 
     auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
     if (table)
         table->flushAndShutdown();
+}
+
+template <typename LogElement>
+void SystemLog<LogElement>::stopFlushThread()
+{
+    {
+        std::lock_guard lock(thread_mutex);
+
+        if (!saving_thread || !saving_thread->joinable())
+            return;
+
+        if (is_shutdown)
+            return;
+
+        is_shutdown = true;
+        queue->shutdown();
+    }
+
+    saving_thread->join();
 }
 
 
@@ -415,26 +462,33 @@ void SystemLog<LogElement>::savingThreadFunction()
 {
     setThreadName("SystemLogFlush");
 
-    while (true)
+    std::vector<LogElement> to_flush;
+    bool exit_this_thread = false;
+    while (!exit_this_thread)
     {
         try
         {
-            auto result = queue->pop();
+            // The end index (exclusive, like std end()) of the messages we are
+            // going to flush.
+            uint64_t to_flush_end = 0;
+            // Should we prepare table even if there are no new messages.
+            bool should_prepare_tables_anyway = false;
 
-            if (result.is_shutdown)
-            {
-                LOG_TRACE(log, "Terminating");
-                return;
-            }
+            to_flush_end = queue->pop(to_flush, should_prepare_tables_anyway, exit_this_thread);
 
-            if (!result.logs.empty())
+            if (to_flush.empty())
             {
-                flushImpl(result.logs, result.last_log_index);
+                if (should_prepare_tables_anyway)
+                {
+                    prepareTable();
+                    LOG_TRACE(log, "Table created (force)");
+
+                    queue->confirm(to_flush_end);
+                }
             }
-            else if (result.create_table_force)
+            else
             {
-                prepareTable();
-                queue->confirm(result.last_log_index);
+                flushImpl(to_flush, to_flush_end);
             }
         }
         catch (...)
@@ -442,6 +496,7 @@ void SystemLog<LogElement>::savingThreadFunction()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
+    LOG_TRACE(log, "Terminating");
 }
 
 

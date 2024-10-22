@@ -312,8 +312,10 @@ public:
         {
             return std::make_shared<FakeDiskTransaction>(*this);
         }
-
-        return createEncryptedTransaction();
+        else
+        {
+            return createEncryptedTransaction();
+        }
     }
 
     std::optional<UInt64> getTotalSpace() const override
@@ -346,12 +348,6 @@ public:
     DiskPtr getDelegateDiskIfExists() const override
     {
         return delegate;
-    }
-
-    UInt32 getRefCount(const String & path) const override
-    {
-        auto wrapped_path = wrappedPath(path);
-        return delegate->getRefCount(wrapped_path);
     }
 
 #if USE_AWS_S3

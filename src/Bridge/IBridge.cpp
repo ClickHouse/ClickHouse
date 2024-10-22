@@ -232,7 +232,7 @@ int IBridge::main(const std::vector<std::string> & /*args*/)
     auto context = Context::createGlobal(shared_context.get());
     context->makeGlobalContext();
 
-    auto settings = context->getSettingsCopy();
+    auto settings = context->getSettings();
     settings.set("http_max_field_value_size", http_max_field_value_size);
     context->setSettings(settings);
 

@@ -37,11 +37,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool enable_global_with_statement;
-    extern const SettingsBool insert_allow_materialized_columns;
-}
 
 namespace ErrorCodes
 {
@@ -94,12 +89,12 @@ static constexpr auto MYSQL_BACKGROUND_THREAD_NAME = "MySQLDBSync";
 
 static ContextMutablePtr createQueryContext(ContextPtr context)
 {
-    Settings new_query_settings = context->getSettingsCopy();
-    new_query_settings[Setting::insert_allow_materialized_columns] = true;
+    Settings new_query_settings = context->getSettings();
+    new_query_settings.insert_allow_materialized_columns = true;
 
     /// To avoid call AST::format
     /// TODO: We need to implement the format function for MySQLAST
-    new_query_settings[Setting::enable_global_with_statement] = false;
+    new_query_settings.enable_global_with_statement = false;
 
     auto query_context = Context::createCopy(context);
     query_context->setSettings(new_query_settings);
@@ -387,9 +382,10 @@ void MaterializedMySQLSyncThread::assertMySQLAvailable()
             throw Exception(ErrorCodes::SYNC_MYSQL_USER_ACCESS_ERROR, "MySQL SYNC USER ACCESS ERR: "
                             "mysql sync user needs at least GLOBAL PRIVILEGES:'RELOAD, REPLICATION SLAVE, REPLICATION CLIENT' "
                             "and SELECT PRIVILEGE on Database {}", mysql_database_name);
-        if (e.errnum() == ER_BAD_DB_ERROR)
+        else if (e.errnum() == ER_BAD_DB_ERROR)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Unknown database '{}' on MySQL", mysql_database_name);
-        throw;
+        else
+            throw;
     }
 }
 
@@ -740,11 +736,11 @@ static void writeFieldsToColumn(
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
-                const Tuple & row_data = rows_data[index].safeGet<const Tuple &>();
+                const Tuple & row_data = rows_data[index].get<const Tuple &>();
                 const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
-                    casted_column->insertValue(static_cast<decltype(to_type)>(value.template safeGet<decltype(from_type)>()));
+                    casted_column->insertValue(static_cast<decltype(to_type)>(value.template get<decltype(from_type)>()));
             }
         };
 
@@ -780,17 +776,17 @@ static void writeFieldsToColumn(
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
-                const Tuple & row_data = rows_data[index].safeGet<const Tuple &>();
+                const Tuple & row_data = rows_data[index].get<const Tuple &>();
                 const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
                 {
                     if (value.getType() == Field::Types::UInt64)
-                        casted_int32_column->insertValue(static_cast<Int32>(value.safeGet<Int32>()));
+                        casted_int32_column->insertValue(static_cast<Int32>(value.get<Int32>()));
                     else if (value.getType() == Field::Types::Int64)
                     {
                         /// For MYSQL_TYPE_INT24
-                        const Int32 & num = static_cast<Int32>(value.safeGet<Int32>());
+                        const Int32 & num = static_cast<Int32>(value.get<Int32>());
                         casted_int32_column->insertValue(num & 0x800000 ? num | 0xFF000000 : num);
                     }
                     else
@@ -802,7 +798,7 @@ static void writeFieldsToColumn(
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
-                const Tuple & row_data = rows_data[index].safeGet<const Tuple &>();
+                const Tuple & row_data = rows_data[index].get<const Tuple &>();
                 const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
@@ -816,12 +812,12 @@ static void writeFieldsToColumn(
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
-                const Tuple & row_data = rows_data[index].safeGet<const Tuple &>();
+                const Tuple & row_data = rows_data[index].get<const Tuple &>();
                 const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
                 {
-                    const String & data = value.safeGet<const String &>();
+                    const String & data = value.get<const String &>();
                     casted_fixed_string_column->insertData(data.data(), data.size());
                 }
             }
@@ -868,7 +864,7 @@ static inline size_t onUpdateData(const Row & rows_data, Block & buffer, size_t 
     {
         writeable_rows_mask[index + 1] = true;
         writeable_rows_mask[index] = differenceSortingKeys(
-            rows_data[index].safeGet<const Tuple &>(), rows_data[index + 1].safeGet<const Tuple &>(), sorting_columns_index);
+            rows_data[index].get<const Tuple &>(), rows_data[index + 1].get<const Tuple &>(), sorting_columns_index);
     }
 
     for (size_t column = 0; column < buffer.columns() - 2; ++column)
