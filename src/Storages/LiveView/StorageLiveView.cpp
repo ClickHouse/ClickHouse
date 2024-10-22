@@ -135,7 +135,7 @@ SelectQueryDescription buildSelectQueryDescription(const ASTPtr & select_query, 
 
             break;
         }
-        else if (auto subquery = extractTableExpression(*inner_select_query, 0))
+        if (auto subquery = extractTableExpression(*inner_select_query, 0))
         {
             inner_query = subquery;
         }
@@ -452,6 +452,7 @@ void StorageLiveView::writeBlock(StorageLiveView & live_view, Block && block, Ch
 
         auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         PullingAsyncPipelineExecutor executor(pipeline);
+        pipeline.setConcurrencyControl(local_context->getSettingsRef()[Setting::use_concurrency_control]);
         Block this_block;
 
         while (executor.pull(this_block))
@@ -588,6 +589,7 @@ MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(ContextPtr local_cont
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     PullingAsyncPipelineExecutor executor(pipeline);
+    pipeline.setConcurrencyControl(local_context->getSettingsRef()[Setting::use_concurrency_control]);
     Block this_block;
 
     while (executor.pull(this_block))
@@ -694,6 +696,7 @@ bool StorageLiveView::getNewBlocks(const std::lock_guard<std::mutex> & lock)
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
 
     PullingAsyncPipelineExecutor executor(pipeline);
+    pipeline.setConcurrencyControl(false);
     Block block;
     while (executor.pull(block))
     {

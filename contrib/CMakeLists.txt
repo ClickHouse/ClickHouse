@@ -160,6 +160,12 @@ add_contrib (datasketches-cpp-cmake datasketches-cpp)
 add_contrib (incbin-cmake incbin)
 add_contrib (sqids-cpp-cmake sqids-cpp)
 
+option(USE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})
+if (USE_MONGODB)
+    add_contrib (mongo-c-driver-cmake mongo-c-driver) # requires: zlib
+    add_contrib (mongo-cxx-driver-cmake mongo-cxx-driver) # requires: libmongoc, libbson
+endif()
+
 option(ENABLE_NLP "Enable NLP functions support" ${ENABLE_LIBRARIES})
 if (ENABLE_NLP)
     add_contrib (libstemmer-c-cmake libstemmer_c)
