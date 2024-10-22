@@ -32,16 +32,6 @@ class Stopwatch:
         self.start_time_str_value = self.start_time.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def kill_fuzzer(fuzzer: str):
-    with subprocess.Popen(["ps", "-A", "u"], stdout=subprocess.PIPE) as p:
-        out, _ = p.communicate()
-        for line in out.splitlines():
-            if fuzzer.encode("utf-8") in line:
-                pid = int(line.split(None, 2)[1])
-                logging.info("Killing fuzzer %s, pid %d", fuzzer, pid)
-                os.kill(pid, signal.SIGKILL)
-
-
 def run_fuzzer(fuzzer: str, timeout: int):
     logging.info("Running fuzzer %s...", fuzzer)
 
@@ -95,7 +85,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
     out_path = f"{OUTPUT}/{fuzzer}.out"
 
     cmd_line = (
-        f"{DEBUGGER} ./{fuzzer} {FUZZER_ARGS} {active_corpus_dir} {seed_corpus_dir}"
+        f"{DEBUGGER} ./{fuzzer} {active_corpus_dir} {seed_corpus_dir}"
     )
 
     cmd_line += f" -exact_artifact_path={exact_artifact_path}"
@@ -132,8 +122,6 @@ def run_fuzzer(fuzzer: str, timeout: int):
             )
     except subprocess.TimeoutExpired:
         logging.info("Timeout running %s", fuzzer)
-        kill_fuzzer(fuzzer)
-        sleep(10)
         with open(status_path, "w", encoding="utf-8") as status:
             status.write(
                 f"Timeout\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
@@ -152,7 +140,7 @@ def main():
 
     subprocess.check_call("ls -al", shell=True)
 
-    timeout = 30
+    timeout = 60
 
     match = re.search(r"(^|\s+)-max_total_time=(\d+)($|\s)", FUZZER_ARGS)
     if match:
