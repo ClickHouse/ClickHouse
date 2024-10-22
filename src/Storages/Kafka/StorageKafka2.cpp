@@ -80,6 +80,28 @@ namespace Setting
     extern const SettingsMilliseconds stream_poll_timeout_ms;
 }
 
+namespace KafkaSetting
+{
+    extern const KafkaSettingsUInt64 input_format_allow_errors_num;
+    extern const KafkaSettingsFloat input_format_allow_errors_ratio;
+    extern const KafkaSettingsString kafka_broker_list;
+    extern const KafkaSettingsString kafka_client_id;
+    extern const KafkaSettingsMilliseconds kafka_flush_interval_ms;
+    extern const KafkaSettingsString kafka_format;
+    extern const KafkaSettingsString kafka_group_name;
+    extern const KafkaSettingsStreamingHandleErrorMode kafka_handle_error_mode;
+    extern const KafkaSettingsString kafka_keeper_path;
+    extern const KafkaSettingsUInt64 kafka_max_block_size;
+    extern const KafkaSettingsUInt64 kafka_max_rows_per_message;
+    extern const KafkaSettingsUInt64 kafka_num_consumers;
+    extern const KafkaSettingsUInt64 kafka_poll_max_batch_size;
+    extern const KafkaSettingsMilliseconds kafka_poll_timeout_ms;
+    extern const KafkaSettingsString kafka_replica_name;
+    extern const KafkaSettingsString kafka_schema;
+    extern const KafkaSettingsBool kafka_thread_per_consumer;
+    extern const KafkaSettingsString kafka_topic_list;
+}
+
 namespace fs = std::filesystem;
 
 namespace ErrorCodes
@@ -108,41 +130,41 @@ StorageKafka2::StorageKafka2(
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , keeper(getContext()->getZooKeeper())
-    , keeper_path(kafka_settings_->kafka_keeper_path.value)
-    , replica_path(keeper_path + "/replicas/" + kafka_settings_->kafka_replica_name.value)
+    , keeper_path((*kafka_settings_)[KafkaSetting::kafka_keeper_path].value)
+    , replica_path(keeper_path + "/replicas/" + (*kafka_settings_)[KafkaSetting::kafka_replica_name].value)
     , kafka_settings(std::move(kafka_settings_))
     , macros_info{.table_id = table_id_}
-    , topics(StorageKafkaUtils::parseTopics(getContext()->getMacros()->expand(kafka_settings->kafka_topic_list.value, macros_info)))
-    , brokers(getContext()->getMacros()->expand(kafka_settings->kafka_broker_list.value, macros_info))
-    , group(getContext()->getMacros()->expand(kafka_settings->kafka_group_name.value, macros_info))
+    , topics(StorageKafkaUtils::parseTopics(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_topic_list].value, macros_info)))
+    , brokers(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_broker_list].value, macros_info))
+    , group(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_group_name].value, macros_info))
     , client_id(
-          kafka_settings->kafka_client_id.value.empty()
+          (*kafka_settings)[KafkaSetting::kafka_client_id].value.empty()
               ? StorageKafkaUtils::getDefaultClientId(table_id_)
-              : getContext()->getMacros()->expand(kafka_settings->kafka_client_id.value, macros_info))
-    , format_name(getContext()->getMacros()->expand(kafka_settings->kafka_format.value))
-    , max_rows_per_message(kafka_settings->kafka_max_rows_per_message.value)
-    , schema_name(getContext()->getMacros()->expand(kafka_settings->kafka_schema.value, macros_info))
-    , num_consumers(kafka_settings->kafka_num_consumers.value)
+              : getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_client_id].value, macros_info))
+    , format_name(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_format].value))
+    , max_rows_per_message((*kafka_settings)[KafkaSetting::kafka_max_rows_per_message].value)
+    , schema_name(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_schema].value, macros_info))
+    , num_consumers((*kafka_settings)[KafkaSetting::kafka_num_consumers].value)
     , log(getLogger("StorageKafka2 (" + table_id_.getNameForLogs() + ")"))
     , semaphore(0, static_cast<int>(num_consumers))
     , settings_adjustments(StorageKafkaUtils::createSettingsAdjustments(*kafka_settings, schema_name))
-    , thread_per_consumer(kafka_settings->kafka_thread_per_consumer.value)
+    , thread_per_consumer((*kafka_settings)[KafkaSetting::kafka_thread_per_consumer].value)
     , collection_name(collection_name_)
     , active_node_identifier(toString(ServerUUID::get()))
 {
-    if (kafka_settings->kafka_num_consumers > 1 && !thread_per_consumer)
+    if ((*kafka_settings)[KafkaSetting::kafka_num_consumers] > 1 && !thread_per_consumer)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "With multiple consumers, it is required to use `kafka_thread_per_consumer` setting");
 
-    if (kafka_settings->kafka_handle_error_mode == StreamingHandleErrorMode::STREAM)
+    if ((*kafka_settings)[KafkaSetting::kafka_handle_error_mode] == StreamingHandleErrorMode::STREAM)
     {
-        kafka_settings->input_format_allow_errors_num = 0;
-        kafka_settings->input_format_allow_errors_ratio = 0;
+        (*kafka_settings)[KafkaSetting::input_format_allow_errors_num] = 0;
+        (*kafka_settings)[KafkaSetting::input_format_allow_errors_ratio] = 0;
     }
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(StorageKafkaUtils::createVirtuals(kafka_settings->kafka_handle_error_mode));
+    setVirtuals(StorageKafkaUtils::createVirtuals((*kafka_settings)[KafkaSetting::kafka_handle_error_mode]));
 
     auto task_count = thread_per_consumer ? num_consumers : 1;
     for (size_t i = 0; i < task_count; ++i)
@@ -160,6 +182,8 @@ StorageKafka2::StorageKafka2(
     activating_task = getContext()->getSchedulePool().createTask(log->name() + "(activating task)", [this]() { activateAndReschedule(); });
     activating_task->deactivate();
 }
+
+StorageKafka2::~StorageKafka2() = default;
 
 void StorageKafka2::partialShutdown()
 {
@@ -341,6 +365,11 @@ Pipe StorageKafka2::read(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Direct read from the new Kafka storage is not implemented");
 }
 
+StreamingHandleErrorMode StorageKafka2::getHandleKafkaErrorMode() const
+{
+    return (*kafka_settings)[KafkaSetting::kafka_handle_error_mode];
+}
+
 
 SinkToStoragePtr
 StorageKafka2::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
@@ -450,13 +479,13 @@ cppkafka::Configuration StorageKafka2::getProducerConfiguration()
 
 size_t StorageKafka2::getMaxBlockSize() const
 {
-    return kafka_settings->kafka_max_block_size.changed ? kafka_settings->kafka_max_block_size.value
+    return (*kafka_settings)[KafkaSetting::kafka_max_block_size].changed ? (*kafka_settings)[KafkaSetting::kafka_max_block_size].value
                                                         : (getContext()->getSettingsRef()[Setting::max_insert_block_size].value / num_consumers);
 }
 
 size_t StorageKafka2::getPollMaxBatchSize() const
 {
-    size_t batch_size = kafka_settings->kafka_poll_max_batch_size.changed ? kafka_settings->kafka_poll_max_batch_size.value
+    size_t batch_size = (*kafka_settings)[KafkaSetting::kafka_poll_max_batch_size].changed ? (*kafka_settings)[KafkaSetting::kafka_poll_max_batch_size].value
                                                                           : getContext()->getSettingsRef()[Setting::max_block_size].value;
 
     return std::min(batch_size, getMaxBlockSize());
@@ -464,7 +493,7 @@ size_t StorageKafka2::getPollMaxBatchSize() const
 
 size_t StorageKafka2::getPollTimeoutMillisecond() const
 {
-    return kafka_settings->kafka_poll_timeout_ms.changed ? kafka_settings->kafka_poll_timeout_ms.totalMilliseconds()
+    return (*kafka_settings)[KafkaSetting::kafka_poll_timeout_ms].changed ? (*kafka_settings)[KafkaSetting::kafka_poll_timeout_ms].totalMilliseconds()
                                                          : getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds();
 }
 
@@ -732,7 +761,7 @@ StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const Topi
         const auto lock_file_path = String(topic_partition_path / lock_file_name);
         LOG_TRACE(log, "Creating locking ops for: {}", lock_file_path);
         ops.push_back(zkutil::makeCreateRequest(topic_partition_path, "", zkutil::CreateMode::Persistent, ignore_if_exists));
-        ops.push_back(zkutil::makeCreateRequest(lock_file_path, kafka_settings->kafka_replica_name.value, zkutil::CreateMode::Ephemeral));
+        ops.push_back(zkutil::makeCreateRequest(lock_file_path, (*kafka_settings)[KafkaSetting::kafka_replica_name].value, zkutil::CreateMode::Ephemeral));
     }
     Coordination::Responses responses;
 
@@ -815,7 +844,7 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
     // otherwise external iteration will reuse that and logic will became even more fuzzy
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
-    auto put_error_to_stream = kafka_settings->kafka_handle_error_mode == StreamingHandleErrorMode::STREAM;
+    auto put_error_to_stream = (*kafka_settings)[KafkaSetting::kafka_handle_error_mode] == StreamingHandleErrorMode::STREAM;
 
     EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInput(
@@ -858,8 +887,8 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
     StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
 
 
-    Poco::Timespan max_execution_time = kafka_settings->kafka_flush_interval_ms.changed
-        ? kafka_settings->kafka_flush_interval_ms
+    Poco::Timespan max_execution_time = (*kafka_settings)[KafkaSetting::kafka_flush_interval_ms].changed
+        ? (*kafka_settings)[KafkaSetting::kafka_flush_interval_ms]
         : getContext()->getSettingsRef()[Setting::stream_flush_interval_ms];
 
     const auto check_time_limit = [&max_execution_time, &total_stopwatch]()
