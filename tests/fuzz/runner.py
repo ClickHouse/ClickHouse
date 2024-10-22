@@ -116,21 +116,23 @@ def run_fuzzer(fuzzer: str, timeout: int):
     try:
         with open(out_path, "wb") as out:
             subprocess.run(
-                cmd_line,
+                cmd_line.split(),
                 stderr=out,
                 stdout=subprocess.DEVNULL,
                 text=True,
                 check=True,
-                shell=True,
+                shell=False,
                 errors="replace",
                 timeout=timeout,
             )
     except subprocess.CalledProcessError:
+        logging.info("Fail running %s", fuzzer)
         with open(status_path, "w", encoding="utf-8") as status:
             status.write(
                 f"FAIL\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
             )
     except subprocess.TimeoutExpired:
+        logging.info("Timeout running %s", fuzzer)
         kill_fuzzer(fuzzer)
         sleep(10)
         with open(status_path, "w", encoding="utf-8") as status:
@@ -138,6 +140,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
                 f"Timeout\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
             )
     else:
+        logging.info("Successful running %s", fuzzer)
         with open(status_path, "w", encoding="utf-8") as status:
             status.write(
                 f"OK\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
