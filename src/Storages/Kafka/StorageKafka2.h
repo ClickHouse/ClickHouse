@@ -2,7 +2,7 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Block.h>
-#include <Core/SettingsEnums.h>
+#include <Core/StreamingHandleErrorMode.h>
 #include <Core/Types.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer2.h>
