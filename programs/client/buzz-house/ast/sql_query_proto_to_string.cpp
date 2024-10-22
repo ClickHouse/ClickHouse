@@ -1690,15 +1690,15 @@ CONV_FN(Select, select) {
 }
 
 CONV_FN(ColumnStatistics, cst) {
-  ret += ColumnStat_Name(cst.stat()).substr(4);
+  ret += ColumnStat_Name(cst.stat()).substr(5);
   for (int i = 0 ; i < cst.other_stats_size(); i++) {
     ret += ", ";
-    ret += ColumnStat_Name(cst.other_stats(i)).substr(4);
+    ret += ColumnStat_Name(cst.other_stats(i)).substr(5);
   }
 }
 
 CONV_FN(CodecParam, cp) {
-  ret += CompressionCodec_Name(cp.codec()).substr(4);
+  ret += CompressionCodec_Name(cp.codec()).substr(5);
   if (cp.params_size()) {
     ret += "(";
     for (int i = 0; i < cp.params_size(); i++) {
@@ -1750,6 +1750,14 @@ CONV_FN(CreateFunction, create_function) {
   LambdaExprToString(ret, create_function.lexpr());
 }
 
+CONV_FN(DefaultModifier, def_mod) {
+  ret += DModifier_Name(def_mod.dvalue()).substr(4);
+  if (def_mod.has_expr()) {
+    ret += " ";
+    ExprToString(ret, def_mod.expr());
+  }
+}
+
 CONV_FN(ColumnDef, cdf) {
   ColumnToString(ret, true, cdf.col());
   ret += " ";
@@ -1767,6 +1775,10 @@ CONV_FN(ColumnDef, cdf) {
       CodecParamToString(ret, cdf.codecs(i));
     }
     ret += ")";
+  }
+  if (cdf.has_defaultv()) {
+    ret += " ";
+    DefaultModifierToString(ret, cdf.defaultv());
   }
   if (cdf.has_stats()) {
     ret += " STATISTICS(";
@@ -1799,7 +1811,7 @@ CONV_FN(IndexDef, idef) {
   ret += " ";
   ExprToString(ret, idef.expr());
   ret += " TYPE ";
-  ret += IndexType_Name(idef.type()).substr(3);
+  ret += IndexType_Name(idef.type()).substr(4);
   if (idef.params_size()) {
     ret += "(";
     for (int i = 0 ; i < idef.params_size(); i++) {
@@ -2270,6 +2282,12 @@ CONV_FN(AlterTableItem, alter) {
       ColumnToString(ret, true, alter.rename_column().old_name());
       ret += " TO ";
       ColumnToString(ret, true, alter.rename_column().new_name());
+      break;
+    case AlterType::kClearColumn:
+      ret += "CLEAR COLUMN ";
+      ColumnToString(ret, true, alter.clear_column().col());
+      ret += " IN PARTITION ";
+      TableKeyToString(ret, alter.clear_column().partition());
       break;
     case AlterType::kModifyColumn:
       ret += "MODIFY COLUMN ";

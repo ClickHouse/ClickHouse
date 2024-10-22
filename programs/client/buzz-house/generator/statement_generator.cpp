@@ -273,6 +273,21 @@ int StatementGenerator::AddTableColumn(RandomGenerator &rg, SQLTable &t, const u
 	if (rg.NextSmallNumber() < 3) {
 		GenerateNextStatistics(rg, cd->mutable_stats());
 	}
+	if (rg.NextSmallNumber() < 2) {
+		sql_query_grammar::DefaultModifier *def_value = cd->mutable_defaultv();
+		sql_query_grammar::DModifier dmod =
+			static_cast<sql_query_grammar::DModifier>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::DModifier_MAX)) + 1);
+
+		def_value->set_dvalue(dmod);
+		col.dmod = std::optional<sql_query_grammar::DModifier>(dmod);
+		if (dmod != sql_query_grammar::DModifier::DEF_EPHEMERAL || rg.NextSmallNumber() < 4) {
+			AddTableRelation(rg, false, "", t);
+			this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
+			GenerateExpression(rg, def_value->mutable_expr());
+			this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = true;
+			this->levels.clear();
+		}
+	}
 	if (t.IsMergeTreeFamily()) {
 		if (rg.NextSmallNumber() < 3) {
 			const uint32_t ncodecs = (rg.NextMediumNumber() % UINT32_C(3)) + 1;
@@ -284,28 +299,28 @@ int StatementGenerator::AddTableColumn(RandomGenerator &rg, SQLTable &t, const u
 
 				cp->set_codec(cc);
 				switch (cc) {
-					case sql_query_grammar::COMPLZ4HC:
-					case sql_query_grammar::COMPZSTD_QAT:
+					case sql_query_grammar::COMP_LZ4HC:
+					case sql_query_grammar::COMP_ZSTD_QAT:
 						if (rg.NextBool()) {
 							std::uniform_int_distribution<uint32_t> next_dist(1, 12);
 							cp->add_params(next_dist(rg.gen));
 						}
 						break;
-					case sql_query_grammar::COMPZSTD:
+					case sql_query_grammar::COMP_ZSTD:
 						if (rg.NextBool()) {
 							std::uniform_int_distribution<uint32_t> next_dist(1, 22);
 							cp->add_params(next_dist(rg.gen));
 						}
 						break;
-					case sql_query_grammar::COMPDelta:
-					case sql_query_grammar::COMPDoubleDelta:
-					case sql_query_grammar::COMPGorilla:
+					case sql_query_grammar::COMP_Delta:
+					case sql_query_grammar::COMP_DoubleDelta:
+					case sql_query_grammar::COMP_Gorilla:
 						if (rg.NextBool()) {
 							std::uniform_int_distribution<uint32_t> next_dist(0, 3);
 							cp->add_params(UINT32_C(1) << next_dist(rg.gen));
 						}
 						break;
-					case sql_query_grammar::COMPFPC:
+					case sql_query_grammar::COMP_FPC:
 						if (rg.NextBool()) {
 							std::uniform_int_distribution<uint32_t> next_dist1(1, 28);
 							cp->add_params(next_dist1(rg.gen));
@@ -351,19 +366,19 @@ int StatementGenerator::AddTableIndex(RandomGenerator &rg, SQLTable &t, const bo
 		for (const auto &entry : t.cols) {
 			if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
 				for (const auto &entry2 : ntp->subtypes) {
-					if (itpe < sql_query_grammar::IndexType::IDXngrambf_v1 || PossibleForFullText(entry2.subtype)) {
-						entries.push_back(InsertEntry(ColumnSpecial::NONE, entry.second.cname, std::optional<uint32_t>(entry2.cname), entry2.array_subtype));
+					if (itpe < sql_query_grammar::IndexType::IDX_ngrambf_v1 || PossibleForFullText(entry2.subtype)) {
+						entries.push_back(InsertEntry(ColumnSpecial::NONE, entry.second.cname, std::optional<uint32_t>(entry2.cname), entry2.array_subtype, entry.second.dmod));
 					}
 				}
-			} else if (itpe < sql_query_grammar::IndexType::IDXngrambf_v1 || PossibleForFullText(entry.second.tp)) {
-				entries.push_back(InsertEntry(entry.second.special, entry.second.cname, std::nullopt, entry.second.tp));
+			} else if (itpe < sql_query_grammar::IndexType::IDX_ngrambf_v1 || PossibleForFullText(entry.second.tp)) {
+				entries.push_back(InsertEntry(entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
 			}
 		}
 	}
 	if (!entries.empty()) {
 		std::shuffle(entries.begin(), entries.end(), rg.gen);
 
-		if (itpe == sql_query_grammar::IndexType::IDXhypothesis && entries.size() > 1 && rg.NextSmallNumber() < 9) {
+		if (itpe == sql_query_grammar::IndexType::IDX_hypothesis && entries.size() > 1 && rg.NextSmallNumber() < 9) {
 			sql_query_grammar::BinaryExpr *bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
 			sql_query_grammar::Expr *expr1 = bexpr->mutable_lhs(), *expr2 = bexpr->mutable_rhs();
 			sql_query_grammar::ExprSchemaTableColumn *estc1 = expr1->mutable_comp_expr()->mutable_expr_stc(),
@@ -403,7 +418,7 @@ int StatementGenerator::AddTableIndex(RandomGenerator &rg, SQLTable &t, const bo
 		this->levels.clear();
 	}
 	switch (itpe) {
-		case sql_query_grammar::IndexType::IDXset:
+		case sql_query_grammar::IndexType::IDX_set:
 			if (rg.NextSmallNumber() < 7) {
 				idef->add_params()->set_ival(0);
 			} else {
@@ -411,28 +426,28 @@ int StatementGenerator::AddTableIndex(RandomGenerator &rg, SQLTable &t, const bo
 				idef->add_params()->set_ival(next_dist(rg.gen));
 			}
 			break;
-		case sql_query_grammar::IndexType::IDXbloom_filter: {
+		case sql_query_grammar::IndexType::IDX_bloom_filter: {
 			std::uniform_int_distribution<uint32_t> next_dist(1, 1000);
 			idef->add_params()->set_dval(static_cast<double>(next_dist(rg.gen)) / static_cast<double>(1000));
 		} break;
-		case sql_query_grammar::IndexType::IDXngrambf_v1:
-		case sql_query_grammar::IndexType::IDXtokenbf_v1: {
+		case sql_query_grammar::IndexType::IDX_ngrambf_v1:
+		case sql_query_grammar::IndexType::IDX_tokenbf_v1: {
 			std::uniform_int_distribution<uint32_t> next_dist1(1, 1000), next_dist2(1, 5);
 
-			if (itpe == sql_query_grammar::IndexType::IDXngrambf_v1) {
+			if (itpe == sql_query_grammar::IndexType::IDX_ngrambf_v1) {
 				idef->add_params()->set_ival(next_dist1(rg.gen));
 			}
 			idef->add_params()->set_ival(next_dist1(rg.gen));
 			idef->add_params()->set_ival(next_dist2(rg.gen));
 			idef->add_params()->set_ival(next_dist1(rg.gen));
 		} break;
-		case sql_query_grammar::IndexType::IDXfull_text:
-		case sql_query_grammar::IndexType::IDXinverted: {
+		case sql_query_grammar::IndexType::IDX_full_text:
+		case sql_query_grammar::IndexType::IDX_inverted: {
 			std::uniform_int_distribution<uint32_t> next_dist(0, 10);
 			idef->add_params()->set_ival(next_dist(rg.gen));
 		} break;
-		case sql_query_grammar::IndexType::IDXminmax:
-		case sql_query_grammar::IndexType::IDXhypothesis:
+		case sql_query_grammar::IndexType::IDX_minmax:
+		case sql_query_grammar::IndexType::IDX_hypothesis:
 			break;
 	}
 	if (rg.NextSmallNumber() < 7) {
@@ -622,10 +637,10 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 		for (const auto &entry : next.cols) {
 			if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
 				for (const auto &entry2 : ntp->subtypes) {
-					entries.push_back(InsertEntry(ColumnSpecial::NONE, entry.second.cname, std::optional<uint32_t>(entry2.cname), entry2.array_subtype));
+					entries.push_back(InsertEntry(ColumnSpecial::NONE, entry.second.cname, std::optional<uint32_t>(entry2.cname), entry2.array_subtype, entry.second.dmod));
 				}
 			} else {
-				entries.push_back(InsertEntry(entry.second.special, entry.second.cname, std::nullopt, entry.second.tp));
+				entries.push_back(InsertEntry(entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
 			}
 		}
 		GenerateEngineDetails(rg, !added_pkey, te);
@@ -725,7 +740,7 @@ int StatementGenerator::GenerateNextCreateView(RandomGenerator &rg, sql_query_gr
 
 			assert(this->entries.empty());
 			for (uint32_t i = 0 ; i < next.ncols ; i++) {
-				entries.push_back(InsertEntry(ColumnSpecial::NONE, i, std::nullopt, nullptr));
+				entries.push_back(InsertEntry(ColumnSpecial::NONE, i, std::nullopt, nullptr, std::nullopt));
 			}
 			GenerateEngineDetails(rg, true, te);
 			this->entries.clear();
@@ -814,10 +829,10 @@ int StatementGenerator::GenerateNextOptimizeTable(RandomGenerator &rg, sql_query
 			for (const auto &entry : t.cols) {
 				if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
 					for (const auto &entry2 : ntp->subtypes) {
-						entries.push_back(InsertEntry(ColumnSpecial::NONE, entry.second.cname, std::optional<uint32_t>(entry2.cname), entry2.array_subtype));
+						entries.push_back(InsertEntry(ColumnSpecial::NONE, entry.second.cname, std::optional<uint32_t>(entry2.cname), entry2.array_subtype, entry.second.dmod));
 					}
 				} else {
-					entries.push_back(InsertEntry(entry.second.special, entry.second.cname, std::nullopt, entry.second.tp));
+					entries.push_back(InsertEntry(entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
 				}
 			}
 			std::shuffle(entries.begin(), entries.end(), rg.gen);
@@ -886,12 +901,14 @@ int StatementGenerator::GenerateNextInsert(RandomGenerator &rg, sql_query_gramma
 	est->mutable_table()->set_table("t" + std::to_string(t.tname));
 	assert(this->entries.empty());
 	for (const auto &entry : t.cols) {
-		if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
-			for (const auto &entry2 : ntp->subtypes) {
-				this->entries.push_back(InsertEntry(ColumnSpecial::NONE, entry.second.cname, std::optional<uint32_t>(entry2.cname), entry2.array_subtype));
+		if (!entry.second.dmod.has_value() || entry.second.dmod.value() == sql_query_grammar::DModifier::DEF_DEFAULT) {
+			if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
+				for (const auto &entry2 : ntp->subtypes) {
+					this->entries.push_back(InsertEntry(ColumnSpecial::NONE, entry.second.cname, std::optional<uint32_t>(entry2.cname), entry2.array_subtype, entry.second.dmod));
+				}
+			} else {
+				this->entries.push_back(InsertEntry(entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
 			}
-		} else {
-			this->entries.push_back(InsertEntry(entry.second.special, entry.second.cname, std::nullopt, entry.second.tp));
 		}
 	}
 	std::shuffle(this->entries.begin(), this->entries.end(), rg.gen);
@@ -920,7 +937,10 @@ int StatementGenerator::GenerateNextInsert(RandomGenerator &rg, sql_query_gramma
 				if (j != 0) {
 					buf += ", ";
 				}
-				if (entry.special == ColumnSpecial::SIGN) {
+				if ((entry.dmod.has_value() && entry.dmod.value() == sql_query_grammar::DModifier::DEF_DEFAULT && rg.NextMediumNumber() < 6) ||
+					rg.NextLargeNumber() < 4) {
+					buf += "DEFAULT";
+				} else if (entry.special == ColumnSpecial::SIGN) {
 					buf += rg.NextBool() ? "1" : "-1";
 				} else if (entry.special == ColumnSpecial::IS_DELETED) {
 					buf += rg.NextBool() ? "1" : "0";
@@ -1069,6 +1089,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 						   materialize_column = 2,
 						   drop_column = 2 * static_cast<uint32_t>(t.cols.size() > 1),
 						   rename_column = 2,
+						   clear_column = 2,
 						   modify_column = 2,
 						   add_stats = 3 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
 						   mod_stats = 3 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
@@ -1092,8 +1113,8 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 						   add_constraint = 2 * static_cast<uint32_t>(t.constrs.size() < 4),
 						   remove_constraint = 2 * static_cast<uint32_t>(!t.constrs.empty()),
 						   prob_space = alter_order_by + heavy_delete + heavy_update + add_column + materialize_column + drop_column +
-										rename_column + modify_column + delete_mask + add_stats + mod_stats + drop_stats + clear_stats +
-										mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property +
+										rename_column + clear_column + modify_column + delete_mask + add_stats + mod_stats + drop_stats +
+										clear_stats + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property +
 										column_modify_setting + column_remove_setting + table_modify_setting + table_remove_setting +
 										add_projection + remove_projection + materialize_projection + clear_projection + add_constraint +
 										remove_constraint;
@@ -1112,11 +1133,11 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 						if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
 							for (const auto &entry2 : ntp->subtypes) {
 								if (!dynamic_cast<JSONType*>(entry2.subtype)) {
-									entries.push_back(InsertEntry(ColumnSpecial::NONE, entry.second.cname, std::optional<uint32_t>(entry2.cname), entry2.array_subtype));
+									entries.push_back(InsertEntry(ColumnSpecial::NONE, entry.second.cname, std::optional<uint32_t>(entry2.cname), entry2.array_subtype, entry.second.dmod));
 								}
 							}
 						} else if (!dynamic_cast<JSONType*>(entry.second.tp)) {
-							entries.push_back(InsertEntry(entry.second.special, entry.second.cname, std::nullopt, entry.second.tp));
+							entries.push_back(InsertEntry(entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
 						}
 					}
 					GenerateTableKey(rg, tkey);
@@ -1151,8 +1172,15 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 
 				rcol->mutable_old_name()->set_column("c" + std::to_string(col.cname));
 				rcol->mutable_new_name()->set_column("c" + std::to_string(ncname));
+			} else if (clear_column && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
+												rename_column + clear_column + 1)) {
+				const SQLColumn &col = rg.PickValueRandomlyFromMap(t.cols);
+				sql_query_grammar::ClearCol *ccol = ati->mutable_clear_column();
+
+				ccol->mutable_col()->set_column("c" + std::to_string(col.cname));
+				ccol->mutable_partition();
 			} else if (modify_column && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
-												rename_column + modify_column + 1)) {
+												rename_column + clear_column + modify_column + 1)) {
 				const SQLColumn &ocol = rg.PickValueRandomlyFromMap(t.cols);
 				const uint32_t next_option = rg.NextSmallNumber();
 				sql_query_grammar::AddColumn *add_col = ati->mutable_modify_column();
@@ -1165,16 +1193,16 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 					add_col->mutable_add_where()->set_first(true);
 				}
 			} else if (delete_mask && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
-											  rename_column + modify_column + delete_mask + 1)) {
+											  rename_column + clear_column + modify_column + delete_mask + 1)) {
 				ati->set_delete_mask(true);
 			} else if (heavy_update && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
-											   rename_column + modify_column + delete_mask + heavy_update + 1)) {
+											   rename_column + clear_column + modify_column + delete_mask + heavy_update + 1)) {
 				sql_query_grammar::Update *upt = ati->mutable_update();
 
 				assert(this->entries.empty());
 				for (const auto &entry : t.cols) {
 					if (!dynamic_cast<NestedType*>(entry.second.tp)) {
-						this->entries.push_back(InsertEntry(entry.second.special, entry.second.cname, std::nullopt, entry.second.tp));
+						this->entries.push_back(InsertEntry(entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
 					}
 				}
 				if (this->entries.empty()) {
@@ -1226,31 +1254,31 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 
 				GenerateUptDelWhere(rg, t, upt->mutable_where()->mutable_expr()->mutable_expr());
 			} else if (add_stats && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
-											rename_column + modify_column + delete_mask + heavy_update + add_stats + 1)) {
+											rename_column + clear_column + modify_column + delete_mask + heavy_update + add_stats + 1)) {
 				sql_query_grammar::AddStatistics *ads = ati->mutable_add_stats();
 
 				PickUpNextCols(rg, t, ads->mutable_cols());
 				GenerateNextStatistics(rg, ads->mutable_stats());
 			} else if (mod_stats && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
-											rename_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats + 1)) {
+											rename_column + clear_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats + 1)) {
 				sql_query_grammar::AddStatistics *ads = ati->mutable_mod_stats();
 
 				PickUpNextCols(rg, t, ads->mutable_cols());
 				GenerateNextStatistics(rg, ads->mutable_stats());
 			} else if (drop_stats && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
-											 rename_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
+											 rename_column + clear_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
 											 drop_stats + 1)) {
 				PickUpNextCols(rg, t, ati->mutable_drop_stats());
 			} else if (clear_stats && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
-											  rename_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
+											  rename_column + clear_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
 											  drop_stats + clear_stats + 1)) {
 				PickUpNextCols(rg, t, ati->mutable_clear_stats());
 			} else if (mat_stats && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
-											rename_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
+											rename_column + clear_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
 											drop_stats + clear_stats + mat_stats + 1)) {
 				PickUpNextCols(rg, t, ati->mutable_mat_stats());
 			} else if (add_idx && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
-										  rename_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
+										  rename_column + clear_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
 										  drop_stats + clear_stats + mat_stats + add_idx + 1)) {
 				sql_query_grammar::AddIndex *add_index = ati->mutable_add_index();
 
@@ -1266,22 +1294,22 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 					}
 				}
 			} else if (materialize_idx && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
-												  rename_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
+												  rename_column + clear_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
 												  drop_stats + clear_stats + mat_stats + add_idx + materialize_idx + 1)) {
 				const SQLIndex &idx = rg.PickValueRandomlyFromMap(t.idxs);
 				ati->mutable_materialize_index()->set_index("i" + std::to_string(idx.iname));
 			} else if (clear_idx && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
-											rename_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
+											rename_column + clear_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
 											drop_stats + clear_stats + mat_stats + add_idx + materialize_idx + clear_idx + 1)) {
 				const SQLIndex &idx = rg.PickValueRandomlyFromMap(t.idxs);
 				ati->mutable_clear_index()->set_index("i" + std::to_string(idx.iname));
 			} else if (drop_idx && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
-										   rename_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
+										   rename_column + clear_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
 										   drop_stats + clear_stats + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + 1)) {
 				const SQLIndex &idx = rg.PickValueRandomlyFromMap(t.idxs);
 				ati->mutable_drop_index()->set_index("i" + std::to_string(idx.iname));
 			} else if (column_remove_property && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
-														 rename_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
+														 rename_column + clear_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
 														 drop_stats + clear_stats + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx +
 														 column_remove_property + 1)) {
 				sql_query_grammar::RemoveColumnProperty *rcs = ati->mutable_column_remove_property();
@@ -1290,7 +1318,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 				rcs->mutable_col()->set_column("c" + std::to_string(col.cname));
 				rcs->set_property(static_cast<sql_query_grammar::RemoveColumnProperty_ColumnProperties>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::RemoveColumnProperty::ColumnProperties_MAX)) + 1));
 			} else if (column_modify_setting && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
-														rename_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
+														rename_column + clear_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
 														drop_stats + clear_stats + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx +
 														column_remove_property + column_modify_setting + 1)) {
 				sql_query_grammar::ModifyColumnSetting *mcp = ati->mutable_column_modify_setting();
@@ -1299,7 +1327,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 				mcp->mutable_col()->set_column("c" + std::to_string(col.cname));
 				GenerateSettingValues(rg, MergeTreeColumnSettings, mcp->mutable_settings());
 			} else if (column_remove_setting && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
-														rename_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
+														rename_column + clear_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
 														drop_stats + clear_stats + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx +
 														column_remove_property + column_modify_setting + column_remove_setting + 1)) {
 				sql_query_grammar::RemoveColumnSetting *rcp = ati->mutable_column_remove_setting();
@@ -1308,32 +1336,32 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 				rcp->mutable_col()->set_column("c" + std::to_string(col.cname));
 				GenerateSettingList(rg, MergeTreeColumnSettings, rcp->mutable_settings());
 			} else if (table_modify_setting && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
-													   rename_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
+													   rename_column + clear_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
 													   drop_stats + clear_stats + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx +
 													   column_remove_property + column_modify_setting + column_remove_setting +
 													   table_modify_setting + 1)) {
 				GenerateSettingValues(rg, MergeTreeTableSettings, ati->mutable_table_modify_setting());
 			} else if (table_remove_setting && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
-													   rename_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
+													   rename_column + clear_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
 													   drop_stats + clear_stats + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx +
 													   column_remove_property + column_modify_setting + column_remove_setting +
 													   table_modify_setting + table_remove_setting + 1)) {
 				GenerateSettingList(rg, MergeTreeTableSettings, ati->mutable_table_remove_setting());
 			} else if (add_projection && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
-												 rename_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
+												 rename_column + clear_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
 												 drop_stats + clear_stats + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx +
 												 column_remove_property + column_modify_setting + column_remove_setting +
 												 table_modify_setting + table_remove_setting + add_projection + 1)) {
 				AddTableProjection(rg, t, true, ati->mutable_add_projection());
 			} else if (remove_projection && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
-													rename_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
+													rename_column + clear_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
 													drop_stats + clear_stats + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx +
 													column_remove_property + column_modify_setting + column_remove_setting +
 													table_modify_setting + table_remove_setting + add_projection + remove_projection + 1)) {
 				const uint32_t &proj = rg.PickRandomlyFromSet(t.projs);
 				ati->mutable_remove_projection()->set_projection("p" + std::to_string(proj));
 			} else if (materialize_projection && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
-														 rename_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
+														 rename_column + clear_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
 														 drop_stats + clear_stats + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx +
 														 column_remove_property + column_modify_setting + column_remove_setting +
 														 table_modify_setting + table_remove_setting + add_projection + remove_projection +
@@ -1341,7 +1369,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 				const uint32_t &proj = rg.PickRandomlyFromSet(t.projs);
 				ati->mutable_materialize_projection()->set_projection("p" + std::to_string(proj));
 			} else if (clear_projection && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
-												   rename_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
+												   rename_column + clear_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
 												   drop_stats + clear_stats + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx +
 												   column_remove_property + column_modify_setting + column_remove_setting +
 												   table_modify_setting + table_remove_setting + add_projection + remove_projection +
@@ -1349,7 +1377,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 				const uint32_t &proj = rg.PickRandomlyFromSet(t.projs);
 				ati->mutable_clear_projection()->set_projection("p" + std::to_string(proj));
 			} else if (add_constraint && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
-												 rename_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
+												 rename_column + clear_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
 												 drop_stats + clear_stats + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx +
 												 column_remove_property + column_modify_setting + column_remove_setting +
 												 table_modify_setting + table_remove_setting + add_projection + remove_projection +
@@ -1727,16 +1755,16 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery &sq, 
 					}
 					t.staged_cols.erase(cname);
 				} else if (ati.has_add_index()) {
-					const uint32_t cname = static_cast<uint32_t>(std::stoul(ati.add_index().new_idx().idx().index().substr(1)));
+					const uint32_t iname = static_cast<uint32_t>(std::stoul(ati.add_index().new_idx().idx().index().substr(1)));
 
 					if (success) {
-						t.idxs[cname] = std::move(t.staged_idxs[cname]);
+						t.idxs[iname] = std::move(t.staged_idxs[iname]);
 					}
-					t.staged_idxs.erase(cname);
+					t.staged_idxs.erase(iname);
 				} else if (ati.has_drop_index() && success) {
-					const uint32_t cname = static_cast<uint32_t>(std::stoul(ati.drop_index().index().substr(1)));
+					const uint32_t iname = static_cast<uint32_t>(std::stoul(ati.drop_index().index().substr(1)));
 
-					t.idxs.erase(cname);
+					t.idxs.erase(iname);
 				} else if (ati.has_add_projection()) {
 					const uint32_t pname = static_cast<uint32_t>(std::stoul(ati.add_projection().proj().projection().substr(1)));
 
@@ -1759,6 +1787,11 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery &sq, 
 					const uint32_t pname = static_cast<uint32_t>(std::stoul(ati.remove_constraint().constraint().substr(1)));
 
 					t.constrs.erase(pname);
+				} else if (success && ati.has_column_remove_property() &&
+						   ati.column_remove_property().property() <= sql_query_grammar::RemoveColumnProperty_ColumnProperties_MATERIALIZED) {
+					const uint32_t cname = static_cast<uint32_t>(std::stoul(ati.column_remove_property().col().column().substr(1)));
+
+					t.cols[cname].dmod = std::nullopt;
 				}
 			}
 		}

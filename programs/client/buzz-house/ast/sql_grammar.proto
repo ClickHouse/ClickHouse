@@ -2521,10 +2521,10 @@ message TypeName {
 }
 
 enum ColumnStat {
-  STATMinMax = 1;
-  STATTDigest = 2;
-  STATUniq = 3;
-  STATCountMin = 4;
+  STAT_MinMax = 1;
+  STAT_TDigest = 2;
+  STAT_Uniq = 3;
+  STAT_CountMin = 4;
 }
 
 message ColumnStatistics {
@@ -2542,22 +2542,34 @@ message SettingValues {
   repeated SetValue other_values = 2;
 }
 
+enum DModifier {
+  DEF_DEFAULT = 1;
+  DEF_MATERIALIZED = 2;
+  DEF_EPHEMERAL = 3;
+  DEF_ALIAS = 4;
+}
+
+message DefaultModifier {
+  required DModifier dvalue = 1;
+  optional Expr expr = 2;
+}
+
 enum CompressionCodec {
-  COMPDefault = 1;
-  COMPNONE = 2;
-  COMPLZ4 = 3;
-  COMPLZ4HC = 4;
-  COMPZSTD = 5;
-  COMPZSTD_QAT = 6;
-  COMPDEFLATE_QPL = 7;
-  COMPDelta = 8;
-  COMPDoubleDelta = 9;
-  COMPGCD = 10;
-  COMPGorilla = 11;
-  COMPFPC = 12;
-  COMPT64 = 13;
-  COMPAES_128_GCM_SIV = 14;
-  COMPAES_256_GCM_SIV = 15;
+  COMP_Default = 1;
+  COMP_NONE = 2;
+  COMP_LZ4 = 3;
+  COMP_LZ4HC = 4;
+  COMP_ZSTD = 5;
+  COMP_ZSTD_QAT = 6;
+  COMP_DEFLATE_QPL = 7;
+  COMP_Delta = 8;
+  COMP_DoubleDelta = 9;
+  COMP_GCD = 10;
+  COMP_Gorilla = 11;
+  COMP_FPC = 12;
+  COMP_T64 = 13;
+  COMP_AES_128_GCM_SIV = 14;
+  COMP_AES_256_GCM_SIV = 15;
 }
 
 message CodecParam {
@@ -2569,21 +2581,22 @@ message ColumnDef {
   required Column col = 1;
   required TypeName type = 2;
   optional bool nullable = 3;
-  repeated CodecParam codecs = 4;
-  optional ColumnStatistics stats = 5;
-  optional bool is_pkey = 6;
-  optional SettingValues settings = 7;
+  optional DefaultModifier defaultv = 4;
+  repeated CodecParam codecs = 5;
+  optional ColumnStatistics stats = 6;
+  optional bool is_pkey = 7;
+  optional SettingValues settings = 8;
 }
 
 enum IndexType {
-  IDXset = 1;
-  IDXminmax = 2;
-  IDXhypothesis = 3;
-  IDXbloom_filter = 4;
-  IDXngrambf_v1 = 5;
-  IDXtokenbf_v1 = 6;
-  IDXfull_text = 7;
-  IDXinverted = 8;
+  IDX_set = 1;
+  IDX_minmax = 2;
+  IDX_hypothesis = 3;
+  IDX_bloom_filter = 4;
+  IDX_ngrambf_v1 = 5;
+  IDX_tokenbf_v1 = 6;
+  IDX_full_text = 7;
+  IDX_inverted = 8;
 }
 
 message IndexParam {
@@ -2849,6 +2862,11 @@ message RenameCol {
   required Column new_name = 2;
 }
 
+message ClearCol {
+  required Column col = 1;
+  required TableKey partition = 2;
+}
+
 message AddStatistics {
   required ColumnList cols = 1;
   required ColumnStatistics stats = 2;
@@ -2935,30 +2953,31 @@ message AlterTableItem {
     AddColumn add_column = 5;
     Column drop_column = 6;
     RenameCol rename_column = 7;
-    AddColumn modify_column = 8;
-    bool delete_mask = 9;
-    AddStatistics add_stats = 10;
-    AddStatistics mod_stats = 11;
-    ColumnList drop_stats = 12;
-    ColumnList clear_stats = 13;
-    ColumnList mat_stats = 14;
-    AddIndex add_index = 15;
-    Index materialize_index = 16;
-    Index drop_index = 17;
-    Index clear_index = 18;
-    RemoveColumnProperty column_remove_property = 19;
-    ModifyColumnSetting column_modify_setting = 20;
-    RemoveColumnSetting column_remove_setting = 21;
-    SettingValues table_modify_setting = 22;
-    SettingList table_remove_setting = 23;
-    ProjectionDef add_projection = 24;
-    Projection remove_projection = 25;
-    Projection materialize_projection = 26;
-    Projection clear_projection = 27;
-    ConstraintDef add_constraint = 28;
-    Constraint remove_constraint = 29;
-    Select modify_query = 30;
-    RefreshableView refresh = 31;
+    ClearCol clear_column = 8;
+    AddColumn modify_column = 9;
+    bool delete_mask = 10;
+    AddStatistics add_stats = 11;
+    AddStatistics mod_stats = 12;
+    ColumnList drop_stats = 13;
+    ColumnList clear_stats = 14;
+    ColumnList mat_stats = 15;
+    AddIndex add_index = 16;
+    Index materialize_index = 17;
+    Index drop_index = 18;
+    Index clear_index = 19;
+    RemoveColumnProperty column_remove_property = 20;
+    ModifyColumnSetting column_modify_setting = 21;
+    RemoveColumnSetting column_remove_setting = 22;
+    SettingValues table_modify_setting = 23;
+    SettingList table_remove_setting = 24;
+    ProjectionDef add_projection = 25;
+    Projection remove_projection = 26;
+    Projection materialize_projection = 27;
+    Projection clear_projection = 28;
+    ConstraintDef add_constraint = 29;
+    Constraint remove_constraint = 30;
+    Select modify_query = 31;
+    RefreshableView refresh = 32;
   }
 }
 

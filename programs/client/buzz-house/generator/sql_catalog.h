@@ -13,36 +13,41 @@ using ColumnSpecial = enum ColumnSpecial {
 
 struct SQLColumn {
 public:
-	std::optional<bool> nullable = std::nullopt;
 	uint32_t cname = 0;
 	SQLType *tp = nullptr;
 	ColumnSpecial special = ColumnSpecial::NONE;
+	std::optional<bool> nullable = std::nullopt;
+	std::optional<sql_query_grammar::DModifier> dmod = std::nullopt;
 
 	SQLColumn() = default;
 	SQLColumn(const SQLColumn& c) {
-		this->nullable = c.nullable;
 		this->cname = c.cname;
 		this->special = c.special;
+		this->nullable = c.nullable;
+		this->dmod = c.dmod;
 		this->tp = TypeDeepCopy(c.tp);
 	}
 	SQLColumn(SQLColumn&& c) {
-		this->nullable = c.nullable;
 		this->cname = c.cname;
 		this->special = c.special;
+		this->nullable = c.nullable;
+		this->dmod = c.dmod;
 		this->tp = c.tp;
 		c.tp = nullptr;
 	}
 	SQLColumn& operator=(const SQLColumn& c) {
-		this->nullable = c.nullable;
 		this->cname = c.cname;
 		this->special = c.special;
+		this->nullable = c.nullable;
+		this->dmod = c.dmod;
 		this->tp = TypeDeepCopy(c.tp);
 		return *this;
 	}
 	SQLColumn& operator=(SQLColumn&& c) {
-		this->nullable = c.nullable;
 		this->cname = c.cname;
 		this->special = c.special;
+		this->nullable = c.nullable;
+		this->dmod = std::optional<sql_query_grammar::DModifier>(c.dmod);
 		this->tp = c.tp;
 		c.tp = nullptr;
 		return *this;

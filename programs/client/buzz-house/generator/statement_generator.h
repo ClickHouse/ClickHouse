@@ -70,9 +70,10 @@ typedef struct InsertEntry {
 	uint32_t cname1 = 0;
 	std::optional<uint32_t> cname2;
 	SQLType *tp = nullptr;
+	std::optional<sql_query_grammar::DModifier> dmod = std::nullopt;
 
-	InsertEntry(const ColumnSpecial cs, const uint32_t c1, std::optional<uint32_t> c2, SQLType *t) :
-		special(cs), cname1(c1), cname2(c2), tp(t) {}
+	InsertEntry(const ColumnSpecial cs, const uint32_t c1, std::optional<uint32_t> c2, SQLType *t, std::optional<sql_query_grammar::DModifier> dm) :
+		special(cs), cname1(c1), cname2(c2), tp(t), dmod(dm) {}
 } InsertEntry;
 
 class StatementGenerator {
