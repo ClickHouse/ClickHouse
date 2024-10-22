@@ -52,6 +52,6 @@ REFRESH_SETTINGS_SUPPORTED_TYPES(RefreshSettings, IMPLEMENT_SETTING_SUBSCRIPT_OP
 
 void RefreshSettings::applyChanges(const SettingsChanges & changes)
 {
-    return impl->applyChanges(changes);
+    impl->applyChanges(changes);
 }
 }
