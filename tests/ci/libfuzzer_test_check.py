@@ -177,7 +177,7 @@ def read_status(status_path: Path):
 def process_results(result_path: Path):
     test_results = []
     oks = 0
-    timeouts = 0
+    errors = 0
     fails = 0
     for file in result_path.glob("*.status"):
         fuzzer = file.stem
@@ -188,8 +188,8 @@ def process_results(result_path: Path):
         result = TestResult(fuzzer, status[0], float(status[2]))
         if status[0] == "OK":
             oks += 1
-        elif status[0] == "Timeout":
-            timeouts += 1
+        elif status[0] == "ERROR":
+            errors += 1
             if file_path_out.exists():
                 result.set_log_files(f"['{file_path_out}']")
         else:
@@ -202,7 +202,7 @@ def process_results(result_path: Path):
                 result.set_log_files(f"['{file_path_out}']")
         test_results.append(result)
 
-    return [oks, timeouts, fails, test_results]
+    return [oks, errors, fails, test_results]
 
 
 def main():
@@ -284,7 +284,7 @@ def main():
     success = results[1] == 0 and results[2] == 0
 
     JobReport(
-        description=f"OK: {results[0]}, Timeout: {results[1]}, FAIL: {results[2]}",
+        description=f"OK: {results[0]}, ERROR: {results[1]}, FAIL: {results[2]}",
         test_results=results[3],
         status=SUCCESS if success else FAILURE,
         start_time=stopwatch.start_time_str,
