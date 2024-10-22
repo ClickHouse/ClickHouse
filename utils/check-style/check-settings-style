@@ -8,6 +8,7 @@ ROOT_PATH=$(git rev-parse --show-toplevel)
 
 # Duplicated or incorrect setting declarations
 SETTINGS_FILE=$(mktemp)
+trap "rm ${SETTINGS_FILE}" EXIT
 ALL_DECLARATION_FILES="
   $ROOT_PATH/src/Core/Settings.cpp
   $ROOT_PATH/src/Core/ServerSettings.cpp
@@ -22,6 +23,7 @@ ALL_DECLARATION_FILES="
   $ROOT_PATH/src/Storages/MaterializedView/RefreshSettings.cpp
   $ROOT_PATH/src/Storages/NATS/NATSSettings.cpp
   $ROOT_PATH/src/Storages/Kafka/KafkaSettings.cpp
+  $ROOT_PATH/src/Storages/Hive/HiveSettings.cpp
   $ROOT_PATH/src/Core/FormatFactorySettingsDeclaration.h"
 
 for settings_file in ${ALL_DECLARATION_FILES};
@@ -44,6 +46,7 @@ cat $ROOT_PATH/src/Storages/ObjectStorageQueue/ObjectStorageQueueSettings.cpp | 
 cat $ROOT_PATH/src/Storages/MaterializedView/RefreshSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " RefreshSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
 cat $ROOT_PATH/src/Storages/NATS/NATSSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " NATSSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
 cat $ROOT_PATH/src/Storages/Kafka/KafkaSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " KafkaSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
+cat $ROOT_PATH/src/Storages/Hive/HiveSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " HiveSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
 
 
 # Check that if there are duplicated settings (declared in different objects) they all have the same type (it's simpler to validate style with that assert)
@@ -58,6 +61,7 @@ for setting in $(awk '{print $1 " " $2}' ${SETTINGS_FILE} | \
         -e 's/RefreshSettings//g' \
         -e 's/NATSSettings//g' \
         -e 's/KafkaSettings//g' \
+        -e 's/HiveSettings//g' \
         -e 's/MergeTreeSettings//g' \
         -e 's/ServerSettings//g' \
         -e 's/Settings//g' | \
@@ -81,6 +85,7 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | \
                -e "^\s**extern const TimeSeriesSettings" \
                -e "^\s**extern const DatabaseReplicatedSettings" \
                -e "^\s**extern const KafkaSettings" \
+               -e "^\s**extern const HiveSettings" \
                -e "^\s**extern const CoordinationSettings" -T | \
     awk '{print substr($5, 0, length($5) -1) " " $4 " " substr($1, 0, length($1) - 1)}' >> ${SETTINGS_FILE}
 
@@ -112,6 +117,7 @@ for setting in $(awk '{print $1 " " $2}' ${SETTINGS_FILE} | \
         -e 's/ObjectStorageQueueSettings//g' \
         -e 's/DatabaseReplicatedSettings//g' \
         -e 's/KafkaSettings//g' \
+        -e 's/HiveSettings//g' \
         -e 's/Settings//g' | \
     sort | uniq | awk '{ print $1 }' | sort | uniq -d);
 do
@@ -121,5 +127,3 @@ do
         echo "# In $line but it should be ${expected/$'\n'/ }"
     done
 done
-
-rm ${SETTINGS_FILE}
