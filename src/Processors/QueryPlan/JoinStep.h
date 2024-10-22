@@ -34,8 +34,6 @@ public:
     void setJoin(JoinPtr join_) { join = std::move(join_); }
     bool allowPushDownToRight() const;
 
-    bool canUpdateInputHeader() const override { return true; }
-
 private:
     void updateOutputHeader() override;
 
