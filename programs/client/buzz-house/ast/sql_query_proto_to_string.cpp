@@ -1903,6 +1903,10 @@ CONV_FN(TableEngine, te) {
     ret += " PRIMARY KEY ";
     TableKeyToString(ret, te.primary_key());
   }
+  if (te.has_sample_by()) {
+    ret += " SAMPLE BY ";
+    TableKeyToString(ret, te.sample_by());
+  }
 }
 
 CONV_FN(CreateTableAs, create_table) {

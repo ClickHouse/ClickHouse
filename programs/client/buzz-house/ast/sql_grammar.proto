@@ -2661,6 +2661,7 @@ message TableEngine {
   optional TableKey order = 4;
   optional TableKey partition_by = 5;
   optional TableKey primary_key = 6;
+  optional TableKey sample_by = 7;
 }
 
 message CreateTableAs {

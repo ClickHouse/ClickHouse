@@ -172,7 +172,9 @@ int StatementGenerator::GenerateTableKey(RandomGenerator &rg, sql_query_grammar:
 }
 
 int StatementGenerator::GenerateEngineDetails(RandomGenerator &rg, sql_query_grammar::TableEngine *te) {
-	GenerateTableKey(rg, te->mutable_order());
+	if (rg.NextSmallNumber() < 6) {
+		GenerateTableKey(rg, te->mutable_order());
+	}
 	if (te->order().exprs_size() && rg.NextSmallNumber() < 5) {
 		//pkey is a subset of order by
 		sql_query_grammar::TableKey *tkey = te->mutable_primary_key();
@@ -188,9 +190,45 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator &rg, sql_query_gra
 				necol->mutable_subcol()->set_column(oecol.subcol().column());
 			}
 		}
+	} else if (!te->order().exprs_size()) {
+		GenerateTableKey(rg, te->mutable_primary_key());
 	}
 	if (rg.NextSmallNumber() < 5) {
 		GenerateTableKey(rg, te->mutable_partition_by());
+	}
+
+	const size_t npkey = te->primary_key().exprs_size();
+	if (npkey && rg.NextSmallNumber() < 5) {
+		//try to add sample key
+		assert(this->ids.empty());
+		for (size_t i = 0 ; i < this->entries.size(); i++) {
+			IntType *itp;
+			const InsertEntry &entry = this->entries[i];
+
+			if (!entry.cname2.has_value() && (itp = dynamic_cast<IntType*>(entry.tp)) && itp->is_unsigned) {
+				//must be in pkey
+				for (size_t j = 0; j < npkey; j++) {
+					const sql_query_grammar::ExprColumn &oecol = te->primary_key().exprs(j).comp_expr().expr_stc().col();
+
+					if (!oecol.has_subcol() && std::stoul(oecol.col().column().substr(1)) == entry.cname1) {
+						this->ids.push_back(entry.cname1);
+						break;
+					}
+				}
+			}
+		}
+		if (!this->ids.empty()) {
+			sql_query_grammar::TableKey *tkey = te->mutable_sample_by();
+			const size_t ncols = (rg.NextMediumNumber() % std::min<size_t>(this->ids.size(), UINT32_C(3))) + 1;
+
+			std::shuffle(ids.begin(), ids.end(), rg.gen);
+			for (size_t i = 0; i < ncols; i++) {
+				sql_query_grammar::ExprColumn *ecol = tkey->add_exprs()->mutable_comp_expr()->mutable_expr_stc()->mutable_col();
+
+				ecol->mutable_col()->set_column("c" + std::to_string(ids[i]));
+			}
+			this->ids.clear();
+		}
 	}
 	return 0;
 }
@@ -1031,22 +1069,26 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 			const uint32_t nopt = next_dist(rg.gen);
 
 			if (alter_order_by && nopt < (alter_order_by + 1)) {
-				NestedType *ntp = nullptr;
+				sql_query_grammar::TableKey *tkey = ati->mutable_order();
 
-				assert(this->entries.empty());
-				for (const auto &entry : t.cols) {
-					if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
-						for (const auto &entry2 : ntp->subtypes) {
-							if (!dynamic_cast<JSONType*>(entry2.subtype)) {
-								entries.push_back(InsertEntry(ColumnSpecial::NONE, entry.second.cname, std::optional<uint32_t>(entry2.cname), entry2.array_subtype));
+				if (rg.NextSmallNumber() < 6) {
+					NestedType *ntp = nullptr;
+
+					assert(this->entries.empty());
+					for (const auto &entry : t.cols) {
+						if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
+							for (const auto &entry2 : ntp->subtypes) {
+								if (!dynamic_cast<JSONType*>(entry2.subtype)) {
+									entries.push_back(InsertEntry(ColumnSpecial::NONE, entry.second.cname, std::optional<uint32_t>(entry2.cname), entry2.array_subtype));
+								}
 							}
+						} else if (!dynamic_cast<JSONType*>(entry.second.tp)) {
+							entries.push_back(InsertEntry(entry.second.special, entry.second.cname, std::nullopt, entry.second.tp));
 						}
-					} else if (!dynamic_cast<JSONType*>(entry.second.tp)) {
-						entries.push_back(InsertEntry(entry.second.special, entry.second.cname, std::nullopt, entry.second.tp));
 					}
+					GenerateTableKey(rg, tkey);
+					this->entries.clear();
 				}
-				GenerateTableKey(rg, ati->mutable_order());
-				this->entries.clear();
 			} else if (heavy_delete && nopt < (heavy_delete + alter_order_by + 1)) {
 				GenerateUptDelWhere(rg, t, ati->mutable_del()->mutable_expr()->mutable_expr());
 			} else if (add_column && nopt < (heavy_delete + alter_order_by + add_column + 1)) {
