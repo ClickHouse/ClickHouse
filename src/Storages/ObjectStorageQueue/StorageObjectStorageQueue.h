@@ -36,7 +36,7 @@ public:
 
     String getName() const override { return engine_name; }
 
-    StorageObjectStorageQueueType getType() { return type; }
+    ObjectStorageType getType() { return type; }
 
     void read(
         QueryPlan & query_plan,
@@ -61,7 +61,7 @@ private:
     using FileIterator = ObjectStorageQueueSource::FileIterator;
     using CommitSettings = ObjectStorageQueueSource::CommitSettings;
 
-    StorageObjectStorageQueueType type;
+    ObjectStorageType type;
     const std::string engine_name;
     const fs::path zk_path;
     const bool enable_logging_to_queue_log;
