@@ -2571,7 +2571,8 @@ message ColumnDef {
   optional bool nullable = 3;
   repeated CodecParam codecs = 4;
   optional ColumnStatistics stats = 5;
-  optional SettingValues settings = 6;
+  optional bool is_pkey = 6;
+  optional SettingValues settings = 7;
 }
 
 enum IndexType {

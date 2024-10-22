@@ -1773,6 +1773,9 @@ CONV_FN(ColumnDef, cdf) {
     ColumnStatisticsToString(ret, cdf.stats());
     ret += ")";
   }
+  if (cdf.is_pkey()) {
+    ret += " PRIMARY KEY";
+  }
   if (cdf.has_settings()) {
     ret += " SETTINGS(";
     SettingValuesToString(ret, cdf.settings());

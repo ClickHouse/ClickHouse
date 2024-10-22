@@ -190,12 +190,12 @@ private:
 	int GenerateNextStatistics(RandomGenerator &rg, sql_query_grammar::ColumnStatistics *cstats);
 	int PickUpNextCols(RandomGenerator &rg, const SQLTable &t, sql_query_grammar::ColumnList *clist);
 	int AddTableColumn(RandomGenerator &rg, SQLTable &t, const uint32_t cname, const bool staged, const bool modify,
-					   const ColumnSpecial special, sql_query_grammar::ColumnDef *cd);
+					   const bool is_pk, const ColumnSpecial special, sql_query_grammar::ColumnDef *cd);
 	int AddTableIndex(RandomGenerator &rg, SQLTable &t, const bool staged, sql_query_grammar::IndexDef *idef);
 	int AddTableProjection(RandomGenerator &rg, SQLTable &t, const bool staged, sql_query_grammar::ProjectionDef *pdef);
 	int AddTableConstraint(RandomGenerator &rg, SQLTable &t, const bool staged, sql_query_grammar::ConstraintDef *cdef);
 	int GenerateTableKey(RandomGenerator &rg, sql_query_grammar::TableKey *tkey);
-	int GenerateEngineDetails(RandomGenerator &rg, sql_query_grammar::TableEngine *te);
+	int GenerateEngineDetails(RandomGenerator &rg, const bool add_pkey, sql_query_grammar::TableEngine *te);
 	int GenerateNextRefreshableView(RandomGenerator &rg, sql_query_grammar::RefreshableView *cv);
 	int GenerateNextCreateView(RandomGenerator &rg, sql_query_grammar::CreateView *cv);
 	int GenerateNextDrop(RandomGenerator &rg, sql_query_grammar::Drop *sq);
