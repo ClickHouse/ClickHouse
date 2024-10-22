@@ -2271,6 +2271,7 @@ CONV_FN(HeavyDelete, hdel) {
     TableKeyToString(ret, hdel.partition());
     ret += " ";
   }
+  ret += "WHERE ";
   WhereStatementToString(ret, hdel.del());
 }
 
