@@ -184,6 +184,7 @@ def process_results(result_path: Path):
         file_path = file.parent / fuzzer
         file_path_unit = file_path.with_suffix(".unit")
         file_path_out = file_path.with_suffix(".out")
+        file_path_stdout = file_path.with_suffix(".stdout")
         status = read_status(file)
         result = TestResult(fuzzer, status[0], float(status[2]))
         if status[0] == "OK":
@@ -192,6 +193,8 @@ def process_results(result_path: Path):
             errors += 1
             if file_path_out.exists():
                 result.set_log_files(f"['{file_path_out}']")
+            elif file_path_stdout.exists():
+                result.set_log_files(f"['{file_path_stdout}']")
         else:
             fails += 1
             if file_path_out.exists():
@@ -200,6 +203,8 @@ def process_results(result_path: Path):
                 result.set_log_files(f"['{file_path_unit}']")
             elif file_path_out.exists():
                 result.set_log_files(f"['{file_path_out}']")
+            elif file_path_stdout.exists():
+                result.set_log_files(f"['{file_path_stdout}']")
         test_results.append(result)
 
     return [oks, errors, fails, test_results]

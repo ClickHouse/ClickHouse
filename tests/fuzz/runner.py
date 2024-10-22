@@ -81,6 +81,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
     exact_artifact_path = f"{OUTPUT}/{fuzzer}.unit"
     status_path = f"{OUTPUT}/{fuzzer}.status"
     out_path = f"{OUTPUT}/{fuzzer}.out"
+    stdout_path = f"{OUTPUT}/{fuzzer}.stdout"
 
     cmd_line = f"{DEBUGGER} ./{fuzzer} {active_corpus_dir} {seed_corpus_dir}"
 
@@ -98,11 +99,11 @@ def run_fuzzer(fuzzer: str, timeout: int):
 
     stopwatch = Stopwatch()
     try:
-        with open(out_path, "wb") as out:
+        with open(out_path, "wb") as out, open(stdout_path, "wb") as stdout:
             subprocess.run(
                 cmd_line.split(),
                 stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
+                stdout=stdout,
                 stderr=out,
                 text=True,
                 check=True,
@@ -122,13 +123,18 @@ def run_fuzzer(fuzzer: str, timeout: int):
             status.write(
                 f"OK\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
             )
+    except Exception as e:
+        logging.info("Unexpected exception running %s: %s", fuzzer, e)
+        with open(status_path, "w", encoding="utf-8") as status:
+            status.write(
+                f"ERROR\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
+            )
     else:
         logging.info("Error running %s", fuzzer)
         with open(status_path, "w", encoding="utf-8") as status:
             status.write(
                 f"ERROR\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
             )
-        os.remove(out_path)
 
 
 def main():
