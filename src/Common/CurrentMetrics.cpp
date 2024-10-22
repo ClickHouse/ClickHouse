@@ -321,6 +321,9 @@
     M(FilteringMarksWithPrimaryKey, "Number of threads currently doing filtering of mark ranges by the primary key") \
     M(FilteringMarksWithSecondaryKeys, "Number of threads currently doing filtering of mark ranges by secondary keys") \
     \
+    M(ConcurrencyControlAcquired, "Total number of acquired CPU slots") \
+    M(ConcurrencyControlSoftLimit, "Value of soft limit on number of CPU slots") \
+    \
     M(DiskS3NoSuchKeyErrors, "The number of `NoSuchKey` errors that occur when reading data from S3 cloud storage through ClickHouse disks.") \
     \
     M(SharedCatalogStateApplicationThreads, "Number of threads in the threadpool for state application in Shared Catalog.") \
