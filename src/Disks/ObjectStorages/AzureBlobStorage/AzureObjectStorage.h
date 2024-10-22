@@ -17,6 +17,7 @@ class Logger;
 
 namespace DB
 {
+
 class AzureObjectStorage : public IObjectStorage
 {
 public:
