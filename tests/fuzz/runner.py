@@ -5,10 +5,8 @@ import datetime
 import logging
 import os
 import re
-import signal
 import subprocess
 from pathlib import Path
-from time import sleep
 
 DEBUGGER = os.getenv("DEBUGGER", "")
 FUZZER_ARGS = os.getenv("FUZZER_ARGS", "")
@@ -84,9 +82,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
     status_path = f"{OUTPUT}/{fuzzer}.status"
     out_path = f"{OUTPUT}/{fuzzer}.out"
 
-    cmd_line = (
-        f"{DEBUGGER} ./{fuzzer} {active_corpus_dir} {seed_corpus_dir}"
-    )
+    cmd_line = f"{DEBUGGER} ./{fuzzer} {active_corpus_dir} {seed_corpus_dir}"
 
     cmd_line += f" -exact_artifact_path={exact_artifact_path}"
 
