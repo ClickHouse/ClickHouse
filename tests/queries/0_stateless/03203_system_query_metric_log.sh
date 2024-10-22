@@ -19,11 +19,9 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
 function check_log()
 {
     interval=$1
-
     # We calculate the diff of each row with its previous row to check whether the intervals at which
     # data is collected is right. The first row is always skipped because the diff is 0. The same for the
-    # last row, which is skipped because it doesn't contain a full interval. Thus, the expected amount of
-    # rows here is the expected ones - 2.
+    # last row, which is skipped because doesn't contain a full interval.
     $CLICKHOUSE_CLIENT --max_threads=1 -m -q """
     WITH diff AS (
         SELECT
@@ -37,7 +35,7 @@ function check_log()
         ORDER BY event_time_microseconds
         OFFSET 1
     )
-    SELECT if(count() BETWEEN ((ceil(2500 / $interval) + 1 - 2) * 0.8) AND ((ceil(2500 / $interval) + 1 - 2) * 1.2), 'number_of_metrics_${interval}_ok', 'number_of_metrics_${interval}_error'),
+    SELECT if(count() BETWEEN ((ceil(2500 / $interval) - 2) * 0.8) AND ((ceil(2500 / $interval) - 2) * 1.2), 'number_of_metrics_${interval}_ok', 'number_of_metrics_${interval}_error'),
            if(avg(diff) BETWEEN $interval * 0.8 AND $interval * 1.2, 'timestamp_diff_in_metrics_${interval}_ok', 'timestamp_diff_in_metrics_${interval}_error')
     FROM diff WHERE row < total_rows
     """
@@ -50,7 +48,7 @@ check_log 123
 # query_metric_log_interval=0 disables the collection altogether
 $CLICKHOUSE_CLIENT -m -q """SELECT count() FROM system.query_metric_log WHERE event_date >= yesterday() AND query_id = '${query_prefix}_0'"""
 
-# a quick query that takes less than query_metric_log_interval is collected at start and finish
+# a quick query that takes less than query_metric_log_interval is never collected
 $CLICKHOUSE_CLIENT -m -q """SELECT count() FROM system.query_metric_log WHERE event_date >= yesterday() AND query_id = '${query_prefix}_fast'"""
 
 # a query that takes more than query_metric_log_interval is collected including the final row
