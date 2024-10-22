@@ -105,8 +105,8 @@ public:
 	}
 
 	bool SupportsFinal() const {
-		return (teng >= sql_query_grammar::TableEngineValues::ReplacingMergeTree &&
-				teng <= sql_query_grammar::TableEngineValues::VersionedCollapsingMergeTree) || toption.has_value();
+		return teng >= sql_query_grammar::TableEngineValues::ReplacingMergeTree &&
+			   teng <= sql_query_grammar::TableEngineValues::VersionedCollapsingMergeTree;
 	}
 
 	bool HasSignColumn() const {
