@@ -72,7 +72,7 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
           std::make_unique<TaskTracker>(
               std::move(schedule_),
               settings_->max_inflight_parts_for_one_file,
-              limitedLog))
+              limited_log))
     , check_objects_after_upload(settings_->check_objects_after_upload)
 {
     allocateBuffer();
