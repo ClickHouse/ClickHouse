@@ -1687,7 +1687,7 @@ try
                     initialized = true;
                     return;
                 }
-                else if (changelog_description.from_log_index > start_to_read_from)
+                if (changelog_description.from_log_index > start_to_read_from)
                 {
                     /// We don't have required amount of reserved logs, but nothing was lost.
                     LOG_WARNING(
@@ -1890,7 +1890,7 @@ void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
     {
         auto & changelog_description = itr->second;
 
-        if (!disk->exists(timestamp_folder))
+        if (!disk->existsDirectory(timestamp_folder))
         {
             LOG_WARNING(log, "Moving broken logs to {}", timestamp_folder);
             disk->createDirectories(timestamp_folder);

@@ -132,23 +132,26 @@ StoragePtr StorageFactory::get(
             {
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Direct creation of tables with ENGINE View is not supported, use CREATE VIEW statement");
             }
-            else if (name == "MaterializedView")
+            if (name == "MaterializedView")
             {
-                throw Exception(ErrorCodes::INCORRECT_QUERY,
-                                "Direct creation of tables with ENGINE MaterializedView "
-                                "is not supported, use CREATE MATERIALIZED VIEW statement");
+                throw Exception(
+                    ErrorCodes::INCORRECT_QUERY,
+                    "Direct creation of tables with ENGINE MaterializedView "
+                    "is not supported, use CREATE MATERIALIZED VIEW statement");
             }
-            else if (name == "LiveView")
+            if (name == "LiveView")
             {
-                throw Exception(ErrorCodes::INCORRECT_QUERY,
-                                "Direct creation of tables with ENGINE LiveView "
-                                "is not supported, use CREATE LIVE VIEW statement");
+                throw Exception(
+                    ErrorCodes::INCORRECT_QUERY,
+                    "Direct creation of tables with ENGINE LiveView "
+                    "is not supported, use CREATE LIVE VIEW statement");
             }
-            else if (name == "WindowView")
+            if (name == "WindowView")
             {
-                throw Exception(ErrorCodes::INCORRECT_QUERY,
-                                "Direct creation of tables with ENGINE WindowView "
-                                "is not supported, use CREATE WINDOW VIEW statement");
+                throw Exception(
+                    ErrorCodes::INCORRECT_QUERY,
+                    "Direct creation of tables with ENGINE WindowView "
+                    "is not supported, use CREATE WINDOW VIEW statement");
             }
 
             auto it = storages.find(name);
@@ -157,8 +160,7 @@ StoragePtr StorageFactory::get(
                 auto hints = getHints(name);
                 if (!hints.empty())
                     throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}. Maybe you meant: {}", name, toString(hints));
-                else
-                    throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}", name);
+                throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}", name);
             }
 
             auto check_feature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
