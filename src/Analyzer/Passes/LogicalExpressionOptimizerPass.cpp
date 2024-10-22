@@ -179,6 +179,26 @@ public:
         , join_node(join_node_)
     {}
 
+    bool needChildVisit(const QueryTreeNodePtr & parent, const QueryTreeNodePtr &)
+    {
+        /** Optimization can change the value of some expression from NULL to FALSE.
+          * For example:
+          * when `a` is `NULL`, the expression `a = b AND a IS NOT NULL` returns `NULL`
+          * and it will be optimized to `a = b`, which returns `FALSE`.
+          * This is valid for JOIN ON condition and for the functions `AND`/`OR` inside it.
+          * (When we replace `AND`/`OR` operands from `NULL` to `FALSE`, the result value can also change only from `NULL` to `FALSE`)
+          * However, in the general case, the result can be wrong.
+          * For example, for NOT: `NOT NULL` is `NULL`, but `NOT FALSE` is `TRUE`.
+          * Therefore, optimize only top-level expression or expressions inside `AND`/`OR`.
+          */
+        if (const auto * function_node = parent->as<FunctionNode>())
+        {
+            const auto & func_name = function_node->getFunctionName();
+            return func_name == "or" || func_name == "and";
+        }
+        return parent->getNodeType() == QueryTreeNodeType::LIST;
+    }
+
     void enterImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
