@@ -36,10 +36,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool enable_named_columns_in_function_tuple;
-}
 
 namespace ErrorCodes
 {
@@ -182,7 +178,7 @@ public:
                     break;
                 }
 
-                if (planner_context.getQueryContext()->getSettingsRef()[Setting::enable_named_columns_in_function_tuple])
+                if (planner_context.getQueryContext()->getSettingsRef().enable_named_columns_in_function_tuple)
                 {
                     /// Function "tuple" which generates named tuple should use argument aliases to construct its name.
                     if (function_node.getFunctionName() == "tuple")
