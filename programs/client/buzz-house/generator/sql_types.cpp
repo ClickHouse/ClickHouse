@@ -209,7 +209,10 @@ SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allo
 					dec->set_precision(precision.value());
 				}
 				if (rg.NextBool()) {
-					scale = std::optional<uint32_t>(rg.NextRandomUInt32() % precision.value());
+					scale = std::optional<uint32_t>(rg.NextRandomUInt32() % (precision.value() + 1));
+					if (dec) {
+						dec->set_scale(scale.value());
+					}
 				}
 			}
 			res = new DecimalType(precision, scale);

@@ -708,7 +708,7 @@ void BottomTypeNameToString(std::string &ret, const bool quote, const bool lcard
               ret += std::to_string(precision);
               if (dec.has_scale()) {
                 ret += ",";
-                ret += std::to_string(dec.scale() % precision);
+                ret += std::to_string(dec.scale() % (precision + 1));
               }
               ret += ")";
             }
