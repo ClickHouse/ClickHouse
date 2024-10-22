@@ -6,7 +6,6 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from test_storage_azure_blob_storage.test import azure_query
 
-
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 NODE_NAME = "node"
 TABLE_NAME = "blob_storage_table"
