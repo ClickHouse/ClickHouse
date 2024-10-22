@@ -28,13 +28,12 @@ void registerDisks(bool global_skip_access_check)
 
 #if USE_SSL
     registerDiskEncrypted(factory, global_skip_access_check);
+    registerDiskEncryptedOS(factory, global_skip_access_check);
 #endif
 
     registerDiskCache(factory, global_skip_access_check);
 
     registerDiskObjectStorage(factory, global_skip_access_check);
-
-    registerDiskEncryptedOS(factory, global_skip_access_check);
 }
 
 }
