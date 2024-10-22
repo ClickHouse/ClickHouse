@@ -11,6 +11,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 AggregatingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition() = default;
@@ -18,7 +19,7 @@ AggregatingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition(ColumnsDefiniti
 AggregatingSortedAlgorithm::ColumnsDefinition::~ColumnsDefinition() = default;
 
 static AggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
-    const Block & header, const SortDescription & description, const String & default_aggregate_function = "")
+    const Block & header, const SortDescription & description, const String & default_aggregate_function = "any")
 {
     AggregatingSortedAlgorithm::ColumnsDefinition def = {};
     size_t num_columns = header.columns();
@@ -62,21 +63,29 @@ static AggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
 
             def.columns_to_simple_aggregate.emplace_back(std::move(desc));
         }
-        else if (dynamic_cast<const DataTypeAggregateFunction *>(column.type->getCustomName()))
-        {
-            // standard aggregate function
-            def.columns_to_aggregate.emplace_back(i);
-        }
-        else
+        else if (!default_aggregate_function.empty())
         {
             AggregateFunctionProperties properties;
             auto type = recursiveRemoveLowCardinality(column.type);
             const auto & func = AggregateFunctionFactory::instance().get(default_aggregate_function, NullsAction::EMPTY, {column.type}, {}, properties);
+
+            if (!func->getResultType()->equals(*removeLowCardinality(column.type)))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incompatible data types between aggregate function '{}' "
+                                                           "which returns {} and column storage type {}",
+                                func->getName(), func->getResultType()->getName(), column.type->getName());
+            }
+
             AggregatingSortedAlgorithm::SimpleAggregateDescription desc(func, i, type.get() == column.type.get() ? nullptr : type, column.type);
             if (desc.function->allocatesMemoryInArena())
                 def.allocates_memory_in_arena = true;
 
             def.columns_to_simple_aggregate.emplace_back(std::move(desc));
+        }
+        else
+        {
+            // standard aggregate function
+            def.columns_to_aggregate.emplace_back(i);
         }
     }
 

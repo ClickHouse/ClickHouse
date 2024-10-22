@@ -44,6 +44,10 @@ The function is not applied to columns that are in primary key.
 
 If `default_aggregate_function` is not specified for a column and the column's type is not SimpleAggregateFunction or AggregateFunction, then any of values in the column within the same primary key is taken. This value can be NULL.
 
+:::warning
+When using this parameter, no check is performed on table creation to verify whether the specified function accepts the data types represented in the columns.
+If the function is unable to work with the data type, an exception will be thrown only during data insertion or the next merge.
+:::
 
 **Query clauses**
 

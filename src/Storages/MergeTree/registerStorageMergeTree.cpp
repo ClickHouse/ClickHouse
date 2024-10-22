@@ -456,7 +456,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             add_mandatory_param("sign column");
             break;
         case MergeTreeData::MergingParams::Aggregating:
-            add_mandatory_param("default aggregate function");
+            add_optional_param("default aggregate function");
             break;
         case MergeTreeData::MergingParams::Graphite:
             add_mandatory_param("'config_element_for_graphite_schema'");
