@@ -548,7 +548,7 @@ std::shared_ptr<StorageObjectStorageQueue::FileIterator> StorageObjectStorageQue
 ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
 {
     /// We do not store queue settings
-    /// (because of the inconbenience of keeping them in sync with ObjectStorageQueueTableMetadata),
+    /// (because of the inconvenience of keeping them in sync with ObjectStorageQueueTableMetadata),
     /// so let's reconstruct.
     ObjectStorageQueueSettings settings;
     const auto & table_metadata = getTableMetadata();
