@@ -387,9 +387,10 @@ void MaterializedMySQLSyncThread::assertMySQLAvailable()
             throw Exception(ErrorCodes::SYNC_MYSQL_USER_ACCESS_ERROR, "MySQL SYNC USER ACCESS ERR: "
                             "mysql sync user needs at least GLOBAL PRIVILEGES:'RELOAD, REPLICATION SLAVE, REPLICATION CLIENT' "
                             "and SELECT PRIVILEGE on Database {}", mysql_database_name);
-        if (e.errnum() == ER_BAD_DB_ERROR)
+        else if (e.errnum() == ER_BAD_DB_ERROR)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Unknown database '{}' on MySQL", mysql_database_name);
-        throw;
+        else
+            throw;
     }
 }
 

@@ -108,7 +108,8 @@ ConcurrencyControl::~ConcurrencyControl()
     if (granted < max)
         return SlotAllocationPtr(new Allocation(*this, max, granted,
             waiters.insert(cur_waiter, nullptr /* pointer is set by Allocation ctor */)));
-    return SlotAllocationPtr(new Allocation(*this, max, granted));
+    else
+        return SlotAllocationPtr(new Allocation(*this, max, granted));
 }
 
 void ConcurrencyControl::setMaxConcurrency(SlotCount value)
@@ -171,7 +172,8 @@ SlotCount ConcurrencyControl::available(std::unique_lock<std::mutex> &) const
 {
     if (cur_concurrency < max_concurrency)
         return max_concurrency - cur_concurrency;
-    return 0;
+    else
+        return 0;
 }
 
 }

@@ -90,12 +90,10 @@ private:
     static bool skipPredicateForShadowDir(const String & local_path)
     {
         // `shadow/{backup_name}/revision.txt` is not an object metadata file
-        // `shadow/../{part_name}/frozen_metadata.txt` is not an object metadata file
         const auto path = fs::path(local_path);
-        return (path.filename() == "revision.txt" &&
+        return path.filename() == "revision.txt" &&
                 path.parent_path().has_parent_path() &&
-                path.parent_path().parent_path().filename() == "shadow") ||
-                path.filename() == "frozen_metadata.txt";
+                path.parent_path().parent_path().filename() == "shadow";
     }
 
     const UInt64 max_block_size;
@@ -132,7 +130,7 @@ public:
         const Block & header,
         UInt64 max_block_size_)
         : SourceStepWithFilter(
-            header,
+            {.header = header},
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -199,7 +197,7 @@ void StorageSystemRemoteDataPaths::read(
 
 void ReadFromSystemRemoteDataPaths::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & /*settings*/)
 {
-    const auto & header = getOutputHeader();
+    const auto & header = getOutputStream().header;
     auto source = std::make_shared<SystemRemoteDataPathsSource>(std::move(disks), header, max_block_size, context);
     source->setStorageLimits(storage_limits);
     processors.emplace_back(source);
@@ -403,7 +401,7 @@ Chunk SystemRemoteDataPathsSource::generate()
 
             if (cache)
             {
-                auto cache_paths = cache->tryGetCachePaths(FileCacheKey::fromPath(object.remote_path));
+                auto cache_paths = cache->tryGetCachePaths(cache->createKeyForPath(object.remote_path));
                 col_cache_paths->insert(Array(cache_paths.begin(), cache_paths.end()));
             }
             else

@@ -375,8 +375,8 @@ void RegExpTreeDictionary::loadData()
 
             if (error->expression < 0)
                 throw Exception::createRuntime(ErrorCodes::LOGICAL_ERROR, String(error->message));
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Pattern '{}' failed with error '{}'", patterns[error->expression], String(error->message));
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Pattern '{}' failed with error '{}'", patterns[error->expression], String(error->message));
         }
 
         /// We allocate the scratch space only once, then copy it across multiple threads with hs_clone_scratch
@@ -491,8 +491,10 @@ public:
                 return false;
             return it->second.safeGet<const Array &>().size() >= *collect_values_limit;
         }
-
-        return this->contains(attr_name) || (defaults && defaults->contains(attr_name));
+        else
+        {
+            return this->contains(attr_name) || (defaults && defaults->contains(attr_name));
+        }
     }
 
     // Returns the number of full attributes

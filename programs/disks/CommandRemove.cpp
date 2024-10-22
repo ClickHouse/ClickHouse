@@ -32,14 +32,16 @@ public:
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path {} on disk {} doesn't exist", path, disk.getDisk()->getName());
         }
-        if (disk.getDisk()->isDirectory(path))
+        else if (disk.getDisk()->isDirectory(path))
         {
             if (!recursive)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "cannot remove '{}': Is a directory", path);
             }
-
-            disk.getDisk()->removeRecursive(path);
+            else
+            {
+                disk.getDisk()->removeRecursive(path);
+            }
         }
         else
         {

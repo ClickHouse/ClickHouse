@@ -507,10 +507,10 @@ try
     /// Don't initialize DateLUT
     registerFunctions();
     registerAggregateFunctions();
-    registerTableFunctions(server_settings.use_legacy_mongodb_integration);
+    registerTableFunctions();
     registerDatabases();
-    registerStorages(server_settings.use_legacy_mongodb_integration);
-    registerDictionaries(server_settings.use_legacy_mongodb_integration);
+    registerStorages();
+    registerDictionaries();
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
 
@@ -518,9 +518,7 @@ try
 
     SCOPE_EXIT({ cleanup(); });
 
-    initTTYBuffer(toProgressOption(getClientConfiguration().getString("progress", "default")),
-        toProgressOption(config().getString("progress-table", "default")));
-    initKeystrokeInterceptor();
+    initTTYBuffer(toProgressOption(getClientConfiguration().getString("progress", "default")));
     ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
     /// try to load user defined executable functions, throw on error and die

@@ -123,7 +123,8 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         auto object_info = iterator->next(0);
         if (object_info)
             return object_info->getPath();
-        return "";
+        else
+            return "";
     });
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }

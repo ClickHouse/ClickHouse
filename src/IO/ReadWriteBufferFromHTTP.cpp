@@ -426,15 +426,15 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
                     reason,
                     "");
             }
-            throw Exception(
-                ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
-                "Cannot read with range: [{}, {}] (response status: {}, reason: {})",
-                *read_range.begin,
-                read_range.end ? toString(*read_range.end) : "-",
-                toString(response.getStatus()),
-                response.getReason());
+            else
+                throw Exception(
+                    ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
+                    "Cannot read with range: [{}, {}] (response status: {}, reason: {})",
+                    *read_range.begin,
+                    read_range.end ? toString(*read_range.end) : "-",
+                    toString(response.getStatus()), response.getReason());
         }
-        if (read_range.end)
+        else if (read_range.end)
         {
             /// We could have range.begin == 0 and range.end != 0 in case of DiskWeb and failing to read with partial content
             /// will affect only performance, so a warning is enough.

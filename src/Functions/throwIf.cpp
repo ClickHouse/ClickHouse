@@ -74,11 +74,6 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeUInt8>();
-    }
-
     bool useDefaultImplementationForConstants() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
@@ -150,10 +145,10 @@ private:
                     throw Exception::createRuntime(
                         error_code.value_or(ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO),
                         *message);
-                throw Exception(
-                    error_code.value_or(ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO),
-                    "Value passed to '{}' function is non-zero",
-                    getName());
+                else
+                    throw Exception(
+                        error_code.value_or(ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO),
+                        "Value passed to '{}' function is non-zero", getName());
             }
 
             size_t result_size = in_untyped->size();

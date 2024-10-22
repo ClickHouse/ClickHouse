@@ -1,13 +1,12 @@
-import logging
-import time
-from multiprocessing.dummy import Pool
-
-import psycopg2
 import pytest
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+import time
+import logging
+import psycopg2
+from multiprocessing.dummy import Pool
 
 from helpers.cluster import ClickHouseCluster
 from helpers.postgres_utility import get_postgres_conn
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(

@@ -3,8 +3,6 @@
 #include "config.h"
 #if USE_PROMETHEUS_PROTOBUFS
 
-#include <algorithm>
-
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -67,11 +65,9 @@ namespace
                 {
                     if (label_name == previous_label_name)
                         throw Exception(ErrorCodes::ILLEGAL_TIME_SERIES_TAGS, "Found duplicate label {}", label_name);
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TIME_SERIES_TAGS,
-                        "Label names are not sorted in lexicographical order ({} > {})",
-                        previous_label_name,
-                        label_name);
+                    else
+                        throw Exception(ErrorCodes::ILLEGAL_TIME_SERIES_TAGS, "Label names are not sorted in lexicographical order ({} > {})",
+                                        previous_label_name, label_name);
                 }
             }
         }
@@ -162,9 +158,10 @@ namespace
     {
         if (scale == 3)
             return timestamp_ms;
-        if (scale > 3)
+        else if (scale > 3)
             return timestamp_ms * DecimalUtils::scaleMultiplier<DateTime64>(scale - 3);
-        return timestamp_ms / DecimalUtils::scaleMultiplier<DateTime64>(3 - scale);
+        else
+            return timestamp_ms / DecimalUtils::scaleMultiplier<DateTime64>(3 - scale);
     }
 
     /// Finds min time and max time in a time series.
@@ -176,8 +173,10 @@ namespace
         for (const auto & sample : samples)
         {
             Int64 timestamp = sample.timestamp();
-            min_time = std::min(timestamp, min_time);
-            max_time = std::max(timestamp, max_time);
+            if (timestamp < min_time)
+                min_time = timestamp;
+            if (timestamp > max_time)
+                max_time = timestamp;
         }
         return {min_time, max_time};
     }
