@@ -1,7 +1,8 @@
-import avro.schema
+import io
+
 import avro.datafile
 import avro.io
-import io
+import avro.schema
 
 # Define the schema
 schema = avro.schema.parse(
