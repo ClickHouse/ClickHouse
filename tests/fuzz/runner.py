@@ -117,16 +117,16 @@ def run_fuzzer(fuzzer: str, timeout: int):
                 f"FAIL\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
             )
     except subprocess.TimeoutExpired:
-        logging.info("Timeout running %s", fuzzer)
-        with open(status_path, "w", encoding="utf-8") as status:
-            status.write(
-                f"Timeout\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
-            )
-    else:
         logging.info("Successful running %s", fuzzer)
         with open(status_path, "w", encoding="utf-8") as status:
             status.write(
                 f"OK\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
+            )
+    else:
+        logging.info("Error running %s", fuzzer)
+        with open(status_path, "w", encoding="utf-8") as status:
+            status.write(
+                f"ERROR\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
             )
         os.remove(out_path)
 
