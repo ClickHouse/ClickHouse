@@ -1989,6 +1989,12 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             UInt16 hashed_zk_path = sipHash64(txn->getTaskZooKeeperPath());
             random_suffix = getHexUIntLowercase(hashed_zk_path);
         }
+        else if (!current_context->getCurrentQueryId().empty())
+        {
+            random_suffix = getRandomASCIIString(/*length=*/2);
+            UInt8 hashed_query_id = sipHash64(current_context->getCurrentQueryId());
+            random_suffix += getHexUIntLowercase(hashed_query_id);
+        }
         else
         {
             random_suffix = getRandomASCIIString(/*length=*/4);
