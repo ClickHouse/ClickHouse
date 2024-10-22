@@ -51,6 +51,8 @@ class QueryMetricLog : public SystemLog<QueryMetricLogElement>
 public:
     void shutdown() final;
 
+    void collectMetrics(const String & query_id, TimePoint current_time, const ProcessList & process_list);
+
     // Both startQuery and finishQuery are called from the thread that executes the query
     void startQuery(const String & query_id, TimePoint query_start_time, UInt64 interval_milliseconds);
     void finishQuery(const String & query_id, QueryStatusInfoPtr query_info = nullptr);

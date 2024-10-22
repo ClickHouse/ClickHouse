@@ -463,25 +463,7 @@ QueryLogElement logQueryStart(
 void logQueryMetricLogFinish(ContextPtr context, bool internal, String query_id, QueryStatusInfoPtr info)
 {
     if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log && !internal)
-    {
-        auto interval_milliseconds = getQueryMetricLogInterval(context);
-        if (info && interval_milliseconds > 0)
-        {
-            /// Only collect data on query finish if the elapsed time exceeds the interval to collect.
-            /// If we don't do this, it's counter-intuitive to have a single entry for every quick query
-            /// where the data is basically a subset of the query_log.
-            /// On the other hand, it's very convenient to have a new entry whenever the query finishes
-            /// so that we can get nice time-series querying only query_metric_log without the need
-            /// to query the final state in query_log.
-            auto collect_on_finish = info->elapsed_microseconds > interval_milliseconds * 1000;
-            auto query_info = collect_on_finish ? info : nullptr;
-            query_metric_log->finishQuery(query_id, query_info);
-        }
-        else
-        {
-            query_metric_log->finishQuery(query_id, nullptr);
-        }
-    }
+        query_metric_log->finishQuery(query_id, info);
 }
 
 void logQueryFinish(
