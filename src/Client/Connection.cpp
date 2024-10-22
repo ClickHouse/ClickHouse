@@ -14,6 +14,7 @@
 #include <Client/ClientBase.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionParameters.h>
+#include "Common/StackTrace.h"
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
@@ -892,6 +893,7 @@ void Connection::sendQuery(
 
 void Connection::sendCancel()
 {
+    LOG_DEBUG(log_wrapper.get(), "send cancel from {}", StackTrace().toString());
     /// If we already disconnected.
     if (!out)
         return;

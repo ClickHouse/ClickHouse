@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
+    extern const int CANNOT_WRITE_AFTER_BUFFER_CANCELED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -102,7 +103,7 @@ public:
             throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to finalized buffer"};
 
         if (canceled)
-            throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to canceled buffer"};
+            throw Exception{ErrorCodes::CANNOT_WRITE_AFTER_BUFFER_CANCELED, "Cannot write to canceled buffer"};
 
         size_t bytes_copied = 0;
 

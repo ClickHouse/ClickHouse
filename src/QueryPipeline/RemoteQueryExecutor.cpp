@@ -1,3 +1,4 @@
+#include "Common/logger_useful.h"
 #include <Common/ConcurrentBoundedQueue.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
@@ -750,10 +751,12 @@ void RemoteQueryExecutor::finish()
         switch (packet.type)
         {
             case Protocol::Server::EndOfStream:
+                LOG_DEBUG(log, "RemoteQueryExecutor::finish EndOfStream");
                 finished = true;
                 break;
 
             case Protocol::Server::Exception:
+                LOG_DEBUG(log, "RemoteQueryExecutor::finish Exception :: {}", packet.exception->what());
                 got_exception_from_replica = true;
                 packet.exception->rethrow();
                 break;

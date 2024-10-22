@@ -54,10 +54,12 @@ void BlockIO::onFinish()
     pipeline.reset();
 }
 
-void BlockIO::onException()
+void BlockIO::onException(bool log_as_error)
 {
+    setAllDataSent();
+
     if (exception_callback)
-        exception_callback(/* log_error */ true);
+        exception_callback(log_as_error);
 
     pipeline.cancel();
     pipeline.reset();
