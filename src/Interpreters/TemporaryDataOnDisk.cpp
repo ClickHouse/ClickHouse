@@ -15,6 +15,8 @@
 #include <Disks/IO/WriteBufferFromTemporaryFile.h>
 
 #include <Core/Defines.h>
+#include <Common/formatReadable.h>
+#include <Common/NaNUtils.h>
 #include <Interpreters/Cache/WriteBufferToFileSegment.h>
 #include <Common/Exception.h>
 
@@ -98,7 +100,24 @@ public:
         {
             auto reservation = volume->reserve(max_file_size);
             if (!reservation)
-                throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space on temporary disk");
+            {
+                auto disks = volume->getDisks();
+                Strings disks_info;
+                for (const auto & d : disks)
+                {
+                    auto to_double = [](auto x) { return static_cast<double>(x); };
+                    disks_info.push_back(fmt::format("{}: available: {} unreserved: {}, total: {}, keeping: {}",
+                        d->getName(),
+                        ReadableSize(d->getAvailableSpace().transform(to_double).value_or(NaNOrZero<double>())),
+                        ReadableSize(d->getUnreservedSpace().transform(to_double).value_or(NaNOrZero<double>())),
+                        ReadableSize(d->getTotalSpace().transform(to_double).value_or(NaNOrZero<double>())),
+                        ReadableSize(d->getKeepingFreeSpace())));
+                }
+
+                throw Exception(ErrorCodes::NOT_ENOUGH_SPACE,
+                    "Not enough space on temporary disk, cannot reserve {} bytes on [{}]",
+                    max_file_size, fmt::join(disks_info, ", "));
+            }
             disk = reservation->getDisk();
         }
         else
