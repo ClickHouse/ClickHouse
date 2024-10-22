@@ -88,6 +88,10 @@ private:
 		"\"", "\\'", "\\t", "\\n", " ", "--", "{", "}", "[", "]", ",", ".",
 		";", ":", "\\\\", "/", "_", "%", "*"};
 
+	/* use bad_utf8 on x' strings! */
+	const std::vector<std::string> bad_utf8{"ff", "c328", "a0a1", "e228a1", "e28228", "f0288cbc", "f09028bc",
+		"f0288c28", "c328a0a1", "e28228ff", "f0288cbcf0288cbc", "c328ff", "aac328"};
+
 	const std::vector<std::string> json_cols{"c0", "c1", "c0.c1", "😆", "😉😉"};
 
 public:
@@ -356,11 +360,18 @@ public:
 		ret += pick;
 	}
 
-	void NextString(std::string &ret, const bool allow_nasty, const uint32_t limit) {
-		const std::string &pick = PickRandomlyFromVector(
-			allow_nasty && this->NextSmallNumber() < 3 ? nasty_strings : (this->NextBool() ? common_english : common_chinese));
+	void NextString(std::string &ret, const std::string &delimeter, const bool allow_nasty, const uint32_t limit) {
+		bool use_bad_utf8 = false;
 
-		if (pick.length() < limit) {
+		if (delimeter == "'" && this->NextMediumNumber() < 4) {
+			ret += "x";
+			use_bad_utf8 = true;
+		}
+		ret += delimeter;
+		const std::string &pick = PickRandomlyFromVector(use_bad_utf8 ? bad_utf8 :
+			(allow_nasty && this->NextSmallNumber() < 3 ? nasty_strings : (this->NextBool() ? common_english : common_chinese)));
+
+		if ((pick.length() >> (use_bad_utf8 ? 1 : 0)) < limit) {
 			ret += pick;
 			/* A few times, generate a large string */
 			if (this->NextLargeNumber() < 4) {
@@ -368,10 +379,10 @@ public:
 				const uint32_t max_iterations = this->NextBool() ? 10000 : this->NextMediumNumber();
 
 				while (i < max_iterations) {
-					const std::string &npick = PickRandomlyFromVector(
-						allow_nasty && this->NextSmallNumber() < 3 ? nasty_strings : (this->NextBool() ? common_english : common_chinese));
+					const std::string &npick = PickRandomlyFromVector(use_bad_utf8 ? bad_utf8 :
+						(allow_nasty && this->NextSmallNumber() < 3 ? nasty_strings : (this->NextBool() ? common_english : common_chinese)));
 
-					len += npick.length();
+					len += (npick.length() >> (use_bad_utf8 ? 1 : 0));
 					if (len < limit) {
 						ret += npick;
 					} else {
@@ -380,9 +391,10 @@ public:
 					i++;
 				}
 			}
-			return;
+		} else {
+			ret += "a";
 		}
-		ret += "a";
+		ret += delimeter;
 	}
 
 	void NextUUID(std::string &ret) {

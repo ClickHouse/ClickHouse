@@ -188,13 +188,13 @@ int StatementGenerator::GenerateLiteralValue(RandomGenerator &rg, sql_query_gram
 		lv->set_no_quote_str(buf);
 	} else if (noption < 601) {
 		buf.resize(0);
-		buf += "'";
 		if (rg.NextMediumNumber() < 6) {
+			buf += "'";
 			rg.NextUUID(buf);
+			buf += "'";
 		} else {
-			rg.NextString(buf, true, (rg.NextRandomUInt32() % 10000) + 1);
+			rg.NextString(buf, "'", true, (rg.NextRandomUInt32() % 10000) + 1);
 		}
-		buf += "'";
 		lv->set_no_quote_str(buf);
 	} else if (noption < 701) {
 		lv->set_special_val(static_cast<sql_query_grammar::SpecialVal>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::SpecialVal_MAX)) + 1));

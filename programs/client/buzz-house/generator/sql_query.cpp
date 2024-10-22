@@ -372,9 +372,7 @@ int StatementGenerator::AddWhereFilter(RandomGenerator &rg, const std::vector<Gr
 		RefColumn(rg, gcol, elike->mutable_expr1());
 		if (rg.NextSmallNumber() < 5) {
 			buf.resize(0);
-			buf += "'";
-			rg.NextString(buf, true, (rg.NextRandomUInt32() % 10000) + 1);
-			buf += "'";
+			rg.NextString(buf, "'", true, (rg.NextRandomUInt32() % 10000) + 1);
 			expr2->mutable_lit_val()->set_no_quote_str(buf);
 		} else {
 			AddWhereSide(rg, available_cols, expr2);

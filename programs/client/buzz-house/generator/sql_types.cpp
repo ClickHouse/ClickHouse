@@ -592,9 +592,7 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &
 	} else if ((stp = dynamic_cast<StringType*>(tp))) {
 		const uint32_t limit = stp->precision.value_or((rg.NextRandomUInt32() % 10000) + 1);
 
-		ret += "'";
-		rg.NextString(ret, true, limit);
-		ret += "'";
+		rg.NextString(ret, "'", true, limit);
 	} else if (dynamic_cast<BoolType*>(tp)) {
 		ret += rg.NextBool() ? "TRUE" : "FALSE";
 	} else if ((etp = dynamic_cast<EnumType*>(tp))) {
@@ -740,9 +738,7 @@ void StatementGenerator::StrBuildJSONElement(RandomGenerator &rg, std::string &r
 		case 10:
 		case 11:
 		case 12: //string
-			ret += '"';
-			rg.NextString(ret, false, (rg.NextRandomUInt32() % 10000) + 1);
-			ret += '"';
+			rg.NextString(ret, "\"", false, (rg.NextRandomUInt32() % 10000) + 1);
 			break;
 		case 13: { //128-bit signed number
 			hugeint_t val(rg.NextRandomInt64(), rg.NextRandomUInt64());
