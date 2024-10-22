@@ -102,6 +102,7 @@ class WriteBuffer;
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, URI)
 
+
 COMMON_SETTINGS_SUPPORTED_TYPES(Settings, DECLARE_SETTING_TRAIT)
 struct Settings
 {
