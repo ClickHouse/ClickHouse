@@ -571,7 +571,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"enable_optimize_predicate_expression", 0, 1, "Optimize predicates to subqueries by default"}
         }
     },
->>>>>>> master
 };
 
 static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory::SettingsChanges>> merge_tree_settings_changes_history_initializer =
