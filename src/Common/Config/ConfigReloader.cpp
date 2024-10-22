@@ -116,40 +116,37 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
         ConfigProcessor config_processor(config_path);
         ConfigProcessor::LoadedConfig loaded_config;
 
-        if (new_files.isDifferOrNewerThan(files))
+        config_processor.is_config_changed = new_files.isDifferOrNewerThan(files);
+
+        LOG_DEBUG(log, "Loading config '{}'", config_path);
+
+        try
         {
-            LOG_DEBUG(log, "Loading config '{}'", config_path);
-
-            try
-            {
-                loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
-                if (loaded_config.has_zk_includes)
-                    loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
-                        zk_node_cache, zk_changed_event, fallback_to_preprocessed);
-            }
-            catch (const Coordination::Exception & e)
-            {
-                if (Coordination::isHardwareError(e.code))
-                    need_reload_from_zk = true;
-
-                if (throw_on_error)
-                    throw;
-
-                tryLogCurrentException(log, "ZooKeeper error when loading config from '" + config_path + "'");
-                return std::nullopt;
-            }
-            catch (...)
-            {
-                if (throw_on_error)
-                    throw;
-
-                tryLogCurrentException(log, "Error loading config from '" + config_path + "'");
-                return std::nullopt;
-            }
-            config_processor.savePreprocessedConfig(loaded_config, preprocessed_dir);
+            loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
+            if (loaded_config.has_zk_includes)
+                loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
+                    zk_node_cache, zk_changed_event, fallback_to_preprocessed);
         }
-        else
-            LOG_DEBUG(log, "Skipped config loading '{}', as it wasn't changed", config_path);
+        catch (const Coordination::Exception & e)
+        {
+            if (Coordination::isHardwareError(e.code))
+                need_reload_from_zk = true;
+
+            if (throw_on_error)
+                throw;
+
+            tryLogCurrentException(log, "ZooKeeper error when loading config from '" + config_path + "'");
+            return std::nullopt;
+        }
+        catch (...)
+        {
+            if (throw_on_error)
+                throw;
+
+            tryLogCurrentException(log, "Error loading config from '" + config_path + "'");
+            return std::nullopt;
+        }
+        config_processor.savePreprocessedConfig(loaded_config, preprocessed_dir);
 
         /** We should remember last modification time if and only if config was successfully loaded
          * Otherwise a race condition could occur during config files update:

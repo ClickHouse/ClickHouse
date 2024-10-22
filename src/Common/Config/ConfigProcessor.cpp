@@ -673,7 +673,9 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     zkutil::ZooKeeperNodeCache * zk_node_cache,
     const zkutil::EventPtr & zk_changed_event)
 {
-    LOG_DEBUG(log, "Processing configuration file '{}'.", path);
+    const bool write_logs = is_config_changed;
+    if (write_logs)
+        LOG_DEBUG(log, "Processing configuration file '{}'.", path);
 
     XMLDocumentPtr config;
 
@@ -686,7 +688,8 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         /// When we can use a config embedded in the binary.
         if (auto it = embedded_configs.find(path); it != embedded_configs.end())
         {
-            LOG_DEBUG(log, "There is no file '{}', will use embedded config.", path);
+            if (write_logs)
+                LOG_DEBUG(log, "There is no file '{}', will use embedded config.", path);
             config = dom_parser.parseMemory(it->second.data(), it->second.size());
         }
         else
@@ -700,7 +703,8 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     {
         try
         {
-            LOG_DEBUG(log, "Merging configuration file '{}'.", merge_file);
+            if (write_logs)
+                LOG_DEBUG(log, "Merging configuration file '{}'.", merge_file);
 
             XMLDocumentPtr with;
             with = parseConfig(merge_file);
