@@ -1,22 +1,17 @@
 #pragma once
 #include <Storages/System/IStorageSystemOneBlock.h>
+#include <Disks/DiskType.h>
 
 namespace DB
 {
 
 class Context;
 
-enum class StorageObjectStorageQueueType
-{
-    S3,
-    Azure,
-};
-
-template <StorageObjectStorageQueueType type>
+template <ObjectStorageType type>
 class StorageSystemObjectStorageQueueSettings final : public IStorageSystemOneBlock
 {
 public:
-    static constexpr auto name = type == StorageObjectStorageQueueType::S3 ? "SystemS3QueueSettings" : "SystemAzureQueueSettings";
+    static constexpr auto name = type == ObjectStorageType::S3 ? "SystemS3QueueSettings" : "SystemAzureQueueSettings";
 
     std::string getName() const override { return name; }
 

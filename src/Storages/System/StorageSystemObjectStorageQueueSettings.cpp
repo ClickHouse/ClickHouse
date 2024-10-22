@@ -13,7 +13,7 @@
 namespace DB
 {
 
-template <StorageObjectStorageQueueType type>
+template <ObjectStorageType type>
 ColumnsDescription StorageSystemObjectStorageQueueSettings<type>::getColumnsDescription()
 {
     return ColumnsDescription
@@ -33,7 +33,7 @@ ColumnsDescription StorageSystemObjectStorageQueueSettings<type>::getColumnsDesc
     };
 }
 
-template <StorageObjectStorageQueueType type>
+template <ObjectStorageType type>
 void StorageSystemObjectStorageQueueSettings<type>::fillData(
     MutableColumns & res_columns,
     ContextPtr context,
@@ -90,6 +90,6 @@ void StorageSystemObjectStorageQueueSettings<type>::fillData(
     }
 }
 
-template class StorageSystemObjectStorageQueueSettings<StorageObjectStorageQueueType::S3>;
-template class StorageSystemObjectStorageQueueSettings<StorageObjectStorageQueueType::Azure>;
+template class StorageSystemObjectStorageQueueSettings<ObjectStorageType::S3>;
+template class StorageSystemObjectStorageQueueSettings<ObjectStorageType::Azure>;
 }
