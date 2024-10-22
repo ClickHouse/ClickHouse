@@ -87,36 +87,37 @@ void QueryMetricLog::shutdown()
     Base::shutdown();
 }
 
+void QueryMetricLog::collectMetrics(const String & query_id, TimePoint current_time, const ProcessList & process_list)
+{
+    const auto query_info = process_list.getQueryInfo(query_id, false, true, false);
+    if (!query_info)
+    {
+        LOG_TRACE(logger, "Query {} is not running anymore, so we couldn't get its QueryInfo", query_id);
+        return;
+    }
+
+    auto elem = createLogMetricElement(query_id, *query_info, current_time);
+    if (elem)
+        add(std::move(elem.value()));
+}
+
 void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_time, UInt64 interval_milliseconds)
 {
     QueryMetricLogStatus status;
     status.interval_milliseconds = interval_milliseconds;
-    status.next_collect_time = query_start_time + std::chrono::milliseconds(interval_milliseconds);
-
-    const auto & profile_events = CurrentThread::getProfileEvents();
-    for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
-        status.last_profile_events[i] = profile_events[i].load(std::memory_order_relaxed);
+    status.next_collect_time = query_start_time;
 
     auto context = getContext();
     const auto & process_list = context->getProcessList();
-    status.task = context->getSchedulePool().createTask("QueryMetricLog", [this, &process_list, query_id] {
+
+    status.task = context->getSchedulePool().createTask("QueryMetricLog", [this, query_id, &process_list] {
         auto current_time = std::chrono::system_clock::now();
-        const auto query_info = process_list.getQueryInfo(query_id, false, true, false);
-        if (!query_info)
-        {
-            LOG_TRACE(logger, "Query {} is not running anymore, so we couldn't get its QueryInfo", query_id);
-            return;
-        }
-
-        auto elem = createLogMetricElement(query_id, *query_info, current_time);
-        if (elem)
-            add(std::move(elem.value()));
+        collectMetrics(query_id, current_time, process_list);
     });
-
-    status.task->scheduleAfter(interval_milliseconds);
 
     std::lock_guard lock(queries_mutex);
     queries.emplace(query_id, std::move(status));
+    collectMetrics(query_id, query_start_time, process_list);
 }
 
 void QueryMetricLog::finishQuery(const String & query_id, QueryStatusInfoPtr query_info)
