@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePool.h>
 #include <Core/Defines.h>
 #include <IO/Progress.h>
 #include <Interpreters/CancellationCode.h>
@@ -21,7 +20,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/OvercommitTracker.h>
-#include "base/defines.h"
+#include <base/defines.h>
 
 #include <condition_variable>
 #include <list>
@@ -495,9 +494,6 @@ public:
     CancellationCode sendCancelToQuery(QueryStatusPtr elem, bool kill = false);
 
     void killAllQueries();
-
-    void createQueryMetricLogTask(const String & query_id, UInt64 interval_milliseconds, const BackgroundSchedulePool::TaskFunc & function) const;
-    void scheduleQueryMetricLogTask(const String & query_id, UInt64 interval_milliseconds) const;
 };
 
 }

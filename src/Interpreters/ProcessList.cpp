@@ -1,5 +1,4 @@
 #include <Interpreters/ProcessList.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
@@ -724,19 +723,13 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
 QueryStatusPtr ProcessList::getProcessListElement(const String & query_id) const
 {
     LockAndBlocker lock(mutex);
-    QueryStatusPtr process_found;
+    for (const auto & process : processes)
     {
-        for (const auto & process : processes)
-        {
-            if (process->client_info.current_query_id == query_id)
-            {
-                process_found = process;
-                break;
-            }
-        }
+        if (process->client_info.current_query_id == query_id)
+            return process;
     }
 
-    return process_found;
+    return nullptr;
 }
 
 QueryStatusInfoPtr ProcessList::getQueryInfo(const String & query_id, bool get_thread_list, bool get_profile_events, bool get_settings) const
