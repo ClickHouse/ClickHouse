@@ -259,12 +259,13 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
         }
         case TypeIndex::String:
             if (traits->isStringAsString(column_name))
-                return {avro::StringSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+                return {
+                    avro::StringSchema(),
+                    [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
                     {
                         const std::string_view & s = assert_cast<const ColumnString &>(column).getDataAt(row_num).toView();
                         encoder.encodeString(std::string(s));
-                    }
-                };
+                    }};
             else
                 return {avro::BytesSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
                     {
@@ -339,26 +340,28 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             const auto & array_type = assert_cast<const DataTypeArray &>(*data_type);
             auto nested_mapping = createSchemaWithSerializeFn(array_type.getNestedType(), type_name_increment, column_name);
             auto schema = avro::ArraySchema(nested_mapping.schema);
-            return {schema, [nested_mapping](const IColumn & column, size_t row_num, avro::Encoder & encoder)
-            {
-                const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
-                const ColumnArray::Offsets & offsets = column_array.getOffsets();
-                size_t offset = offsets[row_num - 1];
-                size_t next_offset = offsets[row_num];
-                size_t row_count = next_offset - offset;
-                const IColumn & nested_column = column_array.getData();
+            return {
+                schema,
+                [nested_mapping](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+                {
+                    const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
+                    const ColumnArray::Offsets & offsets = column_array.getOffsets();
+                    size_t offset = offsets[row_num - 1];
+                    size_t next_offset = offsets[row_num];
+                    size_t row_count = next_offset - offset;
+                    const IColumn & nested_column = column_array.getData();
 
-                encoder.arrayStart();
-                if (row_count > 0)
-                {
-                    encoder.setItemCount(row_count);
-                }
-                for (size_t i = offset; i < next_offset; ++i)
-                {
-                    nested_mapping.serialize(nested_column, i, encoder);
-                }
-                encoder.arrayEnd();
-            }};
+                    encoder.arrayStart();
+                    if (row_count > 0)
+                    {
+                        encoder.setItemCount(row_count);
+                    }
+                    for (size_t i = offset; i < next_offset; ++i)
+                    {
+                        nested_mapping.serialize(nested_column, i, encoder);
+                    }
+                    encoder.arrayEnd();
+                }};
         }
         case TypeIndex::Nullable:
         {
@@ -417,25 +420,29 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
 
             // Since Variants have no schema-guaranteed nullability, we need to always include the null as one of the options in Avro Union.
             // This is because Variant is considered Null in case it doesn't have any of the variants defined.
-            const auto nullUnionIndex = nested_types.size();
+            const auto null_union_index = nested_types.size();
             union_schema.addType(avro::NullSchema());
 
-            return {static_cast<avro::Schema>(union_schema), [serializers = std::move(nested_serializers), nullUnionIndex](const IColumn & column, const size_t row_num, avro::Encoder & encoder)
-            {
-                const auto & col = assert_cast<const ColumnVariant &>(column);
-                const auto global_discriminator = col.globalDiscriminatorAt(row_num);
+            return {
+                static_cast<avro::Schema>(union_schema),
+                [serializers = std::move(nested_serializers),
+                 null_union_index](const IColumn & column, const size_t row_num, avro::Encoder & encoder)
+                {
+                    const auto & col = assert_cast<const ColumnVariant &>(column);
+                    const auto global_discriminator = col.globalDiscriminatorAt(row_num);
 
-                if (global_discriminator == ColumnVariant::NULL_DISCRIMINATOR)
-                {
-                    encoder.encodeUnionIndex(nullUnionIndex);
-                    encoder.encodeNull();
-                }
-                else
-                {
-                    encoder.encodeUnionIndex(global_discriminator);
-                    serializers[global_discriminator](col.getVariantByGlobalDiscriminator(global_discriminator), row_num, encoder);
-                }
-            }};
+                    if (global_discriminator == ColumnVariant::NULL_DISCRIMINATOR)
+                    {
+                        encoder.encodeUnionIndex(null_union_index);
+                        encoder.encodeNull();
+                    }
+                    else
+                    {
+                        size_t offset = col.offsetAt(row_num);
+                        encoder.encodeUnionIndex(global_discriminator);
+                        serializers[global_discriminator](col.getVariantByGlobalDiscriminator(global_discriminator), offset, encoder);
+                    }
+                }};
         }
         case TypeIndex::Tuple:
         {
