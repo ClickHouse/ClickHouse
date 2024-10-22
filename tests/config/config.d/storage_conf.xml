@@ -118,8 +118,8 @@
             <s3obj_encrypted_cached_disk>
                 <type>s3</type>
                 <endpoint>http://localhost:11111/test/00170_test/</endpoint>
-                <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
             </s3obj_encrypted_cached_disk>
             <s3encrypted_cached_enc>
                 <type>encrypted_os</type>
