@@ -178,6 +178,33 @@ public:
                     break;
                 }
 
+                if (planner_context.getQueryContext()->getSettingsRef().enable_named_columns_in_function_tuple)
+                {
+                    /// Function "tuple" which generates named tuple should use argument aliases to construct its name.
+                    if (function_node.getFunctionName() == "tuple")
+                    {
+                        if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(function_node.getResultType().get()))
+                        {
+                            if (type_tuple->haveExplicitNames())
+                            {
+                                const auto & names = type_tuple->getElementNames();
+                                size_t size = names.size();
+                                WriteBufferFromOwnString s;
+                                s << "tuple(";
+                                for (size_t i = 0; i < size; ++i)
+                                {
+                                    if (i != 0)
+                                        s << ", ";
+                                    s << backQuoteIfNeed(names[i]);
+                                }
+                                s << ")";
+                                result = s.str();
+                                break;
+                            }
+                        }
+                    }
+                }
+
                 String in_function_second_argument_node_name;
 
                 if (isNameOfInFunction(function_node.getFunctionName()))
