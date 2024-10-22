@@ -14,7 +14,8 @@
 
 LC_ALL="en_US.UTF-8"
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*.cpp|utils/keeper-bench/example.yaml'
+EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*.cpp|utils/keeper-bench/example.yaml'
+EXCLUDE_DOCS='Settings\.cpp|FormatFactorySettingsDeclaration\.h'
 
 # From [1]:
 #     But since array_to_string_internal() in array.c still loops over array
@@ -31,7 +32,8 @@ function in_array()
 }
 
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
+    grep -vP $EXCLUDE_DOCS |
     xargs grep $@ -P '((class|struct|namespace|enum|if|for|while|else|throw|switch).*|\)(\s*const)?(\s*override)?\s*)\{$|\s$|^ {1,3}[^\* ]\S|\t|^\s*(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\(|\( [^\s\\]|\S \)' |
 # a curly brace not in a new line, but not for the case of C++11 init or agg. initialization | trailing whitespace | number of ws not a multiple of 4, but not in the case of comment continuation | missing whitespace after for/if/while... before opening brace | whitespaces inside braces
     grep -v -P '(//|:\s+\*|\$\(\()| \)"'
@@ -39,16 +41,81 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/n
 
 # Tabs
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
-    grep -vP $EXCLUDE_DIRS |
-    xargs grep $@ -F $'\t'
+    grep -vP $EXCLUDE |
+    xargs grep $@ -F $'\t' && echo '^ tabs are not allowed'
 
 # // namespace comments are unneeded
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     xargs grep $@ -P '}\s*//+\s*namespace\s*'
 
 # Broken symlinks
 find -L $ROOT_PATH -type l 2>/dev/null | grep -v contrib && echo "^ Broken symlinks found"
+
+# Duplicated or incorrect setting declarations
+SETTINGS_FILE=$(mktemp)
+ALL_DECLARATION_FILES="
+  $ROOT_PATH/src/Core/Settings.cpp
+  $ROOT_PATH/src/Core/ServerSettings.cpp
+  $ROOT_PATH/src/Storages/MergeTree/MergeTreeSettings.cpp
+  $ROOT_PATH/src/Coordination/CoordinationSettings.cpp
+  $ROOT_PATH/src/Core/FormatFactorySettingsDeclaration.h"
+
+cat $ROOT_PATH/src/Core/Settings.cpp $ROOT_PATH/src/Core/FormatFactorySettingsDeclaration.h | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " Settings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq > ${SETTINGS_FILE}
+cat $ROOT_PATH/src/Core/ServerSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " ServerSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
+cat $ROOT_PATH/src/Storages/MergeTree/MergeTreeSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " MergeTreeSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
+cat $ROOT_PATH/src/Coordination/CoordinationSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " CoordinationSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
+
+# Check that if there are duplicated settings (declared in different objects) they all have the same type (it's simpler to validate style with that assert)
+for setting in $(awk '{print $1 " " $2}' ${SETTINGS_FILE} | \
+    sed -e 's/CoordinationSettings//g' \
+        -e 's/MergeTreeSettings//g' \
+        -e 's/ServerSettings//g' \
+        -e 's/Settings//g' | \
+    sort | uniq | awk '{ print $1 }' | uniq -d);
+do
+    echo "# Found multiple definitions of setting ${setting} with different types: "
+    grep --line-number " ${setting}," ${ALL_DECLARATION_FILES} | awk '{print "    > " $0 }'
+done
+
+# We append all uses of extern found in implementation files to validate them in a single pass and avoid reading the same files over and over
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | \
+    xargs grep -e "^\s*extern const Settings" \
+               -e "^\s**extern const ServerSettings" \
+               -e "^\s**extern const MergeTreeSettings" \
+               -e "^\s**extern const CoordinationSettings" -T | \
+    awk '{print substr($5, 0, length($5) -1) " " $4 " " substr($1, 0, length($1) - 1)}' >> ${SETTINGS_FILE}
+
+# Duplicate extern declarations for settings
+awk '{if (seen[$0]++) print $3 " -> " $1 ;}' ${SETTINGS_FILE} | while read line;
+do
+    echo "# Found duplicated setting declaration in: $line"
+done
+
+# Find missing declarations (obsolete settings being used)
+# Note that SettingsDeclaration are first in the file
+#  Disabled for now pending fixing the code
+#awk '{print $1 " " $3}' ${SETTINGS_FILE} | awk '{if (!seen[$1]++) print $0}' | grep -v SettingsDeclaration | while read setting;
+#do
+#    echo "Could not find setting (maybe obsolete but used?) $setting"
+#done
+
+# Look for settings declared with multiple types
+for setting in $(awk '{print $1 " " $2}' ${SETTINGS_FILE} | \
+    sed -e 's/MergeTreeSettings//g' \
+        -e 's/ServerSettings//g' \
+        -e 's/CoordinationSettings//g' \
+        -e 's/Settings//g' | \
+    sort | uniq | awk '{ print $1 }' | sort | uniq -d);
+do
+    expected=$(grep "^$setting " ${SETTINGS_FILE} | grep SettingsDeclaration | awk '{ print $2 }')
+    grep "^$setting " ${SETTINGS_FILE} | grep -v " $expected" | awk '{ print $3 " found setting " $1 " with type " $2 }' | while read line;
+    do
+        echo "# In $line but it should be ${expected/$'\n'/ }"
+    done
+done
+
+rm ${SETTINGS_FILE}
 
 # Unused/Undefined/Duplicates ErrorCodes/ProfileEvents/CurrentMetrics
 declare -A EXTERN_TYPES
@@ -68,12 +135,14 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::Timer
     ProfileEvents::Type
     ProfileEvents::TypeEnum
+    ProfileEvents::ValueType
     ProfileEvents::dumpToMapColumn
     ProfileEvents::getProfileEvents
     ProfileEvents::ThreadIdToCountersSnapshot
     ProfileEvents::LOCAL_NAME
     ProfileEvents::keeper_profile_events
     ProfileEvents::CountersIncrement
+    ProfileEvents::size
 
     CurrentMetrics::add
     CurrentMetrics::sub
@@ -85,6 +154,7 @@ EXTERN_TYPES_EXCLUDES=(
     CurrentMetrics::values
     CurrentMetrics::Value
     CurrentMetrics::keeper_metrics
+    CurrentMetrics::size
 
     ErrorCodes::ErrorCode
     ErrorCodes::getName
@@ -107,7 +177,7 @@ for extern_type in ${!EXTERN_TYPES[@]}; do
         # and this matches with zkutil::CreateMode
         grep -v -e 'src/Common/ZooKeeper/Types.h' -e 'src/Coordination/KeeperConstants.cpp'
     } | {
-        grep -vP $EXCLUDE_DIRS | xargs grep -l -P "extern const $type_of_extern $allowed_chars"
+        grep -vP $EXCLUDE | xargs grep -l -P "extern const $type_of_extern $allowed_chars"
     } | while read file; do
         grep -P "extern const $type_of_extern $allowed_chars;" $file | sed -r -e "s/^.*?extern const $type_of_extern ($allowed_chars);.*?$/\1/" | while read val; do
             if ! grep -q "$extern_type::$val" $file; then
@@ -125,7 +195,7 @@ for extern_type in ${!EXTERN_TYPES[@]}; do
     #   sed -i -r "0,/(\s*)extern const $type_of_extern [$allowed_chars]+/s//\1extern const $type_of_extern $val;\n&/" $file || \
     #     awk '{ print; if (ns == 1) { ns = 2 }; if (ns == 2) { ns = 0; print "namespace $extern_type\n{\n    extern const $type_of_extern '$val';\n}" } }; /namespace DB/ { ns = 1; };' < $file > ${file}.tmp && mv ${file}.tmp $file )
     find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | {
-        grep -vP $EXCLUDE_DIRS | xargs grep -l -P "$extern_type::$allowed_chars"
+        grep -vP $EXCLUDE | xargs grep -l -P "$extern_type::$allowed_chars"
     } | while read file; do
         grep -P "$extern_type::$allowed_chars" $file | grep -P -v '^\s*//' | sed -r -e "s/^.*?$extern_type::($allowed_chars).*?$/\1/" | while read val; do
             if ! grep -q "extern const $type_of_extern $val" $file; then
@@ -138,7 +208,7 @@ for extern_type in ${!EXTERN_TYPES[@]}; do
 
     # Duplicates
     find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | {
-        grep -vP $EXCLUDE_DIRS | xargs grep -l -P "$extern_type::$allowed_chars"
+        grep -vP $EXCLUDE | xargs grep -l -P "$extern_type::$allowed_chars"
     } | while read file; do
         grep -P "extern const $type_of_extern $allowed_chars;" $file | sort | uniq -c | grep -v -P ' +1 ' && echo "Duplicate $extern_type in file $file"
     done
@@ -146,16 +216,16 @@ done
 
 # Three or more consecutive empty lines
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     while read file; do awk '/^$/ { ++i; if (i > 2) { print "More than two consecutive empty lines in file '$file'" } } /./ { i = 0 }' $file; done
 
 # Broken XML files (requires libxml2-utils)
 find $ROOT_PATH/{src,base,programs,utils} -name '*.xml' |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     xargs xmllint --noout --nonet
 
 find $ROOT_PATH -not -path $ROOT_PATH'/contrib*' \( -name '*.yaml' -or -name '*.yml' \) -type f |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     xargs yamllint --config-file=$ROOT_PATH/.yamllint
 
 # Tests should not be named with "fail" in their names. It makes looking at the results less convenient.
@@ -262,15 +332,12 @@ done
 # There shouldn't be any code snippets under GPL or LGPL
 find $ROOT_PATH/{src,base,programs} -name '*.h' -or -name '*.cpp' 2>/dev/null | xargs grep -i -F 'General Public License' && echo "There shouldn't be any code snippets under GPL or LGPL"
 
-# There shouldn't be any docker containers outside docker directory
-find $ROOT_PATH -not -path $ROOT_PATH'/tests/ci*' -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*' -name Dockerfile -type f 2>/dev/null | xargs --no-run-if-empty -n1 echo "Please move Dockerfile to docker directory:"
-
 # There shouldn't be any docker compose files outside docker directory
-find $ROOT_PATH -name '*compose*.yml' -type f -not -path $ROOT_PATH'/docker' -not -path $ROOT_PATH'/tests/integration*' -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*' 2>/dev/null | grep -vP $EXCLUDE_DIRS | xargs --no-run-if-empty grep -l "version:" | xargs --no-run-if-empty -n1 echo "Please move docker compose to the 'docker' or 'tests' directory:"
+find $ROOT_PATH -name '*compose*.yml' -type f -not -path $ROOT_PATH'/docker' -not -path $ROOT_PATH'/tests/integration*' -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*' 2>/dev/null | grep -vP $EXCLUDE | xargs --no-run-if-empty grep -l "version:" | xargs --no-run-if-empty -n1 echo "Please move docker compose to the 'docker' or 'tests' directory:"
 
 # Check that every header file has #pragma once in first line
 find $ROOT_PATH/{src,programs,utils} -name '*.h' |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     while read file; do [[ $(head -n1 $file) != '#pragma once' ]] && echo "File $file must have '#pragma once' in first line"; done
 
 # Check for executable bit on non-executable files
@@ -283,22 +350,22 @@ find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -nam
 
 # Too many exclamation marks
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     xargs grep -F '!!!' | grep -P '.' && echo "Too many exclamation marks (looks dirty, unconfident)."
 
 # Exclamation mark in a message
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     xargs grep -F '!",' | grep -P '.' && echo "No need for an exclamation mark (looks dirty, unconfident)."
 
 # Trailing whitespaces
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     xargs grep -n -P ' $' | grep -n -P '.' && echo "^ Trailing whitespaces."
 
 # Forbid stringstream because it's easy to use them incorrectly and hard to debug possible issues
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     xargs grep -P 'std::[io]?stringstream' | grep -v "STYLE_CHECK_ALLOW_STD_STRING_STREAM" && echo "Use WriteBufferFromOwnString or ReadBufferFromString instead of std::stringstream"
 
 # Forbid std::cerr/std::cout in src (fine in programs/utils)
@@ -308,6 +375,7 @@ std_cerr_cout_excludes=(
     _fuzzer
     # OK
     src/Common/ProgressIndication.cpp
+    src/Common/ProgressTable.cpp
     # only under #ifdef DBMS_HASH_MAP_DEBUG_RESIZES, that is used only in tests
     src/Common/HashTable/HashTable.h
     # SensitiveDataMasker::printStats()
@@ -318,6 +386,7 @@ std_cerr_cout_excludes=(
     src/Interpreters/Context.cpp
     # IProcessor::dump()
     src/Processors/IProcessor.cpp
+    src/Client/ClientApplicationBase.cpp
     src/Client/ClientBase.cpp
     src/Client/LineReader.cpp
     src/Client/QueryFuzzer.cpp
@@ -333,7 +402,7 @@ std_cerr_cout_excludes=(
 )
 sources_with_std_cerr_cout=( $(
     find $ROOT_PATH/{src,base} -name '*.h' -or -name '*.cpp' | \
-        grep -vP $EXCLUDE_DIRS | \
+        grep -vP $EXCLUDE | \
         grep -F -v $(printf -- "-e %s " "${std_cerr_cout_excludes[@]}") | \
         xargs grep -F --with-filename -e std::cerr -e std::cout | cut -d: -f1 | sort -u
 ) )
@@ -350,7 +419,7 @@ done
 # NOTE: it is not that accuate, but at least something.
 tests_with_event_time_date=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
-        grep -vP $EXCLUDE_DIRS |
+        grep -vP $EXCLUDE |
         xargs grep --with-filename -e event_time -e event_date | cut -d: -f1 | sort -u
 ) )
 for test_case in "${tests_with_event_time_date[@]}"; do
@@ -406,23 +475,23 @@ find $ROOT_PATH | sort -f | uniq -i -c | awk '{ if ($1 > 1) print }'
 
 # Forbid std::filesystem::is_symlink and std::filesystem::read_symlink, because it's easy to use them incorrectly
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     xargs grep -P '::(is|read)_symlink' | grep -v "STYLE_CHECK_ALLOW_STD_FS_SYMLINK" && echo "Use DB::FS::isSymlink and DB::FS::readSymlink instead"
 
 # Forbid __builtin_unreachable(), because it's hard to debug when it becomes reachable
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     xargs grep -P '__builtin_unreachable' && echo "Use UNREACHABLE() from defines.h instead"
 
 # Forbid mt19937() and random_device() which are outdated and slow
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     xargs grep -P '(std::mt19937|std::mersenne_twister_engine|std::random_device)' && echo "Use pcg64_fast (from pcg_random.h) and randomSeed (from Common/randomSeed.h) instead"
 
 # Require checking return value of close(),
 # since it can hide fd misuse and break other places.
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     xargs grep -e ' close(.*fd' -e ' ::close(' | grep -v = && echo "Return value of close() should be checked"
 
 # Check for existence of __init__.py files
@@ -444,7 +513,7 @@ find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep 
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -P --line-number 'std::regex' | grep -P '.' && echo "^ Please use re2 instead of std::regex"
 
 # Cyrillic characters hiding inside Latin.
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -P --line-number '[a-zA-Z][а-яА-ЯёЁ]|[а-яА-ЯёЁ][a-zA-Z]' && echo "^ Cyrillic characters found in unexpected place."
+find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | grep -v StorageSystemContributors.generated.cpp | xargs grep -P --line-number '[a-zA-Z][а-яА-ЯёЁ]|[а-яА-ЯёЁ][a-zA-Z]' && echo "^ Cyrillic characters found in unexpected place."
 
 # Orphaned header files.
 join -v1 <(find $ROOT_PATH/{src,programs,utils} -name '*.h' -printf '%f\n' | sort | uniq) <(find $ROOT_PATH/{src,programs,utils} -name '*.cpp' -or -name '*.c' -or -name '*.h' -or -name '*.S' | xargs grep --no-filename -o -P '[\w-]+\.h' | sort | uniq) |
@@ -458,11 +527,15 @@ find $ROOT_PATH/{base,src,programs,utils,docs} -name '*.md' -or -name '*.h' -or 
 
 # Wrong spelling of abbreviations, e.g. SQL is right, Sql is wrong. XMLHttpRequest is very wrong.
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     xargs grep -P 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -P 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3' &&
     echo "Abbreviations such as SQL, XML, HTTP, should be in all caps. For example, SQL is right, Sql is wrong. XMLHttpRequest is very wrong."
 
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
+    grep -vP $EXCLUDE |
     xargs grep -F -i 'ErrorCodes::LOGICAL_ERROR, "Logical error:' &&
     echo "If an exception has LOGICAL_ERROR code, there is no need to include the text 'Logical error' in the exception message, because then the phrase 'Logical error' will be printed twice."
+
+PATTERN="allow_";
+DIFF=$(comm -3 <(grep -o "\b$PATTERN\w*\b" $ROOT_PATH/src/Core/Settings.cpp | sort -u) <(grep -o -h "\b$PATTERN\w*\b" $ROOT_PATH/src/Databases/enableAllExperimentalSettings.cpp $ROOT_PATH/utils/check-style/experimental_settings_ignore.txt | sort -u));
+[ -n "$DIFF" ] && echo "$DIFF" && echo "^^ Detected 'allow_*' settings that might need to be included in src/Databases/enableAllExperimentalSettings.cpp" && echo "Alternatively, consider adding an exception to utils/check-style/experimental_settings_ignore.txt"

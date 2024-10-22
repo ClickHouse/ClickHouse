@@ -2,8 +2,8 @@
 
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/SyncReplicaMode.h>
 #include <Storages/IStorage_fwd.h>
-#include <Storages/MaterializedView/RefreshTask_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Common/ActionLock.h>
 #include <Disks/IVolume.h>
@@ -18,8 +18,10 @@ class Context;
 class AccessRightsElements;
 class ASTSystemQuery;
 class IDatabase;
-
 using DatabasePtr = std::shared_ptr<IDatabase>;
+class RefreshTask;
+using RefreshTaskPtr = std::shared_ptr<RefreshTask>;
+using RefreshTaskList = std::list<RefreshTaskPtr>;
 
 
 /** Implement various SYSTEM queries.
@@ -44,6 +46,8 @@ public:
     static void startStopActionInDatabase(StorageActionBlockType action_type, bool start,
                                           const String & database_name, const DatabasePtr & database,
                                           const ContextPtr & local_context, LoggerPtr log);
+
+    static bool trySyncReplica(StoragePtr table, SyncReplicaMode sync_replica_mode, const std::unordered_set<String> & src_replicas, ContextPtr context_);
 
 private:
     ASTPtr query_ptr;
@@ -74,7 +78,7 @@ private:
     void flushDistributed(ASTSystemQuery & query);
     [[noreturn]] void restartDisk(String & name);
 
-    RefreshTaskHolder getRefreshTask();
+    RefreshTaskList getRefreshTasks();
 
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     void startStopAction(StorageActionBlockType action_type, bool start);

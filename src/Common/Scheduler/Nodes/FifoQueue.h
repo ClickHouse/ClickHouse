@@ -34,7 +34,7 @@ public:
     {
         if (!ISchedulerNode::equals(other))
             return false;
-        if (auto * o = dynamic_cast<FifoQueue *>(other))
+        if (auto * _ = dynamic_cast<FifoQueue *>(other))
             return true;
         return false;
     }
@@ -59,8 +59,7 @@ public:
         if (requests.empty())
             busy_periods++;
         queue_cost -= result->cost;
-        dequeued_requests++;
-        dequeued_cost += result->cost;
+        incrementDequeued(result->cost);
         return {result, !requests.empty()};
     }
 

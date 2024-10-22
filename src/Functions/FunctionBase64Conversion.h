@@ -202,8 +202,13 @@ public:
             {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
         };
 
-        validateFunctionArgumentTypes(*this, arguments, mandatory_arguments);
+        validateFunctionArguments(*this, arguments, mandatory_arguments);
 
+        return std::make_shared<DataTypeString>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeString>();
     }
 
@@ -212,7 +217,7 @@ public:
         const auto & input_column = arguments[0].column;
         if (const auto * src_column_as_fixed_string = checkAndGetColumn<ColumnFixedString>(&*input_column))
             return execute(*src_column_as_fixed_string, input_rows_count);
-        else if (const auto * src_column_as_string = checkAndGetColumn<ColumnString>(&*input_column))
+        if (const auto * src_column_as_string = checkAndGetColumn<ColumnString>(&*input_column))
             return execute(*src_column_as_string, input_rows_count);
 
         throw Exception(

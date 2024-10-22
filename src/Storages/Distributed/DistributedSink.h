@@ -49,11 +49,11 @@ public:
         const Names & columns_to_send_);
 
     String getName() const override { return "DistributedSink"; }
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
     void onFinish() override;
 
 private:
-    void onCancel() override;
+    void onCancel() noexcept override;
 
     IColumn::Selector createSelector(const Block & source_block) const;
 

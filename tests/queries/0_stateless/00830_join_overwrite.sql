@@ -13,7 +13,7 @@ SELECT joinGet('kv_overwrite', 'v', toUInt32(1));
 CREATE TABLE t2 (k UInt32, v UInt32) ENGINE = Memory;
 INSERT INTO t2 VALUES (1, 2), (1, 3);
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 SELECT v FROM (SELECT 1 as k) t1 ANY INNER JOIN t2 USING (k) SETTINGS join_any_take_last_row = 0;
 SELECT v FROM (SELECT 1 as k) t1 ANY INNER JOIN t2 USING (k) SETTINGS join_any_take_last_row = 1;

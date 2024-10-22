@@ -1,98 +1,91 @@
-#include "ICommand.h"
 #include <Interpreters/Context.h>
 #include <Common/TerminalSize.h>
+#include "DisksApp.h"
+#include "DisksClient.h"
+#include "ICommand.h"
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 class CommandList final : public ICommand
 {
 public:
-    CommandList()
+    explicit CommandList() : ICommand()
     {
         command_name = "list";
-        command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
         description = "List files at path[s]";
-        usage = "list [OPTION]... <PATH>...";
-        command_option_description->add_options()
-            ("recursive", "recursively list all directories");
+        options_description.add_options()("recursive", "recursively list the directory")("all", "show hidden files")(
+            "path", po::value<String>(), "the path of listing (mandatory, positional)");
+        positional_options_description.add("path", 1);
     }
 
-    void processOptions(
-        Poco::Util::LayeredConfiguration & config,
-        po::variables_map & options) const override
+    void executeImpl(const CommandLineOptions & options, DisksClient & client) override
     {
-        if (options.count("recursive"))
-            config.setBool("recursive", true);
-    }
-
-    void execute(
-        const std::vector<String> & command_arguments,
-        std::shared_ptr<DiskSelector> & disk_selector,
-        Poco::Util::LayeredConfiguration & config) override
-    {
-        if (command_arguments.size() != 1)
-        {
-            printHelpMessage();
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
-        }
-
-        String disk_name = config.getString("disk", "default");
-
-        const String & path =  command_arguments[0];
-
-        DiskPtr disk = disk_selector->get(disk_name);
-
-        String relative_path = validatePathAndGetAsRelative(path);
-
-        bool recursive = config.getBool("recursive", false);
+        bool recursive = options.count("recursive");
+        bool show_hidden = options.count("all");
+        auto disk = client.getCurrentDiskWithPath();
+        String path = getValueFromCommandLineOptionsWithDefault<String>(options, "path", ".");
 
         if (recursive)
-            listRecursive(disk, relative_path);
+            listRecursive(disk, path, show_hidden);
         else
-            list(disk, relative_path);
+            list(disk, path, show_hidden);
     }
 
 private:
-    static void list(const DiskPtr & disk, const std::string & relative_path)
+    static void list(const DiskWithPath & disk, const std::string & path, bool show_hidden)
     {
-        std::vector<String> file_names;
-        disk->listFiles(relative_path, file_names);
+        std::vector<String> file_names = disk.listAllFilesByPath(path);
+        std::vector<String> selected_and_sorted_file_names{};
 
         for (const auto & file_name : file_names)
-            std::cout << file_name << '\n';
+            if (show_hidden || (!file_name.starts_with('.')))
+                selected_and_sorted_file_names.push_back(file_name);
+
+        std::sort(selected_and_sorted_file_names.begin(), selected_and_sorted_file_names.end());
+        for (const auto & file_name : selected_and_sorted_file_names)
+        {
+            std::cout << file_name << "\n";
+        }
     }
 
-    static void listRecursive(const DiskPtr & disk, const std::string & relative_path)
+    static void listRecursive(const DiskWithPath & disk, const std::string & relative_path, bool show_hidden)
     {
-        std::vector<String> file_names;
-        disk->listFiles(relative_path, file_names);
+        std::vector<String> file_names = disk.listAllFilesByPath(relative_path);
+        std::vector<String> selected_and_sorted_file_names{};
 
         std::cout << relative_path << ":\n";
 
-        if (!file_names.empty())
-        {
-            for (const auto & file_name : file_names)
-                std::cout << file_name << '\n';
-            std::cout << "\n";
-        }
-
         for (const auto & file_name : file_names)
+            if (show_hidden || (!file_name.starts_with('.')))
+                selected_and_sorted_file_names.push_back(file_name);
+
+        std::sort(selected_and_sorted_file_names.begin(), selected_and_sorted_file_names.end());
+        for (const auto & file_name : selected_and_sorted_file_names)
         {
-            auto path = relative_path.empty() ? file_name : (relative_path + "/" + file_name);
-            if (disk->isDirectory(path))
-                listRecursive(disk, path);
+            std::cout << file_name << "\n";
+        }
+        std::cout << "\n";
+
+        for (const auto & file_name : selected_and_sorted_file_names)
+        {
+            auto path = [&]() -> String
+            {
+                if (relative_path.ends_with("/"))
+                    return relative_path + file_name;
+
+                return relative_path + "/" + file_name;
+            }();
+            if (disk.isDirectory(path))
+            {
+                listRecursive(disk, path, show_hidden);
+            }
         }
     }
 };
-}
 
-std::unique_ptr <DB::ICommand> makeCommandList()
+CommandPtr makeCommandList()
 {
-    return std::make_unique<DB::CommandList>();
+    return std::make_shared<DB::CommandList>();
+}
 }

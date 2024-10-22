@@ -16,7 +16,7 @@ sidebar_label: clickhouse-local
 
 While `clickhouse-local` is a great tool for development and testing purposes, and for processing files, it is not suitable for serving end users or applications. In these scenarios, it is recommended to use the open-source [ClickHouse](https://clickhouse.com/docs/en/install). ClickHouse is a powerful OLAP database that is designed to handle large-scale analytical workloads. It provides fast and efficient processing of complex queries on large datasets, making it ideal for use in production environments where high-performance is critical. Additionally, ClickHouse offers a wide range of features such as replication, sharding, and high availability, which are essential for scaling up to handle large datasets and serving applications. If you need to handle larger datasets or serve end users or applications, we recommend using open-source ClickHouse instead of `clickhouse-local`.
 
-Please read the docs below that show example use cases for `clickhouse-local`, such as [querying local CSVs](#query-data-in-a-csv-file-using-sql) or [reading a parquet file in S3](#query-data-in-a-parquet-file-in-aws-s3).
+Please read the docs below that show example use cases for `clickhouse-local`, such as [querying local file](#query_data_in_file) or [reading a parquet file in S3](#query-data-in-a-parquet-file-in-aws-s3).
 
 ## Download clickhouse-local
 
@@ -175,6 +175,26 @@ NORTHWOOD	THREE RIVERS	184	731609	██████████████▋
 :::tip
 When you are ready to insert your files into ClickHouse, startup a ClickHouse server and insert the results of your `file` and `s3` table functions into a `MergeTree` table. View the [Quick Start](../../quick-start.mdx) for more details.
 :::
+
+
+## Format Conversions
+
+You can use `clickhouse-local` for converting data between different formats. Example:
+
+``` bash
+$ clickhouse-local --input-format JSONLines --output-format CSV --query "SELECT * FROM table" < data.json > data.csv
+```
+
+Formats are auto-detected from file extensions: 
+
+``` bash
+$ clickhouse-local --query "SELECT * FROM table" < data.json > data.csv
+```
+
+As a shortcut, you can write it using the `--copy` argument:
+``` bash
+$ clickhouse-local --copy < data.json > data.csv
+```
 
 
 ## Usage {#usage}

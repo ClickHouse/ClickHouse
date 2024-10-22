@@ -1,39 +1,47 @@
 #include <amqpcpp.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/MessageQueueSink.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
+#include <Storages/RabbitMQ/RabbitMQProducer.h>
 #include <Storages/RabbitMQ/RabbitMQSource.h>
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
-#include <Storages/RabbitMQ/RabbitMQProducer.h>
-#include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
+#include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsUInt64 output_format_avro_rows_in_file;
+    extern const SettingsMilliseconds stream_flush_interval_ms;
+    extern const SettingsBool stream_like_engine_allow_direct_select;
+}
 
 static const uint32_t QUEUE_SIZE = 100000;
 static const auto MAX_FAILED_READ_ATTEMPTS = 10;
@@ -70,6 +78,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         const StorageID & table_id_,
         ContextPtr context_,
         const ColumnsDescription & columns_,
+        const String & comment,
         std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
         LoadingStrictnessLevel mode)
         : IStorage(table_id_)
@@ -145,6 +154,7 @@ StorageRabbitMQ::StorageRabbitMQ(
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
     setVirtuals(createVirtuals(rabbitmq_settings->rabbitmq_handle_error_mode));
 
@@ -261,8 +271,7 @@ String StorageRabbitMQ::getTableBasedName(String name, const StorageID & table_i
 {
     if (name.empty())
         return fmt::format("{}_{}", table_id.database_name, table_id.table_name);
-    else
-        return fmt::format("{}_{}_{}", name, table_id.database_name, table_id.table_name);
+    return fmt::format("{}_{}_{}", name, table_id.database_name, table_id.table_name);
 }
 
 
@@ -387,9 +396,9 @@ void StorageRabbitMQ::deactivateTask(BackgroundSchedulePool::TaskHolder & task, 
 
 size_t StorageRabbitMQ::getMaxBlockSize() const
 {
-     return rabbitmq_settings->rabbitmq_max_block_size.changed
-         ? rabbitmq_settings->rabbitmq_max_block_size.value
-         : (getContext()->getSettingsRef().max_insert_block_size.value / num_consumers);
+    return rabbitmq_settings->rabbitmq_max_block_size.changed
+        ? rabbitmq_settings->rabbitmq_max_block_size.value
+        : (getContext()->getSettingsRef()[Setting::max_insert_block_size].value / num_consumers);
 }
 
 
@@ -741,7 +750,7 @@ void StorageRabbitMQ::read(
         return;
     }
 
-    if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
+    if (!local_context->getSettingsRef()[Setting::stream_like_engine_allow_direct_select])
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
                         "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
 
@@ -766,7 +775,7 @@ void StorageRabbitMQ::read(
 
     uint64_t max_execution_time_ms = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
         ? rabbitmq_settings->rabbitmq_flush_interval_ms
-        : static_cast<UInt64>(getContext()->getSettingsRef().stream_flush_interval_ms.totalMilliseconds());
+        : static_cast<UInt64>(getContext()->getSettingsRef()[Setting::stream_flush_interval_ms].totalMilliseconds());
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
@@ -813,8 +822,8 @@ SinkToStoragePtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr
         configuration, routing_keys, exchange_name, exchange_type, producer_id.fetch_add(1), persistent, shutdown_called, log);
     size_t max_rows = max_rows_per_message;
     /// Need for backward compatibility.
-    if (format_name == "Avro" && local_context->getSettingsRef().output_format_avro_rows_in_file.changed)
-        max_rows = local_context->getSettingsRef().output_format_avro_rows_in_file.value;
+    if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
+        max_rows = local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].value;
     return std::make_shared<MessageQueueSink>(
         metadata_snapshot->getSampleBlockNonMaterialized(),
         getFormatName(),
@@ -1103,7 +1112,7 @@ bool StorageRabbitMQ::tryStreamToViews()
 
     uint64_t max_execution_time_ms = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
         ? rabbitmq_settings->rabbitmq_flush_interval_ms
-        : static_cast<UInt64>(getContext()->getSettingsRef().stream_flush_interval_ms.totalMilliseconds());
+        : static_cast<UInt64>(getContext()->getSettingsRef()[Setting::stream_flush_interval_ms].totalMilliseconds());
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
@@ -1129,7 +1138,13 @@ bool StorageRabbitMQ::tryStreamToViews()
     }
 
     // Only insert into dependent views and expect that input blocks contain virtual columns
-    InterpreterInsertQuery interpreter(insert, rabbitmq_context, /* allow_materialized_ */ false, /* no_squash_ */ true, /* no_destination_ */ true);
+    InterpreterInsertQuery interpreter(
+        insert,
+        rabbitmq_context,
+        /* allow_materialized */ false,
+        /* no_squash */ true,
+        /* no_destination */ true,
+        /* async_isnert */ false);
     auto block_io = interpreter.execute();
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
@@ -1242,11 +1257,10 @@ bool StorageRabbitMQ::tryStreamToViews()
         LOG_TRACE(log, "Reschedule streaming. Queues are empty.");
         return false;
     }
-    else
-    {
-        LOG_TEST(log, "Will start background loop to let messages be pushed to channel");
-        startLoop();
-    }
+
+    LOG_TEST(log, "Will start background loop to let messages be pushed to channel");
+    startLoop();
+
 
     /// Reschedule.
     return true;
@@ -1282,7 +1296,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         if (!rabbitmq_settings->rabbitmq_format.changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `rabbitmq_format` setting");
 
-        return std::make_shared<StorageRabbitMQ>(args.table_id, args.getContext(), args.columns, std::move(rabbitmq_settings), args.mode);
+        return std::make_shared<StorageRabbitMQ>(args.table_id, args.getContext(), args.columns, args.comment, std::move(rabbitmq_settings), args.mode);
     };
 
     factory.registerStorage("RabbitMQ", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });

@@ -55,24 +55,23 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr column = arguments[0].column;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
             auto col_res = ColumnString::create();
-            ReverseImpl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());
+            ReverseImpl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), input_rows_count);
             return col_res;
         }
-        else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column.get()))
+        if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             auto col_res = ColumnFixedString::create(col_fixed->getN());
-            ReverseImpl::vectorFixed(col_fixed->getChars(), col_fixed->getN(), col_res->getChars());
+            ReverseImpl::vectorFixed(col_fixed->getChars(), col_fixed->getN(), col_res->getChars(), input_rows_count);
             return col_res;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 };
 
@@ -93,11 +92,10 @@ public:
     {
         if (isArray(arguments.at(0).type))
             return FunctionFactory::instance().getImpl("arrayReverse", context)->build(arguments);
-        else
-            return std::make_unique<FunctionToFunctionBaseAdaptor>(
-                FunctionReverse::create(context),
-                collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
-                return_type);
+        return std::make_unique<FunctionToFunctionBaseAdaptor>(
+            FunctionReverse::create(context),
+            collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+            return_type);
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -113,7 +111,7 @@ private:
 
 REGISTER_FUNCTION(Reverse)
 {
-    factory.registerFunction<ReverseOverloadResolver>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<ReverseOverloadResolver>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

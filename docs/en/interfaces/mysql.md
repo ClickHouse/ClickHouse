@@ -6,7 +6,25 @@ sidebar_label: MySQL Interface
 
 # MySQL Interface
 
-ClickHouse supports the MySQL wire protocol. This allow tools that are MySQL-compatible to interact with ClickHouse seamlessly (e.g. [Looker Studio](../integrations/data-visualization/looker-studio-and-clickhouse.md)).
+ClickHouse supports the MySQL wire protocol. This allows certain clients that do not have native ClickHouse connectors leverage the MySQL protocol instead, and it has been validated with the following BI tools:
+
+- [Looker Studio](../integrations/data-visualization/looker-studio-and-clickhouse.md)
+- [Tableau Online](../integrations/tableau-online)
+- [QuickSight](../integrations/quicksight)
+
+If you are trying other untested clients or integrations, keep in mind that there could be the following limitations:
+
+- SSL implementation might not be fully compatible; there could be potential [TLS SNI](https://www.cloudflare.com/learning/ssl/what-is-sni/) issues.
+- A particular tool might require dialect features (e.g., MySQL-specific functions or settings) that are not implemented yet.
+
+If there is a native driver available (e.g., [DBeaver](../integrations/dbeaver)), it is always preferred to use it instead of the MySQL interface. Additionally, while most of the MySQL language clients should work fine, MySQL interface is not guaranteed to be a drop-in replacement for a codebase with existing MySQL queries.
+
+If your use case involves a particular tool that does not have a native ClickHouse driver, and you would like to use it via the MySQL interface and you found certain incompatibilities - please [create an issue](https://github.com/ClickHouse/ClickHouse/issues) in the ClickHouse repository.
+
+::::note
+To support the SQL dialect of above BI tools better, ClickHouse's MySQL interface implicitly runs SELECT queries with setting [prefer_column_name_to_alias = 1](../operations/settings/settings.md#prefer-column-name-to-alias).
+This cannot be turned off and it can lead in rare edge cases to different behavior between queries sent to ClickHouse's normal and MySQL query interfaces.
+::::
 
 ## Enabling the MySQL Interface On ClickHouse Cloud
 
@@ -83,7 +101,7 @@ In this case, ensure that the username follows the `mysql4<subdomain>_<username>
 
 ## Enabling the MySQL Interface On Self-managed ClickHouse
 
-Add the [mysql_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) setting to your server's configuration file. For example, you could define the port in a new XML file in your `config.d/` [folder](../operations/configuration-files):
+Add the [mysql_port](../operations/server-configuration-parameters/settings.md#mysql_port) setting to your server's configuration file. For example, you could define the port in a new XML file in your `config.d/` [folder](../operations/configuration-files):
 
 ``` xml
 <clickhouse>

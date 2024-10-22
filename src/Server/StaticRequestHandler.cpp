@@ -4,13 +4,15 @@
 #include "HTTPHandlerFactory.h"
 #include "HTTPResponseHeaderWriter.h"
 
+#include <Core/ServerSettings.h>
 #include <IO/HTTPCommon.h>
+#include <IO/Operators.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/copyData.h>
 #include <IO/WriteHelpers.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 
 #include <Common/Exception.h>
 
@@ -34,10 +36,9 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
 }
 
-static inline std::unique_ptr<WriteBuffer>
-responseWriteBuffer(HTTPServerRequest & request, HTTPServerResponse & response, UInt64 keep_alive_timeout)
+static inline std::unique_ptr<WriteBuffer> responseWriteBuffer(HTTPServerRequest & request, HTTPServerResponse & response)
 {
-    auto buf = std::unique_ptr<WriteBuffer>(new WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout));
+    auto buf = std::unique_ptr<WriteBuffer>(new WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD));
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
@@ -90,23 +91,22 @@ static inline void trySendExceptionToClient(
 
 void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 {
-    auto keep_alive_timeout = server.context()->getServerSettings().keep_alive_timeout.totalSeconds();
-    auto out = responseWriteBuffer(request, response, keep_alive_timeout);
+    applyHTTPResponseHeaders(response, http_response_headers_override);
+
+    if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
+        response.setChunkedTransferEncoding(true);
+
+    auto out = responseWriteBuffer(request, response);
 
     try
     {
-        applyHTTPResponseHeaders(response, http_response_headers_override);
-
-        if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
-            response.setChunkedTransferEncoding(true);
-
         /// Workaround. Poco does not detect 411 Length Required case.
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() && !request.hasContentLength())
             throw Exception(ErrorCodes::HTTP_LENGTH_REQUIRED,
                             "The Transfer-Encoding is not chunked and there "
                             "is no Content-Length header for POST request");
 
-        setResponseDefaultHeaders(response, keep_alive_timeout);
+        setResponseDefaultHeaders(response);
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus(status));
         writeResponse(*out);
     }

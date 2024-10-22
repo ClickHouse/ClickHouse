@@ -1,5 +1,6 @@
 #include <Interpreters/JoinedTables.h>
 
+#include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 
 #include <Interpreters/DatabaseCatalog.h>
@@ -27,6 +28,14 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool asterisk_include_alias_columns;
+    extern const SettingsBool asterisk_include_materialized_columns;
+    extern const SettingsBool enable_optimize_predicate_expression;
+    extern const SettingsBool joined_subquery_requires_alias;
+    extern const SettingsJoinAlgorithm join_algorithm;
+}
 
 namespace ErrorCodes
 {
@@ -239,13 +248,13 @@ StoragePtr JoinedTables::getLeftTableStorage()
 bool JoinedTables::resolveTables()
 {
     const auto & settings = context->getSettingsRef();
-    bool include_alias_cols = include_all_columns || settings.asterisk_include_alias_columns;
-    bool include_materialized_cols = include_all_columns || settings.asterisk_include_materialized_columns;
+    bool include_alias_cols = include_all_columns || settings[Setting::asterisk_include_alias_columns];
+    bool include_materialized_cols = include_all_columns || settings[Setting::asterisk_include_materialized_columns];
     tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context, include_alias_cols, include_materialized_cols, is_create_parameterized_view);
     if (tables_with_columns.size() != table_expressions.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected tables count");
 
-    if (settings.joined_subquery_requires_alias && tables_with_columns.size() > 1)
+    if (settings[Setting::joined_subquery_requires_alias] && tables_with_columns.size() > 1)
     {
         for (size_t i = 0; i < tables_with_columns.size(); ++i)
         {
@@ -307,8 +316,8 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
     if (tables_with_columns.size() < 2)
         return {};
 
-    auto settings = context->getSettingsRef();
-    MultiEnum<JoinAlgorithm> join_algorithm = settings.join_algorithm;
+    const auto & settings = context->getSettingsRef();
+    MultiEnum<JoinAlgorithm> join_algorithm = settings[Setting::join_algorithm];
     bool try_use_direct_join = join_algorithm.isSet(JoinAlgorithm::DIRECT) || join_algorithm.isSet(JoinAlgorithm::DEFAULT);
     auto table_join = std::make_shared<TableJoin>(settings, context->getGlobalTemporaryVolume(), context->getTempDataOnDisk());
 
@@ -356,8 +365,7 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
         }
     }
 
-    if (!table_join->isSpecialStorage() &&
-        settings.enable_optimize_predicate_expression)
+    if (!table_join->isSpecialStorage() && settings[Setting::enable_optimize_predicate_expression])
         replaceJoinedTable(select_query_);
 
     return table_join;

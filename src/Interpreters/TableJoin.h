@@ -2,7 +2,6 @@
 
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/SettingsEnums.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinUtils.h>
@@ -149,6 +148,10 @@ private:
     const size_t partial_merge_join_left_table_buffer_bytes = 0;
     const size_t max_files_to_merge = 0;
     const String temporary_files_codec = "LZ4";
+    const size_t output_by_rowlist_perkey_rows_threshold = 0;
+    const size_t sort_right_minimum_perkey_rows = 0;
+    const size_t sort_right_maximum_table_rows = 0;
+    const bool allow_join_sorting = false;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
@@ -202,19 +205,19 @@ private:
     Names requiredJoinedNames() const;
 
     /// Create converting actions and change key column names if required
-    ActionsDAGPtr applyKeyConvertToTable(
+    std::optional<ActionsDAG> applyKeyConvertToTable(
         const ColumnsWithTypeAndName & cols_src,
         const NameToTypeMap & type_mapping,
         JoinTableSide table_side,
         NameToNameMap & key_column_rename);
 
-    ActionsDAGPtr applyNullsafeWrapper(
+    std::optional<ActionsDAG> applyNullsafeWrapper(
         const ColumnsWithTypeAndName & cols_src,
         const NameSet & columns_for_nullsafe_comparison,
         JoinTableSide table_side,
         NameToNameMap & key_column_rename);
 
-    ActionsDAGPtr applyJoinUseNullsConversion(
+    std::optional<ActionsDAG> applyJoinUseNullsConversion(
         const ColumnsWithTypeAndName & cols_src,
         const NameToNameMap & key_column_rename);
 
@@ -264,7 +267,7 @@ public:
 
     TemporaryDataOnDiskScopePtr getTempDataOnDisk() { return tmp_data; }
 
-    ActionsDAGPtr createJoinedBlockActions(ContextPtr context) const;
+    ActionsDAG createJoinedBlockActions(ContextPtr context) const;
 
     const std::vector<JoinAlgorithm> & getEnabledJoinAlgorithms() const { return join_algorithm; }
 
@@ -296,6 +299,10 @@ public:
         return join_use_nulls && isRightOrFull(kind());
     }
 
+    size_t outputByRowListPerkeyRowsThreshold() const { return output_by_rowlist_perkey_rows_threshold; }
+    size_t sortRightMinimumPerkeyRows() const { return sort_right_minimum_perkey_rows; }
+    size_t sortRightMaximumTableRows() const { return sort_right_maximum_table_rows; }
+    bool allowJoinSorting() const { return allow_join_sorting; }
     size_t defaultMaxBytes() const { return default_max_bytes; }
     size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
@@ -379,7 +386,7 @@ public:
     /// Calculate converting actions, rename key columns in required
     /// For `USING` join we will convert key columns inplace and affect into types in the result table
     /// For `JOIN ON` we will create new columns with converted keys to join by.
-    std::pair<ActionsDAGPtr, ActionsDAGPtr>
+    std::pair<std::optional<ActionsDAG>, std::optional<ActionsDAG>>
     createConvertingActions(
         const ColumnsWithTypeAndName & left_sample_columns,
         const ColumnsWithTypeAndName & right_sample_columns);

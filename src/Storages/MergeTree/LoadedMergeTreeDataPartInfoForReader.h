@@ -36,7 +36,10 @@ public:
 
     AlterConversionsPtr getAlterConversions() const override { return alter_conversions; }
 
-    String getColumnNameWithMinimumCompressedSize(bool with_subcolumns) const override { return data_part->getColumnNameWithMinimumCompressedSize(with_subcolumns); }
+    String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const override
+    {
+        return data_part->getColumnNameWithMinimumCompressedSize(available_columns);
+    }
 
     const MergeTreeDataPartChecksums & getChecksums() const override { return data_part->checksums; }
 

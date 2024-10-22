@@ -6,6 +6,7 @@ import logging
 import os
 import random
 import shlex
+import shutil
 import signal
 import string
 import subprocess
@@ -135,6 +136,53 @@ def check_args_and_update_paths(args):
         )
 
 
+def check_iptables_legacy():
+    iptables_path = shutil.which("iptables")
+    ip6tables_path = shutil.which("ip6tables")
+
+    if iptables_path is None:
+        print("Error: 'iptables' not found in PATH")
+        sys.exit(1)
+    if ip6tables_path is None:
+        print("Error: 'ip6tables' not found in PATH, ignoring")
+
+    try:
+        file_info = os.stat(iptables_path)
+        file_info_str = str(file_info)
+
+        if "legacy" in file_info_str:
+            print(
+                """
+                iptables on your host machine is in 'legacy' mode. This is not supported.
+
+                Please switch to 'nftables' mode, usualy by installing `iptables-nft` or `nftables`, consult your distribution manual.
+                Or, use --ignore-iptables-legacy-check.
+                """
+            )
+            sys.exit(1)
+
+        if not ip6tables_path:
+            return
+
+        file_info = os.stat(ip6tables_path)
+        file_info_str = str(file_info)
+
+        if "legacy" in file_info_str:
+            print(
+                """
+                ip6tables on your host machine is in 'legacy' mode. This is not supported.
+
+                Please switch to 'nftables' mode, usualy by installing `iptables-nft` or `nftables`, consult your distribution manual.
+                Or, use --ignore-iptables-legacy-check.
+                """
+            )
+            sys.exit(1)
+
+    except FileNotFoundError:
+        print(f"Error: '{iptables_path}' not found")
+        sys.exit(1)
+
+
 def docker_kill_handler_handler(signum, frame):
     _, _ = signum, frame
     subprocess.check_call(
@@ -163,6 +211,7 @@ if __name__ == "__main__":
         level=logging.INFO,
         format="%(asctime)s [ %(process)d ] %(levelname)s : %(message)s (%(filename)s:%(lineno)s, %(funcName)s)",
     )
+
     parser = argparse.ArgumentParser(description="ClickHouse integration tests runner")
 
     parser.add_argument(
@@ -244,6 +293,10 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--count", action="store", type=int, dest="count", help="Repeat count"
+    )
+
+    parser.add_argument(
         "--no-random",
         action="store",
         dest="no_random",
@@ -307,16 +360,32 @@ if __name__ == "__main__":
         help="Bind volume to this dir to use for dockerd files",
     )
 
+    parser.add_argument(
+        "--ignore-iptables-legacy-check",
+        action="store_true",
+        default=False,
+        help="Ignore iptables-legacy usage check",
+    )
+
     parser.add_argument("pytest_args", nargs="*", help="args for pytest command")
 
     args = parser.parse_args()
 
     check_args_and_update_paths(args)
 
+    if not args.ignore_iptables_legacy_check:
+        check_iptables_legacy()
+    else:
+        logging.warning("Skipping iptables-legacy check")
+
     parallel_args = ""
     if args.parallel:
         parallel_args += "--dist=loadfile"
         parallel_args += f" -n {args.parallel}".format()
+
+    repeat_args = (
+        f" --count {args.count}" if args.count is not None and args.count > 0 else ""
+    )
 
     rand_args = ""
     # if not args.no_random:
@@ -409,14 +478,14 @@ if __name__ == "__main__":
         f"--volume={args.utils_dir}/grpc-client/pb2:/ClickHouse/utils/grpc-client/pb2 "
         f"--volume=/run:/run/host:ro {dockerd_internal_volume} {env_tags} {env_cleanup} "
         f"-e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 {use_old_analyzer} -e PYTHONUNBUFFERED=1 "
-        f'-e PYTEST_ADDOPTS="{parallel_args} {pytest_opts} {tests_list} {rand_args} -vvv"'
+        f'-e PYTEST_ADDOPTS="{parallel_args} {repeat_args} {pytest_opts} {tests_list} {rand_args} -vvv"'
         f" {DIND_INTEGRATION_TESTS_IMAGE_NAME}:{args.docker_image_version}"
     )
 
     cmd = cmd_base + " " + args.command
     cmd_pre_pull = (
         f"{cmd_base} find /ClickHouse/tests/integration/compose -name docker_compose_*.yml "
-        r"-exec docker-compose -f '{}' pull \;"
+        r"-exec docker compose -f '{}' pull \;"
     )
 
     containers = subprocess.check_output(

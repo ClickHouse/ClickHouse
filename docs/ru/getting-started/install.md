@@ -22,18 +22,26 @@ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not su
 
 ### Из deb-пакетов {#install-from-deb-packages}
 
-Яндекс рекомендует использовать официальные скомпилированные `deb`-пакеты для Debian или Ubuntu. Для установки пакетов выполните:
+Рекомендуется использовать официальные скомпилированные `deb`-пакеты для Debian или Ubuntu. Для установки пакетов выполните:
 
 ``` bash
-sudo apt-get install -y apt-transport-https ca-certificates dirmngr
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754
+sudo apt-get install -y apt-transport-https ca-certificates curl gnupg
+curl -fsSL 'https://packages.clickhouse.com/rpm/lts/repodata/repomd.xml.key' | sudo gpg --dearmor -o /usr/share/keyrings/clickhouse-keyring.gpg
 
-echo "deb https://packages.clickhouse.com/deb stable main" | sudo tee \
+echo "deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb stable main" | sudo tee \
     /etc/apt/sources.list.d/clickhouse.list
 sudo apt-get update
+```
 
+#### Установка ClickHouse server и client
+
+```bash
 sudo apt-get install -y clickhouse-server clickhouse-client
+```
 
+#### Запуск ClickHouse server
+
+```bash
 sudo service clickhouse-server start
 clickhouse-client # or "clickhouse-client --password" if you've set up a password.
 ```
@@ -55,7 +63,7 @@ clickhouse-client # or "clickhouse-client --password" if you've set up a passwor
 :::
 ### Из rpm-пакетов {#from-rpm-packages}
 
-Команда ClickHouse в Яндексе рекомендует использовать официальные предкомпилированные `rpm`-пакеты для CentOS, RedHat и всех остальных дистрибутивов Linux, основанных на rpm.
+Команда ClickHouse рекомендует использовать официальные предкомпилированные `rpm`-пакеты для CentOS, RedHat и всех остальных дистрибутивов Linux, основанных на rpm.
 
 #### Установка официального репозитория
 
@@ -102,7 +110,7 @@ sudo yum install clickhouse-server clickhouse-client
 
 ### Из tgz-архивов {#from-tgz-archives}
 
-Команда ClickHouse в Яндексе рекомендует использовать предкомпилированные бинарники из `tgz`-архивов для всех дистрибутивов, где невозможна установка `deb`- и `rpm`- пакетов.
+Команда ClickHouse рекомендует использовать предкомпилированные бинарники из `tgz`-архивов для всех дистрибутивов, где невозможна установка `deb`- и `rpm`- пакетов.
 
 Интересующую версию архивов можно скачать вручную с помощью `curl` или `wget` из репозитория https://packages.clickhouse.com/tgz/.
 После этого архивы нужно распаковать и воспользоваться скриптами установки. Пример установки самой свежей версии:

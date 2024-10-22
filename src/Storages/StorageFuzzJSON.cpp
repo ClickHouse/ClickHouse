@@ -63,20 +63,19 @@ JSONValue::Type JSONValue::getType(const JSONValue & v)
         assert(!v.object);
         return JSONValue::Type::Fixed;
     }
-    else if (v.array)
+    if (v.array)
     {
         assert(!v.fixed);
         assert(!v.object);
         return JSONValue::Type::Array;
     }
-    else if (v.object)
+    if (v.object)
     {
         assert(!v.fixed);
         assert(!v.array);
         return JSONValue::Type::Object;
     }
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to determine JSON node type.");
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to determine JSON node type.");
 }
 
 // A node represents either a JSON field (a key-value pair) or a JSON value.
@@ -150,7 +149,6 @@ void traverse(const ParserImpl::Element & e, std::shared_ptr<JSONNode> node)
 
 std::shared_ptr<JSONNode> parseJSON(const String & json)
 {
-    std::string_view view{json.begin(), json.end()};
     ParserImpl::Element document;
     ParserImpl p;
 
@@ -419,7 +417,7 @@ void fuzzJSONObject(
         if (val.fixed->getType() == Field::Types::Which::String)
         {
             out << fuzzJSONStructure(config, rnd, "\"");
-            writeText(val.fixed->get<String>(), out);
+            writeText(val.fixed->safeGet<String>(), out);
             out << fuzzJSONStructure(config, rnd, "\"");
         }
         else

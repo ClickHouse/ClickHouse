@@ -43,9 +43,9 @@ namespace Poco {
 namespace MongoDB {
 
 
-static const std::string keyCursor		{"cursor"};
-static const std::string keyFirstBatch	{"firstBatch"};
-static const std::string keyNextBatch	{"nextBatch"};
+[[ maybe_unused ]] static const std::string keyCursor		{"cursor"};
+[[ maybe_unused ]] static const std::string keyFirstBatch	{"firstBatch"};
+[[ maybe_unused ]] static const std::string keyNextBatch	{"nextBatch"};
 
 static Poco::Int64 cursorIdFromResponse(const MongoDB::Document& doc);
 
@@ -131,7 +131,7 @@ OpMsgMessage& OpMsgCursor::next(Connection& connection)
 			connection.readResponse(_response);
 		}
 		else
-#endif		
+#endif
 		{
 			_response.clear();
 			_query.setCursor(_cursorID, _batchSize);

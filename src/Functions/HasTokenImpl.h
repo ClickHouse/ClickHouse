@@ -35,12 +35,13 @@ struct HasTokenImpl
         const std::string & pattern,
         const ColumnPtr & start_pos,
         PaddedPODArray<UInt8> & res,
-        ColumnUInt8 * res_null)
+        ColumnUInt8 * res_null,
+        size_t input_rows_count)
     {
         if (start_pos != nullptr)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function '{}' does not support start_pos argument", name);
 
-        if (haystack_offsets.empty())
+        if (input_rows_count == 0)
             return;
 
         const UInt8 * const begin = haystack_data.data();
@@ -55,12 +56,11 @@ struct HasTokenImpl
                 std::ranges::fill(res_null->getData(), true);
                 return;
             }
-            else if (has_separator)
+            if (has_separator)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needle must not contain whitespace or separator characters");
-            else if (pattern.empty())
+            if (pattern.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needle cannot be empty, because empty string isn't a token");
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected internal state");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected internal state");
         }
 
         size_t pattern_size = pattern.size();

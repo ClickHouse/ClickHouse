@@ -3,6 +3,8 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/Priority.h>
+#include <Common/EventRateMeter.h>
+#include <Common/Stopwatch.h>
 #include <base/defines.h>
 #include <base/types.h>
 
@@ -176,6 +178,14 @@ protected:
     /// Postponed to be handled in scheduler thread, so it is intended to be called from outside.
     void scheduleActivation();
 
+    /// Helper for introspection metrics
+    void incrementDequeued(ResourceCost cost)
+    {
+        dequeued_requests++;
+        dequeued_cost += cost;
+        throughput.add(static_cast<double>(clock_gettime_ns())/1e9, cost);
+    }
+
 public:
     EventQueue * const event_queue;
     String basename;
@@ -189,6 +199,10 @@ public:
     std::atomic<ResourceCost> dequeued_cost{0};
     std::atomic<ResourceCost> canceled_cost{0};
     std::atomic<UInt64> busy_periods{0};
+
+    /// Average dequeued_cost per second
+    /// WARNING: Should only be accessed from the scheduler thread, so that locking is not required
+    EventRateMeter throughput{static_cast<double>(clock_gettime_ns())/1e9, 2, 1};
 };
 
 using SchedulerNodePtr = std::shared_ptr<ISchedulerNode>;
@@ -324,15 +338,13 @@ public:
         }
         if (postponed.empty())
             return false;
-        else
+
+        if (postponed.front().key <= now())
         {
-            if (postponed.front().key <= now())
-            {
-                processPostponed(std::move(lock));
-                return true;
-            }
-            return false;
+            processPostponed(std::move(lock));
+            return true;
         }
+        return false;
     }
 
     /// Wait for single event (if not available) and process it
@@ -346,7 +358,7 @@ public:
                 processQueue(std::move(lock));
                 return;
             }
-            else if (postponed.empty())
+            if (postponed.empty())
             {
                 wait(lock);
             }
@@ -357,20 +369,18 @@ public:
                     processPostponed(std::move(lock));
                     return;
                 }
-                else
-                {
-                    waitUntil(lock, postponed.front().key);
-                }
+
+                waitUntil(lock, postponed.front().key);
             }
         }
     }
 
     TimePoint now()
     {
-        if (auto result = manual_time.load(); likely(result == TimePoint()))
+        auto result = manual_time.load();
+        if (likely(result == TimePoint()))
             return std::chrono::system_clock::now();
-        else
-            return result;
+        return result;
     }
 
     /// For testing only

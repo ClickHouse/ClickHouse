@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-s3-storage, no-random-settings, no-parallel
+# Tags: no-object-storage, no-random-settings, no-parallel
 set -eo pipefail
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

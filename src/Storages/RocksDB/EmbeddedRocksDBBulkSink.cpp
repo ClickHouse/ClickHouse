@@ -9,6 +9,7 @@
 
 #include <Columns/ColumnString.h>
 #include <Core/SortDescription.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -29,6 +30,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 min_insert_block_size_rows;
+}
 
 namespace ErrorCodes
 {
@@ -85,7 +90,8 @@ EmbeddedRocksDBBulkSink::EmbeddedRocksDBBulkSink(
     }
 
     serializations = getHeader().getSerializations();
-    min_block_size_rows = std::max(storage.getSettings().bulk_insert_block_size, getContext()->getSettingsRef().min_insert_block_size_rows);
+    min_block_size_rows
+        = std::max(storage.getSettings().bulk_insert_block_size, getContext()->getSettingsRef()[Setting::min_insert_block_size_rows]);
 
     /// If max_insert_threads > 1 we may have multiple EmbeddedRocksDBBulkSink and getContext()->getCurrentQueryId() is not guarantee to
     /// to have a distinct path. Also we cannot use query id as directory name here, because it could be defined by user and not suitable
@@ -218,17 +224,18 @@ std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::seriali
     return {std::move(serialized_key_column), std::move(serialized_value_column)};
 }
 
-void EmbeddedRocksDBBulkSink::consume(Chunk chunk_)
+void EmbeddedRocksDBBulkSink::consume(Chunk & chunk_)
 {
     std::vector<Chunk> chunks_to_write = squash(std::move(chunk_));
 
     if (chunks_to_write.empty())
         return;
 
+    size_t num_chunks = chunks_to_write.size();
     auto [serialized_key_column, serialized_value_column]
         = storage.ttl > 0 ? serializeChunks<true>(std::move(chunks_to_write)) : serializeChunks<false>(std::move(chunks_to_write));
     auto sst_file_path = getTemporarySSTFilePath();
-    LOG_DEBUG(getLogger("EmbeddedRocksDBBulkSink"), "Writing {} rows to SST file {}", serialized_key_column->size(), sst_file_path);
+    LOG_DEBUG(getLogger("EmbeddedRocksDBBulkSink"), "Writing {} rows from {} chunks to SST file {}", serialized_key_column->size(), num_chunks, sst_file_path);
     if (auto status = buildSSTFile(sst_file_path, *serialized_key_column, *serialized_value_column); !status.ok())
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
 
@@ -247,7 +254,10 @@ void EmbeddedRocksDBBulkSink::onFinish()
 {
     /// If there is any data left, write it.
     if (!chunks.empty())
-        consume({});
+    {
+        Chunk empty;
+        consume(empty);
+    }
 }
 
 String EmbeddedRocksDBBulkSink::getTemporarySSTFilePath()

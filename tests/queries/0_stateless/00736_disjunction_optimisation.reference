@@ -49,7 +49,7 @@ QUERY id: 0
               LIST id: 12, nodes: 2
                 COLUMN id: 13, column_name: s, result_type: UInt64, source_id: 3
                 CONSTANT id: 14, constant_value: Tuple_(UInt64_21, UInt64_22, UInt64_23), constant_value_type: Tuple(UInt8, UInt8, UInt8)
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 1	21
 1	22
 1	23
@@ -99,7 +99,7 @@ QUERY id: 0
         LIST id: 14, nodes: 2
           COLUMN id: 15, column_name: s, result_type: UInt64, source_id: 3
           CONSTANT id: 16, constant_value: Tuple_(UInt64_21, UInt64_22, UInt64_23), constant_value_type: Tuple(UInt8, UInt8, UInt8)
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 1	1	21	1	1	1
 1	1	22	0	1	1
 1	1	23	0	0	1
@@ -152,7 +152,7 @@ QUERY id: 0
             CONSTANT id: 16, constant_value: Tuple_(UInt64_21, UInt64_22, UInt64_23), constant_value_type: Tuple(UInt8, UInt8, UInt8)
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.bug
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 21	1
 22	1
 23	1
@@ -185,7 +185,7 @@ QUERY id: 0
             CONSTANT id: 6, constant_value: Tuple_(UInt64_21, UInt64_22, UInt64_23), constant_value_type: Tuple(UInt8, UInt8, UInt8)
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.bug
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 1	21
 1	22
 1	23
@@ -237,7 +237,7 @@ QUERY id: 0
               LIST id: 12, nodes: 2
                 COLUMN id: 13, column_name: s, result_type: UInt64, source_id: 3
                 CONSTANT id: 14, constant_value: Tuple_(UInt64_21, UInt64_22, UInt64_23), constant_value_type: Tuple(UInt8, UInt8, UInt8)
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 1	21
 1	22
 1	23
@@ -287,7 +287,7 @@ QUERY id: 0
         LIST id: 14, nodes: 2
           COLUMN id: 15, column_name: s, result_type: UInt64, source_id: 3
           CONSTANT id: 16, constant_value: Tuple_(UInt64_21, UInt64_22, UInt64_23), constant_value_type: Tuple(UInt8, UInt8, UInt8)
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 1	1	21	1	1	1
 1	1	22	0	1	1
 1	1	23	0	0	1
@@ -348,7 +348,7 @@ QUERY id: 0
             CONSTANT id: 21, constant_value: Tuple_(UInt64_21, UInt64_22, UInt64_23), constant_value_type: Tuple(UInt8, UInt8, UInt8)
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.bug
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 21	1
 22	1
 23	1
@@ -381,7 +381,7 @@ QUERY id: 0
             CONSTANT id: 6, constant_value: Tuple_(UInt64_21, UInt64_22, UInt64_23), constant_value_type: Tuple(UInt8, UInt8, UInt8)
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.bug
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 21	1
 22	1
 23	1
@@ -414,4 +414,4 @@ QUERY id: 0
             CONSTANT id: 6, constant_value: Tuple_(UInt64_21, UInt64_22, UInt64_23), constant_value_type: Tuple(UInt8, UInt8, UInt8)
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.bug
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1

@@ -193,54 +193,60 @@ function fuzz
 
     kill -0 $server_pid
 
-    # Set follow-fork-mode to parent, because we attach to clickhouse-server, not to watchdog
-    # and clickhouse-server can do fork-exec, for example, to run some bridge.
-    # Do not set nostop noprint for all signals, because some it may cause gdb to hang,
-    # explicitly ignore non-fatal signals that are used by server.
-    # Number of SIGRTMIN can be determined only in runtime.
-    RTMIN=$(kill -l SIGRTMIN)
-    echo "
-set follow-fork-mode parent
-handle SIGHUP nostop noprint pass
-handle SIGINT nostop noprint pass
-handle SIGQUIT nostop noprint pass
-handle SIGPIPE nostop noprint pass
-handle SIGTERM nostop noprint pass
-handle SIGUSR1 nostop noprint pass
-handle SIGUSR2 nostop noprint pass
-handle SIGSEGV nostop pass
-handle SIG$RTMIN nostop noprint pass
-info signals
-continue
-backtrace full
-thread apply all backtrace full
-info registers
-disassemble /s
-up
-disassemble /s
-up
-disassemble /s
-p \"done\"
-detach
-quit
-" > script.gdb
+    IS_ASAN=$(clickhouse-client --query "SELECT count() FROM system.build_options WHERE name = 'CXX_FLAGS' AND position('sanitize=address' IN value)")
+    if [[ "$IS_ASAN" = "1" ]];
+    then
+        echo "ASAN build detected. Not using gdb since it disables LeakSanitizer detections"
+    else
+        # Set follow-fork-mode to parent, because we attach to clickhouse-server, not to watchdog
+        # and clickhouse-server can do fork-exec, for example, to run some bridge.
+        # Do not set nostop noprint for all signals, because some it may cause gdb to hang,
+        # explicitly ignore non-fatal signals that are used by server.
+        # Number of SIGRTMIN can be determined only in runtime.
+        RTMIN=$(kill -l SIGRTMIN)
+        echo "
+    set follow-fork-mode parent
+    handle SIGHUP nostop noprint pass
+    handle SIGINT nostop noprint pass
+    handle SIGQUIT nostop noprint pass
+    handle SIGPIPE nostop noprint pass
+    handle SIGTERM nostop noprint pass
+    handle SIGUSR1 nostop noprint pass
+    handle SIGUSR2 nostop noprint pass
+    handle SIG$RTMIN nostop noprint pass
+    info signals
+    continue
+    backtrace full
+    thread apply all backtrace full
+    info registers
+    disassemble /s
+    up
+    disassemble /s
+    up
+    disassemble /s
+    p \"done\"
+    detach
+    quit
+    " > script.gdb
 
-    gdb -batch -command script.gdb -p $server_pid &
-    sleep 5
-    # gdb will send SIGSTOP, spend some time loading debug info, and then send SIGCONT, wait for it (up to send_timeout, 300s)
-    time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
+        gdb -batch -command script.gdb -p $server_pid &
+        sleep 5
+        # gdb will send SIGSTOP, spend some time loading debug info, and then send SIGCONT, wait for it (up to send_timeout, 300s)
+        time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
 
-    # Check connectivity after we attach gdb, because it might cause the server
-    # to freeze, and the fuzzer will fail. In debug build, it can take a lot of time.
-    for _ in {1..180}
-    do
-        if clickhouse-client --query "select 1"
-        then
-            break
-        fi
-        sleep 1
-    done
-    kill -0 $server_pid # This checks that it is our server that is started and not some other one
+        # Check connectivity after we attach gdb, because it might cause the server
+        # to freeze, and the fuzzer will fail. In debug build, it can take a lot of time.
+        for _ in {1..180}
+        do
+            if clickhouse-client --query "select 1"
+            then
+                break
+            fi
+            sleep 1
+        done
+        kill -0 $server_pid # This checks that it is our server that is started and not some other one
+    fi
+
     echo 'Server started and responded.'
 
     setup_logs_replication
@@ -265,8 +271,13 @@ quit
     # The fuzzer_pid belongs to the timeout process.
     actual_fuzzer_pid=$(ps -o pid= --ppid "$fuzzer_pid")
 
-    echo "Attaching gdb to the fuzzer itself"
-    gdb -batch -command script.gdb -p $actual_fuzzer_pid &
+    if [[ "$IS_ASAN" = "1" ]];
+    then
+        echo "ASAN build detected. Not using gdb since it disables LeakSanitizer detections"
+    else
+        echo "Attaching gdb to the fuzzer itself"
+        gdb -batch -command script.gdb -p $actual_fuzzer_pid &
+    fi
 
     # Wait for the fuzzer to complete.
     # Note that the 'wait || ...' thing is required so that the script doesn't

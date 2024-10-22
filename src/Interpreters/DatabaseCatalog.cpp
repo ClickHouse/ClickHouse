@@ -1,5 +1,7 @@
+#include <algorithm>
 #include <string>
 #include <mutex>
+#include <utility>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TableNameHints.h>
@@ -17,6 +19,8 @@
 #include <IO/ReadHelpers.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Core/ServerSettings.h>
+#include <IO/SharedThreadPools.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Common/atomicRename.h>
@@ -26,7 +30,9 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
+#include <base/scope_guard.h>
 
+#include <base/isSharedPtrUnique.h>
 #include <boost/range/adaptor/map.hpp>
 
 #include "config.h"
@@ -44,13 +50,19 @@
 namespace CurrentMetrics
 {
     extern const Metric TablesToDropQueueSize;
-    extern const Metric DatabaseCatalogThreads;
-    extern const Metric DatabaseCatalogThreadsActive;
-    extern const Metric DatabaseCatalogThreadsScheduled;
 }
 
 namespace DB
 {
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 database_atomic_delay_before_drop_table_sec;
+    extern const ServerSettingsUInt64 database_catalog_drop_error_cooldown_sec;
+    extern const ServerSettingsUInt64 database_catalog_unused_dir_cleanup_period_sec;
+    extern const ServerSettingsUInt64 database_catalog_unused_dir_hide_timeout_sec;
+    extern const ServerSettingsUInt64 database_catalog_unused_dir_rm_timeout_sec;
+}
 
 namespace ErrorCodes
 {
@@ -185,12 +197,6 @@ StoragePtr TemporaryTableHolder::getTable() const
 
 void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 {
-    drop_delay_sec = getContext()->getConfigRef().getInt("database_atomic_delay_before_drop_table_sec", default_drop_delay_sec);
-    unused_dir_hide_timeout_sec = getContext()->getConfigRef().getInt64("database_catalog_unused_dir_hide_timeout_sec", unused_dir_hide_timeout_sec);
-    unused_dir_rm_timeout_sec = getContext()->getConfigRef().getInt64("database_catalog_unused_dir_rm_timeout_sec", unused_dir_rm_timeout_sec);
-    unused_dir_cleanup_period_sec = getContext()->getConfigRef().getInt64("database_catalog_unused_dir_cleanup_period_sec", unused_dir_cleanup_period_sec);
-    drop_error_cooldown_sec = getContext()->getConfigRef().getInt64("database_catalog_drop_error_cooldown_sec", drop_error_cooldown_sec);
-
     auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, getContext());
     attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
 }
@@ -198,7 +204,7 @@ void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 void DatabaseCatalog::createBackgroundTasks()
 {
     /// It has to be done before databases are loaded (to avoid a race condition on initialization)
-    if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER && unused_dir_cleanup_period_sec)
+    if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER && getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_cleanup_period_sec])
     {
         auto cleanup_task_holder
             = getContext()->getSchedulePool().createTask("DatabaseCatalogCleanupStoreDirectoryTask", [this]() { this->cleanupStoreDirectoryTask(); });
@@ -219,7 +225,7 @@ void DatabaseCatalog::startupBackgroundTasks()
     {
         (*cleanup_task)->activate();
         /// Do not start task immediately on server startup, it's not urgent.
-        (*cleanup_task)->scheduleAfter(unused_dir_hide_timeout_sec * 1000);
+        (*cleanup_task)->scheduleAfter(static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_hide_timeout_sec]) * 1000);
     }
 
     (*drop_task)->activate();
@@ -274,10 +280,12 @@ void DatabaseCatalog::shutdownImpl()
         database->shutdown();
     }
 
+    TablesMarkedAsDropped tables_marked_dropped_to_destroy;
     {
         std::lock_guard lock(tables_marked_dropped_mutex);
-        tables_marked_dropped.clear();
+        tables_marked_dropped.swap(tables_marked_dropped_to_destroy);
     }
+    tables_marked_dropped_to_destroy.clear();
 
     std::lock_guard lock(databases_mutex);
     for (const auto & db : databases)
@@ -519,10 +527,12 @@ void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
         }
-        else
-        {
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist. Maybe you meant {}?", backQuoteIfNeed(database_name), backQuoteIfNeed(names[0]));
-        }
+
+        throw Exception(
+            ErrorCodes::UNKNOWN_DATABASE,
+            "Database {} does not exist. Maybe you meant {}?",
+            backQuoteIfNeed(database_name),
+            backQuoteIfNeed(names[0]));
     }
 }
 
@@ -579,10 +589,12 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
         }
-        else
-        {
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist. Maybe you meant {}?", backQuoteIfNeed(database_name), backQuoteIfNeed(names[0]));
-        }
+
+        throw Exception(
+            ErrorCodes::UNKNOWN_DATABASE,
+            "Database {} does not exist. Maybe you meant {}?",
+            backQuoteIfNeed(database_name),
+            backQuoteIfNeed(names[0]));
     }
     if (check_empty)
     {
@@ -660,10 +672,12 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
         }
-        else
-        {
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist. Maybe you meant {}?", backQuoteIfNeed(database_name), backQuoteIfNeed(names[0]));
-        }
+
+        throw Exception(
+            ErrorCodes::UNKNOWN_DATABASE,
+            "Database {} does not exist. Maybe you meant {}?",
+            backQuoteIfNeed(database_name),
+            backQuoteIfNeed(names[0]));
     }
     return db;
 }
@@ -1031,15 +1045,12 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 
     LOG_INFO(log, "Found {} partially dropped tables. Will load them and retry removal.", dropped_metadata.size());
 
-    ThreadPool pool(CurrentMetrics::DatabaseCatalogThreads, CurrentMetrics::DatabaseCatalogThreadsActive, CurrentMetrics::DatabaseCatalogThreadsScheduled);
+    ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), "DropTables");
     for (const auto & elem : dropped_metadata)
     {
-        pool.scheduleOrThrowOnError([&]()
-        {
-            this->enqueueDroppedTableCleanup(elem.second, nullptr, elem.first);
-        });
+        runner([this, &elem](){ this->enqueueDroppedTableCleanup(elem.second, nullptr, elem.first); });
     }
-    pool.wait();
+    runner.waitForAllToFinishAndRethrowFirstError();
 }
 
 String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) const
@@ -1128,7 +1139,13 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
     }
     else
     {
-        tables_marked_dropped.push_back({table_id, table, dropped_metadata_path, drop_time + drop_delay_sec});
+        tables_marked_dropped.push_back
+        ({
+            table_id,
+            table,
+            dropped_metadata_path,
+            drop_time + static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_atomic_delay_before_drop_table_sec])
+        });
         if (first_async_drop_in_queue == tables_marked_dropped.end())
             --first_async_drop_in_queue;
     }
@@ -1141,7 +1158,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
         (*drop_task)->schedule();
 }
 
-void DatabaseCatalog::dequeueDroppedTableCleanup(StorageID table_id)
+void DatabaseCatalog::undropTable(StorageID table_id)
 {
     String latest_metadata_dropped_path;
     TableMarkedAsDropped dropped_table;
@@ -1195,7 +1212,7 @@ void DatabaseCatalog::dequeueDroppedTableCleanup(StorageID table_id)
 
     /// It's unsafe to create another instance while the old one exists
     /// We cannot wait on shared_ptr's refcount, so it's busy wait
-    while (!dropped_table.table.unique())
+    while (!isSharedPtrUnique(dropped_table.table))
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     dropped_table.table.reset();
 
@@ -1216,91 +1233,149 @@ void DatabaseCatalog::dequeueDroppedTableCleanup(StorageID table_id)
     LOG_INFO(log, "Table {} was successfully undropped.", dropped_table.table_id.getNameForLogs());
 }
 
+std::tuple<size_t, size_t> DatabaseCatalog::getDroppedTablesCountAndInuseCount()
+{
+    std::lock_guard lock(tables_marked_dropped_mutex);
+
+    size_t in_use_count = 0;
+    for (const auto & item : tables_marked_dropped)
+    {
+        bool in_use = item.table && !isSharedPtrUnique(item.table);
+        in_use_count += in_use;
+    }
+    return {tables_marked_dropped.size(), in_use_count};
+}
+
+time_t DatabaseCatalog::getMinDropTime()
+{
+    time_t min_drop_time = std::numeric_limits<time_t>::max();
+    for (const auto & item : tables_marked_dropped)
+    {
+        min_drop_time = std::min(min_drop_time, item.drop_time);
+    }
+    return min_drop_time;
+}
+
+std::vector<DatabaseCatalog::TablesMarkedAsDropped::iterator> DatabaseCatalog::getTablesToDrop()
+{
+    time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    decltype(getTablesToDrop()) result;
+
+    std::lock_guard lock(tables_marked_dropped_mutex);
+
+    for (auto it = tables_marked_dropped.begin(); it != tables_marked_dropped.end(); ++it)
+    {
+        bool in_use = it->table && !isSharedPtrUnique(it->table);
+        bool old_enough = it->drop_time <= current_time;
+        if (!in_use && old_enough)
+            result.emplace_back(it);
+    }
+
+    return result;
+}
+
+void DatabaseCatalog::rescheduleDropTableTask()
+{
+    std::lock_guard lock(tables_marked_dropped_mutex);
+
+    if (tables_marked_dropped.empty())
+        return;
+
+    if (first_async_drop_in_queue != tables_marked_dropped.begin())
+    {
+        (*drop_task)->scheduleAfter(0);
+        return;
+    }
+
+    time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    auto min_drop_time = getMinDropTime();
+    time_t schedule_after_ms = min_drop_time > current_time ? (min_drop_time - current_time) * 1000 : 0;
+
+    (*drop_task)->scheduleAfter(schedule_after_ms);
+}
+
+void DatabaseCatalog::dropTablesParallel(std::vector<DatabaseCatalog::TablesMarkedAsDropped::iterator> tables_to_drop)
+{
+    if (tables_to_drop.empty())
+        return;
+
+    ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), "DropTables");
+
+    for (const auto & item : tables_to_drop)
+    {
+        auto job = [&, table_iterator = item] ()
+        {
+            try
+            {
+                dropTableFinally(*table_iterator);
+
+                TableMarkedAsDropped table_to_delete_without_lock;
+                {
+                    std::lock_guard lock(tables_marked_dropped_mutex);
+
+                    if (first_async_drop_in_queue == table_iterator)
+                        ++first_async_drop_in_queue;
+
+                    [[maybe_unused]] auto removed = tables_marked_dropped_ids.erase(table_iterator->table_id.uuid);
+                    chassert(removed);
+
+                    table_to_delete_without_lock = std::move(*table_iterator);
+                    tables_marked_dropped.erase(table_iterator);
+
+                    wait_table_finally_dropped.notify_all();
+                }
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Cannot drop table " + table_iterator->table_id.getNameForLogs() +
+                                            ". Will retry later.");
+                {
+                    std::lock_guard lock(tables_marked_dropped_mutex);
+
+                    if (first_async_drop_in_queue == table_iterator)
+                        ++first_async_drop_in_queue;
+
+                    tables_marked_dropped.splice(tables_marked_dropped.end(), tables_marked_dropped, table_iterator);
+                    table_iterator->drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + getContext()->getServerSettings()[ServerSetting::database_catalog_drop_error_cooldown_sec];
+
+                    if (first_async_drop_in_queue == tables_marked_dropped.end())
+                        --first_async_drop_in_queue;
+                }
+            }
+        };
+
+        runner(std::move(job));
+    }
+
+    runner.waitForAllToFinishAndRethrowFirstError();
+}
+
 void DatabaseCatalog::dropTableDataTask()
 {
     /// Background task that removes data of tables which were marked as dropped by Atomic databases.
     /// Table can be removed when it's not used by queries and drop_delay_sec elapsed since it was marked as dropped.
 
-    bool need_reschedule = true;
-    /// Default reschedule time for the case when we are waiting for reference count to become 1.
-    size_t schedule_after_ms = reschedule_time_ms;
-    TableMarkedAsDropped table;
-    try
-    {
-        std::lock_guard lock(tables_marked_dropped_mutex);
-        if (tables_marked_dropped.empty())
-            return;
-        time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        time_t min_drop_time = std::numeric_limits<time_t>::max();
-        size_t tables_in_use_count = 0;
-        auto it = std::find_if(tables_marked_dropped.begin(), tables_marked_dropped.end(), [&](const auto & elem)
-        {
-            bool not_in_use = !elem.table || elem.table.unique();
-            bool old_enough = elem.drop_time <= current_time;
-            min_drop_time = std::min(min_drop_time, elem.drop_time);
-            tables_in_use_count += !not_in_use;
-            return not_in_use && old_enough;
-        });
-        if (it != tables_marked_dropped.end())
-        {
-            table = std::move(*it);
-            LOG_INFO(log, "Have {} tables in drop queue ({} of them are in use), will try drop {}",
-                     tables_marked_dropped.size(), tables_in_use_count, table.table_id.getNameForLogs());
-            if (first_async_drop_in_queue == it)
-                ++first_async_drop_in_queue;
-            tables_marked_dropped.erase(it);
-            /// Schedule the task as soon as possible, while there are suitable tables to drop.
-            schedule_after_ms = 0;
-        }
-        else if (current_time < min_drop_time)
-        {
-            /// We are waiting for drop_delay_sec to exceed, no sense to wakeup until min_drop_time.
-            /// If new table is added to the queue with ignore_delay flag, schedule() is called to wakeup the task earlier.
-            schedule_after_ms = (min_drop_time - current_time) * 1000;
-            LOG_TRACE(log, "Not found any suitable tables to drop, still have {} tables in drop queue ({} of them are in use). "
-                           "Will check again after {} seconds", tables_marked_dropped.size(), tables_in_use_count, min_drop_time - current_time);
-        }
-        need_reschedule = !tables_marked_dropped.empty();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, __PRETTY_FUNCTION__);
-    }
+    auto [drop_tables_count, drop_tables_in_use_count] = getDroppedTablesCountAndInuseCount();
 
-    if (table.table_id)
+    auto tables_to_drop = getTablesToDrop();
+
+    if (!tables_to_drop.empty())
     {
+        LOG_INFO(log, "Have {} tables in drop queue ({} of them are in use), will try drop {} tables",
+            drop_tables_count, drop_tables_in_use_count, tables_to_drop.size());
+
         try
         {
-            dropTableFinally(table);
-            std::lock_guard lock(tables_marked_dropped_mutex);
-            [[maybe_unused]] auto removed = tables_marked_dropped_ids.erase(table.table_id.uuid);
-            assert(removed);
+            dropTablesParallel(tables_to_drop);
         }
         catch (...)
         {
-            tryLogCurrentException(log, "Cannot drop table " + table.table_id.getNameForLogs() +
-                                        ". Will retry later.");
-            {
-                table.drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + drop_error_cooldown_sec;
-                std::lock_guard lock(tables_marked_dropped_mutex);
-                tables_marked_dropped.emplace_back(std::move(table));
-                if (first_async_drop_in_queue == tables_marked_dropped.end())
-                    --first_async_drop_in_queue;
-                /// If list of dropped tables was empty, schedule a task to retry deletion.
-                if (tables_marked_dropped.size() == 1)
-                {
-                    need_reschedule = true;
-                    schedule_after_ms = drop_error_cooldown_sec * 1000;
-                }
-            }
+            /// We don't re-throw exception, because we are in a background pool.
+            tryLogCurrentException(log, "Cannot drop tables. Will retry later.");
         }
-
-        wait_table_finally_dropped.notify_all();
     }
 
-    /// Do not schedule a task if there is no tables to drop
-    if (need_reschedule)
-        (*drop_task)->scheduleAfter(schedule_after_ms);
+    rescheduleDropTableTask();
 }
 
 void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
@@ -1314,7 +1389,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
     {
         String data_path = "store/" + getPathForUUID(table.table_id.uuid);
-        if (disk->isReadOnly() || !disk->exists(data_path))
+        if (disk->isReadOnly() || !disk->existsDirectory(data_path))
             continue;
 
         LOG_INFO(log, "Removing data directory {} of dropped table {} from disk {}", data_path, table.table_id.getNameForLogs(), disk_name);
@@ -1347,7 +1422,10 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
     });
 
     /// TSA doesn't support unique_lock
-    if (TSA_SUPPRESS_WARNING_FOR_READ(tables_marked_dropped_ids).contains(uuid))
+    const bool has_table = TSA_SUPPRESS_WARNING_FOR_READ(tables_marked_dropped_ids).contains(uuid);
+    LOG_DEBUG(log, "Done waiting for the table {} to be dropped. The outcome: {}", toString(uuid), has_table ? "table still exists" : "table dropped successfully");
+
+    if (has_table)
         throw Exception(ErrorCodes::UNFINISHED, "Did not finish dropping the table with UUID {} because the server is shutting down, "
                                                 "will finish after restart", uuid);
 }
@@ -1594,7 +1672,7 @@ void DatabaseCatalog::cleanupStoreDirectoryTask()
         for (auto it = disk->iterateDirectory("store"); it->isValid(); it->next())
         {
             String prefix = it->name();
-            bool expected_prefix_dir = disk->isDirectory(it->path()) && prefix.size() == 3 && isHexDigit(prefix[0]) && isHexDigit(prefix[1])
+            bool expected_prefix_dir = disk->existsDirectory(it->path()) && prefix.size() == 3 && isHexDigit(prefix[0]) && isHexDigit(prefix[1])
                 && isHexDigit(prefix[2]);
 
             if (!expected_prefix_dir)
@@ -1611,7 +1689,7 @@ void DatabaseCatalog::cleanupStoreDirectoryTask()
                 UUID uuid;
                 bool parsed = tryParse(uuid, uuid_str);
 
-                bool expected_dir = disk->isDirectory(jt->path()) && parsed && uuid != UUIDHelpers::Nil && uuid_str.starts_with(prefix);
+                bool expected_dir = disk->existsDirectory(jt->path()) && parsed && uuid != UUIDHelpers::Nil && uuid_str.starts_with(prefix);
 
                 if (!expected_dir)
                 {
@@ -1640,7 +1718,7 @@ void DatabaseCatalog::cleanupStoreDirectoryTask()
             LOG_TEST(log, "Nothing to clean up from store/ on disk {}", disk_name);
     }
 
-    (*cleanup_task)->scheduleAfter(unused_dir_cleanup_period_sec * 1000);
+    (*cleanup_task)->scheduleAfter(static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_cleanup_period_sec]) * 1000);
 }
 
 bool DatabaseCatalog::maybeRemoveDirectory(const String & disk_name, const DiskPtr & disk, const String & unused_dir)
@@ -1660,11 +1738,11 @@ bool DatabaseCatalog::maybeRemoveDirectory(const String & disk_name, const DiskP
             return false;
         }
 
-        time_t max_modification_time = std::max(st.st_atime, std::max(st.st_mtime, st.st_ctime));
+        time_t max_modification_time = std::max({st.st_atime, st.st_mtime, st.st_ctime});
         time_t current_time = time(nullptr);
         if (st.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO))
         {
-            if (current_time <= max_modification_time + unused_dir_hide_timeout_sec)
+            if (current_time <= max_modification_time + static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_hide_timeout_sec]))
                 return false;
 
             LOG_INFO(log, "Removing access rights for unused directory {} from disk {} (will remove it when timeout exceed)", unused_dir, disk_name);
@@ -1678,23 +1756,23 @@ bool DatabaseCatalog::maybeRemoveDirectory(const String & disk_name, const DiskP
 
             return true;
         }
-        else
-        {
-            if (!unused_dir_rm_timeout_sec)
-                return false;
 
-            if (current_time <= max_modification_time + unused_dir_rm_timeout_sec)
-                return false;
+        auto unused_dir_rm_timeout_sec = static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_rm_timeout_sec]);
 
-            LOG_INFO(log, "Removing unused directory {} from disk {}", unused_dir, disk_name);
+        if (!unused_dir_rm_timeout_sec)
+            return false;
 
-            /// We have to set these access rights to make recursive removal work
-            disk->chmod(unused_dir, S_IRWXU);
+        if (current_time <= max_modification_time + unused_dir_rm_timeout_sec)
+            return false;
 
-            disk->removeRecursive(unused_dir);
+        LOG_INFO(log, "Removing unused directory {} from disk {}", unused_dir, disk_name);
 
-            return true;
-        }
+        /// We have to set these access rights to make recursive removal work
+        disk->chmod(unused_dir, S_IRWXU);
+
+        disk->removeRecursive(unused_dir);
+
+        return true;
     }
     catch (...)
     {

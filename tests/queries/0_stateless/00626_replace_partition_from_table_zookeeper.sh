@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-s3-storage
+# Tags: zookeeper, no-object-storage, long
 
 # Because REPLACE PARTITION does not forces immediate removal of replaced data parts from local filesystem
 # (it tries to do it as quick as possible, but it still performed in separate thread asynchronously)
@@ -82,6 +82,8 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE src;"
 $CLICKHOUSE_CLIENT --query="CREATE TABLE src (p UInt64, k String, d UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY k;"
 $CLICKHOUSE_CLIENT --query="INSERT INTO src VALUES (1, '0', 1);"
 $CLICKHOUSE_CLIENT --query="INSERT INTO src VALUES (1, '1', 1);"
+$CLICKHOUSE_CLIENT --query="INSERT INTO src VALUES (3, '1', 2);"
+$CLICKHOUSE_CLIENT --query="INSERT INTO src VALUES (4, '1', 2);"
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO dst_r2 VALUES (1, '1', 2);"
 query_with_retry "ALTER TABLE dst_r2 ATTACH PARTITION 1 FROM src;"
@@ -90,6 +92,13 @@ $CLICKHOUSE_CLIENT --query="SYSTEM SYNC REPLICA dst_r1;"
 $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM dst_r1;"
 $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM dst_r2;"
 
+query_with_retry "ALTER TABLE dst_r2 ATTACH PARTITION ALL FROM src;"
+$CLICKHOUSE_CLIENT --query="SYSTEM SYNC REPLICA dst_r2;"
+$CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM dst_r2;"
+query_with_retry "ALTER TABLE dst_r2 DROP PARTITION 3;"
+$CLICKHOUSE_CLIENT --query="SYSTEM SYNC REPLICA dst_r2;"
+query_with_retry "ALTER TABLE dst_r2 DROP PARTITION 4;"
+$CLICKHOUSE_CLIENT --query="SYSTEM SYNC REPLICA dst_r2;"
 
 $CLICKHOUSE_CLIENT --query="SELECT 'REPLACE with fetch';"
 $CLICKHOUSE_CLIENT --query="DROP TABLE src;"

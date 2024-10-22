@@ -43,7 +43,7 @@ Result:
 
 ## mapFromArrays
 
-Creates a map from an array of keys and an array of values.
+Creates a map from an array or map of keys and an array or map of values.
 
 The function is a convenient alternative to syntax `CAST([...], 'Map(key_type, value_type)')`.
 For example, instead of writing
@@ -62,8 +62,8 @@ Alias: `MAP_FROM_ARRAYS(keys, values)`
 
 **Arguments**
 
-- `keys` —  Array of keys to create the map from. [Array(T)](../data-types/array.md) where `T` can be any type supported by [Map](../data-types/map.md) as key type.
-- `values`  - Array or map of values to create the map from. [Array](../data-types/array.md) or [Map](../data-types/map.md).
+- `keys` —  Array or map of keys to create the map from [Array](../data-types/array.md) or [Map](../data-types/map.md). If `keys` is an array, we accept `Array(Nullable(T))` or `Array(LowCardinality(Nullable(T)))` as its type as long as it doesn't contain NULL value.
+- `values`  - Array or map of values to create the map from [Array](../data-types/array.md) or [Map](../data-types/map.md).
 
 **Returned value**
 
@@ -96,6 +96,18 @@ Result:
 ```
 ┌─mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))─┐
 │ {1:('a',1),2:('b',2),3:('c',3)}                       │
+└───────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT mapFromArrays(map('a', 1, 'b', 2, 'c', 3), [1, 2, 3])
+```
+
+Result:
+
+```
+┌─mapFromArrays(map('a', 1, 'b', 2, 'c', 3), [1, 2, 3])─┐
+│ {('a',1):1,('b',2):2,('c',3):3}                       │
 └───────────────────────────────────────────────────────┘
 ```
 
@@ -600,7 +612,7 @@ mapApply(func, map)
 
 **Arguments**
 
-- `func`  - [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `func` — [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
 - `map` — [Map](../data-types/map.md).
 
 **Returned value**
@@ -831,7 +843,39 @@ SELECT mapSort((k, v) -> v, map('key2', 2, 'key3', 1, 'key1', 3)) AS map;
 └──────────────────────────────┘
 ```
 
-For more details see the [reference](../../sql-reference/functions/array-functions.md#array_functions-sort) for `arraySort` function.
+For more details see the [reference](../../sql-reference/functions/array-functions.md#array_functions-sort) for `arraySort` function. 
+
+## mapPartialSort
+
+Sorts the elements of a map in ascending order with additional `limit` argument allowing partial sorting. 
+If the `func` function is specified, the sorting order is determined by the result of the `func` function applied to the keys and values of the map.
+
+**Syntax**
+
+```sql
+mapPartialSort([func,] limit, map)
+```
+**Arguments**
+
+- `func` – Optional function to apply to the keys and values of the map. [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `limit` – Elements in range [1..limit] are sorted. [(U)Int](../data-types/int-uint.md).
+- `map` – Map to sort. [Map](../data-types/map.md).
+
+**Returned value**
+
+- Partially sorted map. [Map](../data-types/map.md).
+
+**Example**
+
+``` sql
+SELECT mapPartialSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2));
+```
+
+``` text
+┌─mapPartialSort(lambda(tuple(k, v), v), 2, map('k1', 3, 'k2', 1, 'k3', 2))─┐
+│ {'k2':1,'k3':2,'k1':3}                                                    │
+└───────────────────────────────────────────────────────────────────────────┘
+```
 
 ## mapReverseSort(\[func,\], map)
 
@@ -861,3 +905,35 @@ SELECT mapReverseSort((k, v) -> v, map('key2', 2, 'key3', 1, 'key1', 3)) AS map;
 ```
 
 For more details see function [arrayReverseSort](../../sql-reference/functions/array-functions.md#array_functions-reverse-sort).
+
+## mapPartialReverseSort
+
+Sorts the elements of a map in descending order with additional `limit` argument allowing partial sorting.
+If the `func` function is specified, the sorting order is determined by the result of the `func` function applied to the keys and values of the map.
+
+**Syntax**
+
+```sql
+mapPartialReverseSort([func,] limit, map)
+```
+**Arguments**
+
+- `func` – Optional function to apply to the keys and values of the map. [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `limit` – Elements in range [1..limit] are sorted. [(U)Int](../data-types/int-uint.md).
+- `map` – Map to sort. [Map](../data-types/map.md).
+
+**Returned value**
+
+- Partially sorted map. [Map](../data-types/map.md).
+
+**Example**
+
+``` sql
+SELECT mapPartialReverseSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2));
+```
+
+``` text
+┌─mapPartialReverseSort(lambda(tuple(k, v), v), 2, map('k1', 3, 'k2', 1, 'k3', 2))─┐
+│ {'k1':3,'k3':2,'k2':1}                                                           │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```

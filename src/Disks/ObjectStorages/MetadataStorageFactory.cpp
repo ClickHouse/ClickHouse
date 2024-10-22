@@ -1,10 +1,9 @@
+#include <Common/assert_cast.h>
 #include <Disks/ObjectStorages/MetadataStorageFactory.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorage.h>
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 #include <Disks/ObjectStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
-#endif
 #include <Disks/DiskLocal.h>
 #include <Interpreters/Context.h>
 
@@ -117,7 +116,7 @@ void registerPlainMetadataStorage(MetadataStorageFactory & factory)
         ObjectStoragePtr object_storage) -> MetadataStoragePtr
     {
         auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
-        return std::make_shared<MetadataStorageFromPlainObjectStorage>(object_storage, key_compatibility_prefix);
+        return std::make_shared<MetadataStorageFromPlainObjectStorage>(object_storage, key_compatibility_prefix, config.getUInt64(config_prefix + ".file_sizes_cache_size", 0));
     });
 }
 
@@ -131,11 +130,10 @@ void registerPlainRewritableMetadataStorage(MetadataStorageFactory & factory)
            ObjectStoragePtr object_storage) -> MetadataStoragePtr
         {
             auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
-            return std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, key_compatibility_prefix);
+            return std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, key_compatibility_prefix, config.getUInt64(config_prefix + ".file_sizes_cache_size", 0));
         });
 }
 
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFactory & factory)
 {
     factory.registerMetadataStorageType("web", [](
@@ -147,7 +145,6 @@ void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFactory & fa
         return std::make_shared<MetadataStorageFromStaticFilesWebServer>(assert_cast<const WebObjectStorage &>(*object_storage));
     });
 }
-#endif
 
 void registerMetadataStorages()
 {
@@ -155,9 +152,7 @@ void registerMetadataStorages()
     registerMetadataStorageFromDisk(factory);
     registerPlainMetadataStorage(factory);
     registerPlainRewritableMetadataStorage(factory);
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     registerMetadataStorageFromStaticFilesWebServer(factory);
-#endif
 }
 
 }

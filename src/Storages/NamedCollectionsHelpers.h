@@ -9,13 +9,13 @@
 #include <fmt/format.h>
 
 
+namespace DB
+{
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
-
-namespace DB
-{
 
 /// Helper function to get named collection for table engine.
 /// Table engines have collection name as first argument of ast and other arguments are key-value overrides.
@@ -133,7 +133,7 @@ void validateNamedCollection(
         {
              throw Exception(
                  ErrorCodes::BAD_ARGUMENTS,
-                 "Unexpected key {} in named collection. Required keys: {}, optional keys: {}",
+                 "Unexpected key `{}` in named collection. Required keys: {}, optional keys: {}",
                  backQuoteIfNeed(key), fmt::join(required_keys, ", "), fmt::join(optional_keys, ", "));
         }
     }

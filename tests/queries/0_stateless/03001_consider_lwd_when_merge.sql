@@ -7,12 +7,14 @@ SETTINGS max_bytes_to_merge_at_max_space_in_pool = 80000, exclude_deleted_rows_f
 INSERT INTO lwd_merge SELECT number FROM numbers(10000);
 INSERT INTO lwd_merge SELECT number FROM numbers(10000, 10000);
 
-OPTIMIZE TABLE lwd_merge;
+SET optimize_throw_if_noop = 1;
+
+OPTIMIZE TABLE lwd_merge; -- { serverError CANNOT_ASSIGN_OPTIMIZE }
 SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'lwd_merge' AND active = 1;
 
 DELETE FROM lwd_merge WHERE id % 10 > 0;
 
-OPTIMIZE TABLE lwd_merge;
+OPTIMIZE TABLE lwd_merge; -- { serverError CANNOT_ASSIGN_OPTIMIZE }
 SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'lwd_merge' AND active = 1;
 
 ALTER TABLE lwd_merge MODIFY SETTING exclude_deleted_rows_for_part_size_in_merge = 1;

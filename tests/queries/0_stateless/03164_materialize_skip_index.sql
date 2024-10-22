@@ -9,7 +9,7 @@ CREATE TABLE t_skip_index_insert
 )
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 SET materialize_skip_indexes_on_insert = 0;
 
 SYSTEM STOP MERGES t_skip_index_insert;

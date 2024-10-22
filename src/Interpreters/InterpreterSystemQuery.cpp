@@ -3,7 +3,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/ActionLock.h>
 #include <Common/typeid_cast.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/SymbolIndex.h>
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
@@ -12,6 +12,7 @@
 #include <Common/FailPoint.h>
 #include <Common/PageCache.h>
 #include <Common/HostResolvePool.h>
+#include <Core/ServerSettings.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>
@@ -51,6 +52,7 @@
 #include <Storages/Freeze.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageFile.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageURL.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
@@ -91,6 +93,16 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsSeconds receive_timeout;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsDouble cannot_allocate_thread_fault_injection_probability;
+}
 
 namespace ErrorCodes
 {
@@ -102,6 +114,7 @@ namespace ErrorCodes
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int ABORTED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 namespace ActionLocks
@@ -157,26 +170,25 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
 {
     if (action_type == ActionLocks::PartsMerge)
         return AccessType::SYSTEM_MERGES;
-    else if (action_type == ActionLocks::PartsFetch)
+    if (action_type == ActionLocks::PartsFetch)
         return AccessType::SYSTEM_FETCHES;
-    else if (action_type == ActionLocks::PartsSend)
+    if (action_type == ActionLocks::PartsSend)
         return AccessType::SYSTEM_REPLICATED_SENDS;
-    else if (action_type == ActionLocks::ReplicationQueue)
+    if (action_type == ActionLocks::ReplicationQueue)
         return AccessType::SYSTEM_REPLICATION_QUEUES;
-    else if (action_type == ActionLocks::DistributedSend)
+    if (action_type == ActionLocks::DistributedSend)
         return AccessType::SYSTEM_DISTRIBUTED_SENDS;
-    else if (action_type == ActionLocks::PartsTTLMerge)
+    if (action_type == ActionLocks::PartsTTLMerge)
         return AccessType::SYSTEM_TTL_MERGES;
-    else if (action_type == ActionLocks::PartsMove)
+    if (action_type == ActionLocks::PartsMove)
         return AccessType::SYSTEM_MOVES;
-    else if (action_type == ActionLocks::PullReplicationLog)
+    if (action_type == ActionLocks::PullReplicationLog)
         return AccessType::SYSTEM_PULLING_REPLICATION_LOG;
-    else if (action_type == ActionLocks::Cleanup)
+    if (action_type == ActionLocks::Cleanup)
         return AccessType::SYSTEM_CLEANUP;
-    else if (action_type == ActionLocks::ViewRefresh)
+    if (action_type == ActionLocks::ViewRefresh)
         return AccessType::SYSTEM_VIEWS;
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type: {}", std::to_string(action_type));
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type: {}", std::to_string(action_type));
 }
 
 constexpr std::string_view table_is_not_replicated = "Table {} is not replicated";
@@ -368,9 +380,12 @@ BlockIO InterpreterSystemQuery::execute()
             system_context->clearMMappedFileCache();
             break;
         case Type::DROP_QUERY_CACHE:
+        {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
-            getContext()->clearQueryCache();
+            getContext()->clearQueryCache(query.query_cache_tag);
             break;
+        }
+
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
 #if USE_EMBEDDED_COMPILER
             getContext()->checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
@@ -662,13 +677,20 @@ BlockIO InterpreterSystemQuery::execute()
             startStopAction(ActionLocks::ViewRefresh, false);
             break;
         case Type::REFRESH_VIEW:
-            getRefreshTask()->run();
+            for (const auto & task : getRefreshTasks())
+                task->run();
+            break;
+        case Type::WAIT_VIEW:
+            for (const auto & task : getRefreshTasks())
+                task->wait();
             break;
         case Type::CANCEL_VIEW:
-            getRefreshTask()->cancel();
+            for (const auto & task : getRefreshTasks())
+                task->cancel();
             break;
         case Type::TEST_VIEW:
-            getRefreshTask()->setFakeTime(query.fake_time_for_view);
+            for (const auto & task : getRefreshTasks())
+                task->setFakeTime(query.fake_time_for_view);
             break;
         case Type::DROP_REPLICA:
             dropReplica(query);
@@ -709,14 +731,8 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::FLUSH_LOGS:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
-
-            auto logs = getContext()->getSystemLogs();
-            std::vector<std::function<void()>> commands;
-            commands.reserve(logs.size());
-            for (auto * system_log : logs)
-                commands.emplace_back([system_log] { system_log->flush(true); });
-
-            executeCommandsAndThrowIfError(commands);
+            auto system_logs = getContext()->getSystemLogs();
+            system_logs.flush(true);
             break;
         }
         case Type::STOP_LISTEN:
@@ -746,7 +762,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::START_THREAD_FUZZER:
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::start();
-            CannotAllocateThreadFaultInjector::setFaultProbability(getContext()->getServerSettings().cannot_allocate_thread_fault_injection_probability);
+            CannotAllocateThreadFaultInjector::setFaultProbability(getContext()->getServerSettings()[ServerSetting::cannot_allocate_thread_fault_injection_probability]);
             break;
         case Type::UNFREEZE:
         {
@@ -865,7 +881,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     table->flushAndShutdown();
     {
         /// If table was already dropped by anyone, an exception will be thrown
-        auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
+        auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
         create_ast = database->getCreateTableQuery(replica.table_name, getContext());
 
         database->detachTable(system_context, replica.table_name);
@@ -880,7 +896,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     create.attach = true;
 
     auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, LoadingStrictnessLevel::ATTACH);
-    auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
+    auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
     auto data_path = database->getTableDataPath(create);
 
     table = StorageFactory::instance().get(create,
@@ -932,7 +948,7 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
     if (replica_names.empty())
         return;
 
-    size_t threads = std::min(static_cast<size_t>(getNumberOfPhysicalCPUCores()), replica_names.size());
+    size_t threads = std::min(static_cast<size_t>(getNumberOfCPUCoresToUse()), replica_names.size());
     LOG_DEBUG(log, "Will restart {} replicas using {} threads", replica_names.size(), threads);
     ThreadPool pool(CurrentMetrics::RestartReplicaThreads, CurrentMetrics::RestartReplicaThreadsActive, CurrentMetrics::RestartReplicaThreadsScheduled, threads);
 
@@ -1000,7 +1016,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
                 {
                     ReplicatedTableStatus status;
                     storage_replicated->getStatus(status);
-                    if (status.zookeeper_path == query.replica_zk_path)
+                    if (status.zookeeper_info.path == query.replica_zk_path)
                         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED,
                                         "There is a local table {}, which has the same table path in ZooKeeper. "
                                         "Please check the path in query. "
@@ -1023,7 +1039,10 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         if (zookeeper->exists(remote_replica_path + "/is_active"))
             throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Can't remove replica: {}, because it's active", query.replica);
 
-        StorageReplicatedMergeTree::dropReplica(zookeeper, query.replica_zk_path, query.replica, log);
+        TableZnodeInfo info;
+        info.path = query.replica_zk_path;
+        info.replica_name = query.replica;
+        StorageReplicatedMergeTree::dropReplica(zookeeper, info, log);
         LOG_INFO(log, "Dropped replica {}", remote_replica_path);
     }
     else
@@ -1040,12 +1059,12 @@ bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const Stora
     storage_replicated->getStatus(status);
 
     /// Do not allow to drop local replicas and active remote replicas
-    if (query.replica == status.replica_name)
+    if (query.replica == status.zookeeper_info.replica_name)
         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED,
                         "We can't drop local replica, please use `DROP TABLE` if you want "
                         "to clean the data and drop this replica");
 
-    storage_replicated->dropReplica(status.zookeeper_path, query.replica, log);
+    storage_replicated->dropReplica(query.replica, log);
     LOG_TRACE(log, "Dropped replica {} of {}", query.replica, table->getStorageID().getNameForLogs());
 
     return true;
@@ -1122,26 +1141,47 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid query");
 }
 
+bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sync_replica_mode, const std::unordered_set<String> & src_replicas, ContextPtr context_)
+ {
+    auto table_id_ = table->getStorageID();
+
+    /// If materialized view, sync its target table.
+    for (int i = 0;; ++i)
+    {
+        if (i >= 100)
+            throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "Materialized view targets form a cycle or a very long chain");
+
+        if (auto * storage_mv = dynamic_cast<StorageMaterializedView *>(table.get()))
+            table = storage_mv->getTargetTable();
+        else
+            break;
+    }
+
+    if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
+    {
+        auto log = getLogger("InterpreterSystemQuery");
+        LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for current last entry to be processed");
+        auto sync_timeout = context_->getSettingsRef()[Setting::receive_timeout].totalMilliseconds();
+        if (!storage_replicated->waitForProcessingQueue(sync_timeout, sync_replica_mode, src_replicas))
+        {
+            LOG_ERROR(log, "SYNC REPLICA {}: Timed out.", table_id_.getNameForLogs());
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC REPLICA {}: command timed out. " \
+                    "See the 'receive_timeout' setting", table_id_.getNameForLogs());
+        }
+        LOG_TRACE(log, "SYNC REPLICA {}: OK", table_id_.getNameForLogs());
+    }
+    else
+        return false;
+
+    return true;
+}
+
 void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
 {
     getContext()->checkAccess(AccessType::SYSTEM_SYNC_REPLICA, table_id);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
-
-    if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
-    {
-        LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for current last entry to be processed");
-        auto sync_timeout = getContext()->getSettingsRef().receive_timeout.totalMilliseconds();
-
-        std::unordered_set<std::string> replicas(query.src_replicas.begin(), query.src_replicas.end());
-        if (!storage_replicated->waitForProcessingQueue(sync_timeout, query.sync_replica_mode, replicas))
-        {
-            LOG_ERROR(log, "SYNC REPLICA {}: Timed out.", table_id.getNameForLogs());
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC REPLICA {}: command timed out. " \
-                    "See the 'receive_timeout' setting", table_id.getNameForLogs());
-        }
-        LOG_TRACE(log, "SYNC REPLICA {}: OK", table_id.getNameForLogs());
-    }
-    else
+    std::unordered_set<std::string> replicas(query.src_replicas.begin(), query.src_replicas.end());
+    if (!trySyncReplica(table, query.sync_replica_mode, replicas, getContext()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
 }
 
@@ -1208,7 +1248,7 @@ void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
     if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get()))
     {
         LOG_TRACE(log, "Synchronizing entries in the database replica's (name: {}) queue with the log", database_name);
-        if (!ptr->waitForReplicaToProcessAllEntries(getContext()->getSettingsRef().receive_timeout.totalMilliseconds()))
+        if (!ptr->waitForReplicaToProcessAllEntries(getContext()->getSettingsRef()[Setting::receive_timeout].totalMilliseconds()))
         {
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC DATABASE REPLICA {}: database is readonly or command timed out. " \
                     "See the 'receive_timeout' setting", database_name);
@@ -1247,15 +1287,15 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SYSTEM RESTART DISK is not supported");
 }
 
-RefreshTaskHolder InterpreterSystemQuery::getRefreshTask()
+RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
 {
     auto ctx = getContext();
     ctx->checkAccess(AccessType::SYSTEM_VIEWS);
-    auto task = ctx->getRefreshSet().getTask(table_id);
-    if (!task)
+    auto tasks = ctx->getRefreshSet().findTasks(table_id);
+    if (tasks.empty())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Refreshable view {} doesn't exist", table_id.getNameForLogs());
-    return task;
+    return tasks;
 }
 
 
@@ -1411,6 +1451,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         }
         case Type::REFRESH_VIEW:
+        case Type::WAIT_VIEW:
         case Type::START_VIEW:
         case Type::START_VIEWS:
         case Type::STOP_VIEW:

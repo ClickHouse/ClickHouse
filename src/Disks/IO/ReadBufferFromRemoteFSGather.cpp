@@ -11,20 +11,6 @@
 
 using namespace DB;
 
-
-namespace
-{
-    bool withFileCache(const ReadSettings & settings)
-    {
-        return settings.remote_fs_cache && settings.enable_filesystem_cache;
-    }
-
-    bool withPageCache(const ReadSettings & settings, bool with_file_cache)
-    {
-        return settings.page_cache && !with_file_cache && settings.use_page_cache_for_disks_without_file_cache;
-    }
-}
-
 namespace DB
 {
 namespace ErrorCodes
@@ -35,7 +21,7 @@ namespace ErrorCodes
 size_t chooseBufferSizeForRemoteReading(const DB::ReadSettings & settings, size_t file_size)
 {
     /// Only when cache is used we could download bigger portions of FileSegments than what we actually gonna read within particular task.
-    if (!withFileCache(settings))
+    if (!settings.enable_filesystem_cache)
         return settings.remote_fs_buffer_size;
 
     /// Buffers used for prefetch and pre-download better to have enough size, but not bigger than the whole file.
@@ -45,7 +31,6 @@ size_t chooseBufferSizeForRemoteReading(const DB::ReadSettings & settings, size_
 ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     ReadBufferCreator && read_buffer_creator_,
     const StoredObjects & blobs_to_read_,
-    const std::string & cache_path_prefix_,
     const ReadSettings & settings_,
     std::shared_ptr<FilesystemCacheLog> cache_log_,
     bool use_external_buffer_)
@@ -54,12 +39,10 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     , settings(settings_)
     , blobs_to_read(blobs_to_read_)
     , read_buffer_creator(std::move(read_buffer_creator_))
-    , cache_path_prefix(cache_path_prefix_)
     , cache_log(settings.enable_filesystem_cache_log ? cache_log_ : nullptr)
     , query_id(CurrentThread::getQueryId())
     , use_external_buffer(use_external_buffer_)
-    , with_file_cache(withFileCache(settings))
-    , with_page_cache(withPageCache(settings, with_file_cache))
+    , with_file_cache(settings.enable_filesystem_cache)
     , log(getLogger("ReadBufferFromRemoteFSGather"))
 {
     if (!blobs_to_read.empty())
@@ -74,42 +57,7 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
     }
 
     current_object = object;
-    const auto & object_path = object.remote_path;
-
-    std::unique_ptr<ReadBufferFromFileBase> buf;
-
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
-    if (with_file_cache)
-    {
-        auto cache_key = settings.remote_fs_cache->createKeyForPath(object_path);
-        buf = std::make_unique<CachedOnDiskReadBufferFromFile>(
-            object_path,
-            cache_key,
-            settings.remote_fs_cache,
-            FileCache::getCommonUser(),
-            [=, this]() { return read_buffer_creator(/* restricted_seek */true, object); },
-            settings,
-            query_id,
-            object.bytes_size,
-            /* allow_seeks */false,
-            /* use_external_buffer */true,
-            /* read_until_position */std::nullopt,
-            cache_log);
-    }
-#endif
-
-    /// Can't wrap CachedOnDiskReadBufferFromFile in CachedInMemoryReadBufferFromFile because the
-    /// former doesn't support seeks.
-    if (with_page_cache && !buf)
-    {
-        auto inner = read_buffer_creator(/* restricted_seek */false, object);
-        auto cache_key = FileChunkAddress { .path = cache_path_prefix + object_path };
-        buf = std::make_unique<CachedInMemoryReadBufferFromFile>(
-            cache_key, settings.page_cache, std::move(inner), settings);
-    }
-
-    if (!buf)
-        buf = read_buffer_creator(/* restricted_seek */true, object);
+    auto buf = read_buffer_creator(/* restricted_seek */true, object);
 
     if (read_until_position > start_offset && read_until_position < start_offset + object.bytes_size)
         buf->setReadUntilPosition(read_until_position - start_offset);

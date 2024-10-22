@@ -6,6 +6,7 @@
 #include <Access/ReplicatedAccessStorage.h>
 #include <Access/User.h>
 #include <Common/logger_useful.h>
+#include <Core/ServerSettings.h>
 #include <Interpreters/Access/InterpreterSetRoleQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -23,6 +24,11 @@
 
 namespace DB
 {
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 max_authentication_methods_per_user;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -33,15 +39,18 @@ namespace
     void updateUserFromQueryImpl(
         User & user,
         const ASTCreateUserQuery & query,
-        const std::optional<AuthenticationData> auth_data,
+        const std::vector<AuthenticationData> authentication_methods,
         const std::shared_ptr<ASTUserNameWithHost> & override_name,
         const std::optional<RolesOrUsersSet> & override_default_roles,
         const std::optional<SettingsProfileElements> & override_settings,
         const std::optional<RolesOrUsersSet> & override_grantees,
         const std::optional<time_t> & valid_until,
+        bool reset_authentication_methods,
+        bool replace_authentication_methods,
         bool allow_implicit_no_password,
         bool allow_no_password,
-        bool allow_plaintext_password)
+        bool allow_plaintext_password,
+        std::size_t max_number_of_authentication_methods)
     {
         if (override_name)
             user.setName(override_name->toString());
@@ -50,25 +59,77 @@ namespace
         else if (query.names->size() == 1)
             user.setName(query.names->front()->toString());
 
-        if (!query.attach && !query.alter && !auth_data && !allow_implicit_no_password)
+        if (!query.attach && !query.alter && authentication_methods.empty() && !allow_implicit_no_password)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Authentication type NO_PASSWORD must "
                             "be explicitly specified, check the setting allow_implicit_no_password "
                             "in the server configuration");
 
-        if (auth_data)
-            user.auth_data = *auth_data;
-
-        if (auth_data || !query.alter)
+        // if user does not have an authentication method and it has not been specified in the query,
+        // add a default one
+        if (user.authentication_methods.empty() && authentication_methods.empty())
         {
-            auto auth_type = user.auth_data.getType();
-            if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
-                ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD)  && !allow_plaintext_password))
+            user.authentication_methods.emplace_back();
+        }
+
+        // 1. an IDENTIFIED WITH will drop existing authentication methods in favor of new ones.
+        if (replace_authentication_methods)
+        {
+            user.authentication_methods.clear();
+        }
+
+        // drop existing ones and keep the most recent
+        if (reset_authentication_methods)
+        {
+            auto backup_authentication_method = user.authentication_methods.back();
+            user.authentication_methods.clear();
+            user.authentication_methods.emplace_back(backup_authentication_method);
+        }
+
+        // max_number_of_authentication_methods == 0 means unlimited
+        if (!authentication_methods.empty() && max_number_of_authentication_methods != 0)
+        {
+            // we only check if user exceeds the allowed quantity of authentication methods in case the create/alter query includes
+            // authentication information. Otherwise, we can bypass this check to avoid blocking non-authentication related alters.
+            auto number_of_authentication_methods = user.authentication_methods.size() + authentication_methods.size();
+            if (number_of_authentication_methods > max_number_of_authentication_methods)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Authentication type {} is not allowed, check the setting allow_{} in the server configuration",
-                                toString(auth_type),
-                                AuthenticationTypeInfo::get(auth_type).name);
+                                "User can not be created/updated because it exceeds the allowed quantity of authentication methods per user. "
+                                "Check the `max_authentication_methods_per_user` setting");
+            }
+        }
+
+        for (const auto & authentication_method : authentication_methods)
+        {
+            user.authentication_methods.emplace_back(authentication_method);
+        }
+
+        bool has_no_password_authentication_method = std::find_if(user.authentication_methods.begin(),
+                                                                  user.authentication_methods.end(),
+                                                                  [](const AuthenticationData & authentication_data)
+                                                                  {
+                                                                      return authentication_data.getType() == AuthenticationType::NO_PASSWORD;
+                                                                  }) != user.authentication_methods.end();
+
+        if (has_no_password_authentication_method && user.authentication_methods.size() > 1)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Authentication method 'no_password' cannot co-exist with other authentication methods");
+        }
+
+        if (!query.alter)
+        {
+            for (const auto & authentication_method : user.authentication_methods)
+            {
+                auto auth_type = authentication_method.getType();
+                if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
+                    ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD)  && !allow_plaintext_password))
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Authentication type {} is not allowed, check the setting allow_{} in the server configuration",
+                                    toString(auth_type),
+                                    AuthenticationTypeInfo::get(auth_type).name);
+                }
             }
         }
 
@@ -114,6 +175,34 @@ namespace
         else if (query.grantees)
             user.grantees = *query.grantees;
     }
+
+    time_t getValidUntilFromAST(ASTPtr valid_until, ContextPtr context)
+    {
+        if (context)
+            valid_until = evaluateConstantExpressionAsLiteral(valid_until, context);
+
+        const String valid_until_str = checkAndGetLiteralArgument<String>(valid_until, "valid_until");
+
+        if (valid_until_str == "infinity")
+            return 0;
+
+        time_t time = 0;
+        ReadBufferFromString in(valid_until_str);
+
+        if (context)
+        {
+            const auto & time_zone = DateLUT::instance("");
+            const auto & utc_time_zone = DateLUT::instance("UTC");
+
+            parseDateTimeBestEffort(time, in, time_zone, utc_time_zone);
+        }
+        else
+        {
+            readDateTimeText(time, in);
+        }
+
+        return time;
+    }
 }
 
 BlockIO InterpreterCreateUserQuery::execute()
@@ -128,29 +217,18 @@ BlockIO InterpreterCreateUserQuery::execute()
     bool no_password_allowed = access_control.isNoPasswordAllowed();
     bool plaintext_password_allowed = access_control.isPlaintextPasswordAllowed();
 
-    std::optional<AuthenticationData> auth_data;
-    if (query.auth_data)
-        auth_data = AuthenticationData::fromAST(*query.auth_data, getContext(), !query.attach);
+    std::vector<AuthenticationData> authentication_methods;
+    if (!query.authentication_methods.empty())
+    {
+        for (const auto & authentication_method_ast : query.authentication_methods)
+        {
+            authentication_methods.push_back(AuthenticationData::fromAST(*authentication_method_ast, getContext(), !query.attach));
+        }
+    }
 
     std::optional<time_t> valid_until;
     if (query.valid_until)
-    {
-        const ASTPtr valid_until_literal = evaluateConstantExpressionAsLiteral(query.valid_until, getContext());
-        const String valid_until_str = checkAndGetLiteralArgument<String>(valid_until_literal, "valid_until");
-
-        time_t time = 0;
-
-        if (valid_until_str != "infinity")
-        {
-            const auto & time_zone = DateLUT::instance("");
-            const auto & utc_time_zone = DateLUT::instance("UTC");
-
-            ReadBufferFromString in(valid_until_str);
-            parseDateTimeBestEffort(time, in, time_zone, utc_time_zone);
-        }
-
-        valid_until = time;
-    }
+        valid_until = getValidUntilFromAST(query.valid_until, getContext());
 
     std::optional<RolesOrUsersSet> default_roles_from_query;
     if (query.default_roles)
@@ -191,12 +269,14 @@ BlockIO InterpreterCreateUserQuery::execute()
         if (query.grantees)
             grantees_from_query = RolesOrUsersSet{*query.grantees, access_control};
 
-        auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
+        auto update_func = [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
         {
             auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
             updateUserFromQueryImpl(
-                *updated_user, query, auth_data, {}, default_roles_from_query, settings_from_query, grantees_from_query,
-                valid_until, implicit_no_password_allowed, no_password_allowed, plaintext_password_allowed);
+                *updated_user, query, authentication_methods, {}, default_roles_from_query, settings_from_query, grantees_from_query,
+                valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
+                implicit_no_password_allowed, no_password_allowed,
+                plaintext_password_allowed, getContext()->getServerSettings()[ServerSetting::max_authentication_methods_per_user]);
             return updated_user;
         };
 
@@ -215,8 +295,10 @@ BlockIO InterpreterCreateUserQuery::execute()
         {
             auto new_user = std::make_shared<User>();
             updateUserFromQueryImpl(
-                *new_user, query, auth_data, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
-                valid_until, implicit_no_password_allowed, no_password_allowed, plaintext_password_allowed);
+                *new_user, query, authentication_methods, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
+                valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
+                implicit_no_password_allowed, no_password_allowed,
+                plaintext_password_allowed, getContext()->getServerSettings()[ServerSetting::max_authentication_methods_per_user]);
             new_users.emplace_back(std::move(new_user));
         }
 
@@ -240,7 +322,7 @@ BlockIO InterpreterCreateUserQuery::execute()
         if (query.grantees)
         {
             RolesOrUsersSet grantees_from_query = RolesOrUsersSet{*query.grantees, access_control};
-            access_control.update(ids, [&](const AccessEntityPtr & entity) -> AccessEntityPtr
+            access_control.update(ids, [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
             {
                 auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
                 updated_user->grantees = grantees_from_query;
@@ -253,13 +335,41 @@ BlockIO InterpreterCreateUserQuery::execute()
 }
 
 
-void InterpreterCreateUserQuery::updateUserFromQuery(User & user, const ASTCreateUserQuery & query, bool allow_no_password, bool allow_plaintext_password)
+void InterpreterCreateUserQuery::updateUserFromQuery(
+    User & user,
+    const ASTCreateUserQuery & query,
+    bool allow_no_password,
+    bool allow_plaintext_password,
+    std::size_t max_number_of_authentication_methods)
 {
-    std::optional<AuthenticationData> auth_data;
-    if (query.auth_data)
-        auth_data = AuthenticationData::fromAST(*query.auth_data, {}, !query.attach);
+    std::vector<AuthenticationData> authentication_methods;
+    if (!query.authentication_methods.empty())
+    {
+        for (const auto & authentication_method_ast : query.authentication_methods)
+        {
+            authentication_methods.emplace_back(AuthenticationData::fromAST(*authentication_method_ast, {}, !query.attach));
+        }
+    }
 
-    updateUserFromQueryImpl(user, query, auth_data, {}, {}, {}, {}, {}, allow_no_password, allow_plaintext_password, true);
+    std::optional<time_t> valid_until;
+    if (query.valid_until)
+        valid_until = getValidUntilFromAST(query.valid_until, {});
+
+    updateUserFromQueryImpl(
+        user,
+        query,
+        authentication_methods,
+        {},
+        {},
+        {},
+        {},
+        valid_until,
+        query.reset_authentication_methods_to_new,
+        query.replace_authentication_methods,
+        allow_no_password,
+        allow_plaintext_password,
+        true,
+        max_number_of_authentication_methods);
 }
 
 void registerInterpreterCreateUserQuery(InterpreterFactory & factory)

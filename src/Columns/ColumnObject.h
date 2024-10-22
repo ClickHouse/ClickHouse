@@ -1,265 +1,276 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-#include <Core/Field.h>
-#include <Core/Names.h>
-#include <DataTypes/Serializations/SubcolumnsTree.h>
-#include <Common/PODArray.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnString.h>
 
 #include <DataTypes/IDataType.h>
+#include <DataTypes/Serializations/SerializationDynamic.h>
+#include <Formats/FormatSettings.h>
+#include <Common/StringHashForHeterogeneousLookup.h>
+#include <Common/WeakHash.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
-/// Info that represents a scalar or array field in a decomposed view.
-/// It allows to recreate field with different number
-/// of dimensions or nullability.
-struct FieldInfo
-{
-    /// The common type of of all scalars in field.
-    DataTypePtr scalar_type;
-
-    /// Do we have NULL scalar in field.
-    bool have_nulls;
-
-    /// If true then we have scalars with different types in array and
-    /// we need to convert scalars to the common type.
-    bool need_convert;
-
-    /// Number of dimension in array. 0 if field is scalar.
-    size_t num_dimensions;
-
-    /// If true then this field is an array of variadic dimension field
-    /// and we need to normalize the dimension
-    bool need_fold_dimension;
-};
-
-FieldInfo getFieldInfo(const Field & field);
-
-/** A column that represents object with dynamic set of subcolumns.
- *  Subcolumns are identified by paths in document and are stored in
- *  a trie-like structure. ColumnObject is not suitable for writing into tables
- *  and it should be converted to Tuple with fixed set of subcolumns before that.
- */
 class ColumnObject final : public COWHelper<IColumnHelper<ColumnObject>, ColumnObject>
 {
 public:
-    /** Class that represents one subcolumn.
-     * It stores values in several parts of column
-     * and keeps current common type of all parts.
-     * We add a new column part with a new type, when we insert a field,
-     * which can't be converted to the current common type.
-     * After insertion of all values subcolumn should be finalized
-     * for writing and other operations.
-     */
-    class Subcolumn
+    struct Statistics
     {
-    public:
-        Subcolumn() = default;
-        Subcolumn(size_t size_, bool is_nullable_);
-        Subcolumn(MutableColumnPtr && data_, bool is_nullable_);
-
-        size_t size() const;
-        size_t byteSize() const;
-        size_t allocatedBytes() const;
-        void get(size_t n, Field & res) const;
-
-        bool isFinalized() const;
-        const DataTypePtr & getLeastCommonType() const { return least_common_type.get(); }
-        const DataTypePtr & getLeastCommonTypeBase() const { return least_common_type.getBase(); }
-        size_t getNumberOfDimensions() const { return least_common_type.getNumberOfDimensions(); }
-
-        /// Checks the consistency of column's parts stored in @data.
-        void checkTypes() const;
-
-        /// Inserts a field, which scalars can be arbitrary, but number of
-        /// dimensions should be consistent with current common type.
-        void insert(Field field);
-        void insert(Field field, FieldInfo info);
-
-        void insertDefault();
-        void insertManyDefaults(size_t length);
-        void insertRangeFrom(const Subcolumn & src, size_t start, size_t length);
-        void popBack(size_t n);
-
-        Subcolumn cut(size_t start, size_t length) const;
-
-        /// Converts all column's parts to the common type and
-        /// creates a single column that stores all values.
-        void finalize();
-
-        /// Returns last inserted field.
-        Field getLastField() const;
-
-        FieldInfo getFieldInfo() const;
-
-        /// Recreates subcolumn with default scalar values and keeps sizes of arrays.
-        /// Used to create columns of type Nested with consistent array sizes.
-        Subcolumn recreateWithDefaultValues(const FieldInfo & field_info) const;
-
-        /// Returns single column if subcolumn in finalizes.
-        /// Otherwise -- undefined behaviour.
-        IColumn & getFinalizedColumn();
-        const IColumn & getFinalizedColumn() const;
-        const ColumnPtr & getFinalizedColumnPtr() const;
-
-        const std::vector<WrappedPtr> & getData() const { return data; }
-        size_t getNumberOfDefaultsInPrefix() const { return num_of_defaults_in_prefix; }
-
-        friend class ColumnObject;
-
-    private:
-        class LeastCommonType
+        enum class Source
         {
-        public:
-            LeastCommonType();
-            explicit LeastCommonType(DataTypePtr type_);
-
-            const DataTypePtr & get() const { return type; }
-            const DataTypePtr & getBase() const { return base_type; }
-            size_t getNumberOfDimensions() const { return num_dimensions; }
-
-        private:
-            DataTypePtr type;
-            DataTypePtr base_type;
-            size_t num_dimensions = 0;
+            READ,  /// Statistics were loaded into column during reading from MergeTree.
+            MERGE, /// Statistics were calculated during merge of several MergeTree parts.
         };
 
-        void addNewColumnPart(DataTypePtr type);
+        explicit Statistics(Source source_) : source(source_) {}
 
-        /// Current least common type of all values inserted to this subcolumn.
-        LeastCommonType least_common_type;
-
-        /// If true then common type type of subcolumn is Nullable
-        /// and default values are NULLs.
-        bool is_nullable = false;
-
-        /// Parts of column. Parts should be in increasing order in terms of subtypes/supertypes.
-        /// That means that the least common type for i-th prefix is the type of i-th part
-        /// and it's the supertype for all type of column from 0 to i-1.
-        std::vector<WrappedPtr> data;
-
-        /// Until we insert any non-default field we don't know further
-        /// least common type and we count number of defaults in prefix,
-        /// which will be converted to the default type of final common type.
-        size_t num_of_defaults_in_prefix = 0;
-
-        size_t num_rows = 0;
+        /// Source of the statistics.
+        Source source;
+        /// Statistics for dynamic paths: (path) -> (total number of not-null values).
+        std::unordered_map<String, size_t> dynamic_paths_statistics;
+        /// Statistics for paths in shared data: path) -> (total number of not-null values).
+        /// We don't store statistics for all paths in shared data but only for some subset of them
+        /// (is 10000 a good limit? It should not be expensive to store 10000 paths per part)
+        static const size_t MAX_SHARED_DATA_STATISTICS_SIZE = 10000;
+        std::unordered_map<String, size_t, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal> shared_data_paths_statistics;
     };
 
-    using Subcolumns = SubcolumnsTree<Subcolumn>;
+    using StatisticsPtr = std::shared_ptr<const Statistics>;
 
 private:
-    /// If true then all subcolumns are nullable.
-    const bool is_nullable;
+    friend class COWHelper<IColumnHelper<ColumnObject>, ColumnObject>;
 
-    Subcolumns subcolumns;
-    size_t num_rows;
+    ColumnObject(std::unordered_map<String, MutableColumnPtr> typed_paths_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
+    ColumnObject(
+        std::unordered_map<String, MutableColumnPtr> typed_paths_,
+        std::unordered_map<String, MutableColumnPtr> dynamic_paths_,
+        MutableColumnPtr shared_data_,
+        size_t max_dynamic_paths_,
+        size_t global_max_dynamic_paths_,
+        size_t max_dynamic_types_,
+        const StatisticsPtr & statistics_ = {});
 
+    ColumnObject(const ColumnObject & other);
+
+    /// Use StringHashForHeterogeneousLookup hash for hash maps to be able to use std::string_view in find() method.
+    using PathToColumnMap = std::unordered_map<String, WrappedPtr, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
+    using PathToDynamicColumnPtrMap = std::unordered_map<String, ColumnDynamic *, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
 public:
-    static constexpr auto COLUMN_NAME_DUMMY = "_dummy";
+    /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
+      * Use mutate in order to make mutable column and mutate shared nested columns.
+      */
+    using Base = COWHelper<IColumnHelper<ColumnObject>, ColumnObject>;
 
-    explicit ColumnObject(bool is_nullable_);
-    ColumnObject(Subcolumns && subcolumns_, bool is_nullable_);
+    static Ptr create(
+        const std::unordered_map<String, ColumnPtr> & typed_paths_,
+        const std::unordered_map<String, ColumnPtr> & dynamic_paths_,
+        const ColumnPtr & shared_data_,
+        size_t max_dynamic_paths_,
+        size_t global_max_dynamic_paths_,
+        size_t max_dynamic_types_,
+        const StatisticsPtr & statistics_ = {});
 
-    /// Checks that all subcolumns have consistent sizes.
-    void checkConsistency() const;
+    static MutablePtr create(
+        std::unordered_map<String, MutableColumnPtr> typed_paths_,
+        std::unordered_map<String, MutableColumnPtr> dynamic_paths_,
+        MutableColumnPtr shared_data_,
+        size_t max_dynamic_paths_,
+        size_t global_max_dynamic_paths_,
+        size_t max_dynamic_types_,
+        const StatisticsPtr & statistics_ = {});
 
-    bool hasSubcolumn(const PathInData & key) const;
+    static MutablePtr create(std::unordered_map<String, MutableColumnPtr> typed_paths_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
 
-    const Subcolumn & getSubcolumn(const PathInData & key) const;
-    Subcolumn & getSubcolumn(const PathInData & key);
+    std::string getName() const override;
 
-    void incrementNumRows() { ++num_rows; }
+    const char * getFamilyName() const override
+    {
+        return "Object";
+    }
 
-    /// Adds a subcolumn from existing IColumn.
-    void addSubcolumn(const PathInData & key, MutableColumnPtr && subcolumn);
+    TypeIndex getDataType() const override
+    {
+        return TypeIndex::Object;
+    }
 
-    /// Adds a subcolumn of specific size with default values.
-    void addSubcolumn(const PathInData & key, size_t new_size);
+    MutableColumnPtr cloneEmpty() const override;
+    MutableColumnPtr cloneResized(size_t size) const override;
 
-    /// Adds a subcolumn of type Nested of specific size with default values.
-    /// It cares about consistency of sizes of Nested arrays.
-    void addNestedSubcolumn(const PathInData & key, const FieldInfo & field_info, size_t new_size);
+    size_t size() const override
+    {
+        return shared_data->size();
+    }
 
-    /// Finds a subcolumn from the same Nested type as @entry and inserts
-    /// an array with default values with consistent sizes as in Nested type.
-    bool tryInsertDefaultFromNested(const Subcolumns::NodePtr & entry) const;
-    bool tryInsertManyDefaultsFromNested(const Subcolumns::NodePtr & entry) const;
-
-    const Subcolumns & getSubcolumns() const { return subcolumns; }
-    Subcolumns & getSubcolumns() { return subcolumns; }
-    PathsInData getKeys() const;
-
-    /// Part of interface
-
-    const char * getFamilyName() const override { return "Object"; }
-    TypeIndex getDataType() const override { return TypeIndex::Object; }
-
-    size_t size() const override;
-    size_t byteSize() const override;
-    size_t allocatedBytes() const override;
-    void forEachSubcolumn(MutableColumnCallback callback) override;
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
-    void insert(const Field & field) override;
-    bool tryInsert(const Field & field) override;
-    void insertDefault() override;
-    void insertFrom(const IColumn & src, size_t n) override;
-    void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
-    void popBack(size_t length) override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
 
-    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
-    ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
-    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
-    ColumnPtr replicate(const Offsets & offsets) const override;
-    MutableColumnPtr cloneResized(size_t new_size) const override;
+    bool isDefaultAt(size_t n) const override;
+    StringRef getDataAt(size_t n) const override;
+    void insertData(const char * pos, size_t length) override;
 
-    /// Finalizes all subcolumns.
+    void insert(const Field & x) override;
+    bool tryInsert(const Field & x) override;
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+    void insertFrom(const IColumn & src, size_t n) override;
+    void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#else
+    void doInsertFrom(const IColumn & src, size_t n) override;
+    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#endif
+    /// TODO: implement more optimal insertManyFrom
+    void insertDefault() override;
+    void insertManyDefaults(size_t length) override;
+
+    void popBack(size_t n) override;
+
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    const char * deserializeAndInsertFromArena(const char * pos) override;
+    const char * skipSerializedInArena(const char * pos) const override;
+
+    void updateHashWithValue(size_t n, SipHash & hash) const override;
+    WeakHash32 getWeakHash32() const override;
+    void updateHashFast(SipHash & hash) const override;
+
+    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    void expand(const Filter & mask, bool inverted) override;
+    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
+    ColumnPtr replicate(const Offsets & replicate_offsets) const override;
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
+
+    void getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &) const override;
+    void updatePermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &, EqualRanges &) const override {}
+
+    /// Values of ColumnObject are not comparable.
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+    int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
+#else
+    int doCompareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
+#endif
+    void getExtremes(Field & min, Field & max) const override;
+
+    void reserve(size_t n) override;
+    size_t capacity() const override;
+    void prepareForSquashing(const std::vector<ColumnPtr> & source_columns) override;
+    void ensureOwnership() override;
+    size_t byteSize() const override;
+    size_t byteSizeAt(size_t n) const override;
+    size_t allocatedBytes() const override;
+    void protect() override;
+
+    void forEachSubcolumn(MutableColumnCallback callback) override;
+
+    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+
+    bool structureEquals(const IColumn & rhs) const override;
+
+    ColumnPtr compress() const override;
+
     void finalize() override;
     bool isFinalized() const override;
 
-    /// Order of rows in ColumnObject is undefined.
-    void getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation & res) const override;
-    void updatePermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &, EqualRanges &) const override {}
-    int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
-    void getExtremes(Field & min, Field & max) const override;
+    bool hasDynamicStructure() const override { return true; }
+    void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
 
-    /// All other methods throw exception.
+    const PathToColumnMap & getTypedPaths() const { return typed_paths; }
+    PathToColumnMap & getTypedPaths() { return typed_paths; }
 
-    StringRef getDataAt(size_t) const override { throwMustBeConcrete(); }
-    bool isDefaultAt(size_t) const override { throwMustBeConcrete(); }
-    void insertData(const char *, size_t) override { throwMustBeConcrete(); }
-    StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override { throwMustBeConcrete(); }
-    char * serializeValueIntoMemory(size_t, char *) const override { throwMustBeConcrete(); }
-    const char * deserializeAndInsertFromArena(const char *) override { throwMustBeConcrete(); }
-    const char * skipSerializedInArena(const char *) const override { throwMustBeConcrete(); }
-    void updateHashWithValue(size_t, SipHash &) const override { throwMustBeConcrete(); }
-    void updateWeakHash32(WeakHash32 &) const override { throwMustBeConcrete(); }
-    void updateHashFast(SipHash &) const override { throwMustBeConcrete(); }
-    void expand(const Filter &, bool) override { throwMustBeConcrete(); }
-    bool hasEqualValues() const override { throwMustBeConcrete(); }
-    size_t byteSizeAt(size_t) const override { throwMustBeConcrete(); }
-    double getRatioOfDefaultRows(double) const override { throwMustBeConcrete(); }
-    UInt64 getNumberOfDefaultRows() const override { throwMustBeConcrete(); }
-    void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwMustBeConcrete(); }
+    const PathToColumnMap & getDynamicPaths() const { return dynamic_paths; }
+    PathToColumnMap & getDynamicPaths() { return dynamic_paths; }
 
-private:
-    [[noreturn]] static void throwMustBeConcrete()
+    const PathToDynamicColumnPtrMap & getDynamicPathsPtrs() const { return dynamic_paths_ptrs; }
+    PathToDynamicColumnPtrMap & getDynamicPathsPtrs() { return dynamic_paths_ptrs; }
+
+    const StatisticsPtr & getStatistics() const { return statistics; }
+
+    const ColumnPtr & getSharedDataPtr() const { return shared_data; }
+    ColumnPtr & getSharedDataPtr() { return shared_data; }
+    IColumn & getSharedDataColumn() { return *shared_data; }
+
+    const ColumnArray & getSharedDataNestedColumn() const { return assert_cast<const ColumnArray &>(*shared_data); }
+    ColumnArray & getSharedDataNestedColumn() { return assert_cast<ColumnArray &>(*shared_data); }
+
+    ColumnArray::Offsets & getSharedDataOffsets() { return assert_cast<ColumnArray &>(*shared_data).getOffsets(); }
+    const ColumnArray::Offsets & getSharedDataOffsets() const { return assert_cast<const ColumnArray &>(*shared_data).getOffsets(); }
+
+    std::pair<ColumnString *, ColumnString *> getSharedDataPathsAndValues()
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ColumnObject must be converted to ColumnTuple before use");
+        auto & column_array = assert_cast<ColumnArray &>(*shared_data);
+        auto & column_tuple = assert_cast<ColumnTuple &>(column_array.getData());
+        return {assert_cast<ColumnString *>(&column_tuple.getColumn(0)), assert_cast<ColumnString *>(&column_tuple.getColumn(1))};
     }
 
-    template <typename Func>
-    MutableColumnPtr applyForSubcolumns(Func && func) const;
+    std::pair<const ColumnString *, const ColumnString *> getSharedDataPathsAndValues() const
+    {
+        const auto & column_array = assert_cast<const ColumnArray &>(*shared_data);
+        const auto & column_tuple = assert_cast<const ColumnTuple &>(column_array.getData());
+        return {assert_cast<const ColumnString *>(&column_tuple.getColumn(0)), assert_cast<const ColumnString *>(&column_tuple.getColumn(1))};
+    }
 
-    /// It's used to get shared sized of Nested to insert correct default values.
-    const Subcolumns::Node * getLeafOfTheSameNested(const Subcolumns::NodePtr & entry) const;
+    size_t getMaxDynamicTypes() const { return max_dynamic_types; }
+    size_t getMaxDynamicPaths() const { return max_dynamic_paths; }
+    size_t getGlobalMaxDynamicPaths() const { return global_max_dynamic_paths; }
+
+    /// Try to add new dynamic path. Returns pointer to the new dynamic
+    /// path column or nullptr if limit on dynamic paths is reached.
+    ColumnDynamic * tryToAddNewDynamicPath(std::string_view path);
+    /// Throws an exception if cannot add.
+    void addNewDynamicPath(std::string_view path);
+
+    void setDynamicPaths(const std::vector<String> & paths);
+    void setDynamicPaths(const std::vector<std::pair<String, ColumnPtr>> & paths);
+    void setMaxDynamicPaths(size_t max_dynamic_paths_);
+    void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
+
+    void serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, std::string_view path, const IColumn & column, size_t n);
+    void deserializeValueFromSharedData(const ColumnString * shared_data_values, size_t n, IColumn & column) const;
+
+    /// Paths in shared data are sorted in each row. Use this method to find the lower bound for specific path in the row.
+    static size_t findPathLowerBoundInSharedData(StringRef path, const ColumnString & shared_data_paths, size_t start, size_t end);
+    /// Insert all the data from shared data with specified path to dynamic column.
+    static void fillPathColumnFromSharedData(IColumn & path_column, StringRef path, const ColumnPtr & shared_data_column, size_t start, size_t end);
+
+private:
+    void insertFromSharedDataAndFillRemainingDynamicPaths(const ColumnObject & src_object_column, std::vector<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length);
+    void serializePathAndValueIntoArena(Arena & arena, const char *& begin, StringRef path, StringRef value, StringRef & res) const;
+
+    /// Map path -> column for paths with explicitly specified types.
+    /// This set of paths is constant and cannot be changed.
+    PathToColumnMap typed_paths;
+    /// Sorted list of typed paths. Used to avoid sorting paths every time in some methods.
+    std::vector<std::string_view> sorted_typed_paths;
+    /// Map path -> column for dynamically added paths. All columns
+    /// here are Dynamic columns. This set of paths can be extended
+    /// during inerts into the column.
+    PathToColumnMap dynamic_paths;
+    /// Sorted list of dynamic paths. Used to avoid sorting paths every time in some methods.
+    std::set<std::string_view> sorted_dynamic_paths;
+
+    /// Store and use pointers to ColumnDynamic to avoid virtual calls.
+    /// With hundreds of dynamic paths these virtual calls are noticeable.
+    PathToDynamicColumnPtrMap dynamic_paths_ptrs;
+    /// Shared storage for all other paths and values. It's filled
+    /// when the number of dynamic paths reaches the limit.
+    /// It has type Array(Tuple(String, String)) and stores
+    /// an array of pairs (path, binary serialized dynamic value) for each row.
+    WrappedPtr shared_data;
+
+    /// Maximum number of dynamic paths. If this limit is reached, all new paths will be inserted into shared data.
+    /// This limit can be different for different instances of Object column. For example, we can decrease it
+    /// in takeDynamicStructureFromSourceColumns before merge.
+    size_t max_dynamic_paths;
+    /// Global limit on number of dynamic paths for all column instances of this Object type. It's the limit specified
+    /// in the type definition (for example 'JSON(max_dynamic_paths=N)'). max_dynamic_paths is always not greater than this limit.
+    size_t global_max_dynamic_paths;
+    /// Maximum number of dynamic types for each dynamic path. Used while creating Dynamic columns for new dynamic paths.
+    size_t max_dynamic_types;
+    /// Statistics on the number of non-null values for each dynamic path and for some shared data paths in the MergeTree data part.
+    /// Calculated during serializing of data part in MergeTree. Used to determine the set of dynamic paths for the merged part.
+    StatisticsPtr statistics;
 };
+
 }

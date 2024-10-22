@@ -1,7 +1,7 @@
-#include <base/hex.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 #include <base/find_symbols.h>
+#include <base/hex.h>
 
 
 namespace DB
@@ -57,7 +57,7 @@ static size_t decodeURL(const char * __restrict src, size_t src_size, char * __r
         {
             break;
         }
-        else if (*src_curr_pos == '+')
+        if (*src_curr_pos == '+')
         {
             if (!plus_as_space)
             {
@@ -121,8 +121,10 @@ enum URLCodeStrategy
 template <URLCodeStrategy code_strategy, bool space_as_plus>
 struct CodeURLComponentImpl
 {
-    static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
-        ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
+    static void vector(
+        const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
+        ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         if (code_strategy == encode)
         {
@@ -134,13 +136,12 @@ struct CodeURLComponentImpl
             res_data.resize(data.size());
         }
 
-        size_t size = offsets.size();
-        res_offsets.resize(size);
+        res_offsets.resize(input_rows_count);
 
         size_t prev_offset = 0;
         size_t res_offset = 0;
 
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const char * src_data = reinterpret_cast<const char *>(&data[prev_offset]);
             size_t src_size = offsets[i] - prev_offset;
@@ -165,7 +166,7 @@ struct CodeURLComponentImpl
         res_data.resize(res_offset);
     }
 
-    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
+    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column of type FixedString is not supported by URL functions");
     }

@@ -183,8 +183,6 @@
     M(ReadBufferFromS3InitMicroseconds) \
     M(ReadBufferFromS3Bytes) \
     M(ReadBufferFromS3RequestsErrors) \
-    M(ReadBufferFromS3ResetSessions) \
-    M(ReadBufferFromS3PreservedSessions) \
 \
     M(WriteBufferFromS3Microseconds) \
     M(WriteBufferFromS3Bytes) \
@@ -372,7 +370,7 @@ extern const std::vector<Event> keeper_profile_events
     M(AsynchronousReadWait) \
     M(S3Requests) \
     M(KeeperAliveConnections) \
-    M(KeeperOutstandingRequets) \
+    M(KeeperOutstandingRequests) \
     M(ThreadsInOvercommitTracker) \
     M(IOUringPendingEvents) \
     M(IOUringInFlightEvents) \

@@ -5,6 +5,32 @@
 #include <Parsers/IAST.h>
 
 #include <boost/noncopyable.hpp>
+#include <vector>
+
+#define LIST_OF_ALL_SYSTEM_LOGS(M) \
+    M(QueryLog,              query_log,            "Contains information about executed queries, for example, start time, duration of processing, error messages.") \
+    M(QueryThreadLog,        query_thread_log,     "Contains information about threads that execute queries, for example, thread name, thread start time, duration of query processing.") \
+    M(PartLog,               part_log,             "This table contains information about events that occurred with data parts in the MergeTree family tables, such as adding or merging data.") \
+    M(TraceLog,              trace_log,            "Contains stack traces collected by the sampling query profiler.") \
+    M(CrashLog,              crash_log,            "Contains information about stack traces for fatal errors. The table does not exist in the database by default, it is created only when fatal errors occur.") \
+    M(TextLog,               text_log,             "Contains logging entries which are normally written to a log file or to stdout.") \
+    M(MetricLog,             metric_log,           "Contains history of metrics values from tables system.metrics and system.events, periodically flushed to disk.") \
+    M(ErrorLog,              error_log,            "Contains history of error values from table system.errors, periodically flushed to disk.") \
+    M(FilesystemCacheLog,    filesystem_cache_log, "Contains a history of all events occurred with filesystem cache for objects on a remote filesystem.") \
+    M(FilesystemReadPrefetchesLog, filesystem_read_prefetches_log, "Contains a history of all prefetches done during reading from MergeTables backed by a remote filesystem.") \
+    M(ObjectStorageQueueLog, s3queue_log,          "Contains logging entries with the information files processes by S3Queue engine.") \
+    M(ObjectStorageQueueLog, azure_queue_log,      "Contains logging entries with the information files processes by S3Queue engine.") \
+    M(AsynchronousMetricLog, asynchronous_metric_log, "Contains the historical values for system.asynchronous_metrics, once per time interval (one second by default).") \
+    M(OpenTelemetrySpanLog,  opentelemetry_span_log, "Contains information about trace spans for executed queries.") \
+    M(QueryViewsLog,         query_views_log,      "Contains information about the dependent views executed when running a query, for example, the view type or the execution time.") \
+    M(ZooKeeperLog,          zookeeper_log,        "This table contains information about the parameters of the request to the ZooKeeper server and the response from it.") \
+    M(SessionLog,            session_log,          "Contains information about all successful and failed login and logout events.") \
+    M(TransactionsInfoLog,   transactions_info_log, "Contains information about all transactions executed on a current server.") \
+    M(ProcessorsProfileLog,  processors_profile_log, "Contains profiling information on processors level (building blocks for a pipeline for query execution.") \
+    M(AsynchronousInsertLog, asynchronous_insert_log, "Contains a history for all asynchronous inserts executed on current server.") \
+    M(BackupLog,             backup_log,           "Contains logging entries with the information about BACKUP and RESTORE operations.") \
+    M(BlobStorageLog,        blob_storage_log,     "Contains logging entries with information about various blob storage operations such as uploads and deletes.") \
+
 
 namespace DB
 {
@@ -34,71 +60,37 @@ namespace DB
     };
     */
 
-class QueryLog;
-class QueryThreadLog;
-class PartLog;
-class TextLog;
-class TraceLog;
-class CrashLog;
-class ErrorLog;
-class MetricLog;
-class AsynchronousMetricLog;
-class OpenTelemetrySpanLog;
-class QueryViewsLog;
-class ZooKeeperLog;
-class SessionLog;
-class TransactionsInfoLog;
-class ProcessorsProfileLog;
-class FilesystemCacheLog;
-class FilesystemReadPrefetchesLog;
-class AsynchronousInsertLog;
-class BackupLog;
-class ObjectStorageQueueLog;
-class BlobStorageLog;
+/// NOLINTBEGIN(bugprone-macro-parentheses)
+#define FORWARD_DECLARATION(log_type, member, descr) \
+    class log_type; \
+
+LIST_OF_ALL_SYSTEM_LOGS(FORWARD_DECLARATION)
+#undef FORWARD_DECLARATION
+/// NOLINTEND(bugprone-macro-parentheses)
+
 
 /// System logs should be destroyed in destructor of the last Context and before tables,
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
-struct SystemLogs
+class SystemLogs
 {
+public:
+    SystemLogs() = default;
     SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config);
-    ~SystemLogs();
+    SystemLogs(const SystemLogs & other) = default;
 
+    void flush(bool should_prepare_tables_anyway);
+    void flushAndShutdown();
     void shutdown();
     void handleCrash();
 
-    std::shared_ptr<QueryLog> query_log;                /// Used to log queries.
-    std::shared_ptr<QueryThreadLog> query_thread_log;   /// Used to log query threads.
-    std::shared_ptr<PartLog> part_log;                  /// Used to log operations with parts
-    std::shared_ptr<TraceLog> trace_log;                /// Used to log traces from query profiler
-    std::shared_ptr<CrashLog> crash_log;                /// Used to log server crashes.
-    std::shared_ptr<TextLog> text_log;                  /// Used to log all text messages.
-    std::shared_ptr<MetricLog> metric_log;              /// Used to log all metrics.
-    std::shared_ptr<ErrorLog> error_log;                /// Used to log errors.
-    std::shared_ptr<FilesystemCacheLog> filesystem_cache_log;
-    std::shared_ptr<FilesystemReadPrefetchesLog> filesystem_read_prefetches_log;
-    std::shared_ptr<ObjectStorageQueueLog> s3_queue_log;
-    std::shared_ptr<ObjectStorageQueueLog> azure_queue_log;
-    /// Metrics from system.asynchronous_metrics.
-    std::shared_ptr<AsynchronousMetricLog> asynchronous_metric_log;
-    /// OpenTelemetry trace spans.
-    std::shared_ptr<OpenTelemetrySpanLog> opentelemetry_span_log;
-    /// Used to log queries of materialized and live views
-    std::shared_ptr<QueryViewsLog> query_views_log;
-    /// Used to log all actions of ZooKeeper client
-    std::shared_ptr<ZooKeeperLog> zookeeper_log;
-    /// Login, LogOut and Login failure events
-    std::shared_ptr<SessionLog> session_log;
-    /// Events related to transactions
-    std::shared_ptr<TransactionsInfoLog> transactions_info_log;
-    /// Used to log processors profiling
-    std::shared_ptr<ProcessorsProfileLog> processors_profile_log;
-    std::shared_ptr<AsynchronousInsertLog> asynchronous_insert_log;
-    /// Backup and restore events
-    std::shared_ptr<BackupLog> backup_log;
-    /// Log blob storage operations
-    std::shared_ptr<BlobStorageLog> blob_storage_log;
+#define DECLARE_PUBLIC_MEMBERS(log_type, member, descr) \
+    std::shared_ptr<log_type> member; \
 
-    std::vector<ISystemLog *> logs;
+    LIST_OF_ALL_SYSTEM_LOGS(DECLARE_PUBLIC_MEMBERS)
+#undef DECLARE_PUBLIC_MEMBERS
+
+private:
+    std::vector<ISystemLog *> getAllLogs() const;
 };
 
 struct SystemLogSettings
@@ -133,23 +125,18 @@ public:
 
     void shutdown() override;
 
-    void stopFlushThread() override;
-
-protected:
-    LoggerPtr log;
-
-    using ISystemLog::is_shutdown;
-    using ISystemLog::saving_thread;
-    using ISystemLog::thread_mutex;
-    using Base::queue;
-
-    StoragePtr getStorage() const;
-
     /** Creates new table if it does not exist.
       * Renames old table if its structure is not suitable.
       * This cannot be done in constructor to avoid deadlock while renaming a table under locked Context when SystemLog object is created.
       */
     void prepareTable() override;
+
+protected:
+    LoggerPtr log;
+
+    using Base::queue;
+
+    StoragePtr getStorage() const;
 
     /// Some tables can override settings for internal queries
     virtual void addSettingsForQuery(ContextMutablePtr & mutable_context, IAST::QueryKind query_kind) const;

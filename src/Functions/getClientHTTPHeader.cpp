@@ -5,10 +5,16 @@
 #include <Columns/ColumnString.h>
 #include <Interpreters/Context.h>
 #include <Core/Field.h>
+#include <Core/Settings.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_get_client_http_header;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -24,7 +30,7 @@ public:
     explicit FunctionGetClientHTTPHeader(ContextPtr context_)
         : WithContext(context_)
     {
-        if (!getContext()->getSettingsRef().allow_get_client_http_header)
+        if (!getContext()->getSettingsRef()[Setting::allow_get_client_http_header])
             throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "The function getClientHTTPHeader requires setting `allow_get_client_http_header` to be enabled.");
     }
 
@@ -57,7 +63,7 @@ public:
         {
             Field header;
             source->get(row, header);
-            if (auto it = client_info.http_headers.find(header.get<String>()); it != client_info.http_headers.end())
+            if (auto it = client_info.http_headers.find(header.safeGet<String>()); it != client_info.http_headers.end())
                 result->insert(it->second);
             else
                 result->insertDefault();

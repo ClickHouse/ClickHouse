@@ -1,3 +1,4 @@
+#include <Storages/SetSettings.h>
 #include <Storages/StorageSet.h>
 #include <Storages/StorageFactory.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -44,7 +45,7 @@ public:
         const String & backup_file_name_, bool persistent_);
 
     String getName() const override { return "SetOrJoinSink"; }
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
     void onFinish() override;
 
 private:
@@ -82,9 +83,9 @@ SetOrJoinSink::SetOrJoinSink(
 {
 }
 
-void SetOrJoinSink::consume(Chunk chunk)
+void SetOrJoinSink::consume(Chunk & chunk)
 {
-    Block block = getHeader().cloneWithColumns(chunk.detachColumns());
+    Block block = getHeader().cloneWithColumns(chunk.getColumns());
 
     table.insertBlock(block, getContext());
     if (persistent)
@@ -213,7 +214,7 @@ std::optional<UInt64> StorageSet::totalBytes(const Settings &) const
 
 void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &)
 {
-    if (disk->exists(path))
+    if (disk->existsDirectory(path))
         disk->removeRecursive(path);
     else
         LOG_INFO(getLogger("StorageSet"), "Path {} is already removed from disk {}", path, disk->getName());
@@ -236,9 +237,9 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
 
 void StorageSetOrJoinBase::restore()
 {
-    if (!disk->exists(fs::path(path) / "tmp/"))
+    if (!disk->existsDirectory(fs::path(path) / "tmp"))
     {
-        disk->createDirectories(fs::path(path) / "tmp/");
+        disk->createDirectories(fs::path(path) / "tmp");
         return;
     }
 
@@ -252,7 +253,7 @@ void StorageSetOrJoinBase::restore()
         const auto & name = dir_it->name();
         const auto & file_path = dir_it->path();
 
-        if (disk->isFile(file_path)
+        if (disk->existsFile(file_path)
             && endsWith(name, file_suffix)
             && disk->getFileSize(file_path) > 0)
         {
@@ -279,7 +280,7 @@ void StorageSetOrJoinBase::restore()
 void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 {
     ContextPtr ctx = nullptr;
-    auto backup_buf = disk->readFile(file_path);
+    auto backup_buf = disk->readFile(file_path, getReadSettings());
     CompressedReadBuffer compressed_backup_buf(*backup_buf);
     NativeReader backup_stream(compressed_backup_buf, 0);
 
