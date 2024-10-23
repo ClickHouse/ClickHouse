@@ -1061,6 +1061,11 @@ CONV_FN(ExprOrderingTerm, eot) {
     ret += " ";
     ret += ExprOrderingTerm_AscDesc_Name(eot.asc_desc());
   }
+  if (eot.has_collation()) {
+    ret += " COLLATE '";
+    ret += eot.collation();
+    ret += "'";
+  }
   if (eot.with_fill()) {
     ret += " WITH FILL";
   }

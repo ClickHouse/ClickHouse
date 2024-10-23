@@ -1012,7 +1012,6 @@ bool Client::buzzHouse()
         bool has_cloud_features = false;
         buzzhouse::RandomGenerator rg(fc.seed);
         std::ofstream outf(fc.log_path, std::ios::out | std::ios::trunc);
-        buzzhouse::QueryOracle qo(std::move(fc));
         sql_query_grammar::SQLQuery sq1, sq2, sq3, sq4;
         int nsuccessfull_create_database = 0, total_create_database_tries = 0, nsuccessfull_create_table = 0, total_create_table_tries = 0;
 
@@ -1028,8 +1027,15 @@ bool Client::buzzHouse()
         outf << "--Session seed: " << rg.GetSeed() << std::endl;
         ProcessQueryAndLog(outf, "SET engine_file_truncate_on_insert = 1;");
 
+        //Load collations
+        full_query.resize(0);
+        fc.GenerateCollationsQuery(full_query);
+        processTextAsSingleQuery(full_query);
+        const auto &collations = fc.LoadCollations();
+
         full_query2.reserve(8192);
-        buzzhouse::StatementGenerator gen(has_cloud_features);
+        buzzhouse::QueryOracle qo(std::move(fc));
+        buzzhouse::StatementGenerator gen(has_cloud_features, std::move(collations));
         while (server_up)
         {
             sq1.Clear();

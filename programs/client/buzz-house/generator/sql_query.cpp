@@ -639,6 +639,9 @@ int StatementGenerator::GenerateOrderBy(RandomGenerator &rg, const uint32_t ncol
 					eot->set_asc_desc(rg.NextBool() ? sql_query_grammar::ExprOrderingTerm_AscDesc::ExprOrderingTerm_AscDesc_ASC :
 													  sql_query_grammar::ExprOrderingTerm_AscDesc::ExprOrderingTerm_AscDesc_DESC);
 				}
+				if (!collations.empty() && rg.NextSmallNumber() < 3) {
+					eot->set_collation(rg.PickRandomlyFromVector(this->collations));
+				}
 				eot->set_with_fill(rg.NextSmallNumber() < 3);
 			}
 		}

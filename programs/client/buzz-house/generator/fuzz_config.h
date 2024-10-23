@@ -32,6 +32,28 @@ public:
 			}
 		}
 	}
+
+	void GenerateCollationsQuery(std::string &res) {
+		const std::filesystem::path &collfile = db_file_path / "collations.data";
+
+		res += "SELECT \"name\" FROM system.collations INTO OUTFILE '";
+		res += collfile.generic_string();
+		res += "' FORMAT TabSeparated;";
+	}
+
+	const std::vector<const std::string> LoadCollations() {
+		std::string input;
+		std::vector<const std::string> res;
+		const std::filesystem::path &collfile = db_file_path / "collations.data";
+		std::ifstream infile(collfile);
+
+		input.reserve(64);
+		while (std::getline(infile, input)) {
+			res.push_back(input);
+			input.resize(0);
+		}
+		return res;
+	}
 };
 
 }

@@ -79,6 +79,7 @@ typedef struct InsertEntry {
 class StatementGenerator {
 private:
 	const bool supports_cloud_features;
+	const std::vector<const std::string> collations;
 
 	std::string buf;
 	bool in_transaction = false, inside_projection = false, allow_not_deterministic = true, enforce_final = false;
@@ -267,10 +268,10 @@ public:
 	const std::function<bool (const SQLTable&)> detached_tables = [](const SQLTable& t){return (t.db && !t.db->attached) || !t.attached;};
 	const std::function<bool (const SQLView&)> detached_views = [](const SQLView& v){return !v.db->attached || !v.attached;};
 
-	StatementGenerator() : supports_cloud_features(false) {
+	StatementGenerator() : supports_cloud_features(false), collations() {
 		buf.reserve(2048);
 	}
-	StatementGenerator (const bool scf) : supports_cloud_features(scf) {
+	StatementGenerator (const bool scf, const std::vector<const std::string> colls) : supports_cloud_features(scf), collations(colls) {
 		buf.reserve(2048);
 	}
 

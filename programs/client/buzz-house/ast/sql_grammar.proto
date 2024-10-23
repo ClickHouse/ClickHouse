@@ -1907,7 +1907,8 @@ message ExprOrderingTerm {
   }
   required Expr expr = 1;
   optional AscDesc asc_desc = 2;
-  optional bool with_fill = 3;
+  optional string collation = 3;
+  optional bool with_fill = 4;
 }
 
 message OrderByList {
