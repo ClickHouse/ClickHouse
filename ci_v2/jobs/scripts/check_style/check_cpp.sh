@@ -55,23 +55,8 @@ SETTINGS_FILE=$(mktemp)
 cat $ROOT_PATH/src/Core/Settings.cpp $ROOT_PATH/src/Core/FormatFactorySettingsDeclaration.h | grep "M(" | awk '{print substr($2, 0, length($2) - 1) " " substr($1, 3, length($1) - 3) " SettingsDeclaration" }' > ${SETTINGS_FILE}
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep "extern const Settings" -T | awk '{print substr($5, 0, length($5) -1) " " substr($4, 9) " " substr($1, 0, length($1) - 1)}' >> ${SETTINGS_FILE}
 
-# Duplicate extern declarations for settings
-awk '{if (seen[$0]++) print $3 " -> " $1 ;}' ${SETTINGS_FILE} | while read line;
-do
-    echo "Found duplicated setting declaration in: $line"
-done
-
-# Incorrect declarations for settings
-for setting in $(awk '{print $1 " " $2}' ${SETTINGS_FILE} | sort | uniq | awk '{ print $1 }' | sort | uniq -d);
-do
-    expected=$(grep "^$setting " ${SETTINGS_FILE} | grep SettingsDeclaration | awk '{ print $2 }')
-    grep "^$setting " ${SETTINGS_FILE} | grep -v " $expected" | awk '{ print $3 " found setting " $1 " with type " $2 }' | while read line;
-    do
-      echo "In $line but it should be $expected"
-    done
-done
-
-rm ${SETTINGS_FILE}
+# Duplicated or incorrect setting declarations
+bash $ROOT_PATH/utils/check-style/check-settings-style
 
 # Unused/Undefined/Duplicates ErrorCodes/ProfileEvents/CurrentMetrics
 declare -A EXTERN_TYPES
