@@ -399,7 +399,7 @@ void HashJoin::doDebugAsserts() const
 
     size_t debug_blocks_nullmaps_allocated_size = 0;
     for (const auto & nullmap : data->blocks_nullmaps)
-        debug_blocks_nullmaps_allocated_size += nullmap.second->allocatedBytes();
+        debug_blocks_nullmaps_allocated_size += nullmap.allocatedBytes();
 
     if (data->blocks_nullmaps_allocated_size != debug_blocks_nullmaps_allocated_size)
         throw Exception(
@@ -695,14 +695,14 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
             {
                 data->blocks_nullmaps_allocated_size
                     += null_map_holder->size() ? null_map_holder->allocatedBytes() * rows / null_map_holder->size() : 0;
-                data->blocks_nullmaps.emplace_back(&stored_block->getSourceBlock(), null_map_holder);
+                data->blocks_nullmaps.emplace_back(stored_block, null_map_holder);
             }
 
             if (!flag_per_row && not_joined_map && is_inserted)
             {
                 data->blocks_nullmaps_allocated_size
                     += not_joined_map->size() ? not_joined_map->allocatedBytes() * rows / not_joined_map->size() : 0;
-                data->blocks_nullmaps.emplace_back(&stored_block->getSourceBlock(), std::move(not_joined_map));
+                data->blocks_nullmaps.emplace_back(stored_block, std::move(not_joined_map));
             }
 
             if (!flag_per_row && !is_inserted)
@@ -1347,10 +1347,10 @@ private:
 
         for (auto & it = *nulls_position; it != end && rows_added < max_block_size; ++it)
         {
-            const auto * block = it->first;
+            const auto * block = it->block;
             ConstNullMapPtr nullmap = nullptr;
-            if (it->second)
-                nullmap = &assert_cast<const ColumnUInt8 &>(*it->second).getData();
+            if (it->column)
+                nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
 
             for (size_t row = 0; row < block->rows(); ++row)
             {

@@ -334,8 +334,15 @@ public:
 
     using MapsVariant = std::variant<MapsOne, MapsAll, MapsAsof>;
 
-    using RawBlockPtr = const Block *;
-    using BlockNullmapList = std::deque<std::pair<RawBlockPtr, ColumnPtr>>;
+    using RawBlockPtr = const ScatteredBlock *;
+    struct NullMapHolder
+    {
+        size_t allocatedBytes() const { return column->size() ? column->allocatedBytes() * block->rows() / column->size() : 0; }
+
+        RawBlockPtr block;
+        ColumnPtr column;
+    };
+    using BlockNullmapList = std::deque<NullMapHolder>;
 
     using ScatteredBlocksList = std::list<ScatteredBlock>;
 
