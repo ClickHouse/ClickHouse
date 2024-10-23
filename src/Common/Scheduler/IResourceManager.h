@@ -49,7 +49,7 @@ public:
     /// Initialize or reconfigure manager.
     virtual void updateConfiguration(const Poco::Util::AbstractConfiguration & config) = 0;
 
-    /// Returns true iff given resource is controlled though this manager.
+    /// Returns true iff given resource is controlled through this manager.
     virtual bool hasResource(const String & resource_name) const = 0;
 
     /// Obtain a classifier instance required to get access to resources.
