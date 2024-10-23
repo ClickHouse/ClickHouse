@@ -453,4 +453,4 @@ ORDER BY yr,
          mo;
 ```
 
-The data is also available for interactive queries in the [Playground](https://sql.clickhouse.com/play), [example](https://sql.clickhouse.com/play?query_id=1MXMHASDLEQIP4P1D1STND).
+The data is also available for interactive queries in the [Playground](https://sql.clickhouse.com), [example](https://sql.clickhouse.com?query_id=1MXMHASDLEQIP4P1D1STND).

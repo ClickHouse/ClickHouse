@@ -360,9 +360,9 @@ This screenshot shows cell tower locations with LTE, UMTS, and GSM radios.  The 
   ![Dashboard of cell towers by radio type in mcc 204](@site/docs/en/getting-started/example-datasets/images/superset-cell-tower-dashboard.png)
 
 :::tip
-The data is also available for interactive queries in the [Playground](https://sql.clickhouse.com/play).
+The data is also available for interactive queries in the [Playground](https://sql.clickhouse.com).
 
-This [example](https://sql.clickhouse.com/play?query_id=UV8M4MAGS2PWAUOAYAAARM) will populate the username and even the query for you.
+This [example](https://sql.clickhouse.com?query_id=UV8M4MAGS2PWAUOAYAAARM) will populate the username and even the query for you.
 
 Although you cannot create tables in the Playground, you can run all of the queries and even use Superset (adjust the host name and port number).
 :::

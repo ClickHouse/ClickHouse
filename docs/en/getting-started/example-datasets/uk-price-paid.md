@@ -447,4 +447,4 @@ With projection: 100 rows in set. Elapsed: 0.336 sec. Processed 17.32 thousand r
 
 ### Test it in the Playground {#playground}
 
-The dataset is also available in the [Online Playground](https://sql.clickhouse.com/play?query_id=TRCWH5ZETY4SEEK8ISCCAX).
+The dataset is also available in the [Online Playground](https://sql.clickhouse.com?query_id=TRCWH5ZETY4SEEK8ISCCAX).

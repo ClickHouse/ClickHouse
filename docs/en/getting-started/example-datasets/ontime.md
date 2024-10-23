@@ -386,7 +386,7 @@ ORDER BY c DESC
 LIMIT 10;
 ```
 
-You can also play with the data in Playground, [example](https://sql.clickhouse.com/play?query_id=M4FSVBVMSHY98NKCQP8N4K).
+You can also play with the data in Playground, [example](https://sql.clickhouse.com?query_id=M4FSVBVMSHY98NKCQP8N4K).
 
 This performance test was created by Vadim Tkachenko. See:
 
