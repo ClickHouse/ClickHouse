@@ -1,7 +1,6 @@
 #include <IO/S3Common.h>
 
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
@@ -132,80 +131,6 @@ static bool setValueFromConfig(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type: {}", field.getTypeName());
 
     return true;
-}
-
-AuthSettings::AuthSettings(
-    const Poco::Util::AbstractConfiguration & config,
-    const DB::Settings & settings,
-    const std::string & config_prefix)
-{
-    for (auto & field : allMutable())
-    {
-        auto path = fmt::format("{}.{}", config_prefix, field.getName());
-
-        bool updated = setValueFromConfig<AuthSettings>(config, path, field);
-        if (!updated)
-        {
-            auto setting_name = "s3_" + field.getName();
-            if (settings.has(setting_name) && settings.isChanged(setting_name))
-                field.setValue(settings.get(setting_name));
-        }
-    }
-
-    headers = getHTTPHeaders(config_prefix, config);
-    server_side_encryption_kms_config = getSSEKMSConfig(config_prefix, config);
-
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys(config_prefix, keys);
-    for (const auto & key : keys)
-    {
-        if (startsWith(key, "user"))
-            users.insert(config.getString(config_prefix + "." + key));
-    }
-}
-
-AuthSettings::AuthSettings(const DB::Settings & settings)
-{
-    updateFromSettings(settings, /* if_changed */false);
-}
-
-void AuthSettings::updateFromSettings(const DB::Settings & settings, bool if_changed)
-{
-    for (auto & field : allMutable())
-    {
-        const auto setting_name = "s3_" + field.getName();
-        if (settings.has(setting_name) && (!if_changed || settings.isChanged(setting_name)))
-        {
-            field.setValue(settings.get(setting_name));
-        }
-    }
-}
-
-bool AuthSettings::hasUpdates(const AuthSettings & other) const
-{
-    AuthSettings copy = *this;
-    copy.updateIfChanged(other);
-    return *this != copy;
-}
-
-void AuthSettings::updateIfChanged(const AuthSettings & settings)
-{
-    for (auto & setting : settings.all())
-    {
-        if (setting.isValueChanged())
-            set(setting.getName(), setting.getValue());
-    }
-
-    if (!settings.headers.empty())
-        headers = settings.headers;
-
-    if (!settings.users.empty())
-        users.insert(settings.users.begin(), settings.users.end());
-
-    if (settings.server_side_encryption_kms_config.key_id.has_value()
-        || settings.server_side_encryption_kms_config.encryption_context.has_value()
-        || settings.server_side_encryption_kms_config.key_id.has_value())
-        server_side_encryption_kms_config = settings.server_side_encryption_kms_config;
 }
 
 RequestSettings::RequestSettings(
@@ -400,30 +325,8 @@ void RequestSettings::validateUploadSettings()
     /// TODO: it's possible to set too small limits.
     /// We can check that max possible object size is not too small.
 }
-
-bool operator==(const AuthSettings & left, const AuthSettings & right)
-{
-    if (left.headers != right.headers)
-        return false;
-
-    if (left.users != right.users)
-        return false;
-
-    if (left.server_side_encryption_kms_config != right.server_side_encryption_kms_config)
-        return false;
-
-    auto l = left.begin();
-    for (const auto & r : right)
-    {
-        if ((l == left.end()) || (*l != r))
-            return false;
-        ++l;
-    }
-    return l == left.end();
-}
 }
 
-IMPLEMENT_SETTINGS_TRAITS(S3::AuthSettingsTraits, CLIENT_SETTINGS_LIST)
 IMPLEMENT_SETTINGS_TRAITS(S3::RequestSettingsTraits, REQUEST_SETTINGS_LIST)
 
 }

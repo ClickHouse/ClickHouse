@@ -21,7 +21,7 @@ struct S3ObjectStorageSettings
 
     S3ObjectStorageSettings(
         const S3::RequestSettings & request_settings_,
-        const S3::AuthSettings & auth_settings_,
+        const S3::S3AuthSettings & auth_settings_,
         uint64_t min_bytes_for_seek_,
         int32_t list_object_keys_size_,
         int32_t objects_chunk_size_to_delete_,
@@ -35,7 +35,7 @@ struct S3ObjectStorageSettings
     {}
 
     S3::RequestSettings request_settings;
-    S3::AuthSettings auth_settings;
+    S3::S3AuthSettings auth_settings;
 
     uint64_t min_bytes_for_seek;
     int32_t list_object_keys_size;
