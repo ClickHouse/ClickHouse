@@ -398,6 +398,6 @@ void registerDatabaseLazy(DatabaseFactory & factory)
             cache_expiration_time_seconds,
             args.context);
     };
-    factory.registerDatabase("Lazy", create_fn);
+    factory.registerDatabase("Lazy", create_fn, {.supports_arguments = true});
 }
 }

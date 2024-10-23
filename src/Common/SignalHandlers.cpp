@@ -14,6 +14,7 @@
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
+#include <Poco/Environment.h>
 
 
 #pragma clang diagnostic ignored "-Wreserved-identifier"
@@ -286,7 +287,7 @@ void SignalListener::run()
             LOG_INFO(log, "Stop SignalListener thread");
             break;
         }
-        else if (sig == SIGHUP)
+        if (sig == SIGHUP)
         {
             LOG_DEBUG(log, "Received signal to close logs.");
             BaseDaemon::instance().closeLogs(BaseDaemon::instance().logger());
@@ -302,9 +303,7 @@ void SignalListener::run()
 
             onTerminate(message, thread_num);
         }
-        else if (sig == SIGINT ||
-                 sig == SIGQUIT ||
-                 sig == SIGTERM)
+        else if (sig == SIGINT || sig == SIGQUIT || sig == SIGTERM)
         {
             if (daemon)
                 daemon->handleSignal(sig);
@@ -334,7 +333,8 @@ void SignalListener::run()
             /// Example: segfault while symbolizing stack trace.
             try
             {
-                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr); }).detach();
+                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr); })
+                    .detach();
             }
             catch (...)
             {
@@ -383,8 +383,8 @@ try
     /// in case of double fault.
 
     LOG_FATAL(log, "########## Short fault info ############");
-    LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}) (from thread {}) Received signal {}",
-              VERSION_STRING, VERSION_OFFICIAL, build_id, GIT_HASH,
+    LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}, architecture: {}) (from thread {}) Received signal {}",
+              VERSION_STRING, VERSION_OFFICIAL, build_id, GIT_HASH, Poco::Environment::osArchitecture(),
               thread_num, sig);
 
     std::string signal_description = "Unknown signal";

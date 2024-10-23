@@ -248,6 +248,9 @@ namespace Net
         SSL_CTX * sslContext() const;
         /// Returns the underlying OpenSSL SSL Context object.
 
+        SSL_CTX * takeSslContext();
+        /// Takes ownership of the underlying OpenSSL SSL Context object.
+
         Usage usage() const;
         /// Returns whether the context is for use by a client or by a server
         /// and whether TLSv1 is required.
@@ -399,6 +402,13 @@ namespace Net
     inline SSL_CTX * Context::sslContext() const
     {
         return _pSSLContext;
+    }
+
+    inline SSL_CTX * Context::takeSslContext()
+    {
+        auto * result = _pSSLContext;
+        _pSSLContext = nullptr;
+        return result;
     }
 
 

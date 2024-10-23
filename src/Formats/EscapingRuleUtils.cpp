@@ -25,22 +25,21 @@ FormatSettings::EscapingRule stringToEscapingRule(const String & escaping_rule)
 {
     if (escaping_rule.empty())
         return FormatSettings::EscapingRule::None;
-    else if (escaping_rule == "None")
+    if (escaping_rule == "None")
         return FormatSettings::EscapingRule::None;
-    else if (escaping_rule == "Escaped")
+    if (escaping_rule == "Escaped")
         return FormatSettings::EscapingRule::Escaped;
-    else if (escaping_rule == "Quoted")
+    if (escaping_rule == "Quoted")
         return FormatSettings::EscapingRule::Quoted;
-    else if (escaping_rule == "CSV")
+    if (escaping_rule == "CSV")
         return FormatSettings::EscapingRule::CSV;
-    else if (escaping_rule == "JSON")
+    if (escaping_rule == "JSON")
         return FormatSettings::EscapingRule::JSON;
-    else if (escaping_rule == "XML")
+    if (escaping_rule == "XML")
         return FormatSettings::EscapingRule::XML;
-    else if (escaping_rule == "Raw")
+    if (escaping_rule == "Raw")
         return FormatSettings::EscapingRule::Raw;
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown escaping rule \"{}\"", escaping_rule);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown escaping rule \"{}\"", escaping_rule);
 }
 
 String escapingRuleToString(FormatSettings::EscapingRule escaping_rule)
@@ -302,8 +301,12 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
                 /// Try to determine the type of value inside quotes
                 auto type = tryInferDataTypeForSingleField(data, format_settings);
 
-                /// If we couldn't infer any type or it's a number and csv.try_infer_numbers_from_strings = 0, we determine it as a string.
-                if (!type || (format_settings.csv.try_infer_strings_from_quoted_tuples && isTuple(type)) || (!format_settings.csv.try_infer_numbers_from_strings && isNumber(type)))
+                /// Return String type if one of the following conditions apply
+                ///  - we couldn't infer any type
+                ///  - it's a number and csv.try_infer_numbers_from_strings = 0
+                ///  - it's a tuple and try_infer_strings_from_quoted_tuples = 0
+                ///  - it's a Bool type (we don't allow reading bool values from strings)
+                if (!type || (format_settings.csv.try_infer_strings_from_quoted_tuples && isTuple(type)) || (!format_settings.csv.try_infer_numbers_from_strings && isNumber(type)) || isBool(type))
                     return std::make_shared<DataTypeString>();
 
                 return type;

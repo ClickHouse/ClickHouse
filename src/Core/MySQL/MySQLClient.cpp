@@ -96,7 +96,7 @@ void MySQLClient::handshake()
 
     if (packet_response.getType() == PACKET_ERR)
         throw Exception::createDeprecated(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
-    else if (packet_response.getType() == PACKET_AUTH_SWITCH)
+    if (packet_response.getType() == PACKET_AUTH_SWITCH)
         throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Access denied for user {}", user);
 }
 
