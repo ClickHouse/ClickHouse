@@ -3,7 +3,13 @@
 # Fast check of all the setting struct usages
 # The linker does not complain about incorrect extern usage, so we need to make sure the style checker handles
 
-LC_ALL="en_US.UTF-8"
+# We want traditional order so it takes underscore into account. With UTF-8 this is considered sorted:
+# disk_connections_warn_limit UInt64
+# disk Float
+# disk_move_retries_during_init UInt64
+# disk_move_retries_wait_ms UInt64
+# disk String
+export LC_COLLATE="C"
 ROOT_PATH=$(git rev-parse --show-toplevel)
 
 # Duplicated or incorrect setting declarations
@@ -26,6 +32,7 @@ ALL_DECLARATION_FILES="
   $ROOT_PATH/src/Storages/Hive/HiveSettings.cpp
   $ROOT_PATH/src/Storages/FileLog/FileLogSettings.cpp
   $ROOT_PATH/src/Storages/Distributed/DistributedSettings.cpp
+  $ROOT_PATH/src/Storages/SetSettings.cpp
   $ROOT_PATH/src/Core/FormatFactorySettingsDeclaration.h"
 
 for settings_file in ${ALL_DECLARATION_FILES};
@@ -35,7 +42,7 @@ do
   fi
 done
 
-cat $ROOT_PATH/src/Core/Settings.cpp $ROOT_PATH/src/Core/FormatFactorySettingsDeclaration.h | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " Settings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq > ${SETTINGS_FILE}
+cat $ROOT_PATH/src/Core/Settings.cpp $ROOT_PATH/src/Core/FormatFactorySettingsDeclaration.h | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " *Settings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq > ${SETTINGS_FILE}
 cat $ROOT_PATH/src/Core/ServerSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " ServerSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
 cat $ROOT_PATH/src/Storages/MergeTree/MergeTreeSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " MergeTreeSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
 cat $ROOT_PATH/src/Coordination/CoordinationSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " CoordinationSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
@@ -89,7 +96,7 @@ for setting in $(
     );
 do
     expected=$(grep "^$setting " ${SETTINGS_FILE} | grep SettingsDeclaration | awk '{ print $2 }')
-    grep "^$setting " ${SETTINGS_FILE} | grep -v " $expected" | awk '{ print $3 " found setting " $1 " with type " $2 }' | while read line;
+    grep "^$setting " ${SETTINGS_FILE} | grep -v " $expected" | awk '{ print $3 " found setting \"" $1 "\" with type " $2 }' | while read line;
     do
         echo "# In $line but it should be ${expected/$'\n'/ }"
     done
