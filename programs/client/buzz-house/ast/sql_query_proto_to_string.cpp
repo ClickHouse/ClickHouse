@@ -542,6 +542,12 @@ CONV_FN(LiteralValue, lit_val) {
         case SpecialVal::VAL_NAN:
           ret += "nan";
           break;
+        case SpecialVal::VAL_PLUS_NAN:
+          ret += "+nan";
+          break;
+        case SpecialVal::VAL_MINUS_NAN:
+          ret += "(-nan)";
+          break;
         case SpecialVal::VAL_HAPPY:
           ret += "'😂'";
           break;

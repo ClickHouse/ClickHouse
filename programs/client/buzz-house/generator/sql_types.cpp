@@ -566,6 +566,11 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &
 				ret += next_option < 33 ? "+" : "-";
 			}
 			ret += "inf";
+		} else if (next_option < 73) {
+			if (next_option < 65) {
+				ret += next_option < 57 ? "+" : "-";
+			}
+			ret += "0.0";
 		} else {
 			ret += std::to_string(rg.NextRandomDouble());
 		}
