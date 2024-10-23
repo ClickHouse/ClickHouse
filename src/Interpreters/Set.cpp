@@ -434,44 +434,36 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
             key_columns.back() = &nullable_col->getNestedColumn();
         }
         else
-        {
             individual_null_maps.push_back(nullptr);
-        }
     }
 
     // Merge all individual null maps into a single null map
     ConstNullMapPtr null_map{};
     ColumnPtr null_map_holder;
 
-    auto merged_null_map_column = ColumnUInt8::create(num_rows);
-    NullMap & merged_null_map = merged_null_map_column->getData();
-    std::fill(merged_null_map.begin(), merged_null_map.end(), 0);
-
-    for (const NullMap * map : individual_null_maps)
+    if (!transform_null_in)
     {
-        if (map)
+        auto merged_null_map_column = ColumnUInt8::create(num_rows);
+        NullMap & merged_null_map = merged_null_map_column->getData();
+        std::fill(merged_null_map.begin(), merged_null_map.end(), 0);
+
+        for (const NullMap * map : individual_null_maps)
         {
-            for (size_t row = 0; row < num_rows; ++row)
+            if (map)
             {
-                if ((*map)[row])
-                    merged_null_map[row] = 1;
+                for (size_t row = 0; row < num_rows; ++row)
+                {
+                    if ((*map)[row])
+                        merged_null_map[row] = 1;
+                }
             }
         }
-    }
 
-    null_map = &merged_null_map;
-    null_map_holder = std::move(merged_null_map_column);
+        null_map = &merged_null_map;
+        null_map_holder = std::move(merged_null_map_column);
+    }
 
     executeOrdinary(key_columns, vec_res, negative, null_map);
-
-    if (!transform_null_in && null_map)
-    {
-        for (size_t row = 0; row < num_rows; ++row)
-        {
-            if ((*null_map)[row])
-                vec_res[row] = negative ? 1 : 0;
-        }
-    }
 
     return res;
 }
