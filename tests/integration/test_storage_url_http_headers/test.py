@@ -116,7 +116,7 @@ def test_storage_url_redirected_headers(started_cluster):
     assert "Host: localhost" in result
 
 
-def test_without_override_content_type_url_http_headers(started_cluster):
+def test_with_override_content_type_url_http_headers(started_cluster):
     query = "INSERT INTO TABLE FUNCTION url('http://localhost:8000/', JSONEachRow, 'x UInt8') SELECT 1"
 
     server.query(query)
