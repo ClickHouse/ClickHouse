@@ -6,7 +6,9 @@
 #include <Interpreters/Context.h>
 #include <Access/ContextAccess.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
+#include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 
 
@@ -46,28 +48,10 @@ void StorageSystemObjectStorageQueueSettings<type>::fillData(
         if (storage.getType() != type)
             return;
 
-        /// We cannot use setting.isValueChanged(), because we do not store initial settings in storage.
-        /// Therefore check if the setting was changed via table metadata.
-        const auto & settings_changes = storage.getInMemoryMetadataPtr()->settings_changes->as<ASTSetQuery>()->changes;
-        auto is_changed = [&](const std::string & setting_name) -> bool
-        {
-            return settings_changes.end() != std::find_if(
-                settings_changes.begin(), settings_changes.end(),
-                [&](const SettingChange & change){ return change.name == setting_name; });
-        };
-
-        for (const auto & change : storage.getSettings())
-        {
-            size_t i = 0;
-            res_columns[i++]->insert(it->databaseName());
-            res_columns[i++]->insert(it->name());
-            res_columns[i++]->insert(change.getName());
-            res_columns[i++]->insert(convertFieldToString(change.getValue()));
-            res_columns[i++]->insert(change.getTypeName());
-            res_columns[i++]->insert(is_changed(change.getName()));
-            res_columns[i++]->insert(change.getDescription());
-            res_columns[i++]->insert(false);
-        }
+        auto constraints_and_current_profiles = context->getSettingsConstraintsAndCurrentProfiles();
+        const auto & constraints = constraints_and_current_profiles->constraints;
+        MutableColumnsAndConstraints params(res_columns, constraints);
+        storage.getSettings().dumpToSystemEngineSettingsColumns(params, it->name(), it->databaseName(), storage);
     };
 
     const auto access = context->getAccess();

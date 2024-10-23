@@ -47,14 +47,20 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt32 enable_logging_to_queue_log;
     extern const ObjectStorageQueueSettingsString keeper_path;
     extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
-    extern const ObjectStorageQueueSettingsUInt32 max_processed_bytes_before_commit;
-    extern const ObjectStorageQueueSettingsUInt32 max_processed_files_before_commit;
-    extern const ObjectStorageQueueSettingsUInt32 max_processed_rows_before_commit;
-    extern const ObjectStorageQueueSettingsUInt32 max_processing_time_sec_before_commit;
+    extern const ObjectStorageQueueSettingsUInt64 max_processed_bytes_before_commit;
+    extern const ObjectStorageQueueSettingsUInt64 max_processed_files_before_commit;
+    extern const ObjectStorageQueueSettingsUInt64 max_processed_rows_before_commit;
+    extern const ObjectStorageQueueSettingsUInt64 max_processing_time_sec_before_commit;
     extern const ObjectStorageQueueSettingsUInt32 polling_min_timeout_ms;
     extern const ObjectStorageQueueSettingsUInt32 polling_max_timeout_ms;
     extern const ObjectStorageQueueSettingsUInt32 polling_backoff_ms;
     extern const ObjectStorageQueueSettingsUInt32 processing_threads_num;
+    extern const ObjectStorageQueueSettingsUInt32 buckets;
+    extern const ObjectStorageQueueSettingsUInt32 tracked_file_ttl_sec;
+    extern const ObjectStorageQueueSettingsUInt32 tracked_files_limit;
+    extern const ObjectStorageQueueSettingsString last_processed_path;
+    extern const ObjectStorageQueueSettingsUInt32 loading_retries;
+    extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
 }
 
 namespace ErrorCodes
@@ -570,23 +576,23 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     /// so let's reconstruct.
     ObjectStorageQueueSettings settings;
     const auto & table_metadata = getTableMetadata();
-    settings.after_processing = table_metadata.after_processing;
-    settings.keeper_path = zk_path;
-    settings.loading_retries = table_metadata.loading_retries;
-    settings.processing_threads_num = table_metadata.processing_threads_num;
-    settings.enable_logging_to_queue_log = enable_logging_to_queue_log;
-    settings.last_processed_path = table_metadata.last_processed_path;
-    settings.tracked_file_ttl_sec = 0;
-    settings.tracked_files_limit = 0;
-    settings.polling_min_timeout_ms = polling_min_timeout_ms;
-    settings.polling_max_timeout_ms = polling_max_timeout_ms;
-    settings.polling_backoff_ms = polling_backoff_ms;
-    settings.cleanup_interval_min_ms = 0;
-    settings.cleanup_interval_max_ms = 0;
-    settings.buckets = table_metadata.buckets;
-    settings.max_processed_files_before_commit = commit_settings.max_processed_files_before_commit;
-    settings.max_processed_rows_before_commit = commit_settings.max_processed_rows_before_commit;
-    settings.max_processed_bytes_before_commit = commit_settings.max_processed_bytes_before_commit;
+    settings[ObjectStorageQueueSetting::after_processing] = table_metadata.after_processing;
+    settings[ObjectStorageQueueSetting::keeper_path] = zk_path;
+    settings[ObjectStorageQueueSetting::loading_retries] = table_metadata.loading_retries;
+    settings[ObjectStorageQueueSetting::processing_threads_num] = table_metadata.processing_threads_num;
+    settings[ObjectStorageQueueSetting::enable_logging_to_queue_log] = enable_logging_to_queue_log;
+    settings[ObjectStorageQueueSetting::last_processed_path] = table_metadata.last_processed_path;
+    settings[ObjectStorageQueueSetting::tracked_file_ttl_sec] = 0;
+    settings[ObjectStorageQueueSetting::tracked_files_limit] = 0;
+    settings[ObjectStorageQueueSetting::polling_min_timeout_ms] = polling_min_timeout_ms;
+    settings[ObjectStorageQueueSetting::polling_max_timeout_ms] = polling_max_timeout_ms;
+    settings[ObjectStorageQueueSetting::polling_backoff_ms] = polling_backoff_ms;
+    settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] = 0;
+    settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = 0;
+    settings[ObjectStorageQueueSetting::buckets] = table_metadata.buckets;
+    settings[ObjectStorageQueueSetting::max_processed_files_before_commit] = commit_settings.max_processed_files_before_commit;
+    settings[ObjectStorageQueueSetting::max_processed_rows_before_commit] = commit_settings.max_processed_rows_before_commit;
+    settings[ObjectStorageQueueSetting::max_processed_bytes_before_commit] = commit_settings.max_processed_bytes_before_commit;
     return settings;
 }
 
