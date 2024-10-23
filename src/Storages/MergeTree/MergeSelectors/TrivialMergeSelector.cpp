@@ -10,7 +10,7 @@ namespace DB
 
 void registerTrivialMergeSelector(MergeSelectorFactory & factory)
 {
-    factory.registerPublicSelector("Trivial",  MergeSelectorAlgorithm::TRIVIAL, [](const std::any &)
+    factory.registerPublicSelector("Trivial", MergeSelectorAlgorithm::TRIVIAL, [](const std::any &)
     {
         return std::make_shared<TrivialMergeSelector>();
     });
