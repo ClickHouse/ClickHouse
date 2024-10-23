@@ -40,6 +40,17 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#ifndef NDEBUG
+    #include <Processors/Transforms/CheckSortedTransform.h>
+#endif
+
+#ifdef CLICKHOUSE_CLOUD
+    #include <Disks/ObjectStorages/DiskObjectStorage.h>
+    #include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
+    #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#endif
+
+
 namespace ProfileEvents
 {
     extern const Event Merge;
