@@ -113,7 +113,7 @@
 <div class="inputs">
     <form id="params">
         <div id="connection-params">
-            <input spellcheck="false" id="url" type="text" value="https://....eu-west-1.aws.clickhouse-staging.com/" placeholder="URL" /><input spellcheck="false" id="user" type="text" value="default" placeholder="user" /><input spellcheck="false" id="password" type="password" placeholder="password" value="" />
+            <input spellcheck="false" id="url" type="text" value="" placeholder="URL" /><input spellcheck="false" id="user" type="text" value="" placeholder="user" /><input spellcheck="false" id="password" type="password" placeholder="password" value="" />
             <input id="hidden-submit" type="submit" hidden="true"/>
         </div>
         <textarea spellcheck="false" data-gramm="false" id="query">SELECT * FROM system.part_log ORDER BY event_date, event_time, event_time_microseconds</textarea>
@@ -127,7 +127,24 @@
 </div>
 <script>
 
-const add_http_cors_header = false;
+let add_http_cors_header = (location.protocol != 'file:');
+
+if (!document.getElementById('url').value) {
+    document.getElementById('url').value = location.protocol != 'file:' ? location.origin : 'http://localhost:8123/';
+}
+
+if (!document.getElementById('user').value) {
+    let user = 'default';
+
+    const current_url = new URL(window.location);
+    /// Substitute user name if it's specified in the query string
+    const user_from_url = current_url.searchParams.get('user');
+    if (user_from_url) {
+        user = user_from_url;
+    }
+    document.getElementById('user').value = user;
+}
+
 
 function formatValue(v) {
     if (v >= 1000000000000) { return (v / 1000000000000).toFixed(2) + 'T'; }
