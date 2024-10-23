@@ -71,8 +71,9 @@ do
 done
 
 # We append all uses of extern found in implementation files to validate them in a single pass and avoid reading the same files over and over
+# Note that rg outputs 'path:$line', so with replace ':' with a space and then reorder to have "$setting $type $path"
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | \
-    xargs rg "^\s*extern const .*Settings" | \
+    xargs rg "^\s*extern const .*Settings" | tr ':' ' ' | \
     awk '{print substr($5, 0, length($5) -1) " " $4 " " substr($1, 0, length($1) - 1)}' >> ${SETTINGS_FILE}
 
 # Duplicate extern declarations for settings
