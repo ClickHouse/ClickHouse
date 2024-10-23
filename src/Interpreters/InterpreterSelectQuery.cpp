@@ -1708,7 +1708,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     executeLimitBy(query_plan);
                 }
 
-                if (query.limitLength() && !query.limitBy())
+                /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.
+                if (query.limitLength() && !query.limitBy() && !query.limit_with_ties)
                     executePreLimit(query_plan, true);
             }
         };
@@ -2083,7 +2084,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
             /// If we have 'WITH TIES', we need execute limit before projection,
             /// because in that case columns from 'ORDER BY' are used.
-            if (query.limit_with_ties && apply_offset)
+            if (query.limit_with_ties && apply_limit && apply_offset)
             {
                 executeLimit(query_plan);
             }
