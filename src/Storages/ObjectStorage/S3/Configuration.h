@@ -99,7 +99,7 @@ private:
     S3::URI url;
     std::vector<String> keys;
 
-    S3::AuthSettings auth_settings;
+    S3::S3AuthSettings auth_settings;
     S3::RequestSettings request_settings;
     HTTPHeaderEntries headers_from_ast; /// Headers from ast is a part of static configuration.
     /// If s3 configuration was passed from ast, then it is static.

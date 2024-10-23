@@ -8,6 +8,7 @@
 #include <Common/Throttler_fwd.h>
 
 #include <IO/S3Common.h>
+#include <IO/S3AuthSettings.h>
 #include <IO/S3Defines.h>
 
 namespace Poco::Util { class AbstractConfiguration; }
@@ -19,7 +20,7 @@ struct Settings;
 
 struct S3Settings
 {
-    S3::AuthSettings auth_settings;
+    S3::S3AuthSettings auth_settings;
     S3::RequestSettings request_settings;
 
     void loadFromConfig(

@@ -31,16 +31,29 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
+namespace S3AuthSetting
+{
+    extern const S3AuthSettingsString access_key_id;
+    extern const S3AuthSettingsUInt64 expiration_window_seconds;
+    extern const S3AuthSettingsBool no_sign_request;
+    extern const S3AuthSettingsString region;
+    extern const S3AuthSettingsString secret_access_key;
+    extern const S3AuthSettingsString server_side_encryption_customer_key_base64;
+    extern const S3AuthSettingsString session_token;
+    extern const S3AuthSettingsBool use_environment_credentials;
+    extern const S3AuthSettingsBool use_insecure_imds_request;
+}
+
 struct KeeperSnapshotManagerS3::S3Configuration
 {
-    S3Configuration(S3::URI uri_, S3::AuthSettings auth_settings_, std::shared_ptr<const S3::Client> client_)
+    S3Configuration(S3::URI uri_, S3::S3AuthSettings auth_settings_, std::shared_ptr<const S3::Client> client_)
         : uri(std::move(uri_))
         , auth_settings(std::move(auth_settings_))
         , client(std::move(client_))
     {}
 
     S3::URI uri;
-    S3::AuthSettings auth_settings;
+    S3::S3AuthSettings auth_settings;
     std::shared_ptr<const S3::Client> client;
 };
 
@@ -66,7 +79,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
         }
 
         const auto & settings = Context::getGlobalContextInstance()->getSettingsRef();
-        auto auth_settings = S3::AuthSettings(config, settings, config_prefix);
+        auto auth_settings = S3::S3AuthSettings(config, settings, config_prefix);
 
         String endpoint = macros->expand(config.getString(config_prefix + ".endpoint"));
         auto new_uri = S3::URI{endpoint};
@@ -81,7 +94,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
 
         LOG_INFO(log, "S3 configuration was updated");
 
-        auto credentials = Aws::Auth::AWSCredentials(auth_settings.access_key_id, auth_settings.secret_access_key, auth_settings.session_token);
+        auto credentials = Aws::Auth::AWSCredentials(auth_settings[S3AuthSetting::access_key_id], auth_settings[S3AuthSetting::secret_access_key], auth_settings[S3AuthSetting::session_token]);
         auto headers = auth_settings.headers;
 
         static constexpr size_t s3_max_redirects = 10;
@@ -95,7 +108,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
         }
 
         S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
-            auth_settings.region,
+            auth_settings[S3AuthSetting::region],
             RemoteHostFilter(), s3_max_redirects, s3_retry_attempts,
             enable_s3_requests_logging,
             /* for_disk_s3 = */ false, /* get_request_throttler = */ {}, /* put_request_throttler = */ {},
@@ -115,15 +128,15 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
             client_settings,
             credentials.GetAWSAccessKeyId(),
             credentials.GetAWSSecretKey(),
-            auth_settings.server_side_encryption_customer_key_base64,
+            auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64],
             auth_settings.server_side_encryption_kms_config,
             std::move(headers),
             S3::CredentialsConfiguration
             {
-                auth_settings.use_environment_credentials,
-                auth_settings.use_insecure_imds_request,
-                auth_settings.expiration_window_seconds,
-                auth_settings.no_sign_request,
+                auth_settings[S3AuthSetting::use_environment_credentials],
+                auth_settings[S3AuthSetting::use_insecure_imds_request],
+                auth_settings[S3AuthSetting::expiration_window_seconds],
+                auth_settings[S3AuthSetting::no_sign_request],
             },
             credentials.GetSessionToken());
 

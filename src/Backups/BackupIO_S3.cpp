@@ -36,6 +36,18 @@ namespace Setting
     extern const SettingsUInt64 s3_max_redirects;
 }
 
+namespace S3AuthSetting
+{
+    extern const S3AuthSettingsString access_key_id;
+    extern const S3AuthSettingsUInt64 expiration_window_seconds;
+    extern const S3AuthSettingsBool no_sign_request;
+    extern const S3AuthSettingsString region;
+    extern const S3AuthSettingsString secret_access_key;
+    extern const S3AuthSettingsString server_side_encryption_customer_key_base64;
+    extern const S3AuthSettingsBool use_environment_credentials;
+    extern const S3AuthSettingsBool use_insecure_imds_request;
+}
+
 namespace ErrorCodes
 {
     extern const int S3_ERROR;
@@ -55,7 +67,7 @@ namespace
         HTTPHeaderEntries headers;
         if (access_key_id.empty())
         {
-            credentials = Aws::Auth::AWSCredentials(settings.auth_settings.access_key_id, settings.auth_settings.secret_access_key);
+            credentials = Aws::Auth::AWSCredentials(settings.auth_settings[S3AuthSetting::access_key_id], settings.auth_settings[S3AuthSetting::secret_access_key]);
             headers = settings.auth_settings.headers;
         }
 
@@ -64,7 +76,7 @@ namespace
         const Settings & local_settings = context->getSettingsRef();
 
         S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
-            settings.auth_settings.region,
+            settings.auth_settings[S3AuthSetting::region],
             context->getRemoteHostFilter(),
             static_cast<unsigned>(local_settings[Setting::s3_max_redirects]),
             static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_attempts]),
@@ -95,15 +107,15 @@ namespace
             client_settings,
             credentials.GetAWSAccessKeyId(),
             credentials.GetAWSSecretKey(),
-            settings.auth_settings.server_side_encryption_customer_key_base64,
+            settings.auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64],
             settings.auth_settings.server_side_encryption_kms_config,
             std::move(headers),
             S3::CredentialsConfiguration
             {
-                settings.auth_settings.use_environment_credentials,
-                settings.auth_settings.use_insecure_imds_request,
-                settings.auth_settings.expiration_window_seconds,
-                settings.auth_settings.no_sign_request
+                settings.auth_settings[S3AuthSetting::use_environment_credentials],
+                settings.auth_settings[S3AuthSetting::use_insecure_imds_request],
+                settings.auth_settings[S3AuthSetting::expiration_window_seconds],
+                settings.auth_settings[S3AuthSetting::no_sign_request]
             });
     }
 
