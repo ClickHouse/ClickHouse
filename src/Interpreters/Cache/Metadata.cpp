@@ -87,7 +87,7 @@ void KeyMetadata::assertAccess(const UserID & user_id_) const
     if (!checkAccess(user_id_))
     {
         throw Exception(ErrorCodes::FILECACHE_ACCESS_DENIED,
-                        "Metadata for key {} belongs to user {}, but user {} requested it",
+                        "Metadata for key {} belongs to another user",
                         key.toString(), user.user_id, user_id_);
     }
 }
