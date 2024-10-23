@@ -70,7 +70,7 @@ SELECT id, haystack, needle, replacement, replaceRegexpOne('Hello World', needle
 DROP TABLE IF EXISTS test_tab;
 
 
-SELECT 'Check that whether an exception is thrown if the needle is empty';
+SELECT 'Check the behavior with empty needles';
 
 CREATE TABLE test_tab
   (id UInt32, haystack String, needle String, replacement String)
