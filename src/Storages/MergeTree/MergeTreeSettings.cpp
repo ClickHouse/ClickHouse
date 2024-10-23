@@ -331,7 +331,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
                 else if (name == "storage_policy")
                     found_storage_policy_setting = true;
 
-                if (found_disk_setting && found_storage_policy_setting)
+                if (!is_attach && found_disk_setting && found_storage_policy_setting)
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
