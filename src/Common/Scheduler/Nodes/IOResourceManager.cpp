@@ -490,16 +490,15 @@ void IOResourceManager::Resource::forEachResourceNode(IResourceManager::VisitorF
 
 void IOResourceManager::forEachNode(IResourceManager::VisitorFunc visitor)
 {
-    // Gather resource upfront to avoid holding mutex for a long time
-    std::map<String, ResourcePtr> sorted_resources;
+    // Copy resource to avoid holding mutex for a long time
+    std::unordered_map<String, ResourcePtr> resources_copy;
     {
         std::unique_lock lock{mutex};
-        for (auto & [resource_name, resource] : resources)
-            sorted_resources[resource_name] = resource;
+        resources_copy = resources;
     }
 
     /// Run tasks one by one to avoid concurrent calls to visitor
-    for (auto & [resource_name, resource] : sorted_resources)
+    for (auto & [resource_name, resource] : resources_copy)
         resource->forEachResourceNode(visitor);
 }
 
