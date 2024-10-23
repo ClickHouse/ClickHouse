@@ -1,5 +1,4 @@
 import io
-import json
 import logging
 import random
 import string
@@ -7,9 +6,11 @@ import time
 import uuid
 
 import pytest
-
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+import json
+from uuid import uuid4
+
 
 AVAILABLE_MODES = ["unordered", "ordered"]
 DEFAULT_AUTH = ["'minio'", "'minio123'"]
@@ -125,26 +126,6 @@ def started_cluster():
             use_old_analyzer=True,
         )
         cluster.add_instance(
-            "node1",
-            with_zookeeper=True,
-            stay_alive=True,
-            main_configs=[
-                "configs/zookeeper.xml",
-                "configs/s3queue_log.xml",
-                "configs/remote_servers.xml",
-            ],
-        )
-        cluster.add_instance(
-            "node2",
-            with_zookeeper=True,
-            stay_alive=True,
-            main_configs=[
-                "configs/zookeeper.xml",
-                "configs/s3queue_log.xml",
-                "configs/remote_servers.xml",
-            ],
-        )
-        cluster.add_instance(
             "instance_too_many_parts",
             user_configs=["configs/users.xml"],
             with_minio=True,
@@ -257,7 +238,6 @@ def create_table(
     auth=DEFAULT_AUTH,
     bucket=None,
     expect_error=False,
-    database_name="default",
 ):
     auth_params = ",".join(auth)
     bucket = started_cluster.minio_bucket if bucket is None else bucket
@@ -279,7 +259,7 @@ def create_table(
 
     node.query(f"DROP TABLE IF EXISTS {table_name}")
     create_query = f"""
-        CREATE TABLE {database_name}.{table_name} ({format})
+        CREATE TABLE {table_name} ({format})
         ENGINE = {engine_def}
         SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
         """
@@ -557,7 +537,7 @@ def test_direct_select_multiple_files(started_cluster, mode):
         table_name,
         mode,
         files_path,
-        additional_settings={"keeper_path": keeper_path, "processing_threads_num": 3},
+        additional_settings={"keeper_path": keeper_path},
     )
     for i in range(5):
         rand_values = [[random.randint(0, 50) for _ in range(3)] for _ in range(10)]
@@ -1097,7 +1077,7 @@ def test_drop_table(started_cluster):
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=100000
     )
     create_mv(node, table_name, dst_table_name)
-    node.wait_for_log_line(f"rows from file: test_drop_data")
+    node.wait_for_log_line(f"Reading from file: test_drop_data")
     node.query(f"DROP TABLE {table_name} SYNC")
     assert node.contains_in_log(
         f"StorageS3Queue (default.{table_name}): Table is being dropped"
@@ -1961,64 +1941,6 @@ def test_upgrade_2(started_cluster):
 
     node.restart_with_latest_version()
     assert table_name in node.query("SHOW TABLES")
-
-
-def test_replicated(started_cluster):
-    node1 = started_cluster.instances["node1"]
-    node2 = started_cluster.instances["node2"]
-
-    table_name = f"test_replicated_{uuid.uuid4().hex[:8]}"
-    dst_table_name = f"{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}"
-    files_path = f"{table_name}_data"
-    files_to_generate = 1000
-
-    node1.query("DROP DATABASE IF EXISTS r")
-    node2.query("DROP DATABASE IF EXISTS r")
-
-    node1.query(
-        "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node1')"
-    )
-    node2.query(
-        "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node2')"
-    )
-
-    create_table(
-        started_cluster,
-        node1,
-        table_name,
-        "ordered",
-        files_path,
-        additional_settings={
-            "keeper_path": keeper_path,
-        },
-        database_name="r",
-    )
-
-    assert '"processing_threads_num":16' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
-
-    total_values = generate_random_files(
-        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
-    )
-
-    create_mv(node1, f"r.{table_name}", dst_table_name)
-    create_mv(node2, f"r.{table_name}", dst_table_name)
-
-    def get_count():
-        return int(
-            node1.query(
-                f"SELECT count() FROM clusterAllReplicas(cluster, default.{dst_table_name})"
-            )
-        )
-
-    expected_rows = files_to_generate
-    for _ in range(20):
-        if expected_rows == get_count():
-            break
-        time.sleep(1)
-    assert expected_rows == get_count()
 
 
 def test_bad_settings(started_cluster):

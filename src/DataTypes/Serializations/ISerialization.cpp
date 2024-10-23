@@ -42,9 +42,10 @@ ISerialization::Kind ISerialization::stringToKind(const String & str)
 {
     if (str == "Default")
         return Kind::DEFAULT;
-    if (str == "Sparse")
+    else if (str == "Sparse")
         return Kind::SPARSE;
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind '{}'", str);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind '{}'", str);
 }
 
 const std::set<SubstreamType> ISerialization::Substream::named_types

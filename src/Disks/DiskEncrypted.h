@@ -31,22 +31,22 @@ public:
 
     ReservationPtr reserve(UInt64 bytes) override;
 
-    bool existsFile(const String & path) const override
+    bool exists(const String & path) const override
     {
         auto wrapped_path = wrappedPath(path);
-        return delegate->existsFile(wrapped_path);
+        return delegate->exists(wrapped_path);
     }
 
-    bool existsDirectory(const String & path) const override
+    bool isFile(const String & path) const override
     {
         auto wrapped_path = wrappedPath(path);
-        return delegate->existsDirectory(wrapped_path);
+        return delegate->isFile(wrapped_path);
     }
 
-    bool existsFileOrDirectory(const String & path) const override
+    bool isDirectory(const String & path) const override
     {
         auto wrapped_path = wrappedPath(path);
-        return delegate->existsFileOrDirectory(wrapped_path);
+        return delegate->isDirectory(wrapped_path);
     }
 
     size_t getFileSize(const String & path) const override;
@@ -312,8 +312,10 @@ public:
         {
             return std::make_shared<FakeDiskTransaction>(*this);
         }
-
-        return createEncryptedTransaction();
+        else
+        {
+            return createEncryptedTransaction();
+        }
     }
 
     std::optional<UInt64> getTotalSpace() const override

@@ -174,7 +174,8 @@ void TimeSeriesDefinitionNormalizer::addMissingColumns(ASTCreateQuery & create) 
     {
         if (type->name == "Nullable")
             return type;
-        return makeASTDataType("Nullable", type);
+        else
+           return makeASTDataType("Nullable", type);
     };
 
     /// Add missing columns for the "data" table.
@@ -318,31 +319,26 @@ ASTPtr TimeSeriesDefinitionNormalizer::chooseIDAlgorithm(const ASTColumnDeclarat
     {
         return make_hash_function("sipHash64");
     }
-    if (id_type_which.isFixedString() && typeid_cast<const DataTypeFixedString &>(*id_type).getN() == 16)
+    else if (id_type_which.isFixedString() && typeid_cast<const DataTypeFixedString &>(*id_type).getN() == 16)
     {
         return make_hash_function("sipHash128");
     }
-    if (id_type_which.isUUID())
+    else if (id_type_which.isUUID())
     {
         return makeASTFunction("reinterpretAsUUID", make_hash_function("sipHash128"));
     }
-    if (id_type_which.isUInt128())
+    else if (id_type_which.isUInt128())
     {
         return makeASTFunction("reinterpretAsUInt128", make_hash_function("sipHash128"));
     }
-
-    throw Exception(
-        ErrorCodes::INCOMPATIBLE_COLUMNS,
-        "{}: The DEFAULT expression for column {} must contain an expression "
-        "which will be used to calculate the identifier of each time series: {} {} DEFAULT ... "
-        "If the DEFAULT expression is not specified then it can be chosen implicitly but only if the column type is one of these: "
-        "UInt64, UInt128, UUID. "
-        "For type {} the DEFAULT expression can't be chosen automatically, so please specify it explicitly",
-        time_series_storage_id.getNameForLogs(),
-        id_column.name,
-        id_column.name,
-        id_type->getName(),
-        id_type->getName());
+    else
+    {
+        throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "{}: The DEFAULT expression for column {} must contain an expression "
+                        "which will be used to calculate the identifier of each time series: {} {} DEFAULT ... "
+                        "If the DEFAULT expression is not specified then it can be chosen implicitly but only if the column type is one of these: UInt64, UInt128, UUID. "
+                        "For type {} the DEFAULT expression can't be chosen automatically, so please specify it explicitly",
+                        time_series_storage_id.getNameForLogs(), id_column.name, id_column.name, id_type->getName(), id_type->getName());
+    }
 }
 
 

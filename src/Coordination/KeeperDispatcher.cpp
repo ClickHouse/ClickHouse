@@ -63,7 +63,7 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
     {
         return true;
     }
-    if (request->getOpNum() == Coordination::OpNum::Multi)
+    else if (request->getOpNum() == Coordination::OpNum::Multi)
     {
         Coordination::ZooKeeperMultiRequest & multi_req = dynamic_cast<Coordination::ZooKeeperMultiRequest &>(*request);
         Int64 memory_delta = 0;
@@ -73,26 +73,27 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
             switch (sub_zk_request->getOpNum())
             {
                 case Coordination::OpNum::Create:
-                case Coordination::OpNum::CreateIfNotExists: {
-                    Coordination::ZooKeeperCreateRequest & create_req
-                        = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*sub_zk_request);
+                case Coordination::OpNum::CreateIfNotExists:
+                {
+                    Coordination::ZooKeeperCreateRequest & create_req = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*sub_zk_request);
                     memory_delta += create_req.bytesSize();
                     break;
                 }
-                case Coordination::OpNum::Set: {
+                case Coordination::OpNum::Set:
+                {
                     Coordination::ZooKeeperSetRequest & set_req = dynamic_cast<Coordination::ZooKeeperSetRequest &>(*sub_zk_request);
                     memory_delta += set_req.bytesSize();
                     break;
                 }
-                case Coordination::OpNum::Remove: {
-                    Coordination::ZooKeeperRemoveRequest & remove_req
-                        = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*sub_zk_request);
+                case Coordination::OpNum::Remove:
+                {
+                    Coordination::ZooKeeperRemoveRequest & remove_req = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*sub_zk_request);
                     memory_delta -= remove_req.bytesSize();
                     break;
                 }
-                case Coordination::OpNum::RemoveRecursive: {
-                    Coordination::ZooKeeperRemoveRecursiveRequest & remove_req
-                        = dynamic_cast<Coordination::ZooKeeperRemoveRecursiveRequest &>(*sub_zk_request);
+                case Coordination::OpNum::RemoveRecursive:
+                {
+                    Coordination::ZooKeeperRemoveRecursiveRequest & remove_req = dynamic_cast<Coordination::ZooKeeperRemoveRecursiveRequest &>(*sub_zk_request);
                     memory_delta -= remove_req.bytesSize();
                     break;
                 }
@@ -964,7 +965,7 @@ static uint64_t getTotalSize(const DiskPtr & disk, const std::string & path = ""
     uint64_t size = 0;
     for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
     {
-        if (disk->existsFile(it->path()))
+        if (disk->isFile(it->path()))
             size += disk->getFileSize(it->path());
         else
             size += getTotalSize(disk, it->path());

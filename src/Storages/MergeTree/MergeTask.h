@@ -27,7 +27,6 @@
 #include <Storages/MergeTree/MergeProgress.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Storages/MergeTree/PartitionActionBlocker.h>
 
 namespace ProfileEvents
 {
@@ -87,7 +86,7 @@ public:
         MergeTreeTransactionPtr txn,
         MergeTreeData * data_,
         MergeTreeDataMergerMutator * mutator_,
-        PartitionActionBlocker * merges_blocker_,
+        ActionBlocker * merges_blocker_,
         ActionBlocker * ttl_merges_blocker_)
         {
             global_ctx = std::make_shared<GlobalRuntimeContext>();
@@ -162,7 +161,7 @@ private:
         MergeListElement * merge_list_element_ptr{nullptr};
         MergeTreeData * data{nullptr};
         MergeTreeDataMergerMutator * mutator{nullptr};
-        PartitionActionBlocker * merges_blocker{nullptr};
+        ActionBlocker * merges_blocker{nullptr};
         ActionBlocker * ttl_merges_blocker{nullptr};
         StorageSnapshotPtr storage_snapshot{nullptr};
         StorageMetadataPtr metadata_snapshot{nullptr};
@@ -216,12 +215,7 @@ private:
         MergeTreeData::MergingParams merging_params{};
 
         scope_guard temporary_directory_lock;
-
         UInt64 prev_elapsed_ms{0};
-
-        // will throw an exception if merge was cancelled in any way.
-        void checkOperationIsNotCanceled() const;
-        bool isCancelled() const;
     };
 
     using GlobalRuntimeContextPtr = std::shared_ptr<GlobalRuntimeContext>;

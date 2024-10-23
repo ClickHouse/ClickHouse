@@ -95,7 +95,8 @@ public:
         {
             if (if_exists)
                 return false;
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "File status for {} doesn't exist", filename);
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "File status for {} doesn't exist", filename);
         }
         file_statuses.erase(it);
         return true;
@@ -258,7 +259,6 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
 
             LOG_TRACE(log, "Metadata in keeper: {}", metadata_str);
 
-            table_metadata.adjustFromKeeper(metadata_from_zk);
             table_metadata.checkEquals(metadata_from_zk);
 
             return table_metadata;
@@ -319,7 +319,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                      code, exception.getPathForFirstFailedOp(), zookeeper_path.string());
             continue;
         }
-        if (code != Coordination::Error::ZOK)
+        else if (code != Coordination::Error::ZOK)
             zkutil::KeeperMultiException::check(code, requests, responses);
 
         return table_metadata;
