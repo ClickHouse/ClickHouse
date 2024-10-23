@@ -82,6 +82,7 @@ def clear_workloads_and_resources():
         drop workload if exists all;
         drop resource if exists io_write;
         drop resource if exists io_read;
+        drop resource if exists io;
     """
     )
     yield
@@ -821,6 +822,42 @@ def test_resource_read_and_write():
     assert (
         node.query(
             f"select dequeued_requests>0 from system.scheduler where resource='io_read' and path ilike '%/production/%' and type='fifo'"
+        )
+        == "1\n"
+    )
+
+
+def test_resource_any_disk():
+    node.query(
+        f"""
+        drop table if exists data;
+        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_resource';
+    """
+    )
+
+    node.query(
+        f"""
+        create resource io (write any disk, read any disk);
+        create workload all settings max_cost = 1000000;
+    """
+    )
+
+    node.query(
+        f"insert into data select * from numbers(1e5) settings workload='all'"
+    )
+
+    assert (
+        node.query(
+            f"select dequeued_requests>0 from system.scheduler where resource='io' and path ilike '%/all/%' and type='fifo'"
+        )
+        == "1\n"
+    )
+
+    node.query(f"select sum(key*key) from data settings workload='all'")
+
+    assert (
+        node.query(
+            f"select dequeued_requests>0 from system.scheduler where resource='io' and path ilike '%/all/%' and type='fifo'"
         )
         == "1\n"
     )
