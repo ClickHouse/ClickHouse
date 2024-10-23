@@ -38,6 +38,7 @@ ALL_DECLARATION_FILES="
     $ROOT_PATH/src/Storages/MemorySettings.cpp
     $ROOT_PATH/src/Storages/ExecutableSettings.cpp
     $ROOT_PATH/src/Storages/MySQL/MySQLSettings.cpp
+    $ROOT_PATH/src/Databases/MySQL/MaterializedMySQLSettings.cpp
 "
 
 # We create an initial file with the shape {setting_name} {ClassName}{Type} SettingsDeclaration
