@@ -58,7 +58,7 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	{"enable_analyzer", TrueOrFalse},
 	{"enable_deflate_qpl_codec", TrueOrFalse},
 	{"enable_early_constant_folding", TrueOrFalse},
-	{"enable_early_constant_enable_extended_results_for_datetime_functionsfolding", TrueOrFalse},
+	{"enable_extended_results_for_datetime_functions", TrueOrFalse},
 	{"enable_http_compression", TrueOrFalse},
 	{"enable_memory_bound_merging_of_aggregation_results", TrueOrFalse},
 	{"enable_multiple_prewhere_read_steps", TrueOrFalse},

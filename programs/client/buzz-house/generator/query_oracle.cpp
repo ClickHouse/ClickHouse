@@ -174,7 +174,6 @@ static const std::map<sql_query_grammar::OutFormat, sql_query_grammar::InFormat>
 
 int QueryOracle::GenerateExportQuery(RandomGenerator &rg, const SQLTable &t, sql_query_grammar::SQLQuery &sq2) {
 	bool first = true;
-	NestedType *ntp = nullptr;
 	sql_query_grammar::Insert *ins = sq2.mutable_inner_query()->mutable_insert();
 	sql_query_grammar::FileFunc *ff = ins->mutable_tfunction()->mutable_file();
 	sql_query_grammar::SelectStatementCore *sel = ins->mutable_select()->mutable_select_core();
@@ -189,39 +188,24 @@ int QueryOracle::GenerateExportQuery(RandomGenerator &rg, const SQLTable &t, sql
 	buf.resize(0);
 	for (const auto &entry : t.cols) {
 		if (entry.second.CanBeInserted()) {
-			if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
-				for (const auto &entry2 : ntp->subtypes) {
-					const std::string &cname = "c" + std::to_string(entry.first) + ".c" + std::to_string(entry2.cname);
+			const std::string &cname = "c" + std::to_string(entry.first);
 
-					if (!first) {
-						buf += ", ";
-					}
-					buf += cname;
-					buf += " ";
-					buf += entry2.subtype->TypeName(true);
-					sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_col()->set_column(std::move(cname));
-					first = false;
-				}
-			} else {
-				const std::string &cname = "c" + std::to_string(entry.first);
-
-				if (!first) {
-					buf += ", ";
-				}
-				buf += cname;
-				buf += " ";
-				buf += entry.second.tp->TypeName(true);
-				if (entry.second.nullable.has_value()) {
-					buf += entry.second.nullable.value() ? "" : " NOT";
-					buf += " NULL";
-				}
-				sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_col()->set_column(std::move(cname));
-				/* ArrowStream doesn't support UUID */
-				if (outf == sql_query_grammar::OutFormat::OUT_ArrowStream && dynamic_cast<UUIDType*>(entry.second.tp)) {
-					outf = sql_query_grammar::OutFormat::OUT_CSV;
-				}
-				first = false;
+			if (!first) {
+				buf += ", ";
 			}
+			buf += cname;
+			buf += " ";
+			buf += entry.second.tp->TypeName(true);
+			if (entry.second.nullable.has_value()) {
+				buf += entry.second.nullable.value() ? "" : " NOT";
+				buf += " NULL";
+			}
+			sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_col()->set_column(std::move(cname));
+			/* ArrowStream doesn't support UUID */
+			if (outf == sql_query_grammar::OutFormat::OUT_ArrowStream && dynamic_cast<UUIDType*>(entry.second.tp)) {
+				outf = sql_query_grammar::OutFormat::OUT_CSV;
+			}
+			first = false;
 		}
 	}
 	ff->set_outformat(outf);
@@ -254,7 +238,6 @@ int QueryOracle::GenerateClearQuery(const SQLTable &t, sql_query_grammar::SQLQue
 }
 
 int QueryOracle::GenerateImportQuery(const SQLTable &t, const sql_query_grammar::SQLQuery &sq2, sql_query_grammar::SQLQuery &sq4) {
-	NestedType *ntp = nullptr;
 	sql_query_grammar::Insert *ins = sq4.mutable_inner_query()->mutable_insert();
 	sql_query_grammar::InsertIntoTable *iit = ins->mutable_itable();
 	sql_query_grammar::InsertFromFile *iff = ins->mutable_ffile();
@@ -267,18 +250,9 @@ int QueryOracle::GenerateImportQuery(const SQLTable &t, const sql_query_grammar:
 	est->mutable_table()->set_table("t" + std::to_string(t.tname));
 	for (const auto &entry : t.cols) {
 		if (entry.second.CanBeInserted()) {
-			if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
-				for (const auto &entry2 : ntp->subtypes) {
-					sql_query_grammar::ColumnPath *cp = iit->add_cols();
+			sql_query_grammar::ColumnPath *cp = iit->add_cols();
 
-					cp->mutable_col()->set_column("c" + std::to_string(entry.first));
-					cp->add_sub_cols()->set_column("c" + std::to_string(entry2.cname));
-				}
-			} else {
-				sql_query_grammar::ColumnPath *cp = iit->add_cols();
-
-				cp->mutable_col()->set_column("c" + std::to_string(entry.first));
-			}
+			cp->mutable_col()->set_column("c" + std::to_string(entry.first));
 		}
 	}
 	iff->set_path(ff.path());
