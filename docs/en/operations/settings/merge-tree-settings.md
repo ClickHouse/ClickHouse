@@ -49,7 +49,7 @@ Default value: 8192.
 
 Maximum size of data granules in bytes.
 
-Default value: 10Mb.
+Default value: 10485760 (ca. 10 MiB).
 
 To restrict the granule size only by number of rows, set to 0 (not recommended).
 
