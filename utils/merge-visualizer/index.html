@@ -303,6 +303,8 @@ async function load() {
     merged_rows = 0;
     merged_bytes = 0;
     merged_parts = 0;
+    currently_active_parts = {};
+    prev_time = null;
 
     const host = document.getElementById('url').value;
     const user = document.getElementById('user').value;
