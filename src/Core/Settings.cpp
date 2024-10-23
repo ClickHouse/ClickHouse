@@ -4,7 +4,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
-#include <Core/FormatFactorySettingsDeclaration.h>
+#include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsChangesHistory.h>
 #include <Core/SettingsEnums.h>
@@ -5817,7 +5817,7 @@ Allow writing simple SELECT queries without the leading SELECT keyword, which ma
 
 
 // End of COMMON_SETTINGS
-// Please add settings related to formats in FormatFactorySettingsDeclaration.h, move obsolete settings to OBSOLETE_SETTINGS and obsolete format settings to OBSOLETE_FORMAT_SETTINGS.
+// Please add settings related to formats in Core/FormatFactorySettings.h, move obsolete settings to OBSOLETE_SETTINGS and obsolete format settings to OBSOLETE_FORMAT_SETTINGS.
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
     /** Obsolete settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \

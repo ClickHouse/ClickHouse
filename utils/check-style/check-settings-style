@@ -12,10 +12,14 @@
 export LC_COLLATE="C"
 ROOT_PATH=$(git rev-parse --show-toplevel)
 
-# Duplicated or incorrect setting declarations
+
 SETTINGS_FILE=$(mktemp)
 trap "rm ${SETTINGS_FILE}" EXIT
+
+
+# Please note that ALL FILES MUST BE NAMED {}Settings and  that must match the class name too
 ALL_DECLARATION_FILES="
+  $ROOT_PATH/src/Core/FormatFactorySettings.h
   $ROOT_PATH/src/Core/Settings.cpp
   $ROOT_PATH/src/Core/ServerSettings.cpp
   $ROOT_PATH/src/Storages/MergeTree/MergeTreeSettings.cpp
@@ -33,32 +37,25 @@ ALL_DECLARATION_FILES="
   $ROOT_PATH/src/Storages/FileLog/FileLogSettings.cpp
   $ROOT_PATH/src/Storages/Distributed/DistributedSettings.cpp
   $ROOT_PATH/src/Storages/SetSettings.cpp
-  $ROOT_PATH/src/Core/FormatFactorySettingsDeclaration.h"
+  $ROOT_PATH/src/Storages/MemorySettings.cpp
+"
+
+# We create an initial file with the shape {setting_name} {ClassName}{Type} SettingsDeclaration
+# We will use SettingsDeclaration to differentiate between setting declaration and usage
+function add_setting_declaration_file()
+{
+    if ! [ -f "$1" ]; then
+        echo "File '$1' does not exist."
+    fi
+    filename=$(basename -- "$1")
+    filename="${filename%.*}"
+    grep "    M(" $1 | awk -vfilename="${filename}" '{print substr($2, 0, length($2) - 1) " " filename substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
+}
 
 for settings_file in ${ALL_DECLARATION_FILES};
 do
-  if ! [ -f "${settings_file}" ]; then
-    echo "File '${settings_file}' does not exist."
-  fi
+    add_setting_declaration_file $settings_file
 done
-
-cat $ROOT_PATH/src/Core/Settings.cpp $ROOT_PATH/src/Core/FormatFactorySettingsDeclaration.h | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " *Settings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq > ${SETTINGS_FILE}
-cat $ROOT_PATH/src/Core/ServerSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " ServerSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
-cat $ROOT_PATH/src/Storages/MergeTree/MergeTreeSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " MergeTreeSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
-cat $ROOT_PATH/src/Coordination/CoordinationSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " CoordinationSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
-cat $ROOT_PATH/src/Databases/DatabaseReplicatedSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " DatabaseReplicatedSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
-cat $ROOT_PATH/src/Storages/TimeSeries/TimeSeriesSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " TimeSeriesSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
-cat $ROOT_PATH/src/Storages/RocksDB/RocksDBSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " RocksDBSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
-cat $ROOT_PATH/src/Storages/RabbitMQ/RabbitMQSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " RabbitMQSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
-cat $ROOT_PATH/src/Storages/PostgreSQL/MaterializedPostgreSQLSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " MaterializedPostgreSQLSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
-cat $ROOT_PATH/src/Storages/ObjectStorageQueue/ObjectStorageQueueSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " ObjectStorageQueueSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
-cat $ROOT_PATH/src/Storages/MaterializedView/RefreshSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " RefreshSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
-cat $ROOT_PATH/src/Storages/NATS/NATSSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " NATSSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
-cat $ROOT_PATH/src/Storages/Kafka/KafkaSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " KafkaSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
-cat $ROOT_PATH/src/Storages/Hive/HiveSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " HiveSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
-cat $ROOT_PATH/src/Storages/FileLog/FileLogSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " FileLogSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
-cat $ROOT_PATH/src/Storages/Distributed/DistributedSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " DistributedSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
-cat $ROOT_PATH/src/Storages/SetSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " SetSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
 
 # Check that if there are duplicated settings (declared in different objects) they all have the same type (it's simpler to validate style with that assert)
 for setting in $(
@@ -74,9 +71,9 @@ done
 # Note that rg outputs 'path:$line', so with replace ':' with a space and then reorder to have "$setting $type $path"
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | \
     xargs rg "^\s*extern const .*Settings" | tr ':' ' ' | \
-    awk '{print substr($5, 0, length($5) -1) " " $4 " " substr($1, 0, length($1) - 1)}' >> ${SETTINGS_FILE}
+    awk '{print substr($5, 0, length($5) -1) " " $4 " " $1}' >> ${SETTINGS_FILE}
 
-# Duplicate extern declarations for settings
+# Detect duplicate extern declarations for settings (harmless but better style)
 awk '{if (seen[$0]++) print $3 " -> " $1 ;}' ${SETTINGS_FILE} | while read line;
 do
     echo "# Found duplicated setting declaration in: $line"
@@ -91,6 +88,8 @@ done
 #done
 
 # Look for settings declared with multiple types
+# This works based on the fact that the if the setting declaration and usage have different types then the pair
+# <setting, type> won't be unique
 for setting in $(
       awk '{ gsub(/^.*Settings/, "", $2); print $1 " " $2}' ${SETTINGS_FILE} | \
       sort | uniq | awk '{ print $1 }' | uniq -d
