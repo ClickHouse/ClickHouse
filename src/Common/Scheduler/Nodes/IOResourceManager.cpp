@@ -113,7 +113,7 @@ void IOResourceManager::Resource::deleteNode(const NodeInfo & info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Removing workload '{}' with children in resource '{}'",
         info.name, resource_name);
 
-    executeInSchedulerThread([&, this]
+    executeInSchedulerThread([&]
     {
         if (!info.parent.empty())
             node_for_workload[info.parent]->detachUnifiedChild(node);
