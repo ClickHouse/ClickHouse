@@ -36,6 +36,9 @@ public:
         /// Size of data part in bytes.
         size_t size = 0;
 
+        /// Size of data part in rows
+        size_t rows = 0;
+
         /// How old this data part in seconds.
         time_t age = 0;
 
