@@ -41,6 +41,11 @@ namespace Setting
     extern const SettingsBool cloud_mode;
 }
 
+namespace ObjectStorageQueueSetting
+{
+    extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
+}
+
 namespace
 {
     UInt64 getCurrentTime()
@@ -227,7 +232,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
 
     std::vector<std::string> metadata_paths;
     size_t buckets_num = 0;
-    if (settings.mode == ObjectStorageQueueMode::ORDERED)
+    if (settings[ObjectStorageQueueSetting::mode] == ObjectStorageQueueMode::ORDERED)
     {
         buckets_num = getBucketsNum(table_metadata);
         if (buckets_num == 0)

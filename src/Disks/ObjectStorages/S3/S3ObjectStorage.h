@@ -5,8 +5,8 @@
 #if USE_AWS_S3
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Disks/ObjectStorages/S3/S3Capabilities.h>
 #include <memory>
+#include <IO/S3/S3Capabilities.h>
 #include <IO/S3Settings.h>
 #include <Common/MultiVersion.h>
 #include <Common/ObjectStorageKeyGenerator.h>
@@ -147,8 +147,6 @@ public:
     std::string getObjectsNamespace() const override { return uri.bucket; }
 
     bool isRemote() const override { return true; }
-
-    void setCapabilitiesSupportBatchDelete(bool value) { s3_capabilities.support_batch_delete = value; }
 
     std::unique_ptr<IObjectStorage> cloneObjectStorage(
         const std::string & new_namespace,

@@ -1,15 +1,16 @@
 #pragma once
 
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
-#include <Storages/StorageInMemoryMetadata.h>
+#include <Core/SettingsEnums.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <base/types.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
-#include <base/types.h>
 
 namespace DB
 {
 
+struct ObjectStorageQueueSettings;
 class WriteBuffer;
 class ReadBuffer;
 
