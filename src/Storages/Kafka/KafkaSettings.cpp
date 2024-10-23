@@ -18,31 +18,31 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-#define KAFKA_RELATED_SETTINGS(M, ALIAS) \
-    M(String, kafka_broker_list, "", "A comma-separated list of brokers for Kafka engine.", 0) \
-    M(String, kafka_topic_list, "", "A list of Kafka topics.", 0) \
-    M(String, kafka_group_name, "", "Client group id string. All Kafka consumers sharing the same group.id belong to the same group.", 0) \
+#define KAFKA_RELATED_SETTINGS(DECLARE, ALIAS) \
+    DECLARE(String, kafka_broker_list, "", "A comma-separated list of brokers for Kafka engine.", 0) \
+    DECLARE(String, kafka_topic_list, "", "A list of Kafka topics.", 0) \
+    DECLARE(String, kafka_group_name, "", "Client group id string. All Kafka consumers sharing the same group.id belong to the same group.", 0) \
     /* those are mapped to format factory settings */ \
-    M(String, kafka_format, "", "The message format for Kafka engine.", 0) \
-    M(String, kafka_schema, "", "Schema identifier (used by schema-based formats) for Kafka engine", 0) \
-    M(UInt64, kafka_num_consumers, 1, "The number of consumers per table for Kafka engine.", 0) \
+    DECLARE(String, kafka_format, "", "The message format for Kafka engine.", 0) \
+    DECLARE(String, kafka_schema, "", "Schema identifier (used by schema-based formats) for Kafka engine", 0) \
+    DECLARE(UInt64, kafka_num_consumers, 1, "The number of consumers per table for Kafka engine.", 0) \
     /* default is = max_insert_block_size / kafka_num_consumers  */ \
-    M(UInt64, kafka_max_block_size, 0, "Number of row collected by poll(s) for flushing data from Kafka.", 0) \
-    M(UInt64, kafka_skip_broken_messages, 0, "Skip at least this number of broken messages from Kafka topic per block", 0) \
-    M(Bool, kafka_commit_every_batch, false, "Commit every consumed and handled batch instead of a single commit after writing a whole block", 0) \
-    M(String, kafka_client_id, "", "Client identifier.", 0) \
+    DECLARE(UInt64, kafka_max_block_size, 0, "Number of row collected by poll(s) for flushing data from Kafka.", 0) \
+    DECLARE(UInt64, kafka_skip_broken_messages, 0, "Skip at least this number of broken messages from Kafka topic per block", 0) \
+    DECLARE(Bool, kafka_commit_every_batch, false, "Commit every consumed and handled batch instead of a single commit after writing a whole block", 0) \
+    DECLARE(String, kafka_client_id, "", "Client identifier.", 0) \
     /* default is stream_poll_timeout_ms */ \
-    M(Milliseconds, kafka_poll_timeout_ms, 0, "Timeout for single poll from Kafka.", 0) \
-    M(UInt64, kafka_poll_max_batch_size, 0, "Maximum amount of messages to be polled in a single Kafka poll.", 0) \
-    M(UInt64, kafka_consumers_pool_ttl_ms, 60'000, "TTL for Kafka consumers (in milliseconds)", 0) \
+    DECLARE(Milliseconds, kafka_poll_timeout_ms, 0, "Timeout for single poll from Kafka.", 0) \
+    DECLARE(UInt64, kafka_poll_max_batch_size, 0, "Maximum amount of messages to be polled in a single Kafka poll.", 0) \
+    DECLARE(UInt64, kafka_consumers_pool_ttl_ms, 60'000, "TTL for Kafka consumers (in milliseconds)", 0) \
     /* default is stream_flush_interval_ms */ \
-    M(Milliseconds, kafka_flush_interval_ms, 0, "Timeout for flushing data from Kafka.", 0) \
-    M(Bool, kafka_thread_per_consumer, false, "Provide independent thread for each consumer", 0) \
-    M(StreamingHandleErrorMode, kafka_handle_error_mode, StreamingHandleErrorMode::DEFAULT, "How to handle errors for Kafka engine. Possible values: default (throw an exception after kafka_skip_broken_messages broken messages), stream (save broken messages and errors in virtual columns _raw_message, _error).", 0) \
-    M(Bool, kafka_commit_on_select, false, "Commit messages when select query is made", 0) \
-    M(UInt64, kafka_max_rows_per_message, 1, "The maximum number of rows produced in one kafka message for row-based formats.", 0) \
-    M(String, kafka_keeper_path, "", "The path to the table in ClickHouse Keeper", 0) \
-    M(String, kafka_replica_name, "", "The replica name in ClickHouse Keeper", 0) \
+    DECLARE(Milliseconds, kafka_flush_interval_ms, 0, "Timeout for flushing data from Kafka.", 0) \
+    DECLARE(Bool, kafka_thread_per_consumer, false, "Provide independent thread for each consumer", 0) \
+    DECLARE(StreamingHandleErrorMode, kafka_handle_error_mode, StreamingHandleErrorMode::DEFAULT, "How to handle errors for Kafka engine. Possible values: default (throw an exception after kafka_skip_broken_messages broken messages), stream (save broken messages and errors in virtual columns _raw_message, _error).", 0) \
+    DECLARE(Bool, kafka_commit_on_select, false, "Commit messages when select query is made", 0) \
+    DECLARE(UInt64, kafka_max_rows_per_message, 1, "The maximum number of rows produced in one kafka message for row-based formats.", 0) \
+    DECLARE(String, kafka_keeper_path, "", "The path to the table in ClickHouse Keeper", 0) \
+    DECLARE(String, kafka_replica_name, "", "The replica name in ClickHouse Keeper", 0) \
 
 #define OBSOLETE_KAFKA_SETTINGS(M, ALIAS) \
     MAKE_OBSOLETE(M, Char, kafka_row_delimiter, '\0') \

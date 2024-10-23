@@ -19,11 +19,11 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
 }
 
-#define HIVE_RELATED_SETTINGS(M, ALIAS) \
-    M(Char, hive_text_field_delimeter, '\x01', "How to split one row of hive data with format text", 0) \
-    M(Bool, enable_orc_stripe_minmax_index, false, "Enable using ORC stripe level minmax index.", 0) \
-    M(Bool, enable_parquet_rowgroup_minmax_index, false, "Enable using Parquet row-group level minmax index.", 0) \
-    M(Bool, enable_orc_file_minmax_index, true, "Enable using ORC file level minmax index.", 0)
+#define HIVE_RELATED_SETTINGS(DECLARE, ALIAS) \
+    DECLARE(Char, hive_text_field_delimeter, '\x01', "How to split one row of hive data with format text", 0) \
+    DECLARE(Bool, enable_orc_stripe_minmax_index, false, "Enable using ORC stripe level minmax index.", 0) \
+    DECLARE(Bool, enable_parquet_rowgroup_minmax_index, false, "Enable using Parquet row-group level minmax index.", 0) \
+    DECLARE(Bool, enable_orc_file_minmax_index, true, "Enable using ORC file level minmax index.", 0)
 
 #define LIST_OF_HIVE_SETTINGS(M, ALIAS) \
     HIVE_RELATED_SETTINGS(M, ALIAS) \
