@@ -65,6 +65,8 @@ struct IndicesDescription : public std::vector<IndexDescription>, IHints<>
 {
     /// Index with name exists
     bool has(const String & name) const;
+    /// Index with type exists
+    bool hasType(const String & type) const;
     /// Convert description to string
     String toString() const;
     /// Parse description from string

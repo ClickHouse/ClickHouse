@@ -2,6 +2,7 @@
 #include <Columns/ColumnMap.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacros.h>
+#include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
 #include <Core/FormatFactorySettingsDeclaration.h>
 #include <Core/Settings.h>
@@ -4453,8 +4454,9 @@ Optimize GROUP BY when all keys in block are constant
     M(Bool, legacy_column_name_of_tuple_literal, false, R"(
 List all names of element of large tuple literals in their column names instead of hash. This settings exists only for compatibility reasons. It makes sense to set to 'true', while doing rolling update of cluster from version lower than 21.7 to higher.
 )", 0) \
-    M(Bool, enable_named_columns_in_function_tuple, true, R"(
+    M(Bool, enable_named_columns_in_function_tuple, false, R"(
 Generate named tuples in function tuple() when all names are unique and can be treated as unquoted identifiers.
+Beware that this setting might currently result in broken queries. It's not recommended to use in production
 )", 0) \
     \
     M(Bool, query_plan_enable_optimizations, true, R"(
@@ -5556,7 +5558,10 @@ If it is set to true, allow to specify experimental compression codecs (but we d
 Only in ClickHouse Cloud. Allow to create ShareSet and SharedJoin
 )", 0) \
     M(UInt64, max_limit_for_ann_queries, 1'000'000, R"(
-SELECT queries with LIMIT bigger than this setting cannot use ANN indexes. Helps to prevent memory overflows in ANN search indexes.
+SELECT queries with LIMIT bigger than this setting cannot use vector similarity indexes. Helps to prevent memory overflows in vector similarity indexes.
+)", 0) \
+    M(UInt64, hnsw_candidate_list_size_for_search, 256, R"(
+The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'.
 )", 0) \
     M(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction
@@ -5806,8 +5811,10 @@ Allow to create database with Engine=MaterializedPostgreSQL(...).
     M(Bool, allow_experimental_query_deduplication, false, R"(
 Experimental data deduplication for SELECT queries based on part UUIDs
 )", 0) \
+    M(Bool, implicit_select, false, R"(
+Allow writing simple SELECT queries without the leading SELECT keyword, which makes it simple for calculator-style usage, e.g. `1 + 2` becomes a valid query.
+)", 0)
 
-    /** End of experimental features */
 
 // End of COMMON_SETTINGS
 // Please add settings related to formats in FormatFactorySettingsDeclaration.h, move obsolete settings to OBSOLETE_SETTINGS and obsolete format settings to OBSOLETE_FORMAT_SETTINGS.
@@ -5893,7 +5900,7 @@ Experimental data deduplication for SELECT queries based on part UUIDs
     OBSOLETE_FORMAT_SETTINGS(M, ALIAS) \
 
 DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SettingsTraits, LIST_OF_SETTINGS)
-
+IMPLEMENT_SETTINGS_TRAITS(SettingsTraits, LIST_OF_SETTINGS)
 
 /** Settings of query execution.
   * These settings go to users.xml.
@@ -5926,9 +5933,6 @@ private:
 
     std::unordered_set<std::string_view> settings_changed_by_compatibility_setting;
 };
-
-
-IMPLEMENT_SETTINGS_TRAITS(SettingsTraits, LIST_OF_SETTINGS)
 
 /** Set the settings from the profile (in the server configuration, many settings can be listed in one profile).
     * The profile can also be set using the `set` functions, like the `profile` setting.
@@ -6077,7 +6081,7 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
 }
 
 #define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
-    Settings ## TYPE NAME = & Settings ## Impl :: NAME;
+    Settings ## TYPE NAME = & SettingsImpl :: NAME;
 
 namespace Setting
 {
@@ -6111,18 +6115,7 @@ bool Settings::operator==(const Settings & other) const
     return *impl == *other.impl;
 }
 
-#define IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR(CLASS_NAME, TYPE)           \
-    const SettingField##TYPE & Settings::operator[](CLASS_NAME##TYPE t) const  \
-    {                                                                    \
-        return impl.get()->*t;                                           \
-    }                                                                    \
-    SettingField##TYPE & Settings::operator[](CLASS_NAME##TYPE t)        \
-    {                                                                    \
-        return impl.get()->*t;                                           \
-    }
-
 COMMON_SETTINGS_SUPPORTED_TYPES(Settings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
-#undef IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR
 
 bool Settings::has(std::string_view name) const
 {
@@ -6199,16 +6192,6 @@ std::vector<std::string_view> Settings::getUnchangedNames() const
 {
     std::vector<std::string_view> setting_names;
     for (const auto & setting : impl->allUnchanged())
-    {
-        setting_names.emplace_back(setting.getName());
-    }
-    return setting_names;
-}
-
-std::vector<std::string_view> Settings::getChangedNames() const
-{
-    std::vector<std::string_view> setting_names;
-    for (const auto & setting : impl->allChanged())
     {
         setting_names.emplace_back(setting.getName());
     }
