@@ -2131,12 +2131,7 @@ If it is set to true, then a user is allowed to executed distributed DDL queries
 If it is set to true, allow to specify meaningless compression codecs.
 )", 0) \
     M(Bool, enable_deflate_qpl_codec, false, R"(
-If turned on, the DEFLATE_QPL codec may be used to compress columns.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
+Obsolete setting, does nothing.
 )", 0) \
     M(Bool, enable_zstd_qat_codec, false, R"(
 If turned on, the ZSTD_QAT codec may be used to compress columns.
