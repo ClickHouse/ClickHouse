@@ -972,6 +972,9 @@ Check page size every this many rows. Consider decreasing if you have columns wi
     M(Bool, output_format_parquet_write_page_index, true, R"(
 Add a possibility to write page index into parquet files.
 )", 0) \
+    M(Bool, output_format_parquet_datetime_as_uint32, false, R"(
+Write DateTime values as raw unix timestamp (read back as UInt32), instead of converting to milliseconds (read back as DateTime64(3)).
+)", 0) \
     M(String, output_format_avro_codec, "", R"(
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd'.
 )", 0) \
