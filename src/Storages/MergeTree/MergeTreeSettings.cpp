@@ -237,44 +237,44 @@ namespace ErrorCodes
     DECLARE(LightweightMutationProjectionMode, lightweight_mutation_projection_mode, LightweightMutationProjectionMode::THROW, "When lightweight delete happens on a table with projection(s), the possible operations include throw the exception as projection exists, or drop projections of this table's relevant parts, or rebuild the projections.", 0) \
     DECLARE(DeduplicateMergeProjectionMode, deduplicate_merge_projection_mode, DeduplicateMergeProjectionMode::THROW, "Whether to allow create projection for the table with non-classic MergeTree. Ignore option is purely for compatibility which might result in incorrect answer. Otherwise, if allowed, what is the action when merge, drop or rebuild.", 0) \
 
-#define MAKE_OBSOLETE_MERGE_TREE_SETTING(DECLARE, TYPE, NAME, DEFAULT) \
-    DECLARE(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", BaseSettingsHelpers::Flags::OBSOLETE)
+#define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
+    M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", BaseSettingsHelpers::Flags::OBSOLETE)
 
-#define OBSOLETE_MERGE_TREE_SETTINGS(DECLARE, ALIAS) \
+#define OBSOLETE_MERGE_TREE_SETTINGS(M, ALIAS) \
     /** Obsolete settings that do nothing but left for compatibility reasons. */ \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(DECLARE, UInt64, min_relative_delay_to_yield_leadership, 120) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(DECLARE, UInt64, check_delay_period, 60) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(DECLARE, UInt64, replicated_max_parallel_sends, 0) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(DECLARE, UInt64, replicated_max_parallel_sends_for_table, 0) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(DECLARE, UInt64, replicated_max_parallel_fetches, 0) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(DECLARE, UInt64, replicated_max_parallel_fetches_for_table, 0) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(DECLARE, Bool, write_final_mark, true) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(DECLARE, UInt64, min_bytes_for_compact_part, 0) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(DECLARE, UInt64, min_rows_for_compact_part, 0) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(DECLARE, Bool, in_memory_parts_enable_wal, true) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(DECLARE, UInt64, write_ahead_log_max_bytes, 1024 * 1024 * 1024) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(DECLARE, UInt64, write_ahead_log_bytes_to_fsync, 100ULL * 1024 * 1024) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(DECLARE, UInt64, write_ahead_log_interval_ms_to_fsync, 100) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(DECLARE, Bool, in_memory_parts_insert_sync, false) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(DECLARE, MaxThreads, max_part_loading_threads, 0) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(DECLARE, MaxThreads, max_part_removal_threads, 0) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(DECLARE, Bool, use_metadata_cache, false) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(DECLARE, UInt64, merge_tree_enable_clear_old_broken_detached, 0) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(DECLARE, UInt64, merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds, 1ULL * 3600 * 24 * 30) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(DECLARE, Seconds, replicated_fetches_http_connection_timeout, 0) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(DECLARE, Seconds, replicated_fetches_http_send_timeout, 0) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(DECLARE, Seconds, replicated_fetches_http_receive_timeout, 0) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(DECLARE, UInt64, replicated_max_parallel_fetches_for_host, DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(DECLARE, CleanDeletedRows, clean_deleted_rows, CleanDeletedRows::Never) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, min_relative_delay_to_yield_leadership, 120) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, check_delay_period, 60) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, replicated_max_parallel_sends, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, replicated_max_parallel_sends_for_table, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, replicated_max_parallel_fetches, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, replicated_max_parallel_fetches_for_table, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, write_final_mark, true) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, min_bytes_for_compact_part, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, min_rows_for_compact_part, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, in_memory_parts_enable_wal, true) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, write_ahead_log_max_bytes, 1024 * 1024 * 1024) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, write_ahead_log_bytes_to_fsync, 100ULL * 1024 * 1024) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, write_ahead_log_interval_ms_to_fsync, 100) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, in_memory_parts_insert_sync, false) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, MaxThreads, max_part_loading_threads, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, MaxThreads, max_part_removal_threads, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, use_metadata_cache, false) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, merge_tree_enable_clear_old_broken_detached, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds, 1ULL * 3600 * 24 * 30) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Seconds, replicated_fetches_http_connection_timeout, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Seconds, replicated_fetches_http_send_timeout, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Seconds, replicated_fetches_http_receive_timeout, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, replicated_max_parallel_fetches_for_host, DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, CleanDeletedRows, clean_deleted_rows, CleanDeletedRows::Never) \
 
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE
 #define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(MACRO) \
     MACRO(index_granularity)
 
-#define LIST_OF_MERGE_TREE_SETTINGS(DECLARE, ALIAS) \
-    MERGE_TREE_SETTINGS(DECLARE, ALIAS)             \
-    OBSOLETE_MERGE_TREE_SETTINGS(DECLARE, ALIAS)
+#define LIST_OF_MERGE_TREE_SETTINGS(M, ALIAS) \
+    MERGE_TREE_SETTINGS(M, ALIAS)             \
+    OBSOLETE_MERGE_TREE_SETTINGS(M, ALIAS)
 
 DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS)
 
