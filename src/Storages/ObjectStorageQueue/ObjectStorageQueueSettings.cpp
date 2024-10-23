@@ -1,9 +1,10 @@
-#include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
+#include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
+#include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
 
 
@@ -72,6 +73,38 @@ ObjectStorageQueueSettings::ObjectStorageQueueSettings(const ObjectStorageQueueS
 ObjectStorageQueueSettings::ObjectStorageQueueSettings(ObjectStorageQueueSettings && settings) noexcept
     : impl(std::make_unique<ObjectStorageQueueSettingsImpl>(std::move(*settings.impl)))
 {
+}
+
+void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
+    MutableColumnsAndConstraints & params,
+    const std::string & table_name,
+    const std::string & database_name,
+    const StorageObjectStorageQueue & storage) const
+{
+    MutableColumns & res_columns = params.res_columns;
+
+    /// We cannot use setting.isValueChanged(), because we do not store initial settings in storage.
+    /// Therefore check if the setting was changed via table metadata.
+    const auto & settings_changes = storage.getInMemoryMetadataPtr()->settings_changes->as<ASTSetQuery>()->changes;
+    auto is_changed = [&](const std::string & setting_name) -> bool
+    {
+        return settings_changes.end() != std::find_if(
+            settings_changes.begin(), settings_changes.end(),
+            [&](const SettingChange & change){ return change.name == setting_name; });
+    };
+
+    for (const auto & change : impl->all())
+    {
+        size_t i = 0;
+        res_columns[i++]->insert(database_name);
+        res_columns[i++]->insert(table_name);
+        res_columns[i++]->insert(change.getName());
+        res_columns[i++]->insert(convertFieldToString(change.getValue()));
+        res_columns[i++]->insert(change.getTypeName());
+        res_columns[i++]->insert(is_changed(change.getName()));
+        res_columns[i++]->insert(change.getDescription());
+        res_columns[i++]->insert(false);
+    }
 }
 
 ObjectStorageQueueSettings::~ObjectStorageQueueSettings() = default;
