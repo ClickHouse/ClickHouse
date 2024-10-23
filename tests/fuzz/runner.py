@@ -95,12 +95,14 @@ def run_fuzzer(fuzzer: str, timeout: int):
     cmd_line = f"{DEBUGGER} ./{fuzzer} {fuzzer_arguments}"
 
     env = None
+    with_fuzzer_args = ""
     if use_fuzzer_args:
         env = {"FUZZER_ARGS": f"{custom_libfuzzer_options} {libfuzzer_corpora}"}
+        with_fuzzer_args = f" with FUZZER_ARGS '{custom_libfuzzer_options} {libfuzzer_corpora}'"
     else:
         cmd_line += f" {custom_libfuzzer_options} {libfuzzer_corpora}"
 
-    logging.info("...will execute: %s%s", cmd_line, f" with FUZZER_ARGS {env["FUZZER_ARGS"]}" if use_fuzzer_args else "")
+    logging.info("...will execute: '%s'%s", cmd_line, with_fuzzer_args)
 
     stopwatch = Stopwatch()
     try:
