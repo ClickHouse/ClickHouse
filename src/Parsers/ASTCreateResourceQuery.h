@@ -18,7 +18,7 @@ public:
     struct Operation
     {
         AccessMode mode;
-        String disk;
+        std::optional<String> disk; // Applies to all disks if not set
 
         friend bool operator ==(const Operation & lhs, const Operation & rhs) { return lhs.mode == rhs.mode && lhs.disk == rhs.disk; }
         friend bool operator !=(const Operation & lhs, const Operation & rhs) { return !(lhs == rhs); }

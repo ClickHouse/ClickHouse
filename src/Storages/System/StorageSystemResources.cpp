@@ -4,7 +4,6 @@
 #include <Parsers/queryToString.h>
 #include <Storages/System/StorageSystemResources.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
-#include "Parsers/ASTCreateQuery.h"
 #include <Parsers/ASTCreateResourceQuery.h>
 
 
@@ -40,12 +39,12 @@ void StorageSystemResources::fillData(MutableColumns & res_columns, ContextPtr c
                 {
                     case DB::ASTCreateResourceQuery::AccessMode::Read:
                     {
-                        read_disks.emplace_back(disk);
+                        read_disks.emplace_back(disk ? *disk : "ANY");
                         break;
                     }
                     case DB::ASTCreateResourceQuery::AccessMode::Write:
                     {
-                        write_disks.emplace_back(disk);
+                        write_disks.emplace_back(disk ? *disk : "ANY");
                         break;
                     }
                 }

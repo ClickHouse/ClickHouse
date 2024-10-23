@@ -46,7 +46,13 @@ Example:
 An alternative way to express which disks are used by a resource is SQL syntax:
 
 ```sql
-CREATE RESOURCE (WRITE DISK disk1, READ DISK disk2)
+CREATE RESOURCE resource_name (WRITE DISK disk1, READ DISK disk2)
+```
+
+Resource could be used for any number of disk for READ or WRITE or both for READ and WRITE. There a syntax allowing to use a resource for all the disks:
+
+```sql
+CREATE RESOURCE all_io (READ ANY DISK, WRITE ANY DISK);
 ```
 
 Note that server configuration options have priority over SQL way to define resources.

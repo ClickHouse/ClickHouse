@@ -88,63 +88,81 @@ DiskObjectStorage::DiskObjectStorage(
         [this] (const std::vector<IWorkloadEntityStorage::Event> & events)
         {
             std::unique_lock lock{resource_mutex};
-            for (auto [entity_type, resource_name, resource] : events)
+
+            // Sets of matching resource names. Required to resolve possible conflicts in deterministic way
+            std::set<String> new_read_resource_name_from_sql{read_resource_name_from_sql};
+            std::set<String> new_write_resource_name_from_sql{write_resource_name_from_sql};
+            std::set<String> new_read_resource_name_from_sql_any{read_resource_name_from_sql_any};
+            std::set<String> new_write_resource_name_from_sql_any{write_resource_name_from_sql_any};
+
+            for (const auto & [entity_type, resource_name, resource] : events)
             {
                 if (entity_type == WorkloadEntityType::Resource)
                 {
                     if (resource) // CREATE RESOURCE
                     {
-                        // We rely on the fact that every disk is allowed to be mentioned at most
-                        // in one RESOURCE for READ and in one RESOURCE for WRITE
-                        // TODO(serxa): add disk operations validation in workload entity storage
                         auto * create = typeid_cast<ASTCreateResourceQuery *>(resource.get());
                         chassert(create);
                         for (const auto & [mode, disk] : create->operations)
                         {
-                            if (disk == name)
+                            if (!disk)
                             {
                                 switch (mode)
                                 {
-                                    case ASTCreateResourceQuery::AccessMode::Read:
-                                    {
-                                        if (read_resource_name_from_config.empty())
-                                            LOG_INFO(log, "Using resource '{}' for READ", resource_name);
-                                        else
-                                            LOG_INFO(log, "Resource '{}' should be used for READ, but it is overridden by config to resource '{}'",
-                                                resource_name, read_resource_name_from_config);
-                                        read_resource_name_from_sql = resource_name;
-                                        break;
-                                    }
-                                    case ASTCreateResourceQuery::AccessMode::Write:
-                                    {
-                                        if (write_resource_name_from_config.empty())
-                                            LOG_INFO(log, "Using resource '{}' for WRITE", resource_name);
-                                        else
-                                            LOG_INFO(log, "Resource '{}' should be used for WRITE, but it is overridden by config to resource '{}'",
-                                                resource_name, write_resource_name_from_config);
-                                        write_resource_name_from_sql = resource_name;
-                                        break;
-                                    }
+                                    case ASTCreateResourceQuery::AccessMode::Read: new_read_resource_name_from_sql_any.insert(resource_name); break;
+                                    case ASTCreateResourceQuery::AccessMode::Write: new_write_resource_name_from_sql_any.insert(resource_name); break;
+                                }
+                            }
+                            else if (*disk == name)
+                            {
+                                switch (mode)
+                                {
+                                    case ASTCreateResourceQuery::AccessMode::Read: new_read_resource_name_from_sql.insert(resource_name); break;
+                                    case ASTCreateResourceQuery::AccessMode::Write: new_write_resource_name_from_sql.insert(resource_name); break;
                                 }
                             }
                         }
                     }
                     else // DROP RESOURCE
                     {
-                        if (read_resource_name_from_sql == resource_name)
-                        {
-                            LOG_INFO(log, "Stop using resource '{}' for READ", resource_name);
-                            read_resource_name_from_sql.clear();
-                        }
-                        if (write_resource_name_from_sql == resource_name)
-                        {
-                            LOG_INFO(log, "Stop using resource '{}' for WRITE", resource_name);
-                            write_resource_name_from_sql.clear();
-                        }
+                        new_read_resource_name_from_sql.erase(resource_name);
+                        new_write_resource_name_from_sql.erase(resource_name);
+                        new_read_resource_name_from_sql_any.erase(resource_name);
+                        new_write_resource_name_from_sql_any.erase(resource_name);
                     }
-                    break;
                 }
             }
+
+            String old_read_resource = getReadResourceNameNoLock();
+            String old_write_resource = getWriteResourceNameNoLock();
+
+            if (!new_read_resource_name_from_sql_any.empty())
+                read_resource_name_from_sql_any = *new_read_resource_name_from_sql_any.begin();
+            else
+                read_resource_name_from_sql_any.clear();
+
+            if (!new_write_resource_name_from_sql_any.empty())
+                write_resource_name_from_sql_any = *new_write_resource_name_from_sql_any.begin();
+            else
+                write_resource_name_from_sql_any.clear();
+
+            if (!new_read_resource_name_from_sql.empty())
+                read_resource_name_from_sql = *new_read_resource_name_from_sql.begin();
+            else
+                read_resource_name_from_sql.clear();
+
+            if (!new_write_resource_name_from_sql.empty())
+                write_resource_name_from_sql = *new_write_resource_name_from_sql.begin();
+            else
+                write_resource_name_from_sql.clear();
+
+            String new_read_resource = getReadResourceNameNoLock();
+            String new_write_resource = getWriteResourceNameNoLock();
+
+            if (old_read_resource != new_read_resource)
+                LOG_INFO(log, "Using resource '{}' instead of '{}' for READ", new_read_resource, old_write_resource);
+            if (old_write_resource != new_write_resource)
+                LOG_INFO(log, "Using resource '{}' instead of '{}' for WRITE", new_write_resource, old_write_resource);
         });
 }
 
@@ -545,13 +563,29 @@ static inline Settings updateIOSchedulingSettings(const Settings & settings, con
 String DiskObjectStorage::getReadResourceName() const
 {
     std::unique_lock lock(resource_mutex);
-    return read_resource_name_from_config.empty() ? read_resource_name_from_sql : read_resource_name_from_config;
+    return getReadResourceNameNoLock();
 }
 
 String DiskObjectStorage::getWriteResourceName() const
 {
     std::unique_lock lock(resource_mutex);
-    return write_resource_name_from_config.empty() ? write_resource_name_from_sql : write_resource_name_from_config;
+    return getWriteResourceNameNoLock();
+}
+
+String DiskObjectStorage::getReadResourceNameNoLock() const
+{
+    if (read_resource_name_from_config.empty())
+        return read_resource_name_from_sql.empty() ? read_resource_name_from_sql_any : read_resource_name_from_sql;
+    else
+        return read_resource_name_from_config;
+}
+
+String DiskObjectStorage::getWriteResourceNameNoLock() const
+{
+    if (write_resource_name_from_config.empty())
+        return write_resource_name_from_sql.empty() ? write_resource_name_from_sql_any : write_resource_name_from_sql;
+    else
+        return write_resource_name_from_config;
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
