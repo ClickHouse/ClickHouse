@@ -286,7 +286,7 @@ ASTPtr ASTBackupQuery::getRewrittenASTWithoutOnCluster(const WithoutOnClusterAST
     auto new_query = std::static_pointer_cast<ASTBackupQuery>(clone());
     new_query->cluster.clear();
     new_query->settings = rewriteSettingsWithoutOnCluster(new_query->settings, params);
-    new_query->setCurrentDatabase(new_query->elements, params.default_database);
+    ASTBackupQuery::setCurrentDatabase(new_query->elements, params.default_database);
     return new_query;
 }
 

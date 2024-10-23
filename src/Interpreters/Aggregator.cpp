@@ -2494,6 +2494,7 @@ void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
         {
             size_t size = non_empty_data.size();
             std::vector<AggregateDataPtr> data_vec;
+            data_vec.reserve(size);
 
             for (size_t result_num = 0; result_num < size; ++result_num)
                 data_vec.emplace_back(non_empty_data[result_num]->without_key + offsets_of_aggregate_states[i]);

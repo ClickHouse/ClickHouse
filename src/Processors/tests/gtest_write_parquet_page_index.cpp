@@ -37,7 +37,10 @@ std::shared_ptr<ISource> multiColumnsSource(const std::vector<DataTypePtr> & typ
     for (size_t i = 0; i < times; ++i)
     {
         Chunk chunk;
+
         Columns columns;
+        columns.reserve(type.size());
+
         for (size_t j = 0; j < type.size(); ++j)
         {
             auto column = type[j]->createColumn();
@@ -77,6 +80,12 @@ void validatePageIndex(
         std::vector<int64_t> column_index_lengths;
         std::vector<int64_t> offset_index_offsets;
         std::vector<int64_t> offset_index_lengths;
+
+        column_index_offsets.reserve(row_group->num_columns());
+        column_index_lengths.reserve(row_group->num_columns());
+        offset_index_offsets.reserve(row_group->num_columns());
+        offset_index_lengths.reserve(row_group->num_columns());
+
         for (int j = 0; j < row_group->num_columns(); j++)
         {
             auto column_chunk = row_group->ColumnChunk(j);
@@ -212,6 +221,7 @@ TEST(Parquet, WriteParquetPageIndexParrelelPlainEnconding)
 
     std::vector<std::vector<String>> values;
     std::vector<String> col;
+    col.reserve(100000);
     for (size_t i = 0; i < 100000; i++)
     {
         col.push_back(std::to_string(i));
@@ -252,6 +262,7 @@ TEST(Parquet, WriteParquetPageIndexParrelelAllNull)
 
     std::vector<std::vector<UInt64>> values;
     auto & col = values.emplace_back();
+    col.reserve(1000);
     for (size_t i = 0; i < 1000; i++)
     {
         col.push_back(0);
@@ -288,6 +299,7 @@ TEST(Parquet, WriteParquetPageIndexSingleThread)
 
     std::vector<std::vector<UInt64>> values;
     std::vector<UInt64> col;
+    col.reserve(1000);
     for (size_t i = 0; i < 1000; i++)
     {
         col.push_back(i % 10);

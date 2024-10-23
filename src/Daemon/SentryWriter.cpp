@@ -180,7 +180,7 @@ void SentryWriter::sendError(Type type, int sig_or_error, const std::string & er
             {
                 int code = sig_or_error;
                 /// Can be only LOGICAL_ERROR, but just in case.
-                sentry_set_tag("exception", DB::ErrorCodes::getName(code).data());
+                sentry_set_tag("exception", DB::ErrorCodes::getName(code).data());  /// NOLINT(bugprone-suspicious-stringview-data-usage)
                 sentry_set_extra("exception_code", sentry_value_new_int32(code));
                 break;
             }

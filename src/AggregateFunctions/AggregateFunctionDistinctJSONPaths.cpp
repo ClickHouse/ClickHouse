@@ -327,7 +327,7 @@ private:
 };
 
 template <typename Data>
-AggregateFunctionPtr createAggregateFunctionDistinctJSONPathsAndTypes(
+static AggregateFunctionPtr createAggregateFunctionDistinctJSONPathsAndTypes(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertNoParameters(name, parameters);

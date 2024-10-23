@@ -149,7 +149,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     if (!index_granularity_info.mark_type.adaptive)
     {
         /// Read directly to marks.
-        chassert(expected_uncompressed_size == plain_marks.size() * sizeof(MarkInCompressedFile));
+        chassert(expected_uncompressed_size == plain_marks.size() * sizeof(MarkInCompressedFile));  /// NOLINT(bugprone-sizeof-expression)
         reader->readStrict(reinterpret_cast<char *>(plain_marks.data()), expected_uncompressed_size);
 
         if (!reader->eof())
