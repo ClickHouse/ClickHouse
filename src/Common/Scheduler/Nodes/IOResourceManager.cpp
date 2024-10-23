@@ -388,7 +388,7 @@ std::future<void> IOResourceManager::Resource::detachClassifier(VersionPtr && ve
 bool IOResourceManager::Classifier::has(const String & resource_name)
 {
     std::unique_lock lock{mutex};
-    return attachments.find(resource_name) != attachments.end();
+    return attachments.contains(resource_name);
 }
 
 ResourceLink IOResourceManager::Classifier::get(const String & resource_name)
@@ -447,7 +447,7 @@ std::future<void> IOResourceManager::Resource::attachClassifier(Classifier & cla
 bool IOResourceManager::hasResource(const String & resource_name) const
 {
     std::unique_lock lock{mutex};
-    return resources.find(resource_name) != resources.end();
+    return resources.contains(resource_name);
 }
 
 ClassifierPtr IOResourceManager::acquire(const String & workload_name)
