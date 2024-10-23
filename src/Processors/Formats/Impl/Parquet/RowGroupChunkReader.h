@@ -93,7 +93,7 @@ public:
         std::unordered_map<String, ColumnFilterPtr> filters);
     ~RowGroupChunkReader()
     {
-                printMetrics(std::cerr);
+//                printMetrics(std::cerr);
     }
     Chunk readChunk(size_t rows);
     bool hasMoreRows() const { return remain_rows > 0; }

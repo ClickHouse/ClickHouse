@@ -5,6 +5,15 @@
 #include <Processors/Formats/Impl/Parquet/ParquetReader.h>
 #include <arrow/io/util_internal.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/Stopwatch.h>
+
+namespace ProfileEvents
+{
+extern const Event ParquetFilteredRows;
+extern const Event ParquetFetchWaitTimeMicroseconds;
+extern const Event ParquetSkippedRows;
+extern const Event ParquetOutputRows;
+}
 
 namespace DB
 {
@@ -38,6 +47,7 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
         if (select_result.skip_all)
         {
             metrics.skipped_rows += rows_to_read;
+            ProfileEvents::increment(ProfileEvents::ParquetSkippedRows, rows_to_read);
         }
 
         bool all = select_result.valid_count == rows_to_read;
@@ -55,10 +65,10 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
                     reader_columns_mapping.at(name)->skip(rows_to_read);
                 }
             }
+            ProfileEvents::increment(ProfileEvents::ParquetFilteredRows, rows_to_read);
         }
         else
         {
-            prefetch->startPrefetch();
             for (const auto & name : column_names)
             {
                 if (select_result.intermediate_columns.contains(name))
@@ -78,13 +88,15 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
                     columns.emplace_back(std::move(column));
                 }
             }
-            metrics.filtered_rows += (rows_to_read - (columns[0]->size() - rows_read));
             rows_read = columns[0]->size();
+            metrics.filtered_rows += (rows_to_read - rows_read);
+            ProfileEvents::increment(ProfileEvents::ParquetFilteredRows, rows_to_read - rows_read);
         }
         remain_rows -= rows_to_read;
     }
 
     metrics.output_rows += rows_read;
+    ProfileEvents::increment(ProfileEvents::ParquetOutputRows, rows_read);
     if (rows_read)
         return Chunk(std::move(columns), rows_read);
     else
@@ -222,12 +234,14 @@ RowGroupChunkReader::RowGroupChunkReader(
         {
             PageReaderCreator creator = [&, idx]
             {
+                Stopwatch time;
                 auto data = prefetch_conditions->readRange(getColumnRange(*row_group_meta->ColumnChunk(idx)));
                 auto page_reader = std::make_unique<LazyPageReader>(
                     std::make_shared<ReadBufferFromMemory>(reinterpret_cast<char *>(data.data), data.size),
                     parquet_reader->properties,
                     remain_rows,
                     row_group_meta->ColumnChunk(idx)->compression());
+                ProfileEvents::increment(ProfileEvents::ParquetFetchWaitTimeMicroseconds, time.elapsedMicroseconds());
                 return page_reader;
             };
             const auto * column_desc = parquet_reader->meta_data->schema()->Column(idx);
@@ -268,6 +282,7 @@ RowGroupChunkReader::RowGroupChunkReader(
         if (filter)
             filter_columns.push_back(col_with_name.name);
     }
+    prefetch->startPrefetch();
     selectConditions = std::make_unique<SelectConditions>(reader_columns_mapping, filter_columns, parquet_reader->expression_filters, parquet_reader->header);
 }
 

@@ -2,6 +2,11 @@
 
 #include <parquet/thrift_internal.h>
 #include <iostream>
+#include <Common/ProfileEvents.h>
+namespace ProfileEvents
+{
+extern const Event ParquetSkipPageNum;
+}
 
 namespace DB
 {
@@ -153,6 +158,7 @@ void LazyPageReader::skipNextPage()
 {
     size_t compressed_len = current_page_header.compressed_page_size;
     stream->seek(compressed_len, SEEK_CUR);
+    ProfileEvents::increment(ProfileEvents::ParquetSkipPageNum, 1);
 }
 const parquet::format::PageHeader & LazyPageReader::peekNextPageHeader()
 {
