@@ -23,6 +23,15 @@ namespace Setting
     extern const SettingsMaxThreads max_parsing_threads;
 }
 
+namespace ObjectStorageQueueSetting
+{
+    extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
+    extern const ObjectStorageQueueSettingsUInt32 max_processed_bytes_before_commit;
+    extern const ObjectStorageQueueSettingsUInt32 max_processed_files_before_commit;
+    extern const ObjectStorageQueueSettingsUInt32 max_processed_rows_before_commit;
+    extern const ObjectStorageQueueSettingsUInt32 max_processing_time_sec_before_commit;
+}
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;

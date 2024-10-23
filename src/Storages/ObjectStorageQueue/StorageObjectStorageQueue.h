@@ -5,7 +5,6 @@
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
@@ -16,6 +15,7 @@
 namespace DB
 {
 class ObjectStorageQueueMetadata;
+struct ObjectStorageQueueSettings;
 
 class StorageObjectStorageQueue : public IStorage, WithContext
 {
