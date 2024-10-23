@@ -38,6 +38,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool enable_named_columns_in_function_tuple;
     extern const SettingsBool transform_null_in;
 }
 
@@ -180,6 +181,33 @@ public:
                     if (result.empty())
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __actionName is internal nad should not be used directly");
                     break;
+                }
+
+                if (planner_context.getQueryContext()->getSettingsRef()[Setting::enable_named_columns_in_function_tuple])
+                {
+                    /// Function "tuple" which generates named tuple should use argument aliases to construct its name.
+                    if (function_node.getFunctionName() == "tuple")
+                    {
+                        if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(function_node.getResultType().get()))
+                        {
+                            if (type_tuple->haveExplicitNames())
+                            {
+                                const auto & names = type_tuple->getElementNames();
+                                size_t size = names.size();
+                                WriteBufferFromOwnString s;
+                                s << "tuple(";
+                                for (size_t i = 0; i < size; ++i)
+                                {
+                                    if (i != 0)
+                                        s << ", ";
+                                    s << backQuoteIfNeed(names[i]);
+                                }
+                                s << ")";
+                                result = s.str();
+                                break;
+                            }
+                        }
+                    }
                 }
 
                 String in_function_second_argument_node_name;

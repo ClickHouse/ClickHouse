@@ -516,6 +516,7 @@ void Client::connect()
     {
         std::cout << "Connected to " << server_name << " server version " << server_version << "." << std::endl << std::endl;
 
+#ifndef CLICKHOUSE_CLOUD
         auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
         auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
 
@@ -531,6 +532,7 @@ void Client::connect()
                         << "It may indicate that the server is out of date and can be upgraded." << std::endl
                         << std::endl;
         }
+#endif
     }
 
     if (!client_context->getSettingsRef()[Setting::use_client_time_zone])

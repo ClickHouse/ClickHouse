@@ -1,13 +1,31 @@
-#include <Storages/MergeTree/TTLMergeSelector.h>
+#include <Storages/MergeTree/MergeSelectors/TTLMergeSelector.h>
+#include <Storages/MergeTree/MergeSelectors/MergeSelectorFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Parsers/queryToString.h>
 
 #include <algorithm>
 #include <cmath>
+#include <any>
 
 
 namespace DB
 {
+
+void registerTTLDeleteMergeSelector(MergeSelectorFactory & factory)
+{
+    factory.registerPrivateSelector("TTLDelete", [](const std::any & params)
+    {
+        return std::make_shared<TTLDeleteMergeSelector>(std::any_cast<TTLDeleteMergeSelector::Params>(params));
+    });
+}
+
+void registerTTLRecompressMergeSelector(MergeSelectorFactory & factory)
+{
+    factory.registerPrivateSelector("TTLRecompress", [](const std::any & params)
+    {
+        return std::make_shared<TTLRecompressMergeSelector>(std::any_cast<TTLRecompressMergeSelector::Params>(params));
+    });
+}
 
 const String & getPartitionIdForPart(const ITTLMergeSelector::Part & part_info)
 {
