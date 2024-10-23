@@ -507,7 +507,15 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 //
                 // So instead of printing it as regular tuple,
                 // let's print it as ExpressionList instead (i.e. with ", " delimiter).
+                //
+                // Another special case is tupleElement(('a', 1) AS x, 1) which will
+                // be formatted as (('a', 1) AS x).1, and although added parens are needed
+                // it will parsed as Tuple(Tuple('a', 1)) of which we will take the first element.
+                //
+                // To mitigate this we add tuple function name and format it as (tuple('a', 1) AS x).1
+
                 bool tuple_arguments_valid = true;
+                bool is_tuple_literal_with_alias = false;
                 const auto * lit_left = arguments->children[0]->as<ASTLiteral>();
                 const auto * lit_right = arguments->children[1]->as<ASTLiteral>();
 
@@ -517,6 +525,11 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                     if (type != Field::Types::Tuple && type != Field::Types::Array)
                     {
                         tuple_arguments_valid = false;
+                    }
+
+                    if (type == Field::Types::Tuple && !lit_left->alias.empty())
+                    {
+                        is_tuple_literal_with_alias = true;
                     }
                 }
 
@@ -532,7 +545,18 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                         if (frame.need_parens)
                             settings.ostr << '(';
 
-                        arguments->children[0]->formatImpl(settings, state, nested_need_parens);
+                        if (is_tuple_literal_with_alias)
+                        {
+                            settings.ostr << '(';
+                            settings.ostr << (settings.hilite ? hilite_function : "") << "tuple" << (settings.hilite ? hilite_none : "");
+                            arguments->children[0]->formatImpl(settings, state, nested_dont_need_parens);
+                            settings.ostr << ')';
+                        }
+                        else
+                        {
+                            arguments->children[0]->formatImpl(settings, state, nested_need_parens);
+                        }
+
                         settings.ostr << (settings.hilite ? hilite_operator : "") << "." << (settings.hilite ? hilite_none : "");
                         arguments->children[1]->formatImpl(settings, state, nested_dont_need_parens);
                         written = true;
