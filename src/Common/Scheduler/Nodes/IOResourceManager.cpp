@@ -6,6 +6,7 @@
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/Priority.h>
 
@@ -40,7 +41,7 @@ namespace
 
 IOResourceManager::NodeInfo::NodeInfo(const ASTPtr & ast, const String & resource_name)
 {
-    auto * create = typeid_cast<ASTCreateWorkloadQuery *>(ast.get());
+    auto * create = assert_cast<ASTCreateWorkloadQuery *>(ast.get());
     name = create->getWorkloadName();
     parent = create->getWorkloadParent();
     settings.updateFromChanges(create->changes, resource_name);
@@ -238,7 +239,7 @@ void IOResourceManager::Workload::updateWorkload(const ASTPtr & new_entity)
 
 String IOResourceManager::Workload::getParent() const
 {
-    return typeid_cast<ASTCreateWorkloadQuery *>(workload_entity.get())->getWorkloadParent();
+    return assert_cast<ASTCreateWorkloadQuery *>(workload_entity.get())->getWorkloadParent();
 }
 
 IOResourceManager::IOResourceManager(IWorkloadEntityStorage & storage_)
