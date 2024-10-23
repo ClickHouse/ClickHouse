@@ -246,8 +246,13 @@ void ConcurrentHashJoin::joinBlock(Block & block, std::vector<Block> & res, std:
     chassert(res.empty());
     res.clear();
     res.reserve(dispatched_blocks.size());
-    std::ranges::transform(
-        dispatched_blocks, std::back_inserter(res), [](ScatteredBlock & res_block) { return std::move(res_block).getSourceBlock(); });
+    for (auto && res_block : dispatched_blocks)
+    {
+        if (res_block.rows())
+            res.emplace_back(std::move(res_block).getSourceBlock());
+    }
+    if (res.empty())
+        res.emplace_back(dispatched_blocks[0].getSourceBlock());
 }
 
 void ConcurrentHashJoin::checkTypesOfKeys(const Block & block) const
