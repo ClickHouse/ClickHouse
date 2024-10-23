@@ -5,7 +5,6 @@ import time
 import traceback
 
 import requests
-
 from praktika.execution.execution_settings import ExecutionSettings, ScalingType
 from praktika.utils import ContextManager, Shell
 

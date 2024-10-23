@@ -37,7 +37,7 @@ class HtmlRunnerHooks:
         )
         for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
             page_url = page_url.replace(bucket, endpoint)
-        #TODO: add support for non-PRs (use branch?)
+        # TODO: add support for non-PRs (use branch?)
         page_url += f"?PR={env.PR_NUMBER}&sha=latest&name_0={urllib.parse.quote(env.WORKFLOW_NAME, safe='')}"
         summary_result.html_link = page_url
 

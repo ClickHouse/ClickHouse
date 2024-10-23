@@ -1,11 +1,10 @@
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from praktika.utils import Utils
-
 from praktika import Artifact, Job
 from praktika.docker import Docker
 from praktika.secret import Secret
+from praktika.utils import Utils
 
 
 class Workflow:

@@ -4,7 +4,6 @@ import json
 from typing import Optional
 
 import requests
-
 from praktika._environment import _Environment
 from praktika.result import Result
 from praktika.settings import Settings

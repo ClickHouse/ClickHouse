@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from praktika._environment import _Environment
 from praktika._settings import _Settings
-from praktika.utils import MetaClasses, Utils, ContextManager, Shell
+from praktika.utils import ContextManager, MetaClasses, Shell, Utils
 
 
 @dataclasses.dataclass
@@ -35,6 +35,7 @@ class Result(MetaClasses.Serializable):
     Inner Class:
         Status: Defines possible statuses for the task, such as "success", "failure", etc.
     """
+
     class Status:
         SKIPPED = "skipped"
         SUCCESS = "success"
