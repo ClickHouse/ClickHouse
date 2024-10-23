@@ -281,7 +281,9 @@ void Set::checkIsCreated() const
 
 ColumnPtr checkDateTimePrecision(
     const ColumnPtr & column_to_cast,
-    const ColumnPtr & column_after_cast)
+    const ColumnPtr & column_after_cast,
+    const size_t num_rows,
+    [[maybe_unused]] const bool transform_null_in)
 {
     // Handle nullable columns
     const ColumnNullable * original_nullable_column = typeid_cast<const ColumnNullable *>(column_to_cast.get());
@@ -319,7 +321,31 @@ ColumnPtr checkDateTimePrecision(
             precision_null_map[row] = 0; // No precision loss
     }
 
-    return precision_null_map_column;
+    if (transform_null_in)
+        return ColumnNullable::create(result_nested_column->getPtr(), std::move(precision_null_map_column));
+
+    const NullMap * result_null_map = result_nullable_column
+        ? &result_nullable_column->getNullMapData()
+        : nullptr;
+
+    // Merge null maps
+    auto merged_null_map_column = ColumnUInt8::create(num_rows);
+    NullMap & merged_null_map = merged_null_map_column->getData();
+
+    const UInt8 * result_null_map_data = result_null_map ? result_null_map->data() : nullptr;
+    const UInt8 * precision_null_map_data = assert_cast<const ColumnUInt8 &>(*precision_null_map_column).getData().data();
+
+    for (size_t row = 0; row < num_rows; ++row)
+    {
+        UInt8 is_null = 0;
+        if (result_null_map_data && result_null_map_data[row])
+            is_null = 1;
+        if (precision_null_map_data[row])
+            is_null = 1;
+        merged_null_map[row] = is_null;
+    }
+
+    return ColumnNullable::create(result_nested_column->getPtr(), std::move(merged_null_map_column));
 }
 
 ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) const
@@ -358,10 +384,9 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     Columns materialized_columns;
     materialized_columns.reserve(num_key_columns);
 
-    // Collect individual null maps for merging later
-    std::vector<const NullMap *> individual_null_maps;
-    individual_null_maps.reserve(num_key_columns);
-    size_t num_rows = vec_res.size();
+    /// We will check existence in Set only for keys whose components do not contain any NULL value.
+    ConstNullMapPtr null_map{};
+    ColumnPtr null_map_holder;
 
     for (size_t i = 0; i < num_key_columns; ++i)
     {
@@ -384,85 +409,25 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         if (isDateTime64(column_to_cast.column->getDataType()))
         {
             // Get the precision null map
-            ColumnPtr precision_null_map = checkDateTimePrecision(column_to_cast.column, result);
+            result = checkDateTimePrecision(column_to_cast.column, result, vec_res.size(), transform_null_in);
 
-            // Get the result null map (if any)
-            const ColumnNullable * result_nullable_column = typeid_cast<const ColumnNullable *>(result.get());
-            const NullMap * result_null_map = result_nullable_column
-                ? &result_nullable_column->getNullMapData()
-                : nullptr;
-
-            // Merge null maps
-            auto merged_null_map_column = ColumnUInt8::create(num_rows);
-            NullMap & merged_null_map = merged_null_map_column->getData();
-
-            const UInt8 * result_null_map_data = result_null_map ? result_null_map->data() : nullptr;
-            const UInt8 * precision_null_map_data = assert_cast<const ColumnUInt8 &>(*precision_null_map).getData().data();
-
-            for (size_t row = 0; row < num_rows; ++row)
+            if (transform_null_in)
             {
-                UInt8 is_null = 0;
-                if (result_null_map_data && result_null_map_data[row])
-                    is_null = 1;
-                if (precision_null_map_data[row])
-                    is_null = 1;
-                merged_null_map[row] = is_null;
+                ColumnRawPtrs key_cols{result.get()};
+                null_map_holder = extractNestedColumnsAndNullMap(key_cols, null_map);
+
+                result = typeid_cast<const ColumnNullable *>(result.get())->getNestedColumnPtr(); // In case of transform_null_in, result column
+                                                                                                  // is considered as not nullable in HashMethodOneNumber
             }
-
-            // Get the nested column from result
-            ColumnPtr result_nested_column_ptr;
-            if (result_nullable_column)
-                result_nested_column_ptr = result_nullable_column->getNestedColumnPtr();
-            else
-                result_nested_column_ptr = result;
-
-            // Create a nullable column with the merged null map
-            result = ColumnNullable::create(result_nested_column_ptr, std::move(merged_null_map_column));
         }
 
         // Append the result to materialized columns
         materialized_columns.emplace_back(result);
         key_columns.emplace_back(materialized_columns.back().get());
-
-        // Collect the null map (if any)
-        const ColumnNullable * nullable_col = typeid_cast<const ColumnNullable *>(result.get());
-        if (nullable_col && transform_null_in)
-        {
-            individual_null_maps.push_back(&nullable_col->getNullMapData());
-            // Replace the key column with its nested column
-            key_columns.back() = &nullable_col->getNestedColumn();
-        }
-        else
-            individual_null_maps.push_back(nullptr);
     }
-
-    /// We will check existence in Set only for keys whose components do not contain any NULL value.
-    ConstNullMapPtr null_map{};
-    ColumnPtr null_map_holder;
 
     if (!transform_null_in)
         null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
-    else
-    {
-        auto merged_null_map_column = ColumnUInt8::create(num_rows);
-        NullMap & merged_null_map = merged_null_map_column->getData();
-        std::fill(merged_null_map.begin(), merged_null_map.end(), 0);
-
-        for (const NullMap * map : individual_null_maps)
-        {
-            if (map)
-            {
-                for (size_t row = 0; row < num_rows; ++row)
-                {
-                    if ((*map)[row])
-                        merged_null_map[row] = 1;
-                }
-            }
-        }
-
-        null_map = &merged_null_map;
-        null_map_holder = std::move(merged_null_map_column);
-    }
 
     executeOrdinary(key_columns, vec_res, negative, null_map);
 
