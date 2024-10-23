@@ -193,8 +193,8 @@ void getDirectChildrenOnDiskImpl(
 }
 
 MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewritableObjectStorage(
-    ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t file_sizes_cache_size)
-    : MetadataStorageFromPlainObjectStorage(object_storage_, storage_path_prefix_, file_sizes_cache_size)
+    ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t object_metadata_cache_size)
+    : MetadataStorageFromPlainObjectStorage(object_storage_, storage_path_prefix_, object_metadata_cache_size)
     , metadata_key_prefix(DB::getMetadataKeyPrefix(object_storage))
     , path_map(loadPathPrefixMap(metadata_key_prefix, object_storage))
 {
