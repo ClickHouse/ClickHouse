@@ -1,5 +1,6 @@
 #include <Coordination/CoordinationSettings.h>
 #include <Core/BaseSettings.h>
+#include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteIntText.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
@@ -64,13 +65,12 @@ namespace ErrorCodes
     M(UInt64, log_slow_connection_operation_threshold_ms, 1000, "Log message if a certain operation took too long inside a single connection", 0)
 
 DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
 
 struct CoordinationSettingsImpl : public BaseSettings<CoordinationSettingsTraits>
 {
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 };
-
-IMPLEMENT_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
 
 void CoordinationSettingsImpl::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
 {
@@ -99,7 +99,7 @@ void CoordinationSettingsImpl::loadFromConfig(const String & config_elem, const 
 }
 
 #define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
-    CoordinationSettings##TYPE NAME = &CoordinationSettings##Impl ::NAME;
+    CoordinationSettings##TYPE NAME = &CoordinationSettingsImpl ::NAME;
 
 namespace CoordinationSetting
 {
@@ -119,18 +119,7 @@ CoordinationSettings::CoordinationSettings(const CoordinationSettings & settings
 
 CoordinationSettings::~CoordinationSettings() = default;
 
-#define IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR(CLASS_NAME, TYPE) \
-    const SettingField##TYPE & CoordinationSettings::operator[](CLASS_NAME##TYPE t) const \
-    { \
-        return impl.get()->*t; \
-    } \
-    SettingField##TYPE & CoordinationSettings::operator[](CLASS_NAME##TYPE t) \
-    { \
-        return impl.get()->*t; \
-    }
-
 COORDINATION_SETTINGS_SUPPORTED_TYPES(CoordinationSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
-#undef IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR
 
 void CoordinationSettings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
 {
