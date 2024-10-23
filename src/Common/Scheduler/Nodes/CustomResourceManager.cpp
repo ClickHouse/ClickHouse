@@ -224,7 +224,7 @@ void CustomResourceManager::updateConfiguration(const Poco::Util::AbstractConfig
 bool CustomResourceManager::hasResource(const String & resource_name) const
 {
     std::lock_guard lock{mutex};
-    return state->resources.find(resource_name) != state->resources.end();
+    return state->resources.contains(resource_name);
 }
 
 ClassifierPtr CustomResourceManager::acquire(const String & classifier_name)
