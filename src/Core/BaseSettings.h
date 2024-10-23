@@ -22,6 +22,9 @@ class ReadBuffer;
 class WriteBuffer;
 
 /** Template class to define collections of settings.
+  * If you create a new setting, please also add it to ./utils/check-style/check-settings-style
+  * for validation
+  *
   * Example of usage:
   *
   * mysettings.h:

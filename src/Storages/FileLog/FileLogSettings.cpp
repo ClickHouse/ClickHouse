@@ -64,7 +64,6 @@ FileLogSettings::~FileLogSettings() = default;
 
 FILELOG_SETTINGS_SUPPORTED_TYPES(FileLogSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 
-
 void FileLogSettings::loadFromQuery(ASTStorage & storage_def)
 {
     if (storage_def.settings)

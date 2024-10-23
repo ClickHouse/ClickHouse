@@ -15,28 +15,29 @@ ROOT_PATH=$(git rev-parse --show-toplevel)
 SETTINGS_FILE=$(mktemp)
 trap 'rm ${SETTINGS_FILE}' EXIT
 
-# Please note that ALL FILES MUST BE NAMED {}Settings and  that must match the class name too
+# Please note that ALL FILES MUST BE NAMED {}Settings and that must also be EXACTLY the class name
 ALL_DECLARATION_FILES="
-  $ROOT_PATH/src/Core/FormatFactorySettings.h
-  $ROOT_PATH/src/Core/Settings.cpp
-  $ROOT_PATH/src/Core/ServerSettings.cpp
-  $ROOT_PATH/src/Storages/MergeTree/MergeTreeSettings.cpp
-  $ROOT_PATH/src/Coordination/CoordinationSettings.cpp
-  $ROOT_PATH/src/Databases/DatabaseReplicatedSettings.cpp
-  $ROOT_PATH/src/Storages/TimeSeries/TimeSeriesSettings.cpp
-  $ROOT_PATH/src/Storages/RocksDB/RocksDBSettings.cpp
-  $ROOT_PATH/src/Storages/RabbitMQ/RabbitMQSettings.cpp
-  $ROOT_PATH/src/Storages/PostgreSQL/MaterializedPostgreSQLSettings.cpp
-  $ROOT_PATH/src/Storages/ObjectStorageQueue/ObjectStorageQueueSettings.cpp
-  $ROOT_PATH/src/Storages/MaterializedView/RefreshSettings.cpp
-  $ROOT_PATH/src/Storages/NATS/NATSSettings.cpp
-  $ROOT_PATH/src/Storages/Kafka/KafkaSettings.cpp
-  $ROOT_PATH/src/Storages/Hive/HiveSettings.cpp
-  $ROOT_PATH/src/Storages/FileLog/FileLogSettings.cpp
-  $ROOT_PATH/src/Storages/Distributed/DistributedSettings.cpp
-  $ROOT_PATH/src/Storages/SetSettings.cpp
-  $ROOT_PATH/src/Storages/MemorySettings.cpp
-  $ROOT_PATH/src/Storages/MySQL/MySQLSettings.cpp
+    $ROOT_PATH/src/Core/FormatFactorySettings.h
+    $ROOT_PATH/src/Core/Settings.cpp
+    $ROOT_PATH/src/Core/ServerSettings.cpp
+    $ROOT_PATH/src/Storages/MergeTree/MergeTreeSettings.cpp
+    $ROOT_PATH/src/Coordination/CoordinationSettings.cpp
+    $ROOT_PATH/src/Databases/DatabaseReplicatedSettings.cpp
+    $ROOT_PATH/src/Storages/TimeSeries/TimeSeriesSettings.cpp
+    $ROOT_PATH/src/Storages/RocksDB/RocksDBSettings.cpp
+    $ROOT_PATH/src/Storages/RabbitMQ/RabbitMQSettings.cpp
+    $ROOT_PATH/src/Storages/PostgreSQL/MaterializedPostgreSQLSettings.cpp
+    $ROOT_PATH/src/Storages/ObjectStorageQueue/ObjectStorageQueueSettings.cpp
+    $ROOT_PATH/src/Storages/MaterializedView/RefreshSettings.cpp
+    $ROOT_PATH/src/Storages/NATS/NATSSettings.cpp
+    $ROOT_PATH/src/Storages/Kafka/KafkaSettings.cpp
+    $ROOT_PATH/src/Storages/Hive/HiveSettings.cpp
+    $ROOT_PATH/src/Storages/FileLog/FileLogSettings.cpp
+    $ROOT_PATH/src/Storages/Distributed/DistributedSettings.cpp
+    $ROOT_PATH/src/Storages/SetSettings.cpp
+    $ROOT_PATH/src/Storages/MemorySettings.cpp
+    $ROOT_PATH/src/Storages/ExecutableSettings.cpp
+    $ROOT_PATH/src/Storages/MySQL/MySQLSettings.cpp
 "
 
 # We create an initial file with the shape {setting_name} {ClassName}{Type} SettingsDeclaration
