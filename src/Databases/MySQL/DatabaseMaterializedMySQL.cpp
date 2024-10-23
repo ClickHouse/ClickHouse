@@ -18,6 +18,7 @@
 #    include <Storages/StorageMySQL.h>
 #    include <Storages/StorageMaterializedMySQL.h>
 #    include <Storages/NamedCollectionsHelpers.h>
+#    include <Storages/MySQL/MySQLSettings.h>
 #    include <Common/setThreadName.h>
 #    include <Common/PoolId.h>
 #    include <filesystem>
