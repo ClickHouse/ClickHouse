@@ -33,3 +33,4 @@ INSERT INTO test VALUES (10);
 SELECT x FROM test ORDER BY x;
 OPTIMIZE TABLE test;
 SELECT name FROM system.parts WHERE active AND table = 'test' AND database = currentDatabase();
+DROP TABLE test;
