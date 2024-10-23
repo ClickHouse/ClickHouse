@@ -137,11 +137,23 @@ void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, 
 void SerializationTuple::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('(', ostr);
+    if (elems.size())
+    {
+        if (settings.spark_text_output_format)
+            elems[0]->serializeText(extractElementColumn(column, 0), row_num, ostr, settings);
+        else
+            elems[0]->serializeTextQuoted(extractElementColumn(column, 0), row_num, ostr, settings);
+    }
     for (size_t i = 0; i < elems.size(); ++i)
     {
-        if (i != 0)
-            writeChar(',', ostr);
-        elems[i]->serializeTextQuoted(extractElementColumn(column, i), row_num, ostr, settings);
+        writeChar(',', ostr);
+        if (settings.spark_text_output_format)
+        {
+            writeChar(' ', ostr);
+            elems[i]->serializeText(extractElementColumn(column, i), row_num, ostr, settings);
+        }
+        else
+            elems[i]->serializeTextQuoted(extractElementColumn(column, i), row_num, ostr, settings);
     }
     writeChar(')', ostr);
 }

@@ -1231,6 +1231,9 @@ Set the quoting rule for identifiers in SHOW CREATE query
     M(IdentifierQuotingStyle, show_create_query_identifier_quoting_style, IdentifierQuotingStyle::Backticks, R"(
 Set the quoting style for identifiers in SHOW CREATE query
 )", 0) \
+    M(Bool, spark_text_output_format, false, R"(
+If true, use Apache Spark output format
+)", 0) \
 
 // End of FORMAT_FACTORY_SETTINGS
 
