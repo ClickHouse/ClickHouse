@@ -283,7 +283,7 @@ ColumnPtr checkDateTimePrecision(
     const ColumnPtr & column_to_cast,
     const ColumnPtr & column_after_cast,
     const size_t num_rows,
-    [[maybe_unused]] const bool transform_null_in)
+    const bool transform_null_in)
 {
     // Handle nullable columns
     const ColumnNullable * original_nullable_column = typeid_cast<const ColumnNullable *>(column_to_cast.get());
