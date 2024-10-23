@@ -1,7 +1,6 @@
 #pragma once
 
 #include "../third_party/md5.h"
-#include "fuzz_config.h"
 #include "random_generator.h"
 #include "statement_generator.h"
 

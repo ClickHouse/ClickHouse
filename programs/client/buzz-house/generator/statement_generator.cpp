@@ -256,11 +256,7 @@ int StatementGenerator::AddTableColumn(RandomGenerator &rg, SQLTable &t, const u
 		std::tie(tp, dd) = RandomDateType(rg, false);
 		cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_dates(dd);
 	} else {
-		const uint32_t prev_max_depth = this->max_depth;
-
-		this->max_depth = 4;
 		tp = RandomNextType(rg, std::numeric_limits<uint32_t>::max(), t.col_counter, cd->mutable_type()->mutable_type());
-		this->max_depth = prev_max_depth;
 	}
 	col.tp = tp;
 	col.special = special;
@@ -805,7 +801,8 @@ int StatementGenerator::GenerateNextDrop(RandomGenerator &rg, sql_query_grammar:
 
 int StatementGenerator::GenerateNextOptimizeTable(RandomGenerator &rg, sql_query_grammar::OptimizeTable *ot) {
 	sql_query_grammar::ExprSchemaTable *est = ot->mutable_est();
-	const SQLTable &t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>([](const SQLTable& st){return (!st.db || st.db->attached) && st.attached && st.IsMergeTreeFamily();}));
+	const SQLTable &t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(
+		[](const SQLTable& st){return (!st.db || st.db->attached) && st.attached && st.IsMergeTreeFamily();}));
 
 	if (t.db) {
 		est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
@@ -1511,7 +1508,8 @@ int StatementGenerator::GenerateNextQuery(RandomGenerator &rg, sql_query_grammar
 				   insert = 100 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables)),
 				   light_delete = 6 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables)),
 				   truncate = 2 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables)),
-				   optimize_table = 2 * static_cast<uint32_t>(CollectionHas<SQLTable>([](const SQLTable& t){return (!t.db || t.db->attached) && t.attached && t.IsMergeTreeFamily();})),
+				   optimize_table = 2 * static_cast<uint32_t>(CollectionHas<SQLTable>(
+					[](const SQLTable& t){return (!t.db || t.db->attached) && t.attached && t.IsMergeTreeFamily();})),
 				   check_table = 2 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables)),
 				   desc_table = 2 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables) ||
 														  CollectionHas<SQLView>(attached_views)),

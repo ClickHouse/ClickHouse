@@ -1034,8 +1034,8 @@ bool Client::buzzHouse()
         const auto &collations = fc.LoadCollations();
 
         full_query2.reserve(8192);
+        buzzhouse::StatementGenerator gen(fc, has_cloud_features, std::move(collations));
         buzzhouse::QueryOracle qo(std::move(fc));
-        buzzhouse::StatementGenerator gen(has_cloud_features, std::move(collations));
         while (server_up)
         {
             sq1.Clear();

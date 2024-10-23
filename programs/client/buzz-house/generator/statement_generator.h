@@ -3,6 +3,7 @@
 #include "random_generator.h"
 #include "random_settings.h"
 #include "sql_catalog.h"
+#include "fuzz_config.h"
 
 namespace buzzhouse {
 
@@ -80,10 +81,12 @@ class StatementGenerator {
 private:
 	const bool supports_cloud_features;
 	const std::vector<const std::string> collations;
+	const uint32_t max_depth, max_width, max_databases, max_functions, max_tables, max_views;
 
 	std::string buf;
 	bool in_transaction = false, inside_projection = false, allow_not_deterministic = true, enforce_final = false;
-	uint32_t database_counter = 0, table_counter = 0, zoo_path_counter = 0, function_counter = 0, current_level = 0;
+	uint32_t depth = 0, width = 0, database_counter = 0, table_counter = 0, zoo_path_counter = 0,
+			 function_counter = 0, current_level = 0;
 	std::map<uint32_t, std::shared_ptr<SQLDatabase>> staged_databases, databases;
 	std::map<uint32_t, SQLTable> staged_tables, tables;
 	std::map<uint32_t, SQLView> staged_views, views;
@@ -95,7 +98,6 @@ private:
 	std::vector<std::reference_wrapper<const SQLView>> filtered_views;
 	std::vector<std::reference_wrapper<const std::shared_ptr<SQLDatabase>>> filtered_databases;
 	std::vector<std::reference_wrapper<const SQLFunction>> filtered_functions;
-	uint32_t depth = 0, width = 0, max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5;
 
 	std::map<uint32_t, std::map<std::string, SQLRelation>> ctes;
 	std::map<uint32_t, QueryLevel> levels;
@@ -268,10 +270,13 @@ public:
 	const std::function<bool (const SQLTable&)> detached_tables = [](const SQLTable& t){return (t.db && !t.db->attached) || !t.attached;};
 	const std::function<bool (const SQLView&)> detached_views = [](const SQLView& v){return !v.db->attached || !v.attached;};
 
-	StatementGenerator() : supports_cloud_features(false), collations() {
+	StatementGenerator() : supports_cloud_features(false), collations(), max_depth(3), max_width(3),
+						   max_databases(4), max_functions(4), max_tables(10), max_views(5) {
 		buf.reserve(2048);
 	}
-	StatementGenerator (const bool scf, const std::vector<const std::string> colls) : supports_cloud_features(scf), collations(colls) {
+	StatementGenerator (const FuzzConfig &fc, const bool scf, const std::vector<const std::string> colls) :
+		supports_cloud_features(scf), collations(colls), max_depth(fc.max_depth), max_width(fc.max_width),
+		max_databases(fc.max_databases), max_functions(fc.max_functions), max_tables(fc.max_tables), max_views(fc.max_views) {
 		buf.reserve(2048);
 	}
 

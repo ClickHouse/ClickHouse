@@ -1,3 +1,5 @@
+#pragma once
+
 #include <fstream>
 #include <filesystem>
 #include <string>
@@ -9,7 +11,8 @@ namespace buzzhouse {
 
 class FuzzConfig {
 public:
-	uint32_t seed = 0;
+	uint32_t seed = 0, max_depth = 3, max_width = 3, max_databases = 4,
+			 max_functions = 4, max_tables = 10, max_views = 5;
 	bool read_log = false;
 	std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
 						  db_file_path = std::filesystem::temp_directory_path() / "db";
@@ -27,6 +30,18 @@ public:
 				read_log = static_cast<bool>(value);
 			} else if (key == "seed") {
 				seed = static_cast<uint32_t>(value);
+			} else if (key == "max_depth") {
+				max_depth = static_cast<uint32_t>(value);
+			} else if (key == "max_width") {
+				max_width = static_cast<uint32_t>(value);
+			} else if (key == "max_databases") {
+				max_databases = static_cast<uint32_t>(value);
+			} else if (key == "max_functions") {
+				max_functions = static_cast<uint32_t>(value);
+			} else if (key == "max_tables") {
+				max_tables = static_cast<uint32_t>(value);
+			} else if (key == "max_views") {
+				max_views = static_cast<uint32_t>(value);
 			} else {
 				throw std::runtime_error("Unknown option: " + key);
 			}
