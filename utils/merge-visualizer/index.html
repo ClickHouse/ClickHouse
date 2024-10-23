@@ -241,9 +241,9 @@ async function update(data) {
 
             let inserted = false;
             for (const child of partition.childNodes) {
-                const child_min_block_id = child['data-min-block-id'];
-                const child_max_block_id = child['data-max-block-id'];
-                const child_level = child['data-level'];
+                const child_min_block_id = +child['data-min-block-id'];
+                const child_max_block_id = +child['data-max-block-id'];
+                const child_level = +child['data-level'];
 
                 if (!inserted && child_min_block_id >= min_block_id) {
                     partition.insertBefore(part, child);
