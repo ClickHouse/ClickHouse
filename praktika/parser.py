@@ -109,14 +109,14 @@ class WorkflowConfigParser:
             assert (
                 job.name not in self.workflow_yaml_config.artifact_to_config
             ), f"Not uniq Job name [{job.name}], workflow [{self.workflow_name}]"
-            self.workflow_yaml_config.artifact_to_config[
-                job.name
-            ] = WorkflowYaml.ArtifactYaml(
-                name=job.name,
-                provided_by=job.name,
-                required_by=[],
-                path="",
-                type=Artifact.Type.PHONY,
+            self.workflow_yaml_config.artifact_to_config[job.name] = (
+                WorkflowYaml.ArtifactYaml(
+                    name=job.name,
+                    provided_by=job.name,
+                    required_by=[],
+                    path="",
+                    type=Artifact.Type.PHONY,
+                )
             )
 
         # populate jobs
@@ -151,9 +151,9 @@ class WorkflowConfigParser:
                     path=artifact.path,
                     type=artifact.type,
                 )
-                self.workflow_yaml_config.artifact_to_config[
-                    artifact.name
-                ] = artifact_yaml_config
+                self.workflow_yaml_config.artifact_to_config[artifact.name] = (
+                    artifact_yaml_config
+                )
 
         # populate ArtifactYaml.provided_by
         for job in self.config.jobs:

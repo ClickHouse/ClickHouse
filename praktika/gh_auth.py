@@ -4,7 +4,6 @@ from typing import List
 
 import requests
 from jwt import JWT, jwk_from_pem
-
 from praktika import Workflow
 from praktika.mangle import _get_workflows
 from praktika.settings import Settings
