@@ -842,9 +842,7 @@ def test_resource_any_disk():
     """
     )
 
-    node.query(
-        f"insert into data select * from numbers(1e5) settings workload='all'"
-    )
+    node.query(f"insert into data select * from numbers(1e5) settings workload='all'")
 
     assert (
         node.query(
