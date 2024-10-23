@@ -88,7 +88,7 @@ namespace DB
  * Classifiers that were created for any of old versions may use nodes of newer version due to updateNode().
  * It may move a queue to a new position in the hierarchy or create/destroy constraints, thus resource requests
  * created by old classifier may reference constraints of newer versions through `request->constraints` which
- * is filled during dequeueRequst().
+ * is filled during dequeueRequest().
  *
  * === THREADS ===
  * scheduler thread:
