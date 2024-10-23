@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
-//#include <Formats/FormatSettings.h>
 
 
 namespace DB
