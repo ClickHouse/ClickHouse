@@ -97,9 +97,9 @@ def run_fuzzer(fuzzer: str, timeout: int):
     env = None
     with_fuzzer_args = ""
     if use_fuzzer_args:
-        env = {"FUZZER_ARGS": f"{custom_libfuzzer_options} {libfuzzer_corpora}"}
+        env = {"FUZZER_ARGS": f"{custom_libfuzzer_options} {libfuzzer_corpora}".strip()}
         with_fuzzer_args = (
-            f" with FUZZER_ARGS '{custom_libfuzzer_options} {libfuzzer_corpora}'"
+            f" with FUZZER_ARGS '{env['FUZZER_ARGS']}'"
         )
     else:
         cmd_line += f" {custom_libfuzzer_options} {libfuzzer_corpora}"
