@@ -1,4 +1,5 @@
 SET enable_analyzer = 1;
+SET enable_optimize_query_tree_logical_expression = 1;
 
 DROP TABLE IF EXISTS 02952_disjunction_optimization;
 

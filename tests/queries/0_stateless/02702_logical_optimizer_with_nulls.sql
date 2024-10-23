@@ -8,6 +8,7 @@ ENGINE=Memory;
 
 INSERT INTO 02702_logical_optimizer VALUES (1, 'test'), (2, 'test2'), (3, 'another');
 
+SET enable_optimize_query_tree_logical_expression = 1;
 SET optimize_min_equality_disjunction_chain_length = 3;
 
 SELECT * FROM 02702_logical_optimizer WHERE a = 1 OR 3 = a OR NULL = a;

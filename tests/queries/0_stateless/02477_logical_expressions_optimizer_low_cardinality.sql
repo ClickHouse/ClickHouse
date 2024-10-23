@@ -2,6 +2,8 @@ DROP TABLE IF EXISTS t_logical_expressions_optimizer_low_cardinality;
 set optimize_min_equality_disjunction_chain_length=3;
 CREATE TABLE t_logical_expressions_optimizer_low_cardinality (a LowCardinality(String), b UInt32) ENGINE = Memory;
 
+SET enable_optimize_query_tree_logical_expression = 1;
+
 -- LowCardinality case, ignore optimize_min_equality_disjunction_chain_length limit, optimizer applied
 -- Chain of OR equals
 EXPLAIN SYNTAX SELECT a FROM t_logical_expressions_optimizer_low_cardinality WHERE a = 'x' OR a = 'y';
