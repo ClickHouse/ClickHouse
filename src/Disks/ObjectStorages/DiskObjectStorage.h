@@ -226,6 +226,8 @@ private:
 
     String getReadResourceName() const;
     String getWriteResourceName() const;
+    String getReadResourceNameNoLock() const;
+    String getWriteResourceNameNoLock() const;
 
     const String object_key_prefix;
     LoggerPtr log;
@@ -244,10 +246,12 @@ private:
     const bool send_metadata;
 
     mutable std::mutex resource_mutex;
-    String read_resource_name_from_config; // specified in disk config.xml
-    String write_resource_name_from_config; // specified in disk config.xml
-    String read_resource_name_from_sql; // described by CREATE RESOURCE queries
-    String write_resource_name_from_sql; // described by CREATE RESOURCE queries
+    String read_resource_name_from_config; // specified in disk config.xml read_resource element
+    String write_resource_name_from_config; // specified in disk config.xml write_resource element
+    String read_resource_name_from_sql; // described by CREATE RESOURCE query with READ DISK clause
+    String write_resource_name_from_sql; // described by CREATE RESOURCE query with WRITE DISK clause
+    String read_resource_name_from_sql_any; // described by CREATE RESOURCE query with READ ANY DISK clause
+    String write_resource_name_from_sql_any; // described by CREATE RESOURCE query with WRITE ANY DISK clause
     scope_guard resource_changes_subscription;
 
     std::unique_ptr<DiskObjectStorageRemoteMetadataRestoreHelper> metadata_helper;

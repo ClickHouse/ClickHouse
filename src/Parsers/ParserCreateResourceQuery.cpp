@@ -19,7 +19,7 @@ bool parseOneOperation(ASTCreateResourceQuery::Operation & operation, IParser::P
 
     ASTCreateResourceQuery::AccessMode mode;
     ASTPtr node;
-    String disk;
+    std::optional<String> disk;
 
     if (ParserKeyword(Keyword::WRITE).ignore(pos, expected))
         mode = ASTCreateResourceQuery::AccessMode::Write;
@@ -28,14 +28,23 @@ bool parseOneOperation(ASTCreateResourceQuery::Operation & operation, IParser::P
     else
         return false;
 
-    if (!ParserKeyword(Keyword::DISK).ignore(pos, expected))
-        return false;
+    if (ParserKeyword(Keyword::ANY).ignore(pos, expected))
+    {
+        if (!ParserKeyword(Keyword::DISK).ignore(pos, expected))
+            return false;
+    }
+    else
+    {
+        if (!ParserKeyword(Keyword::DISK).ignore(pos, expected))
+            return false;
 
-    if (!disk_name_p.parse(pos, node, expected))
-        return false;
+        if (!disk_name_p.parse(pos, node, expected))
+            return false;
 
-    if (!tryGetIdentifierNameInto(node, disk))
-        return false;
+        disk.emplace();
+        if (!tryGetIdentifierNameInto(node, *disk))
+            return false;
+    }
 
     operation.mode = mode;
     operation.disk = std::move(disk);

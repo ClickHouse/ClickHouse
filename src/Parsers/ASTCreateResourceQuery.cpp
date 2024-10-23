@@ -52,17 +52,22 @@ void ASTCreateResourceQuery::formatImpl(const IAST::FormatSettings & format, IAS
         {
             case AccessMode::Read:
             {
-                format.ostr << (format.hilite ? hilite_keyword : "") << "READ DISK ";
+                format.ostr << (format.hilite ? hilite_keyword : "") << "READ ";
                 break;
             }
             case AccessMode::Write:
             {
-                format.ostr << (format.hilite ? hilite_keyword : "") << "WRITE DISK ";
+                format.ostr << (format.hilite ? hilite_keyword : "") << "WRITE ";
                 break;
             }
         }
-        format.ostr << (format.hilite ? hilite_none : "");
-        format.ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(operation.disk) << (format.hilite ? hilite_none : "");
+        if (operation.disk)
+        {
+            format.ostr << "DISK " << (format.hilite ? hilite_none : "");
+            format.ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(*operation.disk) << (format.hilite ? hilite_none : "");
+        }
+        else
+            format.ostr << "ANY DISK" << (format.hilite ? hilite_none : "");
     }
 
     format.ostr << ")";
