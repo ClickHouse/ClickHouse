@@ -13,15 +13,15 @@ class MD5 {
 private:
 	static const constexpr size_t in_buffer_size = 8192; // 8 KB buffer
 	uint8_t buffer[64], in_buffer[in_buffer_size];
-	uint32_t state[4], count[2];
+	uint64_t state[4], count[2];
 
 	void update(const uint8_t* input, size_t length) {
 		size_t index = (count[0] >> 3) & 0x3F;
-		count[0] += static_cast<uint32_t>(length << 3);
+		count[0] += static_cast<uint64_t>(length << 3);
 		if (count[0] < (length << 3)) {
 			count[1]++;
 		}
-		count[1] += static_cast<uint32_t>(length >> 29);
+		count[1] += static_cast<uint64_t>(length >> 29);
 
 		size_t part_len = 64 - index, i = 0;
 
@@ -64,32 +64,32 @@ private:
 		state[3] = 0x10325476;
 	}
 
-	static uint32_t F(uint32_t x, uint32_t y, uint32_t z) {
+	static uint64_t F(uint64_t x, uint64_t y, uint64_t z) {
 		return (x & y) | (~x & z);
 	}
 
-	static uint32_t G(uint32_t x, uint32_t y, uint32_t z) {
+	static uint64_t G(uint64_t x, uint64_t y, uint64_t z) {
 		return (x & z) | (y & ~z);
 	}
 
-	static uint32_t H(uint32_t x, uint32_t y, uint32_t z) {
+	static uint64_t H(uint64_t x, uint64_t y, uint64_t z) {
 		return x ^ y ^ z;
 	}
 
-	static uint32_t I(uint32_t x, uint32_t y, uint32_t z) {
+	static uint64_t I(uint64_t x, uint64_t y, uint64_t z) {
 		return y ^ (x | ~z);
 	}
 
-	static void rotateLeft(uint32_t& x, int n) {
+	static void rotateLeft(uint64_t& x, int n) {
 		x = (x << n) | (x >> (32 - n));
 	}
 
 	void transform(const uint8_t block[64]) {
-		uint32_t a = state[0], b = state[1], c = state[2], d = state[3], x[16];
+		uint64_t a = state[0], b = state[1], c = state[2], d = state[3], x[16];
 		decode(x, block, 64);
 
 		// Constants for MD5
-		static const constexpr uint32_t K[] = {
+		static const constexpr uint64_t K[] = {
 			0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee,
 			0xf57c0faf, 0x4787c62a, 0xa8304613, 0xb00327c8,
 			0xbf597fc7, 0x298e09bb, 0x0fb0a8c4, 0x20004157,
@@ -112,7 +112,7 @@ private:
 
 		// MD5 transformation steps
 		for (int i = 0; i < 64; i++) {
-			uint32_t f, g;
+			uint64_t f, g;
 			if (i < 16) {
 				f = F(b, c, d);
 				g = i;
@@ -143,7 +143,7 @@ private:
 		state[3] += d;
 	}
 
-	void encode(uint8_t* output, const uint32_t* input, size_t length) {
+	void encode(uint8_t* output, const uint64_t* input, size_t length) {
 		for (size_t i = 0; i < length / 4; i++) {
 			output[i * 4] = static_cast<uint8_t>(input[i] & 0xFF);
 			output[i * 4 + 1] = static_cast<uint8_t>((input[i] >> 8) & 0xFF);
@@ -152,12 +152,12 @@ private:
 		}
 	}
 
-	void decode(uint32_t* output, const uint8_t* input, size_t length) {
+	void decode(uint64_t* output, const uint8_t* input, size_t length) {
 		for (size_t i = 0; i < length / 4; i++) {
-			output[i] = static_cast<uint32_t>(input[i * 4]) |
-						(static_cast<uint32_t>(input[i * 4 + 1]) << 8) |
-						(static_cast<uint32_t>(input[i * 4 + 2]) << 16) |
-						(static_cast<uint32_t>(input[i * 4 + 3]) << 24);
+			output[i] = static_cast<uint64_t>(input[i * 4]) |
+						(static_cast<uint64_t>(input[i * 4 + 1]) << 8) |
+						(static_cast<uint64_t>(input[i * 4 + 2]) << 16) |
+						(static_cast<uint64_t>(input[i * 4 + 3]) << 24);
 		}
 	}
 
