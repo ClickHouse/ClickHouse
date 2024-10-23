@@ -55,6 +55,10 @@ public:
 	~SQLColumn() {
 		delete tp;
 	}
+
+	bool CanBeInserted() const {
+		return !dmod.has_value() || dmod.value() == sql_query_grammar::DModifier::DEF_DEFAULT;
+	}
 };
 
 struct SQLIndex {

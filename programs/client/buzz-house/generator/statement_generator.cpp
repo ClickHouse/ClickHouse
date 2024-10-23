@@ -907,7 +907,7 @@ int StatementGenerator::GenerateNextInsert(RandomGenerator &rg, sql_query_gramma
 	est->mutable_table()->set_table("t" + std::to_string(t.tname));
 	assert(this->entries.empty());
 	for (const auto &entry : t.cols) {
-		if (!entry.second.dmod.has_value() || entry.second.dmod.value() == sql_query_grammar::DModifier::DEF_DEFAULT) {
+		if (entry.second.CanBeInserted()) {
 			if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
 				for (const auto &entry2 : ntp->subtypes) {
 					this->entries.push_back(InsertEntry(ColumnSpecial::NONE, entry.second.cname, std::optional<uint32_t>(entry2.cname), entry2.array_subtype, entry.second.dmod));
