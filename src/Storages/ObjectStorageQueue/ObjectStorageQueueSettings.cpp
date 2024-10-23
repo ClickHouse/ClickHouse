@@ -4,6 +4,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
+#include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
+#include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -16,7 +18,7 @@ namespace ErrorCodes
 
 #define OBJECT_STORAGE_QUEUE_RELATED_SETTINGS(DECLARE, ALIAS) \
     DECLARE(ObjectStorageQueueMode, mode, ObjectStorageQueueMode::ORDERED, \
-      "With unordered mode, the set of all already processed files is tracked with persistent nodes in ZooKepeer." \
+      "With unordered mode, the set of all already processed files is tracked with persistent nodes in ZooKeepeer." \
       "With ordered mode, only the max name of the successfully consumed file stored.", \
       0) \
     DECLARE(ObjectStorageQueueAction, after_processing, ObjectStorageQueueAction::KEEP, "Delete or keep file in after successful processing", 0) \
@@ -33,10 +35,10 @@ namespace ErrorCodes
     DECLARE(UInt32, cleanup_interval_min_ms, 60000, "For unordered mode. Polling backoff min for cleanup", 0) \
     DECLARE(UInt32, cleanup_interval_max_ms, 60000, "For unordered mode. Polling backoff max for cleanup", 0) \
     DECLARE(UInt32, buckets, 0, "Number of buckets for Ordered mode parallel processing", 0) \
-    DECLARE(UInt32, max_processed_files_before_commit, 100, "Number of files which can be processed before being committed to keeper", 0) \
-    DECLARE(UInt32, max_processed_rows_before_commit, 0, "Number of rows which can be processed before being committed to keeper", 0) \
-    DECLARE(UInt32, max_processed_bytes_before_commit, 0, "Number of bytes which can be processed before being committed to keeper", 0) \
-    DECLARE(UInt32, max_processing_time_sec_before_commit, 0, "Timeout in seconds after which to commit files committed to keeper", 0) \
+    DECLARE(UInt64, max_processed_files_before_commit, 100, "Number of files which can be processed before being committed to keeper", 0) \
+    DECLARE(UInt64, max_processed_rows_before_commit, 0, "Number of rows which can be processed before being committed to keeper", 0) \
+    DECLARE(UInt64, max_processed_bytes_before_commit, 0, "Number of bytes which can be processed before being committed to keeper", 0) \
+    DECLARE(UInt64, max_processing_time_sec_before_commit, 0, "Timeout in seconds after which to commit files committed to keeper", 0) \
 
 #define LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS(M, ALIAS) \
     OBJECT_STORAGE_QUEUE_RELATED_SETTINGS(M, ALIAS) \
@@ -71,6 +73,38 @@ ObjectStorageQueueSettings::ObjectStorageQueueSettings(const ObjectStorageQueueS
 ObjectStorageQueueSettings::ObjectStorageQueueSettings(ObjectStorageQueueSettings && settings) noexcept
     : impl(std::make_unique<ObjectStorageQueueSettingsImpl>(std::move(*settings.impl)))
 {
+}
+
+void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
+    MutableColumnsAndConstraints & params,
+    const std::string & table_name,
+    const std::string & database_name,
+    const StorageObjectStorageQueue & storage) const
+{
+    MutableColumns & res_columns = params.res_columns;
+
+    /// We cannot use setting.isValueChanged(), because we do not store initial settings in storage.
+    /// Therefore check if the setting was changed via table metadata.
+    const auto & settings_changes = storage.getInMemoryMetadataPtr()->settings_changes->as<ASTSetQuery>()->changes;
+    auto is_changed = [&](const std::string & setting_name) -> bool
+    {
+        return settings_changes.end() != std::find_if(
+            settings_changes.begin(), settings_changes.end(),
+            [&](const SettingChange & change){ return change.name == setting_name; });
+    };
+
+    for (const auto & change : impl->all())
+    {
+        size_t i = 0;
+        res_columns[i++]->insert(database_name);
+        res_columns[i++]->insert(table_name);
+        res_columns[i++]->insert(change.getName());
+        res_columns[i++]->insert(convertFieldToString(change.getValue()));
+        res_columns[i++]->insert(change.getTypeName());
+        res_columns[i++]->insert(is_changed(change.getName()));
+        res_columns[i++]->insert(change.getDescription());
+        res_columns[i++]->insert(false);
+    }
 }
 
 ObjectStorageQueueSettings::~ObjectStorageQueueSettings() = default;
