@@ -46,11 +46,28 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
 {
     if (!is_deleted_column.empty())
         is_deleted_column_number = header_.getPositionByName(is_deleted_column);
+
     if (!version_column.empty())
         version_column_number = header_.getPositionByName(version_column);
 }
 
 void ReplacingSortedAlgorithm::insertRow()
+{
+    if (is_deleted_column_number != -1)
+    {
+        if (!(cleanup && assert_cast<const ColumnUInt8 &>(*(*selected_row.all_columns)[is_deleted_column_number]).getData()[selected_row.row_num]))
+            insertRowImpl();
+    }
+    else
+    {
+        insertRowImpl();
+    }
+
+    /// insertRowImpl() may has not been called
+    saveChunkForSkippingFinalFromSelectedRow();
+}
+
+void ReplacingSortedAlgorithm::insertRowImpl()
 {
     if (out_row_sources_buf)
     {
@@ -67,6 +84,7 @@ void ReplacingSortedAlgorithm::insertRow()
         /// We just record the position to be selected in the chunk
         if (!selected_row.owned_chunk->replace_final_selection)
             selected_row.owned_chunk->replace_final_selection = ColumnUInt64::create();
+
         selected_row.owned_chunk->replace_final_selection->insert(selected_row.row_num);
 
         /// This is the last row we can select from `selected_row.owned_chunk`, keep it to emit later
@@ -74,7 +92,9 @@ void ReplacingSortedAlgorithm::insertRow()
             to_be_emitted.push(std::move(selected_row.owned_chunk));
     }
     else
+    {
         merged_data->insertRow(*selected_row.all_columns, selected_row.row_num, selected_row.owned_chunk->getNumRows());
+    }
 
     selected_row.clear();
 }
@@ -101,6 +121,58 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
             return Status(current.impl->order);
         }
 
+        if (current.impl->isFirst()
+            && is_deleted_column_number == -1 /// Ignore optimization if we need to filter deleted rows.
+            && sources_origin_merge_tree_part_level[current->order] > 0
+            && !skipLastRowFor(current->order) /// Ignore optimization if last row should be skipped.
+            && (queue.size() == 1 || (queue.size() >= 2 && current.totallyLess(queue.nextChild()))))
+        {
+            /// This is special optimization if current cursor is totally less than next cursor
+            /// and current chunk has no duplicates (we assume that parts with non-zero level have no duplicates)
+            /// We want to insert current cursor chunk directly in merged data.
+
+            size_t source_num = current->order;
+            auto current_chunk = std::move(*sources[source_num].chunk);
+            size_t chunk_num_rows = current_chunk.getNumRows();
+
+            /// First if merged_data is not empty we need to flush it.
+            /// We will get into the same condition on next merge call.
+            if (merged_data->mergedRows() != 0)
+                return Status(merged_data->pull());
+
+            /// We will get the next block from the corresponding source, if there is one.
+            queue.removeTop();
+
+            if (enable_vertical_final)
+            {
+                auto replace_final_selection = ColumnUInt64::create(chunk_num_rows);
+                auto & replace_final_data = replace_final_selection->getData();
+
+                std::iota(replace_final_data.begin(), replace_final_data.end(), 0);
+                current_chunk.getChunkInfos().add(std::make_shared<ChunkSelectFinalIndices>(std::move(replace_final_selection)));
+
+                Status status(merged_data->pull(), false);
+                status.required_source = source_num;
+                return Status(std::move(current_chunk), false);
+            }
+
+            merged_data->insertChunk(std::move(current_chunk), chunk_num_rows);
+            sources[source_num].chunk = {};
+
+            /// Write order of rows for other columns this data will be used in gather stream
+            if (out_row_sources_buf)
+            {
+                /// All rows are not skipped.
+                RowSourcePart row_source(source_num);
+                for (size_t i = 0; i < chunk_num_rows; ++i)
+                    out_row_sources_buf->write(row_source.data);
+            }
+
+            Status status(merged_data->pull(), false);
+            status.required_source = source_num;
+            return status;
+        }
+
         RowRef current_row;
         setRowRef(current_row, current);
 
@@ -113,17 +185,7 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
 
             /// Write the data for the previous primary key.
             if (!selected_row.empty())
-            {
-                if (is_deleted_column_number!=-1)
-                {
-                    if (!(cleanup && assert_cast<const ColumnUInt8 &>(*(*selected_row.all_columns)[is_deleted_column_number]).getData()[selected_row.row_num]))
-                        insertRow();
-                }
-                else
-                    insertRow();
-                /// insertRow() may has not been called
-                saveChunkForSkippingFinalFromSelectedRow();
-            }
+                insertRow();
 
             selected_row.clear();
         }
@@ -133,10 +195,10 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         if (out_row_sources_buf)
             current_row_sources.emplace_back(current.impl->order, true);
 
-        if ((is_deleted_column_number!=-1))
+        if (is_deleted_column_number != -1)
         {
             const UInt8 is_deleted = assert_cast<const ColumnUInt8 &>(*current->all_columns[is_deleted_column_number]).getData()[current->getRow()];
-            if ((is_deleted != 1) && (is_deleted != 0))
+            if (is_deleted > 1)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect data: is_deleted = {} (must be 1 or 0).", toString(is_deleted));
         }
 
@@ -172,17 +234,7 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
 
     /// We will write the data for the last primary key.
     if (!selected_row.empty())
-    {
-        if (is_deleted_column_number!=-1)
-        {
-            if (!(cleanup && assert_cast<const ColumnUInt8 &>(*(*selected_row.all_columns)[is_deleted_column_number]).getData()[selected_row.row_num]))
-                insertRow();
-        }
-        else
-            insertRow();
-        /// insertRow() may has not been called
-        saveChunkForSkippingFinalFromSelectedRow();
-    }
+        insertRow();
 
     /// Skipping final: emit the remaining chunks
     if (!to_be_emitted.empty())

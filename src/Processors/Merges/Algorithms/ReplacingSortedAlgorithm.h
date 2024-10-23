@@ -63,6 +63,7 @@ private:
     PODArray<RowSourcePart> current_row_sources;
 
     void insertRow();
+    void insertRowImpl();
 
     /// Method for using in skipping FINAL logic
     /// Skipping FINAL doesn't merge rows to new chunks but marks selected rows in input chunks and emit them
