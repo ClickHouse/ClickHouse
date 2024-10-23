@@ -19,6 +19,9 @@
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
+#ifndef NDEBUG
+    #include <Processors/Transforms/CheckSortedTransform.h>
+#endif
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
