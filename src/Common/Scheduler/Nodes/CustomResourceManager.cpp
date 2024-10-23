@@ -163,7 +163,7 @@ CustomResourceManager::Classifier::Classifier(const CustomResourceManager::State
 
 bool CustomResourceManager::Classifier::has(const String & resource_name)
 {
-    return resources.find(resource_name) != resources.end();
+    return resources.contains(resource_name);
 }
 
 ResourceLink CustomResourceManager::Classifier::get(const String & resource_name)
