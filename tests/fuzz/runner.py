@@ -44,6 +44,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
     options_file = f"{fuzzer}.options"
     custom_libfuzzer_options = ""
     fuzzer_arguments = ""
+    use_fuzzer_args = False
 
     with Path(options_file) as path:
         if path.exists() and path.is_file():
@@ -78,24 +79,28 @@ def run_fuzzer(fuzzer: str, timeout: int):
                     for key, value in parser["fuzzer_arguments"].items()
                 )
 
+            use_fuzzer_args = parser.getboolean("CI", "FUZZER_ARGS", fallback=False)
+
     exact_artifact_path = f"{OUTPUT}/{fuzzer}.unit"
     status_path = f"{OUTPUT}/{fuzzer}.status"
     out_path = f"{OUTPUT}/{fuzzer}.out"
     stdout_path = f"{OUTPUT}/{fuzzer}.stdout"
 
-    cmd_line = f"{DEBUGGER} ./{fuzzer} {active_corpus_dir} {seed_corpus_dir}"
+    if not "-dict=" in custom_libfuzzer_options and Path(f"{fuzzer}.dict").exists():
+        custom_libfuzzer_options += f" -dict={fuzzer}.dict"
+    custom_libfuzzer_options += f" -exact_artifact_path={exact_artifact_path}"
 
-    cmd_line += f" -exact_artifact_path={exact_artifact_path}"
+    libfuzzer_corpora = f"{active_corpus_dir} {seed_corpus_dir}"
 
-    if custom_libfuzzer_options:
-        cmd_line += f" {custom_libfuzzer_options}"
-    if fuzzer_arguments:
-        cmd_line += f" {fuzzer_arguments}"
+    cmd_line = f"{DEBUGGER} ./{fuzzer} {fuzzer_arguments}"
 
-    if not "-dict=" in cmd_line and Path(f"{fuzzer}.dict").exists():
-        cmd_line += f" -dict={fuzzer}.dict"
+    env = None
+    if use_fuzzer_args:
+        env = {"FUZZER_ARGS": f"{custom_libfuzzer_options} {libfuzzer_corpora}"}
+    else:
+        cmd_line += f" {custom_libfuzzer_options} {libfuzzer_corpora}"
 
-    logging.info("...will execute: %s", cmd_line)
+    logging.info("...will execute: %s%s", cmd_line, f" with FUZZER_ARGS {env["FUZZER_ARGS"]}" if use_fuzzer_args else "")
 
     stopwatch = Stopwatch()
     try:
@@ -110,6 +115,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
                 shell=False,
                 errors="replace",
                 timeout=timeout,
+                env=env,
             )
     except subprocess.CalledProcessError:
         logging.info("Fail running %s", fuzzer)
