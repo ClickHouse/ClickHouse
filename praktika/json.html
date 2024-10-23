@@ -6,24 +6,105 @@
     <title>praktika report</title>
     <link rel="icon" href="https://w4z3pajszlbkfcw2wcylfei5km0xmwag.lambda-url.us-east-1.on.aws/" type="image/x-icon">
     <style>
+
+        /* Default (Day Theme) */
+        :root {
+            --background-color: white;
+            --text-color: #000;
+            --tile-background: #f9f9f9;
+            --footer-background: #f1f1f1;
+            --footer-text-color: #000;
+            --status-width: 300px;
+        }
+
+        body {
+            background-color: var(--background-color);
+            color: var(--text-color);
+            height: 100%;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            font-family: monospace, sans-serif;
+        }
+
+        body.night-theme {
+            --background-color: #1F1F1C;
+            --text-color: #fff;
+            --tile-background: black;
+        }
+
+        #info-container {
+            margin-left: calc(var(--status-width) + 20px);
+            margin-bottom: 10px;
+            background-color: var(--tile-background);
+            padding: 10px;
+            text-align: left;
+        }
+
+        #status-container {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            width: var(--status-width);
+            background-color: var(--tile-background);
+            padding: 20px;
+            box-sizing: border-box;
+            text-align: left;
+            font-size: 18px;
+            font-weight: bold;
+            margin: 0; /* Remove margin */
+        }
+
+        #status-container button {
+            display: block; /* Stack buttons vertically */
+            width: 100%; /* Full width of container */
+            padding: 10px;
+            margin-bottom: 10px; /* Space between buttons */
+            background-color: #4CAF50; /* Green background color */
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        #status-container button:hover {
+            background-color: #45a049; /* Darker green on hover */
+        }
+
+        #result-container {
+            background-color: var(--tile-background);
+            margin-left: calc(var(--status-width) + 20px);
+            padding: 20px;
+            box-sizing: border-box;
+            text-align: center;
+            font-size: 18px;
+            font-weight: normal;
+            flex-grow: 1;
+        }
+
         #footer {
+            padding: 10px;
             position: fixed;
             bottom: 0;
             left: 0;
             right: 0;
             background-color: #1F1F1C;
             color: white;
-            padding: 15px 20px;
             font-size: 14px;
             display: flex;
-            justify-content: space-between; /* Align left and right parts */
+            justify-content: space-between; /* Ensure the .left expands, and .right and .settings are aligned to the right */
             align-items: center;
-            z-index: 1000;
-            box-shadow: 0px -2px 5px rgba(0, 0, 0, 0.2);
         }
 
-        #footer .left a::before {
-            content: none;
+        #footer a {
+            color: white;
+            text-decoration: none;
+        }
+
+        #footer .left {
+            flex-grow: 1; /* Takes up all the available space */
         }
 
         /* make some space around '/' in the navigation line */
@@ -32,14 +113,9 @@
             margin-right: 5px;
         }
 
-        #footer .right {
+        #footer .right, #footer .settings {
             display: flex;
-            justify-content: flex-end;
-        }
-
-        #footer a {
-            color: white;
-            text-decoration: none;
+            align-items: center;
         }
 
         #footer .right a::before {
@@ -48,50 +124,25 @@
             color: #e0e0e0;
         }
 
+        #footer .right::before, #footer .settings::before {
+            content: "|"; /* Add separator before right and settings sections */
+            margin-left: 10px;
+            margin-right: 10px;
+            color: #e0e0e0;
+        }
+
+        #theme-toggle {
+            cursor: pointer;
+            font-size: 20px;
+            color: white;
+        }
+
+        #theme-toggle:hover {
+            color: #e0e0e0;
+        }
+
         #footer a:hover {
             text-decoration: underline;
-        }
-
-        #title {
-            margin: 0;
-            padding: 0;
-            display: block;
-            font-size: 14px;
-            color: black;
-            text-align: center;
-        }
-
-        body {
-            font-family: monospace, sans-serif;
-            padding: 20px;
-            max-width: 100%; /* Ensure the layout spans the full width of the page */
-            margin: auto;
-            padding-bottom: 60px;
-            background-color: white;
-        }
-
-        h1 {
-            text-align: center;
-            color: #333;
-        }
-
-        #layout-container {
-            display: flex;
-            align-items: flex-start; /* Align the content/links and table at the top */
-        }
-
-        #left-side {
-            display: flex;
-            flex-direction: column;
-            width: 300px; /* Fixed width for the left side */
-            flex-shrink: 0; /* Prevent the left side from shrinking */
-        }
-
-        #content {
-            padding: 10px;
-            margin-top: 15px;
-            border: 1px solid #ccc;
-            background-color: #f9f9f9;
         }
 
         #links {
@@ -116,31 +167,33 @@
             background-color: #D5D5D5;
         }
 
-        #results-table-container {
-            flex-grow: 1; /* Allow the table to take remaining space */
-            margin-left: 20px;
-            padding: 15px;
-            margin-top: 0;
-        }
-
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 0;
         }
 
         th.name-column, td.name-column {
-            max-width: 400px;  /* Set the maximum width for the column */
-            white-space: nowrap;  /* Prevent text from wrapping */
-            overflow: hidden;  /* Hide the overflowed text */
-            text-overflow: ellipsis;  /* Show ellipsis (...) for overflowed text */
+            max-width: 400px; /* Set the maximum width for the column */
+            white-space: nowrap; /* Prevent text from wrapping */
+            overflow: hidden; /* Hide the overflowed text */
+            text-overflow: ellipsis; /* Show ellipsis (...) for overflowed text */
+        }
+
+        th.status-column, td.status-column {
+            max-width: 100px; /* Set the maximum width for the column */
+            white-space: nowrap; /* Prevent text from wrapping */
+            overflow: hidden; /* Hide the overflowed text */
+            text-overflow: ellipsis; /* Show ellipsis (...) for overflowed text */
+        }
+
+        th.time-column, td.time-column {
+            max-width: 120px; /* Set the maximum width for the column */
+            white-space: nowrap; /* Prevent text from wrapping */
+            text-align: right;
         }
 
         th.info-column, td.info-column {
-            max-width: 400px;  /* Set the maximum width for the column */
-            white-space: nowrap;  /* Prevent text from wrapping */
-            overflow: hidden;  /* Hide the overflowed text */
-            text-overflow: ellipsis;  /* Show ellipsis (...) for overflowed text */
+            width: 100%; /* Allow the column to take all the remaining space */
         }
 
         th, td {
@@ -199,7 +252,6 @@
 
         .json-value a {
             color: #007bff;
-            text-decoration: none;
         }
 
         .json-value a:hover {
@@ -208,22 +260,32 @@
     </style>
 </head>
 <body>
-<h1 id="title">Loading...</h1>
-<div id="layout-container">
-    <div id="left-side">
-        <div id="content"></div>
-        <div id="links"></div>
-    </div>
-    <div id="results-table-container">
-        <div id="results-table"></div>
-    </div>
-</div>
+<div id="info-container"></div>
+<div id="status-container"></div>
+<div id="result-container"></div>
+
 <footer id="footer">
     <div class="left"></div>
-    <div class="right">|</div>
+    <div class="right"></div>
+    <div class="settings">
+        <span id="theme-toggle">☀️</span>
+    </div>
 </footer>
 
 <script>
+    function toggleTheme() {
+        document.body.classList.toggle('night-theme');
+        const toggleIcon = document.getElementById('theme-toggle');
+        if (document.body.classList.contains('night-theme')) {
+            toggleIcon.textContent = '☾'; // Moon for night mode
+        } else {
+            toggleIcon.textContent = '☀️'; // Sun for day mode
+        }
+    }
+
+    // Attach the toggle function to the click event of the icon
+    document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+
     // Function to format timestamp to "DD-mmm-YYYY HH:MM:SS.MM"
     function formatTimestamp(timestamp, showDate = true) {
         const date = new Date(timestamp * 1000);
@@ -235,12 +297,11 @@
         const hours = String(date.getHours()).padStart(2, '0');
         const minutes = String(date.getMinutes()).padStart(2, '0');
         const seconds = String(date.getSeconds()).padStart(2, '0');
-        const milliseconds = String(date.getMilliseconds()).padStart(2, '0');
+        //const milliseconds = String(date.getMilliseconds()).padStart(2, '0');
 
-        // If showDate is true, return date and time, otherwise return only time
         return showDate
-            ? `${day}-${month}-${year} ${hours}:${minutes}:${seconds}.${milliseconds}`
-            : `${hours}:${minutes}:${seconds}.${milliseconds}`;
+            ? `${day}-${month}-${year} ${hours}:${minutes}:${seconds}`
+            : `${hours}:${minutes}:${seconds}`;
     }
 
     // Function to determine status class based on value
@@ -265,31 +326,21 @@
         // Ensure duration is a floating-point number
         const duration = parseFloat(durationInSeconds);
 
-        // Calculate hours, minutes, seconds, and milliseconds
-        const hours = Math.floor(duration / 3600);
-        const minutes = Math.floor((duration % 3600) / 60);
-        const seconds = Math.floor(duration % 60);
-        const milliseconds = Math.floor((duration % 1) * 100); // Get first two digits of milliseconds
+        // Calculate seconds and milliseconds
+        const seconds = Math.floor(duration); // Whole seconds
+        const milliseconds = Math.floor((duration % 1) * 1000); // Convert fraction to milliseconds
 
-        // Format hours, minutes, and seconds with leading zeros
-        const formattedHours = String(hours).padStart(2, '0');
-        const formattedMinutes = String(minutes).padStart(2, '0');
-        const formattedSeconds = String(seconds).padStart(2, '0');
-        const formattedMilliseconds = String(milliseconds).padStart(2, '0');
+        // Format seconds and milliseconds with leading zeros where needed
+        const formattedSeconds = String(seconds);
+        const formattedMilliseconds = String(milliseconds).padStart(3, '0');
 
-        // Return the formatted duration
-        return `${formattedHours}:${formattedMinutes}:${formattedSeconds}.${formattedMilliseconds}`;
+        // Return the formatted duration as seconds.milliseconds
+        return `${formattedSeconds}.${formattedMilliseconds}`;
     }
 
-    // Function to create key-value elements with formatting
-    function createKeyValueElements(key, value, parentElement) {
-        // Define fields to exclude
-        const excludedFields = ['html_link', 'files'];
+    function addKeyValueToStatus(key, value) {
 
-        // Skip processing if the key is in the excluded fields
-        if (excludedFields.includes(key)) {
-            return;
-        }
+        const statusContainer = document.getElementById('status-container');
 
         const keyElement = document.createElement('div');
         keyElement.className = 'json-key';
@@ -297,56 +348,80 @@
 
         const valueElement = document.createElement('div');
         valueElement.className = 'json-value';
+        valueElement.textContent = value;
 
-        if (key === 'duration') {
-            if (value === null) {
-                // Set initial value to 0 and add a unique ID or data attribute to identify the duration element
-                valueElement.textContent = '00:00:00';
-                valueElement.setAttribute('id', 'duration-value');
-            } else {
-                // Format the duration if it's a valid number
-                valueElement.textContent = formatDuration(value);
-            }
-        } else if (typeof value === 'string' && (value.startsWith('http://') || value.startsWith('https://'))) {
-            const link = document.createElement('a');
-            link.href = value;
-            link.textContent = value.split('/').pop();
-            link.target = '_blank'; // Open in new tab
-            valueElement.appendChild(link);
-        } else if (typeof value === 'number' && key.toLowerCase().includes('time')) {
-            // Convert timestamp to formatted date if key contains 'time'
-            const formattedDate = formatTimestamp(value);
-            valueElement.textContent = formattedDate;
-        } else if (typeof value === 'string' && key.toLowerCase().includes('status')) {
-            // Add status formatting based on value
-            valueElement.classList.add('status-value');
-            valueElement.classList.add(getStatusClass(value));
-            valueElement.textContent = value;
-        } else if (typeof value === 'string' && value.includes('\n')) {
-            // Handle multiline strings by converting '\n' to <br> elements
-            const lines = value.split('\n');
-            lines.forEach((line, index) => {
-                valueElement.appendChild(document.createTextNode(line));
-                if (index < lines.length - 1) {
-                    valueElement.appendChild(document.createElement('br'));
-                }
-            });
-        } else if (typeof value === 'object' && !Array.isArray(value)) {
-            // Handle nested objects
-            const nestedContainer = document.createElement('div');
-            nestedContainer.className = 'json-container';
-            for (const nestedKey in value) {
-                if (value.hasOwnProperty(nestedKey)) {
-                    createKeyValueElements(nestedKey, value[nestedKey], nestedContainer);
-                }
-            }
-            valueElement.appendChild(nestedContainer);
-        } else {
-            valueElement.textContent = value;
+        statusContainer.appendChild(keyElement);
+        statusContainer.appendChild(valueElement);
+    }
+
+    function addFileButtonToStatus(key, links) {
+
+        if (links == null) {
+            return
         }
 
-        parentElement.appendChild(keyElement);
-        parentElement.appendChild(valueElement);
+        const statusContainer = document.getElementById('status-container');
+
+        const keyElement = document.createElement('div');
+        keyElement.className = 'json-key';
+        keyElement.textContent = key + ':';
+        statusContainer.appendChild(keyElement);
+
+        if (Array.isArray(links) && links.length > 0) {
+            links.forEach(link => {
+                // const a = document.createElement('a');
+                // a.href = link;
+                // a.textContent = link.split('/').pop();
+                // a.target = '_blank';
+                // statusContainer.appendChild(a);
+                const button = document.createElement('button');
+                button.textContent = link.split('/').pop();
+                button.addEventListener('click', function () {
+                    window.location.href = link;
+                });
+                statusContainer.appendChild(button);
+            });
+        }
+    }
+
+    function addStatusToStatus(status, start_time, duration) {
+        const statusContainer = document.getElementById('status-container');
+
+        let keyElement = document.createElement('div');
+        let valueElement = document.createElement('div');
+        keyElement.className = 'json-key';
+        valueElement.className = 'json-value';
+        keyElement.textContent = 'status:';
+        valueElement.classList.add('status-value');
+        valueElement.classList.add(getStatusClass(status));
+        valueElement.textContent = status;
+        statusContainer.appendChild(keyElement);
+        statusContainer.appendChild(valueElement);
+
+        keyElement = document.createElement('div');
+        valueElement = document.createElement('div');
+        keyElement.className = 'json-key';
+        valueElement.className = 'json-value';
+        keyElement.textContent = 'start_time:';
+        valueElement.textContent = formatTimestamp(start_time);
+        statusContainer.appendChild(keyElement);
+        statusContainer.appendChild(valueElement);
+
+        keyElement = document.createElement('div');
+        valueElement = document.createElement('div');
+        keyElement.className = 'json-key';
+        valueElement.className = 'json-value';
+        keyElement.textContent = 'duration:';
+        if (duration === null) {
+            // Set initial value to 0 and add a unique ID or data attribute to identify the duration element
+            valueElement.textContent = '00:00:00';
+            valueElement.setAttribute('id', 'duration-value');
+        } else {
+            // Format the duration if it's a valid number
+            valueElement.textContent = formatDuration(duration);
+        }
+        statusContainer.appendChild(keyElement);
+        statusContainer.appendChild(valueElement);
     }
 
     function navigatePath(jsonObj, nameArray) {
@@ -394,6 +469,14 @@
     // Define the fixed columns globally, so both functions can use it
     const columns = ['name', 'status', 'start_time', 'duration', 'info'];
 
+    const columnSymbols = {
+        name: '👤',
+        status: '✔️',
+        start_time: '🕒',
+        duration: '⏳',
+        info: '⚠️'
+    };
+
     function createResultsTable(results, nest_level) {
         if (results && Array.isArray(results) && results.length > 0) {
             const table = document.createElement('table');
@@ -407,7 +490,7 @@
             const headerRow = document.createElement('tr');
             columns.forEach(column => {
                 const th = document.createElement('th');
-                th.textContent = column;
+                th.textContent = th.textContent = columnSymbols[column] || column;
                 th.style.cursor = 'pointer'; // Make headers clickable
                 th.addEventListener('click', () => sortTable(results, column, tbody, nest_level)); // Add click event to sort the table
                 headerRow.appendChild(th);
@@ -452,12 +535,13 @@
                     const span = document.createElement('span');
                     span.className = getStatusClass(value);
                     span.textContent = value;
+                    td.classList.add('status-column');
                     td.appendChild(span);
                 } else if (column === 'start_time') {
-                    // Format and display the start_time as a timestamp
+                    td.classList.add('time-column');
                     td.textContent = value ? formatTimestamp(value, false) : '';
                 } else if (column === 'duration') {
-                    // Format and display the duration
+                    td.classList.add('time-column');
                     td.textContent = value ? formatDuration(value) : '';
                 } else if (column === 'info') {
                     // For info and other columns, just display the value
@@ -505,7 +589,7 @@
     }
 
     function loadJSON(PR, sha, nameParams) {
-        const titleElement = document.getElementById('title');
+        const infoElement = document.getElementById('info-container');
         let lastModifiedTime = null;
         const task = nameParams[0].toLowerCase();
 
@@ -513,7 +597,7 @@
         const baseUrl = window.location.origin + window.location.pathname.replace('/json.html', '');
         const path = `${baseUrl}/${encodeURIComponent(PR)}/${encodeURIComponent(sha)}/result_${task}.json`;
 
-        fetch(path, { cache: "no-cache" })
+        fetch(path, {cache: "no-cache"})
             .then(response => {
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
@@ -522,27 +606,15 @@
                 return response.json();
             })
             .then(data => {
-                const contentDiv = document.getElementById('content');
                 const linksDiv = document.getElementById('links');
-                const resultsDiv = document.getElementById('results-table');
+                const resultsDiv = document.getElementById('result-container');
                 const footerRight = document.querySelector('#footer .right');
 
                 let targetData = navigatePath(data, nameParams);
                 let nest_level = nameParams.length;
 
                 if (targetData) {
-                    titleElement.style.display = 'none';
-
-                    // Handle links
-                    if (Array.isArray(targetData.links) && targetData.links.length > 0) {
-                        targetData.links.forEach(link => {
-                            const a = document.createElement('a');
-                            a.href = link;
-                            a.textContent = link.split('/').pop();
-                            a.target = '_blank';
-                            linksDiv.appendChild(a);
-                        });
-                    }
+                    infoElement.style.display = 'none';
 
                     // Handle footer links if present
                     if (Array.isArray(data.aux_links) && data.aux_links.length > 0) {
@@ -554,23 +626,15 @@
                             footerRight.appendChild(a);
                         });
                     }
+                    addStatusToStatus(targetData.status, targetData.start_time, targetData.duration)
 
-                    // Remove 'name', 'links', and 'results' from main data to display
-                    const mainData = { ...targetData };
-                    delete mainData.name;
-                    delete mainData.links;
-                    delete mainData.aux_links;
-                    const resultsData = mainData.results;
-                    delete mainData.results;
+                    // Handle links
+                    addFileButtonToStatus('files', targetData.links)
 
-                    // Display main content and check if duration is null
-                    for (const [key, value] of Object.entries(mainData)) {
-                        createKeyValueElements(key, value, contentDiv);
-                    }
 
                     // Handle duration update if duration is null and start_time exists
-                    if (mainData.duration === null && mainData.start_time) {
-                        let duration = Math.floor(Date.now() / 1000 - mainData.start_time);
+                    if (targetData.duration === null && targetData.start_time) {
+                        let duration = Math.floor(Date.now() / 1000 - targetData.start_time);
                         const durationElement = document.getElementById('duration-value');
 
                         const intervalId = setInterval(() => {
@@ -580,6 +644,7 @@
                     }
 
                     // If 'results' exists and is non-empty, create the table
+                    const resultsData = targetData.results;
                     if (Array.isArray(resultsData) && resultsData.length > 0) {
                         const table = createResultsTable(resultsData, nest_level);
                         if (table) {
@@ -587,8 +652,8 @@
                         }
                     }
                 } else {
-                    titleElement.textContent = 'Object Not Found';
-                    titleElement.style.display = 'block';
+                    infoElement.textContent = 'Object Not Found';
+                    infoElement.style.display = 'block';
                 }
 
                 // Set up auto-reload if Last-Modified header is present
@@ -600,14 +665,14 @@
             })
             .catch(error => {
                 console.error('Error loading JSON:', error);
-                titleElement.textContent = 'Error loading data';
-                titleElement.style.display = 'block';
+                infoElement.textContent = 'Error loading data';
+                infoElement.style.display = 'block';
             });
     }
 
     // Function to check if the JSON file is updated
     function checkForUpdate(path, lastModifiedTime) {
-        fetch(path, { method: 'HEAD' })
+        fetch(path, {method: 'HEAD'})
             .then(response => {
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
@@ -637,6 +702,17 @@
                 nameParams[index] = value;
             }
         });
+
+        if (PR) {
+            addKeyValueToStatus("PR", PR)
+        } else {
+            console.error("TODO")
+        }
+        addKeyValueToStatus("sha", sha);
+        if (nameParams[1]) {
+            addKeyValueToStatus("job", nameParams[1]);
+        }
+        addKeyValueToStatus("workflow", nameParams[0]);
 
         if (PR && sha && root_name) {
             loadJSON(PR, sha, nameParams);
