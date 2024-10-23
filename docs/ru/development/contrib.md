@@ -93,7 +93,7 @@ sidebar_label: "Используемые сторонние библиотеки
 SELECT library_name, license_type, license_path FROM system.licenses ORDER BY library_name COLLATE 'en';
 ```
 
-[Пример](https://sql.clickhouse.com/play?query_id=478GCPU7LRTSZJBNY3EJT3)
+[Пример](https://sql.clickhouse.com?query_id=478GCPU7LRTSZJBNY3EJT3)
 
 ## Рекомендации по добавлению сторонних библиотек и поддержанию в них пользовательских изменений {#adding-third-party-libraries}
 

@@ -244,13 +244,13 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 
 The tool suggests several queries via its help output. We have answered these in addition to some additional supplementary questions of interest. These queries are of approximately increasing complexity vs. the tool's arbitrary order.
 
-This dataset is available in [play.clickhouse.com](https://sql.clickhouse.com/play?query_id=DCQPNPAIMAQXRLHYURLKVJ) in the `git_clickhouse` databases. We provide a link to this environment for all queries, adapting the database name as required. Note that play results may vary from the those presented here due to differences in time of data collection.
+This dataset is available in [play.clickhouse.com](https://sql.clickhouse.com?query_id=DCQPNPAIMAQXRLHYURLKVJ) in the `git_clickhouse` databases. We provide a link to this environment for all queries, adapting the database name as required. Note that play results may vary from the those presented here due to differences in time of data collection.
 
 ## History of a single file
 
 The simplest of queries. Here we look at all commit messages for the `StorageReplicatedMergeTree.cpp`. Since these are likely more interesting, we sort by the most recent messages first.
 
-[play](https://sql.clickhouse.com/play?query_id=COAZRFX2YFULDBXRQTCQ1S)
+[play](https://sql.clickhouse.com?query_id=COAZRFX2YFULDBXRQTCQ1S)
 
 ```sql
 SELECT
@@ -287,7 +287,7 @@ LIMIT 10
 
 We can also review the line changes, excluding renames i.e. we won't show changes before a rename event when the file existed under a different name:
 
-[play](https://sql.clickhouse.com/play?query_id=AKS9SYLARFMZCHGAAQNEBN)
+[play](https://sql.clickhouse.com?query_id=AKS9SYLARFMZCHGAAQNEBN)
 
 ```sql
 SELECT
@@ -327,7 +327,7 @@ This is important for later analysis when we only want to consider the current f
 
 **Note there appears to have been a broken commit history in relation to files under the `dbms`, `libs`, `tests/testflows/` directories during their renames. We also thus exclude these.**
 
-[play](https://sql.clickhouse.com/play?query_id=2HNFWPCFWEEY92WTAPMA7W)
+[play](https://sql.clickhouse.com?query_id=2HNFWPCFWEEY92WTAPMA7W)
 
 ```sql
 SELECT path
@@ -369,7 +369,7 @@ LIMIT 10
 
 Note that this allows for files to be renamed and then re-renamed to their original values. First we aggregate `old_path` for a list of deleted files as a result of renaming. We union this with the last operation for every `path`. Finally, we filter this list to those where the final event is not a `Delete`.
 
-[play](https://sql.clickhouse.com/play?query_id=1OXCKMOH2JVMSHD3NS2WW6)
+[play](https://sql.clickhouse.com?query_id=1OXCKMOH2JVMSHD3NS2WW6)
 
 ```sql
 SELECT uniq(path)
@@ -419,7 +419,7 @@ The difference here is caused by a few factors:
 
 - A rename can occur alongside other modifications to the file. These are listed as separate events in file_changes but with the same time. The `argMax` function has no way of distinguishing these - it picks the first value. The natural ordering of the inserts (the only means of knowing the correct order) is not maintained across the union so modified events can be selected. For example, below the `src/Functions/geometryFromColumn.h` file has several modifications before being renamed to `src/Functions/geometryConverters.h`. Our current solution may pick a Modify event as the latest change causing `src/Functions/geometryFromColumn.h` to be retained.
 
-[play](https://sql.clickhouse.com/play?query_id=SCXWMR9GBMJ9UNZYQXQBFA)
+[play](https://sql.clickhouse.com?query_id=SCXWMR9GBMJ9UNZYQXQBFA)
 
 ```sql
   SELECT
@@ -454,7 +454,7 @@ These differences shouldn't meaningfully impact our analysis. **We welcome impro
 
 Limiting to current files, we consider the number of modifications to be the sum of deletes and additions.
 
-[play](https://sql.clickhouse.com/play?query_id=MHXPSBNPTDMJYR3OYSXVR7)
+[play](https://sql.clickhouse.com?query_id=MHXPSBNPTDMJYR3OYSXVR7)
 
 ```sql
 WITH current_files AS
@@ -507,7 +507,7 @@ LIMIT 10
 
 ## What day of the week do commits usually occur?
 
-[play](https://sql.clickhouse.com/play?query_id=GED2STFSYJDRAA59H8RLIV)
+[play](https://sql.clickhouse.com?query_id=GED2STFSYJDRAA59H8RLIV)
 
 ```sql
 SELECT
@@ -534,7 +534,7 @@ This makes sense with some productivity drop-off on Fridays. Great to see people
 
 This would produce a large query result that is unrealistic to show or visualize if unfiltered. We, therefore, allow a file or subdirectory to be filtered in the following example. Here we group by week using the `toStartOfWeek` function - adapt as required.
 
-[play](https://sql.clickhouse.com/play?query_id=REZRXDVU7CAWT5WKNJSTNY)
+[play](https://sql.clickhouse.com?query_id=REZRXDVU7CAWT5WKNJSTNY)
 
 ```sql
 SELECT
@@ -578,7 +578,7 @@ This data visualizes well. Below we use Superset.
 
 Limit to current files only.
 
-[play](https://sql.clickhouse.com/play?query_id=CYQFNQNK9TAMPU2OZ8KG5Y)
+[play](https://sql.clickhouse.com?query_id=CYQFNQNK9TAMPU2OZ8KG5Y)
 
 ```sql
 WITH current_files AS
@@ -633,7 +633,7 @@ LIMIT 10
 
 Limited to current files only.
 
-[play](https://sql.clickhouse.com/play?query_id=VWPBPGRZVGTHOCQYWNQZNT)
+[play](https://sql.clickhouse.com?query_id=VWPBPGRZVGTHOCQYWNQZNT)
 
 ```sql
 WITH current_files AS
@@ -690,7 +690,7 @@ LIMIT 10
 
 Limited to current files only.
 
-[play](https://sql.clickhouse.com/play?query_id=VWPBPGRZVGTHOCQYWNQZNT)
+[play](https://sql.clickhouse.com?query_id=VWPBPGRZVGTHOCQYWNQZNT)
 
 ```sql
 WITH current_files AS
@@ -750,7 +750,7 @@ Our core data structure, the Merge Tree, is obviously under constant evolution w
 
 Do we write more docs at certain times of the month e.g., around release dates? We can use the `countIf` function to compute a simple ratio, visualizing the result using the `bar` function.
 
-[play](https://sql.clickhouse.com/play?query_id=BA4RZUXUHNQBH9YK7F2T9J)
+[play](https://sql.clickhouse.com?query_id=BA4RZUXUHNQBH9YK7F2T9J)
 
 ```sql
 SELECT
@@ -811,7 +811,7 @@ Maybe a little more near the end of the month, but overall we keep a good even d
 
 We consider diversity here to be the number of unique files an author has contributed to.
 
-[play](https://sql.clickhouse.com/play?query_id=MT8WBABUKYBYSBA78W5TML)
+[play](https://sql.clickhouse.com?query_id=MT8WBABUKYBYSBA78W5TML)
 
 ```sql
 SELECT
@@ -841,7 +841,7 @@ LIMIT 10
 
 Let's see who has the most diverse commits in their recent work. Rather than limit by date, we'll restrict to an author's last N commits (in this case, we've used 3 but feel free to modify):
 
-[play](https://sql.clickhouse.com/play?query_id=4Q3D67FWRIVWTY8EIDDE5U)
+[play](https://sql.clickhouse.com?query_id=4Q3D67FWRIVWTY8EIDDE5U)
 
 ```sql
 SELECT
@@ -888,7 +888,7 @@ LIMIT 10
 
 Here we select our founder [Alexey Milovidov](https://github.com/alexey-milovidov) and limit our analysis to current files.
 
-[play](https://sql.clickhouse.com/play?query_id=OKGZBACRHVGCRAGCZAJKMF)
+[play](https://sql.clickhouse.com?query_id=OKGZBACRHVGCRAGCZAJKMF)
 
 ```sql
 WITH current_files AS
@@ -941,7 +941,7 @@ LIMIT 10
 
 This makes sense because Alexey has been responsible for maintaining the Change log. But what if we use the base name of the file to identify his popular files - this allows for renames and should focus on code contributions.
 
-[play](https://sql.clickhouse.com/play?query_id=P9PBDZGOSVTKXEXU73ZNAJ)
+[play](https://sql.clickhouse.com?query_id=P9PBDZGOSVTKXEXU73ZNAJ)
 
 ```sql
 SELECT
@@ -976,7 +976,7 @@ For this, we first need to identify the largest files. Estimating this via a ful
 
 To estimate, assuming we restrict to current files, we sum line additions and subtract deletions. We can then compute a ratio of length to the number of authors.
 
-[play](https://sql.clickhouse.com/play?query_id=PVSDOHZYUMRDDUZFEYJC7J)
+[play](https://sql.clickhouse.com?query_id=PVSDOHZYUMRDDUZFEYJC7J)
 
 ```sql
 WITH current_files AS
@@ -1031,7 +1031,7 @@ LIMIT 10
 
 Text dictionaries aren't maybe realistic, so lets restrict to code only via a file extension filter!
 
-[play](https://sql.clickhouse.com/play?query_id=BZHGWUIZMPZZUHS5XRBK2M)
+[play](https://sql.clickhouse.com?query_id=BZHGWUIZMPZZUHS5XRBK2M)
 
 ```sql
 WITH current_files AS
@@ -1085,7 +1085,7 @@ LIMIT 10
 
 There is some recency bias in this - newer files have fewer opportunities for commits. What about if we restrict to files at least 1 yr old?
 
-[play](https://sql.clickhouse.com/play?query_id=RMHHZEDHFUCBGRQVQA2732)
+[play](https://sql.clickhouse.com?query_id=RMHHZEDHFUCBGRQVQA2732)
 
 ```sql
 WITH current_files AS
@@ -1144,7 +1144,7 @@ LIMIT 10
 
 We interpret this as the number of lines added and removed by the day of the week. In this case, we focus on the [Functions directory](https://github.com/ClickHouse/ClickHouse/tree/master/src/Functions)
 
-[play](https://sql.clickhouse.com/play?query_id=PF3KEMYG5CVLJGCFYQEGB1)
+[play](https://sql.clickhouse.com?query_id=PF3KEMYG5CVLJGCFYQEGB1)
 
 ```sql
 SELECT
@@ -1171,7 +1171,7 @@ GROUP BY toDayOfWeek(time) AS dayOfWeek
 
 And by time of day,
 
-[play](https://sql.clickhouse.com/play?query_id=Q4VDVKEGHHRBCUJHNCVTF1)
+[play](https://sql.clickhouse.com?query_id=Q4VDVKEGHHRBCUJHNCVTF1)
 
 ```sql
 SELECT
@@ -1215,7 +1215,7 @@ GROUP BY toHour(time) AS hourOfDay
 
 This distribution makes sense given most of our development team is in Amsterdam. The `bar` functions helps us visualize these distributions:
 
-[play](https://sql.clickhouse.com/play?query_id=9AZ8CENV8N91YGW7T6IB68)
+[play](https://sql.clickhouse.com?query_id=9AZ8CENV8N91YGW7T6IB68)
 
 ```sql
 SELECT
@@ -1269,7 +1269,7 @@ FROM
 
 The `sign = -1` indicates a code deletion. We exclude punctuation and the insertion of empty lines.
 
-[play](https://sql.clickhouse.com/play?query_id=448O8GWAHY3EM6ZZ7AGLAM)
+[play](https://sql.clickhouse.com?query_id=448O8GWAHY3EM6ZZ7AGLAM)
 
 ```sql
 SELECT
@@ -1325,7 +1325,7 @@ Alexey clearly likes removing other peoples code. Lets exclude him for a more ba
 
 If we consider by just number of commits:
 
-[play](https://sql.clickhouse.com/play?query_id=WXPKFJCAHOKYKEVTWNFVCY)
+[play](https://sql.clickhouse.com?query_id=WXPKFJCAHOKYKEVTWNFVCY)
 
 ```sql
 SELECT
@@ -1356,7 +1356,7 @@ LIMIT 1 BY day_of_week
 
 OK, some possible advantages here to the longest contributor - our founder Alexey. Lets limit our analysis to the last year.
 
-[play](https://sql.clickhouse.com/play?query_id=8YRJGHFTNJAWJ96XCJKKEH)
+[play](https://sql.clickhouse.com?query_id=8YRJGHFTNJAWJ96XCJKKEH)
 
 ```sql
 SELECT
@@ -1390,7 +1390,7 @@ This is still a little simple and doesn't reflect people's work.
 
 A better metric might be who is the top contributor each day as a fraction of the total work performed in the last year. Note that we treat the deletion and adding code equally.
 
-[play](https://sql.clickhouse.com/play?query_id=VQF4KMRDSUEXGS1JFVDJHV)
+[play](https://sql.clickhouse.com?query_id=VQF4KMRDSUEXGS1JFVDJHV)
 
 ```sql
 SELECT
@@ -1440,7 +1440,7 @@ INNER JOIN
 
 We limit the analysis to the current files. For brevity, we restrict the results to a depth of 2 with 5 files per root folder. Adjust as required.
 
-[play](https://sql.clickhouse.com/play?query_id=6YWAUQYPZINZDJGBEZBNWG)
+[play](https://sql.clickhouse.com?query_id=6YWAUQYPZINZDJGBEZBNWG)
 
 ```sql
 WITH current_files AS
@@ -1523,7 +1523,7 @@ LIMIT 5 BY root
 
 For this question, we need the number of lines written by an author divided by the total number of lines they have had removed by another contributor.
 
-[play](https://sql.clickhouse.com/play?query_id=T4DTWTB36WFSEYAZLMGRNF)
+[play](https://sql.clickhouse.com?query_id=T4DTWTB36WFSEYAZLMGRNF)
 
 ```sql
 SELECT
@@ -1627,7 +1627,7 @@ This doesn't capture the notion of a "re-write" however, where a large portion o
 
 The query is limited to the current files only. We list all file changes by grouping by `path` and `commit_hash`, returning the number of lines added and removed. Using a window function, we estimate the file's total size at any moment in time by performing a cumulative sum and estimating the impact of any change on file size as `lines added - lines removed`. Using this statistic, we can calculate the percentage of the file that has been added or removed for each change. Finally, we count the number of file changes that constitute a rewrite per file i.e. `(percent_add >= 0.5) AND (percent_delete >= 0.5) AND current_size > 50`. Note we require files to be more than 50 lines to avoid early contributions to a file being counted as a rewrite. This also avoids a bias to very small files, which may be more likely to be rewritten.
 
-[play](https://sql.clickhouse.com/play?query_id=5PL1QLNSH6QQTR8H9HINNP)
+[play](https://sql.clickhouse.com?query_id=5PL1QLNSH6QQTR8H9HINNP)
 
 ```sql
 WITH
@@ -1719,7 +1719,7 @@ We query for lines added, joining this with the lines removed - filtering to cas
 
 Finally, we aggregate across this dataset to compute the average number of days lines stay in the repository by the day of the week.
 
-[play](https://sql.clickhouse.com/play?query_id=GVF23LEZTNZI22BT8LZBBE)
+[play](https://sql.clickhouse.com?query_id=GVF23LEZTNZI22BT8LZBBE)
 
 ```sql
 SELECT
@@ -1778,7 +1778,7 @@ GROUP BY dayOfWeek(added_day) AS day_of_week_added
 This query uses the same principle as [What weekday does the code have the highest chance to stay in the repository](#what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository) - by aiming to uniquely identify a line of code using the path and line contents.
 This allows us to identify the time between when a line was added and removed. We filter to current files and code only, however, and average the time for each file across lines.
 
-[play](https://sql.clickhouse.com/play?query_id=3CYYT7HEHWRFHVCM9JCKSU)
+[play](https://sql.clickhouse.com?query_id=3CYYT7HEHWRFHVCM9JCKSU)
 
 ```sql
 WITH
@@ -1869,7 +1869,7 @@ There are a few ways we can address this question. Focusing on the code to test 
 
 Note we limit to users with more than 20 changes to focus on regular committers and avoid a bias to one-off contributions.
 
-[play](https://sql.clickhouse.com/play?query_id=JGKZSEQDPDTDKZXD3ZCGLE)
+[play](https://sql.clickhouse.com?query_id=JGKZSEQDPDTDKZXD3ZCGLE)
 
 ```sql
 SELECT
@@ -1911,7 +1911,7 @@ LIMIT 20
 
 We can plot this distribution as a histogram.
 
-[play](https://sql.clickhouse.com/play?query_id=S5AJIIRGSUAY1JXEVHQDAK)
+[play](https://sql.clickhouse.com?query_id=S5AJIIRGSUAY1JXEVHQDAK)
 
 ```sql
 WITH (
@@ -1954,7 +1954,7 @@ Most contributors write more code than tests, as you'd expect.
 
 What about who adds the most comments when contributing code?
 
-[play](https://sql.clickhouse.com/play?query_id=EXPHDIURBTOXXOK1TGNNYD)
+[play](https://sql.clickhouse.com?query_id=EXPHDIURBTOXXOK1TGNNYD)
 
 ```sql
 SELECT
@@ -2038,7 +2038,7 @@ To compute this, we first work out each author's comments ratio over time - simi
 
 After calculating the average by-week offset across all authors, we sample these results by selecting every 10th week.
 
-[play](https://sql.clickhouse.com/play?query_id=SBHEWR8XC4PRHY13HPPKCN)
+[play](https://sql.clickhouse.com?query_id=SBHEWR8XC4PRHY13HPPKCN)
 
 ```sql
 WITH author_ratios_by_offset AS
@@ -2116,7 +2116,7 @@ Encouragingly, our comment % is pretty constant and doesn't degrade the longer a
 
 We can use the same principle as [List files that were rewritten most number of time or by most of authors](#list-files-that-were-rewritten-most-number-of-time-or-by-most-of-authors) to identify rewrites but consider all files. A window function is used to compute the time between rewrites for each file. From this, we can calculate an average and median across all files.
 
-[play](https://sql.clickhouse.com/play?query_id=WSHUEPJP9TNJUH7QITWWOR)
+[play](https://sql.clickhouse.com?query_id=WSHUEPJP9TNJUH7QITWWOR)
 
 ```sql
 WITH
@@ -2176,7 +2176,7 @@ FROM rewrites
 
 Similar to [What is the average time before code will be rewritten and the median (half-life of code decay)?](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay) and [List files that were rewritten most number of time or by most of authors](#list-files-that-were-rewritten-most-number-of-time-or-by-most-of-authors), except we aggregate by day of week. Adjust as required e.g. month of year.
 
-[play](https://sql.clickhouse.com/play?query_id=8PQNWEWHAJTGN6FTX59KH2)
+[play](https://sql.clickhouse.com?query_id=8PQNWEWHAJTGN6FTX59KH2)
 
 ```sql
 WITH
@@ -2240,7 +2240,7 @@ GROUP BY dayOfWeek
 
 We define "sticky" as how long does an author's code stay before its rewritten. Similar to the previous question [What is the average time before code will be rewritten and the median (half-life of code decay)?](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay) - using the same metric for rewrites i.e. 50% additions and 50% deletions to the file. We compute the average rewrite time per author and only consider contributors with more than two files.
 
-[play](https://sql.clickhouse.com/play?query_id=BKHLVVWN5SET1VTIFQ8JVK)
+[play](https://sql.clickhouse.com?query_id=BKHLVVWN5SET1VTIFQ8JVK)
 
 ```sql
 WITH
@@ -2319,7 +2319,7 @@ This query first requires us to calculate the days when an author has committed.
 
 Our subsequent array functions compute each author's longest sequence of consecutive ones. First, the `groupArray` function is used to collate all `consecutive_day` values for an author. This array of 1s and 0s, is then split on 0 values into subarrays. Finally, we calculate the longest subarray.
 
-[play](https://sql.clickhouse.com/play?query_id=S3E64UYCAMDAYJRSXINVFR)
+[play](https://sql.clickhouse.com?query_id=S3E64UYCAMDAYJRSXINVFR)
 
 ```sql
 WITH commit_days AS
@@ -2372,7 +2372,7 @@ LIMIT 10
 
 Files can be renamed. When this occurs, we get a rename event, where the `path` column is set to the new path of the file and the `old_path` represents the previous location e.g.
 
-[play](https://sql.clickhouse.com/play?query_id=AKTW3Z8JZAPQ4H9BH2ZFRX)
+[play](https://sql.clickhouse.com?query_id=AKTW3Z8JZAPQ4H9BH2ZFRX)
 
 ```sql
 SELECT

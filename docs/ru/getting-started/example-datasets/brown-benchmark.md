@@ -412,4 +412,4 @@ ORDER BY yr,
          mo;
 ```
 
-Данные также доступны для работы с интерактивными запросами через [Playground](https://sql.clickhouse.com/play), [пример](https://sql.clickhouse.com/play?query_id=1MXMHASDLEQIP4P1D1STND).
+Данные также доступны для работы с интерактивными запросами через [Playground](https://sql.clickhouse.com), [пример](https://sql.clickhouse.com?query_id=1MXMHASDLEQIP4P1D1STND).

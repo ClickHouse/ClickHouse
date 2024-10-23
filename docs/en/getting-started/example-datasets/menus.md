@@ -354,4 +354,4 @@ At least they have caviar with vodka. Very nice.
 
 ## Online Playground {#playground}
 
-The data is uploaded to ClickHouse Playground, [example](https://sql.clickhouse.com/play?query_id=KB5KQJJFNBKHE5GBUJCP1B).
+The data is uploaded to ClickHouse Playground, [example](https://sql.clickhouse.com?query_id=KB5KQJJFNBKHE5GBUJCP1B).
