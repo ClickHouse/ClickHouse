@@ -381,6 +381,24 @@ public:
 	}
 };
 
+template<typename T>
+bool HasType(const SQLType *tp) {
+	const Nullable *nl;
+	const LowCardinality *lc;
+	const ArrayType *at;
+
+	if (dynamic_cast<const T*>(tp)) {
+		return true;
+	} else if ((nl = dynamic_cast<const Nullable*>(tp))) {
+		return HasType<T>(nl->subtype);
+ 	} else if ((lc = dynamic_cast<const LowCardinality*>(tp))) {
+		return HasType<T>(lc->subtype);
+	} else if ((at = dynamic_cast<const ArrayType*>(tp))) {
+		return HasType<T>(at->subtype);
+	}
+	return false;
+}
+
 SQLType* TypeDeepCopy(const SQLType *tp);
 std::tuple<SQLType*, sql_query_grammar::Integers> RandomIntType(RandomGenerator &rg);
 std::tuple<SQLType*, sql_query_grammar::FloatingPoints> RandomFloatType(RandomGenerator &rg);

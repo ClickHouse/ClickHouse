@@ -341,11 +341,6 @@ int StatementGenerator::AddTableColumn(RandomGenerator &rg, SQLTable &t, const u
 	return 0;
 }
 
-#define PossibleForFullText(tpe) \
-	(dynamic_cast<StringType*>(tpe) || \
-	 ((at = dynamic_cast<ArrayType*>(tpe)) && dynamic_cast<StringType*>(at->subtype)) || \
-	 ((lc = dynamic_cast<LowCardinality*>(tpe)) && dynamic_cast<StringType*>(lc->subtype)))
-
 int StatementGenerator::AddTableIndex(RandomGenerator &rg, SQLTable &t, const bool staged, sql_query_grammar::IndexDef *idef) {
 	SQLIndex idx;
 	const uint32_t iname = t.idx_counter++;
@@ -358,19 +353,17 @@ int StatementGenerator::AddTableIndex(RandomGenerator &rg, SQLTable &t, const bo
 	idef->mutable_idx()->set_index("i" + std::to_string(iname));
 	idef->set_type(itpe);
 	if (rg.NextSmallNumber() < 9) {
-		ArrayType *at = nullptr;
 		NestedType *ntp = nullptr;
-		LowCardinality *lc = nullptr;
 
 		assert(this->entries.empty());
 		for (const auto &entry : t.cols) {
 			if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
 				for (const auto &entry2 : ntp->subtypes) {
-					if (itpe < sql_query_grammar::IndexType::IDX_ngrambf_v1 || PossibleForFullText(entry2.subtype)) {
+					if (itpe < sql_query_grammar::IndexType::IDX_ngrambf_v1 || HasType<StringType>(entry2.subtype)) {
 						entries.push_back(InsertEntry(ColumnSpecial::NONE, entry.second.cname, std::optional<uint32_t>(entry2.cname), entry2.array_subtype, entry.second.dmod));
 					}
 				}
-			} else if (itpe < sql_query_grammar::IndexType::IDX_ngrambf_v1 || PossibleForFullText(entry.second.tp)) {
+			} else if (itpe < sql_query_grammar::IndexType::IDX_ngrambf_v1 || HasType<StringType>(entry.second.tp)) {
 				entries.push_back(InsertEntry(entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
 			}
 		}

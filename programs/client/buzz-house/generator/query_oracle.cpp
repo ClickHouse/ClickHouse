@@ -91,7 +91,7 @@ int QueryOracle::GenerateCorrectnessTestSecondQuery(sql_query_grammar::SQLQuery 
 /*
 Dump and read table oracle
 */
-int QueryOracle::DumpTableContent(const SQLTable &t, sql_query_grammar::SQLQuery &sq1) {
+int QueryOracle::DumpTableContent(RandomGenerator &rg, const SQLTable &t, const StatementGenerator &gen, sql_query_grammar::SQLQuery &sq1) {
 	bool first = true;
 	const std::filesystem::path &qfile = fc.db_file_path / "query.data";
 	sql_query_grammar::TopSelect *ts = sq1.mutable_inner_query()->mutable_select();
@@ -112,6 +112,13 @@ int QueryOracle::DumpTableContent(const SQLTable &t, sql_query_grammar::SQLQuery
 			sql_query_grammar::ExprColumn *ecol = eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col();
 
 			ecol->mutable_col()->set_column("c" + std::to_string(entry.first));
+			if (rg.NextBool()) {
+				eot->set_asc_desc(rg.NextBool() ? sql_query_grammar::ExprOrderingTerm_AscDesc::ExprOrderingTerm_AscDesc_ASC :
+												  sql_query_grammar::ExprOrderingTerm_AscDesc::ExprOrderingTerm_AscDesc_DESC);
+			}
+			if (!gen.collations.empty() && HasType<StringType>(entry.second.tp) && rg.NextSmallNumber() < 3) {
+				eot->set_collation(rg.PickRandomlyFromVector(gen.collations));
+			}
 			first = false;
 		}
 	}

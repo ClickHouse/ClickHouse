@@ -1092,7 +1092,7 @@ bool Client::buzzHouse()
 
                     //test in and out formats
                     full_query2.resize(0);
-                    (void) qo.DumpTableContent(t, sq1);
+                    (void) qo.DumpTableContent(rg, t, gen, sq1);
                     buzzhouse::SQLQueryToString(full_query2, sq1);
                     outf << full_query2 << std::endl;
                     server_up &= ProcessBuzzHouseQuery(full_query2);
