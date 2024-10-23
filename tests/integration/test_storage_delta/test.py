@@ -8,6 +8,7 @@ import os
 import json
 import time
 import glob
+import uuid
 
 import pyspark
 import delta
@@ -796,7 +797,7 @@ def test_complex_types(started_cluster):
     endpoint_url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}"
     aws_access_key_id = "minio"
     aws_secret_access_key = "minio123"
-    table_name = f"test_complex_types_{uuid4.hex}"
+    table_name = f"test_complex_types_{uuid.uuid4()}"
 
     storage_options = {
         "AWS_ENDPOINT_URL": endpoint_url,
@@ -831,8 +832,8 @@ def test_replicated_database_and_unavailable_s3(started_cluster):
     node1 = started_cluster.instances["node1"]
     node2 = started_cluster.instances["node2"]
 
-    DB_NAME = randomize_table_name("db")
-    TABLE_NAME = randomize_table_name("test_replicated_database_and_unavailable_s3")
+    DB_NAME = f"db_{uuid.uuid4()}"
+    TABLE_NAME = f"test_replicated_database_and_unavailable_s3_{uuid.uuid4()}"
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_restricted_bucket
 
