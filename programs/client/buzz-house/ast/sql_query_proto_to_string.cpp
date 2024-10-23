@@ -1771,6 +1771,10 @@ CONV_FN(ColumnDef, cdf) {
     ret += cdf.nullable() ? "" : " NOT";
     ret += " NULL";
   }
+  if (cdf.has_defaultv()) {
+    ret += " ";
+    DefaultModifierToString(ret, cdf.defaultv());
+  }
   if (cdf.codecs_size()) {
     ret += " CODEC(";
     for (int i = 0; i < cdf.codecs_size(); i++) {
@@ -1780,10 +1784,6 @@ CONV_FN(ColumnDef, cdf) {
       CodecParamToString(ret, cdf.codecs(i));
     }
     ret += ")";
-  }
-  if (cdf.has_defaultv()) {
-    ret += " ";
-    DefaultModifierToString(ret, cdf.defaultv());
   }
   if (cdf.has_stats()) {
     ret += " STATISTICS(";
