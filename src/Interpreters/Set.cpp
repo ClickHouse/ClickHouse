@@ -361,7 +361,6 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     // Collect individual null maps for merging later
     std::vector<const NullMap *> individual_null_maps;
     individual_null_maps.reserve(num_key_columns);
-
     size_t num_rows = vec_res.size();
 
     for (size_t i = 0; i < num_key_columns; ++i)
@@ -427,7 +426,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
 
         // Collect the null map (if any)
         const ColumnNullable * nullable_col = typeid_cast<const ColumnNullable *>(result.get());
-        if (nullable_col)
+        if (nullable_col && transform_null_in)
         {
             individual_null_maps.push_back(&nullable_col->getNullMapData());
             // Replace the key column with its nested column
@@ -437,11 +436,13 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
             individual_null_maps.push_back(nullptr);
     }
 
-    // Merge all individual null maps into a single null map
+    /// We will check existence in Set only for keys whose components do not contain any NULL value.
     ConstNullMapPtr null_map{};
     ColumnPtr null_map_holder;
 
     if (!transform_null_in)
+        null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
+    else
     {
         auto merged_null_map_column = ColumnUInt8::create(num_rows);
         NullMap & merged_null_map = merged_null_map_column->getData();
