@@ -42,14 +42,13 @@ brew install ccache cmake ninja libtool gettext llvm gcc binutils grep findutils
 
 ## Checkout ClickHouse Sources {#checkout-clickhouse-sources}
 
-:::note
-The ClickHouse build assumes a case-sensitive file system. Case-insensitive file systems may cause errors during the build process. If necessary, please follow [these instructions](https://brianboyko.medium.com/a-case-sensitive-src-folder-for-mac-programmers-176cc82a3830) to create a new disk image and checkout the code into it.
-:::
-
 ``` bash
 git clone --recursive git@github.com:ClickHouse/ClickHouse.git
 # ...alternatively, you can use https://github.com/ClickHouse/ClickHouse.git as the repo URL.
 ```
+
+Apple uses a case-insensitive file system by default. While this usually does not affect compilation (especially scratch makes will work), it can confuse file operations like `git mv`.
+For serious development on macOS, make sure that the source code is stored on a case-sensitive disk volume, e.g. see [these instructions](https://brianboyko.medium.com/a-case-sensitive-src-folder-for-mac-programmers-176cc82a3830).
 
 ## Build ClickHouse {#build-clickhouse}
 
