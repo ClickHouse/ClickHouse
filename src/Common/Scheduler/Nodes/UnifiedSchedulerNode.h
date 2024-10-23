@@ -95,7 +95,8 @@ private:
             chassert(!children.empty());
             if (root)
                 return root;
-            return children.begin()->second; // There should be exactly one child
+            chassert(children.size() == 1);
+            return children.begin()->second;
         }
 
         /// Attaches a new child.
@@ -173,11 +174,10 @@ private:
         /// Returns root node if it has been changed to a different node, otherwise returns null.
         [[nodiscard]] SchedulerNodePtr attachUnifiedChild(EventQueue * event_queue_, const UnifiedSchedulerNodePtr & child)
         {
-            bool existing_branch = branches.contains(child->info.priority);
-            auto & child_branch = branches[child->info.priority];
+            auto [it, new_branch]  = branches.try_emplace(child->info.priority);
+            auto & child_branch = it->second;
             auto branch_root = child_branch.attachUnifiedChild(event_queue_, child);
-
-            if (existing_branch)
+            if (!new_branch)
             {
                 if (branch_root)
                 {
@@ -372,7 +372,7 @@ private:
             return {};
         }
 
-        /// Detaches a child.
+        /// Updates constraint-related nodes.
         /// Returns root node if it has been changed to a different node, otherwise returns null.
         [[nodiscard]] SchedulerNodePtr updateSchedulingSettings(EventQueue * event_queue_, const SchedulingSettings & new_settings)
         {
