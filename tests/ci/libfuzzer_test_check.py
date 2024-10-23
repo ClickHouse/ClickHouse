@@ -215,7 +215,8 @@ def main():
 
     stopwatch = Stopwatch()
 
-    os.chown("/var/lib/clickhouse", 0, 0)
+    data_path = "/var/lib/clickhouse"
+    os.makedirs(data_path, exist_ok=True)
 
     temp_path = Path(TEMP_PATH)
     reports_path = Path(REPORT_PATH)
