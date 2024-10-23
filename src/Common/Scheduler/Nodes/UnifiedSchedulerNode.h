@@ -173,11 +173,11 @@ private:
         /// Returns root node if it has been changed to a different node, otherwise returns null.
         [[nodiscard]] SchedulerNodePtr attachUnifiedChild(EventQueue * event_queue_, const UnifiedSchedulerNodePtr & child)
         {
-            bool existing_branch = branches.contains(child->info.priority);
-            auto & child_branch = branches[child->info.priority];
+            auto [it, new_branch]  = branches.try_emplace(child->info.priority);
+            auto & child_branch = it->second;
             auto branch_root = child_branch.attachUnifiedChild(event_queue_, child);
 
-            if (existing_branch)
+            if (!new_branch)
             {
                 if (branch_root)
                 {
