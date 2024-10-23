@@ -877,7 +877,8 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 auto entry_buf = entry->get_buf_ptr();
 
                 IKeeperStateMachine::ZooKeeperLogSerializationVersion serialization_version;
-                auto request_for_session = state_machine->parseRequest(*entry_buf, /*final=*/false, &serialization_version);
+                size_t request_end_position;
+                auto request_for_session = state_machine->parseRequest(*entry_buf, /*final=*/false, &serialization_version, &request_end_position);
                 request_for_session->zxid = next_zxid;
                 if (!state_machine->preprocess(*request_for_session))
                     return nuraft::cb_func::ReturnCode::ReturnNull;
@@ -908,8 +909,10 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
                 if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
                     write_buffer_header_size += sizeof(request_for_session->time);
+                else
+                    request_end_position += sizeof(request_for_session->time);
 
-                auto * buffer_start = reinterpret_cast<BufferBase::Position>(entry_buf->data_begin() + entry_buf->size() - write_buffer_header_size);
+                auto * buffer_start = reinterpret_cast<BufferBase::Position>(entry_buf->data_begin() + request_end_position);
 
                 WriteBufferFromPointer write_buf(buffer_start, write_buffer_header_size);
 
@@ -920,6 +923,9 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 writeIntBinary(request_for_session->digest->version, write_buf);
                 if (request_for_session->digest->version != KeeperStorageBase::NO_DIGEST)
                     writeIntBinary(request_for_session->digest->value, write_buf);
+
+                if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_XID_64)
+                    writeIntBinary(static_cast<uint32_t>(0), write_buf);
 
                 write_buf.finalize();
 
