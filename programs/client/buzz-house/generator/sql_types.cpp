@@ -802,9 +802,12 @@ void StatementGenerator::StrAppendAnyValueInternal(RandomGenerator &rg, std::str
 	TupleType *ttp;
 	VariantType *vtp;
 	LowCardinality *lc;
+	const uint32_t ndefault = rg.NextMediumNumber();
 
-	if (rg.NextMediumNumber() < 6) {
+	if (ndefault < 5) {
 		ret += "NULL";
+	} else if (ndefault == 5) {
+		ret += "DEFAULT";
 	} else if (dynamic_cast<IntType*>(tp) || dynamic_cast<FloatType*>(tp) || dynamic_cast<DateType*>(tp) ||
 			   dynamic_cast<DecimalType*>(tp) || dynamic_cast<StringType*>(tp) || dynamic_cast<BoolType*>(tp) ||
 			   dynamic_cast<EnumType*>(tp) || dynamic_cast<UUIDType*>(tp)) {

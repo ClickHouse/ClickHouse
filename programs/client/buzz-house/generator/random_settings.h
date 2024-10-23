@@ -155,6 +155,10 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	}},
 	{"local_filesystem_read_prefetch", TrueOrFalse},
 	{"log_query_threads", TrueOrFalse},
+	{"low_cardinality_allow_in_native_format", TrueOrFalse},
+	{"low_cardinality_max_dictionary_size", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 18));
+	}},
 	{"low_cardinality_use_single_dictionary_for_part", TrueOrFalse},
 	{"max_block_size", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.RandomInt<uint32_t>(8000, 100000));

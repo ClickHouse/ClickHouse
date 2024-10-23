@@ -33,6 +33,8 @@ int StatementGenerator::AddFieldAccess(RandomGenerator &rg, sql_query_grammar::E
 
 int StatementGenerator::AddColNestedAccess(RandomGenerator &rg, sql_query_grammar::ExprColumn *expr,
 										   const uint32_t nested_prob) {
+	const uint32_t nsuboption = rg.NextLargeNumber();
+
 	this->depth++;
 	if (rg.NextMediumNumber() < nested_prob) {
 		sql_query_grammar::TypeName *tpn = nullptr;
@@ -71,7 +73,15 @@ int StatementGenerator::AddColNestedAccess(RandomGenerator &rg, sql_query_gramma
 		SQLType *tp = RandomNextType(rg, ~(allow_nested), col_counter, expr->mutable_dynamic_subtype()->mutable_type());
 		delete tp;
 	}
-	expr->set_null(rg.NextMediumNumber() < 4);
+	if (nsuboption < 15) {
+		expr->set_null(true);
+	} else if (nsuboption < 31) {
+		expr->set_keys(true);
+	} else if (nsuboption < 46) {
+		expr->set_values(true);
+	} else if (nsuboption < 61) {
+		expr->set_array_size(rg.NextMediumNumber() % 3);
+	}
 	this->depth--;
 	return 0;
 }
@@ -99,7 +109,15 @@ int StatementGenerator::RefColumn(RandomGenerator &rg, const GroupCol &gcol, sql
 		if (gecol.has_subcols()) {
 			ecol->mutable_subcols()->CopyFrom(gecol.subcols());
 		}
-		ecol->set_null(gecol.null());
+		if (gecol.has_null()) {
+			ecol->set_null(gecol.null());
+		} else if (gecol.has_keys()) {
+			ecol->set_keys(gecol.keys());
+		} else if (gecol.has_values()) {
+			ecol->set_values(gecol.values());
+		} else if (gecol.has_array_size()) {
+			ecol->set_array_size(gecol.array_size());
+		}
 	}
 	return 0;
 }

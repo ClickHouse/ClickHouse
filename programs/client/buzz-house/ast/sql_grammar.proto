@@ -1571,11 +1571,17 @@ enum SpecialVal {
   MAX_INT32 = 20;
   MIN_INT64 = 21;
   MAX_INT64 = 22;
-  MAX_UINT32 = 23;
-  MAX_UINT64 = 24;
-  VAL_NULL_CHAR = 25;
-  VAL_DEFAULT = 26;
-  VAL_STAR = 27;
+  MIN_INT128 = 23;
+  MAX_INT128 = 24;
+  MIN_INT256 = 25;
+  MAX_INT256 = 26;
+  MAX_UINT32 = 27;
+  MAX_UINT64 = 28;
+  MAX_UINT128 = 29;
+  MAX_UINT256 = 30;
+  VAL_NULL_CHAR = 31;
+  VAL_DEFAULT = 32;
+  VAL_STAR = 33;
 }
 
 message NumericLiteral {
@@ -1680,7 +1686,12 @@ message ExprColumn {
   optional Column subcol = 2;
   optional JSONColumns subcols = 3;
   optional TypeName dynamic_subtype = 4;
-  optional bool null = 5;
+  oneof expr_column_oneof {
+    bool null = 5;
+    bool keys = 6;
+    bool values = 7;
+    uint32 array_size = 8;
+  }
 }
 
 message ExprSchemaTableColumn {
@@ -2822,7 +2833,11 @@ message DescTable {
 }
 
 message DeduplicateExpr {
-  optional ExprColumnList col_list = 1;
+  oneof deduplicate_oneof {
+    ExprColumnList col_list = 1;
+    bool ded_star = 2;
+    ExprColumnList ded_star_except = 3;
+  }
 }
 
 message OptimizeTable {

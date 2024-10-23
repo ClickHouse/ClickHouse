@@ -213,6 +213,13 @@ CONV_FN(ExprColumn, ec) {
   }
   if (ec.null()) {
     ret += ".null";
+  } else if (ec.keys()) {
+    ret += ".keys";
+  } else if (ec.values()) {
+    ret += ".values";
+  } else if (ec.has_array_size()) {
+    ret += ".size";
+    ret += std::to_string(ec.array_size());
   }
 }
 
@@ -557,11 +564,29 @@ CONV_FN(LiteralValue, lit_val) {
         case SpecialVal::MAX_INT64:
           ret += std::to_string(std::numeric_limits<int64_t>::max());
           break;
+        case SpecialVal::MIN_INT128:
+          ret += "(-170141183460469231731687303715884105728)";
+          break;
+        case SpecialVal::MAX_INT128:
+          ret += "170141183460469231731687303715884105727";
+          break;
+        case SpecialVal::MIN_INT256:
+          ret += "(-57896044618658097711785492504343953926634992332820282019728792003956564819968)";
+          break;
+        case SpecialVal::MAX_INT256:
+          ret += "57896044618658097711785492504343953926634992332820282019728792003956564819967";
+          break;
         case SpecialVal::MAX_UINT32:
           ret += std::to_string(std::numeric_limits<uint32_t>::max());
           break;
         case SpecialVal::MAX_UINT64:
           ret += std::to_string(std::numeric_limits<uint64_t>::max());
+          break;
+        case SpecialVal::MAX_UINT128:
+          ret += "340282366920938463463374607431768211455";
+          break;
+        case SpecialVal::MAX_UINT256:
+          ret += "115792089237316195423570985008687907853269984665640564039457584007913129639935";
           break;
         case SpecialVal::VAL_NULL_CHAR:
           ret += "'\\0'";
@@ -2116,6 +2141,12 @@ CONV_FN(DeduplicateExpr, de) {
   if (de.has_col_list()) {
     ret += " BY ";
     ExprColumnListToString(ret, de.col_list());
+  } else if (de.has_ded_star()) {
+    ret += " BY *";
+  } else if (de.has_ded_star_except()) {
+    ret += " BY * EXCEPT (";
+    ExprColumnListToString(ret, de.ded_star_except());
+    ret += ")";
   }
 }
 

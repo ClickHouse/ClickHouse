@@ -812,13 +812,15 @@ int StatementGenerator::GenerateNextOptimizeTable(RandomGenerator &rg, sql_query
 		ot->mutable_partition();
 	}
 	if (rg.NextSmallNumber() < 4) {
+		const uint32_t noption = rg.NextMediumNumber();
 		sql_query_grammar::DeduplicateExpr *dde = ot->mutable_dedup();
 
-		if (rg.NextSmallNumber() < 6) {
+		if (noption < 51) {
 			NestedType *ntp = nullptr;
-			sql_query_grammar::ExprColumnList *ecl = dde->mutable_col_list();
+			sql_query_grammar::ExprColumnList *ecl = noption < 26 ? dde->mutable_col_list() : dde->mutable_ded_star_except();
 			const uint32_t ocols = (rg.NextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(t.RealNumberOfColumns()), UINT32_C(4))) + 1;
 
+			assert(entries.empty());
 			for (const auto &entry : t.cols) {
 				if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
 					for (const auto &entry2 : ntp->subtypes) {
@@ -839,6 +841,8 @@ int StatementGenerator::GenerateNextOptimizeTable(RandomGenerator &rg, sql_query
 				}
 			}
 			entries.clear();
+		} else if (noption < 76) {
+			dde->set_ded_star(true);
 		}
 	}
 	ot->set_final(t.SupportsFinal() && rg.NextSmallNumber() < 3);
