@@ -73,7 +73,6 @@ namespace KafkaSetting
     extern const KafkaSettingsUInt64 kafka_poll_max_batch_size;
     extern const KafkaSettingsMilliseconds kafka_poll_timeout_ms;
     extern const KafkaSettingsString kafka_replica_name;
-    extern const KafkaSettingsString kafka_row_delimiter;
     extern const KafkaSettingsString kafka_schema;
     extern const KafkaSettingsUInt64 kafka_skip_broken_messages;
     extern const KafkaSettingsBool kafka_thread_per_consumer;
@@ -167,7 +166,6 @@ void registerStorageKafka(StorageFactory & factory)
             CHECK_KAFKA_STORAGE_ARGUMENT(2, kafka_topic_list, 1)
             CHECK_KAFKA_STORAGE_ARGUMENT(3, kafka_group_name, 2)
             CHECK_KAFKA_STORAGE_ARGUMENT(4, kafka_format, 2)
-            CHECK_KAFKA_STORAGE_ARGUMENT(5, kafka_row_delimiter, 2)
             CHECK_KAFKA_STORAGE_ARGUMENT(6, kafka_schema, 2)
             CHECK_KAFKA_STORAGE_ARGUMENT(7, kafka_num_consumers, 0)
             CHECK_KAFKA_STORAGE_ARGUMENT(8, kafka_max_block_size, 0)
@@ -409,7 +407,6 @@ SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const 
 
     if (!schema_name.empty())
         result.emplace_back("format_schema", schema_name);
-
 
     auto kafka_format_settings = kafka_settings.getFormatSettings();
     result.insert(result.end(), kafka_format_settings.begin(), kafka_format_settings.end());
