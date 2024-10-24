@@ -200,7 +200,7 @@ public:
 
     virtual std::optional<Poco::Timestamp> getLastModifiedIfExists(const std::string & path) const
     {
-        if (existsFile(path))
+        if (existsFileOrDirectory(path))
             return getLastModified(path);
         return std::nullopt;
     }

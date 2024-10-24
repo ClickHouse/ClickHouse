@@ -115,7 +115,7 @@ std::shared_ptr<InMemoryPathMap> loadPathPrefixMap(const std::string & metadata_
                     std::lock_guard lock(result->mutex);
                     res = result->map.emplace(
                         std::filesystem::path(local_path).parent_path(),
-                        InMemoryPathMap::Remote{remote_path.parent_path(), last_modified.epochTime()});
+                        InMemoryPathMap::RemotePathInfo{remote_path.parent_path(), last_modified.epochTime()});
                 }
 
                 /// This can happen if table replication is enabled, then the same local path is written
@@ -241,7 +241,7 @@ bool MetadataStorageFromPlainRewritableObjectStorage::existsFile(const std::stri
 
 bool MetadataStorageFromPlainRewritableObjectStorage::existsDirectory(const std::string & path) const
 {
-    return path_map->getRemoteIfExists(path) != std::nullopt;
+    return path_map->getRemotePathInfoIfExists(path) != std::nullopt;
 }
 
 std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDirectory(const std::string & path) const
@@ -262,12 +262,11 @@ std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDi
 std::optional<Poco::Timestamp> MetadataStorageFromPlainRewritableObjectStorage::getLastModifiedIfExists(const String & path) const
 {
     /// Path corresponds to a directory.
-    if (auto remote = path_map->getRemoteIfExists(path))
+    if (auto remote = path_map->getRemotePathInfoIfExists(path))
         return Poco::Timestamp::fromEpochTime(remote->last_modified);
 
     /// A file.
-    auto res = getObjectMetadataEntryWithCache(path);
-    if (res)
+    if (auto res = getObjectMetadataEntryWithCache(path))
         return Poco::Timestamp::fromEpochTime(res->last_modified);
     return std::nullopt;
 }
