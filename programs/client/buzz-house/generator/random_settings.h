@@ -24,7 +24,7 @@ const std::function<void(RandomGenerator&,std::string&)> ZeroToThree = [](Random
 const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> ServerSettings = {
 	{"aggregate_functions_null_for_empty", TrueOrFalse},
 	{"aggregation_in_order_max_block_bytes", [](RandomGenerator &rg, std::string &ret) {
-		ret += std::to_string(rg.RandomInt<uint32_t>(0, 500000));
+		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21));
 	}},
 	{"allow_experimental_parallel_reading_from_replicas", ZeroOneTwo},
 	{"allow_experimental_shared_set_join", TrueOrFalse},
@@ -132,7 +132,7 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	}},
 	{"group_by_use_nulls", TrueOrFalse},
 	{"http_response_buffer_size", [](RandomGenerator &rg, std::string &ret) {
-		ret += std::to_string(rg.RandomInt<uint32_t>(0, 10 * 1048576));
+		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21));
 	}},
 	{"http_wait_end_of_query", TrueOrFalse},
 	{"input_format_parallel_parsing", TrueOrFalse},
@@ -169,13 +169,13 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	{"log_query_threads", TrueOrFalse},
 	{"low_cardinality_allow_in_native_format", TrueOrFalse},
 	{"low_cardinality_max_dictionary_size", [](RandomGenerator &rg, std::string &ret) {
-		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 18));
+		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21));
 	}},
 	{"low_cardinality_use_single_dictionary_for_part", TrueOrFalse},
 	{"materialize_skip_indexes_on_insert", TrueOrFalse},
 	{"materialize_statistics_on_insert", TrueOrFalse},
 	{"max_block_size", [](RandomGenerator &rg, std::string &ret) {
-		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 18));
+		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21));
 	}},
 	{"max_bytes_before_external_group_by", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.5, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
@@ -184,10 +184,10 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.5, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
 	}},
 	{"max_bytes_before_remerge_sort", [](RandomGenerator &rg, std::string &ret) {
-		ret += std::to_string(rg.RandomInt<uint32_t>(1, 300000));
+		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21));
 	}},
 	{"max_compress_block_size", [](RandomGenerator &rg, std::string &ret) {
-		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 18));
+		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21));
 	}},
 	{"max_final_threads", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.RandomInt<uint32_t>(0, std::thread::hardware_concurrency()));
@@ -196,7 +196,7 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 		ret += std::to_string(rg.RandomInt<uint32_t>(0, std::thread::hardware_concurrency()));
 	}},
 	{"max_joined_block_size_rows", [](RandomGenerator &rg, std::string &ret) {
-		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 18));
+		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21));
 	}},
 	{"max_parsing_threads", [](RandomGenerator &rg, std::string &ret) {
 		const std::vector<std::string> &choices = {"0", "1", "10"};
@@ -206,7 +206,7 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.5, 1, UINT32_C(4096)));
 	}},
 	{"max_read_buffer_size", [](RandomGenerator &rg, std::string &ret) {
-		ret += std::to_string(rg.RandomInt<uint32_t>(500000, 1048576));
+		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21));
 	}},
 	{"max_threads", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.RandomInt<uint32_t>(1, std::thread::hardware_concurrency()));
@@ -230,7 +230,7 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 		ret += std::to_string(std::max(1024, static_cast<int>(rg.RandomGauss(10 * 1024 * 1024, 5 * 1000 * 1000))));
 	}},
 	{"min_compress_block_size", [](RandomGenerator &rg, std::string &ret) {
-		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 18));
+		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21));
 	}},
 	{"min_count_to_compile_aggregate_expression", ZeroToThree},
 	{"min_count_to_compile_expression", ZeroToThree},
@@ -421,7 +421,7 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	{"fsync_after_insert", TrueOrFalse},
 	{"fsync_part_directory", TrueOrFalse},
 	{"index_granularity", [](RandomGenerator &rg, std::string &ret) {
-		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 18));
+		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21));
 	}},
 	{"index_granularity_bytes", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.RandomInt<uint32_t>(1024, 30 * 1024 * 1024));
@@ -434,7 +434,7 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	}},
 	{"load_existing_rows_count_for_old_parts", TrueOrFalse},
 	{"marks_compress_block_size", [](RandomGenerator &rg, std::string &ret) {
-		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 18));
+		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21));
 	}},
 	{"max_bytes_to_merge_at_max_space_in_pool", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.25, 0.25, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
@@ -458,7 +458,7 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 1, 100));
 	}},
 	{"merge_max_block_size", [](RandomGenerator &rg, std::string &ret) {
-		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 18));
+		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21));
 	}},
 	{"merge_max_block_size_bytes", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 0, 128 * 1024 * 1024));
@@ -508,7 +508,7 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 		ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.5, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
 	}},
 	{"primary_key_compress_block_size", [](RandomGenerator &rg, std::string &ret) {
-		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 18));
+		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21));
 	}},
 	{"primary_key_lazy_load", TrueOrFalse},
 	{"primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns", [](RandomGenerator &rg, std::string &ret) {
@@ -542,10 +542,10 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 
 const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> MergeTreeColumnSettings = {
 	{"min_compress_block_size", [](RandomGenerator &rg, std::string &ret) {
-		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 18));
+		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21));
 	}},
 	{"max_compress_block_size", [](RandomGenerator &rg, std::string &ret) {
-		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 18));
+		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21));
 	}}
 };
 
