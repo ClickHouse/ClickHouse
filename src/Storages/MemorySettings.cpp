@@ -53,7 +53,7 @@ MemorySettings::MemorySettings(MemorySettings && settings) noexcept : impl(std::
 
 MemorySettings::~MemorySettings() = default;
 
-MemorySettings & MemorySettings::operator=(DB::MemorySettings && settings)
+MemorySettings & MemorySettings::operator=(MemorySettings && settings) noexcept
 {
     *impl = std::move(*settings.impl);
     return *this;
@@ -108,7 +108,7 @@ void MemorySettings::sanityCheck() const
 
 void MemorySettings::applyChanges(const DB::SettingsChanges & changes)
 {
-    return impl->applyChanges(changes);
+    impl->applyChanges(changes);
 }
 }
 
