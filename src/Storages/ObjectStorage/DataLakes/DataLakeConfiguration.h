@@ -1,23 +1,19 @@
 #pragma once
 
-#include "config.h"
+#include <Storages/IStorage.h>
+#include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>
+#include <Storages/ObjectStorage/HDFS/Configuration.h>
+#include <Storages/ObjectStorage/Local/Configuration.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/StorageFactory.h>
+#include <Common/logger_useful.h>
 
-#if USE_AVRO
-
-#    include <Storages/IStorage.h>
-#    include <Storages/ObjectStorage/Azure/Configuration.h>
-#    include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
-#    include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
-#    include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#    include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>
-#    include <Storages/ObjectStorage/HDFS/Configuration.h>
-#    include <Storages/ObjectStorage/Local/Configuration.h>
-#    include <Storages/ObjectStorage/S3/Configuration.h>
-#    include <Storages/ObjectStorage/StorageObjectStorage.h>
-#    include <Storages/StorageFactory.h>
-#    include <Common/logger_useful.h>
-
-#    include <memory>
+#include <memory>
 
 
 namespace DB
@@ -96,5 +92,3 @@ using StorageS3HudiConfiguration = DataLakeConfiguration<StorageS3Configuration,
 
 
 }
-
-#endif

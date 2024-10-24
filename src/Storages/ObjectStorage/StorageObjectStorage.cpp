@@ -87,6 +87,7 @@ StorageObjectStorage::StorageObjectStorage(
     , distributed_processing(distributed_processing_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
+    configuration_->update(object_storage_, context);
     ColumnsDescription columns{columns_};
 
     std::string sample_path;
