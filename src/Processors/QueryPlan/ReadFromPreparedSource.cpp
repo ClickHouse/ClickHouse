@@ -21,10 +21,11 @@ void ReadFromPreparedSource::initializePipeline(QueryPipelineBuilder & pipeline,
 
 ReadFromStorageStep::ReadFromStorageStep(
     Pipe pipe_,
-    String storage_name,
+    StoragePtr storage_,
     ContextPtr context_,
     const SelectQueryInfo & query_info_)
     : ReadFromPreparedSource(std::move(pipe_))
+    , storage(std::move(storage_))
     , context(std::move(context_))
     , query_info(query_info_)
 {

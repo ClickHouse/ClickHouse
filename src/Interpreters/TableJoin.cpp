@@ -146,6 +146,54 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
 {
 }
 
+
+TableJoin::TableJoin(SizeLimits limits, bool use_nulls, JoinKind kind, JoinStrictness strictness, const Names & key_names_right)
+    : size_limits(limits)
+    , default_max_bytes(0)
+    , join_use_nulls(use_nulls)
+    , join_algorithm({JoinAlgorithm::DEFAULT})
+{
+    clauses.emplace_back().key_names_right = key_names_right;
+    table_join.kind = kind;
+    table_join.strictness = strictness;
+}
+
+
+JoinKind TableJoin::kind() const
+{
+    if (join_info)
+        return join_info->kind;
+    return table_join.kind;
+}
+
+void TableJoin::setKind(JoinKind kind)
+{
+    if (join_info)
+        join_info->kind = kind;
+    table_join.kind = kind;
+}
+
+JoinStrictness TableJoin::strictness() const
+{
+    if (join_info)
+        return join_info->strictness;
+    return table_join.strictness;
+}
+
+bool TableJoin::hasUsing() const
+{
+    if (join_info)
+        return join_info->expression.is_using;
+    return table_join.using_expression_list != nullptr;
+}
+
+bool TableJoin::hasOn() const
+{
+    if (join_info)
+        return !join_info->expression.is_using;
+    return table_join.on_expression != nullptr;
+}
+
 void TableJoin::resetKeys()
 {
     clauses.clear();
@@ -974,9 +1022,9 @@ bool TableJoin::allowParallelHashJoin() const
         return false;
     if (!right_storage_name.empty())
         return false;
-    if (table_join.kind != JoinKind::Left && table_join.kind != JoinKind::Inner)
+    if (kind() != JoinKind::Left && kind() != JoinKind::Inner)
         return false;
-    if (table_join.strictness == JoinStrictness::Asof)
+    if (strictness() == JoinStrictness::Asof)
         return false;
     if (isSpecialStorage() || !oneDisjunct())
         return false;

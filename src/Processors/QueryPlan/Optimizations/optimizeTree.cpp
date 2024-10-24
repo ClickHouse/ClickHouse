@@ -168,6 +168,8 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
                 if (optimization_settings.aggregation_in_order)
                     optimizeAggregationInOrder(*frame.node, nodes);
+
+                optimizeJoin(*frame.node, nodes);
             }
 
             /// Traverse all children first.

@@ -175,7 +175,7 @@ void IStorage::readFromPipe(
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
-    std::string storage_name)
+    std::shared_ptr<const IStorage> storage_)
 {
     if (pipe.empty())
     {
@@ -184,7 +184,7 @@ void IStorage::readFromPipe(
     }
     else
     {
-        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), storage_name, context, query_info);
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), storage_, context, query_info);
         query_plan.addStep(std::move(read_step));
     }
 }
