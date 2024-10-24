@@ -72,32 +72,8 @@ done
 # We append all uses of extern found in implementation files to validate them in a single pass and avoid reading the same files over and over
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -e "^\s*extern const Settings" -e "^\s**extern const MergeTreeSettings" -T | awk '{print substr($5, 0, length($5) -1) " " $4 " " substr($1, 0, length($1) - 1)}' >> ${SETTINGS_FILE}
 
-# Duplicate extern declarations for settings
-awk '{if (seen[$0]++) print $3 " -> " $1 ;}' ${SETTINGS_FILE} | while read line;
-do
-    echo "# Found duplicated setting declaration in: $line"
-done
-
-# Find missing declarations (obsolete settings being used)
-# Note that SettingsDeclaration are first in the file
-#  Disabled for now pending fixing the code
-#awk '{print $1 " " $3}' ${SETTINGS_FILE} | awk '{if (!seen[$1]++) print $0}' | grep -v SettingsDeclaration | while read setting;
-#do
-#    echo "Could not find setting (maybe obsolete but used?) $setting"
-#done
-
-# Look for settings declared with multiple types
-for setting in $(awk '{print $1 " " $2}' ${SETTINGS_FILE} | sed -e 's/MergeTreeSettings//g' -e 's/Settings//g' | sort | uniq | awk '{ print $1 }' | sort | uniq -d);
-do
-    echo $setting
-    expected=$(grep "^$setting " ${SETTINGS_FILE} | grep SettingsDeclaration | awk '{ print $2 }')
-    grep "^$setting " ${SETTINGS_FILE} | grep -v " $expected" | awk '{ print $3 " found setting " $1 " with type " $2 }' | while read line;
-    do
-        echo "# In $line but it should be ${expected/$'\n'/ }"
-    done
-done
-
-rm ${SETTINGS_FILE}
+# Duplicated or incorrect setting declarations
+bash $ROOT_PATH/utils/check-style/check-settings-style
 
 # Unused/Undefined/Duplicates ErrorCodes/ProfileEvents/CurrentMetrics
 declare -A EXTERN_TYPES
