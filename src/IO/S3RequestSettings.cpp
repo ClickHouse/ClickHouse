@@ -4,14 +4,12 @@
 #include <IO/S3Common.h>
 #include <IO/S3Defines.h>
 #include <IO/S3RequestSettings.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/Throttler.h>
 #include <Common/formatReadable.h>
 
+#include <Poco/String.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
