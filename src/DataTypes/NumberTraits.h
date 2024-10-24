@@ -204,6 +204,7 @@ struct ResultOfIf
         std::conditional_t<!is_decimal<A> && !is_decimal<B>,
             ConstructedType, Error>>>;
 };
+
 /** Type casting for `modulo` function:
     * UInt<x>,  UInt<y>   ->  UInt<max(x,y)>
     * Int<x>,   Int<y>    ->  Int<max(x,y)>

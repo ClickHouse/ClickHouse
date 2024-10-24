@@ -61,13 +61,13 @@ ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionAc
 #if USE_EMBEDDED_COMPILER
     if (settings.can_compile_expressions && settings.compile_expressions == CompileExpressions::yes)
     {
-        LOG_DEBUG(
+        LOG_TEST(
             getLogger("ExpressionActions"),
             "Actions before compilation: {} with {} lazy_executed_nodes",
             actions_dag.dumpDAG(),
             lazy_executed_nodes.size());
         actions_dag.compileExpressions(settings.min_count_to_compile_expression, lazy_executed_nodes);
-        LOG_DEBUG(getLogger("ExpressionActions"), "Actions after compilation: {}", actions_dag.dumpDAG());
+        LOG_TEST(getLogger("ExpressionActions"), "Actions after compilation: {}", actions_dag.dumpDAG());
     }
 #endif
 

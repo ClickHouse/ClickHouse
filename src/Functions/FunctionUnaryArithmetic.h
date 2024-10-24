@@ -489,17 +489,13 @@ public:
         {
             using DataType = std::decay_t<decltype(type)>;
             if constexpr (std::is_same_v<DataTypeFixedString, DataType> || std::is_same_v<DataTypeString, DataType>)
-            {
                 return false;
-            }
             else
             {
                 using T0 = typename DataType::FieldType;
                 using T1 = typename Op<T0>::ResultType;
                 if constexpr (!std::is_same_v<T1, InvalidType> && !IsDataTypeDecimal<DataType> && Op<T0>::compilable)
-                {
                     return true;
-                }
             }
 
             return false;
@@ -515,9 +511,7 @@ public:
         {
             using DataType = std::decay_t<decltype(type)>;
             if constexpr (std::is_same_v<DataTypeFixedString, DataType> || std::is_same_v<DataTypeString, DataType>)
-            {
                 return false;
-            }
             else
             {
                 using T0 = typename DataType::FieldType;

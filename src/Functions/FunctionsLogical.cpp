@@ -516,7 +516,7 @@ namespace FunctionsLogicalDetail
 
 #if USE_EMBEDDED_COMPILER
 
-/// Cast LLVM value with type to Tenary
+/// Cast LLVM value with type to tenary
 llvm::Value * nativeTenaryCast(llvm::IRBuilderBase & b, const DataTypePtr & from_type, llvm::Value * value)
 {
     auto * result_type = llvm::Type::getInt8Ty(b.getContext());
@@ -540,7 +540,7 @@ llvm::Value * nativeTenaryCast(llvm::IRBuilderBase & b, const DataTypePtr & from
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast non-number {} to tenary", from_type->getName());
 }
 
-/// Cast LLVM value with type to Tenary
+/// Cast LLVM value with type to tenary
 llvm::Value * nativeTenaryCast(llvm::IRBuilderBase & b, const ValueWithType & value_with_type)
 {
     return nativeTenaryCast(b, value_with_type.type, value_with_type.value);
