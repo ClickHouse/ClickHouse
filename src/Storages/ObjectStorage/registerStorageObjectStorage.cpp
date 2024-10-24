@@ -153,6 +153,7 @@ void registerStorageObjectStorage(StorageFactory & factory)
 
 void registerStorageIceberg(StorageFactory & factory)
 {
+#if USE_AWS_S3
     factory.registerStorage(
         "Iceberg",
         [&](const StorageFactory::Arguments & args)
@@ -182,7 +183,8 @@ void registerStorageIceberg(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessType::S3,
         });
-
+#endif
+#if USE_AZURE_BLOB_STORAGE
     factory.registerStorage(
         "IcebergAzure",
         [&](const StorageFactory::Arguments & args)
@@ -197,7 +199,7 @@ void registerStorageIceberg(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessType::AZURE,
         });
-
+#endif
     factory.registerStorage(
         "IcebergLocal",
         [&](const StorageFactory::Arguments & args)
@@ -212,6 +214,22 @@ void registerStorageIceberg(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessType::FILE,
         });
+#if USE_HDFS
+    factory.registerStorage(
+        "IcebergHDFS",
+        [&](const StorageFactory::Arguments & args)
+        {
+            auto configuration = std::make_shared<StorageHDFSIcebergConfiguration>();
+            StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, args.getLocalContext(), false);
+
+            return createStorageObjectStorage(args, configuration, args.getLocalContext());
+        },
+        {
+            .supports_settings = false,
+            .supports_schema_inference = true,
+            .source_access_type = AccessType::HDFS,
+        });
+#endif
 }
 
 #endif

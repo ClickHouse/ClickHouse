@@ -1,12 +1,13 @@
 #pragma once
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Core/SchemaInferenceMode.h>
-#include <Storages/IStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/prepareReadingFromFormat.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Storages/IStorage.h>
 #include <Storages/ObjectStorage/DataLakes/PartitionColumns.h>
+#include <Storages/prepareReadingFromFormat.h>
+#include <Common/threadPoolCallbackRunner.h>
+#include "Storages/ColumnsDescription.h"
 
 namespace DB
 {
@@ -207,6 +208,8 @@ public:
         const StorageSnapshotPtr & storage_snapshot,
         bool supports_subset_of_columns,
         ContextPtr local_context);
+
+    virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
 
     String format = "auto";
     String compression_method = "auto";

@@ -14,14 +14,15 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
 
-#include <Storages/StorageFactory.h>
 #include <Storages/Cache/SchemaCache.h>
-#include <Storages/VirtualColumnUtils.h>
-#include <Storages/ObjectStorage/Utils.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/ObjectStorage/ReadBufferIterator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Storages/ObjectStorage/ReadBufferIterator.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/VirtualColumnUtils.h>
+#include "Storages/ColumnsDescription.h"
 
 
 namespace DB
@@ -252,6 +253,11 @@ ReadFromFormatInfo StorageObjectStorage::Configuration::prepareReadingFromFormat
     return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns);
 }
 
+std::optional<ColumnsDescription> StorageObjectStorage::Configuration::tryGetTableStructureFromMetadata() const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method tryGetTableStructureFromMetadata is not implemented for basic configuration");
+}
+
 void StorageObjectStorage::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -409,6 +415,16 @@ ColumnsDescription StorageObjectStorage::resolveSchemaFromData(
     std::string & sample_path,
     const ContextPtr & context)
 {
+    if (configuration->isDataLakeConfiguration())
+    {
+        configuration->update(object_storage, context);
+        auto table_structure = configuration->tryGetTableStructureFromMetadata();
+        if (table_structure)
+        {
+            return table_structure.value();
+        }
+    }
+
     ObjectInfos read_keys;
     auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
     auto schema = readSchemaFromFormat(configuration->format, format_settings, *iterator, context);
@@ -489,10 +505,17 @@ void StorageObjectStorage::Configuration::initialize(
 
     if (configuration.format == "auto")
     {
-        configuration.format = FormatFactory::instance().tryGetFormatFromFileName(
-            configuration.isArchive()
-            ? configuration.getPathInArchive()
-            : configuration.getPath()).value_or("auto");
+        if (configuration.isDataLakeConfiguration())
+        {
+            configuration.format = "Parquet";
+        }
+        else
+        {
+            configuration.format
+                = FormatFactory::instance()
+                      .tryGetFormatFromFileName(configuration.isArchive() ? configuration.getPathInArchive() : configuration.getPath())
+                      .value_or("auto");
+        }
     }
     else
         FormatFactory::instance().checkFormatName(configuration.format);

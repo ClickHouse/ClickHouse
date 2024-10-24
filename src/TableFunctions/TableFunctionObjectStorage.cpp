@@ -251,6 +251,14 @@ void registerTableFunctionIceberg(TableFunctionFactory & factory)
             .categories{"DataLake"}},
          .allow_readonly = false});
 #    endif
+#   if USE_HDFS
+    factory.registerFunction<TableFunctionIcebergHDFS>(
+        {.documentation
+         = {.description = R"(The table function can be used to read the Iceberg table stored on HDFS virtual filesystem.)",
+            .examples{{"icebergHDFS", "SELECT * FROM icebergHDFS(url)", ""}},
+            .categories{"DataLake"}},
+         .allow_readonly = false});
+#   endif
     factory.registerFunction<TableFunctionIcebergLocal>(
         {.documentation
          = {.description = R"(The table function can be used to read the Iceberg table stored locally.)",
@@ -297,21 +305,4 @@ void registerDataLakeTableFunctions(TableFunctionFactory & factory)
     registerTableFunctionHudi(factory);
 #endif
 }
-
-#if USE_AVRO
-#    if USE_AWS_S3
-template class TableFunctionObjectStorage<IcebergDefinition, StorageS3IcebergConfiguration>;
-template class TableFunctionObjectStorage<IcebergS3Definition, StorageS3IcebergConfiguration>;
-#    endif
-#    if USE_AZURE_BLOB_STORAGE
-template class TableFunctionObjectStorage<IcebergAzureDefinition, StorageAzureIcebergConfiguration>;
-#    endif
-template class TableFunctionObjectStorage<IcebergLocalDefinition, StorageLocalIcebergConfiguration>;
-#endif
-#if USE_AWS_S3
-#    if USE_PARQUET
-template class TableFunctionObjectStorage<DeltaLakeDefinition, StorageS3DeltaLakeConfiguration>;
-#    endif
-template class TableFunctionObjectStorage<HudiDefinition, StorageS3HudiConfiguration>;
-#endif
 }

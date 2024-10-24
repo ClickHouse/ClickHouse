@@ -10,6 +10,7 @@
 #    include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
 #    include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #    include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>
+#    include <Storages/ObjectStorage/HDFS/Configuration.h>
 #    include <Storages/ObjectStorage/Local/Configuration.h>
 #    include <Storages/ObjectStorage/S3/Configuration.h>
 #    include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -46,6 +47,18 @@ public:
         BaseStorageConfiguration::setPartitionColumns(current_metadata->getPartitionColumns());
     }
 
+    std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const override
+    {
+        if (!current_metadata)
+            return std::nullopt;
+        auto schema_from_metadata = current_metadata->getTableSchema();
+        if (!schema_from_metadata.empty())
+        {
+            return ColumnsDescription(std::move(schema_from_metadata));
+        }
+        return std::nullopt;
+    }
+
 private:
     DataLakeMetadataPtr current_metadata;
 
@@ -77,6 +90,7 @@ private:
 using StorageS3IcebergConfiguration = DataLakeConfiguration<StorageS3Configuration, IcebergMetadata>;
 using StorageAzureIcebergConfiguration = DataLakeConfiguration<StorageAzureConfiguration, IcebergMetadata>;
 using StorageLocalIcebergConfiguration = DataLakeConfiguration<StorageLocalConfiguration, IcebergMetadata>;
+using StorageHDFSIcebergConfiguration = DataLakeConfiguration<StorageHDFSConfiguration, IcebergMetadata>;
 using StorageS3DeltaLakeConfiguration = DataLakeConfiguration<StorageS3Configuration, DeltaLakeMetadata>;
 using StorageS3HudiConfiguration = DataLakeConfiguration<StorageS3Configuration, HudiMetadata>;
 

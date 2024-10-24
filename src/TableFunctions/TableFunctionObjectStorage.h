@@ -86,6 +86,12 @@ struct IcebergLocalDefinition
     static constexpr auto storage_type_name = "Local";
 };
 
+struct IcebergHDFSDefinition
+{
+    static constexpr auto name = "icebergHDFS";
+    static constexpr auto storage_type_name = "HDFS";
+};
+
 struct DeltaLakeDefinition
 {
     static constexpr auto name = "deltaLake";
@@ -183,6 +189,9 @@ using TableFunctionIcebergS3 = TableFunctionObjectStorage<IcebergS3Definition, S
 #    endif
 #    if USE_AZURE_BLOB_STORAGE
 using TableFunctionIcebergAzure = TableFunctionObjectStorage<IcebergAzureDefinition, StorageAzureIcebergConfiguration>;
+#    endif
+#    if USE_HDFS
+using TableFunctionIcebergHDFS = TableFunctionObjectStorage<IcebergHDFSDefinition, StorageHDFSIcebergConfiguration>;
 #    endif
 using TableFunctionIcebergLocal = TableFunctionObjectStorage<IcebergLocalDefinition, StorageLocalIcebergConfiguration>;
 #endif
