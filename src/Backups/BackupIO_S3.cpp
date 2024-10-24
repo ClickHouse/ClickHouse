@@ -48,6 +48,12 @@ namespace S3AuthSetting
     extern const S3AuthSettingsBool use_insecure_imds_request;
 }
 
+namespace S3RequestSetting
+{
+    extern const S3RequestSettingsBool allow_native_copy;
+    extern const S3RequestSettingsString storage_class_name;
+}
+
 namespace ErrorCodes
 {
     extern const int S3_ERROR;
@@ -155,7 +161,7 @@ BackupReaderS3::BackupReaderS3(
     }
 
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
-    s3_settings.request_settings.allow_native_copy = allow_s3_native_copy;
+    s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
 
     client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, s3_settings, context_);
 
@@ -254,8 +260,8 @@ BackupWriterS3::BackupWriterS3(
     }
 
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
-    s3_settings.request_settings.allow_native_copy = allow_s3_native_copy;
-    s3_settings.request_settings.storage_class_name = storage_class_name;
+    s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
+    s3_settings.request_settings[S3RequestSetting::storage_class_name] = storage_class_name;
 
     client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, s3_settings, context_);
     if (auto blob_storage_system_log = context_->getBlobStorageLog())

@@ -182,7 +182,7 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
     compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
     structure = collection.getOrDefault<String>("structure", "auto");
 
-    request_settings = S3::RequestSettings(collection, settings, /* validate_settings */true);
+    request_settings = S3::S3RequestSettings(collection, settings, /* validate_settings */true);
 
     static_configuration = !auth_settings[S3AuthSetting::access_key_id].value.empty() || auth_settings[S3AuthSetting::no_sign_request].changed;
 

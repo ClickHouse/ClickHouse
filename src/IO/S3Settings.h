@@ -10,6 +10,7 @@
 #include <IO/S3Common.h>
 #include <IO/S3AuthSettings.h>
 #include <IO/S3Defines.h>
+#include <IO/S3RequestSettings.h>
 
 namespace Poco::Util { class AbstractConfiguration; }
 
@@ -21,7 +22,7 @@ struct Settings;
 struct S3Settings
 {
     S3::S3AuthSettings auth_settings;
-    S3::RequestSettings request_settings;
+    S3::S3RequestSettings request_settings;
 
     void loadFromConfig(
         const Poco::Util::AbstractConfiguration & config,

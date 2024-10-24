@@ -20,7 +20,7 @@ struct S3ObjectStorageSettings
     S3ObjectStorageSettings() = default;
 
     S3ObjectStorageSettings(
-        const S3::RequestSettings & request_settings_,
+        const S3::S3RequestSettings & request_settings_,
         const S3::S3AuthSettings & auth_settings_,
         uint64_t min_bytes_for_seek_,
         int32_t list_object_keys_size_,
@@ -34,7 +34,7 @@ struct S3ObjectStorageSettings
         , read_only(read_only_)
     {}
 
-    S3::RequestSettings request_settings;
+    S3::S3RequestSettings request_settings;
     S3::S3AuthSettings auth_settings;
 
     uint64_t min_bytes_for_seek;
