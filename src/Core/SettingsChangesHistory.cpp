@@ -68,6 +68,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.10",
         {
+            {"object_storage_remove_recursive_file_limit", 0, 1000, "Added new setting to limit number of files stored in memory while removing from object storage. Zero value means unlimited."},
             {"enforce_strict_identifier_format", false, false, "New setting."},
             {"enable_parsing_to_custom_serialization", false, true, "New setting"},
             {"mongodb_throw_on_unsupported_query", false, true, "New setting."},
