@@ -172,9 +172,9 @@ std::optional<StoredObjects> MetadataStorageFromPlainObjectStorage::getStorageOb
 MetadataStorageFromPlainObjectStorage::ObjectMetadataEntryPtr
 MetadataStorageFromPlainObjectStorage::getObjectMetadataEntryWithCache(const std::string & path) const
 {
+    auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     auto get = [&] -> ObjectMetadataEntryPtr
     {
-        auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
         if (auto metadata = object_storage->tryGetObjectMetadata(object_key.serialize()))
             return std::make_shared<ObjectMetadataEntry>(metadata->size_bytes, metadata->last_modified.epochTime());
         return nullptr;
@@ -183,7 +183,7 @@ MetadataStorageFromPlainObjectStorage::getObjectMetadataEntryWithCache(const std
     if (object_metadata_cache)
     {
         SipHash hash;
-        hash.update(path);
+        hash.update(object_key.serialize());
         auto hash128 = hash.get128();
         if (auto res = object_metadata_cache->get(hash128))
             return res;
@@ -263,8 +263,9 @@ UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainObjectStorageTrans
     /// The record has become stale, remove it from cache.
     if (metadata_storage.object_metadata_cache)
     {
+        auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
         SipHash hash;
-        hash.update(path);
+        hash.update(object_key.serialize());
         metadata_storage.object_metadata_cache->remove(hash.get128());
     }
 
