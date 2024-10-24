@@ -103,6 +103,8 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
         size_t size_compressed_without_checksum = 0;
 
         size_t new_size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
+        if (!new_size_compressed)
+            break;
         size_compressed = 0; /// file_in no longer points to the end of the block in working_buffer.
 
         auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
