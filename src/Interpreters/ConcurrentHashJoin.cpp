@@ -26,6 +26,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
+#include "Core/Defines.h"
 
 #include <numeric>
 
@@ -238,7 +239,8 @@ void ConcurrentHashJoin::joinBlock(Block & block, std::vector<Block> & res, std:
         std::shared_ptr<ExtraBlock> none_extra_block;
         auto & hash_join = hash_joins[i];
         auto & dispatched_block = dispatched_blocks[i];
-        hash_join->data->joinBlock(dispatched_block, none_extra_block);
+        if ((i == 0 && block.rows() == 0) || dispatched_block.rows())
+            hash_join->data->joinBlock(dispatched_block, none_extra_block);
         if (none_extra_block && !none_extra_block->empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "not_processed should be empty");
     }

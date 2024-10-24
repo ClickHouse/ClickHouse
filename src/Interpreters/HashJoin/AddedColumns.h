@@ -167,7 +167,7 @@ public:
             return;
 
         /// Do not allow big allocations when user set max_joined_block_rows to huge value
-        size_t reserve_size = std::min<size_t>(max_joined_block_rows, DEFAULT_BLOCK_SIZE * 2);
+        size_t reserve_size = std::min<size_t>(max_joined_block_rows, rows_to_add * 2); /// rows_to_add
 
         if (need_replicate)
             /// Reserve 10% more space for columns, because some rows can be repeated
@@ -226,7 +226,7 @@ private:
     void addColumn(const ColumnWithTypeAndName & src_column, const std::string & qualified_name)
     {
         columns.push_back(src_column.column->cloneEmpty());
-        columns.back()->reserve(src_column.column->size());
+        columns.back()->reserve(rows_to_add);
         type_name.emplace_back(src_column.type, src_column.name, qualified_name);
     }
 
