@@ -205,10 +205,10 @@ def test_async_load_system_database(started_cluster):
         if id > 1:
             for j in range(3):
                 node2.query(
-                    f"select count() from system.text_log_{random.randint(1, id - 1)}"
+                    f"select count() from system.text_log_{random.randint(1, id - 1)}_test"
                 )
                 node2.query(
-                    f"select count() from system.query_log_{random.randint(1, id - 1)}"
+                    f"select count() from system.query_log_{random.randint(1, id - 1)}_test"
                 )
 
             assert (
