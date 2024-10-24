@@ -80,13 +80,13 @@ do
 
         if [ "$LICENSE_TYPE" == "GPL" ]
         then
-            echo "Fatal error: General Public License found in ${LIB_NAME}."
+            echo "Fatal error: General Public License found in ${LIB_NAME}." >&2
             exit 1
         fi
 
         if [ "$LICENSE_TYPE" == "Unknown" ]
         then
-            echo "Fatal error: sources with unknown license found in ${LIB_NAME}."
+            echo "Fatal error: sources with unknown license found in ${LIB_NAME}." >&2
             exit 1
         fi
 
@@ -97,4 +97,4 @@ do
 done
 
 # Special care for Rust
-find "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml' | xargs grep 'license = ' | grep -v -P 'MIT|Apache|MPL' && echo "Fatal error: unrecognized licenses in the Rust code" && exit 1
+find "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml' | xargs grep 'license = ' | grep -v -P 'MIT|Apache|MPL' && echo "Fatal error: unrecognized licenses in the Rust code" >&2 && exit 1
