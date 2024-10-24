@@ -184,7 +184,12 @@ MetadataStorageFromPlainObjectStorage::getObjectMetadataEntryWithCache(const std
     {
         SipHash hash;
         hash.update(path);
-        return object_metadata_cache->getOrSet(hash.get128(), get).first;
+        auto hash128 = hash.get128();
+        if (auto res = object_metadata_cache->get(hash128))
+            return res;
+        if (auto mapped = get())
+            return object_metadata_cache->getOrSet(hash128, [&] { return mapped; }).first;
+        return object_metadata_cache->get(hash128);
     }
     return get();
 }
