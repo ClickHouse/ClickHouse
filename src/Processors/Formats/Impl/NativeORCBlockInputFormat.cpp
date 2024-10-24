@@ -32,12 +32,35 @@
 #    include <IO/copyData.h>
 #    include <Interpreters/castColumn.h>
 #    include <Storages/MergeTree/KeyCondition.h>
-#    include <boost/algorithm/string/case_conv.hpp>
+#    include <orc/MemoryPool.hh>
+#    include <Common/Allocator.h>
 #    include <Common/FieldVisitorsAccurateComparison.h>
-#    include "ArrowBufferedStreams.h"
-
+#    include <Common/MemorySanitizer.h>
 #    include <orc/Vector.hh>
 
+#    include "ArrowBufferedStreams.h"
+
+#    include <boost/algorithm/string/case_conv.hpp>
+
+
+namespace
+{
+
+class MemoryPool : public orc::MemoryPool
+{
+public:
+    char * malloc(uint64_t size) override
+    {
+        auto * ptr = ::malloc(size);
+        /// For nullable columns some of the values will not be initialized.
+        __msan_unpoison(ptr, size);
+        return static_cast<char *>(ptr);
+    }
+
+    void free(char * p) override { ::free(p); }
+};
+
+}
 
 namespace DB
 {
@@ -724,12 +747,17 @@ buildORCSearchArgument(const KeyCondition & key_condition, const Block & header,
 }
 
 static void getFileReader(
-    ReadBuffer & in, std::unique_ptr<orc::Reader> & file_reader, const FormatSettings & format_settings, std::atomic<int> & is_stopped)
+    ReadBuffer & in,
+    std::unique_ptr<orc::Reader> & file_reader,
+    orc::MemoryPool & pool,
+    const FormatSettings & format_settings,
+    std::atomic<int> & is_stopped)
 {
     if (is_stopped)
         return;
 
     orc::ReaderOptions options;
+    options.setMemoryPool(pool);
     auto input_stream = asORCInputStream(in, format_settings, is_stopped);
     file_reader = orc::createReader(std::move(input_stream), options);
 }
@@ -875,6 +903,7 @@ static void updateIncludeTypeIds(
 
 NativeORCBlockInputFormat::NativeORCBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
     : IInputFormat(std::move(header_), &in_)
+    , memory_pool(std::make_unique<MemoryPool>())
     , block_missing_values(getPort().getHeader().columns())
     , format_settings(format_settings_)
     , skip_stripes(format_settings.orc.skip_stripes)
@@ -883,7 +912,7 @@ NativeORCBlockInputFormat::NativeORCBlockInputFormat(ReadBuffer & in_, Block hea
 
 void NativeORCBlockInputFormat::prepareFileReader()
 {
-    getFileReader(*in, file_reader, format_settings, is_stopped);
+    getFileReader(*in, file_reader, *memory_pool, format_settings, is_stopped);
     if (is_stopped)
         return;
 
@@ -1027,7 +1056,8 @@ NamesAndTypesList NativeORCSchemaReader::readSchema()
 {
     std::unique_ptr<orc::Reader> file_reader;
     std::atomic<int> is_stopped = 0;
-    getFileReader(in, file_reader, format_settings, is_stopped);
+    MemoryPool memory_pool;
+    getFileReader(in, file_reader, memory_pool, format_settings, is_stopped);
 
 
     const auto & schema = file_reader->getType();
