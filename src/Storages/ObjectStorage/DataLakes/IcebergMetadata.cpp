@@ -51,7 +51,7 @@ extern const int UNSUPPORTED_METHOD;
 
 IcebergMetadata::IcebergMetadata(
     ObjectStoragePtr object_storage_,
-    ConfigurationObservePtr configuration_,
+    ConfigurationObserverPtr configuration_,
     DB::ContextPtr context_,
     Int32 metadata_version_,
     Int32 format_version_,
@@ -383,7 +383,7 @@ std::pair<Int32, String> getMetadataFileAndVersion(
 }
 
 DataLakeMetadataPtr
-IcebergMetadata::create(ObjectStoragePtr object_storage, ConfigurationObservePtr configuration, ContextPtr local_context)
+IcebergMetadata::create(ObjectStoragePtr object_storage, ConfigurationObserverPtr configuration, ContextPtr local_context)
 {
     auto configuration_ptr = configuration.lock();
 

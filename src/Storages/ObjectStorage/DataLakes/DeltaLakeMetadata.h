@@ -12,10 +12,10 @@ namespace DB
 class DeltaLakeMetadata final : public IDataLakeMetadata
 {
 public:
-    using ConfigurationObservePtr = StorageObjectStorage::ConfigurationObservePtr;
+    using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
     static constexpr auto name = "DeltaLake";
 
-    DeltaLakeMetadata(ObjectStoragePtr object_storage_, ConfigurationObservePtr configuration_, ContextPtr context_);
+    DeltaLakeMetadata(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_);
 
     Strings getDataFiles() const override { return data_files; }
 
@@ -33,7 +33,7 @@ public:
             && data_files == deltalake_metadata->data_files;
     }
 
-    static DataLakeMetadataPtr create(ObjectStoragePtr object_storage, ConfigurationObservePtr configuration, ContextPtr local_context)
+    static DataLakeMetadataPtr create(ObjectStoragePtr object_storage, ConfigurationObserverPtr configuration, ContextPtr local_context)
     {
         return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
     }

@@ -56,17 +56,17 @@ namespace ErrorCodes
 
 struct DeltaLakeMetadataImpl
 {
-    using ConfigurationObservePtr = DeltaLakeMetadata::ConfigurationObservePtr;
+    using ConfigurationObserverPtr = DeltaLakeMetadata::ConfigurationObserverPtr;
 
     ObjectStoragePtr object_storage;
-    ConfigurationObservePtr configuration;
+    ConfigurationObserverPtr configuration;
     ContextPtr context;
 
     /**
      * Useful links:
      *  - https://github.com/delta-io/delta/blob/master/PROTOCOL.md#data-files
      */
-    DeltaLakeMetadataImpl(ObjectStoragePtr object_storage_, ConfigurationObservePtr configuration_, ContextPtr context_)
+    DeltaLakeMetadataImpl(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_)
         : object_storage(object_storage_), configuration(configuration_), context(context_)
     {
     }
@@ -687,7 +687,7 @@ struct DeltaLakeMetadataImpl
     LoggerPtr log = getLogger("DeltaLakeMetadataParser");
 };
 
-DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, ConfigurationObservePtr configuration_, ContextPtr context_)
+DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_)
 {
     auto impl = DeltaLakeMetadataImpl(object_storage_, configuration_, context_);
     auto result = impl.processMetadataFiles();

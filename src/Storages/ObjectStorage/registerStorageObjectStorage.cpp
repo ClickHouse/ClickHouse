@@ -29,6 +29,7 @@ static std::shared_ptr<StorageObjectStorage> createStorageObjectStorage(
 
     StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, context, false);
 
+
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
     // session and user are ignored.
