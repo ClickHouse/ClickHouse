@@ -17,11 +17,11 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
     extern const ObjectStorageQueueSettingsUInt32 buckets;
     extern const ObjectStorageQueueSettingsString last_processed_path;
-    extern const ObjectStorageQueueSettingsUInt32 loading_retries;
     extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
-    extern const ObjectStorageQueueSettingsUInt32 processing_threads_num;
-    extern const ObjectStorageQueueSettingsUInt32 tracked_files_limit;
-    extern const ObjectStorageQueueSettingsUInt32 tracked_file_ttl_sec;
+    extern const ObjectStorageQueueSettingsUInt64 loading_retries;
+    extern const ObjectStorageQueueSettingsUInt64 processing_threads_num;
+    extern const ObjectStorageQueueSettingsUInt64 tracked_files_limit;
+    extern const ObjectStorageQueueSettingsUInt64 tracked_file_ttl_sec;
 
 }
 
@@ -56,13 +56,13 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     const std::string & format_)
     : format_name(format_)
     , columns(columns_.toString())
-    , mode(engine_settings.mode.toString())
-    , buckets(engine_settings.buckets)
-    , last_processed_path(engine_settings.last_processed_path)
-    , after_processing(engine_settings.after_processing)
-    , loading_retries(engine_settings.loading_retries)
-    , tracked_files_limit(engine_settings.tracked_files_limit)
-    , tracked_files_ttl_sec(engine_settings.tracked_file_ttl_sec)
+    , mode(engine_settings[ObjectStorageQueueSetting::mode].toString())
+    , buckets(engine_settings[ObjectStorageQueueSetting::buckets])
+    , last_processed_path(engine_settings[ObjectStorageQueueSetting::last_processed_path])
+    , after_processing(engine_settings[ObjectStorageQueueSetting::after_processing])
+    , loading_retries(engine_settings[ObjectStorageQueueSetting::loading_retries])
+    , tracked_files_limit(engine_settings[ObjectStorageQueueSetting::tracked_files_limit])
+    , tracked_files_ttl_sec(engine_settings[ObjectStorageQueueSetting::tracked_file_ttl_sec])
 {
     processing_threads_num_changed = engine_settings[ObjectStorageQueueSetting::processing_threads_num].changed;
     if (!processing_threads_num_changed && engine_settings[ObjectStorageQueueSetting::processing_threads_num] <= 1)
