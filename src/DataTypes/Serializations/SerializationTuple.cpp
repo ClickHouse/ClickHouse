@@ -137,7 +137,7 @@ void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, 
 void SerializationTuple::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('(', ostr);
-    if (elems.size())
+    if (!elems.empty())
     {
         if (settings.spark_text_output_format)
             elems[0]->serializeText(extractElementColumn(column, 0), row_num, ostr, settings);
