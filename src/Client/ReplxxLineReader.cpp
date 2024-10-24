@@ -293,6 +293,7 @@ void ReplxxLineReader::setLastIsDelimiter(bool flag)
 ReplxxLineReader::ReplxxLineReader(
     Suggest & suggest,
     const String & history_file_path_,
+    UInt32 history_max_entries_,
     bool multiline_,
     bool ignore_shell_suspend,
     Patterns extenders_,
@@ -312,6 +313,8 @@ ReplxxLineReader::ReplxxLineReader(
     , editor(getEditor())
 {
     using Replxx = replxx::Replxx;
+
+    rx.set_max_history_size(static_cast<int>(history_max_entries_));
 
     if (!history_file_path.empty())
     {

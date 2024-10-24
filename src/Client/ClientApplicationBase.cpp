@@ -167,7 +167,8 @@ void ClientApplicationBase::init(int argc, char ** argv)
         ("query_kind", po::value<std::string>()->default_value("initial_query"), "One of initial_query/secondary_query/no_query")
         ("query_id", po::value<std::string>(), "query_id")
 
-        ("history_file", po::value<std::string>(), "path to history file")
+        ("history_file", po::value<std::string>(), "Path to a file containing command history.")
+        ("history_max_entries", po::value<UInt32>()->default_value(1000000), "Maximum number of entries in the history file.")
 
         ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
         ("progress", po::value<ProgressOption>()->implicit_value(ProgressOption::TTY, "tty")->default_value(ProgressOption::DEFAULT, "default"), "Print progress of queries execution - to TTY: tty|on|1|true|yes; to STDERR non-interactive mode: err; OFF: off|0|false|no; DEFAULT - interactive to TTY, non-interactive is off")
@@ -350,6 +351,8 @@ void ClientApplicationBase::init(int argc, char ** argv)
         getClientConfiguration().setBool("highlight", options["highlight"].as<bool>());
     if (options.count("history_file"))
         getClientConfiguration().setString("history_file", options["history_file"].as<std::string>());
+    if (options.count("history_max_entries"))
+        getClientConfiguration().setUInt("history_max_entries", options["history_max_entries"].as<UInt32>());
     if (options.count("interactive"))
         getClientConfiguration().setBool("interactive", true);
     if (options.count("pager"))

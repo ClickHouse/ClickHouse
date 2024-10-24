@@ -192,6 +192,10 @@ void Client::parseConnectionsCredentials(Poco::Util::AbstractConfiguration & con
                 history_file = home_path + "/" + history_file.substr(1);
             config.setString("history_file", history_file);
         }
+        if (config.has(prefix + ".history_max_entries"))
+        {
+            config.setUInt("history_max_entries", history_max_entries);
+        }
         if (config.has(prefix + ".accept-invalid-certificate"))
             config.setBool("accept-invalid-certificate", config.getBool(prefix + ".accept-invalid-certificate"));
     }

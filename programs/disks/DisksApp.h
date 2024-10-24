@@ -62,6 +62,8 @@ private:
 
     // Fields responsible for the REPL work
     String history_file;
+    UInt32 history_max_entries = 0; /// Maximum number of entries in the history file. Needs to be initialized to 0 since we don't have a proper constructor. Worry not, actual value is set within the initializeHistoryFile method.
+
     LineReader::Suggest suggest;
     static LineReader::Patterns query_extenders;
     static LineReader::Patterns query_delimiters;

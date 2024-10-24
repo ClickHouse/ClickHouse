@@ -239,6 +239,8 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
         }
     }
 
+    history_max_entries = config().getUInt("history-max-entries", 1000000);
+
     String default_log_level;
     if (config().has("query"))
         /// We don't want to see any information log in query mode, unless it was set explicitly
@@ -315,6 +317,7 @@ void KeeperClient::runInteractiveReplxx()
     ReplxxLineReader lr(
         suggest,
         history_file,
+        history_max_entries,
         /* multiline= */ false,
         /* ignore_shell_suspend= */ false,
         query_extenders,
