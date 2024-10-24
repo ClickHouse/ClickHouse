@@ -1,3 +1,5 @@
+#include <base/getFQDNOrHostName.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -5,9 +7,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/MetricLog.h>
-#include <base/getFQDNOrHostName.h>
-#include <Common/DateLUTImpl.h>
-#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -81,7 +80,7 @@ void MetricLog::stepFunction(const std::chrono::system_clock::time_point current
         elem.current_metrics[i] = CurrentMetrics::values[i];
     }
 
-    this->add(std::move(elem));
+    add(std::move(elem));
 }
 
 }

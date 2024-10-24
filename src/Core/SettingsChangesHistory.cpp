@@ -68,6 +68,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.10",
         {
+            {"query_metric_log_interval", 0, -1, "New setting."},
             {"enforce_strict_identifier_format", false, false, "New setting."},
             {"enable_parsing_to_custom_serialization", false, true, "New setting"},
             {"mongodb_throw_on_unsupported_query", false, true, "New setting."},
