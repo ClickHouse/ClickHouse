@@ -463,6 +463,28 @@ void ParquetLeafColReader<TColumn>::initDataReader(
     }
 }
 
+template <>
+void ParquetLeafColReader<ColumnUInt8>::initDataReader(
+    parquet::Encoding::type enconding_type,
+    const uint8_t * buffer,
+    std::size_t max_size,
+    std::unique_ptr<RleValuesReader> && def_level_reader)
+{
+    switch (enconding_type)
+    {
+        case parquet::Encoding::PLAIN:
+        {
+            auto bit_reader = std::make_unique<arrow::bit_util::BitReader>(buffer, max_size);
+            data_values_reader = std::make_unique<ParquetBitPlainReader<ColumnUInt8>>(col_descriptor.max_definition_level(),
+                                                                                      std::move(def_level_reader),
+                                                                                      std::move(bit_reader));
+            break;
+        }
+        default:
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Unknown encoding type: {}", enconding_type);
+    }
+}
+
 template <typename TColumn>
 void ParquetLeafColReader<TColumn>::readPageV1(const parquet::DataPageV1 & page)
 {
@@ -620,6 +642,7 @@ std::unique_ptr<ParquetDataValuesReader> ParquetLeafColReader<TColumn>::createDi
 }
 
 
+template class ParquetLeafColReader<ColumnUInt8>;
 template class ParquetLeafColReader<ColumnInt32>;
 template class ParquetLeafColReader<ColumnUInt32>;
 template class ParquetLeafColReader<ColumnInt64>;

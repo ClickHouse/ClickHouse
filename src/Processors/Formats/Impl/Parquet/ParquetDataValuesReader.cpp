@@ -296,6 +296,40 @@ void ParquetPlainValuesReader<ColumnString>::readBatch(
     );
 }
 
+template <>
+void ParquetBitPlainReader<ColumnUInt8>::readBatch(
+    MutableColumnPtr & col_ptr, LazyNullMap & null_map, UInt32 num_values)
+{
+    auto & column = *assert_cast<ColumnUInt8 *>(col_ptr.get());
+    auto cursor = column.size();
+
+    auto & container = column.getData();
+
+    container.resize(cursor + num_values);
+
+    def_level_reader->visitNullableValues(
+    cursor,
+    num_values,
+    max_def_level,
+    null_map,
+        /* individual_visitor */ [&](size_t nest_cursor)
+        {
+            uint8_t byte;
+            bit_reader->GetValue(1, &byte);
+            container[nest_cursor] = byte;
+        },
+        /* repeated_visitor */ [&](size_t nest_cursor, UInt32 count)
+        {
+            for (UInt32 i = 0; i < count; i++)
+            {
+                uint8_t byte;
+                bit_reader->GetValue(1, &byte);
+                container[nest_cursor++] = byte;
+            }
+        }
+    );
+}
+
 
 template <>
 void ParquetPlainValuesReader<ColumnDecimal<DateTime64>, ParquetReaderTypes::TimestampInt96>::readBatch(
@@ -515,6 +549,13 @@ void ParquetRleDictReader<ColumnString>::readBatch(
     );
 }
 
+template <>
+void ParquetRleDictReader<ColumnUInt8>::readBatch(
+    MutableColumnPtr & , LazyNullMap &, UInt32)
+{
+    assert(false);
+}
+
 template <typename TColumnVector>
 void ParquetRleDictReader<TColumnVector>::readBatch(
     MutableColumnPtr & col_ptr, LazyNullMap & null_map, UInt32 num_values)
@@ -561,6 +602,7 @@ template class ParquetPlainValuesReader<ColumnDecimal<Decimal32>>;
 template class ParquetPlainValuesReader<ColumnDecimal<Decimal64>>;
 template class ParquetPlainValuesReader<ColumnDecimal<DateTime64>>;
 template class ParquetPlainValuesReader<ColumnString>;
+template class ParquetPlainValuesReader<ColumnUInt8>;
 
 template class ParquetFixedLenPlainReader<ColumnDecimal<Decimal128>>;
 template class ParquetFixedLenPlainReader<ColumnDecimal<Decimal256>>;
@@ -569,6 +611,7 @@ template class ParquetRleLCReader<ColumnUInt8>;
 template class ParquetRleLCReader<ColumnUInt16>;
 template class ParquetRleLCReader<ColumnUInt32>;
 
+template class ParquetRleDictReader<ColumnUInt8>;
 template class ParquetRleDictReader<ColumnInt32>;
 template class ParquetRleDictReader<ColumnUInt32>;
 template class ParquetRleDictReader<ColumnInt64>;
