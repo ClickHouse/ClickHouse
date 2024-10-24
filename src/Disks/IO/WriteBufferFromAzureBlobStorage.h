@@ -90,6 +90,7 @@ private:
     size_t hidden_size = 0;
 
     std::unique_ptr<TaskTracker> task_tracker;
+    bool check_objects_after_upload = false;
 
     std::deque<PartData> detached_part_data;
 };
