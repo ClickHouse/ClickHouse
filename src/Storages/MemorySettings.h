@@ -30,7 +30,7 @@ struct MemorySettings
     MemorySettings(MemorySettings && settings) noexcept;
     ~MemorySettings();
 
-    MemorySettings & operator=(MemorySettings && settings);
+    MemorySettings & operator=(MemorySettings && settings) noexcept;
 
     MEMORY_SETTINGS_SUPPORTED_TYPES(MemorySettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
