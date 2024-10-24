@@ -81,10 +81,13 @@ def get_run_command(
     envs += [f"-e {e}" for e in additional_envs]
 
     env_str = " ".join(envs)
+    uid = os.getuid()
+    gid = os.getgid()
 
     return (
         f"docker run "
         f"{ci_logs_args} "
+        f"--user {uid}:{gid} "
         f"--workdir=/fuzzers "
         f"--volume={fuzzers_path}:/fuzzers "
         f"--volume={repo_path}/tests:/usr/share/clickhouse-test "
@@ -214,9 +217,6 @@ def main():
     logging.basicConfig(level=logging.INFO)
 
     stopwatch = Stopwatch()
-
-    data_path = "/var/lib/clickhouse"
-    os.makedirs(data_path, exist_ok=True)
 
     temp_path = Path(TEMP_PATH)
     reports_path = Path(REPORT_PATH)
