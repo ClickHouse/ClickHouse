@@ -204,8 +204,16 @@ def test_async_load_system_database(started_cluster):
         # Access some system tables that might be still loading
         if id > 1:
             for j in range(3):
-                node2.query(f"select count() from system.text_log_{random.randint(1, id - 1)}")
-                node2.query(f"select count() from system.query_log_{random.randint(1, id - 1)}")
+                num = random.randint(1, id - 1)
+                node2.query(f"select count() from system.text_log_{num}_test")
+                node2.query(f"select count() from system.query_log_{num}_test")
+
+            assert (
+                int(
+                    node2.query(f"select count() from system.asynchronous_loader where job ilike '%_log_%_test' and execution_pool = 'BackgroundLoad'")
+                )
+                > 0
+            )
 
         # Generate more system tables
         for j in range(10):
@@ -217,8 +225,8 @@ def test_async_load_system_database(started_cluster):
                 if count == 2:
                     break
                 time.sleep(0.1)
-            node2.query(f"rename table system.text_log to system.text_log_{id}")
-            node2.query(f"rename table system.query_log to system.query_log_{id}")
+            node2.query(f"rename table system.text_log to system.text_log_{id}_test")
+            node2.query(f"rename table system.query_log to system.query_log_{id}_test")
             id += 1
 
         # Trigger async load of system database
