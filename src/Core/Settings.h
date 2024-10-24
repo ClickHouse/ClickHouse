@@ -135,7 +135,6 @@ struct Settings
     std::vector<std::string_view> getAllRegisteredNames() const;
     std::vector<std::string_view> getChangedAndObsoleteNames() const;
     std::vector<std::string_view> getUnchangedNames() const;
-    std::vector<std::string_view> getChangedNames() const;
 
     void dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToMapColumn(IColumn * column, bool changed_only = true) const;
