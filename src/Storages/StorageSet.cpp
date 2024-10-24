@@ -214,7 +214,7 @@ std::optional<UInt64> StorageSet::totalBytes(const Settings &) const
 
 void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &)
 {
-    if (disk->exists(path))
+    if (disk->existsDirectory(path))
         disk->removeRecursive(path);
     else
         LOG_INFO(getLogger("StorageSet"), "Path {} is already removed from disk {}", path, disk->getName());
@@ -237,9 +237,9 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
 
 void StorageSetOrJoinBase::restore()
 {
-    if (!disk->exists(fs::path(path) / "tmp/"))
+    if (!disk->existsDirectory(fs::path(path) / "tmp"))
     {
-        disk->createDirectories(fs::path(path) / "tmp/");
+        disk->createDirectories(fs::path(path) / "tmp");
         return;
     }
 
@@ -253,7 +253,7 @@ void StorageSetOrJoinBase::restore()
         const auto & name = dir_it->name();
         const auto & file_path = dir_it->path();
 
-        if (disk->isFile(file_path)
+        if (disk->existsFile(file_path)
             && endsWith(name, file_suffix)
             && disk->getFileSize(file_path) > 0)
         {

@@ -171,6 +171,9 @@ Avoid reordering rows when reading from Parquet files. Usually makes it much slo
     M(Bool, input_format_parquet_filter_push_down, true, R"(
 When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and min/max statistics in the Parquet metadata.
 )", 0) \
+    M(Bool, input_format_parquet_bloom_filter_push_down, false, R"(
+When reading Parquet files, skip whole row groups based on the WHERE expressions and bloom filter in the Parquet metadata.
+)", 0) \
     M(Bool, input_format_parquet_use_native_reader, false, R"(
 When reading Parquet files, to use native reader instead of arrow reader.
 )", 0) \
@@ -191,11 +194,17 @@ When reading ORC files, skip whole stripes or row groups based on the WHERE/PREW
     M(String, input_format_orc_reader_time_zone_name, "GMT", R"(
 The time zone name for ORC row reader, the default ORC row reader's time zone is GMT.
 )", 0) \
+    M(Bool, input_format_orc_dictionary_as_low_cardinality, true, R"(
+Treat ORC dictionary encoded columns as LowCardinality columns while reading ORC files.
+)", 0) \
     M(Bool, input_format_parquet_allow_missing_columns, true, R"(
 Allow missing columns while reading Parquet input formats
 )", 0) \
     M(UInt64, input_format_parquet_local_file_min_bytes_for_seek, 8192, R"(
 Min bytes required for local read (file) to do seek, instead of read with ignore in Parquet input format
+)", 0) \
+    M(Bool, input_format_parquet_enable_row_group_prefetch, true, R"(
+Enable row group prefetching during parquet parsing. Currently, only single-threaded parsing can prefetch.
 )", 0) \
     M(Bool, input_format_arrow_allow_missing_columns, true, R"(
 Allow missing columns while reading Arrow input formats
@@ -604,6 +613,9 @@ See also:
 -   [Interval](../../sql-reference/data-types/special-data-types/interval.md)
 )", 0) \
     \
+    M(Bool, date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands, false, R"(
+Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to [0, 3, 6],
+corresponding to 'seconds', 'milliseconds', and 'microseconds')", 0) \
     M(Bool, input_format_ipv4_default_on_conversion_error, false, R"(
 Deserialization of IPv4 will use default values instead of throwing exception on conversion error.
 

@@ -74,6 +74,11 @@ namespace Setting
     extern const SettingsBool enable_parsing_to_custom_serialization;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsBool disable_insertion_and_mutation;
+}
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -757,7 +762,7 @@ BlockIO InterpreterInsertQuery::execute()
     const Settings & settings = getContext()->getSettingsRef();
     auto & query = query_ptr->as<ASTInsertQuery &>();
 
-    if (getContext()->getServerSettings().disable_insertion_and_mutation
+    if (getContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
         && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Insert queries are prohibited");
 

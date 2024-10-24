@@ -2,6 +2,7 @@
 
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
+#include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
@@ -33,6 +34,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int REPLICA_ALREADY_EXISTS;
+}
+
+namespace Setting
+{
+    extern const SettingsBool cloud_mode;
+}
+
+namespace ObjectStorageQueueSetting
+{
+    extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
 }
 
 namespace
@@ -213,13 +224,15 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
     const ObjectStorageQueueSettings & settings,
     const ColumnsDescription & columns,
     const std::string & format,
+    const ContextPtr & context,
+    bool is_attach,
     LoggerPtr log)
 {
     ObjectStorageQueueTableMetadata table_metadata(settings, columns, format);
 
     std::vector<std::string> metadata_paths;
     size_t buckets_num = 0;
-    if (settings.mode == ObjectStorageQueueMode::ORDERED)
+    if (settings[ObjectStorageQueueSetting::mode] == ObjectStorageQueueMode::ORDERED)
     {
         buckets_num = getBucketsNum(table_metadata);
         if (buckets_num == 0)
@@ -238,6 +251,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
 
     const auto table_metadata_path = zookeeper_path / "metadata";
     auto zookeeper = getZooKeeper();
+    bool warned = false;
     zookeeper->createAncestors(zookeeper_path);
 
     for (size_t i = 0; i < 1000; ++i)
@@ -251,7 +265,28 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
 
             table_metadata.adjustFromKeeper(metadata_from_zk);
             table_metadata.checkEquals(metadata_from_zk);
+
             return table_metadata;
+        }
+
+        const auto & settings_ref = context->getSettingsRef();
+        if (!warned && settings_ref[Setting::cloud_mode]
+            && table_metadata.getMode() == ObjectStorageQueueMode::ORDERED
+            && table_metadata.buckets <= 1 && table_metadata.processing_threads_num <= 1)
+        {
+            const std::string message = "Ordered mode in cloud without "
+                "either `buckets`>1 or `processing_threads_num`>1 (works as `buckets` if it's not specified) "
+                "will not work properly. Please specify them in the CREATE query. See documentation for more details.";
+
+            if (is_attach)
+            {
+                LOG_WARNING(log, "{}", message);
+                warned = true;
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
+            }
         }
 
         Coordination::Requests requests;
