@@ -470,6 +470,7 @@ private:
 
 void CacheMetadata::cleanupThreadFunc()
 {
+    LOG_DEBUG(log, "Cleanup thread started");
     while (true)
     {
         Key key;

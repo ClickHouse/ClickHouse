@@ -29,7 +29,7 @@ public:
         size_t max_bytes_before_remerge_,
         double remerge_lowered_memory_bytes_ratio_,
         size_t max_bytes_before_external_sort_,
-        TemporaryDataOnDiskPtr tmp_data_,
+        TemporaryDataOnDiskScopePtr tmp_data_,
         size_t min_free_disk_space_);
 
     String getName() const override { return "MergeSortingTransform"; }
@@ -45,7 +45,8 @@ private:
     size_t max_bytes_before_remerge;
     double remerge_lowered_memory_bytes_ratio;
     size_t max_bytes_before_external_sort;
-    TemporaryDataOnDiskPtr tmp_data;
+    TemporaryDataOnDiskScopePtr tmp_data;
+    size_t temporary_files_num = 0;
     size_t min_free_disk_space;
     size_t max_block_bytes;
 

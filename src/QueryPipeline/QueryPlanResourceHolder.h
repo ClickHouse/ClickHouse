@@ -13,6 +13,7 @@ class QueryPlan;
 class Context;
 
 struct QueryIdHolder;
+class TemporaryDataBuffer;
 
 struct QueryPlanResourceHolder
 {
@@ -33,6 +34,7 @@ struct QueryPlanResourceHolder
     std::vector<StoragePtr> storage_holders;
     std::vector<TableLockHolder> table_locks;
     std::vector<std::shared_ptr<QueryIdHolder>> query_id_holders;
+    std::vector<std::shared_ptr<TemporaryDataBuffer>> rows_sources_temporary_file;
 };
 
 }
