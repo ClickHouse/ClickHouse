@@ -1712,9 +1712,8 @@ namespace
                     dateTimeZone += *cur;
                     ++cur;
                 }
-                const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
                 const DateLUTImpl & date_time_zone = DateLUT::instance(dateTimeZone);
-                const auto timezoneOffset = date_time_zone.getOffsetAtStartOfEpoch() - utc_time_zone.getOffsetAtStartOfEpoch();
+                const auto timezoneOffset = date_time_zone.timezoneOffset(0);
                 date.has_time_zone_offset = true;
                 date.time_zone_offset = timezoneOffset;
                 return cur;
