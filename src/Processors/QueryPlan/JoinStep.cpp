@@ -166,6 +166,7 @@ void JoinStep::setJoin(JoinPtr join_, bool swap_streams_)
     join_algorithm_header.clear();
     swap_streams = swap_streams_;
     join = std::move(join_);
+    updateOutputHeader();
 }
 
 void JoinStep::updateOutputHeader()
