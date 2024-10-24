@@ -1,4 +1,5 @@
 #include <Core/BaseSettings.h>
+#include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
 #include <Core/MergeSelectorAlgorithm.h>
 #include <Core/SettingsChangesHistory.h>
@@ -330,7 +331,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
                 else if (name == "storage_policy")
                     found_storage_policy_setting = true;
 
-                if (found_disk_setting && found_storage_policy_setting)
+                if (!is_attach && found_disk_setting && found_storage_policy_setting)
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
@@ -486,8 +487,7 @@ void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
     }
 }
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
-    MergeTreeSettings ## TYPE NAME = & MergeTreeSettings ## Impl :: NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) MergeTreeSettings##TYPE NAME = &MergeTreeSettingsImpl ::NAME;
 
 namespace MergeTreeSetting
 {
@@ -511,18 +511,7 @@ MergeTreeSettings::MergeTreeSettings(MergeTreeSettings && settings) noexcept
 
 MergeTreeSettings::~MergeTreeSettings() = default;
 
-#define IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR(CLASS_NAME, TYPE)                          \
-    const SettingField##TYPE & MergeTreeSettings::operator[](CLASS_NAME##TYPE t) const  \
-    {                                                                                   \
-        return impl.get()->*t;                                                          \
-    }                                                                                   \
-SettingField##TYPE & MergeTreeSettings::operator[](CLASS_NAME##TYPE t)                  \
-    {                                                                                   \
-        return impl.get()->*t;                                                          \
-    }
-
 MERGETREE_SETTINGS_SUPPORTED_TYPES(MergeTreeSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
-#undef IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR
 
 bool MergeTreeSettings::has(std::string_view name) const
 {

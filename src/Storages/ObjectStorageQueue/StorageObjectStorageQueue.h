@@ -5,9 +5,9 @@
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageFactory.h>
 
@@ -15,6 +15,7 @@
 namespace DB
 {
 class ObjectStorageQueueMetadata;
+struct ObjectStorageQueueSettings;
 
 class StorageObjectStorageQueue : public IStorage, WithContext
 {
@@ -33,7 +34,9 @@ public:
         ASTStorage * engine_args,
         LoadingStrictnessLevel mode);
 
-    String getName() const override { return "ObjectStorageQueue"; }
+    String getName() const override { return engine_name; }
+
+    ObjectStorageType getType() { return type; }
 
     void read(
         QueryPlan & query_plan,
@@ -51,16 +54,20 @@ public:
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
+    ObjectStorageQueueSettings getSettings() const;
+
 private:
     friend class ReadFromObjectStorageQueue;
     using FileIterator = ObjectStorageQueueSource::FileIterator;
     using CommitSettings = ObjectStorageQueueSource::CommitSettings;
 
+    ObjectStorageType type;
+    const std::string engine_name;
     const fs::path zk_path;
     const bool enable_logging_to_queue_log;
-    const size_t polling_min_timeout_ms;
-    const size_t polling_max_timeout_ms;
-    const size_t polling_backoff_ms;
+    const UInt32 polling_min_timeout_ms;
+    const UInt32 polling_max_timeout_ms;
+    const UInt32 polling_backoff_ms;
     const CommitSettings commit_settings;
 
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
