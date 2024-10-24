@@ -67,13 +67,13 @@ const constexpr uint32_t allow_set = (1 << 0),
 						 allow_limit = (1 << 10);
 
 typedef struct InsertEntry {
-	ColumnSpecial special;
+	ColumnSpecial special = ColumnSpecial::NONE;
 	uint32_t cname1 = 0;
-	std::optional<uint32_t> cname2;
-	SQLType *tp = nullptr;
+	std::optional<uint32_t> cname2 = std::nullopt;
+	const SQLType *tp = nullptr;
 	std::optional<sql_query_grammar::DModifier> dmod = std::nullopt;
 
-	InsertEntry(const ColumnSpecial cs, const uint32_t c1, std::optional<uint32_t> c2, SQLType *t, std::optional<sql_query_grammar::DModifier> dm) :
+	InsertEntry(const ColumnSpecial cs, const uint32_t c1, const std::optional<uint32_t> c2, const SQLType *t, const std::optional<sql_query_grammar::DModifier> dm) :
 		special(cs), cname1(c1), cname2(c2), tp(t), dmod(dm) {}
 } InsertEntry;
 
@@ -179,13 +179,13 @@ private:
 	void AddTableRelation(RandomGenerator &rg, const bool allow_internal_cols, const std::string &rel_name, const SQLTable &t);
 	void AppendDecimal(RandomGenerator &rg, std::string &ret, const uint32_t left, const uint32_t right);
 
-	void StrAppendBottomValue(RandomGenerator &rg, std::string &ret, SQLType* tp);
-	void StrAppendMap(RandomGenerator &rg, std::string &ret, MapType *mt);
-	void StrAppendArray(RandomGenerator &rg, std::string &ret, ArrayType *at);
-	void StrAppendTuple(RandomGenerator &rg, std::string &ret, TupleType *at);
-	void StrAppendVariant(RandomGenerator &rg, std::string &ret, VariantType *vtp);
-	void StrAppendAnyValueInternal(RandomGenerator &rg, std::string &ret, SQLType *tp);
-	void StrAppendAnyValue(RandomGenerator &rg, std::string &ret, SQLType *tp);
+	void StrAppendBottomValue(RandomGenerator &rg, std::string &ret, const SQLType* tp);
+	void StrAppendMap(RandomGenerator &rg, std::string &ret, const MapType *mt);
+	void StrAppendArray(RandomGenerator &rg, std::string &ret, const ArrayType *at);
+	void StrAppendTuple(RandomGenerator &rg, std::string &ret, const TupleType *at);
+	void StrAppendVariant(RandomGenerator &rg, std::string &ret, const VariantType *vtp);
+	void StrAppendAnyValueInternal(RandomGenerator &rg, std::string &ret, const SQLType *tp);
+	void StrAppendAnyValue(RandomGenerator &rg, std::string &ret, const SQLType *tp);
 
 	void StrBuildJSONArray(RandomGenerator &rg, const int jdepth, const int jwidth, std::string &ret);
 	void StrBuildJSONElement(RandomGenerator &rg, std::string &ret);
@@ -255,12 +255,12 @@ private:
 	int GenerateNextExplain(RandomGenerator &rg, sql_query_grammar::ExplainQuery *sq);
 	int GenerateNextQuery(RandomGenerator &rg, sql_query_grammar::SQLQueryInner *sq);
 
-	SQLType* BottomType(RandomGenerator &rg, const uint32_t allowed_types, const bool low_card, sql_query_grammar::BottomTypeName *tp);
-	SQLType* GenerateArraytype(RandomGenerator &rg, const uint32_t allowed_types);
-	SQLType* GenerateArraytype(RandomGenerator &rg, const uint32_t allowed_types, uint32_t &col_counter, sql_query_grammar::TopTypeName *tp);
+	const SQLType* BottomType(RandomGenerator &rg, const uint32_t allowed_types, const bool low_card, sql_query_grammar::BottomTypeName *tp);
+	const SQLType* GenerateArraytype(RandomGenerator &rg, const uint32_t allowed_types);
+	const SQLType* GenerateArraytype(RandomGenerator &rg, const uint32_t allowed_types, uint32_t &col_counter, sql_query_grammar::TopTypeName *tp);
 
-	SQLType* RandomNextType(RandomGenerator &rg, const uint32_t allowed_types);
-	SQLType* RandomNextType(RandomGenerator &rg, const uint32_t allowed_types, uint32_t &col_counter, sql_query_grammar::TopTypeName *tp);
+	const SQLType* RandomNextType(RandomGenerator &rg, const uint32_t allowed_types);
+	const SQLType* RandomNextType(RandomGenerator &rg, const uint32_t allowed_types, uint32_t &col_counter, sql_query_grammar::TopTypeName *tp);
 public:
 	const std::function<bool (const std::shared_ptr<SQLDatabase>&)> attached_databases = [](const std::shared_ptr<SQLDatabase>& d){return d->attached;};
 	const std::function<bool (const SQLTable&)> attached_tables = [](const SQLTable& t){return (!t.db || t.db->attached) && t.attached;};

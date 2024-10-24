@@ -48,7 +48,7 @@ public:
 		}
 	}
 
-	void GenerateCollationsQuery(std::string &res) {
+	void GenerateCollationsQuery(std::string &res) const {
 		const std::filesystem::path &collfile = db_file_path / "collations.data";
 
 		res += "SELECT \"name\" FROM system.collations INTO OUTFILE '";
@@ -56,7 +56,7 @@ public:
 		res += "' FORMAT TabSeparated;";
 	}
 
-	const std::vector<const std::string> LoadCollations() {
+	const std::vector<const std::string> LoadCollations() const {
 		std::string input;
 		std::vector<const std::string> res;
 		const std::filesystem::path &collfile = db_file_path / "collations.data";

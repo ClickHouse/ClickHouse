@@ -5,7 +5,7 @@
 
 namespace buzzhouse {
 
-SQLType*
+const SQLType*
 TypeDeepCopy(const SQLType *tp) {
 	const IntType *it;
 	const FloatType *ft;
@@ -52,21 +52,21 @@ TypeDeepCopy(const SQLType *tp) {
 	} else if ((mt = dynamic_cast<const MapType*>(tp))) {
 		return new MapType(TypeDeepCopy(mt->key), TypeDeepCopy(mt->value));
 	} else if ((ttp = dynamic_cast<const TupleType*>(tp))) {
-		std::vector<SubType> subtypes;
+		std::vector<const SubType> subtypes;
 
 		for (const auto &entry : ttp->subtypes) {
 			subtypes.push_back(SubType(entry.cname, TypeDeepCopy(entry.subtype)));
 		}
 		return new TupleType(std::move(subtypes));
 	} else if ((vtp = dynamic_cast<const VariantType*>(tp))) {
-		std::vector<SQLType*> subtypes;
+		std::vector<const SQLType*> subtypes;
 
 		for (const auto &entry : vtp->subtypes) {
 			subtypes.push_back(TypeDeepCopy(entry));
 		}
 		return new VariantType(std::move(subtypes));
 	} else if ((ntp = dynamic_cast<const NestedType*>(tp))) {
-		std::vector<NestedSubType> subtypes;
+		std::vector<const NestedSubType> subtypes;
 
 		for (const auto &entry : ntp->subtypes) {
 			subtypes.push_back(NestedSubType(entry.cname, TypeDeepCopy(entry.subtype)));
@@ -78,7 +78,7 @@ TypeDeepCopy(const SQLType *tp) {
 	return nullptr;
 }
 
-std::tuple<SQLType*, sql_query_grammar::Integers>
+std::tuple<const SQLType*, sql_query_grammar::Integers>
 RandomIntType(RandomGenerator &rg) {
 	std::uniform_int_distribution<uint32_t> next_dist(1, 12);
 	const uint32_t nopt = next_dist(rg.gen);
@@ -113,7 +113,7 @@ RandomIntType(RandomGenerator &rg) {
 	}
 }
 
-std::tuple<SQLType*, sql_query_grammar::FloatingPoints>
+std::tuple<const SQLType*, sql_query_grammar::FloatingPoints>
 RandomFloatType(RandomGenerator &rg) {
 	std::uniform_int_distribution<uint32_t> next_dist(1, 2);
 	const uint32_t nopt = next_dist(rg.gen);
@@ -128,7 +128,7 @@ RandomFloatType(RandomGenerator &rg) {
 	}
 }
 
-std::tuple<SQLType*, sql_query_grammar::Dates>
+std::tuple<const SQLType*, sql_query_grammar::Dates>
 RandomDateType(RandomGenerator &rg, const bool low_card) {
 	std::uniform_int_distribution<uint32_t> next_dist(1, low_card ? 3 : 4);
 	const uint32_t nopt = next_dist(rg.gen);
@@ -147,8 +147,8 @@ RandomDateType(RandomGenerator &rg, const bool low_card) {
 	}
 }
 
-SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allowed_types, const bool low_card, sql_query_grammar::BottomTypeName *tp) {
-	SQLType* res = nullptr;
+const SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allowed_types, const bool low_card, sql_query_grammar::BottomTypeName *tp) {
+	const SQLType* res = nullptr;
 	const uint32_t top_limit = low_card ? 4 : (8 + ((allowed_types & allow_json) ? 2 : 0) + ((allowed_types & allow_dynamic) ? 1 : 0));
 	std::uniform_int_distribution<uint32_t> next_dist(1, top_limit);
 	const uint32_t nopt = next_dist(rg.gen);
@@ -233,7 +233,7 @@ SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allo
 				sql_query_grammar::EnumDef *edef = tp ? tp->mutable_enum_def() : nullptr;
 
 				for (uint32_t i = 0 ; i < nvalues; i++) {
-					const int32_t next = static_cast<int32_t>(bits ? rg.NextRandomInt16() : rg.NextRandomInt8());
+					const int32_t next = static_cast<const int32_t>(bits ? rg.NextRandomInt16() : rg.NextRandomInt8());
 
 					if (edef) {
 						if (i == 0) {
@@ -245,7 +245,7 @@ SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allo
 					}
 					enum_values.push_back(next);
 				}
-				res = new EnumType(bits ? 16 : 8, std::move(enum_values));
+				res = new EnumType(bits ? 16 : 8, enum_values);
 			} else {
 				//int
 				sql_query_grammar::Integers nint;
@@ -341,7 +341,7 @@ SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allo
 						}
 						this->depth++;
 						desc += " ";
-						SQLType *jtp = RandomNextType(rg, ~(allow_nested|allow_enum), col_counter, tp ? jpt->mutable_type() : nullptr);
+					const SQLType *jtp = RandomNextType(rg, ~(allow_nested|allow_enum), col_counter, tp ? jpt->mutable_type() : nullptr);
 						desc += jtp->TypeName(false);
 						delete jtp;
 						this->depth--;
@@ -373,31 +373,31 @@ SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_t allo
 	return res;
 }
 
-SQLType* StatementGenerator::GenerateArraytype(RandomGenerator &rg, const uint32_t allowed_types, uint32_t &col_counter, sql_query_grammar::TopTypeName *tp) {
+const SQLType* StatementGenerator::GenerateArraytype(RandomGenerator &rg, const uint32_t allowed_types, uint32_t &col_counter, sql_query_grammar::TopTypeName *tp) {
 	this->depth++;
-	SQLType* k = this->RandomNextType(rg, allowed_types, col_counter, tp);
+	const SQLType* k = this->RandomNextType(rg, allowed_types, col_counter, tp);
 	this->depth--;
 	return new ArrayType(k);
 }
 
-SQLType* StatementGenerator::GenerateArraytype(RandomGenerator &rg, const uint32_t allowed_types) {
+const SQLType* StatementGenerator::GenerateArraytype(RandomGenerator &rg, const uint32_t allowed_types) {
 	uint32_t col_counter = 0;
 
 	return GenerateArraytype(rg, allowed_types, col_counter, nullptr);
 }
 
-SQLType* StatementGenerator::RandomNextType(RandomGenerator &rg, const uint32_t allowed_types, uint32_t &col_counter, sql_query_grammar::TopTypeName *tp) {
+const SQLType* StatementGenerator::RandomNextType(RandomGenerator &rg, const uint32_t allowed_types, uint32_t &col_counter, sql_query_grammar::TopTypeName *tp) {
 	const uint32_t noption = rg.NextMediumNumber();
 
 	if ((allowed_types & allow_nullable) && noption < 21) {
 		//nullable
 		const bool lcard = rg.NextMediumNumber() < 18;
-		SQLType* res = new Nullable(BottomType(rg, allowed_types & ~(allow_dynamic|allow_json), lcard, tp ? (lcard ? tp->mutable_nullable_lcard() : tp->mutable_nullable()) : nullptr));
+		const SQLType* res = new Nullable(BottomType(rg, allowed_types & ~(allow_dynamic|allow_json), lcard, tp ? (lcard ? tp->mutable_nullable_lcard() : tp->mutable_nullable()) : nullptr));
 		return lcard ? new LowCardinality(res) : res;
 	} else if (noption < 71 || this->depth == this->max_depth) {
 		//non nullable
 		const bool lcard = rg.NextMediumNumber() < 18;
-		SQLType* res = BottomType(rg, allowed_types, lcard, tp ? (lcard ? tp->mutable_non_nullable_lcard() : tp->mutable_non_nullable()) : nullptr);
+		const SQLType* res = BottomType(rg, allowed_types, lcard, tp ? (lcard ? tp->mutable_non_nullable_lcard() : tp->mutable_non_nullable()) : nullptr);
 		return lcard ? new LowCardinality(res) : res;
 	} else if (noption < 77 || this->max_width <= this->width + 1) {
 		//array
@@ -407,9 +407,9 @@ SQLType* StatementGenerator::RandomNextType(RandomGenerator &rg, const uint32_t 
 		sql_query_grammar::MapType *mt = tp ? tp->mutable_map() : nullptr;
 
 		this->depth++;
-		SQLType* k = this->RandomNextType(rg, allowed_types & ~(allow_nullable|allow_nested), col_counter, mt ? mt->mutable_key() : nullptr);
+		const SQLType* k = this->RandomNextType(rg, allowed_types & ~(allow_nullable|allow_nested), col_counter, mt ? mt->mutable_key() : nullptr);
 		this->width++;
-		SQLType* v = this->RandomNextType(rg, allowed_types & ~(allow_nested), col_counter, mt ? mt->mutable_value() : nullptr);
+		const SQLType* v = this->RandomNextType(rg, allowed_types & ~(allow_nested), col_counter, mt ? mt->mutable_value() : nullptr);
 		this->depth--;
 		this->width--;
 		return new MapType(k, v);
@@ -417,7 +417,7 @@ SQLType* StatementGenerator::RandomNextType(RandomGenerator &rg, const uint32_t 
 		//tuple
 		sql_query_grammar::TupleType *tt = tp ? tp->mutable_tuple() : nullptr;
 		const uint32_t ncols = (rg.NextMediumNumber() % (std::min<uint32_t>(5, this->max_width - this->width))) + UINT32_C(2);
-		std::vector<SubType> subtypes;
+		std::vector<const SubType> subtypes;
 
 		this->depth++;
 		for (uint32_t i = 0 ; i < ncols ; i++) {
@@ -428,7 +428,7 @@ SQLType* StatementGenerator::RandomNextType(RandomGenerator &rg, const uint32_t 
 			if (tcd) {
 				tcd->mutable_col()->set_column("c" + std::to_string(cname));
 			}
-			SQLType *k = this->RandomNextType(rg, allowed_types & ~(allow_nested), col_counter, tcd ? tcd->mutable_type_name() : nullptr);
+			const SQLType *k = this->RandomNextType(rg, allowed_types & ~(allow_nested), col_counter, tcd ? tcd->mutable_type_name() : nullptr);
 			subtypes.push_back(SubType(cname, k));
 		}
 		this->depth--;
@@ -437,7 +437,7 @@ SQLType* StatementGenerator::RandomNextType(RandomGenerator &rg, const uint32_t 
 		//variant
 		sql_query_grammar::VariantType *vt = tp ? tp->mutable_variant() : nullptr;
 		const uint32_t ncols = (rg.NextMediumNumber() % (std::min<uint32_t>(5, this->max_width - this->width))) + UINT32_C(2);
-		std::vector<SQLType*> subtypes;
+		std::vector<const SQLType*> subtypes;
 
 		this->depth++;
 		for (uint32_t i = 0 ; i < ncols ; i++) {
@@ -452,7 +452,7 @@ SQLType* StatementGenerator::RandomNextType(RandomGenerator &rg, const uint32_t 
 		//nested
 		sql_query_grammar::NestedType *nt = tp ? tp->mutable_nested() : nullptr;
 		const uint32_t ncols = (rg.NextMediumNumber() % (std::min<uint32_t>(5, this->max_width - this->width))) + UINT32_C(1);
-		std::vector<NestedSubType> subtypes;
+		std::vector<const NestedSubType> subtypes;
 
 		this->depth++;
 		for (uint32_t i = 0 ; i < ncols ; i++) {
@@ -463,7 +463,7 @@ SQLType* StatementGenerator::RandomNextType(RandomGenerator &rg, const uint32_t 
 			if (tcd) {
 				tcd->mutable_col()->set_column("c" + std::to_string(cname));
 			}
-			SQLType *k = this->RandomNextType(rg, allowed_types & ~(allow_nested), col_counter, tcd ? tcd->mutable_type_name() : nullptr);
+			const SQLType *k = this->RandomNextType(rg, allowed_types & ~(allow_nested), col_counter, tcd ? tcd->mutable_type_name() : nullptr);
 			subtypes.push_back(NestedSubType(cname, k));
 		}
 		this->depth--;
@@ -474,7 +474,7 @@ SQLType* StatementGenerator::RandomNextType(RandomGenerator &rg, const uint32_t 
 	return nullptr;
 }
 
-SQLType* StatementGenerator::RandomNextType(RandomGenerator &rg, const uint32_t allowed_types) {
+const SQLType* StatementGenerator::RandomNextType(RandomGenerator &rg, const uint32_t allowed_types) {
 	uint32_t col_counter = 0;
 
 	return RandomNextType(rg, allowed_types, col_counter, nullptr);
@@ -506,14 +506,14 @@ void StatementGenerator::AppendDecimal(RandomGenerator &rg, std::string &ret, co
 	}
 }
 
-void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &ret, SQLType* tp) {
-	IntType *itp;
-	DateType *dtp;
-	DecimalType *detp;
-	StringType *stp;
-	EnumType *etp;
+void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &ret, const SQLType* tp) {
+	const IntType *itp;
+	const DateType *dtp;
+	const DecimalType *detp;
+	const StringType *stp;
+	const EnumType *etp;
 
-	if ((itp = dynamic_cast<IntType*>(tp))) {
+	if ((itp = dynamic_cast<const IntType*>(tp))) {
 		if (itp->is_unsigned) {
 			switch (itp->size) {
 				case 8:
@@ -553,7 +553,7 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &
 				}
 			}
 		}
-	} else if (dynamic_cast<FloatType*>(tp)) {
+	} else if (dynamic_cast<const FloatType*>(tp)) {
 		const uint32_t next_option = rg.NextLargeNumber();
 
 		if (next_option < 25) {
@@ -574,7 +574,7 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &
 		} else {
 			ret += std::to_string(rg.NextRandomDouble());
 		}
-	} else if ((dtp = dynamic_cast<DateType*>(tp))) {
+	} else if ((dtp = dynamic_cast<const DateType*>(tp))) {
 		ret += "'";
 		if (dtp->has_time) {
 			if (dtp->extended) {
@@ -590,23 +590,23 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &
 			}
 		}
 		ret += "'";
-	} else if ((detp = dynamic_cast<DecimalType*>(tp))) {
+	} else if ((detp = dynamic_cast<const DecimalType*>(tp))) {
 		const uint32_t right = detp->scale.value_or(0), left = detp->precision.value_or(10) - right;
 
 		AppendDecimal(rg, ret, left, right);
-	} else if ((stp = dynamic_cast<StringType*>(tp))) {
+	} else if ((stp = dynamic_cast<const StringType*>(tp))) {
 		const uint32_t limit = stp->precision.value_or((rg.NextRandomUInt32() % 10000) + 1);
 
 		rg.NextString(ret, "'", true, limit);
-	} else if (dynamic_cast<BoolType*>(tp)) {
+	} else if (dynamic_cast<const BoolType*>(tp)) {
 		ret += rg.NextBool() ? "TRUE" : "FALSE";
-	} else if ((etp = dynamic_cast<EnumType*>(tp))) {
+	} else if ((etp = dynamic_cast<const EnumType*>(tp))) {
 		const int32_t nvalue = rg.PickRandomlyFromVector(etp->values);
 
 		ret += "'";
 		ret += std::to_string(nvalue);
 		ret += "'";
-	} else if (dynamic_cast<UUIDType*>(tp)) {
+	} else if (dynamic_cast<const UUIDType*>(tp)) {
 		ret += "'";
 		rg.NextUUID(ret);
 		ret += "'";
@@ -615,7 +615,7 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &
 	}
 }
 
-void StatementGenerator::StrAppendMap(RandomGenerator &rg, std::string &ret, MapType *mt) {
+void StatementGenerator::StrAppendMap(RandomGenerator &rg, std::string &ret, const MapType *mt) {
 	const uint32_t limit = rg.NextLargeNumber() % 100;
 
 	ret += "map(";
@@ -630,7 +630,7 @@ void StatementGenerator::StrAppendMap(RandomGenerator &rg, std::string &ret, Map
 	ret += ")";
 }
 
-void StatementGenerator::StrAppendArray(RandomGenerator &rg, std::string &ret, ArrayType *at) {
+void StatementGenerator::StrAppendArray(RandomGenerator &rg, std::string &ret, const ArrayType *at) {
 	const uint32_t limit = rg.NextLargeNumber() % 100;
 
 	ret += "[";
@@ -643,7 +643,7 @@ void StatementGenerator::StrAppendArray(RandomGenerator &rg, std::string &ret, A
 	ret += "]";
 }
 
-void StatementGenerator::StrAppendTuple(RandomGenerator &rg, std::string &ret, TupleType *at) {
+void StatementGenerator::StrAppendTuple(RandomGenerator &rg, std::string &ret, const TupleType *at) {
 	ret += "(";
 	for (uint32_t i = 0 ; i < at->subtypes.size(); i++) {
 		if (i != 0) {
@@ -654,7 +654,7 @@ void StatementGenerator::StrAppendTuple(RandomGenerator &rg, std::string &ret, T
 	ret += ")";
 }
 
-void StatementGenerator::StrAppendVariant(RandomGenerator &rg, std::string &ret, VariantType *vtp) {
+void StatementGenerator::StrAppendVariant(RandomGenerator &rg, std::string &ret, const VariantType *vtp) {
 	StrAppendAnyValueInternal(rg, ret, rg.PickRandomlyFromVector(vtp->subtypes));
 }
 
@@ -800,54 +800,54 @@ void StatementGenerator::StrBuildJSON(RandomGenerator &rg, const int jdepth, con
 	ret += "}";
 }
 
-void StatementGenerator::StrAppendAnyValueInternal(RandomGenerator &rg, std::string &ret, SQLType *tp) {
-	MapType *mt;
-	Nullable *nl;
-	ArrayType *at;
-	TupleType *ttp;
-	VariantType *vtp;
-	LowCardinality *lc;
+void StatementGenerator::StrAppendAnyValueInternal(RandomGenerator &rg, std::string &ret, const SQLType *tp) {
+	const MapType *mt;
+	const Nullable *nl;
+	const ArrayType *at;
+	const TupleType *ttp;
+	const VariantType *vtp;
+	const LowCardinality *lc;
 	const uint32_t ndefault = rg.NextMediumNumber();
 
 	if (ndefault < 5) {
 		ret += "NULL";
 	} else if (ndefault == 5) {
 		ret += "DEFAULT";
-	} else if (dynamic_cast<IntType*>(tp) || dynamic_cast<FloatType*>(tp) || dynamic_cast<DateType*>(tp) ||
-			   dynamic_cast<DecimalType*>(tp) || dynamic_cast<StringType*>(tp) || dynamic_cast<BoolType*>(tp) ||
-			   dynamic_cast<EnumType*>(tp) || dynamic_cast<UUIDType*>(tp)) {
+	} else if (dynamic_cast<const IntType*>(tp) || dynamic_cast<const FloatType*>(tp) || dynamic_cast<const DateType*>(tp) ||
+			   dynamic_cast<const DecimalType*>(tp) || dynamic_cast<const StringType*>(tp) || dynamic_cast<const BoolType*>(tp) ||
+			   dynamic_cast<const EnumType*>(tp) || dynamic_cast<const UUIDType*>(tp)) {
 		StrAppendBottomValue(rg, ret, tp);
-	} else if ((lc = dynamic_cast<LowCardinality*>(tp))) {
+	} else if ((lc = dynamic_cast<const LowCardinality*>(tp))) {
 		StrAppendAnyValueInternal(rg, ret, lc->subtype);
-	} else if ((nl = dynamic_cast<Nullable*>(tp))) {
+	} else if ((nl = dynamic_cast<const Nullable*>(tp))) {
 		StrAppendAnyValueInternal(rg, ret, nl->subtype);
-	} else if (dynamic_cast<JSONType*>(tp)) {
+	} else if (dynamic_cast<const JSONType*>(tp)) {
 		std::uniform_int_distribution<int> dopt(1, this->max_depth), wopt(1, this->max_width);
 
 		ret += "'";
 		StrBuildJSON(rg, dopt(rg.gen), wopt(rg.gen), ret);
 		ret += "'";
-	} else if (dynamic_cast<DynamicType*>(tp)) {
+	} else if (dynamic_cast<const DynamicType*>(tp)) {
 		uint32_t col_counter = 0;
-		SQLType *next = RandomNextType(rg, allow_nullable|allow_json, col_counter, nullptr);
+		const SQLType *next = RandomNextType(rg, allow_nullable|allow_json, col_counter, nullptr);
 
 		StrAppendAnyValueInternal(rg, ret, next);
 		delete next;
 	} else if (this->depth == this->max_depth) {
 		ret += "1";
-	} else if ((mt = dynamic_cast<MapType*>(tp))) {
+	} else if ((mt = dynamic_cast<const MapType*>(tp))) {
 		this->depth++;
 		StrAppendMap(rg, ret, mt);
 		this->depth--;
-	} else if ((at = dynamic_cast<ArrayType*>(tp))) {
+	} else if ((at = dynamic_cast<const ArrayType*>(tp))) {
 		this->depth++;
 		StrAppendArray(rg, ret, at);
 		this->depth--;
-	} else if ((ttp = dynamic_cast<TupleType*>(tp))) {
+	} else if ((ttp = dynamic_cast<const TupleType*>(tp))) {
 		this->depth++;
 		StrAppendTuple(rg, ret, ttp);
 		this->depth--;
-	} else if ((vtp = dynamic_cast<VariantType*>(tp))) {
+	} else if ((vtp = dynamic_cast<const VariantType*>(tp))) {
 		this->depth++;
 		StrAppendVariant(rg, ret, vtp);
 		this->depth--;
@@ -857,7 +857,7 @@ void StatementGenerator::StrAppendAnyValueInternal(RandomGenerator &rg, std::str
 	}
 }
 
-void StatementGenerator::StrAppendAnyValue(RandomGenerator &rg, std::string &ret, SQLType *tp) {
+void StatementGenerator::StrAppendAnyValue(RandomGenerator &rg, std::string &ret, const SQLType *tp) {
 	StrAppendAnyValueInternal(rg, ret, tp);
 	if (rg.NextSmallNumber() < 7) {
 		ret += "::";

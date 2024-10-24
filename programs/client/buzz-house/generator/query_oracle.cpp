@@ -199,7 +199,7 @@ int QueryOracle::GenerateExportQuery(RandomGenerator &rg, const SQLTable &t, sql
 			}
 			sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_col()->set_column(std::move(cname));
 			/* ArrowStream doesn't support UUID */
-			if (outf == sql_query_grammar::OutFormat::OUT_ArrowStream && dynamic_cast<UUIDType*>(entry.second.tp)) {
+			if (outf == sql_query_grammar::OutFormat::OUT_ArrowStream && dynamic_cast<const UUIDType*>(entry.second.tp)) {
 				outf = sql_query_grammar::OutFormat::OUT_CSV;
 			}
 			first = false;

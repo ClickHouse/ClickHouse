@@ -79,11 +79,11 @@ int StatementGenerator::GenerateNextCreateFunction(RandomGenerator &rg, sql_quer
 }
 
 void StatementGenerator::AddTableRelation(RandomGenerator &rg, const bool allow_internal_cols, const std::string &rel_name, const SQLTable &t) {
-	NestedType *ntp = nullptr;
+	const NestedType *ntp = nullptr;
 	SQLRelation rel(rel_name);
 
 	for (const auto &entry : t.cols) {
-		if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
+		if ((ntp = dynamic_cast<const NestedType*>(entry.second.tp))) {
 			for (const auto &entry2 : ntp->subtypes) {
 				rel.cols.push_back(SQLRelationCol(rel_name, "c" + std::to_string(entry.first),
 												  std::optional<std::string>("c" + std::to_string(entry2.cname))));
@@ -130,12 +130,12 @@ int StatementGenerator::GenerateNextStatistics(RandomGenerator &rg, sql_query_gr
 }
 
 int StatementGenerator::PickUpNextCols(RandomGenerator &rg, const SQLTable &t, sql_query_grammar::ColumnList *clist) {
-	NestedType *ntp = nullptr;
+	const NestedType *ntp = nullptr;
 	const size_t ncols = (rg.NextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(t.RealNumberOfColumns()), UINT32_C(4))) + 1;
 
 	assert(this->ids.empty());
 	for (const auto &entry : t.cols) {
-		if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
+		if ((ntp = dynamic_cast<const NestedType*>(entry.second.tp))) {
 			for (const auto &entry2 : ntp->subtypes) {
 				ids.push_back(entry2.cname);
 			}
@@ -202,10 +202,10 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator &rg, const bool ad
 		//try to add sample key
 		assert(this->ids.empty());
 		for (size_t i = 0 ; i < this->entries.size(); i++) {
-			IntType *itp;
+			const IntType *itp = nullptr;
 			const InsertEntry &entry = this->entries[i];
 
-			if (!entry.cname2.has_value() && (itp = dynamic_cast<IntType*>(entry.tp)) && itp->is_unsigned) {
+			if (!entry.cname2.has_value() && (itp = dynamic_cast<const IntType*>(entry.tp)) && itp->is_unsigned) {
 				//must be in pkey
 				for (size_t j = 0; j < npkey; j++) {
 					const sql_query_grammar::ExprColumn &oecol = te->primary_key().exprs(j).comp_expr().expr_stc().col();
@@ -236,7 +236,7 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator &rg, const bool ad
 int StatementGenerator::AddTableColumn(RandomGenerator &rg, SQLTable &t, const uint32_t cname, const bool staged,
 									   const bool modify, const bool is_pk, const ColumnSpecial special, sql_query_grammar::ColumnDef *cd) {
 	SQLColumn col;
-	SQLType *tp = nullptr;
+	const SQLType *tp = nullptr;
 	auto &to_add = staged ? t.staged_cols : t.cols;
 
 	col.cname = cname;
@@ -261,8 +261,8 @@ int StatementGenerator::AddTableColumn(RandomGenerator &rg, SQLTable &t, const u
 	col.tp = tp;
 	col.special = special;
 	if (!modify && col.special == ColumnSpecial::NONE &&
-		(dynamic_cast<IntType*>(tp) || dynamic_cast<FloatType*>(tp) || dynamic_cast<DateType*>(tp) || dynamic_cast<DecimalType*>(tp) ||
-		 dynamic_cast<StringType*>(tp) || dynamic_cast<BoolType*>(tp) || dynamic_cast<UUIDType*>(tp)) && rg.NextSmallNumber() < 3) {
+		(dynamic_cast<const IntType*>(tp) || dynamic_cast<const FloatType*>(tp) || dynamic_cast<const DateType*>(tp) || dynamic_cast<const DecimalType*>(tp) ||
+		 dynamic_cast<const StringType*>(tp) || dynamic_cast<const BoolType*>(tp) || dynamic_cast<const UUIDType*>(tp)) && rg.NextSmallNumber() < 3) {
 		cd->set_nullable(rg.NextBool());
 		col.nullable = std::optional<bool>(cd->nullable());
 	}
@@ -349,11 +349,11 @@ int StatementGenerator::AddTableIndex(RandomGenerator &rg, SQLTable &t, const bo
 	idef->mutable_idx()->set_index("i" + std::to_string(iname));
 	idef->set_type(itpe);
 	if (rg.NextSmallNumber() < 9) {
-		NestedType *ntp = nullptr;
+		const NestedType *ntp = nullptr;
 
 		assert(this->entries.empty());
 		for (const auto &entry : t.cols) {
-			if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
+			if ((ntp = dynamic_cast<const NestedType*>(entry.second.tp))) {
 				for (const auto &entry2 : ntp->subtypes) {
 					if (itpe < sql_query_grammar::IndexType::IDX_ngrambf_v1 || HasType<StringType>(entry2.subtype)) {
 						entries.push_back(InsertEntry(ColumnSpecial::NONE, entry.second.cname, std::optional<uint32_t>(entry2.cname), entry2.array_subtype, entry.second.dmod));
@@ -615,7 +615,7 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 		next.is_temp = t.is_temp;
 	}
 	if (next.IsMergeTreeFamily()) {
-		NestedType *ntp = nullptr;
+		const NestedType *ntp = nullptr;
 		sql_query_grammar::SettingValues *svs = ct->mutable_settings();
 
 		if (rg.NextSmallNumber() < 4) {
@@ -624,7 +624,7 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 		}
 		assert(this->entries.empty());
 		for (const auto &entry : next.cols) {
-			if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
+			if ((ntp = dynamic_cast<const NestedType*>(entry.second.tp))) {
 				for (const auto &entry2 : ntp->subtypes) {
 					entries.push_back(InsertEntry(ColumnSpecial::NONE, entry.second.cname, std::optional<uint32_t>(entry2.cname), entry2.array_subtype, entry.second.dmod));
 				}
@@ -822,13 +822,13 @@ int StatementGenerator::GenerateNextOptimizeTable(RandomGenerator &rg, sql_query
 		sql_query_grammar::DeduplicateExpr *dde = ot->mutable_dedup();
 
 		if (noption < 51) {
-			NestedType *ntp = nullptr;
+			const NestedType *ntp = nullptr;
 			sql_query_grammar::ExprColumnList *ecl = noption < 26 ? dde->mutable_col_list() : dde->mutable_ded_star_except();
 			const uint32_t ocols = (rg.NextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(t.RealNumberOfColumns()), UINT32_C(4))) + 1;
 
 			assert(entries.empty());
 			for (const auto &entry : t.cols) {
-				if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
+				if ((ntp = dynamic_cast<const NestedType*>(entry.second.tp))) {
 					for (const auto &entry2 : ntp->subtypes) {
 						entries.push_back(InsertEntry(ColumnSpecial::NONE, entry.second.cname, std::optional<uint32_t>(entry2.cname), entry2.array_subtype, entry.second.dmod));
 					}
@@ -897,7 +897,7 @@ int StatementGenerator::GenerateNextDescTable(RandomGenerator &rg, sql_query_gra
 }
 
 int StatementGenerator::GenerateNextInsert(RandomGenerator &rg, sql_query_grammar::Insert *ins) {
-	NestedType *ntp = nullptr;
+	const NestedType *ntp = nullptr;
 	const uint32_t noption = rg.NextMediumNumber();
 	sql_query_grammar::InsertIntoTable *iit = ins->mutable_itable();
 	sql_query_grammar::ExprSchemaTable *est = iit->mutable_est();
@@ -910,7 +910,7 @@ int StatementGenerator::GenerateNextInsert(RandomGenerator &rg, sql_query_gramma
 	assert(this->entries.empty());
 	for (const auto &entry : t.cols) {
 		if (entry.second.CanBeInserted()) {
-			if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
+			if ((ntp = dynamic_cast<const NestedType*>(entry.second.tp))) {
 				for (const auto &entry2 : ntp->subtypes) {
 					this->entries.push_back(InsertEntry(ColumnSpecial::NONE, entry.second.cname, std::optional<uint32_t>(entry2.cname), entry2.array_subtype, entry.second.dmod));
 				}
@@ -1140,17 +1140,17 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 				sql_query_grammar::TableKey *tkey = ati->mutable_order();
 
 				if (rg.NextSmallNumber() < 6) {
-					NestedType *ntp = nullptr;
+					const NestedType *ntp = nullptr;
 
 					assert(this->entries.empty());
 					for (const auto &entry : t.cols) {
-						if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
+						if ((ntp = dynamic_cast<const NestedType*>(entry.second.tp))) {
 							for (const auto &entry2 : ntp->subtypes) {
-								if (!dynamic_cast<JSONType*>(entry2.subtype)) {
+								if (!dynamic_cast<const JSONType*>(entry2.subtype)) {
 									entries.push_back(InsertEntry(ColumnSpecial::NONE, entry.second.cname, std::optional<uint32_t>(entry2.cname), entry2.array_subtype, entry.second.dmod));
 								}
 							}
-						} else if (!dynamic_cast<JSONType*>(entry.second.tp)) {
+						} else if (!dynamic_cast<const JSONType*>(entry.second.tp)) {
 							entries.push_back(InsertEntry(entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
 						}
 					}
@@ -1233,7 +1233,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 				}
 				assert(this->entries.empty());
 				for (const auto &entry : t.cols) {
-					if (!dynamic_cast<NestedType*>(entry.second.tp)) {
+					if (!dynamic_cast<const NestedType*>(entry.second.tp)) {
 						this->entries.push_back(InsertEntry(entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
 					}
 				}

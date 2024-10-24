@@ -14,7 +14,7 @@ using ColumnSpecial = enum ColumnSpecial {
 struct SQLColumn {
 public:
 	uint32_t cname = 0;
-	SQLType *tp = nullptr;
+	const SQLType *tp = nullptr;
 	ColumnSpecial special = ColumnSpecial::NONE;
 	std::optional<bool> nullable = std::nullopt;
 	std::optional<sql_query_grammar::DModifier> dmod = std::nullopt;
@@ -96,10 +96,10 @@ public:
 
 	size_t RealNumberOfColumns() const {
 		size_t res = 0;
-		NestedType *ntp = nullptr;
+		const NestedType *ntp = nullptr;
 
 		for (const auto &entry : cols) {
-			if ((ntp = dynamic_cast<NestedType*>(entry.second.tp))) {
+			if ((ntp = dynamic_cast<const NestedType*>(entry.second.tp))) {
 				res += ntp->subtypes.size();
 			} else {
 				res++;

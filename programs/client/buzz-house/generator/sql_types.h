@@ -17,14 +17,14 @@ const constexpr uint32_t allow_nullable = (1 << 0),
 
 class SQLType {
 public:
-	virtual const std::string TypeName(const bool escape) = 0;
+	virtual const std::string TypeName(const bool escape) const = 0;
 
 	virtual ~SQLType() = default;
 };
 
 class BoolType : public SQLType {
 public:
-	const std::string TypeName(const bool escape) override {
+	const std::string TypeName(const bool escape) const override {
 		(void) escape;
 		return "Bool";
 	}
@@ -37,7 +37,7 @@ public:
 	const bool is_unsigned;
 	IntType(const uint32_t s, const bool isu) : size(s), is_unsigned(isu) {}
 
-	const std::string TypeName(const bool escape) override {
+	const std::string TypeName(const bool escape) const override {
 		std::string ret;
 
 		(void) escape;
@@ -54,7 +54,7 @@ public:
 	const uint32_t size;
 	FloatType(const uint32_t s) : size(s) {}
 
-	const std::string TypeName(const bool escape) override {
+	const std::string TypeName(const bool escape) const override {
 		std::string ret;
 
 		(void) escape;
@@ -70,7 +70,7 @@ public:
 	const bool has_time, extended;
 	DateType(const bool ht, const bool ex) : has_time(ht), extended(ex) {}
 
-	const std::string TypeName(const bool escape) override {
+	const std::string TypeName(const bool escape) const override {
 		std::string ret;
 
 		(void) escape;
@@ -86,10 +86,10 @@ public:
 
 class DecimalType : public SQLType {
 public:
-	const std::optional<uint32_t> precision, scale;
-	DecimalType(const std::optional<uint32_t> p, const std::optional<uint32_t> s) : precision(p), scale(s) {}
+	const std::optional<const uint32_t> precision, scale;
+	DecimalType(const std::optional<const uint32_t> p, const std::optional<const uint32_t> s) : precision(p), scale(s) {}
 
-	const std::string TypeName(const bool escape) override {
+	const std::string TypeName(const bool escape) const override {
 		std::string ret;
 
 		(void) escape;
@@ -110,10 +110,10 @@ public:
 
 class StringType : public SQLType {
 public:
-	std::optional<uint32_t> precision;
-	StringType(const std::optional<uint32_t> p) : precision(p) {}
+	const std::optional<const uint32_t> precision;
+	StringType(const std::optional<const uint32_t> p) : precision(p) {}
 
-	const std::string TypeName(const bool escape) override {
+	const std::string TypeName(const bool escape) const override {
 		std::string ret;
 
 		(void) escape;
@@ -131,7 +131,7 @@ public:
 
 class UUIDType : public SQLType {
 public:
-	const std::string TypeName(const bool escape) override {
+	const std::string TypeName(const bool escape) const override {
 		(void) escape;
 		return "UUID";
 	}
@@ -141,10 +141,10 @@ public:
 class EnumType : public SQLType {
 public:
 	const uint32_t size;
-	std::vector<int32_t> values;
+	const std::vector<int32_t> values;
 	EnumType(const uint32_t s, const std::vector<int32_t> v) : size(s), values(v) {}
 
-	const std::string TypeName(const bool escape) override {
+	const std::string TypeName(const bool escape) const override {
 		std::string ret;
 
 		ret += "Enum";
@@ -175,10 +175,10 @@ public:
 
 class DynamicType : public SQLType {
 public:
-	std::optional<uint32_t> ntypes;
-	DynamicType(const std::optional<uint32_t> n) : ntypes(n) {}
+	const std::optional<const uint32_t> ntypes;
+	DynamicType(const std::optional<const uint32_t> n) : ntypes(n) {}
 
-	const std::string TypeName(const bool escape) override {
+	const std::string TypeName(const bool escape) const override {
 		std::string ret;
 
 		(void) escape;
@@ -198,7 +198,7 @@ public:
 	const std::string desc;
 	JSONType(const std::string &s) : desc(s) {}
 
-	const std::string TypeName(const bool escape) override {
+	const std::string TypeName(const bool escape) const override {
 		std::string ret;
 
 		ret += "JSON";
@@ -215,10 +215,10 @@ public:
 
 class Nullable : public SQLType {
 public:
-	SQLType* subtype;
-	Nullable(SQLType* s) : subtype(s) {}
+	const SQLType* subtype;
+	Nullable(const SQLType* s) : subtype(s) {}
 
-	const std::string TypeName(const bool escape) override {
+	const std::string TypeName(const bool escape) const override {
 		std::string ret;
 
 		ret += "Nullable(";
@@ -231,10 +231,10 @@ public:
 
 class LowCardinality : public SQLType {
 public:
-	SQLType* subtype;
-	LowCardinality(SQLType* s) : subtype(s) {}
+	const SQLType* subtype;
+	LowCardinality(const SQLType* s) : subtype(s) {}
 
-	const std::string TypeName(const bool escape) override {
+	const std::string TypeName(const bool escape) const override {
 		std::string ret;
 
 		ret += "LowCardinality(";
@@ -247,10 +247,10 @@ public:
 
 class ArrayType : public SQLType {
 public:
-	SQLType* subtype;
-	ArrayType(SQLType* s) : subtype(s) {}
+	const SQLType* subtype;
+	ArrayType(const SQLType* s) : subtype(s) {}
 
-	const std::string TypeName(const bool escape) override {
+	const std::string TypeName(const bool escape) const override {
 		std::string ret;
 
 		ret += "Array(";
@@ -263,10 +263,10 @@ public:
 
 class MapType : public SQLType {
 public:
-	SQLType* key, *value;
-	MapType(SQLType* k, SQLType* v) : key(k), value(v) {}
+	const SQLType* key, *value;
+	MapType(const SQLType* k, const SQLType* v) : key(k), value(v) {}
 
-	const std::string TypeName(const bool escape) override {
+	const std::string TypeName(const bool escape) const override {
 		std::string ret;
 
 		ret += "Map(";
@@ -281,18 +281,18 @@ public:
 
 class SubType {
 public:
-	uint32_t cname;
-	SQLType* subtype;
+	const uint32_t cname;
+	const SQLType* subtype;
 
-	SubType(uint32_t n, SQLType* s) : cname(n), subtype(s) {}
+	SubType(const uint32_t n, const SQLType* s) : cname(n), subtype(s) {}
 };
 
 class TupleType : public SQLType {
 public:
-	std::vector<SubType> subtypes;
-	TupleType(std::vector<SubType> s) : subtypes(s) {}
+	const std::vector<const SubType> subtypes;
+	TupleType(const std::vector<const SubType> s) : subtypes(s) {}
 
-	const std::string TypeName(const bool escape) override {
+	const std::string TypeName(const bool escape) const override {
 		std::string ret;
 
 		ret += "Tuple(";
@@ -317,10 +317,10 @@ public:
 
 class VariantType : public SQLType {
 public:
-	std::vector<SQLType*> subtypes;
-	VariantType(std::vector<SQLType*> s) : subtypes(s) {}
+	const std::vector<const SQLType*> subtypes;
+	VariantType(const std::vector<const SQLType*> s) : subtypes(s) {}
 
-	const std::string TypeName(const bool escape) override {
+	const std::string TypeName(const bool escape) const override {
 		std::string ret;
 
 		ret += "Variant(";
@@ -342,21 +342,20 @@ public:
 
 class NestedSubType {
 public:
-	uint32_t cname;
-	SQLType* subtype;
-	ArrayType *array_subtype;
+	const uint32_t cname;
+	const SQLType* subtype;
+	const ArrayType *array_subtype;
 
-	NestedSubType(uint32_t n, SQLType* s) : cname(n), subtype(s) {
-		array_subtype = new ArrayType(subtype);
-	}
+	NestedSubType(const uint32_t n, const SQLType* s) :
+		cname(n), subtype(s), array_subtype(new ArrayType(s)) {}
 };
 
 class NestedType : public SQLType {
 public:
-	std::vector<NestedSubType> subtypes;
-	NestedType(std::vector<NestedSubType> s) : subtypes(s) {}
+	const std::vector<const NestedSubType> subtypes;
+	NestedType(const std::vector<const NestedSubType> s) : subtypes(s) {}
 
-	const std::string TypeName(const bool escape) override {
+	const std::string TypeName(const bool escape) const override {
 		std::string ret;
 
 		ret += "Nested(";
@@ -374,7 +373,6 @@ public:
 	}
 	~NestedType() override {
 		for (auto &entry : subtypes) {
-			entry.array_subtype->subtype = nullptr;
 			delete entry.array_subtype;
 			delete entry.subtype;
 		}
@@ -399,9 +397,9 @@ bool HasType(const SQLType *tp) {
 	return false;
 }
 
-SQLType* TypeDeepCopy(const SQLType *tp);
-std::tuple<SQLType*, sql_query_grammar::Integers> RandomIntType(RandomGenerator &rg);
-std::tuple<SQLType*, sql_query_grammar::FloatingPoints> RandomFloatType(RandomGenerator &rg);
-std::tuple<SQLType*, sql_query_grammar::Dates> RandomDateType(RandomGenerator &rg, const bool low_card);
+const SQLType* TypeDeepCopy(const SQLType *tp);
+std::tuple<const SQLType*, sql_query_grammar::Integers> RandomIntType(RandomGenerator &rg);
+std::tuple<const SQLType*, sql_query_grammar::FloatingPoints> RandomFloatType(RandomGenerator &rg);
+std::tuple<const SQLType*, sql_query_grammar::Dates> RandomDateType(RandomGenerator &rg, const bool low_card);
 
 }
