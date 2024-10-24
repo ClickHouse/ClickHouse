@@ -114,9 +114,9 @@ std::list<CertificateReloader::MultiData>::iterator CertificateReloader::findOrI
     {
         if (!ctx) {
             if (prefix == Poco::Net::SSLManager::CFG_CLIENT_PREFIX)
-            ctx = Poco::Net::SSLManager::instance().defaultClientContext()->sslContext();
+                ctx = Poco::Net::SSLManager::instance().defaultClientContext()->sslContext();
             else
-            ctx = Poco::Net::SSLManager::instance().defaultServerContext()->sslContext(); 
+                ctx = Poco::Net::SSLManager::instance().defaultServerContext()->sslContext();
         }
         data.push_back(MultiData(ctx));
         --it;
