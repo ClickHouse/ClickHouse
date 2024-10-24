@@ -60,7 +60,8 @@ struct QuantileExactWeighted
 
     void add(const Value & x, Weight weight)
     {
-        if (!isNaN(x))
+        /// Ignore values with zero weight.
+        if (!isNaN(x) && weight)
             map[x] += weight;
     }
 

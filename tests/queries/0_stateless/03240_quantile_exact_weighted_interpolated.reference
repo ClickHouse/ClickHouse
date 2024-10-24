@@ -17,4 +17,4 @@ Test with filter that returns no rows
 Test with dynamic weights
 21	7	4.2
 Test with all weights set to 0
-50	16.66666666	10
+0	0	0
