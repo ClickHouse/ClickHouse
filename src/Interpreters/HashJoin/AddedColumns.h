@@ -72,7 +72,7 @@ public:
         , left_block(left_block_.getSourceBlock())
         , join_on_keys(join_on_keys_)
         , additional_filter_expression(additional_filter_expression_)
-        , rows_to_add(left_block.rows())
+        , rows_to_add(left_block_.rows())
         , join_data_avg_perkey_rows(join.getJoinedData()->avgPerKeyRows())
         , output_by_row_list_threshold(join.getTableJoin().outputByRowListPerkeyRowsThreshold())
         , join_data_sorted(join.getJoinedData()->sorted)

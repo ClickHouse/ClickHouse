@@ -412,8 +412,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         {
             if (unlikely(current_offset >= max_joined_block_rows))
             {
-                added_columns.offsets_to_replicate->resize(ind);
-                added_columns.filter.resize(ind);
+                added_columns.offsets_to_replicate->resize(i);
+                added_columns.filter.resize(i);
                 break;
             }
         }
