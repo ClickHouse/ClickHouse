@@ -95,7 +95,7 @@ namespace
                 }
                 return result_column;
             }
-            else if (WhichDataType(arg1.type).isDateTime64())
+            if (WhichDataType(arg1.type).isDateTime64())
             {
                 const auto & date_time_col = checkAndGetColumn<ColumnDateTime64>(*arg1.column);
                 const DataTypeDateTime64 * date_time_type = static_cast<const DataTypeDateTime64 *>(arg1.type.get());
