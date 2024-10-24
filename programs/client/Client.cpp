@@ -351,11 +351,16 @@ try
     initKeystrokeInterceptor();
     ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
+    /// Must be called after we stopped initializing the global context and changing its settings.
+    /// After this point the global context must be stayed almost unchanged till shutdown,
+    /// and all necessary changes must be made to the client context instead.
+    createClientContext();
+
     {
         // All that just to set DB::CurrentThread::get().getGlobalContext()
         // which is required for client timezone (pushed from server) to work.
         auto thread_group = std::make_shared<ThreadGroup>();
-        const_cast<ContextWeakPtr&>(thread_group->global_context) = global_context;
+        const_cast<ContextWeakPtr&>(thread_group->query_context) = client_context;
         thread_status.attachToGroup(thread_group, false);
     }
 
@@ -1155,11 +1160,6 @@ void Client::processOptions(const OptionsDescription & options_description,
 
     if (options.count("opentelemetry-tracestate"))
         global_context->getClientTraceContext().tracestate = options["opentelemetry-tracestate"].as<std::string>();
-
-    /// In case of clickhouse-client the `client_context` can be just an alias for the `global_context`.
-    /// (There is no need to copy the context because clickhouse-client has no background tasks so it won't use that context in parallel.)
-    client_context = global_context;
-    initClientContext();
 }
 
 
@@ -1186,10 +1186,6 @@ void Client::processConfig()
     {
         echo_queries = config().getBool("echo", false);
         ignore_error = config().getBool("ignore-error", false);
-
-        auto query_id = config().getString("query_id", "");
-        if (!query_id.empty())
-            global_context->setCurrentQueryId(query_id);
     }
     print_stack_trace = config().getBool("stacktrace", false);
 
