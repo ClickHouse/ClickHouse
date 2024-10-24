@@ -1,5 +1,6 @@
 #include <Storages/Distributed/DistributedSink.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
+#include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/Distributed/Defines.h>
 #include <Storages/StorageDistributed.h>
 #include <Disks/StoragePolicy.h>
@@ -33,6 +34,8 @@
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Core/Settings.h>
+
+#include <base/range.h>
 
 #include <filesystem>
 
@@ -72,6 +75,12 @@ namespace Setting
     extern const SettingsInt64 network_zstd_compression_level;
     extern const SettingsBool prefer_localhost_replica;
     extern const SettingsBool use_compact_format_in_distributed_parts_names;
+}
+
+namespace DistributedSetting
+{
+    extern const DistributedSettingsBool fsync_after_insert;
+    extern const DistributedSettingsBool fsync_directories;
 }
 
 namespace ErrorCodes
@@ -784,8 +793,8 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
     const auto & settings = context->getSettingsRef();
     const auto & distributed_settings = storage.getDistributedSettingsRef();
 
-    bool fsync = distributed_settings.fsync_after_insert;
-    bool dir_fsync = distributed_settings.fsync_directories;
+    bool fsync = distributed_settings[DistributedSetting::fsync_after_insert];
+    bool dir_fsync = distributed_settings[DistributedSetting::fsync_directories];
 
     std::string compression_method = Poco::toUpper(settings[Setting::network_compression_method].toString());
     std::optional<int> compression_level;

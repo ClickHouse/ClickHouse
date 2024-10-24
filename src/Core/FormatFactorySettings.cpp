@@ -1,5 +1,5 @@
 #include <Core/BaseSettings.h>
-#include <Core/FormatFactorySettingsDeclaration.h>
+#include <Core/FormatFactorySettings.h>
 #include <Core/SettingsEnums.h>
 
 namespace DB
