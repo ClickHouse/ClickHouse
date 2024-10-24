@@ -103,7 +103,7 @@ struct AtomicBitSet
     void unsetAll() const;
 };
 
-enum class PageChunkState : uint8_t
+enum class PageChunkState
 {
     /// Pages are not reclaimable by the OS, the buffer has correct contents.
     Stable,

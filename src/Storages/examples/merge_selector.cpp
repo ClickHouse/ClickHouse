@@ -1,7 +1,7 @@
 #include <iostream>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
-#include <Storages/MergeTree/MergeSelectors/SimpleMergeSelector.h>
+#include <Storages/MergeTree/SimpleMergeSelector.h>
 
 
 /** This program tests merge-selecting algorithm.
@@ -82,7 +82,8 @@ int main(int, char **)
             if (in_range)
             {
                 sum_merged_size += parts[i].size;
-                max_level = std::max(parts[i].level, max_level);
+                if (parts[i].level > max_level)
+                    max_level = parts[i].level;
             }
 
             if (parts[i].data == selected_parts.back().data)

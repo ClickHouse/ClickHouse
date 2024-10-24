@@ -368,13 +368,12 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             {
                 return nested_mapping;
             }
-
-            avro::UnionSchema union_schema;
-            union_schema.addType(avro::NullSchema());
-            union_schema.addType(nested_mapping.schema);
-            return {
-                union_schema,
-                [nested_mapping](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+            else
+            {
+                avro::UnionSchema union_schema;
+                union_schema.addType(avro::NullSchema());
+                union_schema.addType(nested_mapping.schema);
+                return {union_schema, [nested_mapping](const IColumn & column, size_t row_num, avro::Encoder & encoder)
                 {
                     const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
                     if (!col.isNullAt(row_num))
@@ -388,6 +387,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
                         encoder.encodeNull();
                     }
                 }};
+            }
         }
         case TypeIndex::LowCardinality:
         {

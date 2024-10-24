@@ -1,7 +1,6 @@
 #include <Storages/IStorageCluster.h>
 
 #include <Common/Exception.h>
-#include <Core/Settings.h>
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ConnectionTimeouts.h>
@@ -29,13 +28,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool async_query_sending_for_remote;
-    extern const SettingsBool async_socket_for_remote;
-    extern const SettingsBool skip_unavailable_shards;
-}
 
 IStorageCluster::IStorageCluster(
     const String & cluster_name_,
@@ -66,7 +58,7 @@ public:
         ClusterPtr cluster_,
         LoggerPtr log_)
         : SourceStepWithFilter(
-            std::move(sample_block),
+            DataStream{.header = std::move(sample_block)},
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -94,8 +86,7 @@ private:
 
 void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -132,7 +123,7 @@ void IStorageCluster::read(
     Block sample_block;
     ASTPtr query_to_send = query_info.query;
 
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (context->getSettingsRef().allow_experimental_analyzer)
     {
         sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_info.query, context, SelectQueryOptions(processed_stage));
     }
@@ -191,7 +182,7 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                 std::vector<IConnectionPool::Entry>{try_result},
                 queryToString(query_to_send),
-                getOutputHeader(),
+                getOutputStream().header,
                 new_context,
                 /*throttler=*/nullptr,
                 scalars,
@@ -203,14 +194,14 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
             pipes.emplace_back(std::make_shared<RemoteSource>(
                 remote_query_executor,
                 add_agg_info,
-                current_settings[Setting::async_socket_for_remote],
-                current_settings[Setting::async_query_sending_for_remote]));
+                current_settings.async_socket_for_remote,
+                current_settings.async_query_sending_for_remote));
         }
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
-        pipe = Pipe(std::make_shared<NullSource>(getOutputHeader()));
+        pipe = Pipe(std::make_shared<NullSource>(getOutputStream().header));
 
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
@@ -232,10 +223,10 @@ QueryProcessingStage::Enum IStorageCluster::getQueryProcessingStage(
 
 ContextPtr ReadFromCluster::updateSettings(const Settings & settings)
 {
-    Settings new_settings{settings};
+    Settings new_settings = settings;
 
     /// Cluster table functions should always skip unavailable shards.
-    new_settings[Setting::skip_unavailable_shards] = true;
+    new_settings.skip_unavailable_shards = true;
 
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);

@@ -18,7 +18,6 @@
 #include <IO/S3/Client.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include <Interpreters/Context.h>
 #include <Common/Macros.h>
 
 #include <aws/core/auth/AWSCredentials.h>
@@ -65,8 +64,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
             return;
         }
 
-        const auto & settings = Context::getGlobalContextInstance()->getSettingsRef();
-        auto auth_settings = S3::AuthSettings(config, settings, config_prefix);
+        auto auth_settings = S3::AuthSettings::loadFromConfig(config_prefix, config);
 
         String endpoint = macros->expand(config.getString(config_prefix + ".endpoint"));
         auto new_uri = S3::URI{endpoint};
@@ -120,10 +118,10 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
             std::move(headers),
             S3::CredentialsConfiguration
             {
-                auth_settings.use_environment_credentials,
-                auth_settings.use_insecure_imds_request,
-                auth_settings.expiration_window_seconds,
-                auth_settings.no_sign_request,
+                auth_settings.use_environment_credentials.value_or(true),
+                auth_settings.use_insecure_imds_request.value_or(false),
+                auth_settings.expiration_window_seconds.value_or(S3::DEFAULT_EXPIRATION_WINDOW_SECONDS),
+                auth_settings.no_sign_request.value_or(false),
             },
             credentials.GetSessionToken());
 
@@ -149,14 +147,14 @@ std::shared_ptr<KeeperSnapshotManagerS3::S3Configuration> KeeperSnapshotManagerS
 
 void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapshot_file_info)
 {
-    const auto & [snapshot_path, snapshot_disk, snapshot_size] = snapshot_file_info;
+    const auto & [snapshot_path, snapshot_disk] = snapshot_file_info;
     try
     {
         auto s3_client = getSnapshotS3Client();
         if (s3_client == nullptr)
             return;
 
-        S3::RequestSettings request_settings_1;
+        S3Settings::RequestSettings request_settings_1;
 
         const auto create_writer = [&](const auto & key)
         {
@@ -171,9 +169,9 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
             );
         };
 
-        LOG_INFO(log, "Will try to upload snapshot on {} to S3", snapshot_path);
+        LOG_INFO(log, "Will try to upload snapshot on {} to S3", snapshot_file_info.path);
 
-        auto snapshot_file = snapshot_disk->readFile(snapshot_path, getReadSettings());
+        auto snapshot_file = snapshot_disk->readFile(snapshot_file_info.path);
 
         auto snapshot_name = fs::path(snapshot_path).filename().string();
         auto lock_file = fmt::format(".{}_LOCK", snapshot_name);
@@ -199,7 +197,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
         lock_writer.finalize();
 
         // We read back the written UUID, if it's the same we can upload the file
-        S3::RequestSettings request_settings_2;
+        S3Settings::RequestSettings request_settings_2;
         request_settings_2.max_single_read_retries = 1;
         ReadBufferFromS3 lock_reader
         {
@@ -263,33 +261,31 @@ void KeeperSnapshotManagerS3::snapshotS3Thread()
 
     while (!shutdown_called)
     {
-        SnapshotFileInfoPtr snapshot_file_info;
+        SnapshotFileInfo snapshot_file_info;
         if (!snapshots_s3_queue.pop(snapshot_file_info))
             break;
 
         if (shutdown_called)
             break;
 
-        uploadSnapshotImpl(*snapshot_file_info);
+        uploadSnapshotImpl(snapshot_file_info);
     }
 }
 
-void KeeperSnapshotManagerS3::uploadSnapshot(const SnapshotFileInfoPtr & file_info, bool async_upload)
+void KeeperSnapshotManagerS3::uploadSnapshot(const SnapshotFileInfo & file_info, bool async_upload)
 {
-    chassert(file_info);
-
     if (getSnapshotS3Client() == nullptr)
         return;
 
     if (async_upload)
     {
         if (!snapshots_s3_queue.push(file_info))
-            LOG_WARNING(log, "Failed to add snapshot {} to S3 queue", file_info->path);
+            LOG_WARNING(log, "Failed to add snapshot {} to S3 queue", file_info.path);
 
         return;
     }
 
-    uploadSnapshotImpl(*file_info);
+    uploadSnapshotImpl(file_info);
 }
 
 void KeeperSnapshotManagerS3::startup(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros)

@@ -31,15 +31,7 @@ struct UnlinkMetadataFileOperationOutcome
     UInt32 num_hardlinks = std::numeric_limits<UInt32>::max();
 };
 
-struct TruncateFileOperationOutcome
-{
-    StoredObjects objects_to_remove;
-};
-
-
 using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
-using TruncateFileOperationOutcomePtr = std::shared_ptr<TruncateFileOperationOutcome>;
-
 
 /// Tries to provide some "transactions" interface, which allow
 /// to execute (commit) operations simultaneously. We don't provide
@@ -151,14 +143,9 @@ public:
         return nullptr;
     }
 
-    virtual TruncateFileOperationOutcomePtr truncateFile(const std::string & /* path */, size_t /* size */)
-    {
-        throwNotImplemented();
-    }
-
     virtual ~IMetadataTransaction() = default;
 
-protected:
+private:
     [[noreturn]] static void throwNotImplemented()
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Operation is not implemented");
@@ -182,18 +169,13 @@ public:
 
     /// ==== General purpose methods. Define properties of object storage file based on metadata files ====
 
-    virtual bool existsFile(const std::string & path) const = 0;
-    virtual bool existsDirectory(const std::string & path) const = 0;
-    virtual bool existsFileOrDirectory(const std::string & path) const = 0;
+    virtual bool exists(const std::string & path) const = 0;
+
+    virtual bool isFile(const std::string & path) const = 0;
+
+    virtual bool isDirectory(const std::string & path) const = 0;
 
     virtual uint64_t getFileSize(const std::string & path) const = 0;
-
-    virtual std::optional<uint64_t> getFileSizeIfExists(const std::string & path) const
-    {
-        if (existsFile(path))
-            return getFileSize(path);
-        return std::nullopt;
-    }
 
     virtual Poco::Timestamp getLastModified(const std::string & path) const = 0;
 
@@ -247,14 +229,7 @@ public:
     /// object_storage_path is absolute.
     virtual StoredObjects getStorageObjects(const std::string & path) const = 0;
 
-    virtual std::optional<StoredObjects> getStorageObjectsIfExist(const std::string & path) const
-    {
-        if (existsFile(path))
-            return getStorageObjects(path);
-        return std::nullopt;
-    }
-
-protected:
+private:
     [[noreturn]] static void throwNotImplemented()
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Operation is not implemented");

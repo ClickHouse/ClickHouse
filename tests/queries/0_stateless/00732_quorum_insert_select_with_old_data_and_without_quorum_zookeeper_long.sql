@@ -1,6 +1,5 @@
--- Tags: long, zookeeper, no-replicated-database, no-shared-merge-tree
+-- Tags: long, zookeeper, no-replicated-database
 -- Tag no-replicated-database: Fails due to additional replicas or shards
--- Tag no-shared-merge-tree: no-shared-merge-tree: No quorum
 
 SET send_logs_level = 'fatal';
 
@@ -23,7 +22,7 @@ SET insert_quorum_timeout=0;
 
 SYSTEM STOP FETCHES quorum1;
 
-INSERT INTO quorum2 VALUES (4, toDate('2020-12-16')); -- { serverError UNKNOWN_STATUS_OF_INSERT }
+INSERT INTO quorum2 VALUES (4, toDate('2020-12-16')); -- { serverError 319 }
 
 SELECT x FROM quorum1 ORDER BY x;
 SELECT x FROM quorum2 ORDER BY x;

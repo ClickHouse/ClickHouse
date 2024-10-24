@@ -5,9 +5,8 @@
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
-#include <Disks/ObjectStorages/MetadataOperationsHolder.h>
+#include <Disks/ObjectStorages/MetadataFromDiskTransactionState.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
-#include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
 
 namespace DB
 {
@@ -15,7 +14,7 @@ namespace DB
 struct UnlinkMetadataFileOperationOutcome;
 using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
 
-/// Stores metadata on a separate disk
+/// Store metadata on a separate disk
 /// (used for object storages, like S3 and related).
 class MetadataStorageFromDisk final : public IMetadataStorage
 {
@@ -35,9 +34,11 @@ public:
 
     MetadataStorageType getType() const override { return MetadataStorageType::Local; }
 
-    bool existsFile(const std::string & path) const override;
-    bool existsDirectory(const std::string & path) const override;
-    bool existsFileOrDirectory(const std::string & path) const override;
+    bool exists(const std::string & path) const override;
+
+    bool isFile(const std::string & path) const override;
+
+    bool isDirectory(const std::string & path) const override;
 
     uint64_t getFileSize(const String & path) const override;
 
@@ -73,10 +74,17 @@ public:
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<SharedMutex> & lock) const;
 };
 
-class MetadataStorageFromDiskTransaction final : public IMetadataTransaction, private MetadataOperationsHolder
+class MetadataStorageFromDiskTransaction final : public IMetadataTransaction
 {
 private:
     const MetadataStorageFromDisk & metadata_storage;
+
+    std::vector<MetadataOperationPtr> operations;
+    MetadataFromDiskTransactionState state{MetadataFromDiskTransactionState::PREPARING};
+
+    void addOperation(MetadataOperationPtr && operation);
+
+    void rollback(size_t until_pos);
 
 public:
     explicit MetadataStorageFromDiskTransaction(const MetadataStorageFromDisk & metadata_storage_)
@@ -127,7 +135,6 @@ public:
 
     UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
-    TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t target_size) override;
 
 };
 

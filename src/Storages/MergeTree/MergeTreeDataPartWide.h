@@ -35,9 +35,16 @@ public:
         const ValueSizeMap & avg_value_size_hints,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback) const override;
 
-    bool isStoredOnDisk() const override { return true; }
+    MergeTreeWriterPtr getWriter(
+        const NamesAndTypesList & columns_list,
+        const StorageMetadataPtr & metadata_snapshot,
+        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+        const Statistics & stats_to_recalc_,
+        const CompressionCodecPtr & default_codec_,
+        const MergeTreeWriterSettings & writer_settings,
+        const MergeTreeIndexGranularity & computed_index_granularity) override;
 
-    bool isStoredOnReadonlyDisk() const override;
+    bool isStoredOnDisk() const override { return true; }
 
     bool isStoredOnRemoteDisk() const override;
 
