@@ -168,7 +168,7 @@ static const std::map<sql_query_grammar::OutFormat, sql_query_grammar::InFormat>
 	{sql_query_grammar::OutFormat::OUT_RowBinaryWithNames, sql_query_grammar::InFormat::IN_RowBinaryWithNames},
 	{sql_query_grammar::OutFormat::OUT_RowBinaryWithNamesAndTypes, sql_query_grammar::InFormat::IN_RowBinaryWithNamesAndTypes},
 	{sql_query_grammar::OutFormat::OUT_Native, sql_query_grammar::InFormat::IN_Native},
-	{sql_query_grammar::OutFormat::OUT_RawBLOB, sql_query_grammar::InFormat::IN_RawBLOB},
+	//{sql_query_grammar::OutFormat::OUT_RawBLOB, sql_query_grammar::InFormat::IN_RawBLOB}, outputs as a single value
 	{sql_query_grammar::OutFormat::OUT_MsgPack, sql_query_grammar::InFormat::IN_MsgPack}
 };
 

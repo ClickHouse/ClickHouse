@@ -264,11 +264,11 @@ private:
 public:
 	const std::function<bool (const std::shared_ptr<SQLDatabase>&)> attached_databases = [](const std::shared_ptr<SQLDatabase>& d){return d->attached;};
 	const std::function<bool (const SQLTable&)> attached_tables = [](const SQLTable& t){return (!t.db || t.db->attached) && t.attached;};
-	const std::function<bool (const SQLView&)> attached_views = [](const SQLView& v){return v.db->attached && v.attached;};
+	const std::function<bool (const SQLView&)> attached_views = [](const SQLView& v){return (!v.db || v.db->attached) && v.attached;};
 
 	const std::function<bool (const std::shared_ptr<SQLDatabase>&)> detached_databases = [](const std::shared_ptr<SQLDatabase>& d){return !d->attached;};
 	const std::function<bool (const SQLTable&)> detached_tables = [](const SQLTable& t){return (t.db && !t.db->attached) || !t.attached;};
-	const std::function<bool (const SQLView&)> detached_views = [](const SQLView& v){return !v.db->attached || !v.attached;};
+	const std::function<bool (const SQLView&)> detached_views = [](const SQLView& v){return (v.db && !v.db->attached) || !v.attached;};
 
 	StatementGenerator() : supports_cloud_features(false), collations(), max_depth(3), max_width(3),
 						   max_databases(4), max_functions(4), max_tables(10), max_views(5) {

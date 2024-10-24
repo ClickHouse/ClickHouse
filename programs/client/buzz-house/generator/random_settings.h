@@ -345,6 +345,7 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 		ret += "'";
 	}},
 	{"transform_null_in", TrueOrFalse},
+	{"type_json_skip_duplicated_paths", TrueOrFalse},
 	{"update_insert_deduplication_token_in_dependent_materialized_views", TrueOrFalse},
 	{"use_json_alias_for_old_object_type", TrueOrFalse},
 	{"use_page_cache_for_disks_without_file_cache", TrueOrFalse},
