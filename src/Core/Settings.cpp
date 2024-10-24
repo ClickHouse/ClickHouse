@@ -2772,7 +2772,6 @@ To disable the collection of a single query, set `query_metric_log_interval` to 
 Default value: -1
     )", 0) \
     DECLARE(LogsLevel, send_logs_level, LogsLevel::fatal, R"(
-    DECLARE(LogsLevel, send_logs_level, LogsLevel::fatal, R"(
 Send server text logs with specified minimum level to client. Valid values: 'trace', 'debug', 'information', 'warning', 'error', 'fatal', 'none'
 )", 0) \
     DECLARE(String, send_logs_source_regexp, "", R"(
