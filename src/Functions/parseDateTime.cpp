@@ -1713,10 +1713,16 @@ namespace
                     ++cur;
                 }
                 const DateLUTImpl & date_time_zone = DateLUT::instance(dateTimeZone);
-                const auto timezoneOffset = date_time_zone.timezoneOffset(0);
-                date.has_time_zone_offset = true;
-                date.time_zone_offset = timezoneOffset;
-                return cur;
+                const auto result = date.buildDateTime(date_time_zone);
+                if (result.has_value())
+                {
+                    const auto timezoneOffset = date_time_zone.timezoneOffset(*result);
+                    date.has_time_zone_offset = true;
+                    date.time_zone_offset = timezoneOffset;
+                    return cur;
+                }
+                else
+                    RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Unable to build date time from timezone {}", dateTimeZone)
             }
 
             [[nodiscard]]
