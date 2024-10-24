@@ -16,6 +16,14 @@ CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similar
 -- deterministic randomness.
 INSERT INTO tab SELECT number, [sipHash64(number)/18446744073709551615, wyHash64(number)/18446744073709551615] FROM numbers(370000); -- 18446744073709551615 is the biggest UInt64
 
+-- hnsw_candidate_list_size_for_search = 0 is illegal
+WITH [0.5, 0.5] AS reference_vec
+SELECT id, vec, L2Distance(vec, reference_vec)
+FROM tab
+ORDER BY L2Distance(vec, reference_vec)
+LIMIT 3
+SETTINGS hnsw_candidate_list_size_for_search = 0; -- { serverError INVALID_SETTING_VALUE }
+
 DROP TABLE IF EXISTS results;
 CREATE TABLE results(id Int32) ENGINE = Memory;
 
