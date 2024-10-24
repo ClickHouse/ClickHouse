@@ -25,26 +25,25 @@ struct InMemoryPathMap
             return path1 < path2;
         }
     };
-    struct Remote
+    struct RemotePathInfo
     {
         std::string path;
         time_t last_modified = 0;
     };
 
-    using Map = std::map<std::filesystem::path, Remote, PathComparator>;
+    using Map = std::map<std::filesystem::path, RemotePathInfo, PathComparator>;
 
-    std::optional<Remote> getRemoteIfExists(const std::string & path)
+    std::optional<RemotePathInfo> getRemotePathInfoIfExists(const std::string & path)
     {
         auto base_path = path;
         if (base_path.ends_with('/'))
             base_path.pop_back();
-        {
-            SharedLockGuard lock(mutex);
-            auto it = map.find(base_path);
-            if (it == map.end())
-                return std::nullopt;
-            return it->second;
-        }
+
+        SharedLockGuard lock(mutex);
+        auto it = map.find(base_path);
+        if (it == map.end())
+            return std::nullopt;
+        return it->second;
     }
 
     mutable SharedMutex mutex;

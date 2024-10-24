@@ -1,16 +1,17 @@
 #include "MetadataStorageFromPlainObjectStorage.h"
+
 #include <Disks/IDisk.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/ObjectStorages/InMemoryPathMap.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
 #include <Disks/ObjectStorages/StaticDirectoryIterator.h>
 #include <Disks/ObjectStorages/StoredObject.h>
-#include "Common/ObjectStorageKey.h"
-#include "Disks/ObjectStorages/IObjectStorage.h"
+#include <Common/ObjectStorageKey.h>
+#include <Common/SipHash.h>
 
 #include <Common/filesystemHelpers.h>
 
 #include <filesystem>
-#include <locale>
 #include <memory>
 #include <optional>
 #include <tuple>
@@ -93,8 +94,7 @@ uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path)
 
 std::optional<uint64_t> MetadataStorageFromPlainObjectStorage::getFileSizeIfExists(const String & path) const
 {
-    auto res = getObjectMetadataEntryWithCache(path);
-    if (res)
+    if (auto res = getObjectMetadataEntryWithCache(path))
         return res->file_size;
     return std::nullopt;
 }
@@ -169,10 +169,10 @@ std::optional<StoredObjects> MetadataStorageFromPlainObjectStorage::getStorageOb
     return std::nullopt;
 }
 
-std::shared_ptr<MetadataStorageFromPlainObjectStorage::ObjectMetadataEntry>
+MetadataStorageFromPlainObjectStorage::ObjectMetadataEntryPtr
 MetadataStorageFromPlainObjectStorage::getObjectMetadataEntryWithCache(const std::string & path) const
 {
-    auto get = [&] -> std::shared_ptr<ObjectMetadataEntry>
+    auto get = [&] -> ObjectMetadataEntryPtr
     {
         auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
         if (auto metadata = object_storage->tryGetObjectMetadata(object_key.serialize()))
@@ -181,7 +181,11 @@ MetadataStorageFromPlainObjectStorage::getObjectMetadataEntryWithCache(const std
     };
 
     if (object_metadata_cache)
-        return object_metadata_cache->getOrSet(path, get).first;
+    {
+        SipHash hash;
+        hash.update(path);
+        return object_metadata_cache->getOrSet(hash.get128(), get).first;
+    }
     return get();
 }
 
@@ -253,7 +257,11 @@ UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainObjectStorageTrans
 {
     /// The record has become stale, remove it from cache.
     if (metadata_storage.object_metadata_cache)
-        metadata_storage.object_metadata_cache->remove(path);
+    {
+        SipHash hash;
+        hash.update(path);
+        metadata_storage.object_metadata_cache->remove(hash.get128());
+    }
 
     /// No hardlinks, so will always remove file.
     return std::make_shared<UnlinkMetadataFileOperationOutcome>(UnlinkMetadataFileOperationOutcome{0});

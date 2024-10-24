@@ -72,7 +72,8 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
     {
         std::lock_guard lock(path_map.mutex);
         auto & map = path_map.map;
-        [[maybe_unused]] auto result = map.emplace(base_path, InMemoryPathMap::Remote{object_key_prefix, Poco::Timestamp{}.epochTime()});
+        [[maybe_unused]] auto result
+            = map.emplace(base_path, InMemoryPathMap::RemotePathInfo{object_key_prefix, Poco::Timestamp{}.epochTime()});
         chassert(result.second);
     }
     auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;

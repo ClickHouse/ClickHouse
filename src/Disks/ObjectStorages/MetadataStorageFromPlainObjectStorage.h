@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Types.h>
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/ObjectStorages/InMemoryPathMap.h>
@@ -42,11 +43,12 @@ protected:
         uint64_t file_size;
         time_t last_modified;
     };
+    using ObjectMetadataEntryPtr = std::shared_ptr<ObjectMetadataEntry>;
 
     ObjectStoragePtr object_storage;
     const String storage_path_prefix;
 
-    mutable std::optional<CacheBase<String, ObjectMetadataEntry>> object_metadata_cache;
+    mutable std::optional<CacheBase<UInt128, ObjectMetadataEntry>> object_metadata_cache;
 
     mutable SharedMutex metadata_mutex;
 
@@ -93,7 +95,7 @@ protected:
     /// Returns a map of virtual filesystem paths to paths in the object storage.
     virtual std::shared_ptr<InMemoryPathMap> getPathMap() const { throwNotImplemented(); }
 
-    std::shared_ptr<ObjectMetadataEntry> getObjectMetadataEntryWithCache(const std::string & path) const;
+    ObjectMetadataEntryPtr getObjectMetadataEntryWithCache(const std::string & path) const;
 };
 
 class MetadataStorageFromPlainObjectStorageTransaction final : public IMetadataTransaction, private MetadataOperationsHolder
