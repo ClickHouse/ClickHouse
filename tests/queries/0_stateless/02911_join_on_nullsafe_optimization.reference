@@ -64,3 +64,4 @@ SELECT * FROM t1n as t1 JOIN t2n as t2 ON (t1.x == t2.x AND ((t2.x IS NOT NULL) 
 0
 2
 2
+1
