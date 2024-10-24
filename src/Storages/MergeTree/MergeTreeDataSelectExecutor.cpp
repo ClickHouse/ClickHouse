@@ -1022,11 +1022,7 @@ size_t MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
 
 /// Same as roundRowsOrBytesToMarks() but do not return more then max_marks
 size_t MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
-    size_t rows_setting,
-    size_t bytes_setting,
-    size_t rows_granularity,
-    size_t bytes_granularity,
-    size_t max_marks)
+    size_t rows_setting, size_t bytes_setting, size_t rows_granularity, size_t bytes_granularity, size_t min_marks, size_t max_marks)
 {
     size_t marks = 1;
 
@@ -1035,17 +1031,16 @@ size_t MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
     else if (rows_setting)
         marks = (rows_setting + rows_granularity - 1) / rows_granularity;
 
-    if (bytes_granularity == 0)
-        return marks;
-
-    /// Overflow
-    if (bytes_setting + bytes_granularity <= bytes_setting) /// overflow
-        return max_marks;
-    if (bytes_setting)
-        return std::max(marks, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
-    return marks;
+    if (bytes_granularity)
+    {
+        /// Overflow
+        if (bytes_setting + bytes_granularity <= bytes_setting) /// overflow
+            marks = max_marks;
+        else if (bytes_setting)
+            marks = std::max(marks, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
+    }
+    return std::max(marks, min_marks);
 }
-
 
 /// Calculates a set of mark ranges, that could possibly contain keys, required by condition.
 /// In other words, it removes subranges from whole range, that definitely could not contain required keys.

@@ -22,6 +22,9 @@ class ReadBuffer;
 class WriteBuffer;
 
 /** Template class to define collections of settings.
+  * If you create a new setting, please also add it to ./utils/check-style/check-settings-style
+  * for validation
+  *
   * Example of usage:
   *
   * mysettings.h:
@@ -49,10 +52,10 @@ class WriteBuffer;
   * #include <Core/BaseSettings.h>
   * #include <Core/BaseSettingsFwdMacrosImpl.h>
   *
-  * #define APPLY_FOR_MYSETTINGS(M) \
-  *     M(UInt64, a, 100, "Description of a", 0) \
-  *     M(Float, f, 3.11, "Description of f", IMPORTANT) // IMPORTANT - means the setting can't be ignored by older versions) \
-  *     M(String, s, "default", "Description of s", 0)
+  * #define APPLY_FOR_MYSETTINGS(DECLARE, ALIAS) \
+  *     DECLARE(UInt64, a, 100, "Description of a", 0) \
+  *     DECLARE(Float, f, 3.11, "Description of f", IMPORTANT) // IMPORTANT - means the setting can't be ignored by older versions) \
+  *     DECLARE(String, s, "default", "Description of s", 0)
   *
   * DECLARE_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS)
   * IMPLEMENT_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS)
