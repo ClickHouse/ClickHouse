@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Common/Logger.h>
 
+
 namespace DB
 {
 

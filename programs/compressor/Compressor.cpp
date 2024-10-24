@@ -9,6 +9,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/ParallelCompressedWriteBuffer.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -17,6 +18,8 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/TerminalSize.h>
+#include <Common/ThreadPool.h>
+#include <Common/CurrentMetrics.h>
 #include <Core/Defines.h>
 
 
@@ -27,6 +30,13 @@ namespace DB
         extern const int TOO_LARGE_SIZE_COMPRESSED;
         extern const int BAD_ARGUMENTS;
     }
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric LocalThread;
+    extern const Metric LocalThreadActive;
+    extern const Metric LocalThreadScheduled;
 }
 
 
@@ -77,12 +87,13 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             ("decompress,d", "decompress")
             ("offset-in-compressed-file", po::value<size_t>()->default_value(0ULL), "offset to the compressed block (i.e. physical file offset)")
             ("offset-in-decompressed-block", po::value<size_t>()->default_value(0ULL), "offset to the decompressed block (i.e. virtual offset)")
-            ("block-size,b", po::value<unsigned>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size")
+            ("block-size,b", po::value<size_t>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size")
             ("hc", "use LZ4HC instead of LZ4")
             ("zstd", "use ZSTD instead of LZ4")
             ("deflate_qpl", "use deflate_qpl instead of LZ4")
             ("codec", po::value<std::vector<std::string>>()->multitoken(), "use codecs combination instead of LZ4")
             ("level", po::value<int>(), "compression level for codecs specified via flags")
+            ("threads", po::value<size_t>()->default_value(1), "number of threads for parallel compression")
             ("none", "use no compression instead of LZ4")
             ("stat", "print block statistics of compressed data")
             ("stacktrace", "print stacktrace of exception")
@@ -111,13 +122,20 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         bool stat_mode = options.count("stat");
         bool use_none = options.count("none");
         print_stacktrace = options.count("stacktrace");
-        unsigned block_size = options["block-size"].as<unsigned>();
+        size_t block_size = options["block-size"].as<size_t>();
+        size_t num_threads = options["threads"].as<size_t>();
         std::vector<std::string> codecs;
         if (options.count("codec"))
             codecs = options["codec"].as<std::vector<std::string>>();
 
         if ((use_lz4hc || use_zstd || use_deflate_qpl || use_none) && !codecs.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong options, codec flags like --zstd and --codec options are mutually exclusive");
+
+        if (num_threads < 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid value of `threads` parameter");
+
+        if (num_threads > 1 && decompress)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parallel mode is only implemented for compression (not for decompression)");
 
         if (!codecs.empty() && options.count("level"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong options, --level is not compatible with --codec list");
@@ -148,7 +166,6 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         }
         else
             codec = CompressionCodecFactory::instance().get(method_family, level);
-
 
         std::unique_ptr<ReadBufferFromFileBase> rb;
         std::unique_ptr<WriteBufferFromFileBase> wb;
@@ -190,9 +207,20 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         else
         {
             /// Compression
-            CompressedWriteBuffer to(*wb, codec, block_size);
-            copyData(*rb, to);
-            to.finalize();
+
+            if (num_threads == 1)
+            {
+                CompressedWriteBuffer to(*wb, codec, block_size);
+                copyData(*rb, to);
+                to.finalize();
+            }
+            else
+            {
+                ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, num_threads);
+                ParallelCompressedWriteBuffer to(*wb, codec, block_size, num_threads, pool);
+                copyData(*rb, to);
+                to.finalize();
+            }
         }
     }
     catch (...)
