@@ -1488,6 +1488,8 @@ Keys:
 - `formatting` – Log format for console output. Currently, only `json` is supported).
 - `use_syslog` - Also forward log output to syslog.
 - `syslog_level` - Log level for logging to syslog.
+- `message_regexp` - Only log messages that match this regular expression. Defaults to `""`, indicating no filtering.
+- `message_regexp_negative` - Only log messages that don't match this regular expression. Defaults to `""`, indicating no filtering.
 
 **Log format specifiers**
 
@@ -1574,6 +1576,28 @@ The log level of individual log names can be overridden. For example, to mute al
         </logger>
     </levels>
 </logger>
+```
+
+**Regular Expression Filtering**
+
+The messages logged can be filtered using regular expressions using `message_regexp` and `message_regexp_negative`. This can be done on a per-level basis or globally. If both a global and logger-specific pattern is specified, the global pattern is overridden (ignored) and only the logger-specific pattern applies. The positive and negative patterns are considered independently for this situation. Note: Using this feature may cause a slight slowdown in performance.
+
+
+```xml
+    <logger>
+        <level>trace</level>
+        <!-- Global: Don't log Trace messages -->
+        <message_regexp_negative>.*Trace.*</message_regexp_negative>
+
+        <message_regexps>
+            <logger>
+                <!-- For the executeQuery logger, only log if message has "Read", but not "from" -->
+                <name>executeQuery</name>
+                <message_regexp>.*Read.*</message_regexp>
+                <message_regexp_negative>.*from.*</message_regexp_negative>
+            </logger>
+        </message_regexps>
+    </logger>
 ```
 
 ### syslog
