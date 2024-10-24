@@ -119,9 +119,10 @@ std::unique_ptr<orc::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in
     if (bytes_read < magic_size || file_data != ORC_MAGIC_BYTES)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Not an ORC file");
 
-    WriteBufferFromString file_buffer(file_data, AppendModeTag{});
-    copyData(in, file_buffer, is_cancelled);
-    file_buffer.finalize();
+    {
+        WriteBufferFromString file_buffer(file_data, AppendModeTag{});
+        copyData(in, file_buffer, is_cancelled);
+    }
 
     size_t file_size = file_data.size();
     return std::make_unique<ORCInputStreamFromString>(std::move(file_data), file_size);

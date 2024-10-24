@@ -94,8 +94,7 @@ void LocalConnection::sendProfileEvents()
     Block profile_block;
     state->after_send_profile_events.restart();
     next_packet_type = Protocol::Server::ProfileEvents;
-    ProfileEvents::getProfileEvents(server_display_name, state->profile_queue, profile_block, last_sent_snapshots);
-    state->block.emplace(std::move(profile_block));
+    state->block.emplace(ProfileEvents::getProfileEvents(server_display_name, state->profile_queue, last_sent_snapshots));
 }
 
 void LocalConnection::sendQuery(

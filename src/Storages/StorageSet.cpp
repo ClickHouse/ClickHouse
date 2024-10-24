@@ -43,12 +43,15 @@ public:
         ContextPtr ctx, StorageSetOrJoinBase & table_, const StorageMetadataPtr & metadata_snapshot_,
         const String & backup_path_, const String & backup_tmp_path_,
         const String & backup_file_name_, bool persistent_);
+    ~SetOrJoinSink() override;
 
     String getName() const override { return "SetOrJoinSink"; }
     void consume(Chunk & chunk) override;
     void onFinish() override;
 
 private:
+    void cancelBuffers() noexcept;
+
     StorageSetOrJoinBase & table;
     StorageMetadataPtr metadata_snapshot;
     String backup_path;
@@ -83,6 +86,20 @@ SetOrJoinSink::SetOrJoinSink(
 {
 }
 
+SetOrJoinSink::~SetOrJoinSink()
+{
+    if (isCancelled())
+        cancelBuffers();
+}
+
+void SetOrJoinSink::cancelBuffers() noexcept
+{
+    compressed_backup_buf.cancel();
+    if (backup_buf)
+        backup_buf->cancel();
+}
+
+
 void SetOrJoinSink::consume(Chunk & chunk)
 {
     Block block = getHeader().cloneWithColumns(chunk.getColumns());
@@ -102,6 +119,10 @@ void SetOrJoinSink::onFinish()
         backup_buf->finalize();
 
         table.disk->replaceFile(fs::path(backup_tmp_path) / backup_file_name, fs::path(backup_path) / backup_file_name);
+    }
+    else
+    {
+        cancelBuffers();
     }
 }
 

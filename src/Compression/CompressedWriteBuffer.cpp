@@ -69,6 +69,7 @@ void CompressedWriteBuffer::finalizeImpl()
     /// Don't try to resize buffer in nextImpl.
     use_adaptive_buffer_size = false;
     next();
+    BufferWithOwnMemory<WriteBuffer>::finalizeImpl();
 }
 
 CompressedWriteBuffer::CompressedWriteBuffer(
@@ -81,11 +82,10 @@ CompressedWriteBuffer::CompressedWriteBuffer(
 {
 }
 
-CompressedWriteBuffer::~CompressedWriteBuffer()
+void CompressedWriteBuffer::cancelImpl() noexcept
 {
-    if (!canceled)
-        finalize();
+    BufferWithOwnMemory<WriteBuffer>::cancelImpl();
+    out.cancel();
 }
-
 
 }

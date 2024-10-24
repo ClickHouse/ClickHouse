@@ -230,7 +230,6 @@ public:
     /// Returns an entry in the ProcessList associated with this QueryStatus. The function can return nullptr.
     std::shared_ptr<ProcessListEntry> getProcessListEntry() const;
 
-    bool isAllDataSent() const { return is_all_data_sent; }
     void setAllDataSent() { is_all_data_sent = true; }
 
     /// Adds a pipeline to the QueryStatus

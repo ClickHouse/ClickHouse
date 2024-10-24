@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
@@ -863,56 +864,65 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
 #ifndef NDEBUG
-            /// Verify that AST formatting is consistent:
-            /// If you format AST, parse it back, and format it again, you get the same string.
-
-            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(
-                /*max_length=*/0,
-                /*one_line=*/true,
-                /*show_secrets=*/true,
-                /*print_pretty_type_names=*/false,
-                /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
-                /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
-
-            /// The query can become more verbose after formatting, so:
-            size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
-
-            ASTPtr ast2;
             try
             {
-                ast2 = parseQuery(
-                    parser,
-                    formatted1.data(),
-                    formatted1.data() + formatted1.size(),
-                    "",
-                    new_max_query_size,
-                    settings[Setting::max_parser_depth],
-                    settings[Setting::max_parser_backtracks]);
-            }
-            catch (const Exception & e)
-            {
-                if (e.code() == ErrorCodes::SYNTAX_ERROR)
+                /// Verify that AST formatting is consistent:
+                /// If you format AST, parse it back, and format it again, you get the same string.
+
+                String formatted1 = ast->formatWithPossiblyHidingSensitiveData(
+                    /*max_length=*/0,
+                    /*one_line=*/true,
+                    /*show_secrets=*/true,
+                    /*print_pretty_type_names=*/false,
+                    /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+                    /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+
+                /// The query can become more verbose after formatting, so:
+                size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
+
+                ASTPtr ast2;
+                try
+                {
+                    ast2 = parseQuery(
+                        parser,
+                        formatted1.data(),
+                        formatted1.data() + formatted1.size(),
+                        "",
+                        new_max_query_size,
+                        settings[Setting::max_parser_depth],
+                        settings[Setting::max_parser_backtracks]);
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::SYNTAX_ERROR)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}",
+                            formatted1, std::string_view(begin, end-begin));
+                    else
+                        throw;
+                }
+
+                chassert(ast2);
+
+                String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(
+                    /*max_length=*/0,
+                    /*one_line=*/true,
+                    /*show_secrets=*/true,
+                    /*print_pretty_type_names=*/false,
+                    /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+                    /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+
+                if (formatted1 != formatted2)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}",
-                        formatted1, std::string_view(begin, end-begin));
-
-                throw;
+                        "Inconsistent AST formatting: the query:\n{}\nWas parsed and formatted back as:\n{}",
+                        formatted1, formatted2);
             }
-
-            chassert(ast2);
-
-            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(
-                /*max_length=*/0,
-                /*one_line=*/true,
-                /*show_secrets=*/true,
-                /*print_pretty_type_names=*/false,
-                /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
-                /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
-
-            if (formatted1 != formatted2)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Inconsistent AST formatting: the query:\n{}\nWas parsed and formatted back as:\n{}",
-                    formatted1, formatted2);
+            catch (Exception & e)
+            {
+                /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail inder debug build.
+                if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+                    throw;
+            }
 #endif
         }
 
@@ -1565,7 +1575,7 @@ void executeQuery(
 
         /// If not - copy enough data into 'parse_buf'.
         WriteBufferFromVector<PODArray<char>> out(parse_buf);
-        LimitReadBuffer limit(istr, max_query_size + 1, /* trow_exception */ false, /* exact_limit */ {});
+        LimitReadBuffer limit(istr, {.read_no_more = max_query_size + 1});
         copyData(limit, out);
         out.finalize();
 

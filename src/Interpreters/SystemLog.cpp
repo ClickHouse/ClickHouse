@@ -1,6 +1,7 @@
 #include <Interpreters/SystemLog.h>
 
 #include <base/scope_guard.h>
+#include <Common/Logger.h>
 #include <Common/SystemLogBase.h>
 #include <Common/logger_useful.h>
 #include <Common/MemoryTrackerBlockerInThread.h>

@@ -281,10 +281,12 @@ namespace
             size_t size_to_stage = task.part_size;
 
             PODArray<char> memory;
-            memory.resize(size_to_stage);
-            WriteBufferFromVector<PODArray<char>> wb(memory);
+            {
+                memory.resize(size_to_stage);
+                WriteBufferFromVector<PODArray<char>> wb(memory);
+                copyData(*read_buffer, wb, size_to_stage);
+            }
 
-            copyData(*read_buffer, wb, size_to_stage);
             Azure::Core::IO::MemoryBodyStream stream(reinterpret_cast<const uint8_t *>(memory.data()), size_to_stage);
 
             const auto & block_id = task.block_ids.emplace_back(getRandomASCIIString(64));

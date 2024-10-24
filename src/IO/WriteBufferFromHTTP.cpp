@@ -47,6 +47,8 @@ void WriteBufferFromHTTP::finalizeImpl()
 
     receiveResponse(*session, request, response, false);
     /// TODO: Response body is ignored.
+
+    WriteBufferFromOStream::finalizeImpl();
 }
 
 }

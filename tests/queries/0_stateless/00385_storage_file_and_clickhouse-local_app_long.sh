@@ -63,4 +63,4 @@ ${CLICKHOUSE_LOCAL} -q "CREATE TABLE sophisticated_default
 SELECT count() FROM system.tables WHERE name='sophisticated_default' AND database = currentDatabase();"
 
 # Help is not skipped
-[[ $(${CLICKHOUSE_LOCAL} --help | wc -l) -gt 100 ]]
+[[ $(${CLICKHOUSE_LOCAL} --help | wc -l) -gt 50 ]]

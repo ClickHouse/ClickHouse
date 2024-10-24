@@ -21,7 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
-    extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
+    extern const int REQUIRED_PASSWORD;
 }
 
 std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServerRequest & request) const
@@ -49,7 +49,7 @@ std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServer
     return {"", true};
 }
 
-void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
+void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPServerResponse & response, OutputPtr output)
 {
     HTMLForm params(server.context()->getSettingsRef(), request);
 
@@ -68,12 +68,13 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
 
     if (compress)
     {
-        CompressedWriteBuffer compressed_out(*used_output.out);
+        CompressedWriteBuffer compressed_out(*output);
         endpoint->processQuery(params, body, compressed_out, response);
+        compressed_out.finalize();
     }
     else
     {
-        endpoint->processQuery(params, body, *used_output.out, response);
+        endpoint->processQuery(params, body, *output, response);
     }
 }
 
@@ -86,85 +87,42 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
 
-    Output used_output;
-    used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
+    auto output = std::make_shared<WriteBufferFromHTTPServerResponse>(
         response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, write_event);
-
-    auto finalize_output = [&]
-    {
-        try
-        {
-            used_output.out->finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Failed to finalize response write buffer");
-        }
-    };
-
-    auto write_response = [&](const std::string & message)
-    {
-        if (response.sent())
-        {
-            finalize_output();
-            return;
-        }
-
-        try
-        {
-            writeString(message, *used_output.out);
-            finalize_output();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-            finalize_output();
-        }
-    };
 
     try
     {
-        if (auto [message, success] = checkAuthentication(request); success)
+        auto [message, success] = checkAuthentication(request);
+        if (success)
         {
-            processQuery(request, response, used_output);
-            finalize_output();
+            processQuery(request, response, output);
+            output->finalize();
             LOG_DEBUG(log, "Done processing query");
         }
         else
         {
-            response.setStatusAndReason(HTTPServerResponse::HTTP_UNAUTHORIZED);
-            write_response(message);
             LOG_WARNING(log, "Query processing failed request: '{}' authentication failed", request.getURI());
+            output->cancelWithException(request, ErrorCodes::REQUIRED_PASSWORD, message, nullptr);
         }
     }
     catch (Exception & e)
     {
-        if (e.code() == ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES)
-        {
-            used_output.out->finalize();
-            return;
-        }
-
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
-
         /// Sending to remote server was cancelled due to server shutdown or drop table.
         bool is_real_error = e.code() != ErrorCodes::ABORTED;
-
-        PreformattedMessage message = getCurrentExceptionMessageAndPattern(is_real_error);
-        write_response(message.text);
-
+        PreformattedMessage message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ is_real_error);
         if (is_real_error)
             LOG_ERROR(log, message);
         else
             LOG_INFO(log, message);
+
+        output->cancelWithException(request, getCurrentExceptionCode(), message.text, nullptr);
     }
     catch (...)
     {
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         PreformattedMessage message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
-        write_response(message.text);
-
         LOG_ERROR(log, message);
+
+        output->cancelWithException(request, getCurrentExceptionCode(), message.text, nullptr);
     }
 }
 
