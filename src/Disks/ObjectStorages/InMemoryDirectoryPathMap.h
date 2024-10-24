@@ -12,7 +12,7 @@ namespace DB
 {
 
 
-struct InMemoryPathMap
+struct InMemoryDirectoryPathMap
 {
     struct PathComparator
     {

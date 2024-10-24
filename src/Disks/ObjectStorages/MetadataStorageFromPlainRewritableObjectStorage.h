@@ -13,7 +13,7 @@ class MetadataStorageFromPlainRewritableObjectStorage final : public MetadataSto
 {
 private:
     const std::string metadata_key_prefix;
-    std::shared_ptr<InMemoryPathMap> path_map;
+    std::shared_ptr<InMemoryDirectoryPathMap> path_map;
 
 public:
     MetadataStorageFromPlainRewritableObjectStorage(
@@ -34,7 +34,7 @@ public:
 
 protected:
     std::string getMetadataKeyPrefix() const override { return metadata_key_prefix; }
-    std::shared_ptr<InMemoryPathMap> getPathMap() const override { return path_map; }
+    std::shared_ptr<InMemoryDirectoryPathMap> getPathMap() const override { return path_map; }
     void getDirectChildrenOnDisk(
         const std::string & storage_key,
         const RelativePathsWithMetadata & remote_paths,
