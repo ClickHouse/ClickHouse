@@ -1,5 +1,5 @@
 #include "MetadataStorageFromPlainObjectStorageOperations.h"
-#include <Disks/ObjectStorages/InMemoryPathMap.h>
+#include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -31,7 +31,10 @@ ObjectStorageKey createMetadataObjectKey(const std::string & object_key_prefix, 
 }
 
 MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
-    std::filesystem::path && path_, InMemoryPathMap & path_map_, ObjectStoragePtr object_storage_, const std::string & metadata_key_prefix_)
+    std::filesystem::path && path_,
+    InMemoryDirectoryPathMap & path_map_,
+    ObjectStoragePtr object_storage_,
+    const std::string & metadata_key_prefix_)
     : path(std::move(path_))
     , path_map(path_map_)
     , object_storage(object_storage_)
@@ -73,7 +76,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
         std::lock_guard lock(path_map.mutex);
         auto & map = path_map.map;
         [[maybe_unused]] auto result
-            = map.emplace(base_path, InMemoryPathMap::RemotePathInfo{object_key_prefix, Poco::Timestamp{}.epochTime()});
+            = map.emplace(base_path, InMemoryDirectoryPathMap::RemotePathInfo{object_key_prefix, Poco::Timestamp{}.epochTime()});
         chassert(result.second);
     }
     auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
@@ -111,7 +114,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo(std::un
 MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFromPlainObjectStorageMoveDirectoryOperation(
     std::filesystem::path && path_from_,
     std::filesystem::path && path_to_,
-    InMemoryPathMap & path_map_,
+    InMemoryDirectoryPathMap & path_map_,
     ObjectStoragePtr object_storage_,
     const std::string & metadata_key_prefix_)
     : path_from(std::move(path_from_))
@@ -216,7 +219,10 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo(std::uniq
 }
 
 MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation(
-    std::filesystem::path && path_, InMemoryPathMap & path_map_, ObjectStoragePtr object_storage_, const std::string & metadata_key_prefix_)
+    std::filesystem::path && path_,
+    InMemoryDirectoryPathMap & path_map_,
+    ObjectStoragePtr object_storage_,
+    const std::string & metadata_key_prefix_)
     : path(std::move(path_)), path_map(path_map_), object_storage(object_storage_), metadata_key_prefix(metadata_key_prefix_)
 {
     chassert(path.string().ends_with('/'));

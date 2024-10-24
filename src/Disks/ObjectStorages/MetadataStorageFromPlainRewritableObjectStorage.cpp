@@ -1,5 +1,5 @@
 #include <Disks/ObjectStorages/FlatDirectoryStructureKeyGenerator.h>
-#include <Disks/ObjectStorages/InMemoryPathMap.h>
+#include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorage.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
 
@@ -45,10 +45,10 @@ std::string getMetadataKeyPrefix(ObjectStoragePtr object_storage)
         : metadata_key_prefix;
 }
 
-std::shared_ptr<InMemoryPathMap> loadPathPrefixMap(const std::string & metadata_key_prefix, ObjectStoragePtr object_storage)
+std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & metadata_key_prefix, ObjectStoragePtr object_storage)
 {
-    auto result = std::make_shared<InMemoryPathMap>();
-    using Map = InMemoryPathMap::Map;
+    auto result = std::make_shared<InMemoryDirectoryPathMap>();
+    using Map = InMemoryDirectoryPathMap::Map;
 
     ThreadPool & pool = getIOThreadPool().get();
     ThreadPoolCallbackRunnerLocal<void> runner(pool, "PlainRWMetaLoad");
@@ -115,7 +115,7 @@ std::shared_ptr<InMemoryPathMap> loadPathPrefixMap(const std::string & metadata_
                     std::lock_guard lock(result->mutex);
                     res = result->map.emplace(
                         std::filesystem::path(local_path).parent_path(),
-                        InMemoryPathMap::RemotePathInfo{remote_path.parent_path(), last_modified.epochTime()});
+                        InMemoryDirectoryPathMap::RemotePathInfo{remote_path.parent_path(), last_modified.epochTime()});
                 }
 
                 /// This can happen if table replication is enabled, then the same local path is written
@@ -145,7 +145,7 @@ void getDirectChildrenOnDiskImpl(
     const std::string & storage_key,
     const RelativePathsWithMetadata & remote_paths,
     const std::string & local_path,
-    const InMemoryPathMap & path_map,
+    const InMemoryDirectoryPathMap & path_map,
     std::unordered_set<std::string> & result)
 {
     /// Directories are retrieved from the in-memory path map.

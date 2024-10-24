@@ -1,5 +1,5 @@
 #include "FlatDirectoryStructureKeyGenerator.h"
-#include <Disks/ObjectStorages/InMemoryPathMap.h>
+#include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
 #include "Common/ObjectStorageKey.h"
 #include <Common/SharedLockGuard.h>
 #include <Common/SharedMutex.h>
@@ -12,7 +12,8 @@
 namespace DB
 {
 
-FlatDirectoryStructureKeyGenerator::FlatDirectoryStructureKeyGenerator(String storage_key_prefix_, std::weak_ptr<InMemoryPathMap> path_map_)
+FlatDirectoryStructureKeyGenerator::FlatDirectoryStructureKeyGenerator(
+    String storage_key_prefix_, std::weak_ptr<InMemoryDirectoryPathMap> path_map_)
     : storage_key_prefix(storage_key_prefix_), path_map(std::move(path_map_))
 {
 }

@@ -1,5 +1,5 @@
 #include <Disks/ObjectStorages/CommonPathPrefixKeyGenerator.h>
-#include <Disks/ObjectStorages/InMemoryPathMap.h>
+#include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
 
 #include <Common/SharedLockGuard.h>
 #include <Common/getRandomASCIIString.h>
@@ -11,7 +11,7 @@
 namespace DB
 {
 
-CommonPathPrefixKeyGenerator::CommonPathPrefixKeyGenerator(String key_prefix_, std::weak_ptr<InMemoryPathMap> path_map_)
+CommonPathPrefixKeyGenerator::CommonPathPrefixKeyGenerator(String key_prefix_, std::weak_ptr<InMemoryDirectoryPathMap> path_map_)
     : storage_key_prefix(key_prefix_), path_map(std::move(path_map_))
 {
 }
