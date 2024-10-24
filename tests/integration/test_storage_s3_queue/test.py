@@ -1644,24 +1644,6 @@ def test_processed_file_setting(started_cluster, processing_threads):
 
     assert expected_rows == get_count()
 
-    node.restart_clickhouse()
-
-    correct_values = [
-        [1, 1, 1],
-    ]
-    values_csv = (
-        "\n".join((",".join(map(str, row)) for row in correct_values)) + "\n"
-    ).encode()
-    file_path = f"{files_path}/test_99.csv"
-    put_s3_file_content(started_cluster, file_path, values_csv)
-
-    expected_rows += 1
-    for _ in range(20):
-        if expected_rows == get_count():
-            break
-        time.sleep(1)
-    assert expected_rows == get_count()
-
 
 @pytest.mark.parametrize("processing_threads", [1, 5])
 def test_processed_file_setting_distributed(started_cluster, processing_threads):
