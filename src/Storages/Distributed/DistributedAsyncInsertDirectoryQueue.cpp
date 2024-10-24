@@ -2,6 +2,7 @@
 #include <Storages/Distributed/DistributedAsyncInsertHeader.h>
 #include <Storages/Distributed/DistributedAsyncInsertHelpers.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
+#include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/StorageDistributed.h>
 #include <QueryPipeline/RemoteInserter.h>
 #include <Formats/NativeReader.h>
@@ -23,10 +24,6 @@
 #include <Common/logger_useful.h>
 #include <Compression/CheckingCompressedReadBuffer.h>
 #include <IO/Operators.h>
-#include <base/hex.h>
-#include <boost/algorithm/string/find_iterator.hpp>
-#include <boost/algorithm/string/finder.hpp>
-#include <boost/range/adaptor/indexed.hpp>
 #include <filesystem>
 
 
@@ -56,6 +53,15 @@ namespace Setting
     extern const SettingsLoadBalancing load_balancing;
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
+}
+
+namespace DistributedSetting
+{
+    extern const DistributedSettingsUInt64 background_insert_batch;
+    extern const DistributedSettingsMilliseconds background_insert_max_sleep_time_ms;
+    extern const DistributedSettingsMilliseconds background_insert_sleep_time_ms;
+    extern const DistributedSettingsUInt64 background_insert_split_batch_on_failure;
+    extern const DistributedSettingsBool fsync_directories;
 }
 
 namespace ErrorCodes
@@ -120,16 +126,16 @@ DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
     , path(fs::path(disk->getPath()) / relative_path / "")
     , broken_relative_path(fs::path(relative_path) / "broken")
     , broken_path(fs::path(path) / "broken" / "")
-    , should_batch_inserts(storage.getDistributedSettingsRef().background_insert_batch)
-    , split_batch_on_failure(storage.getDistributedSettingsRef().background_insert_split_batch_on_failure)
-    , dir_fsync(storage.getDistributedSettingsRef().fsync_directories)
+    , should_batch_inserts(storage.getDistributedSettingsRef()[DistributedSetting::background_insert_batch])
+    , split_batch_on_failure(storage.getDistributedSettingsRef()[DistributedSetting::background_insert_split_batch_on_failure])
+    , dir_fsync(storage.getDistributedSettingsRef()[DistributedSetting::fsync_directories])
     , min_batched_block_size_rows(storage.getContext()->getSettingsRef()[Setting::min_insert_block_size_rows])
     , min_batched_block_size_bytes(storage.getContext()->getSettingsRef()[Setting::min_insert_block_size_bytes])
     , current_batch_file_path(path + "current_batch.txt")
     , pending_files(std::numeric_limits<size_t>::max())
-    , default_sleep_time(storage.getDistributedSettingsRef().background_insert_sleep_time_ms.totalMilliseconds())
+    , default_sleep_time(storage.getDistributedSettingsRef()[DistributedSetting::background_insert_sleep_time_ms].totalMilliseconds())
     , sleep_time(default_sleep_time)
-    , max_sleep_time(storage.getDistributedSettingsRef().background_insert_max_sleep_time_ms.totalMilliseconds())
+    , max_sleep_time(storage.getDistributedSettingsRef()[DistributedSetting::background_insert_max_sleep_time_ms].totalMilliseconds())
     , log(getLogger(getLoggerName()))
     , monitor_blocker(monitor_blocker_)
     , metric_pending_bytes(CurrentMetrics::DistributedBytesToInsert, 0)
@@ -615,8 +621,7 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
                     tryLogCurrentException(log, "File is marked broken due to");
                     continue;
                 }
-                else
-                    throw;
+                throw;
             }
 
             BatchHeader batch_header(

@@ -10,8 +10,11 @@ namespace DB
 
 std::unique_ptr<ReadBuffer> PartMetadataManagerOrdinary::read(const String & file_name) const
 {
-    size_t file_size = part->getDataPartStorage().getFileSize(file_name);
-    auto res = part->getDataPartStorage().readFile(file_name, ReadSettings().adjustBufferSize(file_size), file_size, std::nullopt);
+    constexpr size_t size_hint = 4096; /// These files are small.
+    auto read_settings = getReadSettings().adjustBufferSize(size_hint);
+    /// Default read method is pread_threadpool, but there is not much point in it here.
+    read_settings.local_fs_method = LocalFSReadMethod::pread;
+    auto res = part->getDataPartStorage().readFile(file_name, read_settings, size_hint, std::nullopt);
 
     if (isCompressedFromFileName(file_name))
         return std::make_unique<CompressedReadBufferFromFile>(std::move(res));
@@ -19,10 +22,22 @@ std::unique_ptr<ReadBuffer> PartMetadataManagerOrdinary::read(const String & fil
     return res;
 }
 
-bool PartMetadataManagerOrdinary::exists(const String & file_name) const
+std::unique_ptr<ReadBuffer> PartMetadataManagerOrdinary::readIfExists(const String & file_name) const
 {
-    return part->getDataPartStorage().exists(file_name);
+    constexpr size_t size_hint = 4096;  /// These files are small.
+    if (auto res = part->getDataPartStorage().readFileIfExists(file_name, ReadSettings().adjustBufferSize(size_hint), size_hint, std::nullopt))
+    {
+        if (isCompressedFromFileName(file_name))
+            return std::make_unique<CompressedReadBufferFromFile>(std::move(res));
+
+        return res;
+    }
+    return {};
 }
 
+bool PartMetadataManagerOrdinary::exists(const String & file_name) const
+{
+    return part->getDataPartStorage().existsFile(file_name);
+}
 
 }

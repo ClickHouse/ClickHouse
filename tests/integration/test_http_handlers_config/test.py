@@ -1,6 +1,8 @@
 import contextlib
 import os
-import urllib.request, urllib.parse, urllib.error
+import urllib.error
+import urllib.parse
+import urllib.request
 
 from helpers.cluster import ClickHouseCluster
 

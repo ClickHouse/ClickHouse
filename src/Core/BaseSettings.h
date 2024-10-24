@@ -22,22 +22,57 @@ class ReadBuffer;
 class WriteBuffer;
 
 /** Template class to define collections of settings.
+  * If you create a new setting, please also add it to ./utils/check-style/check-settings-style
+  * for validation
+  *
   * Example of usage:
   *
   * mysettings.h:
-  * #define APPLY_FOR_MYSETTINGS(M) \
-  *     M(UInt64, a, 100, "Description of a", 0) \
-  *     M(Float, f, 3.11, "Description of f", IMPORTANT) // IMPORTANT - means the setting can't be ignored by older versions) \
-  *     M(String, s, "default", "Description of s", 0)
+  * #include <Core/BaseSettingsFwdMacros.h>
+  * #include <Core/SettingsFields.h>
   *
-  * DECLARE_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS)
-
-  * struct MySettings : public BaseSettings<MySettingsTraits>
+  * #define MY_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
+  *      M(CLASS_NAME, Float) \
+  *      M(CLASS_NAME, String) \
+  *      M(CLASS_NAME, UInt64)
+  *
+  * MY_SETTINGS_SUPPORTED_TYPES(MySettings, DECLARE_SETTING_TRAIT)
+  *
+  * struct MySettings
   * {
+  *     MySettings();
+  *     ~MySettings();
+  *
+  *     MY_SETTINGS_SUPPORTED_TYPES(MySettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
+  * private:
+  *     std::unique_ptr<MySettingsImpl> impl;
   * };
   *
   * mysettings.cpp:
+  * #include <Core/BaseSettings.h>
+  * #include <Core/BaseSettingsFwdMacrosImpl.h>
+  *
+  * #define APPLY_FOR_MYSETTINGS(DECLARE, ALIAS) \
+  *     DECLARE(UInt64, a, 100, "Description of a", 0) \
+  *     DECLARE(Float, f, 3.11, "Description of f", IMPORTANT) // IMPORTANT - means the setting can't be ignored by older versions) \
+  *     DECLARE(String, s, "default", "Description of s", 0)
+  *
+  * DECLARE_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS)
   * IMPLEMENT_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS)
+  *
+  * struct MySettingsImpl : public BaseSettings<MySettingsTraits>
+  * {
+  * };
+  *
+  * #define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) MySettings##TYPE NAME = &MySettings##Impl ::NAME;
+  *
+  * namespace MySetting
+  * {
+  * APPLY_FOR_MYSETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
+  * }
+  * #undef INITIALIZE_SETTING_EXTERN
+  *
+  * MY_SETTINGS_SUPPORTED_TYPES(MySettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
   */
 template <class TTraits>
 class BaseSettings : public TTraits::Data
@@ -235,8 +270,7 @@ Field BaseSettings<TTraits>::get(std::string_view name) const
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getValue(*this, index);
-    else
-        return static_cast<Field>(getCustomSetting(name));
+    return static_cast<Field>(getCustomSetting(name));
 }
 
 template <typename TTraits>
@@ -257,8 +291,7 @@ String BaseSettings<TTraits>::getString(std::string_view name) const
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getValueString(*this, index);
-    else
-        return getCustomSetting(name).toString();
+    return getCustomSetting(name).toString();
 }
 
 template <typename TTraits>
@@ -381,10 +414,9 @@ const char * BaseSettings<TTraits>::getTypeName(std::string_view name) const
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getTypeName(index);
-    else if (tryGetCustomSetting(name))
+    if (tryGetCustomSetting(name))
         return "Custom";
-    else
-        BaseSettingsHelpers::throwSettingNotFound(name);
+    BaseSettingsHelpers::throwSettingNotFound(name);
 }
 
 template <typename TTraits>
@@ -394,10 +426,9 @@ const char * BaseSettings<TTraits>::getDescription(std::string_view name) const
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getDescription(index);
-    else if (tryGetCustomSetting(name))
+    if (tryGetCustomSetting(name))
         return "Custom";
-    else
-        BaseSettingsHelpers::throwSettingNotFound(name);
+    BaseSettingsHelpers::throwSettingNotFound(name);
 }
 
 template <typename TTraits>
