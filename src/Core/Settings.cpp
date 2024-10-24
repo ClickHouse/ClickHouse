@@ -2830,7 +2830,7 @@ Limit on size of multipart/form-data content. This setting cannot be parsed from
     DECLARE(Bool, calculate_text_stack_trace, true, R"(
 Calculate text stack trace in case of exceptions during query execution. This is the default. It requires symbol lookups that may slow down fuzzing tests when a huge amount of wrong queries are executed. In normal cases, you should not disable this option.
 )", 0) \
-    DECLARE(Bool, enable_job_stack_trace, false, R"(
+    DECLARE(Bool, enable_job_stack_trace, true, R"(
 Output stack trace of a job creator when job results in exception
 )", 0) \
     DECLARE(Bool, allow_ddl, true, R"(
