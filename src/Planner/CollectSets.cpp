@@ -32,15 +32,17 @@ namespace ErrorCodes
 namespace
 {
 
-class CollectSetsVisitor : public ConstInDepthQueryTreeVisitor<CollectSetsVisitor>
+class CollectSetsVisitor : public InDepthQueryTreeVisitorWithContext<CollectSetsVisitor>
 {
 public:
     explicit CollectSetsVisitor(PlannerContext & planner_context_)
-        : planner_context(planner_context_)
+        : InDepthQueryTreeVisitorWithContext<CollectSetsVisitor>(planner_context_.getQueryContext())
+        , planner_context(planner_context_)
     {}
 
-    void visitImpl(const QueryTreeNodePtr & node)
+    void enterImpl(const QueryTreeNodePtr & node)
     {
+        LOG_DEBUG(getLogger("CollectSets"), "Enter node: {}", node->dumpTree());
         if (const auto * constant_node = node->as<ConstantNode>())
             /// Collect sets from source expression as well.
             /// Most likely we will not build them, but those sets could be requested during analysis.
@@ -122,7 +124,7 @@ private:
 
 }
 
-void collectSets(const QueryTreeNodePtr & node, PlannerContext & planner_context)
+void collectSets(QueryTreeNodePtr node, PlannerContext & planner_context)
 {
     CollectSetsVisitor visitor(planner_context);
     visitor.visit(node);
