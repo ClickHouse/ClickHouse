@@ -1,7 +1,4 @@
 #!/usr/bin/expect -f
-# Tags: no-debug, no-tsan, no-msan, no-asan, no-ubsan, no-s3-storage, no-cpu-aarch64
-# ^ it can be slower than 60 seconds
-
 # This is the regression for the concurrent access in ProgressIndication,
 # so it is important to read enough rows here (10e6).
 #
@@ -27,12 +24,27 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
-spawn bash
-send "source $basedir/../shell_config.sh\r"
+# We use min_chunk_bytes_for_parallel_parsing and input_format_parallel_parsing
+# to form tiny blocks and make progress output more interactive.
+#
+# Using standard chunk sizes would require pushing much larger data amounts, which
+# would be too slow on sanitizer and debug builds, potentially causing timeouts.
+#
+# interactive_delay allows progress to be printed more frequently.
+# The sleep command in the bash loop ensures that interactive_delay will be reached.
+spawn bash -c "
+    source $basedir/../shell_config.sh; \
+    for i in {1..10}; do \
+        yes | head -n 10; \
+        sleep 0.1; \
+    done | \$CLICKHOUSE_LOCAL \
+            --progress \
+            --interactive_delay=100 \
+            --min_chunk_bytes_for_parallel_parsing=1 \
+            --input_format_parallel_parsing=1 \
+            --max_threads=1 \
+            --query \"insert into function null('foo String') format TSV\"
+"
 
-send "yes | head -n10000000 | \$CLICKHOUSE_LOCAL --progress --query \"insert into function null('foo String') format TSV\" >/dev/null\r"
 expect "Progress: "
-send "\3"
-
-send "exit\r"
 expect eof
