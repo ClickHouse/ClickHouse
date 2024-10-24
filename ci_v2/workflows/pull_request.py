@@ -23,6 +23,13 @@ fast_test_job = Job.Config(
     run_in_docker="clickhouse/fasttest",
 )
 
+job_build_amd_debug = Job.Config(
+    name=JobNames.BUILD_AMD_DEBUG,
+    runs_on=[RunnerLabels.BUILDER],
+    command="python3 ./ci_v2/jobs/build_clickhouse.py",
+    run_in_docker="clickhouse/fasttest",
+)
+
 workflow = Workflow.Config(
     name="PR",
     event=Workflow.Event.PULL_REQUEST,
@@ -30,6 +37,7 @@ workflow = Workflow.Config(
     jobs=[
         style_check_job,
         fast_test_job,
+        job_build_amd_debug,
     ],
     dockers=DOCKERS,
     secrets=SECRETS,

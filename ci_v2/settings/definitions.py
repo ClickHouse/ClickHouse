@@ -230,3 +230,4 @@ DOCKERS = [
 class JobNames:
     STYLE_CHECK = "Style Check"
     FAST_TEST = "Fast test"
+    BUILD_AMD_DEBUG = "Build amd64 debug"

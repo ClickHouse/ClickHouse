@@ -25,12 +25,14 @@
             display: flex;
             flex-direction: column;
             font-family: monospace, sans-serif;
+            --header-background-color: #f4f4f4;
         }
 
         body.night-theme {
             --background-color: #1F1F1C;
             --text-color: #fff;
             --tile-background: black;
+            --header-background-color: #1F1F1C;
         }
 
         #info-container {
@@ -50,10 +52,22 @@
             background-color: var(--tile-background);
             padding: 20px;
             box-sizing: border-box;
-            text-align: left;
             font-size: 18px;
+            margin: 0;
+        }
+
+        .key-value-pair {
+            display: flex;               /* Enable Flexbox for alignment */
+            justify-content: space-between; /* Distribute space between key and value */
+            margin-bottom: 20px;         /* Add space between each pair */
+        }
+
+        .json-key {
             font-weight: bold;
-            margin: 0; /* Remove margin */
+        }
+
+        .json-value {
+            font-weight: normal;
         }
 
         #status-container button {
@@ -203,7 +217,7 @@
         }
 
         th {
-            background-color: #f4f4f4;
+            background-color: var(--header-background-color);
         }
 
         .status-success {
@@ -239,23 +253,6 @@
         .status-other {
             color: grey;
             font-weight: bold;
-        }
-
-        .json-key {
-            font-weight: bold;
-            margin-top: 10px;
-        }
-
-        .json-value {
-            margin-left: 20px;
-        }
-
-        .json-value a {
-            color: #007bff;
-        }
-
-        .json-value a:hover {
-            text-decoration: underline;
         }
     </style>
 </head>
@@ -342,6 +339,9 @@
 
         const statusContainer = document.getElementById('status-container');
 
+        let keyValuePair = document.createElement('div');
+        keyValuePair.className = 'key-value-pair';
+
         const keyElement = document.createElement('div');
         keyElement.className = 'json-key';
         keyElement.textContent = key + ':';
@@ -350,8 +350,9 @@
         valueElement.className = 'json-value';
         valueElement.textContent = value;
 
-        statusContainer.appendChild(keyElement);
-        statusContainer.appendChild(valueElement);
+        keyValuePair.appendChild(keyElement)
+        keyValuePair.appendChild(valueElement)
+        statusContainer.appendChild(keyValuePair);
     }
 
     function addFileButtonToStatus(key, links) {
@@ -364,7 +365,7 @@
 
         const keyElement = document.createElement('div');
         keyElement.className = 'json-key';
-        keyElement.textContent = key + ':';
+        keyElement.textContent = columnSymbols[key] + ':' || key;
         statusContainer.appendChild(keyElement);
 
         if (Array.isArray(links) && links.length > 0) {
@@ -385,33 +386,41 @@
     }
 
     function addStatusToStatus(status, start_time, duration) {
-        const statusContainer = document.getElementById('status-container');
+        const statusContainer = document.getElementById('status-container')
 
+        let keyValuePair = document.createElement('div');
+        keyValuePair.className = 'key-value-pair';
         let keyElement = document.createElement('div');
         let valueElement = document.createElement('div');
         keyElement.className = 'json-key';
         valueElement.className = 'json-value';
-        keyElement.textContent = 'status:';
+        keyElement.textContent = columnSymbols['status'] + ':' || 'status:';
         valueElement.classList.add('status-value');
         valueElement.classList.add(getStatusClass(status));
         valueElement.textContent = status;
-        statusContainer.appendChild(keyElement);
-        statusContainer.appendChild(valueElement);
+        keyValuePair.appendChild(keyElement);
+        keyValuePair.appendChild(valueElement);
+        statusContainer.appendChild(keyValuePair);
 
+        keyValuePair = document.createElement('div');
+        keyValuePair.className = 'key-value-pair';
         keyElement = document.createElement('div');
         valueElement = document.createElement('div');
         keyElement.className = 'json-key';
         valueElement.className = 'json-value';
-        keyElement.textContent = 'start_time:';
+        keyElement.textContent = columnSymbols['start_time'] + ':' || 'start_time:';
         valueElement.textContent = formatTimestamp(start_time);
-        statusContainer.appendChild(keyElement);
-        statusContainer.appendChild(valueElement);
+        keyValuePair.appendChild(keyElement);
+        keyValuePair.appendChild(valueElement);
+        statusContainer.appendChild(keyValuePair);
 
+        keyValuePair = document.createElement('div');
+        keyValuePair.className = 'key-value-pair';
         keyElement = document.createElement('div');
         valueElement = document.createElement('div');
         keyElement.className = 'json-key';
         valueElement.className = 'json-value';
-        keyElement.textContent = 'duration:';
+        keyElement.textContent = columnSymbols['duration'] + ':' || 'duration:';
         if (duration === null) {
             // Set initial value to 0 and add a unique ID or data attribute to identify the duration element
             valueElement.textContent = '00:00:00';
@@ -420,8 +429,9 @@
             // Format the duration if it's a valid number
             valueElement.textContent = formatDuration(duration);
         }
-        statusContainer.appendChild(keyElement);
-        statusContainer.appendChild(valueElement);
+        keyValuePair.appendChild(keyElement);
+        keyValuePair.appendChild(valueElement);
+        statusContainer.appendChild(keyValuePair);
     }
 
     function navigatePath(jsonObj, nameArray) {
@@ -470,11 +480,12 @@
     const columns = ['name', 'status', 'start_time', 'duration', 'info'];
 
     const columnSymbols = {
-        name: '👤',
+        name: '📂',
         status: '✔️',
         start_time: '🕒',
         duration: '⏳',
-        info: '⚠️'
+        info: 'ℹ️',
+        files: '📄'
     };
 
     function createResultsTable(results, nest_level) {
@@ -626,6 +637,7 @@
                             footerRight.appendChild(a);
                         });
                     }
+
                     addStatusToStatus(targetData.status, targetData.start_time, targetData.duration)
 
                     // Handle links
