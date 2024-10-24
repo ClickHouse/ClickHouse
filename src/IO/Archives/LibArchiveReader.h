@@ -90,6 +90,11 @@ public:
         : LibArchiveReader("7z", /*lock_on_reading_=*/false, std::move(path_to_archive))
     {
     }
+
+    explicit SevenZipArchiveReader(std::string path_to_archive, const ReadArchiveFunction & archive_read_function)
+        : LibArchiveReader("7z", /*lock_on_reading_=*/false, std::move(path_to_archive), archive_read_function)
+    {
+    }
 };
 
 #endif
