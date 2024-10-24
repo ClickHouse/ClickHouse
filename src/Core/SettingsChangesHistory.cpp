@@ -587,6 +587,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.10",
         {
+            {"enforce_index_structure_match_on_partition_manipulation", true, false, "Add new setting to allow attach when source table's projections and secondary indices is a subset of those in the target table."}
         }
     },
     {"24.9",
