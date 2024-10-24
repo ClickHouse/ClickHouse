@@ -23,14 +23,14 @@ struct ObjectStorageQueueTableMetadata
     const String format_name;
     const String columns;
     const String mode;
-    const UInt64 buckets;
+    const UInt32 buckets;
     const String last_processed_path;
     /// Changeable settings.
     std::atomic<ObjectStorageQueueAction> after_processing;
-    std::atomic<UInt32> loading_retries;
-    std::atomic<UInt32> processing_threads_num;
-    std::atomic<UInt32> tracked_files_limit;
-    std::atomic<UInt32> tracked_files_ttl_sec;
+    std::atomic<UInt64> loading_retries;
+    std::atomic<UInt64> processing_threads_num;
+    std::atomic<UInt64> tracked_files_limit;
+    std::atomic<UInt64> tracked_files_ttl_sec;
 
     bool processing_threads_num_changed = false;
 

@@ -70,10 +70,6 @@ private:
 
     ObjectStorageType type;
     const std::string engine_name;
-
-    const std::unique_ptr<ObjectStorageQueueSettings> queue_settings;
-    std::mutex changeable_settings_mutex;
-
     const fs::path zk_path;
     const bool enable_logging_to_queue_log;
     const UInt32 polling_min_timeout_ms;

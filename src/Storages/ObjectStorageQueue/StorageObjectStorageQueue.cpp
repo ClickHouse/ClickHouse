@@ -55,12 +55,12 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt32 polling_min_timeout_ms;
     extern const ObjectStorageQueueSettingsUInt32 polling_max_timeout_ms;
     extern const ObjectStorageQueueSettingsUInt32 polling_backoff_ms;
-    extern const ObjectStorageQueueSettingsUInt32 processing_threads_num;
+    extern const ObjectStorageQueueSettingsUInt64 processing_threads_num;
     extern const ObjectStorageQueueSettingsUInt32 buckets;
-    extern const ObjectStorageQueueSettingsUInt32 tracked_file_ttl_sec;
-    extern const ObjectStorageQueueSettingsUInt32 tracked_files_limit;
+    extern const ObjectStorageQueueSettingsUInt64 tracked_file_ttl_sec;
+    extern const ObjectStorageQueueSettingsUInt64 tracked_files_limit;
     extern const ObjectStorageQueueSettingsString last_processed_path;
-    extern const ObjectStorageQueueSettingsUInt32 loading_retries;
+    extern const ObjectStorageQueueSettingsUInt64 loading_retries;
     extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
 }
 
@@ -356,10 +356,10 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
 {
     Pipes pipes;
 
-    size_t adjusted_num_stream = storage->getTableMetadata().processing_threads_num.load();
+    size_t processing_threads_num = storage->getTableMetadata().processing_threads_num;
 
     createIterator(nullptr);
-    for (size_t i = 0; i < adjusted_num_streams; ++i)
+    for (size_t i = 0; i < processing_threads_num; ++i)
         pipes.emplace_back(storage->createSource(
                                i/* processor_id */,
                                info,
@@ -490,12 +490,6 @@ bool StorageObjectStorageQueue::streamToViews()
 
     LOG_TEST(log, "Using {} processing threads", processing_threads_num);
 
-    size_t adjusted_num_streams;
-    {
-        std::lock_guard lock(changeable_settings_mutex);
-        adjusted_num_streams = queue_settings->processing_threads_num;
-    }
-
     while (!shutdown_called && !file_iterator->isFinished())
     {
         InterpreterInsertQuery interpreter(
@@ -515,10 +509,10 @@ bool StorageObjectStorageQueue::streamToViews()
         Pipes pipes;
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> sources;
 
-        pipes.reserve(adjusted_num_streams);
-        sources.reserve(adjusted_num_streams);
+        pipes.reserve(processing_threads_num);
+        sources.reserve(processing_threads_num);
 
-        for (size_t i = 0; i < adjusted_num_streams; ++i)
+        for (size_t i = 0; i < processing_threads_num; ++i)
         {
             auto source = createSource(
                 i/* processor_id */,
@@ -534,7 +528,7 @@ bool StorageObjectStorageQueue::streamToViews()
         auto pipe = Pipe::unitePipes(std::move(pipes));
 
         block_io.pipeline.complete(std::move(pipe));
-        block_io.pipeline.setNumThreads(adjusted_num_streams);
+        block_io.pipeline.setNumThreads(processing_threads_num);
         block_io.pipeline.setConcurrencyControl(queue_context->getSettingsRef()[Setting::use_concurrency_control]);
 
         std::atomic_size_t rows = 0;
@@ -570,13 +564,13 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "loading_retries",
     "after_processing",
     "tracked_files_limit",
-    "tracked_files_ttl_sec",
+    "tracked_file_ttl_sec",
     /// For compatibility.
     "s3queue_processing_threads_num",
     "s3queue_loading_retries",
     "s3queue_after_processing",
     "s3queue_tracked_files_limit",
-    "s3queue_tracked_files_ttl_sec",
+    "s3queue_tracked_file_ttl_sec",
 };
 
 static const std::unordered_set<std::string_view> changeable_settings_ordered_mode
@@ -600,7 +594,7 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
 {
     for (const auto & command : commands)
     {
-        if (command.type != AlterCommand::MODIFY_SETTING)
+        if (command.type != AlterCommand::MODIFY_SETTING && command.type != AlterCommand::RESET_SETTING)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only MODIFY SETTING alter is allowed for {}", getName());
     }
 
@@ -613,6 +607,7 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
 
     const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
     const auto & old_changes = old_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+    const auto mode = getTableMetadata().getMode();
     for (const auto & changed_setting : new_changes)
     {
         auto it = std::find_if(
@@ -623,12 +618,12 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
 
         if (setting_changed)
         {
-            if (!isSettingChangeable(changed_setting.name, queue_settings->mode))
+            if (!isSettingChangeable(changed_setting.name, mode))
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
                     "Changing setting {} is not allowed for {} mode of {}",
-                    changed_setting.name, magic_enum::enum_name(queue_settings->mode.value), getName());
+                    changed_setting.name, magic_enum::enum_name(mode), getName());
             }
         }
     }
@@ -648,9 +643,24 @@ void StorageObjectStorageQueue::alter(
 
         StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
         commands.apply(new_metadata, local_context);
-        const auto & new_settings = new_metadata.settings_changes->as<ASTSetQuery &>().changes;
+        auto new_settings = new_metadata.settings_changes->as<ASTSetQuery &>().changes;
+
+        ObjectStorageQueueSettings default_settings;
+        for (const auto & setting : old_settings)
+        {
+            auto it = std::find_if(
+                new_settings.begin(), new_settings.end(),
+                [&](const SettingChange & change) { return change.name == setting.name; });
+
+            if (it == new_settings.end())
+            {
+                /// Setting was reset.
+                new_settings.push_back(SettingChange(setting.name, default_settings.get(setting.name)));
+            }
+        }
 
         SettingsChanges changed_settings;
+        const auto mode = getTableMetadata().getMode();
         for (const auto & setting : new_settings)
         {
             auto it = std::find_if(
@@ -661,18 +671,23 @@ void StorageObjectStorageQueue::alter(
             if (!setting_changed)
                 continue;
 
-            if (!isSettingChangeable(setting.name, queue_settings->mode))
+            if (!isSettingChangeable(setting.name, mode))
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
                     "Changing setting {} is not allowed for {} mode of {}",
-                    setting.name, magic_enum::enum_name(queue_settings->mode.value), getName());
+                    setting.name, magic_enum::enum_name(mode), getName());
             }
 
             changed_settings.push_back(setting);
         }
 
         files_metadata->alterSettings(changed_settings);
+
+        StorageInMemoryMetadata metadata = getInMemoryMetadata();
+        metadata.setSettingsChanges(new_metadata.settings_changes);
+        setInMemoryMetadata(metadata);
+
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     }
 }
