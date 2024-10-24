@@ -1,11 +1,10 @@
-#include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Common/logger_useful.h>
+#include <IO/ReadHelpers.h>
+#include <Storages/ObjectStorage/DataLakes/Common.h>
+#include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
 #include <base/find_symbols.h>
 #include <Poco/String.h>
-#include "config.h"
-#include <IO/ReadHelpers.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
