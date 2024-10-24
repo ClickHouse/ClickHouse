@@ -1,6 +1,5 @@
 #include <base/getFQDNOrHostName.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -12,9 +11,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/PartLog.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/ProfileEventsExt.h>
-#include <Common/ProfileEvents.h>
 #include <DataTypes/DataTypeMap.h>
 
 #include <Common/CurrentThread.h>
