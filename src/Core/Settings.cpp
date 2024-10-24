@@ -2130,9 +2130,6 @@ If it is set to true, then a user is allowed to executed distributed DDL queries
     M(Bool, allow_suspicious_codecs, false, R"(
 If it is set to true, allow to specify meaningless compression codecs.
 )", 0) \
-    M(Bool, enable_deflate_qpl_codec, false, R"(
-Obsolete setting, does nothing.
-)", 0) \
     M(Bool, enable_zstd_qat_codec, false, R"(
 If turned on, the ZSTD_QAT codec may be used to compress columns.
 
@@ -5886,6 +5883,7 @@ Allow writing simple SELECT queries without the leading SELECT keyword, which ma
     MAKE_OBSOLETE(M, Bool, query_plan_optimize_primary_key, true) \
     MAKE_OBSOLETE(M, Bool, optimize_monotonous_functions_in_order_by, false) \
     MAKE_OBSOLETE(M, UInt64, http_max_chunk_size, 100_GiB) \
+    MAKE_OBSOLETE(M, Bool, enable_deflate_qpl_codec, false) \
 
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
