@@ -1,12 +1,11 @@
 import logging
-import pytest
 import os
+
+import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers
-
 from helpers.s3_tools import prepare_s3_bucket
-
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
