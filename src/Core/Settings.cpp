@@ -4,6 +4,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
+#include <Core/DistributedCacheProtocol.h>
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsChangesHistory.h>
