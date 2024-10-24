@@ -70,6 +70,7 @@ if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; th
     }
 
     remove_keeper_config "remove_recursive" "[[:digit:]]\+"
+    remove_keeper_config "use_xid_64" "[[:digit:]]\+"
 fi
 
 export IS_FLAKY_CHECK=0
