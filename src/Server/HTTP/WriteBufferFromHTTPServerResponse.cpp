@@ -285,8 +285,8 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
             LOG_DEBUG(
                 getLogger("WriteBufferFromHTTPServerResponse"),
                 "Write buffer has been canceled with an error."
-                "Proper HTTP error code and headers have been send to the client."
-                " HTTP code: {}, message: <{}>, error code: {}, message: <{}>."
+                " Proper HTTP error code and headers have been send to the client."
+                " HTTP code: {}, message: <{}>, error code: {}, message: <{}>,"
                 " use compression: {}, data has been send through buffers: {}, compression discarded data: {}, discarded data: {}",
             response.getStatus(), response.getReason(), exception_code_, message,
             use_compression_buffer,

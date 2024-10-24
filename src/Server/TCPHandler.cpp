@@ -142,7 +142,6 @@ namespace DB::ErrorCodes
     extern const int CLIENT_INFO_DOES_NOT_MATCH;
     extern const int LOGICAL_ERROR;
     extern const int NETWORK_ERROR;
-    extern const int QUERY_WAS_CANCELLED;
     extern const int SOCKET_TIMEOUT;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
@@ -152,6 +151,16 @@ namespace DB::ErrorCodes
     extern const int UNKNOWN_PROTOCOL;
     extern const int UNSUPPORTED_METHOD;
     extern const int USER_EXPIRED;
+
+    // We have to distinguish the case when query is killed by `KILL QUERY` statement
+    // and when it is killed by `Protocol::Client::Cancel` packet.
+
+    // When query is illed by `KILL QUERY` statement we have to end the execution
+    // and send the exception to the actual client which initiated the TCP connection.
+
+    // When query is killed by `Protocol::Client::Cancel` packet we just stop execution,
+    // there is no need to send the exception which has been caused by the cancel packet.
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
 namespace
@@ -453,7 +462,6 @@ void TCPHandler::runImpl()
          *  The client will be able to accept it, if it did not happen while sending another packet and the client has not disconnected yet.
          */
         std::unique_ptr<DB::Exception> exception;
-        bool close_connection = false;
 
         try
         {
@@ -687,78 +695,18 @@ void TCPHandler::runImpl()
 
             query_state->finalizeOut();
         }
-        catch (const NetException & e)
-        {
-            LOG_DEBUG(log, "XX NetException: {}", e.what());
-            exception.reset(e.clone());
-        }
         catch (const Exception & e)
         {
             LOG_DEBUG(log, "XX Exception: {}", e.what());
-            /// Authentication failure with interserver secret
-            /// - early exit without trying to send the exception to the client.
-            /// Because the server should not try to skip (parse, decompress) the remaining packets sent by the client,
-            /// as it will lead to additional work and unneeded exposure to unauthenticated connections.
-
-            /// Note that the exception AUTHENTICATION_FAILED can be here in two cases:
-            /// 1. The authentication in receiveHello is skipped with "interserver secret",
-            /// postponed to receiving the query, and then failed.
-            /// 2. Receiving exception from a query using a table function to authenticate with another server.
-            /// In this case, the user is already authenticated with this server,
-            /// is_interserver_mode is false, and we can send the exception to the client normally.
-
-
-            if (is_interserver_mode && e.code() == ErrorCodes::AUTHENTICATION_FAILED)
-            {
-                if (!query_state.has_value())
-                    return;
-                query_state->io.onException();
-                query_state->cancelOut();
-                return;
-            }
-
-            if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
-            {
-                LOG_DEBUG(log, "XX Exception UNKNOWN_PACKET_FROM_CLIENT: {}", e.what());
-
-                if (!query_state.has_value())
-                    return;
-                query_state->io.onException();
-                query_state->cancelOut();
-                return;
-            }
-
             exception.reset(e.clone());
-
-            /// If there is UNEXPECTED_PACKET_FROM_CLIENT emulate network_error
-            /// to break the loop, but do not throw to send the exception to
-            /// the client.
-            if (e.code() == ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT)
-                close_connection = true;
-
-            if (e.code() == ErrorCodes::USER_EXPIRED)
-                close_connection = true;
-
-            // if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
-            //     close_connection = true;
-        }
-        catch (const Poco::Net::NetException & e)
-        {
-            /** We can get here if there was an error during connection to the client,
-             *  or in connection with a remote server that was used to process the request.
-             *  It is not possible to distinguish between these two cases.
-             *  Although in one of them, we have to send exception to the client, but in the other - we can not.
-             *  We will try to send exception to the client in any case - see below.
-             */
-            exception = std::make_unique<DB::Exception>(Exception::CreateFromPocoTag{}, e);
         }
         catch (const Poco::Exception & e)
         {
+            LOG_DEBUG(log, "XX Poco Exception: {}", e.what());
             exception = std::make_unique<DB::Exception>(Exception::CreateFromPocoTag{}, e);
         }
 // Server should die on std logic errors in debug, like with assert()
-// or ErrorCodes::LOGICAL_ERROR. This helps catch these errors in
-// tests.
+// or ErrorCodes::LOGICAL_ERROR. This helps catch these errors in tests.
 #ifdef DEBUG_OR_SANITIZER_BUILD
         catch (const std::logic_error & e)
         {
@@ -782,16 +730,17 @@ void TCPHandler::runImpl()
 
         if (exception)
         {
-            bool log_as_error = exception->code() != ErrorCodes::QUERY_WAS_CANCELLED;
+            auto exception_code = exception->code();
 
             if (!query_state.has_value())
             {
                 LOG_DEBUG(log, "we do not have an query state");
 
-                if (log_as_error)
+                if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
                     LOG_INFO(log, getExceptionMessageAndPattern(*exception, send_exception_with_stack_trace));
                 else
                     LOG_ERROR(log, getExceptionMessageAndPattern(*exception, send_exception_with_stack_trace));
+
                 return;
             }
 
@@ -802,19 +751,42 @@ void TCPHandler::runImpl()
             catch (...)
             {
                 LOG_DEBUG(log, "query_state->io.onException()");
-                query_state->io.onException(log_as_error);
+                query_state->io.onException(exception_code != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT);
+            }
+
+             /// Authentication failure with interserver secret
+            /// - early exit without trying to send the exception to the client.
+            /// Because the server should not try to skip (parse, decompress) the remaining packets sent by the client,
+            /// as it will lead to additional work and unneeded exposure to unauthenticated connections.
+
+            /// Note that the exception AUTHENTICATION_FAILED can be here in two cases:
+            /// 1. The authentication in receiveHello is skipped with "interserver secret",
+            /// postponed to receiving the query, and then failed.
+            /// 2. Receiving exception from a query using a table function to authenticate with another server.
+            /// In this case, the user is already authenticated with this server,
+            /// is_interserver_mode is false, and we can send the exception to the client normally.
+
+            if (is_interserver_mode
+                && !is_interserver_authenticated)
+            {
+                /// Interserver authentication is done only after we read the query.
+                /// This fact can be abused by producing exception before or while we read the query.
+                /// To avoid any potential exploits, we simply close connection on any exceptions
+                /// that happen before the first query is authenticated with the cluster secret.
+                LOG_DEBUG(log, "is_interserver_mode && !is_interserver_authenticated");
+                query_state->cancelOut();
+                return;
+            }
+
+            if (exception_code == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
+            {
+                LOG_DEBUG(log, "XX Exception UNKNOWN_PACKET_FROM_CLIENT");
+                query_state->cancelOut();
+                return;
             }
 
             if (thread_trace_context)
                     thread_trace_context->root_span.addAttribute(*exception);
-
-            LOG_DEBUG(log, "is_interserver_mode && !is_interserver_authenticated: {}", is_interserver_mode && !is_interserver_authenticated);
-            /// Interserver authentication is done only after we read the query.
-            /// This fact can be abused by producing exception before or while we read the query.
-            /// To avoid any potential exploits, we simply close connection on any exceptions
-            /// that happen before the first query is authenticated with the cluster secret.
-            if (is_interserver_mode && !is_interserver_authenticated)
-                return;
 
             try
             {
@@ -830,15 +802,15 @@ void TCPHandler::runImpl()
                 if (!query_state->read_all_data)
                     skipData(query_state.value());
 
-                if (log_as_error)
-                {
-                    LOG_DEBUG(log, "try send exception");
-                    sendException(*exception, send_exception_with_stack_trace);
-                }
-                else
+                if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
                 {
                     LOG_DEBUG(log, "try send EndOfStream");
                     sendEndOfStream(query_state.value());
+                }
+                else
+                {
+                    LOG_DEBUG(log, "try send exception");
+                    sendException(*exception, send_exception_with_stack_trace);
                 }
 
                 LOG_DEBUG(log, "Logs and exception has been sent");
@@ -851,7 +823,8 @@ void TCPHandler::runImpl()
                 return;
             }
 
-            if (close_connection)
+            if (exception->code() == ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT
+                || exception->code() == ErrorCodes::USER_EXPIRED)
             {
                 LOG_DEBUG(log, "Going to close connection due to exception: {}", exception->message());
                 query_state->finalizeOut();
@@ -2361,11 +2334,11 @@ void TCPHandler::processCancel(QueryState & state)
     {
         state.stop_read_return_partial_result = true;
         LOG_INFO(log, "Received 'Cancel' packet from the client, returning partial result.");
-        return;
+            return;
     }
 
     state.read_all_data = true;
-    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Received 'Cancel' packet from the client, canceling the query.");
+    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.");
 }
 
 
