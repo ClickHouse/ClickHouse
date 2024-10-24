@@ -62,7 +62,7 @@ struct CountSubstringsImpl
         while (pos < end && end != (pos = searcher.search(pos, end - pos)))
         {
             /// Determine which index it refers to.
-            while (i + 1 < input_rows_count && begin + haystack_offsets[i] <= pos)
+            while (i < input_rows_count - 1 && begin + haystack_offsets[i] <= pos)
                 ++i;
 
             auto start = start_pos != nullptr ? start_pos->getUInt(i) : 0;
@@ -80,12 +80,10 @@ struct CountSubstringsImpl
                 continue;
             }
             pos = begin + haystack_offsets[i];
-            if (i + 1 < input_rows_count)
-                ++i;
-            else
-                break; // Handle the end of the haystacks
 
-            chassert(i < input_rows_count);
+            ++i;
+            if (i >= input_rows_count)
+                break; // Handle the end of the haystacks
         }
     }
 
