@@ -195,6 +195,7 @@ public:
     virtual ~IObjectStorage() = default;
 
     virtual const std::string & getCacheName() const;
+    virtual const std::string & getLayerName() const { return getCacheName(); }
 
     static ThreadPool & getThreadPoolWriter();
 
@@ -242,6 +243,7 @@ public:
     virtual void removeCacheIfExists(const std::string & /* path */) {}
 
     virtual bool supportsCache() const { return false; }
+    virtual bool supportsOverlays() const { return false || supportsCache(); }
 
     virtual bool isReadOnly() const { return false; }
     virtual bool isWriteOnce() const { return false; }
@@ -262,6 +264,14 @@ public:
     }
 #endif
 
+    virtual ObjectStoragePtr getWrappedObjectStorage()
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method `getWrappedObjectStorage()` is not implemented for storage {}",
+            getName());
+    }
+
 #if USE_AWS_S3
     virtual std::shared_ptr<const S3::Client> getS3StorageClient()
     {
@@ -269,7 +279,6 @@ public:
     }
     virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() { return nullptr; }
 #endif
-
 
 private:
     mutable std::mutex throttlers_mutex;

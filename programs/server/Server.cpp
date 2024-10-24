@@ -68,6 +68,7 @@
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/registerInterpreters.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Access/AccessControl.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -1612,6 +1613,8 @@ try
 #endif
 
     NamedCollectionFactory::instance().loadIfNot();
+
+    FileCacheFactory::instance().loadDefaultCaches(config());
 
     FileCacheFactory::instance().loadDefaultCaches(config());
 

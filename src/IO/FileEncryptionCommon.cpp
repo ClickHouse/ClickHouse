@@ -5,11 +5,14 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <Common/MemorySanitizer.h>
 #include <Common/SipHash.h>
+#include <Common/quoteString.h>
 #include <Common/safe_cast.h>
 
 #    include <cassert>
+#    include <boost/algorithm/hex.hpp>
 #    include <boost/algorithm/string/predicate.hpp>
 
 #    include <openssl/err.h>
@@ -466,6 +469,158 @@ UInt128 calculateV1KeyFingerprint(const String & key, UInt64 key_id)
     return calculateV1KeyFingerprint(small_key_hash, key_id);
 }
 
+constexpr Algorithm DEFAULT_ENCRYPTION_ALGORITHM = Algorithm::AES_128_CTR;
+
+static String unhexKey(const String & hex)
+{
+    try
+    {
+        return boost::algorithm::unhex(hex);
+    }
+    catch (const std::exception &)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read key_hex, check for valid characters [0-9a-fA-F] and length");
+    }
+}
+
+/// Reads encryption keys from the configuration.
+void getKeysFromConfig(
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix,
+    std::map<UInt64, String> & out_keys_by_id,
+    Strings & out_keys_without_id)
+{
+    Strings config_keys;
+    config.keys(config_prefix, config_keys);
+
+    for (const std::string & config_key : config_keys)
+    {
+        String key;
+        std::optional<UInt64> key_id;
+
+        if ((config_key == "key") || config_key.starts_with("key["))
+        {
+            String key_path = config_prefix + "." + config_key;
+            key = config.getString(key_path);
+            String key_id_path = key_path + "[@id]";
+            if (config.has(key_id_path))
+                key_id = config.getUInt64(key_id_path);
+        }
+        else if ((config_key == "key_hex") || config_key.starts_with("key_hex["))
+        {
+            String key_path = config_prefix + "." + config_key;
+            key = unhexKey(config.getString(key_path));
+            String key_id_path = key_path + "[@id]";
+            if (config.has(key_id_path))
+                key_id = config.getUInt64(key_id_path);
+        }
+        else
+            continue;
+
+        if (key_id)
+        {
+            if (!out_keys_by_id.contains(*key_id))
+                out_keys_by_id[*key_id] = key;
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple keys specified for same ID {}", *key_id);
+        }
+        else
+            out_keys_without_id.push_back(key);
+    }
+
+    if (out_keys_by_id.empty() && out_keys_without_id.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No encryption keys found");
+
+    if (out_keys_by_id.empty() && (out_keys_without_id.size() == 1))
+    {
+        out_keys_by_id[0] = out_keys_without_id.front();
+        out_keys_without_id.clear();
+    }
+}
+
+/// Reads the current encryption key from the configuration.
+String getCurrentKeyFromConfig(
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix,
+    const std::map<UInt64, String> & keys_by_id,
+    const Strings & keys_without_id)
+{
+    String key_path = config_prefix + ".current_key";
+    String key_hex_path = config_prefix + ".current_key_hex";
+    String key_id_path = config_prefix + ".current_key_id";
+
+    if (config.has(key_path) + config.has(key_hex_path) + config.has(key_id_path) > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The current key is specified multiple times");
+
+    auto check_current_key_found = [&](const String & current_key_)
+    {
+        for (const auto & [_, key] : keys_by_id)
+        {
+            if (key == current_key_)
+                return;
+        }
+        for (const auto & key : keys_without_id)
+        {
+            if (key == current_key_)
+                return;
+        }
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The current key is not found in keys");
+    };
+
+    if (config.has(key_path))
+    {
+        String current_key = config.getString(key_path);
+        check_current_key_found(current_key);
+        return current_key;
+    }
+    else if (config.has(key_hex_path))
+    {
+        String current_key = unhexKey(config.getString(key_hex_path));
+        check_current_key_found(current_key);
+        return current_key;
+    }
+    else if (config.has(key_id_path))
+    {
+        UInt64 current_key_id = config.getUInt64(key_id_path);
+        auto it = keys_by_id.find(current_key_id);
+        if (it == keys_by_id.end())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found a key with the current ID {}", current_key_id);
+        return it->second;
+    }
+    else if (keys_by_id.size() == 1 && keys_without_id.empty() && keys_by_id.begin()->first == 0)
+    {
+        /// There is only a single key defined with id=0, so we can choose it as current.
+        return keys_by_id.begin()->second;
+    }
+    else
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The current key is not specified");
+    }
+}
+
+/// Reads the current encryption algorithm from the configuration.
+Algorithm getCurrentAlgorithmFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+{
+    String path = config_prefix + ".algorithm";
+    if (!config.has(path))
+        return DEFAULT_ENCRYPTION_ALGORITHM;
+    return parseAlgorithmFromString(config.getString(path));
+}
+
+Header readHeader(ReadBufferFromFileBase & read_buffer)
+{
+    try
+    {
+        FileEncryption::Header header;
+        header.read(read_buffer);
+        return header;
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("While reading the header of encrypted file " + quoteString(read_buffer.getFileName()));
+        throw;
+    }
+}
 }
 }
 

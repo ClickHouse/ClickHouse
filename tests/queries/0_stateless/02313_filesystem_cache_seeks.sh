@@ -7,12 +7,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-
 client_opts=(
   --distributed_ddl_output_mode  'null_status_on_timeout'
 )
 
-for STORAGE_POLICY in 's3_cache' 'local_cache' 's3_cache_multi' 'azure_cache'; do
+for STORAGE_POLICY in 's3_cache' 'local_cache' 's3_cache_multi' 'azure_cache' 'encrypted_cached' 's3_encrypted_cached'; do
     echo "Using storage policy: $STORAGE_POLICY"
     $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE"
 
