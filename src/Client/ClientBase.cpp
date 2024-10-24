@@ -108,6 +108,7 @@ namespace Setting
     extern const SettingsUInt64 output_format_pretty_max_value_width;
     extern const SettingsBool partial_result_on_first_cancel;
     extern const SettingsBool throw_if_no_data_to_insert;
+    extern const SettingsBool implicit_select;
 }
 
 namespace ErrorCodes
@@ -321,7 +322,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     else if (dialect == Dialect::prql)
         parser = std::make_unique<ParserPRQLQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     else
-        parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert]);
+        parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
 
     if (is_interactive || ignore_error)
     {
@@ -1784,6 +1785,9 @@ try
 {
     QueryPipeline pipeline(std::move(pipe));
     PullingAsyncPipelineExecutor executor(pipeline);
+
+    /// Concurrency control in client is not required
+    pipeline.setConcurrencyControl(false);
 
     if (need_render_progress)
     {

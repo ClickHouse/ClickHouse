@@ -121,6 +121,14 @@ However, you can delete old data using `ALTER TABLE ... DROP PARTITION`.
 
 To insert a default value instead of `NULL` into a column with not nullable data type, enable [insert_null_as_default](../../operations/settings/settings.md#insert_null_as_default) setting.
 
+`INSERT` also supports CTE(common table expression). For example, the following two statements are equivalent:
+
+``` sql
+INSERT INTO x WITH y AS (SELECT * FROM numbers(10)) SELECT * FROM y;
+WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
+```
+
+
 ## Inserting Data from a File
 
 **Syntax**
