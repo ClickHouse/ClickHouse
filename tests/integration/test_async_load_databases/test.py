@@ -213,7 +213,9 @@ def test_async_load_system_database(started_cluster):
 
             assert (
                 int(
-                    node2.query(f"select count() from system.asynchronous_loader where job ilike '%_log_%_test' and execution_pool = 'BackgroundLoad'")
+                    node2.query(
+                        f"select count() from system.asynchronous_loader where job ilike '%_log_%_test' and execution_pool = 'BackgroundLoad'"
+                    )
                 )
                 > 0
             )
