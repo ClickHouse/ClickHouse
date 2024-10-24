@@ -4449,7 +4449,7 @@ Optimize GROUP BY when all keys in block are constant
     M(Bool, legacy_column_name_of_tuple_literal, false, R"(
 List all names of element of large tuple literals in their column names instead of hash. This settings exists only for compatibility reasons. It makes sense to set to 'true', while doing rolling update of cluster from version lower than 21.7 to higher.
 )", 0) \
-    M(Bool, enable_named_columns_in_function_tuple, false, R"(
+    M(Bool, enable_named_columns_in_function_tuple, true, R"(
 Generate named tuples in function tuple() when all names are unique and can be treated as unquoted identifiers.
 Beware that this setting might currently result in broken queries. It's not recommended to use in production
 )", 0) \
@@ -4740,15 +4740,15 @@ Should use prefetching when reading data from remote filesystem.
     M(Int64, read_priority, 0, R"(
 Priority to read data from local filesystem or remote filesystem. Only supported for 'pread_threadpool' method for local filesystem and for `threadpool` method for remote filesystem.
 )", 0) \
-    M(UInt64, merge_tree_min_rows_for_concurrent_read_for_remote_filesystem, (20 * 8192), R"(
-The minimum number of lines to read from one file before the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) engine can parallelize reading, when reading from remote filesystem.
+    M(UInt64, merge_tree_min_rows_for_concurrent_read_for_remote_filesystem, 0, R"(
+The minimum number of lines to read from one file before the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) engine can parallelize reading, when reading from remote filesystem. We do not recommend using this setting.
 
 Possible values:
 
 - Positive integer.
 )", 0) \
-    M(UInt64, merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem, (24 * 10 * 1024 * 1024), R"(
-The minimum number of bytes to read from one file before [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) engine can parallelize reading, when reading from remote filesystem.
+    M(UInt64, merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem, 0, R"(
+The minimum number of bytes to read from one file before [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) engine can parallelize reading, when reading from remote filesystem. We do not recommend using this setting.
 
 Possible values:
 
@@ -4765,6 +4765,9 @@ Whether to use constant size tasks for reading from a remote table.
 )", 0) \
     M(Bool, merge_tree_determine_task_size_by_prewhere_columns, true, R"(
 Whether to use only prewhere columns size to determine reading task size.
+)", 0) \
+    M(UInt64, merge_tree_min_read_task_size, 8, R"(
+Hard lower limit on the task size (even when the number of granules is low and the number of available threads is high we won't allocate smaller tasks
 )", 0) \
     M(UInt64, merge_tree_compact_parts_min_granules_to_multibuffer_read, 16, R"(
 Only available in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request.
