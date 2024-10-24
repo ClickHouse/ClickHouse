@@ -157,7 +157,11 @@ struct AuthSettings : public BaseSettings<AuthSettingsTraits>
     void updateIfChanged(const AuthSettings & settings);
     bool canBeUsedByUser(const String & user) const { return users.empty() || users.contains(user); }
 
+    HTTPHeaderEntries getHeaders() const;
+
     HTTPHeaderEntries headers;
+    HTTPHeaderEntries access_headers;
+
     std::unordered_set<std::string> users;
     ServerSideEncryptionKMSConfig server_side_encryption_kms_config;
     /// Note: if you add any field, do not forget to update operator ==.
@@ -199,7 +203,7 @@ private:
     void normalizeSettings();
 };
 
-HTTPHeaderEntries getHTTPHeaders(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config);
+HTTPHeaderEntries getHTTPHeaders(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config, std::string header_key = "header");
 
 ServerSideEncryptionKMSConfig getSSEKMSConfig(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config);
 
