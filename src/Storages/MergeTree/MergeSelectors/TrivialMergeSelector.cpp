@@ -58,7 +58,7 @@ TrivialMergeSelector::PartsRange TrivialMergeSelector::select(
 
             if (!max_total_size_to_merge || total_size <= max_total_size_to_merge)
             {
-                candidates.emplace_back(&partition[left], &partition[right]);
+                candidates.emplace_back(partition.data() + left, partition.data() + right);
                 if (candidates.size() == settings.num_ranges_to_choose)
                     break;
             }
