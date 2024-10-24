@@ -18,7 +18,6 @@
 #include <Common/KnownObjectNames.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
-#include <Core/FormatFactorySettingsDeclaration.h>
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 
