@@ -15,7 +15,7 @@
 LC_ALL="en_US.UTF-8"
 ROOT_PATH=$(git rev-parse --show-toplevel)
 EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*.cpp|utils/keeper-bench/example.yaml'
-EXCLUDE_DOCS='Settings\.cpp|FormatFactorySettingsDeclaration\.h'
+EXCLUDE_DOCS='Settings\.cpp|FormatFactorySettings\.h'
 
 # From [1]:
 #     But since array_to_string_internal() in array.c still loops over array
