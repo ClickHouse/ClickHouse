@@ -1,6 +1,6 @@
 1	Mundo
 2	Estados Unidos
-3	colorados
+3	Colorado
 4	Boulder County
 5	Boulder
 6	China
