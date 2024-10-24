@@ -1830,7 +1830,7 @@ message ColumnList {
 }
 
 message LambdaExpr {
-  required ColumnList args = 1;
+  repeated Column args = 1;
   required Expr expr = 2;
 }
 

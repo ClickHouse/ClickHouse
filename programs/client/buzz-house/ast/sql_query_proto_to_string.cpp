@@ -1030,7 +1030,12 @@ CONV_FN(ColumnList, cols) {
 
 CONV_FN(LambdaExpr, lambda) {
   ret += "(";
-  ColumnListToString(ret, lambda.args());
+  for (int i = 0 ; i < lambda.args_size(); i++) {
+    if (i != 0) {
+      ret += ", ";
+    }
+    ColumnToString(ret, true, lambda.args(i));
+  }
   ret += ") -> ";
   ExprToString(ret, lambda.expr());
 }

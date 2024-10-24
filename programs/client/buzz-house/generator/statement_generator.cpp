@@ -66,7 +66,7 @@ int StatementGenerator::GenerateNextCreateFunction(RandomGenerator &rg, sql_quer
 	const uint32_t fname = this->function_counter++;
 
 	next.fname = fname;
-	next.nargs = std::min(this->max_width - this->width, (rg.NextSmallNumber() % (rg.NextBool() ? 4 : 10)) + 1);
+	next.nargs = std::min(this->max_width - this->width, (rg.NextMediumNumber() % (rg.NextBool() ? 4 : 10)));
 	next.not_deterministic = rg.NextBool();
 	SetAllowNotDetermistic(next.not_deterministic); //if this function is later called by an oracle, then don't call it
 	GenerateLambdaCall(rg, next.nargs, cf->mutable_lexpr());

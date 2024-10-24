@@ -398,7 +398,6 @@ int StatementGenerator::GeneratePredicate(RandomGenerator &rg, sql_query_grammar
 
 int StatementGenerator::GenerateLambdaCall(RandomGenerator &rg, const uint32_t nparams, sql_query_grammar::LambdaExpr *lexpr) {
 	SQLRelation rel("");
-	sql_query_grammar::ColumnList *cl = lexpr->mutable_args();
 	std::map<uint32_t, QueryLevel> levels_backup;
 	const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate,
 			   prev_allow_aggregates = this->levels[this->current_level].allow_aggregates,
@@ -412,11 +411,9 @@ int StatementGenerator::GenerateLambdaCall(RandomGenerator &rg, const uint32_t n
 	this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = true;
 
 	for (uint32_t i = 0 ; i < nparams ; i++) {
-		sql_query_grammar::Column *col = i == 0 ? cl->mutable_col() : cl->add_other_cols();
-
 		buf.resize(0);
 		buf += ('x' + i);
-		col->set_column(buf);
+		lexpr->add_args()->set_column(buf);
 		rel.cols.push_back(SQLRelationCol("", buf, std::nullopt));
 	}
 	this->levels[this->current_level].rels.push_back(std::move(rel));
