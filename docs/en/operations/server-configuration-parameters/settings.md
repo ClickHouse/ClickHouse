@@ -1975,6 +1975,22 @@ The default is `false`.
 <async_load_databases>true</async_load_databases>
 ```
 
+## async_load_system_database {#async_load_system_database}
+
+Asynchronous loading of system tables. Helpful if there is high amount of log tables and parts in system database. Independent of `async_load_databases` setting.
+
+If `true` all system databases with `Ordinary`, `Atomic` and `Replicated` engine will be loaded asynchronously after the ClickHouse server start up. See `system.asynchronous_loader` table, `tables_loader_background_pool_size` and `tables_loader_foreground_pool_size` server settings. Any query that tries to access a system table, that is not yet loaded, will wait for exactly this table to be started up. The table that is waited for by at least one query will be loaded with higher priority. Also consider setting a limit `max_waiting_queries` for the total number of waiting queries.
+
+If `false`, system database loads before server start.
+
+The default is `false`.
+
+**Example**
+
+``` xml
+<async_load_system_database>true</async_load_system_database>
+```
+
 ## tables_loader_foreground_pool_size {#tables_loader_foreground_pool_size}
 
 Sets the number of threads performing load jobs in foreground pool. The foreground pool is used for loading table synchronously before server start listening on a port and for loading tables that are waited for. Foreground pool has higher priority than background pool. It means that no job starts in background pool while there are jobs running in foreground pool.
@@ -3109,7 +3125,7 @@ By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests ove
 
 ### no_proxy
 By default, all requests will go through the proxy. In order to disable it for specific hosts, the `no_proxy` variable must be set.
-It can be set inside the `<proxy>` clause for list and remote resolvers and as an environment variable for environment resolver. 
+It can be set inside the `<proxy>` clause for list and remote resolvers and as an environment variable for environment resolver.
 It supports IP addresses, domains, subdomains and `'*'` wildcard for full bypass. Leading dots are stripped just like curl does.
 
 Example:
