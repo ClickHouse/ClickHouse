@@ -91,7 +91,7 @@ int QueryOracle::GenerateCorrectnessTestSecondQuery(sql_query_grammar::SQLQuery 
 /*
 Dump and read table oracle
 */
-int QueryOracle::DumpTableContent(RandomGenerator &rg, const SQLTable &t, const StatementGenerator &gen, sql_query_grammar::SQLQuery &sq1) {
+int QueryOracle::DumpTableContent(RandomGenerator &rg, const SQLTable &t, sql_query_grammar::SQLQuery &sq1) {
 	bool first = true;
 	const std::filesystem::path &qfile = fc.db_file_path / "query.data";
 	sql_query_grammar::TopSelect *ts = sq1.mutable_inner_query()->mutable_select();
@@ -115,9 +115,6 @@ int QueryOracle::DumpTableContent(RandomGenerator &rg, const SQLTable &t, const 
 			if (rg.NextBool()) {
 				eot->set_asc_desc(rg.NextBool() ? sql_query_grammar::ExprOrderingTerm_AscDesc::ExprOrderingTerm_AscDesc_ASC :
 												  sql_query_grammar::ExprOrderingTerm_AscDesc::ExprOrderingTerm_AscDesc_DESC);
-			}
-			if (!gen.collations.empty() && HasType<StringType>(entry.second.tp) && rg.NextSmallNumber() < 3) {
-				eot->set_collation(rg.PickRandomlyFromVector(gen.collations));
 			}
 			first = false;
 		}
@@ -269,10 +266,12 @@ Run query with different settings oracle
 static const std::vector<TestSetting> test_settings{
 	TestSetting("aggregate_functions_null_for_empty", {"0", "1"}),
 	TestSetting("aggregation_in_order_max_block_bytes", {"0", "1"}),
+	TestSetting("allow_reorder_prewhere_conditions", {"0", "1"}),
 	TestSetting("any_join_distinct_right_table_keys", {"0", "1"}),
 	TestSetting("async_insert", {"0", "1"}),
 	TestSetting("check_query_single_value_result", {"0", "1"}),
 	TestSetting("compile_aggregate_expressions", {"0", "1"}),
+	TestSetting("compile_expressions", {"0", "1"}),
 	TestSetting("compile_sort_description", {"0", "1"}),
 	TestSetting("cross_join_min_bytes_to_compress", {"0", "1"}),
 	TestSetting("cross_join_min_rows_to_compress", {"0", "1"}),
@@ -285,6 +284,7 @@ static const std::vector<TestSetting> test_settings{
 	TestSetting("enable_named_columns_in_function_tuple", {"0", "1"}),
 	TestSetting("enable_optimize_predicate_expression", {"0", "1"}),
 	TestSetting("enable_optimize_predicate_expression_to_final_subquery", {"0", "1"}),
+	TestSetting("enable_parsing_to_custom_serialization", {"0", "1"}),
 	TestSetting("enable_scalar_subquery_optimization", {"0", "1"}),
 	TestSetting("enable_sharing_sets_for_mutations", {"0", "1"}),
 	TestSetting("enable_software_prefetch_in_aggregation", {"0", "1"}),
@@ -316,6 +316,8 @@ static const std::vector<TestSetting> test_settings{
 	TestSetting("max_threads", {"1", std::to_string(std::thread::hardware_concurrency())}),
 	TestSetting("min_chunk_bytes_for_parallel_parsing", {"0", "1"}),
 	TestSetting("min_external_table_block_size_bytes", {"0", "100000000"}),
+	TestSetting("move_all_conditions_to_prewhere", {"0", "1"}),
+	TestSetting("move_primary_key_columns_to_end_of_prewhere", {"0", "1"}),
 	TestSetting("optimize_aggregation_in_order", {"0", "1"}),
 	TestSetting("optimize_aggregators_of_group_by_keys", {"0", "1"}),
 	TestSetting("optimize_append_index", {"0", "1"}),
@@ -329,6 +331,7 @@ static const std::vector<TestSetting> test_settings{
 	TestSetting("optimize_if_transform_strings_to_enum", {"0", "1"}),
 	TestSetting("optimize_injective_functions_in_group_by", {"0", "1"}),
 	TestSetting("optimize_injective_functions_inside_uniq", {"0", "1"}),
+	TestSetting("optimize_move_to_prewhere", {"0", "1"}),
 	TestSetting("optimize_move_to_prewhere_if_final", {"0", "1"}),
 	TestSetting("optimize_multiif_to_if", {"0", "1"}),
 	TestSetting("optimize_normalize_count_variants", {"0", "1"}),
@@ -373,6 +376,7 @@ static const std::vector<TestSetting> test_settings{
 	TestSetting("transform_null_in", {"0", "1"}),
 	TestSetting("ttl_only_drop_parts", {"0", "1"}),
 	TestSetting("update_insert_deduplication_token_in_dependent_materialized_views", {"0", "1"}),
+	TestSetting("use_index_for_in_with_subqueries", {"0", "1"}),
 	TestSetting("use_page_cache_for_disks_without_file_cache", {"0", "1"}),
 	TestSetting("use_skip_indexes", {"0", "1"}),
 	TestSetting("use_uncompressed_cache", {"0", "1"}),
