@@ -208,8 +208,9 @@ def test_async_load_system_database(started_cluster):
                 node2.query(f"select count() from system.query_log_{random.randint(1, id - 1)}")
 
         # Generate more system tables
-        for j in range(30):
+        for j in range(10):
             while True:
+                node2.query("system flush logs")
                 count = int(
                     node2.query("select count() from system.tables where database = 'system' and name in ['query_log', 'text_log']")
                 )

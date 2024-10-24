@@ -171,6 +171,7 @@ namespace ServerSetting
     extern const ServerSettingsBool async_insert_queue_flush_on_shutdown;
     extern const ServerSettingsUInt64 async_insert_threads;
     extern const ServerSettingsBool async_load_databases;
+    extern const ServerSettingsBool async_load_system_database;
     extern const ServerSettingsUInt64 background_buffer_flush_schedule_pool_size;
     extern const ServerSettingsUInt64 background_common_pool_size;
     extern const ServerSettingsUInt64 background_distributed_schedule_pool_size;
@@ -2223,7 +2224,7 @@ try
         auto & database_catalog = DatabaseCatalog::instance();
         /// We load temporary database first, because projections need it.
         database_catalog.initializeAndLoadTemporaryDatabase();
-        load_system_metadata_tasks = loadMetadataSystem(global_context, server_settings.async_load_system_database);
+        load_system_metadata_tasks = loadMetadataSystem(global_context, server_settings[ServerSetting::async_load_system_database]);
         maybeConvertSystemDatabase(global_context, load_system_metadata_tasks);
 
         /// Startup scripts can depend on the system log tables.
