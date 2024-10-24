@@ -73,3 +73,29 @@ def test_http_readiness_partitioned_cluster(started_cluster):
         assert readiness_data["status"] == "fail"
         assert readiness_data["details"]["role"] == "follower"
         assert readiness_data["details"]["hasLeader"] == False
+
+
+def test_http_commands_basic_responses(started_cluster):
+    leader = keeper_utils.get_leader(cluster, [node1, node2, node3])
+    response = requests.get(
+        "http://{host}:{port}/api/v1/commands/conf".format(
+            host=leader.ip_address, port=9182
+        )
+    )
+    assert response.status_code == 200
+
+    command_data = response.json()
+    assert command_data["result"] == keeper_utils.send_4lw_cmd(cluster, leader, "conf")
+
+    follower = keeper_utils.get_any_follower(cluster, [node1, node2, node3])
+    response = requests.get(
+        "http://{host}:{port}/api/v1/commands/conf".format(
+            host=follower.ip_address, port=9182
+        )
+    )
+    assert response.status_code == 200
+
+    command_data = response.json()
+    assert command_data["result"] == keeper_utils.send_4lw_cmd(
+        cluster, follower, "conf"
+    )
