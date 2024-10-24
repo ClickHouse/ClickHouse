@@ -7,7 +7,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/SettingsChanges.h>
@@ -18,6 +17,7 @@ namespace Poco { class Logger; }
 namespace DB
 {
 class StorageObjectStorageQueue;
+struct ObjectStorageQueueSettings;
 struct ObjectStorageQueueTableMetadata;
 struct StorageInMemoryMetadata;
 using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;

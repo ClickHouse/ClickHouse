@@ -52,6 +52,7 @@
 #include <Storages/Freeze.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageFile.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageURL.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
@@ -113,6 +114,7 @@ namespace ErrorCodes
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int ABORTED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 namespace ActionLocks
@@ -1139,10 +1141,23 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid query");
 }
 
-bool InterpreterSystemQuery::trySyncReplica(IStorage * table, SyncReplicaMode sync_replica_mode, const std::unordered_set<String> & src_replicas, ContextPtr context_)
+bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sync_replica_mode, const std::unordered_set<String> & src_replicas, ContextPtr context_)
  {
     auto table_id_ = table->getStorageID();
-    if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table))
+
+    /// If materialized view, sync its target table.
+    for (int i = 0;; ++i)
+    {
+        if (i >= 100)
+            throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "Materialized view targets form a cycle or a very long chain");
+
+        if (auto * storage_mv = dynamic_cast<StorageMaterializedView *>(table.get()))
+            table = storage_mv->getTargetTable();
+        else
+            break;
+    }
+
+    if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
     {
         auto log = getLogger("InterpreterSystemQuery");
         LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for current last entry to be processed");
@@ -1166,7 +1181,7 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
     getContext()->checkAccess(AccessType::SYSTEM_SYNC_REPLICA, table_id);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     std::unordered_set<std::string> replicas(query.src_replicas.begin(), query.src_replicas.end());
-    if (!trySyncReplica(table.get(), query.sync_replica_mode, replicas, getContext()))
+    if (!trySyncReplica(table, query.sync_replica_mode, replicas, getContext()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
 }
 
