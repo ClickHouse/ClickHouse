@@ -130,12 +130,10 @@ ColumnPtr CacheDictionary<dictionary_key_type>::getColumn(
         IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
         return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, default_mask).front();
     }
-    else
-    {
-        const ColumnPtr & default_values_column = std::get<RefDefault>(default_or_filter).get();
-        const Columns & columns= Columns({default_values_column});
-        return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, columns).front();
-    }
+
+    const ColumnPtr & default_values_column = std::get<RefDefault>(default_or_filter).get();
+    const Columns & columns = Columns({default_values_column});
+    return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, columns).front();
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -209,18 +207,12 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
 
         if (source_returns_fetched_columns_in_order_of_keys)
             return request.filterRequestedColumns(fetched_columns_from_storage);
-        else
-        {
-            /// Reorder result from storage to requested keys indexes
-            MutableColumns aggregated_columns = aggregateColumnsInOrderOfKeys(
-                keys,
-                request,
-                fetched_columns_from_storage,
-                key_index_to_state_from_storage,
-                default_mask);
 
-            return request.filterRequestedColumns(aggregated_columns);
-        }
+        /// Reorder result from storage to requested keys indexes
+        MutableColumns aggregated_columns
+            = aggregateColumnsInOrderOfKeys(keys, request, fetched_columns_from_storage, key_index_to_state_from_storage, default_mask);
+
+        return request.filterRequestedColumns(aggregated_columns);
     }
 
     size_t keys_to_update_size = not_found_keys_size + expired_keys_size;
@@ -237,29 +229,21 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
 
         if (source_returns_fetched_columns_in_order_of_keys)
             return request.filterRequestedColumns(fetched_columns_from_storage);
-        else
-        {
-            /// Reorder result from storage to requested keys indexes
-            MutableColumns aggregated_columns = aggregateColumnsInOrderOfKeys(
-                keys,
-                request,
-                fetched_columns_from_storage,
-                key_index_to_state_from_storage,
-                default_mask);
 
-            return request.filterRequestedColumns(aggregated_columns);
-        }
-    }
-    else
-    {
-        /// Start sync update
-        update_queue.tryPushToUpdateQueueOrThrow(update_unit);
-        update_queue.waitForCurrentUpdateFinish(update_unit);
+        /// Reorder result from storage to requested keys indexes
+        MutableColumns aggregated_columns
+            = aggregateColumnsInOrderOfKeys(keys, request, fetched_columns_from_storage, key_index_to_state_from_storage, default_mask);
 
-        requested_keys_to_fetched_columns_during_update_index =
-            std::move(update_unit->requested_keys_to_fetched_columns_during_update_index);
-        fetched_columns_during_update = std::move(update_unit->fetched_columns_during_update);
+        return request.filterRequestedColumns(aggregated_columns);
     }
+
+    /// Start sync update
+    update_queue.tryPushToUpdateQueueOrThrow(update_unit);
+    update_queue.waitForCurrentUpdateFinish(update_unit);
+
+    requested_keys_to_fetched_columns_during_update_index = std::move(update_unit->requested_keys_to_fetched_columns_during_update_index);
+    fetched_columns_during_update = std::move(update_unit->fetched_columns_during_update);
+
 
     MutableColumns aggregated_columns = aggregateColumns(
         keys,
@@ -395,8 +379,7 @@ ColumnPtr CacheDictionary<dictionary_key_type>::getHierarchy(
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
         return result;
     }
-    else
-        return nullptr;
+    return nullptr;
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -413,8 +396,7 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::isInHierarchy(
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
         return result;
     }
-    else
-        return nullptr;
+    return nullptr;
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -666,6 +648,7 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             Columns fetched_columns_during_update = fetch_request.makeAttributesResultColumnsNonMutable();
 
             DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+            pipeline.setConcurrencyControl(false);
             Block block;
             while (executor.pull(block))
             {

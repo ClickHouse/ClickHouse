@@ -56,7 +56,7 @@ private:
         bool supports_subset_of_columns,
         ContextPtr local_context) override
     {
-        auto info = DB::prepareReadingFromFormat(requested_columns, storage_snapshot, supports_subset_of_columns);
+        auto info = DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns);
         if (!current_metadata)
         {
             current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);

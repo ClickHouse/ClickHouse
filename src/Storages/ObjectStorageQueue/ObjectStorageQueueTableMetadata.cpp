@@ -6,10 +6,24 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 
 
 namespace DB
 {
+
+namespace ObjectStorageQueueSetting
+{
+    extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
+    extern const ObjectStorageQueueSettingsUInt32 buckets;
+    extern const ObjectStorageQueueSettingsString last_processed_path;
+    extern const ObjectStorageQueueSettingsUInt32 loading_retries;
+    extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
+    extern const ObjectStorageQueueSettingsUInt32 processing_threads_num;
+    extern const ObjectStorageQueueSettingsUInt32 tracked_files_limit;
+    extern const ObjectStorageQueueSettingsUInt32 tracked_file_ttl_sec;
+
+}
 
 namespace ErrorCodes
 {
@@ -42,15 +56,19 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     const std::string & format_)
     : format_name(format_)
     , columns(columns_.toString())
-    , after_processing(engine_settings.after_processing.toString())
-    , mode(engine_settings.mode.toString())
-    , tracked_files_limit(engine_settings.tracked_files_limit)
-    , tracked_files_ttl_sec(engine_settings.tracked_file_ttl_sec)
-    , buckets(engine_settings.buckets)
-    , processing_threads_num(engine_settings.processing_threads_num)
-    , last_processed_path(engine_settings.last_processed_path)
-    , loading_retries(engine_settings.loading_retries)
+    , after_processing(engine_settings[ObjectStorageQueueSetting::after_processing].toString())
+    , mode(engine_settings[ObjectStorageQueueSetting::mode].toString())
+    , tracked_files_limit(engine_settings[ObjectStorageQueueSetting::tracked_files_limit])
+    , tracked_files_ttl_sec(engine_settings[ObjectStorageQueueSetting::tracked_file_ttl_sec])
+    , buckets(engine_settings[ObjectStorageQueueSetting::buckets])
+    , last_processed_path(engine_settings[ObjectStorageQueueSetting::last_processed_path])
+    , loading_retries(engine_settings[ObjectStorageQueueSetting::loading_retries])
 {
+    processing_threads_num_changed = engine_settings[ObjectStorageQueueSetting::processing_threads_num].changed;
+    if (!processing_threads_num_changed && engine_settings[ObjectStorageQueueSetting::processing_threads_num] <= 1)
+        processing_threads_num = std::max<uint32_t>(getNumberOfCPUCoresToUse(), 16);
+    else
+        processing_threads_num = engine_settings[ObjectStorageQueueSetting::processing_threads_num];
 }
 
 String ObjectStorageQueueTableMetadata::toString() const
@@ -102,9 +120,9 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     , tracked_files_limit(getOrDefault(json, "tracked_files_limit", "s3queue_", 0))
     , tracked_files_ttl_sec(getOrDefault(json, "tracked_files_ttl_sec", "", getOrDefault(json, "tracked_file_ttl_sec", "s3queue_", 0)))
     , buckets(getOrDefault(json, "buckets", "", 0))
-    , processing_threads_num(getOrDefault(json, "processing_threads_num", "s3queue_", 1))
     , last_processed_path(getOrDefault<String>(json, "last_processed_file", "s3queue_", ""))
     , loading_retries(getOrDefault(json, "loading_retries", "", 10))
+    , processing_threads_num(getOrDefault(json, "processing_threads_num", "s3queue_", 1))
 {
     validateMode(mode);
 }
@@ -114,6 +132,24 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueTableMetadata::parse(const Str
     Poco::JSON::Parser parser;
     auto json = parser.parse(metadata_str).extract<Poco::JSON::Object::Ptr>();
     return ObjectStorageQueueTableMetadata(json);
+}
+
+void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk)
+{
+    if (processing_threads_num != from_zk.processing_threads_num)
+    {
+        auto log = getLogger("ObjectStorageQueueTableMetadata");
+        const std::string message = fmt::format(
+            "Using `processing_threads_num` from keeper: {} (local: {})",
+            from_zk.processing_threads_num, processing_threads_num);
+
+        if (processing_threads_num_changed)
+            LOG_WARNING(log, "{}", message);
+        else
+            LOG_TRACE(log, "{}", message);
+
+        processing_threads_num = from_zk.processing_threads_num;
+    }
 }
 
 void ObjectStorageQueueTableMetadata::checkEquals(const ObjectStorageQueueTableMetadata & from_zk) const

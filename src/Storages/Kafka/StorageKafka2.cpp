@@ -40,7 +40,6 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/config_version.h>
 #include <Common/formatReadable.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
@@ -560,7 +559,7 @@ bool StorageKafka2::createTableIfNotExists()
             LOG_INFO(log, "It looks like the table {} was created by another replica at the same moment, will retry", keeper_path);
             continue;
         }
-        else if (code != Coordination::Error::ZOK)
+        if (code != Coordination::Error::ZOK)
         {
             zkutil::KeeperMultiException::check(code, ops, responses);
         }
@@ -602,7 +601,7 @@ bool StorageKafka2::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr keeper_to
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal of replicated table. It's a bug");
     }
-    else if (code == Coordination::Error::ZNOTEMPTY)
+    if (code == Coordination::Error::ZNOTEMPTY)
     {
         LOG_ERROR(
             log,
@@ -847,15 +846,13 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
 
             return 1;
         }
-        else
-        {
-            e.addMessage(
-                "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
-                consumer.currentTopic(),
-                consumer.currentPartition(),
-                consumer.currentOffset());
-            throw std::move(e);
-        }
+
+        e.addMessage(
+            "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
+            consumer.currentTopic(),
+            consumer.currentPartition(),
+            consumer.currentOffset());
+        throw std::move(e);
     };
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));

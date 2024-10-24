@@ -760,35 +760,35 @@ ASTExplainQuery::ExplainKind QueryFuzzer::fuzzExplainKind(ASTExplainQuery::Expla
     {
         return kind;
     }
-    else if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::ParsedAST;
     }
-    else if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::AnalyzedSyntax;
     }
-    else if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::QueryTree;
     }
-    else if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::QueryPlan;
     }
-    else if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::QueryPipeline;
     }
-    else if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::QueryEstimates;
     }
-    else if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::TableOverride;
     }
-    else if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::CurrentTransaction;
     }
@@ -1005,7 +1005,7 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
 {
     for (auto & child : expr_list.children)
     {
-        if (auto * literal = typeid_cast<ASTLiteral *>(child.get()))
+        if (auto * /*literal*/ _ = typeid_cast<ASTLiteral *>(child.get()))
         {
             if (fuzz_rand() % 13 == 0)
                 child = fuzzLiteralUnderExpressionList(child);
