@@ -49,7 +49,7 @@ Default value: 8192.
 
 Maximum size of data granules in bytes.
 
-Default value: 10Mb.
+Default value: 10485760 (ca. 10 MiB).
 
 To restrict the granule size only by number of rows, set to 0 (not recommended).
 
@@ -1078,6 +1078,8 @@ Possible values:
 - Any positive integer.
 
 Default value: 0 bytes.
+
+Note that if both `min_free_disk_bytes_to_perform_insert` and `min_free_disk_ratio_to_perform_insert` are specified, ClickHouse will count on the value that will allow to perform inserts on a bigger amount of free memory.
 
 ## min_free_disk_ratio_to_perform_insert 
 

@@ -6,6 +6,7 @@
 
 #include <Core/ServerSettings.h>
 #include <IO/HTTPCommon.h>
+#include <IO/Operators.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>

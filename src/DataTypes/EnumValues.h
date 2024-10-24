@@ -36,8 +36,8 @@ public:
 
     auto findByValue(const T & value) const
     {
-        const auto it = value_to_name_map.find(value);
-        if (it == std::end(value_to_name_map))
+        auto it = value_to_name_map.find(value);
+        if (it == value_to_name_map.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", toString(value));
 
         return it;
@@ -58,7 +58,7 @@ public:
     bool getNameForValue(const T & value, StringRef & result) const
     {
         const auto it = value_to_name_map.find(value);
-        if (it == std::end(value_to_name_map))
+        if (it == value_to_name_map.end())
             return false;
 
         result = it->second;

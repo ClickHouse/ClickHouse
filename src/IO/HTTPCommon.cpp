@@ -84,11 +84,9 @@ void assertResponseIsOk(const String & uri, Poco::Net::HTTPResponse & response, 
             ? ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
             : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 
-        std::stringstream body; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        body.exceptions(std::ios::failbit);
-        body << istr.rdbuf();
-
-        throw HTTPException(code, uri, status, response.getReason(), body.str());
+        istr.seekg(0, std::ios::end);
+        size_t body_length = istr.tellg();
+        throw HTTPException(code, uri, status, response.getReason(), body_length);
     }
 }
 
@@ -97,13 +95,13 @@ Exception HTTPException::makeExceptionMessage(
     const std::string & uri,
     Poco::Net::HTTPResponse::HTTPStatus http_status,
     const std::string & reason,
-    const std::string & body)
+    size_t body_length)
 {
     return Exception(code,
         "Received error from remote server {}. "
-        "HTTP status code: {} {}, "
-        "body: {}",
-        uri, static_cast<int>(http_status), reason, body);
+        "HTTP status code: {} '{}', "
+        "body length: {} bytes",
+        uri, static_cast<int>(http_status), reason, body_length);
 }
 
 }

@@ -8,7 +8,7 @@ PRIMARY KEY (town, date)
 PARTITION BY toYear(date)
 COMMENT 'test' -- to end ENGINE definition, so SETTINGS will be in the query level
 SETTINGS
-    enable_secure_identifiers=true; -- { serverError BAD_ARGUMENTS }
+    enforce_strict_identifier_format=true; -- { serverError BAD_ARGUMENTS }
 DROP TABLE IF EXISTS `test_foo_#`;
 
 
@@ -23,7 +23,7 @@ PRIMARY KEY (town, date)
 PARTITION BY toYear(date)
 COMMENT 'test' -- to end ENGINE definition, so SETTINGS will be in the query level
 SETTINGS
-    enable_secure_identifiers=true; -- { serverError BAD_ARGUMENTS }
+    enforce_strict_identifier_format=true; -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE IF EXISTS test_foo;
 CREATE TABLE test_foo (
@@ -36,7 +36,7 @@ PRIMARY KEY (town, date)
 PARTITION BY toYear(date)
 COMMENT 'test' -- to end ENGINE definition, so SETTINGS will be in the query level
 SETTINGS
-    enable_secure_identifiers=true; -- { serverError BAD_ARGUMENTS }
+    enforce_strict_identifier_format=true; -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE IF EXISTS test_foo;
 CREATE TABLE test_foo (
@@ -49,7 +49,7 @@ PRIMARY KEY (town, date)
 PARTITION BY toYear(date)
 COMMENT 'test' -- to end ENGINE definition, so SETTINGS will be in the query level
 SETTINGS
-    enable_secure_identifiers=true; -- { serverError BAD_ARGUMENTS }
+    enforce_strict_identifier_format=true; -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE IF EXISTS test_foo;
 CREATE TABLE test_foo (
@@ -62,11 +62,11 @@ PRIMARY KEY (town, date)
 PARTITION BY toYear(date)
 COMMENT 'test' -- to end ENGINE definition, so SETTINGS will be in the query level
 SETTINGS
-    enable_secure_identifiers=true;
+    enforce_strict_identifier_format=true;
 
-SHOW CREATE TABLE test_foo 
+SHOW CREATE TABLE test_foo
 SETTINGS
-    enable_secure_identifiers=true;
+    enforce_strict_identifier_format=true;
 
 DROP TABLE IF EXISTS test_foo;
 CREATE TABLE test_foo (
@@ -79,13 +79,13 @@ PRIMARY KEY (town, date)
 PARTITION BY toYear(date)
 COMMENT 'test' -- to end ENGINE definition, so SETTINGS will be in the query level
 SETTINGS
-    enable_secure_identifiers=true;
+    enforce_strict_identifier_format=true;
 
-SHOW CREATE TABLE test_foo 
+SHOW CREATE TABLE test_foo
 SETTINGS
-    enable_secure_identifiers=true;
+    enforce_strict_identifier_format=true;
 
--- CREATE TABLE without `enable_secure_identifiers`
+-- CREATE TABLE without `enforce_strict_identifier_format`
 DROP TABLE IF EXISTS test_foo;
 CREATE TABLE `test_foo` (
     `insecure_$` Int8,
@@ -95,17 +95,17 @@ CREATE TABLE `test_foo` (
 ENGINE = MergeTree
 PRIMARY KEY (town, date)
 PARTITION BY toYear(date);
--- Then SHOW CREATE .. with `enable_secure_identifiers`
+-- Then SHOW CREATE .. with `enforce_strict_identifier_format`
 -- While the result contains insecure identifiers (`insecure_$`), the `SHOW CREATE TABLE ...` query does not have any. So the query is expected to succeed.
-SHOW CREATE TABLE test_foo 
+SHOW CREATE TABLE test_foo
 SETTINGS
-    enable_secure_identifiers=true;
+    enforce_strict_identifier_format=true;
 
 DROP TABLE IF EXISTS test_foo;
 
--- SHOW CREATE .. query contains an insecure identifier (`test_foo$`) with `enable_secure_identifiers`
+-- SHOW CREATE .. query contains an insecure identifier (`test_foo$`) with `enforce_strict_identifier_format`
 SHOW CREATE TABLE `test_foo$`
 SETTINGS
-    enable_secure_identifiers=true; -- { serverError BAD_ARGUMENTS }
+    enforce_strict_identifier_format=true; -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE IF EXISTS test_foo;

@@ -9,61 +9,61 @@ SET min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
 SET max_block_size = 1;
 
 SET max_rows_to_read = 4;
-SELECT * FROM pk WHERE x = 2 AND y = 11;
+SELECT * FROM pk WHERE x = 2 AND y = 11 ORDER BY ALL;
 
 SET max_rows_to_read = 5;
-SELECT * FROM pk WHERE x = 1;
+SELECT * FROM pk WHERE x = 1 ORDER BY ALL;
 
 SET max_rows_to_read = 9;
-SELECT * FROM pk WHERE x = 3;
+SELECT * FROM pk WHERE x = 3 ORDER BY ALL;
 
 SET max_rows_to_read = 3;
-SELECT * FROM pk WHERE x = 3 AND y = 44;
+SELECT * FROM pk WHERE x = 3 AND y = 44 ORDER BY ALL;
 
 SET max_rows_to_read = 2;
-SELECT * FROM pk WHERE x = 3 AND y = 44 AND z = 4935;
-SELECT * FROM pk WHERE x = 3 AND y = 44 AND z = 4578;
+SELECT * FROM pk WHERE x = 3 AND y = 44 AND z = 4935 ORDER BY ALL;
+SELECT * FROM pk WHERE x = 3 AND y = 44 AND z = 4578 ORDER BY ALL;
 
 SET max_rows_to_read = 1;
-SELECT * FROM pk WHERE x = 3 AND y = 44 AND z = 4934;
-SELECT * FROM pk WHERE x = 3 AND y = 44 AND z = 4936;
-SELECT * FROM pk WHERE x = 3 AND y = 44 AND z = 4577;
-SELECT * FROM pk WHERE x = 3 AND y = 44 AND z = 4579;
+SELECT * FROM pk WHERE x = 3 AND y = 44 AND z = 4934 ORDER BY ALL;
+SELECT * FROM pk WHERE x = 3 AND y = 44 AND z = 4936 ORDER BY ALL;
+SELECT * FROM pk WHERE x = 3 AND y = 44 AND z = 4577 ORDER BY ALL;
+SELECT * FROM pk WHERE x = 3 AND y = 44 AND z = 4579 ORDER BY ALL;
 
 SET max_rows_to_read = 1;
-SELECT * FROM pk WHERE x = 3 AND y = 55 AND z > 5786;
+SELECT * FROM pk WHERE x = 3 AND y = 55 AND z > 5786 ORDER BY ALL;
 
 SET max_rows_to_read = 2;
-SELECT * FROM pk WHERE x = 3 AND y = 55 AND z >= 5786;
+SELECT * FROM pk WHERE x = 3 AND y = 55 AND z >= 5786 ORDER BY ALL;
 
 SET max_rows_to_read = 3;
-SELECT * FROM pk WHERE x = 3 AND y = 55 AND z > 1235;
+SELECT * FROM pk WHERE x = 3 AND y = 55 AND z > 1235 ORDER BY ALL;
 
 SET max_rows_to_read = 4;
-SELECT * FROM pk WHERE x = 3 AND y = 55 AND z >= 1235;
-SELECT * FROM pk WHERE x = 3 AND y = 55 AND z >= 1000;
-SELECT * FROM pk WHERE x = 3 AND y = 55 AND z >= 1000 AND x < 10000;
-SELECT * FROM pk WHERE x = 3 AND y = 55;
-SELECT * FROM pk WHERE x = 3 AND y >= 50;
-SELECT * FROM pk WHERE x = 3 AND y > 44;
-SELECT * FROM pk WHERE x >= 3 AND y > 44;
-SELECT * FROM pk WHERE x > 2 AND y > 44;
+SELECT * FROM pk WHERE x = 3 AND y = 55 AND z >= 1235 ORDER BY ALL;
+SELECT * FROM pk WHERE x = 3 AND y = 55 AND z >= 1000 ORDER BY ALL;
+SELECT * FROM pk WHERE x = 3 AND y = 55 AND z >= 1000 AND x < 10000 ORDER BY ALL;
+SELECT * FROM pk WHERE x = 3 AND y = 55 ORDER BY ALL;
+SELECT * FROM pk WHERE x = 3 AND y >= 50 ORDER BY ALL;
+SELECT * FROM pk WHERE x = 3 AND y > 44 ORDER BY ALL;
+SELECT * FROM pk WHERE x >= 3 AND y > 44 ORDER BY ALL;
+SELECT * FROM pk WHERE x > 2 AND y > 44 ORDER BY ALL;
 
 SET max_rows_to_read = 2;
-SELECT * FROM pk WHERE x = 3 AND y = 55 AND z = 5786;
+SELECT * FROM pk WHERE x = 3 AND y = 55 AND z = 5786 ORDER BY ALL;
 
 SET max_rows_to_read = 15;
 SET merge_tree_min_rows_for_seek = 0;
-SELECT * FROM pk WHERE z = 2791;
-SELECT * FROM pk WHERE z = 5786;
-SELECT * FROM pk WHERE z = 1235;
-SELECT * FROM pk WHERE z = 4578;
+SELECT * FROM pk WHERE z = 2791 ORDER BY ALL;
+SELECT * FROM pk WHERE z = 5786 ORDER BY ALL;
+SELECT * FROM pk WHERE z = 1235 ORDER BY ALL;
+SELECT * FROM pk WHERE z = 4578 ORDER BY ALL;
 
 SET max_rows_to_read = 10;
-SELECT * FROM pk WHERE y = 11;
-SELECT * FROM pk WHERE y = 22;
-SELECT * FROM pk WHERE y = 33;
-SELECT * FROM pk WHERE y = 44;
-SELECT * FROM pk WHERE y = 55;
+SELECT * FROM pk WHERE y = 11 ORDER BY ALL;
+SELECT * FROM pk WHERE y = 22 ORDER BY ALL;
+SELECT * FROM pk WHERE y = 33 ORDER BY ALL;
+SELECT * FROM pk WHERE y = 44 ORDER BY ALL;
+SELECT * FROM pk WHERE y = 55 ORDER BY ALL;
 
 DROP TABLE pk;

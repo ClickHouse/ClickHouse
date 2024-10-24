@@ -671,9 +671,11 @@ XMLDocumentPtr ConfigProcessor::parseConfig(const std::string & config_path)
 XMLDocumentPtr ConfigProcessor::processConfig(
     bool * has_zk_includes,
     zkutil::ZooKeeperNodeCache * zk_node_cache,
-    const zkutil::EventPtr & zk_changed_event)
+    const zkutil::EventPtr & zk_changed_event,
+    bool is_config_changed)
 {
-    LOG_DEBUG(log, "Processing configuration file '{}'.", path);
+    if (is_config_changed)
+        LOG_DEBUG(log, "Processing configuration file '{}'.", path);
 
     XMLDocumentPtr config;
 
@@ -686,7 +688,8 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         /// When we can use a config embedded in the binary.
         if (auto it = embedded_configs.find(path); it != embedded_configs.end())
         {
-            LOG_DEBUG(log, "There is no file '{}', will use embedded config.", path);
+            if (is_config_changed)
+                LOG_DEBUG(log, "There is no file '{}', will use embedded config.", path);
             config = dom_parser.parseMemory(it->second.data(), it->second.size());
         }
         else
@@ -700,7 +703,8 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     {
         try
         {
-            LOG_DEBUG(log, "Merging configuration file '{}'.", merge_file);
+            if (is_config_changed)
+                LOG_DEBUG(log, "Merging configuration file '{}'.", merge_file);
 
             XMLDocumentPtr with;
             with = parseConfig(merge_file);
@@ -790,10 +794,10 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     return config;
 }
 
-ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes)
+ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes, bool is_config_changed)
 {
     bool has_zk_includes;
-    XMLDocumentPtr config_xml = processConfig(&has_zk_includes);
+    XMLDocumentPtr config_xml = processConfig(&has_zk_includes, nullptr, nullptr, is_config_changed);
 
     if (has_zk_includes && !allow_zk_includes)
         throw Poco::Exception("Error while loading config '" + path + "': from_zk includes are not allowed!");
@@ -806,14 +810,15 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes
 ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
     zkutil::ZooKeeperNodeCache & zk_node_cache,
     const zkutil::EventPtr & zk_changed_event,
-    bool fallback_to_preprocessed)
+    bool fallback_to_preprocessed,
+    bool is_config_changed)
 {
     XMLDocumentPtr config_xml;
     bool has_zk_includes;
     bool processed_successfully = false;
     try
     {
-        config_xml = processConfig(&has_zk_includes, &zk_node_cache, zk_changed_event);
+        config_xml = processConfig(&has_zk_includes, &zk_node_cache, zk_changed_event, is_config_changed);
         processed_successfully = true;
     }
     catch (const Poco::Exception & ex)

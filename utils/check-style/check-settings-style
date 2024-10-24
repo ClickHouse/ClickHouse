@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+
+# Fast check of all the setting struct usages
+# The linker does not complain about incorrect extern usage, so we need to make sure the style checker handles
+
+LC_ALL="en_US.UTF-8"
+ROOT_PATH=$(git rev-parse --show-toplevel)
+
+# Duplicated or incorrect setting declarations
+SETTINGS_FILE=$(mktemp)
+ALL_DECLARATION_FILES="
+  $ROOT_PATH/src/Core/Settings.cpp
+  $ROOT_PATH/src/Core/ServerSettings.cpp
+  $ROOT_PATH/src/Storages/MergeTree/MergeTreeSettings.cpp
+  $ROOT_PATH/src/Coordination/CoordinationSettings.cpp
+  $ROOT_PATH/src/Databases/DatabaseReplicatedSettings.cpp
+  $ROOT_PATH/src/Storages/TimeSeries/TimeSeriesSettings.cpp
+  $ROOT_PATH/src/Storages/RocksDB/RocksDBSettings.cpp
+  $ROOT_PATH/src/Storages/RabbitMQ/RabbitMQSettings.cpp
+  $ROOT_PATH/src/Storages/PostgreSQL/MaterializedPostgreSQLSettings.cpp
+  $ROOT_PATH/src/Storages/ObjectStorageQueue/ObjectStorageQueueSettings.cpp
+  $ROOT_PATH/src/Storages/MaterializedView/RefreshSettings.cpp
+  $ROOT_PATH/src/Core/FormatFactorySettingsDeclaration.h"
+
+for settings_file in ${ALL_DECLARATION_FILES};
+do
+  if ! [ -f "${settings_file}" ]; then
+    echo "File '${settings_file}' does not exist."
+  fi
+done
+
+cat $ROOT_PATH/src/Core/Settings.cpp $ROOT_PATH/src/Core/FormatFactorySettingsDeclaration.h | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " Settings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq > ${SETTINGS_FILE}
+cat $ROOT_PATH/src/Core/ServerSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " ServerSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
+cat $ROOT_PATH/src/Storages/MergeTree/MergeTreeSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " MergeTreeSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
+cat $ROOT_PATH/src/Coordination/CoordinationSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " CoordinationSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
+cat $ROOT_PATH/src/Databases/DatabaseReplicatedSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " DatabaseReplicatedSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
+cat $ROOT_PATH/src/Storages/TimeSeries/TimeSeriesSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " TimeSeriesSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
+cat $ROOT_PATH/src/Storages/RocksDB/RocksDBSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " RocksDBSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
+cat $ROOT_PATH/src/Storages/RabbitMQ/RabbitMQSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " RabbitMQSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
+cat $ROOT_PATH/src/Storages/PostgreSQL/MaterializedPostgreSQLSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " MaterializedPostgreSQLSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
+cat $ROOT_PATH/src/Storages/ObjectStorageQueue/ObjectStorageQueueSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " ObjectStorageQueueSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
+cat $ROOT_PATH/src/Storages/MaterializedView/RefreshSettings.cpp | grep "    M(" | awk '{print substr($2, 0, length($2) - 1) " RefreshSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
+
+
+# Check that if there are duplicated settings (declared in different objects) they all have the same type (it's simpler to validate style with that assert)
+for setting in $(awk '{print $1 " " $2}' ${SETTINGS_FILE} | \
+    sed -e 's/CoordinationSettings//g' \
+        -e 's/DatabaseReplicatedSettings//g' \
+        -e 's/TimeSeriesSettings//g' \
+        -e 's/RabbitMQSettings//g' \
+        -e 's/RocksDBSettings//g' \
+        -e 's/MaterializedPostgreSQLSettings//g' \
+        -e 's/ObjectStorageQueueSettings//g' \
+        -e 's/RefreshSettings//g' \
+        -e 's/MergeTreeSettings//g' \
+        -e 's/ServerSettings//g' \
+        -e 's/Settings//g' | \
+    sort | uniq | awk '{ print $1 }' | uniq -d);
+do
+    echo "# Found multiple definitions of setting ${setting} with different types: "
+    grep --line-number " ${setting}," ${ALL_DECLARATION_FILES} | awk '{print "    > " $0 }'
+done
+
+# We append all uses of extern found in implementation files to validate them in a single pass and avoid reading the same files over and over
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | \
+    xargs grep -e "^\s*extern const Settings" \
+               -e "^\s**extern const ServerSettings" \
+               -e "^\s**extern const MergeTreeSettings" \
+               -e "^\s**extern const RabbitMQSettings" \
+               -e "^\s**extern const RocksDBSettings" \
+               -e "^\s**extern const MaterializedPostgreSQLSettings" \
+               -e "^\s**extern const ObjectStorageQueueSettings" \
+               -e "^\s**extern const RefreshSettings" \
+               -e "^\s**extern const TimeSeriesSettings" \
+               -e "^\s**extern const DatabaseReplicatedSettings" \
+               -e "^\s**extern const CoordinationSettings" -T | \
+    awk '{print substr($5, 0, length($5) -1) " " $4 " " substr($1, 0, length($1) - 1)}' >> ${SETTINGS_FILE}
+
+# Duplicate extern declarations for settings
+awk '{if (seen[$0]++) print $3 " -> " $1 ;}' ${SETTINGS_FILE} | while read line;
+do
+    echo "# Found duplicated setting declaration in: $line"
+done
+
+# Find missing declarations (obsolete settings being used)
+# Note that SettingsDeclaration are first in the file
+#  Disabled for now pending fixing the code
+#awk '{print $1 " " $3}' ${SETTINGS_FILE} | awk '{if (!seen[$1]++) print $0}' | grep -v SettingsDeclaration | while read setting;
+#do
+#    echo "Could not find setting (maybe obsolete but used?) $setting"
+#done
+
+# Look for settings declared with multiple types
+for setting in $(awk '{print $1 " " $2}' ${SETTINGS_FILE} | \
+    sed -e 's/MergeTreeSettings//g' \
+        -e 's/ServerSettings//g' \
+        -e 's/CoordinationSettings//g' \
+        -e 's/TimeSeriesSettings//g' \
+        -e 's/RabbitMQSettings//g' \
+        -e 's/RefreshSettings//g' \
+        -e 's/RocksDBSettings//g' \
+        -e 's/MaterializedPostgreSQLSettings//g' \
+        -e 's/ObjectStorageQueueSettings//g' \
+        -e 's/DatabaseReplicatedSettings//g' \
+        -e 's/Settings//g' | \
+    sort | uniq | awk '{ print $1 }' | sort | uniq -d);
+do
+    expected=$(grep "^$setting " ${SETTINGS_FILE} | grep SettingsDeclaration | awk '{ print $2 }')
+    grep "^$setting " ${SETTINGS_FILE} | grep -v " $expected" | awk '{ print $3 " found setting " $1 " with type " $2 }' | while read line;
+    do
+        echo "# In $line but it should be ${expected/$'\n'/ }"
+    done
+done
+
+rm ${SETTINGS_FILE}

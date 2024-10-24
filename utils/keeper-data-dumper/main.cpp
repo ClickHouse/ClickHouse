@@ -16,6 +16,11 @@
 using namespace Coordination;
 using namespace DB;
 
+namespace DB::CoordinationSetting
+{
+    extern const CoordinationSettingsBool compress_logs;
+}
+
 void dumpMachine(std::shared_ptr<KeeperStateMachine<DB::KeeperMemoryStorage>> machine)
 {
     auto & storage = machine->getStorageUnsafe();
@@ -76,7 +81,7 @@ int main(int argc, char *argv[])
     LOG_INFO(logger, "Last committed index: {}", last_commited_index);
 
     DB::KeeperLogStore changelog(
-        LogFileSettings{.force_sync = true, .compress_logs = settings->compress_logs, .rotate_interval = 10000000},
+        LogFileSettings{.force_sync = true, .compress_logs = (*settings)[DB::CoordinationSetting::compress_logs], .rotate_interval = 10000000},
         FlushSettings(),
         keeper_context);
     changelog.init(last_commited_index, 10000000000UL); /// collect all logs

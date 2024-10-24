@@ -683,7 +683,7 @@ void StorageLog::loadMarks(const WriteLock & lock /* already locked exclusively 
         return;
 
     size_t num_marks = 0;
-    if (disk->exists(marks_file_path))
+    if (disk->existsFile(marks_file_path))
     {
         size_t file_size = disk->getFileSize(marks_file_path);
         if (file_size % (num_data_files * sizeof(Mark)) != 0)

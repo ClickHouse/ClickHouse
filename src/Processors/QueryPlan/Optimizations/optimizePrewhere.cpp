@@ -187,7 +187,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     if (!optimize_result.fully_moved_to_prewhere)
     {
         filter_node->step = std::make_unique<FilterStep>(
-            source_step_with_filter->getOutputStream(),
+            source_step_with_filter->getOutputHeader(),
             std::move(split_result.second),
             filter_step->getFilterColumnName(),
             filter_step->removesFilterColumn());
@@ -196,7 +196,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     {
         /// Have to keep this expression to change column names to column identifiers
         filter_node->step = std::make_unique<ExpressionStep>(
-            source_step_with_filter->getOutputStream(),
+            source_step_with_filter->getOutputHeader(),
             std::move(split_result.second));
     }
 }

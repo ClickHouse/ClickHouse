@@ -33,9 +33,6 @@ jobs:
           filter: tree:0
       - name: Debug Info
         uses: ./.github/actions/debug
-      - name: Cancel previous Sync PR workflow
-        run: |
-          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --cancel-previous-run
       - name: Set pending Sync status
         run: |
           python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --set-pending-status

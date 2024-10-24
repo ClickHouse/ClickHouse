@@ -103,6 +103,7 @@ namespace Setting
     extern const SettingsBool single_join_prefer_left_table;
     extern const SettingsBool transform_null_in;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
+    extern const SettingsBool use_concurrency_control;
 }
 
 
@@ -588,6 +589,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             PullingAsyncPipelineExecutor executor(io.pipeline);
             io.pipeline.setProgressCallback(context->getProgressCallback());
             io.pipeline.setProcessListElement(context->getProcessListElement());
+            io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
             Block block;
 
@@ -1950,7 +1952,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
     {
         bool table_expression_in_resolve_process = nearest_query_scope->table_expressions_in_resolve_process.contains(table_expression.get());
 
-        if (auto * /*array_join_node*/ _ = table_expression->as<ArrayJoinNode>())
+        if (table_expression->as<ArrayJoinNode>())
         {
             if (table_expressions_column_nodes_with_names_stack.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR,

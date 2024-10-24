@@ -5,6 +5,19 @@ slug: /zh/interfaces/third-party/gui
 
 ## 开源 {#kai-yuan}
 
+### ChartDB {#chartdb}
+
+ClickHouse 的数据库模式可视化工具 [ChartDB](https://chartdb.io)。
+
+主要功能：
+
+- 一键导入并可视化 ClickHouse 模式，包括带有物化视图和标准视图的 ER 图表，并显示表之间的引用关系。
+- 支持 AI 驱动的 DDL 导出功能，便于数据库模式管理和文档生成。
+- 支持多种 SQL 方言，适用于各种数据库环境。
+- 直接在浏览器中使用，无需数据库凭证或注册，使用简单且安全。
+
+[ChartDB 源代码](https://github.com/chartdb/chartdb).
+
 ### Tabix {#tabix}
 
 ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).

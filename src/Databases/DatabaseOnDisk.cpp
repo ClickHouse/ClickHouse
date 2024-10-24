@@ -123,7 +123,7 @@ std::pair<String, StoragePtr> createTableFromAST(
         else
         {
             columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, mode);
-            constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints);
+            constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints, columns, context);
         }
     }
 
@@ -370,7 +370,7 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
 
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
     {
-        if (disk->isReadOnly() || !disk->exists(table_data_path_relative))
+        if (disk->isReadOnly() || !disk->existsDirectory(table_data_path_relative))
             continue;
 
         LOG_INFO(log, "Removing data directory from disk {} with path {} for dropped table {} ", disk_name, table_data_path_relative, table_name);

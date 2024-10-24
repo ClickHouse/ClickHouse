@@ -34,7 +34,10 @@ class TestCIConfig(unittest.TestCase):
                     f"Job [{job}] must have style-checker(-aarch64) runner",
                 )
             elif "binary_" in job.lower() or "package_" in job.lower():
-                if job.lower() == CI.BuildNames.PACKAGE_AARCH64:
+                if job.lower() in (
+                    CI.BuildNames.PACKAGE_AARCH64,
+                    CI.BuildNames.PACKAGE_AARCH64_ASAN,
+                ):
                     self.assertTrue(
                         CI.JOB_CONFIGS[job].runner_type in (CI.Runners.BUILDER_ARM,),
                         f"Job [{job}] must have [{CI.Runners.BUILDER_ARM}] runner",

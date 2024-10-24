@@ -528,7 +528,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
     String bin_path = escaped_name + DATA_FILE_EXTENSION;
 
     /// Some columns may be removed because of ttl. Skip them.
-    if (!getDataPartStorage().exists(mrk_path))
+    if (!getDataPartStorage().existsFile(mrk_path))
         return;
 
     auto mrk_file_in = getDataPartStorage().readFile(mrk_path, {}, std::nullopt, std::nullopt);

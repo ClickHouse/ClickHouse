@@ -163,6 +163,7 @@ public:
         bool with_table_structure);
 
     /// Storage type: s3, hdfs, azure, local.
+    virtual ObjectStorageType getType() const = 0;
     virtual std::string getTypeName() const = 0;
     /// Engine name: S3, HDFS, Azure.
     virtual std::string getEngineName() const = 0;

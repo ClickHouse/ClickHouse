@@ -328,7 +328,7 @@ String StorageReplicatedMergeTree::getEndpointName() const
 
 static ConnectionTimeouts getHTTPTimeouts(ContextPtr context)
 {
-    return ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings().keep_alive_timeout);
+    return ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
 }
 
 static MergeTreePartInfo makeDummyDropRangeForMovePartitionOrAttachPartitionFrom(const String & partition_id)
@@ -1564,7 +1564,16 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     checkTTLExpressions(new_metadata, old_metadata);
     setProperties(new_metadata, old_metadata);
 
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+    try
+    {
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+    }
+    catch (...)
+    {
+        LOG_ERROR(log, "Failed to set table structure, reverting changes");
+        setProperties(old_metadata, new_metadata);
+        throw;
+    }
 }
 
 
@@ -1614,7 +1623,7 @@ void StorageReplicatedMergeTree::paranoidCheckForCoveredPartsInZooKeeperOnStart(
 
         bool found = false;
         for (const DiskPtr & disk : disks)
-            if (disk->exists(fs::path(path) / part_name))
+            if (disk->existsDirectory(fs::path(path) / part_name))
                 found = true;
 
         if (!found)
@@ -6160,38 +6169,40 @@ void StorageReplicatedMergeTree::alter(
     auto table_id = getStorageID();
     const auto & query_settings = query_context->getSettingsRef();
 
+    StorageInMemoryMetadata future_metadata = getInMemoryMetadata();
+    commands.apply(future_metadata, query_context);
+
     if (commands.isSettingsAlter())
     {
         /// We don't replicate storage_settings_ptr ALTER. It's local operation.
         /// Also we don't upgrade alter lock to table structure lock.
-        StorageInMemoryMetadata future_metadata = getInMemoryMetadata();
-        commands.apply(future_metadata, query_context);
-
         merge_strategy_picker.refreshState();
 
         changeSettings(future_metadata.settings_changes, table_lock_holder);
 
+        /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata);
         return;
     }
 
     if (commands.isCommentAlter())
     {
-        StorageInMemoryMetadata future_metadata = getInMemoryMetadata();
-        commands.apply(future_metadata, query_context);
-
         setInMemoryMetadata(future_metadata);
 
+        /// It is safe to ignore exceptions here as only the comment is changed, which is not validated in `alterTable`
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata);
         return;
     }
 
     if (!query_settings[Setting::allow_suspicious_primary_key])
     {
-        StorageInMemoryMetadata future_metadata = getInMemoryMetadata();
-        commands.apply(future_metadata, query_context);
-
         MergeTreeData::verifySortingKey(future_metadata.sorting_key);
+    }
+
+    {
+        /// Call applyMetadataChangesToCreateQuery to validate the resulting CREATE query
+        auto ast = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, query_context);
+        applyMetadataChangesToCreateQuery(ast, future_metadata, query_context);
     }
 
     auto ast_to_str = [](ASTPtr query) -> String
@@ -6238,9 +6249,6 @@ void StorageReplicatedMergeTree::alter(
         mutation_znode.reset();
 
         auto current_metadata = getInMemoryMetadataPtr();
-
-        StorageInMemoryMetadata future_metadata = *current_metadata;
-        commands.apply(future_metadata, query_context);
 
         ReplicatedMergeTreeTableMetadata future_metadata_in_zk(*this, current_metadata);
         if (ast_to_str(future_metadata.sorting_key.definition_ast) != ast_to_str(current_metadata->sorting_key.definition_ast))
@@ -6309,6 +6317,8 @@ void StorageReplicatedMergeTree::alter(
                 setInMemoryMetadata(metadata_copy);
             }
 
+            /// Only the comment and/or settings changed here, so it is okay to assume alterTable won't throw as neither
+            /// of them are validated in alterTable.
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata_copy);
         }
 
@@ -6378,7 +6388,7 @@ void StorageReplicatedMergeTree::alter(
             /// so we have to update metadata of DatabaseReplicated here.
             String metadata_zk_path = fs::path(txn->getDatabaseZooKeeperPath()) / "metadata" / escapeForFileName(table_id.table_name);
             auto ast = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, query_context);
-            applyMetadataChangesToCreateQuery(ast, future_metadata);
+            applyMetadataChangesToCreateQuery(ast, future_metadata, query_context);
             ops.emplace_back(zkutil::makeSetRequest(metadata_zk_path, getObjectDefinitionFromCreateQuery(ast), -1));
         }
 
@@ -9614,7 +9624,7 @@ StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part, co
     }
 
     /// If part is temporary refcount file may be absent
-    if (part.getDataPartStorage().exists(IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK))
+    if (part.getDataPartStorage().existsFile(IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK))
     {
         auto ref_count = part.getDataPartStorage().getRefCount(IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK);
         if (ref_count > 0) /// Keep part shard info for frozen backups
@@ -10542,7 +10552,7 @@ bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const St
         throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Invalid detached part name {} on disk {}", path, disk->getName());
 
     fs::path checksums = fs::path(path) / IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK;
-    if (disk->exists(checksums))
+    if (disk->existsFile(checksums))
     {
         if (disk->getRefCount(checksums) == 0)
         {
@@ -10592,7 +10602,7 @@ void StorageReplicatedMergeTree::adjustCreateQueryForBackup(ASTPtr & create_quer
         auto current_metadata = getInMemoryMetadataPtr();
         auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this, current_metadata).checkAndFindDiff(metadata_from_entry, current_metadata->getColumns(), getContext());
         auto adjusted_metadata = metadata_diff.getNewMetadata(columns_from_entry, getContext(), *current_metadata);
-        applyMetadataChangesToCreateQuery(create_query, adjusted_metadata);
+        applyMetadataChangesToCreateQuery(create_query, adjusted_metadata, getContext());
     }
     catch (...)
     {

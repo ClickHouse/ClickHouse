@@ -183,7 +183,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         /*avg_value_size_hints=*/ {},
         /*profile_callback=*/ {});
 
-    if (prefetch)
+    if (prefetch && !data_part->isEmpty())
         reader->prefetchBeginOfRange(Priority{});
 }
 
@@ -366,7 +366,7 @@ public:
         bool prefetch_,
         ContextPtr context_,
         LoggerPtr log_)
-        : ISourceStep(DataStream{.header = storage_snapshot_->getSampleBlockForColumns(columns_to_read_)})
+        : ISourceStep(storage_snapshot_->getSampleBlockForColumns(columns_to_read_))
         , type(type_)
         , storage(storage_)
         , storage_snapshot(storage_snapshot_)
@@ -409,7 +409,7 @@ public:
 
             if (mark_ranges && mark_ranges->empty())
             {
-                pipeline.init(Pipe(std::make_unique<NullSource>(output_stream->header)));
+                pipeline.init(Pipe(std::make_unique<NullSource>(*output_header)));
                 return;
             }
         }

@@ -64,12 +64,12 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
     }
 
     filter_node.step = std::make_unique<FilterStep>(
-            filter_node.children.at(0)->step->getOutputStream(),
+            filter_node.children.at(0)->step->getOutputHeader(),
             std::move(split.first),
             std::move(split_filter_name),
             remove_filter);
 
-    node->step = std::make_unique<ExpressionStep>(filter_node.step->getOutputStream(), std::move(split.second));
+    node->step = std::make_unique<ExpressionStep>(filter_node.step->getOutputHeader(), std::move(split.second));
 
     filter_node.step->setStepDescription("(" + description + ")[split]");
     node->step->setStepDescription(description);

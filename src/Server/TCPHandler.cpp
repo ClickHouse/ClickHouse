@@ -100,6 +100,12 @@ namespace Setting
     extern const SettingsUInt64 unknown_packet_in_send_data;
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
+    extern const SettingsBool use_concurrency_control;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool validate_tcp_client_information;
 }
 }
 
@@ -1110,6 +1116,7 @@ void TCPHandler::processOrdinaryQuery()
 
     {
         PullingAsyncPipelineExecutor executor(pipeline);
+        pipeline.setConcurrencyControl(query_context->getSettingsRef()[Setting::use_concurrency_control]);
         CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
 
         /// The following may happen:
@@ -1899,7 +1906,7 @@ void TCPHandler::receiveQuery()
 
         correctQueryClientInfo(session->getClientInfo(), client_info);
         const auto & config_ref = Context::getGlobalContextInstance()->getServerSettings();
-        if (config_ref.validate_tcp_client_information)
+        if (config_ref[ServerSetting::validate_tcp_client_information])
             validateClientInfo(session->getClientInfo(), client_info);
     }
 

@@ -30,6 +30,14 @@ void registerTableFunctionIceberg(TableFunctionFactory & factory)
             .categories{"DataLake"}},
          .allow_readonly = false});
 #    endif
+#    if USE_HDFS
+    factory.registerFunction<TableFunctionIcebergHDFS>(
+        {.documentation
+         = {.description = R"(The table function can be used to read the Iceberg table stored on HDFS object store.)",
+            .examples{{"icebergHDFS", "SELECT * FROM icebergHDFS(url)", ""}},
+            .categories{"DataLake"}},
+         .allow_readonly = false});
+#    endif
     factory.registerFunction<TableFunctionIcebergLocal>(
         {.documentation
          = {.description = R"(The table function can be used to read the Iceberg table stored locally.)",

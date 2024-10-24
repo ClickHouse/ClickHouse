@@ -11,7 +11,7 @@ SET cluster_for_parallel_replicas='parallel_replicas';
 SELECT count() FROM test_parallel_replicas_settings WHERE NOT ignore(*) settings log_comment='0_f621c4f2-4da7-4a7c-bb6d-052c442d0f7f';
 
 SYSTEM FLUSH LOGS;
-
+SET max_rows_to_read = 0; -- system.text_log can be really big
 SELECT count() > 0 FROM system.text_log
 WHERE yesterday() <= event_date
       AND query_id in (select query_id from system.query_log where current_database=currentDatabase() AND log_comment='0_f621c4f2-4da7-4a7c-bb6d-052c442d0f7f')

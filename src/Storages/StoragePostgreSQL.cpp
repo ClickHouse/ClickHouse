@@ -138,7 +138,7 @@ public:
         String remote_table_schema_,
         String remote_table_name_,
         postgres::ConnectionHolderPtr connection_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
         , logger(getLogger("ReadFromPostgreSQL"))
         , max_block_size(max_block_size_)
         , remote_table_schema(remote_table_schema_)
@@ -169,7 +169,7 @@ public:
             transform_query_limit);
         LOG_TRACE(logger, "Query: {}", query);
 
-        pipeline.init(Pipe(std::make_shared<PostgreSQLSource<>>(std::move(connection), query, getOutputStream().header, max_block_size)));
+        pipeline.init(Pipe(std::make_shared<PostgreSQLSource<>>(std::move(connection), query, getOutputHeader(), max_block_size)));
     }
 
     LoggerPtr logger;

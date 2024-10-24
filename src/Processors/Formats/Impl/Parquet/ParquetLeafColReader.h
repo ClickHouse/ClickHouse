@@ -54,6 +54,10 @@ private:
     void readPage();
     void readPageV1(const parquet::DataPageV1 & page);
     void readPageV2(const parquet::DataPageV2 & page);
+    void initDataReader(parquet::Encoding::type enconding_type,
+                        const uint8_t * buffer,
+                        std::size_t max_size,
+                        std::unique_ptr<RleValuesReader> && def_level_reader);
 
     std::unique_ptr<ParquetDataValuesReader> createDictReader(
         std::unique_ptr<RleValuesReader> def_level_reader, std::unique_ptr<RleValuesReader> rle_data_reader);

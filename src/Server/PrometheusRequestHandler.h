@@ -29,7 +29,7 @@ private:
     void createImpl();
 
     /// Returns the write buffer used for the current HTTP response.
-    WriteBufferFromHTTPServerResponse & getOutputStream(HTTPServerResponse & response);
+    WriteBufferFromHTTPServerResponse & getOutputHeader(HTTPServerResponse & response);
 
     /// Finalizes the output stream and sends the response to the client.
     void finalizeResponse(HTTPServerResponse & response);

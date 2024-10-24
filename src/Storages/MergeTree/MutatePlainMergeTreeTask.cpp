@@ -39,6 +39,10 @@ void MutatePlainMergeTreeTask::prepare()
         future_part,
         task_context);
 
+    storage.writePartLog(
+        PartLogElement::MUTATE_PART_START, {}, 0,
+        future_part->name, new_part, future_part->parts, merge_list_entry.get(), {});
+
     stopwatch = std::make_unique<Stopwatch>();
 
     write_part_log = [this] (const ExecutionStatus & execution_status)

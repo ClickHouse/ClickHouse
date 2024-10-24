@@ -63,7 +63,34 @@ Currently there are 3 ways to authenticate:
 - `SAS Token` - Can be used by providing an `endpoint`, `connection_string` or `storage_account_url`. It is identified by presence of '?' in the url.
 - `Workload Identity` - Can be used by providing an `endpoint` or `storage_account_url`. If `use_workload_identity` parameter is set in config, ([workload identity](https://github.com/Azure/azure-sdk-for-cpp/tree/main/sdk/identity/azure-identity#authenticate-azure-hosted-applications)) is used for authentication.
 
+### Data cache {#data-cache}
 
+`Azure` table engine supports data caching on local disk.
+See filesystem cache configuration options and usage in this [section](/docs/en/operations/storing-data.md/#using-local-cache).
+Caching is made depending on the path and ETag of the storage object, so clickhouse will not read a stale cache version.
+
+To enable caching use a setting `filesystem_cache_name = '<name>'` and `enable_filesystem_cache = 1`.
+
+```sql
+SELECT *
+FROM azureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;', 'test_container', 'test_table', 'CSV')
+SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
+```
+
+1. add the following section to clickhouse configuration file:
+
+``` xml
+<clickhouse>
+    <filesystem_caches>
+        <cache_for_azure>
+            <path>path to cache directory</path>
+            <max_size>10Gi</max_size>
+        </cache_for_azure>
+    </filesystem_caches>
+</clickhouse>
+```
+
+2. reuse cache configuration (and therefore cache storage) from clickhouse `storage_configuration` section, [described here](/docs/en/operations/storing-data.md/#using-local-cache)
 
 ## See also
 

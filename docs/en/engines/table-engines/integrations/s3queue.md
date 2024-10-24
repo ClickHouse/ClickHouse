@@ -69,6 +69,8 @@ SETTINGS
 
 ## Settings {#settings}
 
+To get a list of settings, configured for the table, use `system.s3_queue_settings` table. Available from `24.10`.
+
 ### mode {#mode}
 
 Possible values:
