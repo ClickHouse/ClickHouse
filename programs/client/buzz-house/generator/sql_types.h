@@ -22,6 +22,8 @@ public:
 	virtual ~SQLType() = default;
 };
 
+const SQLType* TypeDeepCopy(const SQLType *tp);
+
 class BoolType : public SQLType {
 public:
 	const std::string TypeName(const bool escape) const override {
@@ -347,7 +349,7 @@ public:
 	const ArrayType *array_subtype;
 
 	NestedSubType(const uint32_t n, const SQLType* s) :
-		cname(n), subtype(s), array_subtype(new ArrayType(s)) {}
+		cname(n), subtype(s), array_subtype(new ArrayType(TypeDeepCopy(s))) {}
 };
 
 class NestedType : public SQLType {
@@ -397,7 +399,6 @@ bool HasType(const SQLType *tp) {
 	return false;
 }
 
-const SQLType* TypeDeepCopy(const SQLType *tp);
 std::tuple<const SQLType*, sql_query_grammar::Integers> RandomIntType(RandomGenerator &rg);
 std::tuple<const SQLType*, sql_query_grammar::FloatingPoints> RandomFloatType(RandomGenerator &rg);
 std::tuple<const SQLType*, sql_query_grammar::Dates> RandomDateType(RandomGenerator &rg, const bool low_card);
