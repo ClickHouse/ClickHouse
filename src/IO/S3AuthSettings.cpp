@@ -105,7 +105,9 @@ S3AuthSettings::S3AuthSettings(
         }
     }
 
-    headers = getHTTPHeaders(config_prefix, config);
+    headers = getHTTPHeaders(config_prefix, config, "header");
+    access_headers = getHTTPHeaders(config_prefix, config, "access_header");
+
     server_side_encryption_kms_config = getSSEKMSConfig(config_prefix, config);
 
     Poco::Util::AbstractConfiguration::Keys keys;
@@ -157,6 +159,9 @@ bool S3AuthSettings::operator==(const S3AuthSettings & right)
     if (headers != right.headers)
         return false;
 
+    if (access_headers != right.access_headers)
+        return false;
+
     if (users != right.users)
         return false;
 
@@ -196,6 +201,9 @@ void S3AuthSettings::updateIfChanged(const S3AuthSettings & settings)
     if (!settings.headers.empty())
         headers = settings.headers;
 
+    if (!settings.access_headers.empty())
+         access_headers = settings.access_headers;
+
     if (!settings.users.empty())
         users.insert(settings.users.begin(), settings.users.end());
 
@@ -205,6 +213,17 @@ void S3AuthSettings::updateIfChanged(const S3AuthSettings & settings)
         server_side_encryption_kms_config = settings.server_side_encryption_kms_config;
 }
 
+HTTPHeaderEntries S3AuthSettings::getHeaders() const
+{
+    bool auth_settings_is_default = !impl->isChanged("access_key_id");
+    if (access_headers.empty() || !auth_settings_is_default)
+        return headers;
+
+    HTTPHeaderEntries result(headers);
+    result.insert(result.end(), access_headers.begin(), access_headers.end());
+
+    return result;
+}
 
 }
 }
