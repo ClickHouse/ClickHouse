@@ -22,6 +22,7 @@
             <election_timeout_upper_bound_ms>4000</election_timeout_upper_bound_ms>
 
             <async_replication>1</async_replication>
+            <use_xid_64>1</use_xid_64>
         </coordination_settings>
 
         <raft_configuration>
