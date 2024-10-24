@@ -27,6 +27,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int INVALID_SETTING_VALUE;
 }
 

@@ -70,7 +70,6 @@ namespace ErrorCodes
 {
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int BAD_ARGUMENTS;
-    extern const int INVALID_SETTING_VALUE;
 }
 
 namespace S3
