@@ -37,6 +37,7 @@ private:
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
@@ -53,9 +54,20 @@ private:
         if (1 == num_arguments)
             return arguments[0].column;
 
-        Columns converted_columns(num_arguments);
+        Columns converted_columns;
         for (size_t arg = 0; arg < num_arguments; ++arg)
-            converted_columns[arg] = castColumn(arguments[arg], result_type)->convertToFullColumnIfConst();
+        {
+            if (!isNothing(removeNullable(arguments[arg].type)))
+            {
+                auto converted_col = castColumn(arguments[arg], result_type)->convertToFullColumnIfConst();
+                converted_columns.emplace_back(converted_col);
+            }
+        }
+
+        if (converted_columns.empty())
+            return arguments[0].column;
+        else if (converted_columns.size() == 1)
+            return converted_columns[0];
 
         auto result_column = result_type->createColumn();
         result_column->reserve(input_rows_count);
@@ -63,17 +75,17 @@ private:
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
             size_t best_arg = 0;
-            for (size_t arg = 1; arg < num_arguments; ++arg)
+            for (size_t arg = 1; arg < converted_columns.size(); ++arg)
             {
-                auto cmp_result = converted_columns[arg]->compareAt(row_num, row_num, *converted_columns[best_arg], 1);
-
                 if constexpr (kind == LeastGreatest::Least)
                 {
+                    auto cmp_result = converted_columns[arg]->compareAt(row_num, row_num, *converted_columns[best_arg], 1);
                     if (cmp_result < 0)
                         best_arg = arg;
                 }
                 else
                 {
+                    auto cmp_result = converted_columns[arg]->compareAt(row_num, row_num, *converted_columns[best_arg], -1);
                     if (cmp_result > 0)
                         best_arg = arg;
                 }
@@ -85,7 +97,6 @@ private:
         return result_column;
     }
 };
-
 
 template <LeastGreatest kind, typename SpecializedFunction>
 class LeastGreatestOverloadResolver : public IFunctionOverloadResolver
@@ -113,6 +124,22 @@ public:
         /// More efficient specialization for two numeric arguments.
         if (arguments.size() == 2 && isNumber(removeNullable(arguments[0].type)) && isNumber(removeNullable(arguments[1].type)))
             return std::make_unique<FunctionToFunctionBaseAdaptor>(SpecializedFunction::create(context), argument_types, return_type);
+
+        if (isNothing(removeNullable(return_type)))
+        {
+            DataTypes non_null_types;
+            for (const auto & t : argument_types)
+            {
+                if (!removeNullable(t)->onlyNull())
+                    non_null_types.push_back(t);
+            }
+            if (!non_null_types.empty())
+            {
+                const DataTypePtr & result_type = getReturnTypeImpl(non_null_types);
+                return std::make_unique<FunctionToFunctionBaseAdaptor>(
+                        FunctionLeastGreatestGeneric<kind>::create(context), argument_types, result_type);
+            }
+        }
 
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
             FunctionLeastGreatestGeneric<kind>::create(context), argument_types, return_type);

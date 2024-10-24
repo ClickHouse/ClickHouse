@@ -43,6 +43,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/IsOperation.h>
 #include <Functions/castTypeToEither.h>
+#include <Functions/LeastGreatestGeneric.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <base/TypeList.h>
@@ -789,6 +790,7 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr bool is_modulo = IsOperation<Op>::modulo;
     static constexpr bool is_int_div = IsOperation<Op>::int_div;
     static constexpr bool is_int_div_or_zero = IsOperation<Op>::int_div_or_zero;
+    static constexpr bool is_compare = IsOperation<Op>::greatest || IsOperation<Op>::least;
 
     ContextPtr context;
     bool check_decimal_overflow = true;
@@ -1325,6 +1327,67 @@ class FunctionBinaryArithmetic : public IFunction
         return function->execute(new_arguments, result_type, input_rows_count);
     }
 
+    /// Execute the comparison when the operation is least or greatest, and the input type is nullable numeric. Make the result not to
+    /// return null by ignore null input values.
+    ColumnPtr executeComparison(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    {
+        bool args_have_nulls = false, args_have_constants = false;
+        for (const auto & arg : arguments)
+        {
+            if (!args_have_constants)
+                args_have_constants = checkColumnConst<ColumnNullable>(arg.column.get());
+            if (!args_have_nulls)
+            {
+                if (!arg.column->isNullable())
+                    continue;
+
+                const ColumnConst * const_col = checkAndGetColumn<ColumnConst>(arg.column.get());
+                const ColumnNullable * null_col = const_col ? checkAndGetColumn<ColumnNullable>(const_col->getDataColumnPtr().get()) :
+                    checkAndGetColumn<ColumnNullable>(arg.column.get());
+                const ColumnPtr & null_map_col = null_col->getNullMapColumnPtr();
+                const NullMap & null_map = assert_cast<const ColumnUInt8 &>(*null_map_col).getData();
+                for (uint8_t i : null_map)
+                    args_have_nulls |= i;
+            }
+        }
+
+        /// If the input has null values, use `FunctionLeastGreatestGeneric` to do the comparison.
+        if (args_have_nulls || args_have_constants)
+        {
+            if constexpr (IsOperation<Op>::greatest)
+                return FunctionLeastGreatestGeneric<LeastGreatest::Greatest>::create(context)->executeImpl(arguments, result_type, input_rows_count);
+            else
+                return FunctionLeastGreatestGeneric<LeastGreatest::Least>::create(context)->executeImpl(arguments, result_type, input_rows_count);
+        }
+        else
+        {
+            ColumnsWithTypeAndName new_args;
+            new_args.reserve(arguments.size());
+            auto createNewColumn = [&](size_t i) -> void
+            {
+                if (arguments[i].column->isNullable())
+                {
+                    const ColumnNullable * null_col = checkAndGetColumn<ColumnNullable>(arguments[i].column.get());
+                    new_args.emplace_back(ColumnWithTypeAndName(null_col->getNestedColumnPtr(), removeNullable(arguments[i].type), arguments[i].name));
+                }
+                else
+                    new_args.emplace_back(arguments[i]);
+            };
+
+            for (size_t i = 0; i < arguments.size(); ++i)
+                createNewColumn(i);
+
+            auto res = executeImpl2(new_args, removeNullable(result_type), input_rows_count);
+            if (!result_type->isNullable())
+                return res;
+            else
+            {
+                auto null_map = ColumnUInt8::create(res->size(), 0);
+                return ColumnNullable::create(std::move(res), std::move(null_map));
+            }
+        }
+    }
+
     template <typename T, typename ResultDataType>
     static auto helperGetOrConvert(const auto & col_const, const auto & col)
     {
@@ -1463,9 +1526,11 @@ public:
     bool useDefaultImplementationForNulls() const override
     {
         /// We shouldn't use default implementation for nulls for the case when operation is divide,
-        /// intDiv or modulo and denominator is Nullable(Something), because it may cause division
-        /// by zero error (when value is Null we store default value 0 in nested column).
-        return !division_by_nullable;
+        /// intDiv or modulo and denominator is Nullable(Something), or the case when operation is
+        /// least, greatest. For the first case, it may cause division by zero error (when value is
+        /// Null we store default value 0 in nested column), and for the second case, it would return
+        /// null as result when the input has null values, which is incorrect.
+        return !division_by_nullable && !is_compare;
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
@@ -1553,6 +1618,30 @@ public:
                         static_cast<const DataTypeArray &>(*arguments[1]).getNestedType(),
                 };
                 return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context));
+            }
+        }
+
+        /// Special case when the function is least or greatest.
+        if constexpr (is_compare)
+        {
+            bool args_have_nulls = false;
+            DataTypes new_arguments;
+            new_arguments.reserve(arguments.size());
+            for (const auto & arg : arguments)
+            {
+                if (arg->isNullable())
+                {
+                    args_have_nulls = true;
+                    new_arguments.emplace_back(removeNullable(arg));
+                    break;
+                }
+                else
+                    new_arguments.emplace_back(arg);
+            }
+            if (args_have_nulls)
+            {
+                const DataTypePtr res_type = getReturnTypeImplStatic(new_arguments, context);
+                return makeNullable(res_type);
             }
         }
 
@@ -2217,6 +2306,12 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         if (auto function_builder = getFunctionForTupleAndNumberArithmetic(arguments[0].type, arguments[1].type, context))
         {
             return executeTupleNumberOperator(arguments, result_type, input_rows_count, function_builder);
+        }
+
+        /// Special case when the function is least or greatest.
+        if constexpr (is_compare)
+        {
+            return executeComparison(arguments, result_type, input_rows_count);
         }
 
         return executeImpl2(arguments, result_type, input_rows_count);
