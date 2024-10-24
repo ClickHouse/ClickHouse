@@ -53,26 +53,6 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/n
 find -L $ROOT_PATH -type l 2>/dev/null | grep -v contrib && echo "^ Broken symlinks found"
 
 # Duplicated or incorrect setting declarations
-SETTINGS_FILE=$(mktemp)
-ALL_DECLARATION_FILES="
-  $ROOT_PATH/src/Core/Settings.cpp
-  $ROOT_PATH/src/Storages/MergeTree/MergeTreeSettings.cpp
-  $ROOT_PATH/src/Core/FormatFactorySettingsDeclaration.h"
-
-cat $ROOT_PATH/src/Core/Settings.cpp $ROOT_PATH/src/Core/FormatFactorySettingsDeclaration.h | grep "M(" | awk '{print substr($2, 0, length($2) - 1) " Settings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq > ${SETTINGS_FILE}
-cat $ROOT_PATH/src/Storages/MergeTree/MergeTreeSettings.cpp | grep "M(" | awk '{print substr($2, 0, length($2) - 1) " MergeTreeSettings" substr($1, 3, length($1) - 3) " SettingsDeclaration" }' | sort | uniq >> ${SETTINGS_FILE}
-
-# Check that if there are duplicated settings (declared in different objects) they all have the same type (it's simpler to validate style with that assert)
-for setting in $(awk '{print $1 " " $2}' ${SETTINGS_FILE} | sed -e 's/MergeTreeSettings//g' -e 's/Settings//g' | sort | uniq | awk '{ print $1 }' | uniq -d);
-do
-    echo "# Found multiple definitions of setting ${setting} with different types: "
-    grep --line-number " ${setting}," ${ALL_DECLARATION_FILES} | awk '{print "    > " $0 }'
-done
-
-# We append all uses of extern found in implementation files to validate them in a single pass and avoid reading the same files over and over
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -e "^\s*extern const Settings" -e "^\s**extern const MergeTreeSettings" -T | awk '{print substr($5, 0, length($5) -1) " " $4 " " substr($1, 0, length($1) - 1)}' >> ${SETTINGS_FILE}
-
-# Duplicated or incorrect setting declarations
 bash $ROOT_PATH/utils/check-style/check-settings-style
 
 # Unused/Undefined/Duplicates ErrorCodes/ProfileEvents/CurrentMetrics

@@ -37,6 +37,16 @@ namespace Setting
     extern const SettingsBool schema_inference_use_cache_for_s3;
 }
 
+namespace S3AuthSetting
+{
+    extern const S3AuthSettingsString access_key_id;
+    extern const S3AuthSettingsUInt64 expiration_window_seconds;
+    extern const S3AuthSettingsBool no_sign_request;
+    extern const S3AuthSettingsString secret_access_key;
+    extern const S3AuthSettingsString session_token;
+    extern const S3AuthSettingsBool use_environment_credentials;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -162,19 +172,19 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
     else
         url = S3::URI(collection.get<String>("url"), settings[Setting::allow_archive_path_syntax]);
 
-    auth_settings.access_key_id = collection.getOrDefault<String>("access_key_id", "");
-    auth_settings.secret_access_key = collection.getOrDefault<String>("secret_access_key", "");
-    auth_settings.use_environment_credentials = collection.getOrDefault<UInt64>("use_environment_credentials", 1);
-    auth_settings.no_sign_request = collection.getOrDefault<bool>("no_sign_request", false);
-    auth_settings.expiration_window_seconds = collection.getOrDefault<UInt64>("expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS);
+    auth_settings[S3AuthSetting::access_key_id] = collection.getOrDefault<String>("access_key_id", "");
+    auth_settings[S3AuthSetting::secret_access_key] = collection.getOrDefault<String>("secret_access_key", "");
+    auth_settings[S3AuthSetting::use_environment_credentials] = collection.getOrDefault<UInt64>("use_environment_credentials", 1);
+    auth_settings[S3AuthSetting::no_sign_request] = collection.getOrDefault<bool>("no_sign_request", false);
+    auth_settings[S3AuthSetting::expiration_window_seconds] = collection.getOrDefault<UInt64>("expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS);
 
     format = collection.getOrDefault<String>("format", format);
     compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
     structure = collection.getOrDefault<String>("structure", "auto");
 
-    request_settings = S3::RequestSettings(collection, settings, /* validate_settings */true);
+    request_settings = S3::S3RequestSettings(collection, settings, /* validate_settings */true);
 
-    static_configuration = !auth_settings.access_key_id.value.empty() || auth_settings.no_sign_request.changed;
+    static_configuration = !auth_settings[S3AuthSetting::access_key_id].value.empty() || auth_settings[S3AuthSetting::no_sign_request].changed;
 
     keys = {url.key};
 }
@@ -367,19 +377,19 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
         compression_method = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["compression_method"]], "compression_method");
 
     if (engine_args_to_idx.contains("access_key_id"))
-        auth_settings.access_key_id = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["access_key_id"]], "access_key_id");
+        auth_settings[S3AuthSetting::access_key_id] = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["access_key_id"]], "access_key_id");
 
     if (engine_args_to_idx.contains("secret_access_key"))
-        auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["secret_access_key"]], "secret_access_key");
+        auth_settings[S3AuthSetting::secret_access_key] = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["secret_access_key"]], "secret_access_key");
 
     if (engine_args_to_idx.contains("session_token"))
-        auth_settings.session_token = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["session_token"]], "session_token");
+        auth_settings[S3AuthSetting::session_token] = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["session_token"]], "session_token");
 
     if (no_sign_request)
-        auth_settings.no_sign_request = no_sign_request;
+        auth_settings[S3AuthSetting::no_sign_request] = no_sign_request;
 
-    static_configuration = !auth_settings.access_key_id.value.empty() || auth_settings.no_sign_request.changed;
-    auth_settings.no_sign_request = no_sign_request;
+    static_configuration = !auth_settings[S3AuthSetting::access_key_id].value.empty() || auth_settings[S3AuthSetting::no_sign_request].changed;
+    auth_settings[S3AuthSetting::no_sign_request] = no_sign_request;
 
     keys = {url.key};
 }

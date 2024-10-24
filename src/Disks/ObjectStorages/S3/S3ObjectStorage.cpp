@@ -195,7 +195,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     if (mode != WriteMode::Rewrite)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 doesn't support append to files");
 
-    S3::RequestSettings request_settings = s3_settings.get()->request_settings;
+    S3::S3RequestSettings request_settings = s3_settings.get()->request_settings;
     /// NOTE: For background operations settings are not propagated from session or query. They are taken from
     /// default user's .xml config. It's obscure and unclear behavior. For them it's always better
     /// to rely on settings from disk.

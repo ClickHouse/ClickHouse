@@ -1,9 +1,8 @@
 #pragma once
 
 #include <Storages/MarkCache.h>
-#include <IO/ReadSettings.h>
-#include <Common/ThreadPool_fwd.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
+#include <Common/ThreadPool_fwd.h>
 
 
 namespace DB
@@ -11,6 +10,7 @@ namespace DB
 
 struct MergeTreeIndexGranularityInfo;
 using MarksPtr = MarkCache::MappedPtr;
+struct ReadSettings;
 class Threadpool;
 
 /// Class that helps to get marks by indexes.

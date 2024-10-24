@@ -39,6 +39,8 @@ ALL_DECLARATION_FILES="
     $ROOT_PATH/src/Storages/ExecutableSettings.cpp
     $ROOT_PATH/src/Storages/MySQL/MySQLSettings.cpp
     $ROOT_PATH/src/Databases/MySQL/MaterializedMySQLSettings.cpp
+    $ROOT_PATH/src/IO/S3AuthSettings.cpp
+    $ROOT_PATH/src/IO/S3RequestSettings.cpp
 "
 
 # We create an initial file with the shape {setting_name} {ClassName}{Type} SettingsDeclaration
@@ -50,7 +52,7 @@ function add_setting_declaration_file()
     fi
     filename=$(basename -- "$1")
     filename="${filename%.*}"
-    grep "DECLARE(" "$1" | awk -vfilename="${filename}" '{print substr($2, 0, length($2) - 1) " " filename substr($1, 9, length($1) - 9) " SettingsDeclaration" }' | sort | uniq >> "${SETTINGS_FILE}"
+    grep "DECLARE(" "$1" | awk -vfilename="${filename}" '{print substr($2, 0, length($2) - 1) " " filename substr($1, 9, length($1) - 9) " SettingsDeclaration" }' >> "${SETTINGS_FILE}"
 }
 
 for settings_file in ${ALL_DECLARATION_FILES};

@@ -33,6 +33,12 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace S3RequestSetting
+{
+    extern const S3RequestSettingsUInt64 max_single_read_retries;
+}
+
 namespace ErrorCodes
 {
     extern const int S3_ERROR;
@@ -48,7 +54,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     const String & bucket_,
     const String & key_,
     const String & version_id_,
-    const S3::RequestSettings & request_settings_,
+    const S3::S3RequestSettings & request_settings_,
     const ReadSettings & settings_,
     bool use_external_buffer_,
     size_t offset_,
@@ -111,7 +117,7 @@ bool ReadBufferFromS3::nextImpl()
     size_t sleep_time_with_backoff_milliseconds = 100;
     for (size_t attempt = 1; !next_result; ++attempt)
     {
-        bool last_attempt = attempt >= request_settings.max_single_read_retries;
+        bool last_attempt = attempt >= request_settings[S3RequestSetting::max_single_read_retries];
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3Microseconds);
 
@@ -176,7 +182,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
     size_t sleep_time_with_backoff_milliseconds = 100;
     for (size_t attempt = 1; n > 0; ++attempt)
     {
-        bool last_attempt = attempt >= request_settings.max_single_read_retries;
+        bool last_attempt = attempt >= request_settings[S3RequestSetting::max_single_read_retries];
         size_t bytes_copied = 0;
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3Microseconds);
@@ -227,7 +233,7 @@ bool ReadBufferFromS3::processException(Poco::Exception & e, size_t read_offset,
         log,
         "Caught exception while reading S3 object. Bucket: {}, Key: {}, Version: {}, Offset: {}, "
         "Attempt: {}/{}, Message: {}",
-        bucket, key, version_id.empty() ? "Latest" : version_id, read_offset, attempt, request_settings.max_single_read_retries, e.message());
+        bucket, key, version_id.empty() ? "Latest" : version_id, read_offset, attempt, request_settings[S3RequestSetting::max_single_read_retries], e.message());
 
 
     if (auto * s3_exception = dynamic_cast<S3Exception *>(&e))
