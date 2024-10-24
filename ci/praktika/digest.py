@@ -1,6 +1,8 @@
 import dataclasses
 import hashlib
+import os
 from hashlib import md5
+from pathlib import Path
 from typing import List
 
 from praktika import Job
@@ -37,7 +39,7 @@ class Digest:
             sorted=True,
         )
 
-        print(f"calc digest: hash_key [{cache_key}], include [{included_files}] files")
+        print(f"calc digest for job [{job_config.name}]: hash_key [{cache_key}], include [{len(included_files)}] files")
         # Sort files to ensure consistent hash calculation
         included_files.sort()
 
@@ -91,10 +93,16 @@ class Digest:
 
     @staticmethod
     def _calc_file_digest(file_path, hash_md5):
-        # Calculate MD5 hash
-        with open(file_path, "rb") as f:
+        # Resolve file path if it's a symbolic link
+        resolved_path = file_path
+        if Path(file_path).is_symlink():
+            resolved_path = os.path.realpath(file_path)
+            if not Path(resolved_path).is_file():
+                print(f"WARNING: No valid file resolved by link {file_path} -> {resolved_path} - skipping digest calculation")
+                return hash_md5.hexdigest()[:Settings.CACHE_DIGEST_LEN]
+
+        with open(resolved_path, "rb") as f:
             for chunk in iter(lambda: f.read(4096), b""):
                 hash_md5.update(chunk)
 
-        res = hash_md5.hexdigest()[: Settings.CACHE_DIGEST_LEN]
-        return res
+        return hash_md5.hexdigest()[: Settings.CACHE_DIGEST_LEN]
