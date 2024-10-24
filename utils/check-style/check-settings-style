@@ -40,6 +40,7 @@ ALL_DECLARATION_FILES="
     $ROOT_PATH/src/Storages/MySQL/MySQLSettings.cpp
     $ROOT_PATH/src/Databases/MySQL/MaterializedMySQLSettings.cpp
     $ROOT_PATH/src/IO/S3AuthSettings.cpp
+    $ROOT_PATH/src/IO/S3RequestSettings.cpp
 "
 
 # We create an initial file with the shape {setting_name} {ClassName}{Type} SettingsDeclaration

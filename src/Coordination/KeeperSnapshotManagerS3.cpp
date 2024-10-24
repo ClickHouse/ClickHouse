@@ -44,6 +44,11 @@ namespace S3AuthSetting
     extern const S3AuthSettingsBool use_insecure_imds_request;
 }
 
+namespace S3RequestSetting
+{
+    extern const S3RequestSettingsUInt64 max_single_read_retries;
+}
+
 struct KeeperSnapshotManagerS3::S3Configuration
 {
     S3Configuration(S3::URI uri_, S3::S3AuthSettings auth_settings_, std::shared_ptr<const S3::Client> client_)
@@ -169,7 +174,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
         if (s3_client == nullptr)
             return;
 
-        S3::RequestSettings request_settings_1;
+        S3::S3RequestSettings request_settings_1;
 
         const auto create_writer = [&](const auto & key)
         {
@@ -212,8 +217,8 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
         lock_writer.finalize();
 
         // We read back the written UUID, if it's the same we can upload the file
-        S3::RequestSettings request_settings_2;
-        request_settings_2.max_single_read_retries = 1;
+        S3::S3RequestSettings request_settings_2;
+        request_settings_2[S3RequestSetting::max_single_read_retries] = 1;
         ReadBufferFromS3 lock_reader
         {
             s3_client->client,

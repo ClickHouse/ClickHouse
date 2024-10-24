@@ -2,10 +2,8 @@
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/Settings.h>
 #include <IO/S3AuthSettings.h>
+#include <IO/S3Defines.h>
 #include <IO/S3Common.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Common/Exception.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
@@ -88,7 +86,7 @@ S3AuthSettings::S3AuthSettings() : impl(std::make_unique<S3AuthSettingsImpl>())
 
 S3AuthSettings::S3AuthSettings(
     const Poco::Util::AbstractConfiguration & config, const DB::Settings & settings, const std::string & config_prefix)
-    : impl(std::make_unique<S3AuthSettingsImpl>())
+    : S3AuthSettings()
 {
     for (auto & field : impl->allMutable())
     {

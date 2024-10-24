@@ -13,7 +13,6 @@ class AbstractConfiguration;
 
 namespace DB
 {
-class NamedCollection;
 struct Settings;
 struct S3AuthSettingsImpl;
 
