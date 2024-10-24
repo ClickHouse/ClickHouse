@@ -37,8 +37,6 @@ public:
     void setJoin(JoinPtr join_, bool swap_streams_ = false);
     bool allowPushDownToRight() const;
 
-    bool canUpdateInputHeader() const override { return true; }
-
     JoinInnerTableSelectionMode inner_table_selection_mode = JoinInnerTableSelectionMode::Right;
 
 private:
