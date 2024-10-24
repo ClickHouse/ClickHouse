@@ -6,6 +6,8 @@ if(NOT USE_MONGODB)
 endif()
 
 set(BSONCXX_SOURCES_DIR "${ClickHouse_SOURCE_DIR}/contrib/mongo-cxx-driver/src/bsoncxx")
+set(BSONCXX_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/mongo-cxx-driver/src/bsoncxx")
+
 set(BSONCXX_SOURCES
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/array/element.cpp
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/array/value.cpp
@@ -29,20 +31,20 @@ set(BSONCXX_POLY_USE_IMPLS ON)
 
 configure_file(
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/config/config.hpp.in
-        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/config/config.hpp
+        ${BSONCXX_BINARY_DIR}/lib/bsoncxx/v_noabi/bsoncxx/config/config.hpp
 )
 configure_file(
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/config/version.hpp.in
-        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/config/version.hpp
+        ${BSONCXX_BINARY_DIR}/lib/bsoncxx/v_noabi/bsoncxx/config/version.hpp
 )
 configure_file(
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/config/private/config.hh.in
-        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/config/private/config.hh
+        ${BSONCXX_BINARY_DIR}/lib/bsoncxx/v_noabi/bsoncxx/config/private/config.hh
 )
 
 add_library(_bsoncxx ${BSONCXX_SOURCES})
 add_library(ch_contrib::bsoncxx ALIAS _bsoncxx)
-target_include_directories(_bsoncxx SYSTEM PUBLIC "${BSONCXX_SOURCES_DIR}/include/bsoncxx/v_noabi" ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi)
+target_include_directories(_bsoncxx SYSTEM PUBLIC "${BSONCXX_SOURCES_DIR}/include/bsoncxx/v_noabi" "${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi" "${BSONCXX_BINARY_DIR}/lib/bsoncxx/v_noabi")
 target_compile_definitions(_bsoncxx PUBLIC BSONCXX_STATIC)
 target_link_libraries(_bsoncxx ch_contrib::libbson)
 
@@ -51,13 +53,14 @@ generate_export_header(_bsoncxx
         BASE_NAME BSONCXX
         EXPORT_MACRO_NAME BSONCXX_API
         NO_EXPORT_MACRO_NAME BSONCXX_PRIVATE
-        EXPORT_FILE_NAME ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/config/export.hpp
+        EXPORT_FILE_NAME ${BSONCXX_BINARY_DIR}/lib/bsoncxx/v_noabi/bsoncxx/config/export.hpp
         STATIC_DEFINE BSONCXX_STATIC
 )
 
 
 
 set(MONGOCXX_SOURCES_DIR "${ClickHouse_SOURCE_DIR}/contrib/mongo-cxx-driver/src/mongocxx")
+set(MONGOCXX_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/mongo-cxx-driver/src/mongocxx")
 set(MONGOCXX_SOURCES
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/bulk_write.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/change_stream.cpp
@@ -163,20 +166,20 @@ endif()
 
 configure_file(
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/config/config.hpp.in
-        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/config/config.hpp
+        ${MONGOCXX_BINARY_DIR}/lib/mongocxx/v_noabi/mongocxx/config/config.hpp
 )
 configure_file(
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/config/version.hpp.in
-        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/config/version.hpp
+        ${MONGOCXX_BINARY_DIR}/lib/mongocxx/v_noabi/mongocxx/config/version.hpp
 )
 configure_file(
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/config/private/config.hh.in
-        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/config/private/config.hh
+        ${MONGOCXX_BINARY_DIR}/lib/mongocxx/v_noabi/mongocxx/config/private/config.hh
 )
 
 add_library(_mongocxx ${MONGOCXX_SOURCES})
 add_library(ch_contrib::mongocxx ALIAS _mongocxx)
-target_include_directories(_mongocxx SYSTEM PUBLIC "${MONGOCXX_SOURCES_DIR}/include/mongocxx/v_noabi" ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi)
+target_include_directories(_mongocxx SYSTEM PUBLIC "${MONGOCXX_SOURCES_DIR}/include/mongocxx/v_noabi" "${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi" "${MONGOCXX_BINARY_DIR}/lib/mongocxx/v_noabi")
 target_compile_definitions(_mongocxx PUBLIC MONGOCXX_STATIC)
 target_link_libraries(_mongocxx ch_contrib::bsoncxx ch_contrib::libmongoc)
 
@@ -184,6 +187,6 @@ generate_export_header(_mongocxx
         BASE_NAME MONGOCXX
         EXPORT_MACRO_NAME MONGOCXX_API
         NO_EXPORT_MACRO_NAME MONGOCXX_PRIVATE
-        EXPORT_FILE_NAME ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/config/export.hpp
+        EXPORT_FILE_NAME ${MONGOCXX_BINARY_DIR}/lib/mongocxx/v_noabi/mongocxx/config/export.hpp
         STATIC_DEFINE MONGOCXX_STATIC
 )

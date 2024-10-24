@@ -109,7 +109,7 @@ void CreateDirectoryRecursiveOperation::execute(std::unique_lock<SharedMutex> &)
 {
     namespace fs = std::filesystem;
     fs::path p(path);
-    while (!disk.exists(p))
+    while (!disk.existsFileOrDirectory(p))
     {
         paths_created.push_back(p);
         if (!p.has_parent_path())
@@ -151,26 +151,26 @@ RemoveRecursiveOperation::RemoveRecursiveOperation(const std::string & path_, ID
 
 void RemoveRecursiveOperation::execute(std::unique_lock<SharedMutex> &)
 {
-    if (disk.isFile(path))
+    if (disk.existsFile(path))
         disk.moveFile(path, temp_path);
-    else if (disk.isDirectory(path))
+    else if (disk.existsDirectory(path))
         disk.moveDirectory(path, temp_path);
 }
 
 void RemoveRecursiveOperation::undo(std::unique_lock<SharedMutex> &)
 {
-    if (disk.isFile(temp_path))
+    if (disk.existsFile(temp_path))
         disk.moveFile(temp_path, path);
-    else if (disk.isDirectory(temp_path))
+    else if (disk.existsDirectory(temp_path))
         disk.moveDirectory(temp_path, path);
 }
 
 void RemoveRecursiveOperation::finalize()
 {
-    if (disk.exists(temp_path))
+    if (disk.existsFileOrDirectory(temp_path))
         disk.removeRecursive(temp_path);
 
-    if (disk.exists(path))
+    if (disk.existsFileOrDirectory(path))
         disk.removeRecursive(path);
 }
 
@@ -246,7 +246,7 @@ ReplaceFileOperation::ReplaceFileOperation(const std::string & path_from_, const
 
 void ReplaceFileOperation::execute(std::unique_lock<SharedMutex> &)
 {
-    if (disk.exists(path_to))
+    if (disk.existsFile(path_to))
         disk.moveFile(path_to, temp_path_to);
 
     disk.replaceFile(path_from, path_to);
@@ -272,10 +272,9 @@ WriteFileOperation::WriteFileOperation(const std::string & path_, IDisk & disk_,
 
 void WriteFileOperation::execute(std::unique_lock<SharedMutex> &)
 {
-    if (disk.exists(path))
+    if (auto buf = disk.readFileIfExists(path, ReadSettings{}))
     {
         existed = true;
-        auto buf = disk.readFile(path);
         readStringUntilEOF(prev_data, *buf);
     }
     auto buf = disk.writeFile(path);
@@ -299,7 +298,7 @@ void WriteFileOperation::undo(std::unique_lock<SharedMutex> &)
 void AddBlobOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
 {
     DiskObjectStorageMetadataPtr metadata;
-    if (metadata_storage.exists(path))
+    if (metadata_storage.existsFile(path))
         metadata = metadata_storage.readMetadataUnlocked(path, metadata_lock);
     else
         metadata = std::make_unique<DiskObjectStorageMetadata>(disk.getPath(), path);
@@ -351,7 +350,7 @@ void UnlinkMetadataFileOperation::undo(std::unique_lock<SharedMutex> & lock)
 
 void TruncateMetadataFileOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
 {
-    if (metadata_storage.exists(path))
+    if (metadata_storage.existsFile(path))
     {
         auto metadata = metadata_storage.readMetadataUnlocked(path, metadata_lock);
         while (metadata->getTotalSizeBytes() > target_size)

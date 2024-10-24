@@ -566,12 +566,9 @@ Block QueryPipeline::getHeader() const
 {
     if (input)
         return input->getHeader();
-    else if (output)
+    if (output)
         return output->getHeader();
-    else
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Header is available only for pushing or pulling QueryPipeline");
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Header is available only for pushing or pulling QueryPipeline");
 }
 
 void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
