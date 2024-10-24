@@ -10,7 +10,7 @@
 {1343 -> fe, afe -> fefe}
 {1343 -> fe, afe -> fefe}
 -- tuple format
-(1, 1, 3, abc)
-(1, 1, 3, abc)
-(1, 1, 3, abc)
-(1, 1, 3, abc)
+(1, 3, abc)
+(1, 3, abc)
+(1, 3, abc)
+(1, 3, abc)

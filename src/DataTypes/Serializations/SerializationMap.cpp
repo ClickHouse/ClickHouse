@@ -114,19 +114,22 @@ void SerializationMap::serializeTextImpl(
             writeChar(':', ostr);
         value_writer(ostr, value, nested_tuple.getColumn(1), offset);
     }
-    for (size_t i = offset + 1; i < next_offset; ++i)
-    {
-        writeChar(',', ostr);
-        if (settings.spark_text_output_format)
-            writeChar(' ', ostr);
-
-        key_writer(ostr, key, nested_tuple.getColumn(0), i);
-        if (settings.spark_text_output_format)
+    if (settings.spark_text_output_format)
+        for (size_t i = offset + 1; i < next_offset; ++i)
+        {
+            writeString(std::string_view(", "), ostr);
+            key_writer(ostr, key, nested_tuple.getColumn(0), i);
             writeString(std::string_view(" -> "), ostr);
-        else
+            value_writer(ostr, value, nested_tuple.getColumn(1), i);
+        }
+    else
+        for (size_t i = offset + 1; i < next_offset; ++i)
+        {
+            writeChar(',', ostr);
+            key_writer(ostr, key, nested_tuple.getColumn(0), i);
             writeChar(':', ostr);
-        value_writer(ostr, value, nested_tuple.getColumn(1), i);
-    }
+            value_writer(ostr, value, nested_tuple.getColumn(1), i);
+        }
     writeChar('}', ostr);
 }
 

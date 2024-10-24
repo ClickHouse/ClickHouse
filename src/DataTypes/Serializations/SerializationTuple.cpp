@@ -144,17 +144,18 @@ void SerializationTuple::serializeText(const IColumn & column, size_t row_num, W
         else
             elems[0]->serializeTextQuoted(extractElementColumn(column, 0), row_num, ostr, settings);
     }
-    for (size_t i = 0; i < elems.size(); ++i)
-    {
-        writeChar(',', ostr);
-        if (settings.spark_text_output_format)
+    if (settings.spark_text_output_format)
+        for (size_t i = 1; i < elems.size(); ++i)
         {
-            writeChar(' ', ostr);
+            writeString(std::string_view(", "), ostr);
             elems[i]->serializeText(extractElementColumn(column, i), row_num, ostr, settings);
         }
-        else
+    else
+        for (size_t i = 1; i < elems.size(); ++i)
+        {
+            writeChar(',', ostr);
             elems[i]->serializeTextQuoted(extractElementColumn(column, i), row_num, ostr, settings);
-    }
+        }
     writeChar(')', ostr);
 }
 
