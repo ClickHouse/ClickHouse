@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <numeric>
 
+#include <Common/thread_local_rng.h>
+
 
 namespace DB
 {
