@@ -996,6 +996,7 @@ void HashJoin::checkTypesOfKeys(const Block & block) const
 
 void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
+    LOG_DEBUG(&Poco::Logger::get("debug"), "block.rows()={}", block.rows());
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
 
@@ -1062,6 +1063,7 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 
 void HashJoin::joinBlock(ScatteredBlock & block, ExtraBlockPtr & not_processed)
 {
+    LOG_DEBUG(&Poco::Logger::get("debug"), "block.rows()={}", block.rows());
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
 
