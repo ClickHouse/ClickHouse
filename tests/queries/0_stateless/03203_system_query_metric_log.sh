@@ -19,9 +19,11 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
 function check_log()
 {
     interval=$1
-    # We calculate the diff of each row with its previous row to check whether the intervals at which
-    # data is collected is right. The first row is always skipped because the diff is 0. The same for the
-    # last row, which is skipped because doesn't contain a full interval.
+
+    # We calculate the diff of each row with its previous row to check whether the intervals at
+    # which data is collected is right. The first row is always skipped because the diff with the
+    # preceding one (itself) is 0. The last row is also skipped, because it doesn't contain a full
+    # interval.
     $CLICKHOUSE_CLIENT --max_threads=1 -m -q """
     WITH diff AS (
         SELECT
@@ -38,6 +40,30 @@ function check_log()
     SELECT if(count() BETWEEN ((ceil(2500 / $interval) - 2) * 0.8) AND ((ceil(2500 / $interval) - 2) * 1.2), 'number_of_metrics_${interval}_ok', 'number_of_metrics_${interval}_error'),
            if(avg(diff) BETWEEN $interval * 0.8 AND $interval * 1.2, 'timestamp_diff_in_metrics_${interval}_ok', 'timestamp_diff_in_metrics_${interval}_error')
     FROM diff WHERE row < total_rows
+    """
+
+    # Check that the first event contains information from the beginning of the query.
+    # Notice the rest of the events won't contain these because the diff will be 0.
+    $CLICKHOUSE_CLIENT -m -q """
+        SELECT if(ProfileEvent_Query = 1 AND ProfileEvent_SelectQuery = 1 AND ProfileEvent_InitialQuery = 1, 'initial_data_${interval}_ok', 'initial_data_${interval}_error')
+        FROM system.query_metric_log
+        WHERE event_date >= yesterday() AND query_id = '${query_prefix}_${interval}'
+        ORDER BY event_time_microseconds
+        LIMIT 1
+    """
+
+    # Also check that it contains some data that we know it's going to be there.
+    # Notice the Sleep events can be in any of the rows, not only in the first one.
+    $CLICKHOUSE_CLIENT -m -q """
+        SELECT if(sum(ProfileEvent_SleepFunctionCalls) = 1 AND
+                  sum(ProfileEvent_SleepFunctionMicroseconds) = 2500000 AND
+                  sum(ProfileEvent_SleepFunctionElapsedMicroseconds) = 2500000 AND
+                  sum(ProfileEvent_Query) = 1 AND
+                  sum(ProfileEvent_SelectQuery) = 1 AND
+                  sum(ProfileEvent_InitialQuery) = 1,
+                  'data_${interval}_ok', 'data_${interval}_error')
+        FROM system.query_metric_log
+        WHERE event_date >= yesterday() AND query_id = '${query_prefix}_${interval}'
     """
 }
 
