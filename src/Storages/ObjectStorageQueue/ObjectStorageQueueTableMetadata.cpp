@@ -12,6 +12,19 @@
 namespace DB
 {
 
+namespace ObjectStorageQueueSetting
+{
+    extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
+    extern const ObjectStorageQueueSettingsUInt32 buckets;
+    extern const ObjectStorageQueueSettingsString last_processed_path;
+    extern const ObjectStorageQueueSettingsUInt32 loading_retries;
+    extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
+    extern const ObjectStorageQueueSettingsUInt32 processing_threads_num;
+    extern const ObjectStorageQueueSettingsUInt32 tracked_files_limit;
+    extern const ObjectStorageQueueSettingsUInt32 tracked_file_ttl_sec;
+
+}
+
 namespace ErrorCodes
 {
     extern const int METADATA_MISMATCH;
@@ -51,11 +64,11 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     , tracked_files_limit(engine_settings.tracked_files_limit)
     , tracked_files_ttl_sec(engine_settings.tracked_file_ttl_sec)
 {
-    processing_threads_num_changed = engine_settings.processing_threads_num.changed;
-    if (!processing_threads_num_changed && engine_settings.processing_threads_num <= 1)
+    processing_threads_num_changed = engine_settings[ObjectStorageQueueSetting::processing_threads_num].changed;
+    if (!processing_threads_num_changed && engine_settings[ObjectStorageQueueSetting::processing_threads_num] <= 1)
         processing_threads_num = std::max<uint32_t>(getNumberOfCPUCoresToUse(), 16);
     else
-        processing_threads_num = engine_settings.processing_threads_num;
+        processing_threads_num = engine_settings[ObjectStorageQueueSetting::processing_threads_num];
 }
 
 String ObjectStorageQueueTableMetadata::toString() const

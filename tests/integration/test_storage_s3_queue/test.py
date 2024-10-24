@@ -1644,6 +1644,24 @@ def test_processed_file_setting(started_cluster, processing_threads):
 
     assert expected_rows == get_count()
 
+    node.restart_clickhouse()
+
+    correct_values = [
+        [1, 1, 1],
+    ]
+    values_csv = (
+        "\n".join((",".join(map(str, row)) for row in correct_values)) + "\n"
+    ).encode()
+    file_path = f"{files_path}/99.csv"
+    put_s3_file_content(started_cluster, file_path, values_csv)
+
+    expected_rows += 1
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+    assert expected_rows == get_count()
+
 
 @pytest.mark.parametrize("processing_threads", [1, 5])
 def test_processed_file_setting_distributed(started_cluster, processing_threads):
@@ -2049,102 +2067,54 @@ def test_bad_settings(started_cluster):
         assert "Ordered mode in cloud without either" in str(e)
 
 
-def test_alter_settings(started_cluster):
-    node1 = started_cluster.instances["node1"]
-    node2 = started_cluster.instances["node2"]
+def test_processing_threads(started_cluster):
+    node = started_cluster.instances["node1"]
 
-    table_name = f"test_alter_settings_{uuid.uuid4().hex[:8]}"
+    table_name = f"test_processing_threads_{uuid.uuid4().hex[:8]}"
     dst_table_name = f"{table_name}_dst"
+    # A unique path is necessary for repeatable tests
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
-    files_to_generate = 1000
-
-    node1.query("DROP DATABASE IF EXISTS r")
-    node2.query("DROP DATABASE IF EXISTS r")
-
-    node1.query(
-        f"CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/{table_name}', 'shard1', 'node1')"
-    )
-    node2.query(
-        f"CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/{table_name}', 'shard1', 'node2')"
-    )
+    files_to_generate = 10
 
     create_table(
         started_cluster,
-        node1,
+        node,
         table_name,
-        "unordered",
+        "ordered",
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
-            "processing_threads_num": 10,
-            "loading_retries": 20,
         },
-        database_name="r",
     )
 
-    assert '"processing_threads_num":10' in node1.query(
+    assert '"processing_threads_num":16' in node.query(
         f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
     )
 
-    assert '"loading_retries":20' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
-
-    assert '"after_processing":"keep"' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    assert 16 == int(
+        node.query(
+            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'processing_threads_num'"
+        )
     )
 
     total_values = generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
 
-    create_mv(node1, f"r.{table_name}", dst_table_name)
-    create_mv(node2, f"r.{table_name}", dst_table_name)
+    create_mv(node, table_name, dst_table_name)
 
     def get_count():
-        return int(
-            node1.query(
-                f"SELECT count() FROM clusterAllReplicas(cluster, default.{dst_table_name})"
-            )
-        )
+        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
-    expected_rows = files_to_generate
+    expected_rows = 10
     for _ in range(20):
         if expected_rows == get_count():
             break
         time.sleep(1)
+
     assert expected_rows == get_count()
 
-    node1.query(
-        f"""
-        ALTER TABLE r.{table_name}
-        MODIFY SETTING processing_threads_num=5, loading_retries=10, after_processing='delete', tracked_files_limit=50, tracked_files_ttl_sec=10000
-    """
-    )
-
-    assert '"processing_threads_num":5' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
-
-    assert '"loading_retries":10' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
-
-    assert '"after_processing":"delete"' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
-
-    node1.restart_clickhouse()
-
-    assert '"processing_threads_num":5' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
-
-    assert '"loading_retries":10' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
-
-    assert '"after_processing":"delete"' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    assert node.contains_in_log(
+        f"StorageS3Queue (default.{table_name}): Using 16 processing threads"
     )
