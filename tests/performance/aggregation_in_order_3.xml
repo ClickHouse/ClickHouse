@@ -1,0 +1,13 @@
+<test>
+    <settings>
+        <optimize_aggregation_in_order>1</optimize_aggregation_in_order>
+    </settings>
+
+    <create_query>CREATE TABLE data_sim (`parent_key` Int, `child_key` Int, `child_key_2` Int, `value` Int) ENGINE = MergeTree ORDER BY (parent_key, child_key)</create_query>
+
+    <fill_query>INSERT INTO data_sim SELECT number % 10, number % 3, intDiv(number, 2), number FROM numbers(100000000)</fill_query>
+
+    <query> SELECT parent_key, child_key, count() FROM data_sim GROUP BY parent_key, child_key, child_key_2 SETTINGS optimize_aggregation_in_order = 1 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS data_sim</drop_query>
+</test>
