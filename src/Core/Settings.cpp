@@ -2130,21 +2130,8 @@ If it is set to true, then a user is allowed to executed distributed DDL queries
     DECLARE(Bool, allow_suspicious_codecs, false, R"(
 If it is set to true, allow to specify meaningless compression codecs.
 )", 0) \
-    DECLARE(Bool, enable_deflate_qpl_codec, false, R"(
-If turned on, the DEFLATE_QPL codec may be used to compress columns.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-)", 0) \
     DECLARE(Bool, enable_zstd_qat_codec, false, R"(
 If turned on, the ZSTD_QAT codec may be used to compress columns.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
 )", 0) \
     DECLARE(UInt64, query_profiler_real_time_period_ns, QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS, R"(
 Sets the period for a real clock timer of the [query profiler](../../operations/optimizing-performance/sampling-query-profiler.md). Real clock timer counts wall-clock time.
@@ -5891,6 +5878,7 @@ Allow writing simple SELECT queries without the leading SELECT keyword, which ma
     MAKE_OBSOLETE(M, Bool, query_plan_optimize_primary_key, true) \
     MAKE_OBSOLETE(M, Bool, optimize_monotonous_functions_in_order_by, false) \
     MAKE_OBSOLETE(M, UInt64, http_max_chunk_size, 100_GiB) \
+    MAKE_OBSOLETE(M, Bool, enable_deflate_qpl_codec, false) \
 
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
