@@ -106,6 +106,8 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_t
         auto elem = createLogMetricElement(query_id, *query_info, current_time);
         if (elem)
             add(std::move(elem.value()));
+        else
+            LOG_TRACE(logger, "Query {} finished already while this collecting task was running", query_id);
     });
 
     status.task->scheduleAfter(interval_milliseconds);
@@ -161,10 +163,7 @@ std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(cons
 
     /// The query might have finished while the scheduled task is running.
     if (query_status_it == queries.end())
-    {
-        LOG_TRACE(logger, "Query {} finished already while this collecting task was running", query_id);
         return {};
-    }
 
     QueryMetricLogElement elem;
     elem.event_time = timeInSeconds(current_time);
