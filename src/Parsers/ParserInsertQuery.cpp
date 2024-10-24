@@ -45,6 +45,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserIdentifier name_p(true);
     ParserList columns_p(std::make_unique<ParserInsertElement>(), std::make_unique<ParserToken>(TokenType::Comma), false);
     ParserFunction table_function_p{false};
+    ParserSubstitution infile_parameter_p;
     ParserStringLiteral infile_name_p;
     ParserExpressionWithOptionalAlias exp_elem_p(false);
 
@@ -130,7 +131,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (s_from_infile.ignore(pos, expected))
     {
         /// Read file name to process it later
-        if (!infile_name_p.parse(pos, infile, expected))
+        if (!infile_name_p.parse(pos, infile, expected) && !infile_parameter_p.parse(pos, infile, expected))
             return false;
 
         /// Check for 'COMPRESSION' parameter (optional)
