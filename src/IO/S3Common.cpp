@@ -77,14 +77,14 @@ namespace ErrorCodes
 namespace S3
 {
 
-HTTPHeaderEntries getHTTPHeaders(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config)
+HTTPHeaderEntries getHTTPHeaders(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config, const std::string header_key)
 {
     HTTPHeaderEntries headers;
     Poco::Util::AbstractConfiguration::Keys subconfig_keys;
     config.keys(config_elem, subconfig_keys);
     for (const std::string & subkey : subconfig_keys)
     {
-        if (subkey.starts_with("header"))
+        if (subkey.starts_with(header_key))
         {
             auto header_str = config.getString(config_elem + "." + subkey);
             auto delimiter = header_str.find(':');
@@ -152,7 +152,9 @@ AuthSettings::AuthSettings(
         }
     }
 
-    headers = getHTTPHeaders(config_prefix, config);
+    headers = getHTTPHeaders(config_prefix, config, "header");
+    access_headers = getHTTPHeaders(config_prefix, config, "access_header");
+
     server_side_encryption_kms_config = getSSEKMSConfig(config_prefix, config);
 
     Poco::Util::AbstractConfiguration::Keys keys;
@@ -162,6 +164,18 @@ AuthSettings::AuthSettings(
         if (startsWith(key, "user"))
             users.insert(config.getString(config_prefix + "." + key));
     }
+}
+
+HTTPHeaderEntries AuthSettings::getHeaders() const
+{
+    bool auth_settings_is_default = !isChanged("access_key_id");
+    if (access_headers.empty() || !auth_settings_is_default)
+        return headers;
+
+    HTTPHeaderEntries result(headers);
+    result.insert(result.end(), access_headers.begin(), access_headers.end());
+
+    return result;
 }
 
 AuthSettings::AuthSettings(const DB::Settings & settings)
@@ -198,6 +212,9 @@ void AuthSettings::updateIfChanged(const AuthSettings & settings)
 
     if (!settings.headers.empty())
         headers = settings.headers;
+
+    if (!settings.access_headers.empty())
+        access_headers = settings.access_headers;
 
     if (!settings.users.empty())
         users.insert(settings.users.begin(), settings.users.end());
@@ -404,6 +421,9 @@ void RequestSettings::validateUploadSettings()
 bool operator==(const AuthSettings & left, const AuthSettings & right)
 {
     if (left.headers != right.headers)
+        return false;
+
+    if (left.access_headers != right.access_headers)
         return false;
 
     if (left.users != right.users)
