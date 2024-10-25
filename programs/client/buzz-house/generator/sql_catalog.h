@@ -96,6 +96,10 @@ public:
 	bool IsBufferEngine() const {
 		return teng == sql_query_grammar::TableEngineValues::Buffer;
 	}
+
+	bool IsRocksEngine() const {
+		return teng == sql_query_grammar::TableEngineValues::EmbeddedRocksDB;
+	}
 };
 
 struct SQLTable : SQLBase {

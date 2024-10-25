@@ -153,8 +153,8 @@ int StatementGenerator::PickUpNextCols(RandomGenerator &rg, const SQLTable &t, s
 	return 0;
 }
 
-int StatementGenerator::GenerateTableKey(RandomGenerator &rg, sql_query_grammar::TableKey *tkey) {
-	if (!entries.empty() && rg.NextSmallNumber() < 7) {
+int StatementGenerator::GenerateTableKey(RandomGenerator &rg, const bool force, sql_query_grammar::TableKey *tkey) {
+	if (!entries.empty() && (force || rg.NextSmallNumber() < 7)) {
 		const size_t ocols = (rg.NextMediumNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1;
 
 		std::shuffle(entries.begin(), entries.end(), rg.gen);
@@ -174,7 +174,7 @@ int StatementGenerator::GenerateTableKey(RandomGenerator &rg, sql_query_grammar:
 int StatementGenerator::GenerateMergeTreeEngineDetails(RandomGenerator &rg, const sql_query_grammar::TableEngineValues teng,
 													   const bool add_pkey, sql_query_grammar::TableEngine *te) {
 	if (rg.NextSmallNumber() < 6) {
-		GenerateTableKey(rg, te->mutable_order());
+		GenerateTableKey(rg, false, te->mutable_order());
 	}
 	if (te->order().exprs_size() && add_pkey && rg.NextSmallNumber() < 5) {
 		//pkey is a subset of order by
@@ -192,10 +192,10 @@ int StatementGenerator::GenerateMergeTreeEngineDetails(RandomGenerator &rg, cons
 			}
 		}
 	} else if (!te->order().exprs_size() && add_pkey) {
-		GenerateTableKey(rg, te->mutable_primary_key());
+		GenerateTableKey(rg, false, te->mutable_primary_key());
 	}
 	if (rg.NextSmallNumber() < 5) {
-		GenerateTableKey(rg, te->mutable_partition_by());
+		GenerateTableKey(rg, false, te->mutable_partition_by());
 	}
 
 	const size_t npkey = te->primary_key().exprs_size();
@@ -253,7 +253,7 @@ int StatementGenerator::GenerateFileEngineDetails(RandomGenerator &rg, sql_query
 	sql_query_grammar::TableEngineParam *tep = te->add_params();
 
 	if (rg.NextSmallNumber() < 5) {
-		GenerateTableKey(rg, te->mutable_partition_by());
+		GenerateTableKey(rg, false, te->mutable_partition_by());
 	}
 	if (noption < 9) {
 		tep->set_in_out(static_cast<sql_query_grammar::InOutFormat>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::InOutFormat_MAX)) + 1));
@@ -333,6 +333,11 @@ int StatementGenerator::GenerateBufferEngineDetails(RandomGenerator &rg, sql_que
 		//flush_bytes
 		te->add_params()->set_num(static_cast<int32_t>(rg.NextRandomUInt32() % 1001));
 	}
+	return 0;
+}
+
+int StatementGenerator::GenerateRocksEngineDetails(RandomGenerator &rg, const bool add_pkey, sql_query_grammar::TableEngine *te) {
+	GenerateTableKey(rg, add_pkey, te->mutable_primary_key());
 	return 0;
 }
 
@@ -594,6 +599,7 @@ const std::vector<sql_query_grammar::TableEngineValues> like_engs = {
 	sql_query_grammar::TableEngineValues::StripeLog,
 	sql_query_grammar::TableEngineValues::Log,
 	sql_query_grammar::TableEngineValues::TinyLog,
+	sql_query_grammar::TableEngineValues::EmbeddedRocksDB,
 	sql_query_grammar::TableEngineValues::Buffer
 };
 
@@ -636,7 +642,7 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 
 		next.teng = val;
 		te->set_engine(val);
-		added_pkey |= !next.IsMergeTreeFamily();
+		added_pkey |= (!next.IsMergeTreeFamily() && !next.IsRocksEngine());
 		const bool add_version_to_replacing = next.teng == sql_query_grammar::TableEngineValues::ReplacingMergeTree && rg.NextSmallNumber() < 4;
 		uint32_t added_cols = 0, added_idxs = 0, added_projs = 0, added_consts = 0, added_sign = 0, added_is_deleted = 0, added_version = 0;
 		const uint32_t to_addcols = (rg.NextMediumNumber() % (rg.NextBool() ? 5 : 30)) + 1,
@@ -730,7 +736,8 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 		next.constr_counter = t.constr_counter;
 		next.is_temp = t.is_temp;
 	}
-	if (next.IsMergeTreeFamily() || next.IsFileEngine() || next.IsJoinEngine() || next.IsBufferEngine()) {
+	if (next.IsMergeTreeFamily() || next.IsFileEngine() || next.IsJoinEngine() ||
+		next.IsBufferEngine() || next.IsRocksEngine()) {
 		const NestedType *ntp = nullptr;
 
 		assert(this->entries.empty());
@@ -756,6 +763,8 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 			GenerateJoinEngineDetails(rg, te);
 		} else if (next.IsBufferEngine()) {
 			GenerateBufferEngineDetails(rg, te);
+		} else if (next.IsRocksEngine()) {
+			GenerateRocksEngineDetails(rg, !added_pkey, te);
 		}
 		this->entries.clear();
 	}
@@ -842,7 +851,8 @@ int StatementGenerator::GenerateNextCreateView(RandomGenerator &rg, sql_query_gr
 
 		next.teng = val;
 		te->set_engine(val);
-		if (next.IsMergeTreeFamily() || next.IsFileEngine() || next.IsJoinEngine() || next.IsBufferEngine()) {
+		if (next.IsMergeTreeFamily() || next.IsFileEngine() || next.IsJoinEngine() ||
+			next.IsBufferEngine() || next.IsRocksEngine()) {
 			assert(this->entries.empty());
 			for (uint32_t i = 0 ; i < next.ncols ; i++) {
 				entries.push_back(InsertEntry(ColumnSpecial::NONE, i, std::nullopt, nullptr, std::nullopt));
@@ -860,6 +870,8 @@ int StatementGenerator::GenerateNextCreateView(RandomGenerator &rg, sql_query_gr
 				GenerateJoinEngineDetails(rg, te);
 			} else if (next.IsBufferEngine()) {
 				GenerateBufferEngineDetails(rg, te);
+			} else if (next.IsRocksEngine()) {
+				GenerateRocksEngineDetails(rg, true, te);
 			}
 			this->entries.clear();
 		}
@@ -1281,7 +1293,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 							entries.push_back(InsertEntry(entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
 						}
 					}
-					GenerateTableKey(rg, tkey);
+					GenerateTableKey(rg, false, tkey);
 					this->entries.clear();
 				}
 			} else if (heavy_delete && nopt < (heavy_delete + alter_order_by + 1)) {

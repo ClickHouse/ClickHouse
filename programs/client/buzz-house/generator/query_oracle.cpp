@@ -301,7 +301,7 @@ static const std::vector<TestSetting> test_settings{
 	TestSetting("input_format_import_nested_json", {"0", "1"}),
 	TestSetting("input_format_parallel_parsing", {"0", "1"}),
 	TestSetting("insert_null_as_default", {"0", "1"}),
-	TestSetting("join_algorithm", {"'default'", "'grace_hash'", "'hash'", "'parallel_hash'", "'partial_merge'",
+	TestSetting("join_algorithm", {"'default'", "'grace_hash'", "'direct, hash'", "'hash'", "'parallel_hash'", "'partial_merge'",
 								   "'direct'", "'auto'", "'full_sorting_merge'", "'prefer_partial_merge'"}),
 	TestSetting("join_any_take_last_row", {"0", "1"}),
 	TestSetting("join_use_nulls", {"0", "1"}),

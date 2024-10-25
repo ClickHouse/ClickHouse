@@ -139,7 +139,7 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	{"insert_null_as_default", TrueOrFalse},
 	{"insert_quorum", ZeroOneTwo},
 	{"join_algorithm", [](RandomGenerator &rg, std::string &ret) {
-		const std::vector<std::string> &choices = {"default", "grace_hash", "hash", "parallel_hash", "partial_merge",
+		const std::vector<std::string> &choices = {"default", "grace_hash", "direct, hash", "hash", "parallel_hash", "partial_merge",
 												   "direct", "auto", "full_sorting_merge", "prefer_partial_merge"};
 		ret += "'";
 		ret += rg.PickRandomlyFromVector(choices);
@@ -563,6 +563,13 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	{"persistent", TrueOrFalse}
 };
 
+const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> EmbeddedRocksDBTableSettings = {
+	{"optimize_for_bulk_insert", TrueOrFalse},
+	{"bulk_insert_block_size", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21));
+	}},
+};
+
 const std::map<sql_query_grammar::TableEngineValues, std::map<std::string, std::function<void(RandomGenerator&,std::string&)>>> AllTableSettings = {
 	{sql_query_grammar::MergeTree, MergeTreeTableSettings},
 	{sql_query_grammar::ReplacingMergeTree, MergeTreeTableSettings},
@@ -578,6 +585,7 @@ const std::map<sql_query_grammar::TableEngineValues, std::map<std::string, std::
 	{sql_query_grammar::StripeLog, {}},
 	{sql_query_grammar::Log, {}},
 	{sql_query_grammar::TinyLog, {}},
+	{sql_query_grammar::EmbeddedRocksDB, EmbeddedRocksDBTableSettings},
 	{sql_query_grammar::Buffer, {}}
 };
 
@@ -605,6 +613,7 @@ const std::map<sql_query_grammar::TableEngineValues, std::map<std::string, std::
 	{sql_query_grammar::StripeLog, {}},
 	{sql_query_grammar::Log, {}},
 	{sql_query_grammar::TinyLog, {}},
+	{sql_query_grammar::EmbeddedRocksDB, {}},
 	{sql_query_grammar::Buffer, {}}
 };
 

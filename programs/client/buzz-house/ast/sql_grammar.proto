@@ -2739,7 +2739,8 @@ enum TableEngineValues {
   StripeLog = 12;
   Log = 13;
   TinyLog = 14;
-  Buffer = 15;
+  EmbeddedRocksDB = 15;
+  Buffer = 16;
 }
 
 enum TableEngineOption {
