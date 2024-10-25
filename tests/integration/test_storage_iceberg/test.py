@@ -4,7 +4,7 @@ import logging
 import os
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pyspark
 import pytest
@@ -468,6 +468,105 @@ def test_multiple_iceberg_files(started_cluster, format_version, storage_type):
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 200
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY 1") == instance.query(
         "SELECT number, toString(number + 1) FROM numbers(200)"
+    )
+
+
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
+def test_iceberg_snapshot_reads(started_cluster, format_version, storage_type):
+    if is_arm() and storage_type == "hdfs":
+        pytest.skip("Disabled test IcebergHDFS for aarch64")
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = (
+        "test_iceberg_snapshot_reads"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
+
+    write_iceberg_from_df(
+        spark,
+        generate_data(spark, 0, 100),
+        TABLE_NAME,
+        mode="overwrite",
+        format_version=format_version,
+    )
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        "",
+    )
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+    snapshot1_timestamp = datetime.now(timezone.utc)
+    time.sleep(0.1)
+
+    write_iceberg_from_df(
+        spark,
+        generate_data(spark, 100, 200),
+        TABLE_NAME,
+        mode="append",
+        format_version=format_version,
+    )
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        "",
+    )
+    snapshot2_timestamp = datetime.now(timezone.utc)
+    time.sleep(0.1)
+
+    write_iceberg_from_df(
+        spark,
+        generate_data(spark, 200, 300),
+        TABLE_NAME,
+        mode="append",
+        format_version=format_version,
+    )
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        "",
+    )
+    snapshot3_timestamp = datetime.now(timezone.utc)
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 300
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY 1") == instance.query(
+        "SELECT number, toString(number + 1) FROM numbers(300)"
+    )
+
+    # Validate that each snapshot timestamp only sees the data inserted by that time.
+    assert (
+        instance.query(
+            f"""
+                          SELECT * FROM {TABLE_NAME} ORDER BY 1
+                          SETTINGS iceberg_query_at_timestamp_ms = {int(snapshot1_timestamp.timestamp() * 1000)}"""
+        )
+        == instance.query("SELECT number, toString(number + 1) FROM numbers(100)")
+    )
+
+    assert (
+        instance.query(
+            f"""
+                          SELECT * FROM {TABLE_NAME} ORDER BY 1
+                          SETTINGS iceberg_query_at_timestamp_ms = {int(snapshot2_timestamp.timestamp() * 1000)}"""
+        )
+        == instance.query("SELECT number, toString(number + 1) FROM numbers(200)")
+    )
+
+    assert (
+        instance.query(
+            f"""SELECT * FROM {TABLE_NAME} ORDER BY 1
+                          SETTINGS iceberg_query_at_timestamp_ms = {int(snapshot3_timestamp.timestamp() * 1000)}"""
+        )
+        == instance.query("SELECT number, toString(number + 1) FROM numbers(300)")
     )
 
 

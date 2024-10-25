@@ -91,12 +91,14 @@ public:
     bool operator ==(const IDataLakeMetadata & other) const override
     {
         const auto * iceberg_metadata = dynamic_cast<const IcebergMetadata *>(&other);
-        return iceberg_metadata && getVersion() == iceberg_metadata->getVersion();
+        return iceberg_metadata && getManifestListFile() == iceberg_metadata->getManifestListFile();
     }
 
     static DataLakeMetadataPtr create(ObjectStoragePtr object_storage, ConfigurationObserverPtr configuration, ContextPtr local_context);
 
 private:
+    const std::string& getManifestListFile() const { return manifest_list_file; }
+
     size_t getVersion() const { return metadata_version; }
 
     const ObjectStoragePtr object_storage;
