@@ -27,9 +27,9 @@ fi
 
 if [ "$1" = configure ] || [ -n "$not_deb_os" ]; then
     # 'ii' means install and installed
-    # ('ic' for Installed but configuration incomplete)
-    # If it is the first installation, we might encounter the 'ic' (Incomplete) status when executing the postinst script
-    installed=$(dpkg -l | grep '^ii\s+clickhouse-server')
+    # ('ic' for installed but configuration incomplete)
+    # If it is the first installation, we might encounter the 'ic' (configuration incomplete) status when executing the postinst script
+    installed=$(dpkg -l | grep -E '^ii\s+clickhouse-server\s')
     # already installed, use the old "is-enabled" status
     if [ -n "$installed" ]; then
         status=$(systemctl is-enabled clickhouse-server 2>/dev/null)
