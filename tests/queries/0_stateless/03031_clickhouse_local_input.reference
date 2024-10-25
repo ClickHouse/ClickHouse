@@ -7,3 +7,5 @@ foo
 bar
 # defaults
 bam
+# inferred destination table structure
+foo

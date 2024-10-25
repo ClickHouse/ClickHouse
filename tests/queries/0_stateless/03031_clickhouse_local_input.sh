@@ -28,4 +28,8 @@ echo '# defaults'
 $CLICKHOUSE_LOCAL --input_format_tsv_empty_as_default=1 --engine_file_truncate_on_insert=1 -q "insert into function file('$tmp_file', 'LineAsString', 'x String') select y from input('x String, y String DEFAULT \\'bam\\'') format TSV" <<<$'foo\t'
 cat "$tmp_file"
 
+echo '# inferred destination table structure'
+$CLICKHOUSE_LOCAL --engine_file_truncate_on_insert=1 -q "insert into function file('$tmp_file', 'TSV') select * from input('x String') format LineAsString" <"$tmp_input"
+cat "$tmp_file"
+
 rm -f "${tmp_file:?}" "${tmp_input:?}"
