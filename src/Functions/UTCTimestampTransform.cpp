@@ -27,7 +27,7 @@ namespace ErrorCodes
 
 namespace
 {
-    template <typename Name, bool to>
+    template <typename Name, bool toUTC>
     class UTCTimestampTransform : public IFunction
     {
     public:
@@ -87,11 +87,11 @@ namespace
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     UInt32 date_time_val = date_time_col.getElement(i);
-                    auto timezoneOffset = time_zone.timezoneOffset(date_time_val);
-                    if constexpr (to)
-                        result_data[i] = date_time_val - static_cast<UInt32>(timezoneOffset);
+                    auto time_zone_offset = time_zone.timezoneOffset(date_time_val);
+                    if constexpr (toUTC)
+                        result_data[i] = date_time_val - static_cast<UInt32>(time_zone_offset);
                     else
-                        result_data[i] = date_time_val + static_cast<UInt32>(timezoneOffset);
+                        result_data[i] = date_time_val + static_cast<UInt32>(time_zone_offset);
                 }
                 return result_column;
             }
@@ -109,12 +109,12 @@ namespace
                     DateTime64 date_time_val = date_time_col.getElement(i);
                     Int64 seconds = date_time_val.value / scale_multiplier;
                     Int64 micros = date_time_val.value % scale_multiplier;
-                    auto timezoneOffset = time_zone.timezoneOffset(seconds);
+                    auto time_zone_offset = time_zone.timezoneOffset(seconds);
                     Int64 time_val = seconds;
-                    if constexpr (to)
-                        time_val -= timezoneOffset;
+                    if constexpr (toUTC)
+                        time_val -= time_zone_offset;
                     else
-                        time_val += timezoneOffset;
+                        time_val += time_zone_offset;
                     DateTime64 date_time_64(time_val * scale_multiplier + micros);
                     result_data[i] = date_time_64;
                 }
