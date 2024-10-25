@@ -3,7 +3,6 @@
 #include <memory>
 
 #include <Common/Exception.h>
-#include "Analyzer/Passes/OptimizeGroupByInjectiveFunctionsPass.h"
 
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -16,39 +15,40 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/Utils.h>
+#include <Analyzer/Passes/AggregateFunctionOfGroupByKeysPass.h>
+#include <Analyzer/Passes/AggregateFunctionsArithmericOperationsPass.h>
+#include <Analyzer/Passes/ArrayExistsToHasPass.h>
+#include <Analyzer/Passes/AutoFinalOnQueryPass.h>
+#include <Analyzer/Passes/ComparisonTupleEliminationPass.h>
+#include <Analyzer/Passes/ConvertOrLikeChainPass.h>
+#include <Analyzer/Passes/ConvertQueryToCNFPass.h>
+#include <Analyzer/Passes/CountDistinctPass.h>
+#include <Analyzer/Passes/CrossToInnerJoinPass.h>
+#include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
+#include <Analyzer/Passes/FuseFunctionsPass.h>
+#include <Analyzer/Passes/GroupingFunctionsResolvePass.h>
+#include <Analyzer/Passes/IfChainToMultiIfPass.h>
+#include <Analyzer/Passes/IfConstantConditionPass.h>
+#include <Analyzer/Passes/IfTransformStringsToEnumPass.h>
+#include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
+#include <Analyzer/Passes/MultiIfToIfPass.h>
+#include <Analyzer/Passes/NormalizeCountVariantsPass.h>
+#include <Analyzer/Passes/OptimizeDateOrDateTimeConverterWithPreimagePass.h>
+#include <Analyzer/Passes/OptimizeGroupByFunctionKeysPass.h>
+#include <Analyzer/Passes/OptimizeGroupByInjectiveFunctionsPass.h>
+#include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
+#include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
+#include <Analyzer/Passes/OrderByTupleEliminationPass.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/Passes/RemoveUnusedProjectionColumnsPass.h>
-#include <Analyzer/Passes/RewriteSumFunctionWithSumAndCountPass.h>
-#include <Analyzer/Passes/CountDistinctPass.h>
-#include <Analyzer/Passes/UniqToCountPass.h>
-#include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
+#include <Analyzer/Passes/ReplaceTableFunctionsWithClusterVariantsPass.h>
 #include <Analyzer/Passes/RewriteAggregateFunctionWithIfPass.h>
-#include <Analyzer/Passes/SumIfToCountIfPass.h>
-#include <Analyzer/Passes/MultiIfToIfPass.h>
-#include <Analyzer/Passes/IfConstantConditionPass.h>
-#include <Analyzer/Passes/IfChainToMultiIfPass.h>
-#include <Analyzer/Passes/OrderByTupleEliminationPass.h>
-#include <Analyzer/Passes/NormalizeCountVariantsPass.h>
-#include <Analyzer/Passes/AggregateFunctionsArithmericOperationsPass.h>
-#include <Analyzer/Passes/UniqInjectiveFunctionsEliminationPass.h>
-#include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
-#include <Analyzer/Passes/FuseFunctionsPass.h>
-#include <Analyzer/Passes/OptimizeGroupByFunctionKeysPass.h>
-#include <Analyzer/Passes/IfTransformStringsToEnumPass.h>
-#include <Analyzer/Passes/ConvertOrLikeChainPass.h>
-#include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
-#include <Analyzer/Passes/GroupingFunctionsResolvePass.h>
-#include <Analyzer/Passes/AutoFinalOnQueryPass.h>
-#include <Analyzer/Passes/ArrayExistsToHasPass.h>
-#include <Analyzer/Passes/ComparisonTupleEliminationPass.h>
-#include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
-#include <Analyzer/Passes/CrossToInnerJoinPass.h>
+#include <Analyzer/Passes/RewriteSumFunctionWithSumAndCountPass.h>
 #include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
-#include <Analyzer/Passes/ConvertQueryToCNFPass.h>
-#include <Analyzer/Passes/AggregateFunctionOfGroupByKeysPass.h>
-#include <Analyzer/Passes/OptimizeDateOrDateTimeConverterWithPreimagePass.h>
-
+#include <Analyzer/Passes/SumIfToCountIfPass.h>
+#include <Analyzer/Passes/UniqInjectiveFunctionsEliminationPass.h>
+#include <Analyzer/Passes/UniqToCountPass.h>
+#include <Analyzer/Utils.h>
 
 namespace DB
 {
@@ -299,6 +299,8 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<ShardNumColumnToFunctionPass>());
 
     manager.addPass(std::make_unique<OptimizeDateOrDateTimeConverterWithPreimagePass>());
+
+    manager.addPass(std::make_unique<ReplaceTableFunctionsWithClusterVariantsPass>());
 }
 
 }
