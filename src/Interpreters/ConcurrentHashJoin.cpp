@@ -26,7 +26,6 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
-#include "Core/Defines.h"
 
 #include <numeric>
 
@@ -239,7 +238,7 @@ void ConcurrentHashJoin::joinBlock(Block & block, std::vector<Block> & res, std:
         std::shared_ptr<ExtraBlock> none_extra_block;
         auto & hash_join = hash_joins[i];
         auto & dispatched_block = dispatched_blocks[i];
-        if ((i == 0 && block.rows() == 0) || dispatched_block.rows())
+        if (i == 0 || dispatched_block.rows())
             hash_join->data->joinBlock(dispatched_block, none_extra_block);
         if (none_extra_block && !none_extra_block->empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "not_processed should be empty");
@@ -248,13 +247,11 @@ void ConcurrentHashJoin::joinBlock(Block & block, std::vector<Block> & res, std:
     chassert(res.empty());
     res.clear();
     res.reserve(dispatched_blocks.size());
-    for (auto && res_block : dispatched_blocks)
+    for (size_t i = 0; i < dispatched_blocks.size(); ++i)
     {
-        if (res_block.rows())
-            res.emplace_back(std::move(res_block).getSourceBlock());
+        if (i == 0 || dispatched_blocks[i].rows())
+            res.emplace_back(std::move(dispatched_blocks[i]).getSourceBlock());
     }
-    if (res.empty())
-        res.emplace_back(dispatched_blocks[0].getSourceBlock());
 }
 
 void ConcurrentHashJoin::checkTypesOfKeys(const Block & block) const
