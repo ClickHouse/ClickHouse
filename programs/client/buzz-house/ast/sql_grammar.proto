@@ -2463,10 +2463,15 @@ message JsonDef {
   repeated JsonDefItem spec = 1;
 }
 
+message EnumDefValue {
+  required string enumv = 2;
+  required uint32 number = 3;
+}
+
 message EnumDef {
   optional bool bits = 1; //false for 8 or true for 16
-  required int32 first_value = 2;
-  repeated int32 other_values = 3;
+  required EnumDefValue first_value = 2;
+  repeated EnumDefValue other_values = 3;
 }
 
 message Dynamic {

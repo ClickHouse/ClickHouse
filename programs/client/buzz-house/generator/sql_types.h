@@ -140,11 +140,19 @@ public:
 	~UUIDType() override = default;
 };
 
+class EnumValue {
+public:
+	const std::string val;
+	const int32_t number;
+
+	EnumValue(const std::string v, const int32_t n) : val(v), number(n) {}
+};
+
 class EnumType : public SQLType {
 public:
 	const uint32_t size;
-	const std::vector<int32_t> values;
-	EnumType(const uint32_t s, const std::vector<int32_t> v) : size(s), values(v) {}
+	const std::vector<const EnumValue> values;
+	EnumType(const uint32_t s, const std::vector<const EnumValue> v) : size(s), values(v) {}
 
 	const std::string TypeName(const bool escape) const override {
 		std::string ret;
@@ -153,21 +161,19 @@ public:
 		ret += std::to_string(size);
 		ret += "(";
 		for (size_t i = 0 ; i < values.size(); i++) {
-			const std::string next = std::to_string(values[i]);
+			const EnumValue &v = values[i];
 
 			if (i != 0) {
 				ret += ", ";
 			}
-			if (escape) {
-				ret += "\\";
+			for (const auto &c : v.val) {
+				if (escape && c == '\'') {
+					ret += "\\";
+				}
+				ret += v.val;
 			}
-			ret += "'";
-			ret += next;
-			if (escape) {
-				ret += "\\";
-			}
-			ret += "' = ";
-			ret += next;
+			ret += " = ";
+			ret += std::to_string(v.number);
 		}
 		ret += ")";
 		return ret;

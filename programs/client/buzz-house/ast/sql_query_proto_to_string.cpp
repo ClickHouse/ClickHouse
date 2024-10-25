@@ -704,6 +704,14 @@ CONV_FN_QUOTE(ColumnPath, ic) {
   }
 }
 
+CONV_FN(EnumDefValue, edf) {
+  ret += "'";
+  ret += edf.enumv();
+  ret += "'";
+  ret += " = ";
+  ret += std::to_string(edf.number());
+}
+
 void BottomTypeNameToString(std::string &ret, const bool quote, const bool lcard, const BottomTypeName& btn) {
   using BottomTypeNameType = BottomTypeName::BottomOneOfCase;
   switch (btn.bottom_one_of_case()) {
@@ -794,25 +802,16 @@ void BottomTypeNameToString(std::string &ret, const bool quote, const bool lcard
             break;
           case BottomTypeNameType::kEnumDef: {
             const sql_query_grammar::EnumDef &edef = btn.enum_def();
-            const std::string first_val = std::to_string(edef.first_value());
 
             ret += "Enum";
             if (edef.has_bits()) {
               ret += edef.bits() ? "16" : "8";
             }
-            ret += "('";
-            ret += first_val;
-            ret += "'";
-            ret += " = ";
-            ret += first_val;
-            for (int i = 0 ; i < edef.other_values_size(); i++) {
-              const std::string next_val = std::to_string(edef.other_values(i));
-
-              ret += ", '";
-              ret += next_val;
-              ret += "'";
-              ret += " = ";
-              ret += next_val;
+            ret += "(";
+            EnumDefValueToString(ret, edef.first_value());
+            for (int i = 0; i < edef.other_values_size(); i++) {
+              ret += ", ";
+              EnumDefValueToString(ret, edef.other_values(i));
             }
             ret += ")";
           } break;
@@ -1059,7 +1058,7 @@ CONV_FN(SQLFuncCall, sfc) {
     ret += '(';
     for (int i = 0 ; i < sfc.params_size(); i++) {
       if (i != 0) {
-        ret += ",";
+        ret += ", ";
       }
       ExprToString(ret, sfc.params(i));
     }
@@ -1073,7 +1072,7 @@ CONV_FN(SQLFuncCall, sfc) {
     const sql_query_grammar::SQLFuncArg &sfa = sfc.args(i);
 
     if (i != 0) {
-      ret += ",";
+      ret += ", ";
     }
     if (sfa.has_lambda()) {
       LambdaExprToString(ret, sfa.lambda());
@@ -1129,7 +1128,7 @@ CONV_FN(SQLWindowCall, wc) {
   ret += '(';
   for (int i = 0 ; i < wc.args_size(); i++) {
     if (i != 0) {
-      ret += ",";
+      ret += ", ";
     }
     ExprToString(ret, wc.args(i));
   }
@@ -1183,7 +1182,7 @@ CONV_FN(WindowDefn, wd) {
     ret += "PARTITION BY ";
     for (int i = 0 ; i < wd.partition_exprs_size(); i++) {
       if (i != 0) {
-        ret += ",";
+        ret += ", ";
       }
       ExprToString(ret, wd.partition_exprs(i));
     }
@@ -1527,9 +1526,10 @@ CONV_FN(TableOrSubquery, tos) {
 
 CONV_FN(JoinedQuery, tos) {
   if (tos.tos_list_size() > 0) {
-   TableOrSubqueryToString(ret, tos.tos_list(0));
-    for (int i = 1; i < tos.tos_list_size(); i++) {
-      ret += ", ";
+    for (int i = 0; i < tos.tos_list_size(); i++) {
+      if (i != 0) {
+        ret += ", ";
+      }
       TableOrSubqueryToString(ret, tos.tos_list(i));
     }
   } else {
@@ -1652,9 +1652,10 @@ CONV_FN(SelectStatementCore, ssc) {
   if (ssc.result_columns_size() == 0) {
     ret += "*";
   } else {
-    ResultColumnToString(ret, ssc.result_columns(0));
-    for (int i = 1; i < ssc.result_columns_size(); i++) {
-      ret += ", ";
+    for (int i = 0; i < ssc.result_columns_size(); i++) {
+      if (i != 0) {
+        ret += ", ";
+      }
       ResultColumnToString(ret, ssc.result_columns(i));
     }
   }
@@ -2621,7 +2622,7 @@ CONV_FN(ExplainQuery, explain) {
       const sql_query_grammar::ExplainOption &eopt = explain.opts(i);
 
       if (i != 0) {
-        ret += ",";
+        ret += ", ";
       }
       ret += " ";
       switch (explain.expl()) {

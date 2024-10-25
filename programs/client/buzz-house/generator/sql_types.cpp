@@ -228,24 +228,25 @@ const SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_
 			if (allowed_types & allow_enum) {
 				//Enum
 				const bool bits = rg.NextBool();
-				std::vector<int32_t> enum_values;
-				const uint32_t nvalues = rg.NextSmallNumber();
+				std::vector<const EnumValue> evs;
+				const uint32_t nvalues = (rg.NextLargeNumber() % enum_values.size()) + 1;
 				sql_query_grammar::EnumDef *edef = tp ? tp->mutable_enum_def() : nullptr;
 
+				edef->set_bits(bits);
+				std::shuffle(enum_values.begin(), enum_values.end(), rg.gen);
 				for (uint32_t i = 0 ; i < nvalues; i++) {
-					const int32_t next = static_cast<const int32_t>(bits ? rg.NextRandomInt16() : rg.NextRandomInt8());
+					const std::string &nval = enum_values[i];
+					const int32_t num = static_cast<const int32_t>(bits ? rg.NextRandomInt16() : rg.NextRandomInt8());
 
 					if (edef) {
-						if (i == 0) {
-							edef->set_first_value(next);
-							edef->set_bits(bits);
-						} else {
-							edef->add_other_values(next);
-						}
+						sql_query_grammar::EnumDefValue *edf = i == 0 ? edef->mutable_first_value() : edef->add_other_values();
+
+						edf->set_number(num);
+						edf->set_enumv(nval);
 					}
-					enum_values.push_back(next);
+					evs.push_back(EnumValue(nval, num));
 				}
-				res = new EnumType(bits ? 16 : 8, enum_values);
+				res = new EnumType(bits ? 16 : 8, evs);
 			} else {
 				//int
 				sql_query_grammar::Integers nint;
@@ -601,11 +602,9 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator &rg, std::string &
 	} else if (dynamic_cast<const BoolType*>(tp)) {
 		ret += rg.NextBool() ? "TRUE" : "FALSE";
 	} else if ((etp = dynamic_cast<const EnumType*>(tp))) {
-		const int32_t nvalue = rg.PickRandomlyFromVector(etp->values);
+		const EnumValue &nvalue = rg.PickRandomlyFromVector(etp->values);
 
-		ret += "'";
-		ret += std::to_string(nvalue);
-		ret += "'";
+		ret += nvalue.val;
 	} else if (dynamic_cast<const UUIDType*>(tp)) {
 		ret += "'";
 		rg.NextUUID(ret);
