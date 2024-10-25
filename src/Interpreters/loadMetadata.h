@@ -20,7 +20,7 @@ namespace DB
 [[nodiscard]] LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_database_name = {}, bool async_load_databases = false);
 
 /// Converts `system` database from Ordinary to Atomic (if needed)
-void maybeConvertSystemDatabase(ContextMutablePtr context, LoadTaskPtrs & system_startup_tasks);
+void maybeConvertSystemDatabase(ContextMutablePtr context, LoadTaskPtrs & load_system_metadata_tasks);
 
 /// Converts all databases (except system) from Ordinary to Atomic if convert_ordinary_to_atomic flag exists
 /// Waits for `load_metadata` task before conversions
