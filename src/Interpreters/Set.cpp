@@ -280,7 +280,7 @@ void Set::checkIsCreated() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to use set before it has been built.");
 }
 
-ColumnPtr checkDateTimePrecision(const ColumnWithTypeAndName & column_to_cast)
+ColumnUInt8::Ptr checkDateTimePrecision(const ColumnWithTypeAndName & column_to_cast)
 {
     // Handle nullable columns
     const ColumnNullable * original_nullable_column = typeid_cast<const ColumnNullable *>(column_to_cast.column.get());
@@ -320,7 +320,7 @@ ColumnPtr checkDateTimePrecision(const ColumnWithTypeAndName & column_to_cast)
     return precision_null_map_column;
 }
 
-ColumnPtr mergeNullMaps(const ColumnPtr & null_map_column1, const ColumnPtr & null_map_column2)
+ColumnPtr mergeNullMaps(const ColumnPtr & null_map_column1, const ColumnUInt8::Ptr & null_map_column2)
 {
     if (!null_map_column1)
         return null_map_column2;
@@ -328,7 +328,7 @@ ColumnPtr mergeNullMaps(const ColumnPtr & null_map_column1, const ColumnPtr & nu
         return null_map_column1;
 
     const auto & null_map1 = assert_cast<const ColumnUInt8 &>(*null_map_column1).getData();
-    const auto & null_map2 = assert_cast<const ColumnUInt8 &>(*null_map_column2).getData();
+    const auto & null_map2 = (*null_map_column2).getData();
 
     size_t size = null_map1.size();
     if (size != null_map2.size())
@@ -406,7 +406,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         // If the original column is DateTime64, check for sub-second precision
         if (isDateTime64(column_to_cast.column->getDataType()))
         {
-            ColumnPtr filtered_null_map_column = checkDateTimePrecision(column_to_cast);
+            ColumnUInt8::Ptr filtered_null_map_column = checkDateTimePrecision(column_to_cast);
 
             // Extract existing null map and nested column from the result
             const ColumnNullable * result_nullable_column = typeid_cast<const ColumnNullable *>(result.get());
@@ -418,16 +418,16 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
                 ? result_nullable_column->getNullMapColumnPtr()
                 : nullptr;
 
-            ColumnPtr merged_null_map_column = mergeNullMaps(existing_null_map_column, filtered_null_map_column);
-
-            result = ColumnNullable::create(nested_result_column->getPtr(), merged_null_map_column);
-
             if (transform_null_in)
             {
-                ColumnRawPtrs key_cols{result.get()};
-                null_map_holder = extractNestedColumnsAndNullMap(key_cols, null_map);
+                null_map_holder = filtered_null_map_column;
+                null_map = &filtered_null_map_column->getData();
+            }
+            else
+            {
+                ColumnPtr merged_null_map_column = mergeNullMaps(existing_null_map_column, filtered_null_map_column);
 
-                result = nested_result_column->getPtr(); /// The result is considered not nullable in HashMethodOneNumber
+                result = ColumnNullable::create(nested_result_column->getPtr(), merged_null_map_column);
             }
         }
 
