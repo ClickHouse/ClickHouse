@@ -15,6 +15,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexUtils.h>
 #include <Storages/MergeTree/RPNBuilder.h>
@@ -419,6 +421,79 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
     return false;
 }
 
+ASTPtr MergeTreeConditionBloomFilterText::parseExpression(const String & expression)
+{
+    ParserExpression parser;
+    ASTPtr ast;
+
+    try
+    {
+        ast = parseQuery(parser, expression, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    }
+    catch (...)
+    {
+        return nullptr;
+    }
+
+    return ast;
+}
+
+std::optional<size_t> MergeTreeConditionBloomFilterText::getKeyIndexForMapValuesLower(const std::string & column_name)
+{
+    for (size_t i = 0; i < index_columns.size(); ++i)
+    {
+        const auto & index_column = index_columns[i];
+
+        ASTPtr ast = parseExpression(index_column);
+        if (!ast)
+            continue;
+
+        // Check if the index column is arrayMap(x -> func(x), mapValues(map_col))
+        if (const auto * array_map_func = ast->as<ASTFunction>())
+        {
+            if (array_map_func->name == "arrayMap" && array_map_func->arguments && array_map_func->arguments->children.size() == 2)
+            {
+                const auto & lambda_ast = array_map_func->arguments->children[0];
+                const auto & array_ast = array_map_func->arguments->children[1];
+
+                // Check if lambda_ast is a lambda function
+                if (const auto * lambda_func = lambda_ast->as<ASTFunction>())
+                {
+                    if (lambda_func->name == "lambda" && lambda_func->arguments && lambda_func->arguments->children.size() == 2)
+                    {
+                        const auto & lambda_expr_ast = lambda_func->arguments->children[1];
+
+                        // Check if lambda_expr_ast is func(x)
+                        if (const auto * inner_func = lambda_expr_ast->as<ASTFunction>())
+                        {
+                            if (inner_func->name == "lower")
+                            {
+                                // Now check if array_ast is mapValues(map_col) || map_col.values
+                                if (const auto * map_values_func = array_ast->as<ASTFunction>())
+                                {
+                                    if (map_values_func->name == "mapValues" && map_values_func->arguments && map_values_func->arguments->children.size() == 1)
+                                    {
+                                        const auto & map_col_ast = map_values_func->arguments->children[0];
+                                        String map_col_name = map_col_ast->getColumnName();
+
+                                        if (column_name == map_col_name)
+                                        {
+                                            // Found a matching index column
+                                            return i;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+
 bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     const String & function_name,
     const RPNBuilderTreeNode & key_node,
@@ -480,6 +555,42 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             else
             {
                 return false;
+            }
+        }
+        else if (key_function_node_function_name == "lower")
+        {
+            auto arg_0 = key_function_node.getArgumentAt(0);
+            if (arg_0.isFunction())
+            {
+                auto arg_0_function_node = arg_0.toFunctionNode();
+                auto arg_0_function_node_function_name = arg_0_function_node.getFunctionName();
+                if (arg_0_function_node_function_name == "arrayElement")
+                {
+                    auto arg_0_function_node_argument_at_0 = arg_0_function_node.getArgumentAt(0);
+                    auto arg_0_function_node_argument_at_0_column_name = arg_0_function_node_argument_at_0.getColumnName();
+                    if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", arg_0_function_node_argument_at_0_column_name)))
+                    {
+                        auto arg_0_function_node_argument_at_1 = arg_0_function_node.getArgumentAt(1);
+                        DataTypePtr const_type;
+
+                        if (arg_0_function_node_argument_at_1.tryGetConstant(const_value, const_type))
+                        {
+                            key_index = map_keys_index;
+
+                            auto const_data_type = WhichDataType(const_type);
+                            if (!const_data_type.isStringOrFixedString() && !const_data_type.isArray())
+                                return false;
+                        }
+                        else
+                        {
+                            return false;
+                        }
+                    }
+                    else if (const auto map_values_lower_exists = getKeyIndexForMapValuesLower(arg_0_function_node_argument_at_0_column_name))
+                    {
+                        key_index = map_values_lower_exists;
+                    }
+                }
             }
         }
     }
