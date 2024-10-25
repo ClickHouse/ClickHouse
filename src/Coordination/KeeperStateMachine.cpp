@@ -267,7 +267,11 @@ nuraft::ptr<nuraft::buffer> IKeeperStateMachine::getZooKeeperLogEntry(const Keep
     size_t request_size = sizeof(uint32_t) + Coordination::size(request->getOpNum()) + request->sizeImpl();
     Coordination::write(static_cast<int32_t>(request_size), write_buf);
     XidHelper xid_helper{.xid = request->xid};
-    Coordination::write(xid_helper.parts.lower, write_buf);
+    if (request_for_session.use_xid_64)
+        Coordination::write(xid_helper.parts.lower, write_buf);
+    else
+        Coordination::write(static_cast<int32_t>(xid_helper.xid), write_buf);
+
     Coordination::write(request->getOpNum(), write_buf);
     request->writeImpl(write_buf);
 
@@ -276,13 +280,15 @@ nuraft::ptr<nuraft::buffer> IKeeperStateMachine::getZooKeeperLogEntry(const Keep
     DB::writeIntBinary(static_cast<int64_t>(0), write_buf); /// zxid
     DB::writeIntBinary(KeeperStorageBase::DigestVersion::NO_DIGEST, write_buf); /// digest version or NO_DIGEST flag
     DB::writeIntBinary(static_cast<uint64_t>(0), write_buf); /// digest value
-    Coordination::write(xid_helper.parts.upper, write_buf); /// for 64bit XID MSB
+
+    if (request_for_session.use_xid_64)
+        Coordination::write(xid_helper.parts.upper, write_buf); /// for 64bit XID MSB
     /// if new fields are added, update KeeperStateMachine::ZooKeeperLogSerializationVersion along with parseRequest function and PreAppendLog callback handler
     return write_buf.getBuffer();
 }
 
-std::shared_ptr<KeeperStorageBase::RequestForSession>
-IKeeperStateMachine::parseRequest(nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version)
+std::shared_ptr<KeeperStorageBase::RequestForSession> IKeeperStateMachine::parseRequest(
+    nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version, size_t * request_end_position)
 {
     ReadBufferFromNuraftBuffer buffer(data);
     auto request_for_session = std::make_shared<KeeperStorageBase::RequestForSession>();
@@ -301,6 +307,9 @@ IKeeperStateMachine::parseRequest(nuraft::buffer & data, bool final, ZooKeeperLo
     /// go to end of the buffer and read extra information including second part of XID
     auto buffer_position = buffer.getPosition();
     buffer.seek(length - sizeof(uint32_t), SEEK_CUR);
+
+    if (request_end_position)
+        *request_end_position = buffer.getPosition();
 
     using enum ZooKeeperLogSerializationVersion;
     ZooKeeperLogSerializationVersion version = INITIAL;
@@ -332,6 +341,10 @@ IKeeperStateMachine::parseRequest(nuraft::buffer & data, bool final, ZooKeeperLo
     {
         version = WITH_XID_64;
         Coordination::read(xid_helper.parts.upper, buffer);
+    }
+    else
+    {
+        xid_helper.xid = static_cast<int32_t>(xid_helper.parts.lower);
     }
 
     if (serialization_version)
