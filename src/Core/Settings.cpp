@@ -4443,7 +4443,9 @@ List all names of element of large tuple literals in their column names instead 
 )", 0) \
     DECLARE(Bool, enable_named_columns_in_function_tuple, true, R"(
 Generate named tuples in function tuple() when all names are unique and can be treated as unquoted identifiers.
-Beware that this setting might currently result in broken queries. It's not recommended to use in production
+)", 0) \
+    DECLARE(Bool, strict_named_tuple_conversion, true, R"(
+When enabled, throws an exception if any fields are lost during named tuple conversions, helping prevent silent data loss.
 )", 0) \
     \
     DECLARE(Bool, query_plan_enable_optimizations, true, R"(
