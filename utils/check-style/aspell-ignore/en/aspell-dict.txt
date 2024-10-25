@@ -3149,3 +3149,5 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+divideOrNull
+moduloOrNull
