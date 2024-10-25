@@ -26,8 +26,11 @@ if [ ! -f "/etc/debian_version" ]; then
 fi
 
 if [ "$1" = configure ] || [ -n "$not_deb_os" ]; then
-    installed=$(dpkg -l | grep "^ii\s\+clickhouse-server ")
-    # already installed, use old "is-enabled" status
+    # 'ii' means install and installed
+    # ('ic' for Installed but configuration incomplete)
+    # If it is the first installation, we might encounter the 'ic' (Incomplete) status when executing the postinst script
+    installed=$(dpkg -l | grep '^ii\s+clickhouse-server')
+    # already installed, use the old "is-enabled" status
     if [ -n "$installed" ]; then
         status=$(systemctl is-enabled clickhouse-server 2>/dev/null)
     fi
