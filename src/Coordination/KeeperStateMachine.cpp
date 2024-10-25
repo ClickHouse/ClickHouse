@@ -267,7 +267,11 @@ nuraft::ptr<nuraft::buffer> IKeeperStateMachine::getZooKeeperLogEntry(const Keep
     size_t request_size = sizeof(uint32_t) + Coordination::size(request->getOpNum()) + request->sizeImpl();
     Coordination::write(static_cast<int32_t>(request_size), write_buf);
     XidHelper xid_helper{.xid = request->xid};
-    Coordination::write(xid_helper.parts.lower, write_buf);
+    if (request_for_session.use_xid_64)
+        Coordination::write(xid_helper.parts.lower, write_buf);
+    else
+        Coordination::write(static_cast<int32_t>(xid_helper.xid), write_buf);
+
     Coordination::write(request->getOpNum(), write_buf);
     request->writeImpl(write_buf);
 
@@ -337,6 +341,10 @@ std::shared_ptr<KeeperStorageBase::RequestForSession> IKeeperStateMachine::parse
     {
         version = WITH_XID_64;
         Coordination::read(xid_helper.parts.upper, buffer);
+    }
+    else
+    {
+        xid_helper.xid = static_cast<int32_t>(xid_helper.parts.lower);
     }
 
     if (serialization_version)
