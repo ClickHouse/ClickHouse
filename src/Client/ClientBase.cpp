@@ -59,6 +59,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/CompressionMethod.h>
@@ -107,6 +108,7 @@ namespace Setting
     extern const SettingsUInt64 output_format_pretty_max_value_width;
     extern const SettingsBool partial_result_on_first_cancel;
     extern const SettingsBool throw_if_no_data_to_insert;
+    extern const SettingsBool implicit_select;
 }
 
 namespace ErrorCodes
@@ -320,7 +322,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     else if (dialect == Dialect::prql)
         parser = std::make_unique<ParserPRQLQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     else
-        parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert]);
+        parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
 
     if (is_interactive || ignore_error)
     {
@@ -1784,6 +1786,9 @@ try
     QueryPipeline pipeline(std::move(pipe));
     PullingAsyncPipelineExecutor executor(pipeline);
 
+    /// Concurrency control in client is not required
+    pipeline.setConcurrencyControl(false);
+
     if (need_render_progress)
     {
         pipeline.setProgressCallback([this](const Progress & progress){ onProgress(progress); });
@@ -1991,7 +1996,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
     {
         /// Temporarily apply query settings to context.
-        std::optional<Settings> old_settings;
+        Settings old_settings = client_context->getSettingsRef();
         SCOPE_EXIT_SAFE({
             try
             {
@@ -2008,45 +2013,15 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
                     have_error = true;
                 }
             }
-            if (old_settings)
-                client_context->setSettings(*old_settings);
+            client_context->setSettings(old_settings);
         });
-
-        auto apply_query_settings = [&](const IAST & settings_ast)
-        {
-            if (!old_settings)
-                old_settings.emplace(client_context->getSettingsRef());
-            client_context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
-            client_context->resetSettingsToDefaultValue(settings_ast.as<ASTSetQuery>()->default_settings);
-        };
-
-        const auto * insert = parsed_query->as<ASTInsertQuery>();
-        if (const auto * select = parsed_query->as<ASTSelectQuery>(); select && select->settings())
-            apply_query_settings(*select->settings());
-        else if (const auto * select_with_union = parsed_query->as<ASTSelectWithUnionQuery>())
-        {
-            const ASTs & children = select_with_union->list_of_selects->children;
-            if (!children.empty())
-            {
-                // On the client it is enough to apply settings only for the
-                // last SELECT, since the only thing that is important to apply
-                // on the client is format settings.
-                const auto * last_select = children.back()->as<ASTSelectQuery>();
-                if (last_select && last_select->settings())
-                {
-                    apply_query_settings(*last_select->settings());
-                }
-            }
-        }
-        else if (const auto * query_with_output = parsed_query->as<ASTQueryWithOutput>(); query_with_output && query_with_output->settings_ast)
-            apply_query_settings(*query_with_output->settings_ast);
-        else if (insert && insert->settings_ast)
-            apply_query_settings(*insert->settings_ast);
+        InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
 
         if (!connection->checkConnected(connection_parameters.timeouts))
             connect();
 
         ASTPtr input_function;
+        const auto * insert = parsed_query->as<ASTInsertQuery>();
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
 
