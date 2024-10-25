@@ -267,10 +267,24 @@ int StatementGenerator::GenerateFileEngineDetails(RandomGenerator &rg, sql_query
 
 int StatementGenerator::GenerateJoinEngineDetails(RandomGenerator &rg, sql_query_grammar::TableEngine *te) {
 	const size_t ncols = (rg.NextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(entries.size()), UINT32_C(3))) + 1;
-	sql_query_grammar::JoinConst jc = static_cast<sql_query_grammar::JoinConst>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::JoinConst_MAX)) + 1);
-	sql_query_grammar::JoinType jt = static_cast<sql_query_grammar::JoinType>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::JoinType_MAX)) + 1);
+	sql_query_grammar::JoinType jt = static_cast<sql_query_grammar::JoinType>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::J_FULL)) + 1);
+	sql_query_grammar::TableEngineParam *tep = te->add_params();
 
-	te->add_params()->set_join_const(jc);
+	switch (jt) {
+		case sql_query_grammar::JoinType::J_LEFT:
+		case sql_query_grammar::JoinType::J_INNER:
+			tep->set_join_const(static_cast<sql_query_grammar::JoinConst>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::JoinConst_MAX)) + 1));
+			break;
+		case sql_query_grammar::JoinType::J_RIGHT:
+			tep->set_join_const(static_cast<sql_query_grammar::JoinConst>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::JoinConst::J_ANTI)) + 1));
+			break;
+		case sql_query_grammar::JoinType::J_FULL:
+			tep->set_join_const(sql_query_grammar::JoinConst::J_ALL);
+			break;
+		default:
+			assert(0);
+			break;
+	}
 	te->add_params()->set_join_op(jt);
 
 	std::shuffle(entries.begin(), entries.end(), rg.gen);
