@@ -1,6 +1,7 @@
 #include <Interpreters/PeriodicLog.h>
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/MetricLog.h>
+#include <Interpreters/LatencyLog.h>
 
 namespace DB
 {
