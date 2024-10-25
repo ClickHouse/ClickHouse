@@ -10,6 +10,23 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+void IQueryPlanStep::updateInputHeaders(Headers input_headers_)
+{
+    input_headers = std::move(input_headers_);
+    updateOutputHeader();
+}
+
+void IQueryPlanStep::updateInputHeader(Header input_header, size_t idx)
+{
+    if (idx >= input_headers.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot update input header {} for step {} because it has only {} headers",
+            idx, getName(), input_headers.size());
+
+    input_headers[idx] = input_header;
+    updateOutputHeader();
+}
+
 const Header & IQueryPlanStep::getOutputHeader() const
 {
     if (!hasOutputHeader())

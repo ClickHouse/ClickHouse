@@ -156,6 +156,7 @@ namespace Setting
     extern const SettingsBool use_query_cache;
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
+    extern const SettingsBool implicit_select;
     extern const SettingsBool enforce_strict_identifier_format;
 }
 
@@ -575,14 +576,10 @@ void logQueryFinish(
 
         if (settings[Setting::log_query_settings])
         {
-            auto changed_settings_names = settings.getChangedNames();
-            for (const auto & name : changed_settings_names)
+            auto changes = settings.changes();
+            for (const auto & change : changes)
             {
-                Field value = settings.get(name);
-                String value_str = convertFieldToString(value);
-
-                query_span->addAttribute(fmt::format("clickhouse.setting.{}", name), value_str);
-
+                query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), convertFieldToString(change.value));
             }
         }
         query_span->finish();
@@ -861,7 +858,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
         else
         {
-            ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert]);
+            ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
             /// TODO: parser should fail early when max_query_size limit is reached.
             ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
