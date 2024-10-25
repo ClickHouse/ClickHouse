@@ -5,6 +5,7 @@
 #if USE_AWS_S3
 #include <IO/S3Settings.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {

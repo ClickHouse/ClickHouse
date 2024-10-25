@@ -179,8 +179,8 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Can't take information about index granularity from blocks, when non empty index_granularity array specified");
 
-    if (!getDataPartStorage().exists())
-        getDataPartStorage().createDirectories();
+    /// We don't need to check if it exists or not, createDirectories doesn't throw
+    getDataPartStorage().createDirectories();
 
     if (settings.rewrite_primary_key)
         initPrimaryIndex();
