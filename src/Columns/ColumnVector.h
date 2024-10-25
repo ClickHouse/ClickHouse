@@ -52,6 +52,7 @@ private:
     explicit ColumnVector(const size_t n) : data(n) {}
     ColumnVector(const size_t n, const ValueType x) : data(n, x) {}
     ColumnVector(const ColumnVector & src) : data(src.data.begin(), src.data.end()) {}
+    ColumnVector(Container::const_iterator begin, Container::const_iterator end) : data(begin, end) { }
 
     /// Sugar constructor.
     ColumnVector(std::initializer_list<T> il) : data{il} {}

@@ -101,6 +101,7 @@ sub3 as (select l.x, l.y, r.y, r.z as z from sub2 r any right join sub1 l on l.y
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, l.y, y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
 select * from sub5
+order by all
 SETTINGS enable_parallel_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 
 explain description=0
