@@ -990,7 +990,6 @@ const std::vector<CHFunction> CHFuncs = {
 	CHFunction(sql_query_grammar::SQLFunc::FUNCfromUnixTimestamp64Micro, 0, 0, 1, 2),
 	CHFunction(sql_query_grammar::SQLFunc::FUNCfromUnixTimestamp64Nano, 0, 0, 1, 2),
 	//ULID
-	CHFunction(sql_query_grammar::SQLFunc::FUNCgenerateULID, 0, 0, 1, 2),
 	CHFunction(sql_query_grammar::SQLFunc::FUNCULIDStringToDateTime, 0, 0, 1, 2),
 	//UUID
 	CHFunction(sql_query_grammar::SQLFunc::FUNCgenerateUUIDv4, 0, 0, 1, 2),
@@ -1018,6 +1017,8 @@ const std::vector<CHFunction> CHFuncs = {
 	CHFunction(sql_query_grammar::SQLFunc::FUNCuniqThetaIntersect, 0, 0, 2, 2),
 	CHFunction(sql_query_grammar::SQLFunc::FUNCuniqThetaNot, 0, 0, 2, 2),
 	/* Not Deterministic */
+	//ULID
+	CHFunction(sql_query_grammar::SQLFunc::FUNCgenerateULID, 0, 0, 1, 2),
 	//time
 	CHFunction(sql_query_grammar::SQLFunc::FUNCtimestamp, 0, 0, 1, 2),
 	CHFunction(sql_query_grammar::SQLFunc::FUNCtimeZone, 0, 0, 0, 0),

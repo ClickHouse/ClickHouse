@@ -666,21 +666,17 @@ int StatementGenerator::GenerateOrderBy(RandomGenerator &rg, const uint32_t ncol
 			(this->levels[this->current_level].group_by_all ||
 			 (this->levels[this->current_level].gcols.empty() && !this->levels[this->current_level].global_aggregate)) &&
 			rg.NextSmallNumber() < 4) {
+			std::vector<uint32_t> nids;
 			const uint32_t iclauses = std::min<uint32_t>(this->fc.max_width - this->width,
 				std::min<uint32_t>(UINT32_C(3), (rg.NextRandomUInt32() % this->levels[this->current_level].projections.size()) + 1));
 
-			assert(this->ids.empty());
-			this->ids.insert(this->ids.end(), this->levels[this->current_level].projections.begin(), this->levels[this->current_level].projections.end());
-			std::shuffle(this->ids.begin(), this->ids.end(), rg.gen);
+			nids.insert(nids.end(), this->levels[this->current_level].projections.begin(), this->levels[this->current_level].projections.end());
+			std::shuffle(nids.begin(), nids.end(), rg.gen);
 			for (uint32_t i = 0 ; i < iclauses; i++) {
 				sql_query_grammar::InterpolateExpr *ie = olist->add_interpolate();
 
-				ie->mutable_col()->set_column("c" + std::to_string(this->ids[i]));
-			}
-			this->ids.clear();
-
-			for (uint32_t i = 0 ; i < iclauses; i++) {
-				GenerateExpression(rg, &(const_cast<sql_query_grammar::Expr&>(olist->interpolate(i).expr())));
+				ie->mutable_col()->set_column("c" + std::to_string(nids[i]));
+				GenerateExpression(rg, ie->mutable_expr());
 				this->width++;
 			}
 			this->width -= iclauses;

@@ -2477,7 +2477,7 @@ message JsonDef {
 
 message EnumDefValue {
   required string enumv = 2;
-  required uint32 number = 3;
+  required int32 number = 3;
 }
 
 message EnumDef {
