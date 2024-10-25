@@ -6,11 +6,8 @@
 #include <fmt/format.h>
 
 #include <Common/logger_useful.h>
-#include <Common/ActionBlocker.h>
 #include <Core/Settings.h>
 #include <Common/ProfileEvents.h>
-#include <Processors/Transforms/CheckSortedTransform.h>
-#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -20,10 +17,8 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
-#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
-#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
@@ -34,9 +29,6 @@
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/Transforms/TTLTransform.h>
-#include <Processors/Transforms/TTLCalcTransform.h>
-#include <Processors/Transforms/DistinctSortedTransform.h>
-#include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -48,9 +40,22 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#ifndef NDEBUG
+    #include <Processors/Transforms/CheckSortedTransform.h>
+#endif
+
+#ifdef CLICKHOUSE_CLOUD
+    #include <Interpreters/Cache/FileCacheFactory.h>
+    #include <Disks/ObjectStorages/DiskObjectStorage.h>
+    #include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
+    #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#endif
+
+
 namespace ProfileEvents
 {
     extern const Event Merge;
+    extern const Event MergeSourceParts;
     extern const Event MergedColumns;
     extern const Event GatheredColumns;
     extern const Event MergeTotalMilliseconds;
@@ -240,6 +245,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 {
     ProfileEvents::increment(ProfileEvents::Merge);
+    ProfileEvents::increment(ProfileEvents::MergeSourceParts, global_ctx->future_part->parts.size());
 
     String local_tmp_prefix;
     if (global_ctx->need_prefix)
@@ -1317,7 +1323,7 @@ bool MergeTask::execute()
 }
 
 
-/// Apply merge strategy (Ordinary, Colapsing, Aggregating, etc) to the stream
+/// Apply merge strategy (Ordinary, Collapsing, Aggregating, etc) to the stream
 class MergePartsStep : public ITransformingStep
 {
 public:
@@ -1353,7 +1359,7 @@ public:
         ///  that is going in insertion order.
         ProcessorPtr merged_transform;
 
-        const auto &header = pipeline.getHeader();
+        const auto & header = pipeline.getHeader();
         const auto input_streams_count = pipeline.getNumStreams();
 
         switch (merging_params.mode)
@@ -1681,6 +1687,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         auto pipeline_settings = BuildQueryPipelineSettings::fromContext(global_ctx->context);
         auto optimization_settings = QueryPlanOptimizationSettings::fromContext(global_ctx->context);
         auto builder = merge_parts_query_plan.buildQueryPipeline(optimization_settings, pipeline_settings);
+
+        // Merges are not using concurrency control now. Queries and merges running together could lead to CPU overcommit.
+        // TODO(serxa): Enable concurrency control for merges. This should be done after CPU scheduler introduction.
+        builder->setConcurrencyControl(false);
 
         global_ctx->merged_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     }
