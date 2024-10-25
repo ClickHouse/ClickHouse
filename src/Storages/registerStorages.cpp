@@ -41,9 +41,10 @@ void registerStorageS3Queue(StorageFactory & factory);
 #if USE_PARQUET
 void registerStorageDeltaLake(StorageFactory & factory);
 #endif
+#endif
+
 #if USE_AVRO
 void registerStorageIceberg(StorageFactory & factory);
-#endif
 #endif
 
 #if USE_AZURE_BLOB_STORAGE

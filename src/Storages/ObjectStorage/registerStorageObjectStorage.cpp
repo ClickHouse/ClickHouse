@@ -11,8 +11,6 @@
 namespace DB
 {
 
-#if USE_AWS_S3 || USE_AZURE_BLOB_STORAGE || USE_HDFS
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -64,8 +62,6 @@ static std::shared_ptr<StorageObjectStorage> createStorageObjectStorage(
         /* distributed_processing */ false,
         partition_by);
 }
-
-#endif
 
 #if USE_AZURE_BLOB_STORAGE
 void registerStorageAzure(StorageFactory & factory)
@@ -236,10 +232,10 @@ void registerStorageIceberg(StorageFactory & factory)
 #endif
 
 
-#if USE_AWS_S3
 #if USE_PARQUET
 void registerStorageDeltaLake(StorageFactory & factory)
 {
+#if USE_AWS_S3
     factory.registerStorage(
         "DeltaLake",
         [&](const StorageFactory::Arguments & args)
@@ -254,11 +250,13 @@ void registerStorageDeltaLake(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessType::S3,
         });
+#endif
 }
 #endif
 
 void registerStorageHudi(StorageFactory & factory)
 {
+#if USE_AWS_S3
     factory.registerStorage(
         "Hudi",
         [&](const StorageFactory::Arguments & args)
@@ -273,6 +271,6 @@ void registerStorageHudi(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessType::S3,
         });
-}
 #endif
+}
 }
