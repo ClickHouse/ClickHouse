@@ -3756,13 +3756,7 @@ private:
 
             bool strict_named_tuple_conversion = false;
 
-            /// Internal cast does not have context set. Additionally, we should
-            /// check for query context which is attached to current thread.
-            if (context)
-            {
-                strict_named_tuple_conversion = context->getSettingsRef()[Setting::strict_named_tuple_conversion];
-            }
-            else if (DB::CurrentThread::isInitialized())
+            if (DB::CurrentThread::isInitialized())
             {
                 const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
 
