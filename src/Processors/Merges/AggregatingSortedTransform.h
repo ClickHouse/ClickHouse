@@ -21,6 +21,7 @@ public:
         const Block & header,
         size_t num_inputs,
         SortDescription description_,
+        const String & default_aggregate_function,
         size_t max_block_size_rows,
         size_t max_block_size_bytes)
         : IMergingTransform(
@@ -28,6 +29,7 @@ public:
             header,
             num_inputs,
             std::move(description_),
+            default_aggregate_function,
             max_block_size_rows,
             max_block_size_bytes)
     {

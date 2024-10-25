@@ -61,6 +61,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     sign_column = data.merging_params.sign_column;
     is_deleted_column = data.merging_params.is_deleted_column;
     columns_to_sum = fmt::format("{}", fmt::join(data.merging_params.columns_to_sum.begin(), data.merging_params.columns_to_sum.end(), ","));
+    default_aggregate_function = data.merging_params.default_aggregate_function;
     version_column = data.merging_params.version_column;
     if (data.merging_params.mode == MergeTreeData::MergingParams::Graphite)
     {
@@ -168,6 +169,8 @@ void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
             out << "is_deleted column: " << is_deleted_column << "\n";
         if (!columns_to_sum.empty())
             out << "columns to sum: " << columns_to_sum << "\n";
+        if (!default_aggregate_function.empty())
+            out << "default aggregate function: " << default_aggregate_function << "\n";
         if (!graphite_params_hash.empty())
             out << "graphite hash: " << graphite_params_hash << "\n";
     }
@@ -237,6 +240,9 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
         if (checkString("columns to sum: ", in))
             in >> columns_to_sum >> "\n";
 
+        if (checkString("default aggregate function: ", in))
+            in >> default_aggregate_function >> "\n";
+
         if (checkString("graphite hash: ", in))
             in >> graphite_params_hash >> "\n";
     }
@@ -293,6 +299,10 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const Replicat
         if (columns_to_sum != from_zk.columns_to_sum)
             throw Exception(ErrorCodes::METADATA_MISMATCH, "Existing table metadata in ZooKeeper differs in sum columns. "
                 "Stored in ZooKeeper: {}, local: {}", from_zk.columns_to_sum, columns_to_sum);
+
+        if (default_aggregate_function != from_zk.default_aggregate_function)
+            throw Exception(ErrorCodes::METADATA_MISMATCH, "Existing table metadata in ZooKeeper differs in default_aggregate_function. "
+                "Stored in ZooKeeper: {}, local: {}", from_zk.default_aggregate_function, default_aggregate_function);
 
         if (graphite_params_hash != from_zk.graphite_params_hash)
             throw Exception(ErrorCodes::METADATA_MISMATCH, "Existing table metadata in ZooKeeper differs in graphite params. "
