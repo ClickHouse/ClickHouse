@@ -195,7 +195,7 @@ private:
     Container sessions;
 
     // Ordered map of close times for sessions, grouped by the next multiple of close_interval
-    using CloseTimes = std::map<std::chrono::steady_clock::time_point, std::set<Key>>;
+    using CloseTimes = std::map<std::chrono::steady_clock::time_point, std::unordered_set<Key, SessionKeyHash>>;
     CloseTimes close_time_buckets;
 
     constexpr static std::chrono::steady_clock::duration close_interval = std::chrono::milliseconds(1000);
@@ -211,8 +211,8 @@ private:
         const auto close_time_bucket = session_close_time + bucket_padding;
 
         session.close_time_bucket = close_time_bucket;
-        auto it = close_time_buckets.insert(std::make_pair(close_time_bucket, std::set<Key>{}));
-        it.first->second.insert(session.key);
+        auto & bucket_sessions = close_time_buckets[close_time_bucket];
+        bucket_sessions.insert(session.key);
 
         LOG_TEST(log, "Schedule closing session with session_id: {}, user_id: {}",
             session.key.second, session.key.first);
