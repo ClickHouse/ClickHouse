@@ -1372,7 +1372,8 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf, const char *
             ++buf.position();
             return true;
         }
-        return false;
+        else
+            return false;
     };
 
     UInt16 year = 0;
@@ -1605,7 +1606,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field, const Fo
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF for key '{}'", name_of_field.toString());
         return ReturnType(false);
     }
-    if (*buf.position() == '"') /// skip double-quoted string
+    else if (*buf.position() == '"') /// skip double-quoted string
     {
         NullOutput sink;
         if constexpr (throw_exception)
@@ -2111,13 +2112,13 @@ ReturnType readQuotedFieldInto(Vector & s, ReadBuffer & buf)
 
     if (*buf.position() == '\'')
         return readQuotedStringFieldInto<ReturnType>(s, buf);
-    if (*buf.position() == '[')
+    else if (*buf.position() == '[')
         return readQuotedFieldInBracketsInto<ReturnType, '[', ']'>(s, buf);
-    if (*buf.position() == '(')
+    else if (*buf.position() == '(')
         return readQuotedFieldInBracketsInto<ReturnType, '(', ')'>(s, buf);
-    if (*buf.position() == '{')
+    else if (*buf.position() == '{')
         return readQuotedFieldInBracketsInto<ReturnType, '{', '}'>(s, buf);
-    if (checkCharCaseInsensitive('n', buf))
+    else if (checkCharCaseInsensitive('n', buf))
     {
         /// NULL or NaN
         if (checkCharCaseInsensitive('u', buf))

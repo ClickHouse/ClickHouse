@@ -13,7 +13,7 @@ class CreatingSetStep : public ITransformingStep
 {
 public:
     CreatingSetStep(
-        const Header & input_header_,
+        const DataStream & input_stream_,
         SetAndKeyPtr set_and_key_,
         StoragePtr external_table_,
         SizeLimits network_transfer_limits_,
@@ -27,7 +27,7 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
 private:
-    void updateOutputHeader() override;
+    void updateOutputStream() override;
 
     SetAndKeyPtr set_and_key;
     StoragePtr external_table;
@@ -38,7 +38,7 @@ private:
 class CreatingSetsStep : public IQueryPlanStep
 {
 public:
-    explicit CreatingSetsStep(Headers input_headers_);
+    explicit CreatingSetsStep(DataStreams input_streams_);
 
     String getName() const override { return "CreatingSets"; }
 
@@ -52,7 +52,7 @@ public:
 class DelayedCreatingSetsStep final : public IQueryPlanStep
 {
 public:
-    DelayedCreatingSetsStep(Header input_header, PreparedSets::Subqueries subqueries_, ContextPtr context_);
+    DelayedCreatingSetsStep(DataStream input_stream, PreparedSets::Subqueries subqueries_, ContextPtr context_);
 
     String getName() const override { return "DelayedCreatingSets"; }
 

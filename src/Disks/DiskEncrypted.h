@@ -312,8 +312,10 @@ public:
         {
             return std::make_shared<FakeDiskTransaction>(*this);
         }
-
-        return createEncryptedTransaction();
+        else
+        {
+            return createEncryptedTransaction();
+        }
     }
 
     std::optional<UInt64> getTotalSpace() const override

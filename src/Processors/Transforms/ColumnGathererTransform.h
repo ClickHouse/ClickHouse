@@ -190,7 +190,7 @@ void ColumnGathererStream::gather(Column & column_res)
                 source_to_fully_copy = &source;
                 return;
             }
-            if (len == 1)
+            else if (len == 1)
                 column_res.insertFrom(*source.column, source.pos);
             else
                 column_res.insertRangeFrom(*source.column, source.pos, len);

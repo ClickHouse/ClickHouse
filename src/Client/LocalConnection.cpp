@@ -520,7 +520,7 @@ bool LocalConnection::pollImpl()
     {
         return true;
     }
-    if (block && !state->io.null_format)
+    else if (block && !state->io.null_format)
     {
         state->block.emplace(block);
     }

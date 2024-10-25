@@ -217,9 +217,11 @@ std::string MySQLDictionarySource::getUpdateFieldAndDate()
         update_time = std::chrono::system_clock::now();
         return query_builder.composeUpdateQuery(configuration.update_field, str_time);
     }
-
-    update_time = std::chrono::system_clock::now();
-    return load_all_query;
+    else
+    {
+        update_time = std::chrono::system_clock::now();
+        return load_all_query;
+    }
 }
 
 QueryPipeline MySQLDictionarySource::loadFromQuery(const String & query)

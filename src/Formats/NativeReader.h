@@ -4,7 +4,6 @@
 #include <Formats/MarkInCompressedFile.h>
 #include <Common/PODArray.h>
 #include <Core/Block.h>
-#include <Core/BlockMissingValues.h>
 
 namespace DB
 {

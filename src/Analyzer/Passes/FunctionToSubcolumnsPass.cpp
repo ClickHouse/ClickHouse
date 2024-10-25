@@ -285,7 +285,7 @@ public:
             return;
         }
 
-        if (const auto * /*join_node*/ _ = node->as<JoinNode>())
+        if (const auto * join_node = node->as<JoinNode>())
         {
             can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::join_use_nulls];
             return;
