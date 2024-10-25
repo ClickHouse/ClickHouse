@@ -1321,7 +1321,7 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
             if (!prev_info.isDisjoint(info))
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Part {} intersects previous part {}. It is a bug or a result of manual intervention in the server or ZooKeeper data",
+                    "Part {} intersects previous part {}. It is a bug or a result of manual intervention",
                     name, prev->second->name);
             }
         }
@@ -1338,7 +1338,7 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
             if (!next_info.isDisjoint(info))
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Part {} intersects next part {}.  It is a bug or a result of manual intervention in the server or ZooKeeper data",
+                    "Part {} intersects next part {}. It is a bug or a result of manual intervention",
                     name, it->second->name);
             }
         }
@@ -2001,9 +2001,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     if (suspicious_broken_unexpected_parts != 0)
         LOG_WARNING(log, "Found suspicious broken unexpected parts {} with total rows count {}", suspicious_broken_unexpected_parts, suspicious_broken_unexpected_parts_bytes);
 
+    bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
     if (!is_static_storage)
         for (auto & part : broken_parts_to_detach)
-            part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
+            part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
 
     resetObjectColumnsFromActiveParts(part_lock);
     resetSerializationHints(part_lock);
@@ -2091,6 +2092,7 @@ try
 
     ThreadPoolCallbackRunnerLocal<void> runner(getUnexpectedPartsLoadingThreadPool().get(), "UnexpectedParts");
 
+    bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
     for (auto & load_state : unexpected_data_parts)
     {
         std::lock_guard lock(unexpected_data_parts_mutex);
@@ -2106,9 +2108,7 @@ try
 
             chassert(load_state.part);
             if (load_state.is_broken)
-            {
-                load_state.part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
-            }
+                load_state.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
         }, Priority{});
     }
     runner.waitForAllToFinishAndRethrowFirstError();
@@ -2159,6 +2159,7 @@ try
 
     ThreadPoolCallbackRunnerLocal<void> runner(getOutdatedPartsLoadingThreadPool().get(), "OutdatedParts");
 
+    bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
     while (true)
     {
         ThreadFuzzer::maybeInjectSleep();
@@ -2199,7 +2200,7 @@ try
             if (res.is_broken)
             {
                 forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(res.part->name);
-                res.part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
+                res.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
             }
             else if (res.part->is_duplicate)
                 res.part->remove();
@@ -4468,6 +4469,7 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
     auto lock = lockParts();
     bool removed_active_part = false;
     bool restored_active_part = false;
+    bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
 
     auto it_part = data_parts_by_info.find(part_to_detach->info);
     if (it_part == data_parts_by_info.end())
@@ -4486,7 +4488,7 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
     }
 
     modifyPartState(it_part, DataPartState::Deleting);
-    asMutableDeletingPart(part)->renameToDetached(prefix);
+    asMutableDeletingPart(part)->renameToDetached(prefix, /*ignore_error=*/ replicated);
     LOG_TEST(log, "forcefullyMovePartToDetachedAndRemoveFromMemory: removing {} from data_parts_indexes", part->getNameWithState());
     data_parts_indexes.erase(it_part);
 
@@ -5877,6 +5879,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
                        .withPartType(MergeTreeDataPartType::Wide)
                        .build();
         }
+        /// Errors should not be ignored RESTORE, since you should not restore to broken disks.
         part->renameToDetached("broken-from-backup");
     };
 
