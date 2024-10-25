@@ -231,7 +231,7 @@ void MetadataStorageFromPlainObjectStorageTransaction::createEmptyMetadataFile(c
 void MetadataStorageFromPlainObjectStorageTransaction::createMetadataFile(
     const std::string & path, ObjectStorageKey /*object_key*/, uint64_t /* size_in_bytes */)
 {
-    return createEmptyMetadataFile(path);
+    createEmptyMetadataFile(path);
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std::string & path)

@@ -306,7 +306,7 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute(std::uniqu
     if (it == path_map.map.end())
         LOG_TRACE(
             getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"),
-            "Parrent dirrectory does not exist, skipping path {}",
+            "Parent dirrectory does not exist, skipping path {}",
             path);
     else
         written = it->second.filenames.emplace(path.filename()).second;
@@ -333,11 +333,6 @@ MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorag
     , remote_path(std::filesystem::path(object_storage_->generateObjectKeyForPath(path_, std::nullopt).serialize()))
     , path_map(path_map_)
 {
-    auto common_key_prefix = object_storage_->getCommonKeyPrefix();
-    chassert(remote_path.string().starts_with(common_key_prefix));
-    auto rel_path = remote_path.lexically_relative(common_key_prefix);
-    remote_parent_path = rel_path.parent_path() / "";
-    filename = rel_path.filename();
 }
 
 void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute(std::unique_lock<SharedMutex> &)
@@ -357,7 +352,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute(s
             path);
     else
     {
-        auto res = it->second.filenames.erase(filename);
+        auto res = it->second.filenames.erase(path.filename());
         unlinked = res > 0;
     }
 }
@@ -371,7 +366,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo(std:
         chassert(it != path_map.map.end());
         if (it != path_map.map.end())
         {
-            it->second.filenames.emplace(filename);
+            it->second.filenames.emplace(path.filename());
         }
     }
 }
