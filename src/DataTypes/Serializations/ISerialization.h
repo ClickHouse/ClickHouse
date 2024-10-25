@@ -276,6 +276,9 @@ public:
 
         bool use_compact_variant_discriminators_serialization = false;
 
+        /// Serialize JSON column as single String column with serialized JSON values.
+        bool write_json_as_string = false;
+
         enum class ObjectAndDynamicStatisticsMode
         {
             NONE,   /// Don't write statistics.

@@ -6,11 +6,8 @@
 #include <fmt/format.h>
 
 #include <Common/logger_useful.h>
-#include <Common/ActionBlocker.h>
 #include <Core/Settings.h>
 #include <Common/ProfileEvents.h>
-#include <Processors/Transforms/CheckSortedTransform.h>
-#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -20,10 +17,8 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
-#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
-#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
@@ -34,9 +29,6 @@
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/Transforms/TTLTransform.h>
-#include <Processors/Transforms/TTLCalcTransform.h>
-#include <Processors/Transforms/DistinctSortedTransform.h>
-#include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -48,9 +40,22 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#ifndef NDEBUG
+    #include <Processors/Transforms/CheckSortedTransform.h>
+#endif
+
+#ifdef CLICKHOUSE_CLOUD
+    #include <Interpreters/Cache/FileCacheFactory.h>
+    #include <Disks/ObjectStorages/DiskObjectStorage.h>
+    #include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
+    #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#endif
+
+
 namespace ProfileEvents
 {
     extern const Event Merge;
+    extern const Event MergeSourceParts;
     extern const Event MergedColumns;
     extern const Event GatheredColumns;
     extern const Event MergeTotalMilliseconds;
@@ -302,6 +307,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 {
     ProfileEvents::increment(ProfileEvents::Merge);
+    ProfileEvents::increment(ProfileEvents::MergeSourceParts, global_ctx->future_part->parts.size());
 
     String local_tmp_prefix;
     if (global_ctx->need_prefix)
@@ -900,12 +906,12 @@ class ColumnGathererStep : public ITransformingStep
 {
 public:
     ColumnGathererStep(
-        const DataStream & input_stream_,
+        const Header & input_header_,
         const String & rows_sources_temporary_file_name_,
         UInt64 merge_block_size_rows_,
         UInt64 merge_block_size_bytes_,
         bool is_result_sparse_)
-        : ITransformingStep(input_stream_, input_stream_.header, getTraits())
+        : ITransformingStep(input_header_, input_header_, getTraits())
         , rows_sources_temporary_file_name(rows_sources_temporary_file_name_)
         , merge_block_size_rows(merge_block_size_rows_)
         , merge_block_size_bytes(merge_block_size_bytes_)
@@ -935,9 +941,9 @@ public:
         pipeline.addTransform(std::move(transform));
     }
 
-    void updateOutputStream() override
+    void updateOutputHeader() override
     {
-        output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
+        output_header = input_headers.front();
     }
 
 private:
@@ -993,12 +999,12 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline MergeTask::Vertic
 
     /// Union of all parts streams
     {
-        DataStreams input_streams;
-        input_streams.reserve(plans.size());
+        Headers input_headers;
+        input_headers.reserve(plans.size());
         for (auto & plan : plans)
-            input_streams.emplace_back(plan->getCurrentDataStream());
+            input_headers.emplace_back(plan->getCurrentHeader());
 
-        auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
+        auto union_step = std::make_unique<UnionStep>(std::move(input_headers));
         merge_column_query_plan.unitePlans(std::move(union_step), std::move(plans));
     }
 
@@ -1007,7 +1013,7 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline MergeTask::Vertic
         bool is_result_sparse = global_ctx->new_data_part->getSerialization(column_name)->getKind() == ISerialization::Kind::SPARSE;
         const auto data_settings = global_ctx->data->getSettings();
         auto merge_step = std::make_unique<ColumnGathererStep>(
-            merge_column_query_plan.getCurrentDataStream(),
+            merge_column_query_plan.getCurrentHeader(),
             RowsSourcesTemporaryFile::FILE_ID,
             (*data_settings)[MergeTreeSetting::merge_max_block_size],
             (*data_settings)[MergeTreeSetting::merge_max_block_size_bytes],
@@ -1030,7 +1036,7 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline MergeTask::Vertic
             auto indices_expression_dag = indexes_it->second.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext())->getActionsDAG().clone();
             indices_expression_dag.addMaterializingOutputActions(/*materialize_sparse=*/ true); /// Const columns cannot be written without materialization.
             auto calculate_indices_expression_step = std::make_unique<ExpressionStep>(
-                merge_column_query_plan.getCurrentDataStream(),
+                merge_column_query_plan.getCurrentHeader(),
                 std::move(indices_expression_dag));
             merge_column_query_plan.addStep(std::move(calculate_indices_expression_step));
         }
@@ -1392,12 +1398,12 @@ bool MergeTask::execute()
 }
 
 
-/// Apply merge strategy (Ordinary, Colapsing, Aggregating, etc) to the stream
+/// Apply merge strategy (Ordinary, Collapsing, Aggregating, etc) to the stream
 class MergePartsStep : public ITransformingStep
 {
 public:
     MergePartsStep(
-        const DataStream & input_stream_,
+        const Header & input_header_,
         const SortDescription & sort_description_,
         const Names partition_key_columns_,
         const MergeTreeData::MergingParams & merging_params_,
@@ -1407,7 +1413,7 @@ public:
         bool blocks_are_granules_size_,
         bool cleanup_,
         time_t time_of_merge_)
-        : ITransformingStep(input_stream_, input_stream_.header, getTraits())
+        : ITransformingStep(input_header_, input_header_, getTraits())
         , sort_description(sort_description_)
         , partition_key_columns(partition_key_columns_)
         , merging_params(merging_params_)
@@ -1428,7 +1434,7 @@ public:
         ///  that is going in insertion order.
         ProcessorPtr merged_transform;
 
-        const auto &header = pipeline.getHeader();
+        const auto & header = pipeline.getHeader();
         const auto input_streams_count = pipeline.getNumStreams();
 
         WriteBuffer * rows_sources_write_buf = nullptr;
@@ -1504,9 +1510,9 @@ public:
 #endif
     }
 
-    void updateOutputStream() override
+    void updateOutputHeader() override
     {
-        output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
+        output_header = input_headers.front();
     }
 
 private:
@@ -1540,16 +1546,16 @@ class TTLStep : public ITransformingStep
 {
 public:
     TTLStep(
-        const DataStream & input_stream_,
+        const Header & input_header_,
         const ContextPtr & context_,
         const MergeTreeData & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const MergeTreeData::MutableDataPartPtr & data_part_,
         time_t current_time,
         bool force_)
-        : ITransformingStep(input_stream_, input_stream_.header, getTraits())
+        : ITransformingStep(input_header_, input_header_, getTraits())
     {
-        transform = std::make_shared<TTLTransform>(context_, input_stream_.header, storage_, metadata_snapshot_, data_part_, current_time, force_);
+        transform = std::make_shared<TTLTransform>(context_, input_header_, storage_, metadata_snapshot_, data_part_, current_time, force_);
         subqueries_for_sets = transform->getSubqueries();
     }
 
@@ -1562,9 +1568,9 @@ public:
         pipeline.addTransform(transform);
     }
 
-    void updateOutputStream() override
+    void updateOutputHeader() override
     {
-        output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
+        output_header = input_headers.front();
     }
 
 private:
@@ -1651,12 +1657,12 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
     /// Union of all parts streams
     {
-        DataStreams input_streams;
-        input_streams.reserve(plans.size());
+        Headers input_headers;
+        input_headers.reserve(plans.size());
         for (auto & plan : plans)
-            input_streams.emplace_back(plan->getCurrentDataStream());
+            input_headers.emplace_back(plan->getCurrentHeader());
 
-        auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
+        auto union_step = std::make_unique<UnionStep>(std::move(input_headers));
         merge_parts_query_plan.unitePlans(std::move(union_step), std::move(plans));
     }
 
@@ -1665,7 +1671,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         /// Calculate sorting key expressions so that they are available for merge sorting.
         auto sorting_key_expression_dag = global_ctx->metadata_snapshot->getSortingKey().expression->getActionsDAG().clone();
         auto calculate_sorting_key_expression_step = std::make_unique<ExpressionStep>(
-            merge_parts_query_plan.getCurrentDataStream(),
+            merge_parts_query_plan.getCurrentHeader(),
             std::move(sorting_key_expression_dag));
         merge_parts_query_plan.addStep(std::move(calculate_sorting_key_expression_step));
     }
@@ -1693,11 +1699,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental merges with CLEANUP are not allowed");
 
         auto merge_step = std::make_unique<MergePartsStep>(
-            merge_parts_query_plan.getCurrentDataStream(),
+            merge_parts_query_plan.getCurrentHeader(),
             sort_description,
             partition_key_columns,
             global_ctx->merging_params,
-            (is_vertical_merge ? RowsSourcesTemporaryFile::FILE_ID : ""),  /// rows_sources temporaty file is used only for vertical merge
+            (is_vertical_merge ? RowsSourcesTemporaryFile::FILE_ID : ""),  /// rows_sources' temporary file is used only for vertical merge
             (*data_settings)[MergeTreeSetting::merge_max_block_size],
             (*data_settings)[MergeTreeSetting::merge_max_block_size_bytes],
             ctx->blocks_are_granules_size,
@@ -1725,7 +1731,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         }
 
         auto deduplication_step = std::make_unique<DistinctStep>(
-            merge_parts_query_plan.getCurrentDataStream(),
+            merge_parts_query_plan.getCurrentHeader(),
             SizeLimits(), 0 /*limit_hint*/,
             global_ctx->deduplicate_by_columns,
             false /*pre_distinct*/);
@@ -1740,7 +1746,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     if (ctx->need_remove_expired_values)
     {
         auto ttl_step = std::make_unique<TTLStep>(
-            merge_parts_query_plan.getCurrentDataStream(), global_ctx->context, *global_ctx->data, global_ctx->metadata_snapshot, global_ctx->new_data_part, global_ctx->time_of_merge, ctx->force_ttl);
+            merge_parts_query_plan.getCurrentHeader(), global_ctx->context, *global_ctx->data, global_ctx->metadata_snapshot, global_ctx->new_data_part, global_ctx->time_of_merge, ctx->force_ttl);
         subqueries = ttl_step->getSubqueries();
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));
@@ -1752,7 +1758,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         auto indices_expression_dag = global_ctx->merging_skip_indexes.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext())->getActionsDAG().clone();
         indices_expression_dag.addMaterializingOutputActions(/*materialize_sparse=*/ true); /// Const columns cannot be written without materialization.
         auto calculate_indices_expression_step = std::make_unique<ExpressionStep>(
-            merge_parts_query_plan.getCurrentDataStream(),
+            merge_parts_query_plan.getCurrentHeader(),
             std::move(indices_expression_dag));
         merge_parts_query_plan.addStep(std::move(calculate_indices_expression_step));
     }
@@ -1765,6 +1771,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         pipeline_settings.temporary_file_lookup = ctx->rows_sources_temporary_file;
         auto optimization_settings = QueryPlanOptimizationSettings::fromContext(global_ctx->context);
         auto builder = merge_parts_query_plan.buildQueryPipeline(optimization_settings, pipeline_settings);
+
+        // Merges are not using concurrency control now. Queries and merges running together could lead to CPU overcommit.
+        // TODO(serxa): Enable concurrency control for merges. This should be done after CPU scheduler introduction.
+        builder->setConcurrencyControl(false);
 
         global_ctx->merged_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     }

@@ -28,11 +28,7 @@ public:
         auto disk = client.getCurrentDiskWithPath();
         const String & path = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path"));
         bool recursive = options.count("recursive");
-        if (!disk.getDisk()->exists(path))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path {} on disk {} doesn't exist", path, disk.getDisk()->getName());
-        }
-        if (disk.getDisk()->isDirectory(path))
+        if (disk.getDisk()->existsDirectory(path))
         {
             if (!recursive)
             {
@@ -41,10 +37,12 @@ public:
 
             disk.getDisk()->removeRecursive(path);
         }
-        else
+        else if (disk.getDisk()->existsFile(path))
         {
             disk.getDisk()->removeFileIfExists(path);
         }
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path {} on disk {} doesn't exist", path, disk.getDisk()->getName());
     }
 };
 
