@@ -66,6 +66,11 @@ namespace Setting
     extern const SettingsBool use_hedged_requests;
 }
 
+namespace DistributedSetting
+{
+    extern const DistributedSettingsBool skip_unavailable_shards;
+}
+
 namespace ErrorCodes
 {
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
@@ -155,7 +160,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
 
     if (!settings[Setting::skip_unavailable_shards].changed && distributed_settings)
     {
-        new_settings[Setting::skip_unavailable_shards] = distributed_settings->skip_unavailable_shards.value;
+        new_settings[Setting::skip_unavailable_shards] = (*distributed_settings)[DistributedSetting::skip_unavailable_shards].value;
         new_settings[Setting::skip_unavailable_shards].changed = true;
     }
 
