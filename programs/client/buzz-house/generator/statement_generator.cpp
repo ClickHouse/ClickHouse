@@ -338,6 +338,8 @@ int StatementGenerator::AddTableColumn(RandomGenerator &rg, SQLTable &t, const u
 		}
 	}
 	if (t.IsMergeTreeFamily()) {
+		const auto &csettings = AllColumnSettings.at(t.teng);
+
 		if (rg.NextSmallNumber() < 3) {
 			const uint32_t ncodecs = (rg.NextMediumNumber() % UINT32_C(3)) + 1;
 
@@ -381,8 +383,8 @@ int StatementGenerator::AddTableColumn(RandomGenerator &rg, SQLTable &t, const u
 				}
 			}
 		}
-		if (rg.NextSmallNumber() < 3) {
-			GenerateSettingValues(rg, MergeTreeColumnSettings, cd->mutable_settings());
+		if (!csettings.empty() && rg.NextSmallNumber() < 3) {
+			GenerateSettingValues(rg, csettings, cd->mutable_settings());
 		}
 		cd->set_is_pkey(is_pk);
 	}
@@ -545,6 +547,7 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 	bool added_pkey = false;
 	sql_query_grammar::TableEngine *te = ct->mutable_engine();
 	sql_query_grammar::ExprSchemaTable *est = ct->mutable_est();
+	sql_query_grammar::SettingValues *svs = nullptr;
 	const bool replace = CollectionCount<SQLTable>(attached_tables) > 3 && rg.NextMediumNumber() < 16;
 
 	next.is_temp = rg.NextMediumNumber() < 22;
@@ -568,7 +571,8 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 	if (!CollectionHas<SQLTable>(attached_tables) || rg.NextSmallNumber() < 9) {
 		//create table with definition
 		sql_query_grammar::TableDef *colsdef = ct->mutable_table_def();
-		std::uniform_int_distribution<uint32_t> table_engine(1, sql_query_grammar::TableEngineValues_MAX);
+		std::uniform_int_distribution<uint32_t> table_engine(1,
+			rg.NextBool() ? sql_query_grammar::TableEngineValues::VersionedCollapsingMergeTree : sql_query_grammar::TableEngineValues_MAX);
 		sql_query_grammar::TableEngineValues val = static_cast<sql_query_grammar::TableEngineValues>(table_engine(rg.gen));
 
 		next.teng = val;
@@ -667,14 +671,9 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 		next.constr_counter = t.constr_counter;
 		next.is_temp = t.is_temp;
 	}
-	if (next.IsMergeTreeFamily()) {
+	if (next.IsMergeTreeFamily() || next.IsFileEngine() || next.IsJoinEngine()) {
 		const NestedType *ntp = nullptr;
-		sql_query_grammar::SettingValues *svs = ct->mutable_settings();
 
-		if (rg.NextSmallNumber() < 4) {
-			next.toption = supports_cloud_features && rg.NextBool() ?
-				sql_query_grammar::TableEngineOption::TShared : sql_query_grammar::TableEngineOption::TReplicated;
-		}
 		assert(this->entries.empty());
 		for (const auto &entry : next.cols) {
 			if ((ntp = dynamic_cast<const NestedType*>(entry.second.tp))) {
@@ -685,11 +684,29 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 				entries.push_back(InsertEntry(entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
 			}
 		}
-		GenerateMergeTreeEngineDetails(rg, next.teng, !added_pkey, te);
+		if (next.IsMergeTreeFamily()) {
+			if (rg.NextSmallNumber() < 4) {
+				next.toption = supports_cloud_features && rg.NextBool() ?
+					sql_query_grammar::TableEngineOption::TShared : sql_query_grammar::TableEngineOption::TReplicated;
+				te->set_toption(next.toption.value());
+			}
+			GenerateMergeTreeEngineDetails(rg, next.teng, !added_pkey, te);
+ 		} else if (next.IsFileEngine()) {
+			GenerateFileEngineDetails(rg, te);
+		} else if (next.IsJoinEngine()) {
+			GenerateJoinEngineDetails(rg, te);
+		}
 		this->entries.clear();
+	}
 
-		if (rg.NextSmallNumber() < 5) {
-			GenerateSettingValues(rg, MergeTreeTableSettings, svs);
+	const auto &tsettings = AllTableSettings.at(next.teng);
+	if (!tsettings.empty() && rg.NextSmallNumber() < 5) {
+		svs = ct->mutable_settings();
+		GenerateSettingValues(rg, tsettings, svs);
+	}
+	if (next.IsMergeTreeFamily()) {
+		if (!svs) {
+			svs = ct->mutable_settings();
 		}
 		sql_query_grammar::SetValue *sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 		sv->set_property("allow_nullable_key");
@@ -701,11 +718,6 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 			sv2->set_property("storage_policy");
 			sv2->set_value("'s3_with_keeper'");
 		}
-	} else if (next.teng == sql_query_grammar::TableEngineValues::File) {
-		GenerateFileEngineDetails(rg, te);
-	}
-	if (next.toption.has_value()) {
-		te->set_toption(next.toption.value());
 	}
 	assert(!next.toption.has_value() || next.IsMergeTreeFamily());
 	this->staged_tables[tname] = std::move(next);
@@ -760,26 +772,30 @@ int StatementGenerator::GenerateNextCreateView(RandomGenerator &rg, sql_query_gr
 	est->mutable_table()->set_table("v" + std::to_string(next.vname));
 	if (next.is_materialized) {
 		sql_query_grammar::TableEngine *te = cv->mutable_engine();
-		std::uniform_int_distribution<uint32_t> table_engine(1, sql_query_grammar::TableEngineValues_MAX);
+		std::uniform_int_distribution<uint32_t> table_engine(1,
+			rg.NextBool() ? sql_query_grammar::TableEngineValues::VersionedCollapsingMergeTree : sql_query_grammar::TableEngineValues_MAX);
 		sql_query_grammar::TableEngineValues val = static_cast<sql_query_grammar::TableEngineValues>(table_engine(rg.gen));
 
 		next.teng = val;
 		te->set_engine(val);
-		if (next.IsMergeTreeFamily()) {
-			if (rg.NextSmallNumber() < 4) {
-				next.toption = supports_cloud_features && rg.NextBool() ?
-					sql_query_grammar::TableEngineOption::TShared : sql_query_grammar::TableEngineOption::TReplicated;
-				te->set_toption(next.toption.value());
-			}
-
+		if (next.IsMergeTreeFamily() || next.IsFileEngine() || next.IsJoinEngine()) {
 			assert(this->entries.empty());
 			for (uint32_t i = 0 ; i < next.ncols ; i++) {
 				entries.push_back(InsertEntry(ColumnSpecial::NONE, i, std::nullopt, nullptr, std::nullopt));
 			}
-			GenerateMergeTreeEngineDetails(rg, next.teng, true, te);
+			if (next.IsMergeTreeFamily()) {
+				if (rg.NextSmallNumber() < 4) {
+					next.toption = supports_cloud_features && rg.NextBool() ?
+						sql_query_grammar::TableEngineOption::TShared : sql_query_grammar::TableEngineOption::TReplicated;
+					te->set_toption(next.toption.value());
+				}
+				GenerateMergeTreeEngineDetails(rg, next.teng, true, te);
+			} else if (next.IsFileEngine()) {
+				GenerateFileEngineDetails(rg, te);
+			} else if (next.IsJoinEngine()) {
+				GenerateJoinEngineDetails(rg, te);
+			}
 			this->entries.clear();
-		} else if (next.teng == sql_query_grammar::TableEngineValues::File) {
-			GenerateFileEngineDetails(rg, te);
 		}
 		if (CollectionHas<SQLTable>(attached_tables) && rg.NextSmallNumber() < 5) {
 			const SQLTable &t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables));
@@ -1103,7 +1119,8 @@ int StatementGenerator::GenerateNextExchangeTables(RandomGenerator &rg, sql_quer
 int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_grammar::AlterTable *at) {
 	sql_query_grammar::ExprSchemaTable *est = at->mutable_est();
 	const uint32_t nalters = rg.NextBool() ? 1 : ((rg.NextMediumNumber() % 4) + 1);
-	const bool has_tables = CollectionHas<SQLTable>(attached_tables),
+	const bool has_tables = CollectionHas<SQLTable>(
+					[](const SQLTable& tt){return (!tt.db || tt.db->attached) && tt.attached && !tt.IsFileEngine();}),
 			   has_views = CollectionHas<SQLView>(attached_views);
 
 	if (has_views && (!has_tables || rg.NextBool())) {
@@ -1131,7 +1148,8 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 			}
 		}
 	} else if (has_tables) {
-		SQLTable &t = const_cast<SQLTable &>(rg.PickRandomlyFromVector(FilterCollection<SQLTable>(attached_tables)).get());
+		SQLTable &t = const_cast<SQLTable &>(rg.PickRandomlyFromVector(FilterCollection<SQLTable>(
+					[](const SQLTable& tt){return (!tt.db || tt.db->attached) && tt.attached && !tt.IsFileEngine();})).get());
 
 		at->set_is_temp(t.is_temp);
 		if (t.db) {
@@ -1159,10 +1177,10 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 						   clear_idx = 2 * static_cast<uint32_t>(!t.idxs.empty()),
 						   drop_idx = 2 * static_cast<uint32_t>(!t.idxs.empty()),
 						   column_remove_property = 2,
-						   column_modify_setting = 2 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
-						   column_remove_setting = 2 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
-						   table_modify_setting = 2 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
-						   table_remove_setting = 2 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
+						   column_modify_setting = 2 * static_cast<uint32_t>(!AllColumnSettings.at(t.teng).empty()),
+						   column_remove_setting = 2 * static_cast<uint32_t>(!AllColumnSettings.at(t.teng).empty()),
+						   table_modify_setting = 2 * static_cast<uint32_t>(!AllTableSettings.at(t.teng).empty()),
+						   table_remove_setting = 2 * static_cast<uint32_t>(!AllTableSettings.at(t.teng).empty()),
 						   add_projection = 2 * static_cast<uint32_t>(t.IsMergeTreeFamily()),
 						   remove_projection = 2 * static_cast<uint32_t>(t.IsMergeTreeFamily() && !t.projs.empty()),
 						   materialize_projection = 2 * static_cast<uint32_t>(t.IsMergeTreeFamily() && !t.projs.empty()),
@@ -1407,31 +1425,37 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator &rg, sql_query_gramma
 														drop_stats + clear_stats + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx +
 														column_remove_property + column_modify_setting + 1)) {
 				sql_query_grammar::ModifyColumnSetting *mcp = ati->mutable_column_modify_setting();
+				const auto &csettings = AllColumnSettings.at(t.teng);
 				const SQLColumn &col = rg.PickValueRandomlyFromMap(t.cols);
 
 				mcp->mutable_col()->set_column("c" + std::to_string(col.cname));
-				GenerateSettingValues(rg, MergeTreeColumnSettings, mcp->mutable_settings());
+				GenerateSettingValues(rg, csettings, mcp->mutable_settings());
 			} else if (column_remove_setting && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
 														rename_column + clear_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
 														drop_stats + clear_stats + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx +
 														column_remove_property + column_modify_setting + column_remove_setting + 1)) {
 				sql_query_grammar::RemoveColumnSetting *rcp = ati->mutable_column_remove_setting();
+				const auto &csettings = AllColumnSettings.at(t.teng);
 				const SQLColumn &col = rg.PickValueRandomlyFromMap(t.cols);
 
 				rcp->mutable_col()->set_column("c" + std::to_string(col.cname));
-				GenerateSettingList(rg, MergeTreeColumnSettings, rcp->mutable_settings());
+				GenerateSettingList(rg, csettings, rcp->mutable_settings());
 			} else if (table_modify_setting && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
 													   rename_column + clear_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
 													   drop_stats + clear_stats + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx +
 													   column_remove_property + column_modify_setting + column_remove_setting +
 													   table_modify_setting + 1)) {
-				GenerateSettingValues(rg, MergeTreeTableSettings, ati->mutable_table_modify_setting());
+				const auto &tsettings = AllTableSettings.at(t.teng);
+
+				GenerateSettingValues(rg, tsettings, ati->mutable_table_modify_setting());
 			} else if (table_remove_setting && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
 													   rename_column + clear_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
 													   drop_stats + clear_stats + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx +
 													   column_remove_property + column_modify_setting + column_remove_setting +
 													   table_modify_setting + table_remove_setting + 1)) {
-				GenerateSettingList(rg, MergeTreeTableSettings, ati->mutable_table_remove_setting());
+				const auto &tsettings = AllTableSettings.at(t.teng);
+
+				GenerateSettingList(rg, tsettings, ati->mutable_table_remove_setting());
 			} else if (add_projection && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column +
 												 rename_column + clear_column + modify_column + delete_mask + heavy_update + add_stats + mod_stats +
 												 drop_stats + clear_stats + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx +
@@ -1575,7 +1599,8 @@ int StatementGenerator::GenerateNextQuery(RandomGenerator &rg, sql_query_grammar
 				   desc_table = 2 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables) ||
 														  CollectionHas<SQLView>(attached_views)),
 				   exchange_tables = 1 * static_cast<uint32_t>(CollectionCount<SQLTable>(attached_tables) > 1),
-				   alter_table = 6 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables) ||
+				   alter_table = 6 * static_cast<uint32_t>(CollectionHas<SQLTable>(
+					[](const SQLTable& t){return (!t.db || t.db->attached) && t.attached && !t.IsFileEngine();}) ||
 														   CollectionHas<SQLView>(attached_views)),
 				   set_values = 5,
 				   attach = 2 * static_cast<uint32_t>(CollectionHas<SQLTable>(detached_tables) ||

@@ -540,6 +540,46 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	}}
 };
 
+const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> MemoryTableSettings = {
+	{"min_bytes_to_keep", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21));
+	}},
+	{"max_bytes_to_keep", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21));
+	}},
+	{"min_rows_to_keep", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21));
+	}},
+	{"max_rows_to_keep", [](RandomGenerator &rg, std::string &ret) {
+		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21));
+	}}
+};
+
+const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> SetTableSettings = {
+	{"persistent", TrueOrFalse}
+};
+
+const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> JoinTableSettings = {
+	{"persistent", TrueOrFalse}
+};
+
+const std::map<sql_query_grammar::TableEngineValues, std::map<std::string, std::function<void(RandomGenerator&,std::string&)>>> AllTableSettings = {
+	{sql_query_grammar::MergeTree, MergeTreeTableSettings},
+	{sql_query_grammar::ReplacingMergeTree, MergeTreeTableSettings},
+	{sql_query_grammar::SummingMergeTree, MergeTreeTableSettings},
+	{sql_query_grammar::AggregatingMergeTree, MergeTreeTableSettings},
+	{sql_query_grammar::CollapsingMergeTree, MergeTreeTableSettings},
+	{sql_query_grammar::VersionedCollapsingMergeTree, MergeTreeTableSettings},
+	{sql_query_grammar::Memory, MemoryTableSettings},
+	{sql_query_grammar::File, {}},
+	{sql_query_grammar::Null, {}},
+	{sql_query_grammar::Set, SetTableSettings},
+	{sql_query_grammar::Join, JoinTableSettings},
+	{sql_query_grammar::StripeLog, {}},
+	{sql_query_grammar::Log, {}},
+	{sql_query_grammar::TinyLog, {}},
+};
+
 const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> MergeTreeColumnSettings = {
 	{"min_compress_block_size", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21));
@@ -547,6 +587,23 @@ const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> 
 	{"max_compress_block_size", [](RandomGenerator &rg, std::string &ret) {
 		ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21));
 	}}
+};
+
+const std::map<sql_query_grammar::TableEngineValues, std::map<std::string, std::function<void(RandomGenerator&,std::string&)>>> AllColumnSettings = {
+	{sql_query_grammar::MergeTree, MergeTreeColumnSettings},
+	{sql_query_grammar::ReplacingMergeTree, MergeTreeColumnSettings},
+	{sql_query_grammar::SummingMergeTree, MergeTreeColumnSettings},
+	{sql_query_grammar::AggregatingMergeTree, MergeTreeColumnSettings},
+	{sql_query_grammar::CollapsingMergeTree, MergeTreeColumnSettings},
+	{sql_query_grammar::VersionedCollapsingMergeTree, MergeTreeColumnSettings},
+	{sql_query_grammar::Memory, {}},
+	{sql_query_grammar::File, {}},
+	{sql_query_grammar::Null, {}},
+	{sql_query_grammar::Set, {}},
+	{sql_query_grammar::Join, {}},
+	{sql_query_grammar::StripeLog, {}},
+	{sql_query_grammar::Log, {}},
+	{sql_query_grammar::TinyLog, {}},
 };
 
 void SetRandomSetting(RandomGenerator &rg, const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> &settings,

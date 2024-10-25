@@ -84,6 +84,14 @@ public:
 		return teng >= sql_query_grammar::TableEngineValues::MergeTree &&
 			   teng <= sql_query_grammar::TableEngineValues::VersionedCollapsingMergeTree;
 	}
+
+	bool IsFileEngine() const {
+		return teng == sql_query_grammar::TableEngineValues::File;
+	}
+
+	bool IsJoinEngine() const {
+		return teng == sql_query_grammar::TableEngineValues::Join;
+	}
 };
 
 struct SQLTable : SQLBase {
