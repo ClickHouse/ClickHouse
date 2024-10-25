@@ -11,11 +11,14 @@ namespace buzzhouse {
 
 class FuzzConfig {
 public:
+	std::vector<const std::string> collations;
+	bool read_log = false, fuzz_floating_points;
 	uint32_t seed = 0, max_depth = 3, max_width = 3, max_databases = 4,
 			 max_functions = 4, max_tables = 10, max_views = 5;
-	bool read_log = false;
 	std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
 						  db_file_path = std::filesystem::temp_directory_path() / "db";
+
+	FuzzConfig() {}
 
 	FuzzConfig(const std::string &path) {
 		std::ifstream ifs(path);
@@ -42,6 +45,8 @@ public:
 				max_tables = static_cast<uint32_t>(value);
 			} else if (key == "max_views") {
 				max_views = static_cast<uint32_t>(value);
+			} else if (key == "fuzz_floating_points") {
+				fuzz_floating_points = static_cast<bool>(value);
 			} else {
 				throw std::runtime_error("Unknown option: " + key);
 			}
@@ -56,18 +61,17 @@ public:
 		res += "' FORMAT TabSeparated;";
 	}
 
-	const std::vector<const std::string> LoadCollations() const {
+	void LoadCollations() {
 		std::string input;
-		std::vector<const std::string> res;
 		const std::filesystem::path &collfile = db_file_path / "collations.data";
 		std::ifstream infile(collfile);
 
 		input.reserve(64);
+		collations.clear();
 		while (std::getline(infile, input)) {
-			res.push_back(input);
+			collations.push_back(input);
 			input.resize(0);
 		}
-		return res;
 	}
 };
 

@@ -79,9 +79,8 @@ typedef struct InsertEntry {
 
 class StatementGenerator {
 private:
+	const FuzzConfig &fc;
 	const bool supports_cloud_features;
-	const std::vector<const std::string> collations;
-	const uint32_t max_depth, max_width, max_databases, max_functions, max_tables, max_views;
 
 	std::string buf;
 	bool in_transaction = false, inside_projection = false, allow_not_deterministic = true, enforce_final = false;
@@ -274,13 +273,7 @@ public:
 	const std::function<bool (const SQLTable&)> detached_tables = [](const SQLTable& t){return (t.db && !t.db->attached) || !t.attached;};
 	const std::function<bool (const SQLView&)> detached_views = [](const SQLView& v){return (v.db && !v.db->attached) || !v.attached;};
 
-	StatementGenerator() : supports_cloud_features(false), collations(), max_depth(3), max_width(3),
-						   max_databases(4), max_functions(4), max_tables(10), max_views(5) {
-		buf.reserve(2048);
-	}
-	StatementGenerator (const FuzzConfig &fc, const bool scf, const std::vector<const std::string> colls) :
-		supports_cloud_features(scf), collations(colls), max_depth(fc.max_depth), max_width(fc.max_width),
-		max_databases(fc.max_databases), max_functions(fc.max_functions), max_tables(fc.max_tables), max_views(fc.max_views) {
+	StatementGenerator(const FuzzConfig &fuzzc, const bool scf) : fc(fuzzc), supports_cloud_features(scf) {
 		buf.reserve(2048);
 	}
 

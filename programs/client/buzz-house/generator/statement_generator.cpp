@@ -66,7 +66,7 @@ int StatementGenerator::GenerateNextCreateFunction(RandomGenerator &rg, sql_quer
 	const uint32_t fname = this->function_counter++;
 
 	next.fname = fname;
-	next.nargs = std::min(this->max_width - this->width, (rg.NextMediumNumber() % (rg.NextBool() ? 4 : 10)));
+	next.nargs = std::min(this->fc.max_width - this->width, (rg.NextMediumNumber() % (rg.NextBool() ? 4 : 10)));
 	next.not_deterministic = rg.NextBool();
 	SetAllowNotDetermistic(next.not_deterministic); //if this function is later called by an oracle, then don't call it
 	GenerateLambdaCall(rg, next.nargs, cf->mutable_lexpr());
@@ -448,7 +448,7 @@ int StatementGenerator::AddTableIndex(RandomGenerator &rg, SQLTable &t, const bo
 }
 
 int StatementGenerator::AddTableProjection(RandomGenerator &rg, SQLTable &t, const bool staged, sql_query_grammar::ProjectionDef *pdef) {
-	const uint32_t pname = t.proj_counter++, ncols = std::max(std::min(this->max_width - this->width, (rg.NextMediumNumber() % UINT32_C(3)) + 1), UINT32_C(1));
+	const uint32_t pname = t.proj_counter++, ncols = std::max(std::min(this->fc.max_width - this->width, (rg.NextMediumNumber() % UINT32_C(3)) + 1), UINT32_C(1));
 	auto &to_add = staged ? t.staged_projs : t.projs;
 
 	pdef->mutable_proj()->set_projection("p" + std::to_string(pname));
@@ -1516,9 +1516,9 @@ int StatementGenerator::GenerateDetach(RandomGenerator &rg, sql_query_grammar::D
 
 int StatementGenerator::GenerateNextQuery(RandomGenerator &rg, sql_query_grammar::SQLQueryInner *sq) {
 	const uint32_t create_table = 6 * static_cast<uint32_t>(CollectionHas<std::shared_ptr<SQLDatabase>>(attached_databases) &&
-															tables.size() < this->max_tables),
+															tables.size() < this->fc.max_tables),
 				   create_view = 10 * static_cast<uint32_t>(CollectionHas<std::shared_ptr<SQLDatabase>>(attached_databases) &&
-															views.size() < this->max_views),
+															views.size() < this->fc.max_views),
 				   drop = 1 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables) ||
 													CollectionHas<SQLView>(attached_views) ||
 													CollectionHas<std::shared_ptr<SQLDatabase>>(attached_databases) ||
@@ -1541,8 +1541,8 @@ int StatementGenerator::GenerateNextQuery(RandomGenerator &rg, sql_query_grammar
 				   dettach = 2 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables) ||
 													   CollectionHas<SQLView>(attached_views) ||
 													   CollectionHas<std::shared_ptr<SQLDatabase>>(attached_databases)),
-				   create_database = 2 * static_cast<uint32_t>(databases.size() < this->max_databases),
-				   create_function = 5 * static_cast<uint32_t>(functions.size() < this->max_functions),
+				   create_database = 2 * static_cast<uint32_t>(databases.size() < this->fc.max_databases),
+				   create_function = 5 * static_cast<uint32_t>(functions.size() < this->fc.max_functions),
 				   select_query = 350,
 				   prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table +
 								check_table + desc_table + exchange_tables + alter_table + set_values + attach +

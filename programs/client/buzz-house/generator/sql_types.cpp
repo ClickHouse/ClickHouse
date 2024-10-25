@@ -154,24 +154,26 @@ const SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_
 	const uint32_t nopt = next_dist(rg.gen);
 
 	switch (nopt) {
-		case 1: {
-			//int
-			sql_query_grammar::Integers nint;
+		case 1:
+		case 2:
+			if (nopt == 2 && this->fc.fuzz_floating_points) {
+				//float
+				sql_query_grammar::FloatingPoints nflo;
 
-			std::tie(res, nint) = RandomIntType(rg);
-			if (tp) {
-				tp->set_integers(nint);
-			}
-		} break;
-		case 2: {
-			//float
-			sql_query_grammar::FloatingPoints nflo;
+				std::tie(res, nflo) = RandomFloatType(rg);
+				if (tp) {
+					tp->set_floats(nflo);
+				}
+			} else {
+				//int
+				sql_query_grammar::Integers nint;
 
-			std::tie(res, nflo) = RandomFloatType(rg);
-			if (tp) {
-				tp->set_floats(nflo);
+				std::tie(res, nint) = RandomIntType(rg);
+				if (tp) {
+					tp->set_integers(nint);
+				}
 			}
-		} break;
+			break;
 		case 3: {
 			//dates
 			sql_query_grammar::Dates dd;
@@ -291,7 +293,7 @@ const SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_
 						}
 						desc += "max_dynamic_paths=";
 						desc += std::to_string(max_dpaths);
-					} else if (this->depth >= this->max_depth || noption < 8) {
+					} else if (this->depth >= this->fc.max_depth || noption < 8) {
 						const uint32_t max_dtypes = rg.NextBool() ? (rg.NextSmallNumber() % 5) : (rg.NextRandomUInt32() % 33);
 
 						if (tp) {
@@ -299,7 +301,7 @@ const SQLType* StatementGenerator::BottomType(RandomGenerator &rg, const uint32_
 						}
 						desc += "max_dynamic_types=";
 						desc += std::to_string(max_dtypes);
-					} /*else if (this->depth >= this->max_depth || noption < 9) {
+					} /*else if (this->depth >= this->fc.max_depth || noption < 9) {
 						const uint32_t nskips = (rg.NextMediumNumber() % 4) + 1;
 						sql_query_grammar::ColumnPath *cp = tp ? jdi->mutable_skip_path() : nullptr;
 
@@ -395,12 +397,12 @@ const SQLType* StatementGenerator::RandomNextType(RandomGenerator &rg, const uin
 		const bool lcard = rg.NextMediumNumber() < 18;
 		const SQLType* res = new Nullable(BottomType(rg, allowed_types & ~(allow_dynamic|allow_json), lcard, tp ? (lcard ? tp->mutable_nullable_lcard() : tp->mutable_nullable()) : nullptr));
 		return lcard ? new LowCardinality(res) : res;
-	} else if (noption < 71 || this->depth == this->max_depth) {
+	} else if (noption < 71 || this->depth == this->fc.max_depth) {
 		//non nullable
 		const bool lcard = rg.NextMediumNumber() < 18;
 		const SQLType* res = BottomType(rg, allowed_types, lcard, tp ? (lcard ? tp->mutable_non_nullable_lcard() : tp->mutable_non_nullable()) : nullptr);
 		return lcard ? new LowCardinality(res) : res;
-	} else if (noption < 77 || this->max_width <= this->width + 1) {
+	} else if (noption < 77 || this->fc.max_width <= this->width + 1) {
 		//array
 		return GenerateArraytype(rg, allowed_types & ~(allow_nested), col_counter, tp ? tp->mutable_array() : nullptr);
 	} else if (noption < 83) {
@@ -417,7 +419,7 @@ const SQLType* StatementGenerator::RandomNextType(RandomGenerator &rg, const uin
 	} else if (((allowed_types & (allow_variant|allow_nested)) == 0) || noption < 89) {
 		//tuple
 		sql_query_grammar::TupleType *tt = tp ? tp->mutable_tuple() : nullptr;
-		const uint32_t ncols = (rg.NextMediumNumber() % (std::min<uint32_t>(5, this->max_width - this->width))) + UINT32_C(2);
+		const uint32_t ncols = (rg.NextMediumNumber() % (std::min<uint32_t>(5, this->fc.max_width - this->width))) + UINT32_C(2);
 		std::vector<const SubType> subtypes;
 
 		this->depth++;
@@ -437,7 +439,7 @@ const SQLType* StatementGenerator::RandomNextType(RandomGenerator &rg, const uin
 	} else if ((allowed_types & allow_variant) && (!(allowed_types & allow_nested) || noption < 95)) {
 		//variant
 		sql_query_grammar::VariantType *vt = tp ? tp->mutable_variant() : nullptr;
-		const uint32_t ncols = (rg.NextMediumNumber() % (std::min<uint32_t>(5, this->max_width - this->width))) + UINT32_C(2);
+		const uint32_t ncols = (rg.NextMediumNumber() % (std::min<uint32_t>(5, this->fc.max_width - this->width))) + UINT32_C(2);
 		std::vector<const SQLType*> subtypes;
 
 		this->depth++;
@@ -452,7 +454,7 @@ const SQLType* StatementGenerator::RandomNextType(RandomGenerator &rg, const uin
 	} else if ((allowed_types & allow_nested)) {
 		//nested
 		sql_query_grammar::NestedType *nt = tp ? tp->mutable_nested() : nullptr;
-		const uint32_t ncols = (rg.NextMediumNumber() % (std::min<uint32_t>(5, this->max_width - this->width))) + UINT32_C(1);
+		const uint32_t ncols = (rg.NextMediumNumber() % (std::min<uint32_t>(5, this->fc.max_width - this->width))) + UINT32_C(1);
 		std::vector<const NestedSubType> subtypes;
 
 		this->depth++;
@@ -821,7 +823,7 @@ void StatementGenerator::StrAppendAnyValueInternal(RandomGenerator &rg, std::str
 	} else if ((nl = dynamic_cast<const Nullable*>(tp))) {
 		StrAppendAnyValueInternal(rg, ret, nl->subtype);
 	} else if (dynamic_cast<const JSONType*>(tp)) {
-		std::uniform_int_distribution<int> dopt(1, this->max_depth), wopt(1, this->max_width);
+		std::uniform_int_distribution<int> dopt(1, this->fc.max_depth), wopt(1, this->fc.max_width);
 
 		ret += "'";
 		StrBuildJSON(rg, dopt(rg.gen), wopt(rg.gen), ret);
@@ -832,7 +834,7 @@ void StatementGenerator::StrAppendAnyValueInternal(RandomGenerator &rg, std::str
 
 		StrAppendAnyValueInternal(rg, ret, next);
 		delete next;
-	} else if (this->depth == this->max_depth) {
+	} else if (this->depth == this->fc.max_depth) {
 		ret += "1";
 	} else if ((mt = dynamic_cast<const MapType*>(tp))) {
 		this->depth++;
