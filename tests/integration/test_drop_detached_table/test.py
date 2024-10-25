@@ -1,7 +1,9 @@
 # Tag no-fasttest: requires S3
 
 import logging
+
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
