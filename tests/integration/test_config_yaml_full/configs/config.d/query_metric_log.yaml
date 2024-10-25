@@ -1,6 +1,6 @@
-error_log:
+query_metric_log:
   database: system
-  table: error_log
+  table: query_metric_log
   flush_interval_milliseconds: 7500
   collect_interval_milliseconds: 1000
 
