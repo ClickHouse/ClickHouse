@@ -590,6 +590,9 @@ endif()
 
 include (cmake/sanitize_targets.cmake)
 
+add_custom_target (ttttt ALL DEPENDS chcache)
+add_dependencies (clickhouse ttttt)
+
 # Build native targets if necessary
 get_property(NATIVE_BUILD_TARGETS GLOBAL PROPERTY NATIVE_BUILD_TARGETS)
 if (NATIVE_BUILD_TARGETS
