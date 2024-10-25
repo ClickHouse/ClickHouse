@@ -13,10 +13,12 @@ end_of_block = r".*\r\n.*\r\n"
 
 
 class client(object):
-    def __init__(self, command=None, name="", log=None):
+    def __init__(self, command=None, name="", log=None, extra_options=None):
         self.client = uexpect.spawn(["/bin/bash", "--noediting"])
         if command is None:
-            options = "--enable-progress-table-toggle=0"
+            extra_options = extra_options or {}
+            extra_options["enable-progress-table-toggle"] = 0
+            options = " ".join(f"--{k}={v}" for k, v in extra_options.items())
             command = (
                 os.environ.get("CLICKHOUSE_BINARY", "clickhouse") + " client " + options
             )
