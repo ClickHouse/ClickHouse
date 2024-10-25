@@ -5575,8 +5575,6 @@ DETACH TABLE test_table;
 DROP DETACHED TABLE test_table SYNC;
 ```
 )", 0) \
-    M(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0) \
-
     DECLARE(Bool, allow_experimental_shared_set_join, true, R"(
 Only in ClickHouse Cloud. Allow to create ShareSet and SharedJoin
 )", 0) \
