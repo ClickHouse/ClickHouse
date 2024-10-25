@@ -893,9 +893,6 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_ZXID_DIGEST)
                     bytes_missing += sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version) + sizeof(request_for_session->digest->value);
 
-                if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_XID_64)
-                    bytes_missing += sizeof(uint32_t);
-
                 if (bytes_missing != 0)
                 {
                     auto new_buffer = nuraft::buffer::alloc(entry_buf->size() + bytes_missing);
@@ -905,7 +902,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 }
 
                 size_t write_buffer_header_size = sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version)
-                    + sizeof(request_for_session->digest->value) + sizeof(uint32_t);
+                    + sizeof(request_for_session->digest->value);
 
                 if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
                     write_buffer_header_size += sizeof(request_for_session->time);
@@ -923,11 +920,6 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 writeIntBinary(request_for_session->digest->version, write_buf);
                 if (request_for_session->digest->version != KeeperStorageBase::NO_DIGEST)
                     writeIntBinary(request_for_session->digest->value, write_buf);
-
-                /// when we extend an entry from old Keeper, we write 0 for MSB of XID just in case so newer version don't
-                /// read random garbage from it
-                if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_XID_64)
-                    writeIntBinary(static_cast<uint32_t>(0), write_buf);
 
                 write_buf.finalize();
 
