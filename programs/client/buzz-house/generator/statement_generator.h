@@ -202,7 +202,10 @@ private:
 	int AddTableProjection(RandomGenerator &rg, SQLTable &t, const bool staged, sql_query_grammar::ProjectionDef *pdef);
 	int AddTableConstraint(RandomGenerator &rg, SQLTable &t, const bool staged, sql_query_grammar::ConstraintDef *cdef);
 	int GenerateTableKey(RandomGenerator &rg, sql_query_grammar::TableKey *tkey);
-	int GenerateEngineDetails(RandomGenerator &rg, const bool add_pkey, sql_query_grammar::TableEngine *te);
+	int GenerateMergeTreeEngineDetails(RandomGenerator &rg, const sql_query_grammar::TableEngineValues teng,
+									   const bool add_pkey, sql_query_grammar::TableEngine *te);
+	int GenerateFileEngineDetails(RandomGenerator &rg, sql_query_grammar::TableEngine *te);
+	int GenerateJoinEngineDetails(RandomGenerator &rg, sql_query_grammar::TableEngine *te);
 	int GenerateNextRefreshableView(RandomGenerator &rg, sql_query_grammar::RefreshableView *cv);
 	int GenerateNextCreateView(RandomGenerator &rg, sql_query_grammar::CreateView *cv);
 	int GenerateNextDrop(RandomGenerator &rg, sql_query_grammar::Drop *sq);

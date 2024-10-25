@@ -1401,20 +1401,20 @@ CONV_FN(JoinConstraint, jc) {
 }
 
 CONV_FN(JoinCore, jcc) {
-  const bool has_cross_or_paste = jcc.join_op() > sql_query_grammar::JoinCore_JoinType::JoinCore_JoinType_FULL;
+  const bool has_cross_or_paste = jcc.join_op() > sql_query_grammar::JoinType::J_FULL;
 
   if (jcc.global()) {
     ret += " GLOBAL";
   }
-  if (jcc.join_op() != sql_query_grammar::JoinCore_JoinType::JoinCore_JoinType_INNER ||
+  if (jcc.join_op() != sql_query_grammar::JoinType::J_INNER ||
       !jcc.has_join_const() ||
-      jcc.join_const() < sql_query_grammar::JoinCore_JoinConst::JoinCore_JoinConst_SEMI) {
+      jcc.join_const() < sql_query_grammar::JoinConst::J_SEMI) {
     ret += " ";
-    ret += JoinCore_JoinType_Name(jcc.join_op());
+    ret += JoinType_Name(jcc.join_op()).substr(2);
   }
   if (!has_cross_or_paste && jcc.has_join_const()) {
     ret += " ";
-    ret += JoinCore_JoinConst_Name(jcc.join_const());
+    ret += JoinConst_Name(jcc.join_const()).substr(2);
   }
   ret += " JOIN ";
   TableOrSubqueryToString(ret, jcc.tos());
@@ -1965,6 +1965,32 @@ CONV_FN(TableKey, to) {
   }
 }
 
+CONV_FN(TableEngineParam, tep) {
+  using TableEngineParamType = TableEngineParam::TableEngineParamOneofCase;
+  switch (tep.table_engine_param_oneof_case()) {
+    case TableEngineParamType::kCols:
+      ColumnPathToString(ret, true, tep.cols());
+      break;
+    case TableEngineParamType::kIn:
+      ret += InFormat_Name(tep.in()).substr(3);
+      break;
+    case TableEngineParamType::kOut:
+      ret += OutFormat_Name(tep.out()).substr(4);
+      break;
+    case TableEngineParamType::kInOut:
+      ret += InOutFormat_Name(tep.in_out()).substr(6);
+      break;
+    case TableEngineParamType::kJoinOp:
+      ret += JoinType_Name(tep.join_op()).substr(2);
+      break;
+    case TableEngineParamType::kJoinConst:
+      ret += JoinConst_Name(tep.join_const()).substr(2);
+      break;
+    default:
+      ret += "c0";
+  }
+}
+
 CONV_FN(TableEngine, te) {
   const sql_query_grammar::TableEngineValues tengine = te.engine();
 
@@ -1976,11 +2002,11 @@ CONV_FN(TableEngine, te) {
   }
   ret += TableEngineValues_Name(tengine);
   ret += "(";
-  for (int i = 0 ; i < te.cols_size(); i++) {
+  for (int i = 0 ; i < te.params_size(); i++) {
     if (i != 0) {
       ret += ", ";
     }
-    ColumnPathToString(ret, true, te.cols(i));
+    TableEngineParamToString(ret, te.params(i));
   }
   ret += ")";
   if (te.has_order()) {

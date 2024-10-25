@@ -2193,6 +2193,50 @@ enum OutFormat {
   OUT_Markdown = 70;
 }
 
+enum InOutFormat {
+  INOUT_TabSeparated = 1;
+  INOUT_TabSeparatedWithNames = 2;
+  INOUT_TabSeparatedWithNamesAndTypes = 3;
+  INOUT_CSV = 4;
+  INOUT_CSVWithNames = 5;
+  INOUT_CSVWithNamesAndTypes = 6;
+  INOUT_CustomSeparated = 7;
+  INOUT_CustomSeparatedWithNames = 8;
+  INOUT_CustomSeparatedWithNamesAndTypes = 9;
+  INOUT_Values = 10;
+  INOUT_JSON = 11;
+  INOUT_JSONColumns = 12;
+  INOUT_JSONColumnsWithMetadata = 13;
+  INOUT_JSONCompact = 14;
+  INOUT_JSONCompactColumns = 15;
+  INOUT_JSONEachRow = 16;
+  INOUT_JSONStringsEachRow = 17;
+  INOUT_JSONCompactEachRow = 18;
+  INOUT_JSONCompactEachRowWithNames = 19;
+  INOUT_JSONCompactEachRowWithNamesAndTypes = 20;
+  INOUT_JSONCompactStringsEachRow = 21;
+  INOUT_JSONCompactStringsEachRowWithNames = 22;
+  INOUT_JSONCompactStringsEachRowWithNamesAndTypes = 23;
+  INOUT_JSONObjectEachRow = 24;
+  INOUT_BSONEachRow = 25;
+  INOUT_TSKV = 26;
+  INOUT_Protobuf = 27;
+  INOUT_ProtobufSingle = 28;
+  INOUT_ProtobufList = 29;
+  INOUT_Avro = 30;
+  INOUT_Parquet = 31;
+  INOUT_Arrow = 32;
+  INOUT_ArrowStream = 33;
+  INOUT_ORC = 34;
+  INOUT_Npy = 35;
+  INOUT_RowBinary = 36;
+  INOUT_RowBinaryWithNames = 37;
+  INOUT_RowBinaryWithNamesAndTypes = 38;
+  INOUT_Native = 39;
+  INOUT_RawBLOB = 40;
+  INOUT_MsgPack = 41;
+}
+
 message UsingExpr {
   required ExprColumnList col_list = 1;
 }
@@ -2204,22 +2248,24 @@ message JoinConstraint {
   }
 }
 
+enum JoinType {
+  J_LEFT = 1;
+  J_INNER = 2;
+  J_RIGHT = 3;
+  J_FULL = 4;
+  J_PASTE = 5;
+  J_CROSS = 6;
+}
+
+enum JoinConst {
+  J_ANY = 1;
+  J_ALL = 2;
+  J_SEMI = 3;
+  J_ANTI = 4;
+  J_ASOF = 5;
+}
+
 message JoinCore {
-  enum JoinType {
-    LEFT = 1;
-    INNER = 2;
-    RIGHT = 3;
-    FULL = 4;
-    PASTE = 5;
-    CROSS = 6;
-  }
-  enum JoinConst {
-    ANY = 1;
-    ALL = 2;
-    SEMI = 3;
-    ANTI = 4;
-    ASOF = 5;
-  }
   optional bool global = 1;
   optional JoinType join_op = 2;
   optional JoinConst join_const = 3;
@@ -2679,19 +2725,20 @@ message TableKey {
 }
 
 enum TableEngineValues {
-  Memory = 1;
-  //require order by
-  MergeTree = 2;
-  ReplacingMergeTree = 3;
-  SummingMergeTree = 4;
-  AggregatingMergeTree = 5;
-  CollapsingMergeTree = 6;
-  VersionedCollapsingMergeTree = 7;
-  //GraphiteMergeTree = 8;
-  //end require order by
-  StripeLog = 8;
-  Log = 9;
-  TinyLog = 10;
+  MergeTree = 1;
+  ReplacingMergeTree = 2;
+  SummingMergeTree = 3;
+  AggregatingMergeTree = 4;
+  CollapsingMergeTree = 5;
+  VersionedCollapsingMergeTree = 6;
+  Memory = 7;
+  File = 8;
+  Null = 9;
+  Set = 10;
+  Join = 11;
+  StripeLog = 12;
+  Log = 13;
+  TinyLog = 14;
 }
 
 enum TableEngineOption {
@@ -2699,10 +2746,21 @@ enum TableEngineOption {
   TReplicated = 2;
 }
 
+message TableEngineParam {
+  oneof table_engine_param_oneof {
+    ColumnPath cols = 1;
+    InFormat in = 2;
+    OutFormat out = 3;
+    InOutFormat in_out = 4;
+    JoinType join_op = 5;
+    JoinConst join_const = 6;
+  }
+}
+
 message TableEngine {
   optional TableEngineOption toption = 1;
   required TableEngineValues engine = 2;
-  repeated ColumnPath cols = 3;
+  repeated TableEngineParam params = 3;
   optional TableKey order = 4;
   optional TableKey partition_by = 5;
   optional TableKey primary_key = 6;

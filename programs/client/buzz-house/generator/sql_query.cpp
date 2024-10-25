@@ -458,21 +458,21 @@ int StatementGenerator::GenerateFromStatement(RandomGenerator &rg, const uint32_
 			GenerateArrayJoin(rg, jcc->mutable_arr());
 		} else {
 			sql_query_grammar::JoinCore *core = jcc->mutable_core();
-			sql_query_grammar::JoinCore_JoinType jt = static_cast<sql_query_grammar::JoinCore_JoinType>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::JoinCore::JoinType_MAX)) + 1);
+			sql_query_grammar::JoinType jt = static_cast<sql_query_grammar::JoinType>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::JoinType_MAX)) + 1);
 
 			core->set_global(rg.NextSmallNumber() < 3);
 			core->set_join_op(jt);
 			if (rg.NextSmallNumber() < 4) {
 				switch (jt) {
-					case sql_query_grammar::JoinCore_JoinType::JoinCore_JoinType_LEFT:
-					case sql_query_grammar::JoinCore_JoinType::JoinCore_JoinType_INNER:
-						core->set_join_const(static_cast<sql_query_grammar::JoinCore_JoinConst>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::JoinCore::JoinConst_MAX)) + 1));
+					case sql_query_grammar::JoinType::J_LEFT:
+					case sql_query_grammar::JoinType::J_INNER:
+						core->set_join_const(static_cast<sql_query_grammar::JoinConst>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::JoinConst_MAX)) + 1));
 						break;
-					case sql_query_grammar::JoinCore_JoinType::JoinCore_JoinType_RIGHT:
-						core->set_join_const(static_cast<sql_query_grammar::JoinCore_JoinConst>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::JoinCore_JoinConst::JoinCore_JoinConst_ANTI)) + 1));
+					case sql_query_grammar::JoinType::J_RIGHT:
+						core->set_join_const(static_cast<sql_query_grammar::JoinConst>((rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::JoinConst::J_ANTI)) + 1));
 						break;
-					case sql_query_grammar::JoinCore_JoinType::JoinCore_JoinType_FULL:
-						core->set_join_const(sql_query_grammar::JoinCore_JoinConst::JoinCore_JoinConst_ALL);
+					case sql_query_grammar::JoinType::J_FULL:
+						core->set_join_const(sql_query_grammar::JoinConst::J_ALL);
 						break;
 					default:
 						break;
