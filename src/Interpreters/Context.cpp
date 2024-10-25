@@ -1124,15 +1124,15 @@ Strings Context::getWarnings() const
         SharedLockGuard lock(shared->mutex);
         common_warnings = shared->warnings;
         if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<Int64>(shared->max_table_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached tables is more than {}", shared->max_table_num_to_warn));
+            common_warnings.emplace_back(fmt::format("The number of attached tables is more than {}.", shared->max_table_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::AttachedView) > static_cast<Int64>(shared->max_view_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached views is more than {}", shared->max_view_num_to_warn));
+            common_warnings.emplace_back(fmt::format("The number of attached views is more than {}.", shared->max_view_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::AttachedDictionary) > static_cast<Int64>(shared->max_dictionary_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached dictionaries is more than {}", shared->max_dictionary_num_to_warn));
+            common_warnings.emplace_back(fmt::format("The number of attached dictionaries is more than {}.", shared->max_dictionary_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<Int64>(shared->max_database_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached databases is more than {}", shared->max_database_num_to_warn));
+            common_warnings.emplace_back(fmt::format("The number of attached databases is more than {}.", shared->max_database_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<Int64>(shared->max_part_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of active parts is more than {}", shared->max_part_num_to_warn));
+            common_warnings.emplace_back(fmt::format("The number of active parts is more than {}.", shared->max_part_num_to_warn));
     }
     /// Make setting's name ordered
     auto obsolete_settings = settings->getChangedAndObsoleteNames();
@@ -4247,6 +4247,16 @@ std::shared_ptr<QueryLog> Context::getQueryLog() const
         return {};
 
     return shared->system_logs->query_log;
+}
+
+std::shared_ptr<QueryMetricLog> Context::getQueryMetricLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->query_metric_log;
 }
 
 std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog() const
