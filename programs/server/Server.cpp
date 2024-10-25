@@ -1662,8 +1662,17 @@ try
         config().getString("path", DBMS_DEFAULT_PATH),
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
-        [&](ConfigurationPtr config, bool initial_loading)
+        [&, config_file = config().getString("config-file", "config.xml")](ConfigurationPtr config, bool initial_loading)
         {
+            if (!initial_loading)
+            {
+                /// Add back "config-file" key which is absent in the reloaded config.
+                config->setString("config-file", config_file);
+
+                /// Apply config updates in global context.
+                global_context->setConfig(config);
+            }
+
             Settings::checkNoSettingNamesAtTopLevel(*config, config_path);
 
             ServerSettings new_server_settings;
@@ -1772,6 +1781,7 @@ try
                     concurrent_threads_soft_limit = value;
             }
             ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
+            LOG_INFO(log, "ConcurrencyControl limit is set to {}", concurrent_threads_soft_limit);
 
             global_context->getProcessList().setMaxSize(new_server_settings[ServerSetting::max_concurrent_queries]);
             global_context->getProcessList().setMaxInsertQueriesAmount(new_server_settings[ServerSetting::max_concurrent_insert_queries]);
@@ -2072,7 +2082,7 @@ try
     auto & access_control = global_context->getAccessControl();
     try
     {
-        access_control.setUpFromMainConfig(config(), config_path, [&] { return global_context->getZooKeeper(); });
+        access_control.setupFromMainConfig(config(), config_path, [&] { return global_context->getZooKeeper(); });
     }
     catch (...)
     {

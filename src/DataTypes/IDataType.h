@@ -88,6 +88,15 @@ public:
 
     DataTypePtr getPtr() const { return shared_from_this(); }
 
+    /// Returns the normalized form of the current type, currently handling the
+    /// conversion of named tuples to unnamed tuples.
+    ///
+    /// This is useful for converting aggregate states into a normalized form with
+    /// normalized argument types. E.g, `AggregateFunction(uniq, Tuple(a int, b int))`
+    /// should be convertible to `AggregateFunction(uniq, Tuple(int, int))`, as both
+    /// have same memory layouts for state representation and the same serialization.
+    virtual DataTypePtr getNormalizedType() const { return shared_from_this(); }
+
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
 
