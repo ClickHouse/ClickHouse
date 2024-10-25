@@ -3754,7 +3754,23 @@ private:
                 }
             }
 
-            if (context->getSettingsRef()[Setting::strict_named_tuple_conversion] && num_from_fields < from_names.size())
+            bool strict_named_tuple_conversion = true;
+
+            /// Internal cast does not have context set. Additionally, we should
+            /// check for query context which is attached to current thread.
+            if (context)
+            {
+                strict_named_tuple_conversion = context->getSettingsRef()[Setting::strict_named_tuple_conversion];
+            }
+            else if (DB::CurrentThread::isInitialized())
+            {
+                const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
+
+                if (query_context)
+                    strict_named_tuple_conversion = query_context->getSettingsRef()[Setting::strict_named_tuple_conversion];
+            }
+
+            if (strict_named_tuple_conversion && num_from_fields < from_names.size())
                 throw Exception(
                     ErrorCodes::CANNOT_CONVERT_TYPE,
                     "Some fields are lost when casting {} to {} (strict_named_tuple_conversion is enabled)",
