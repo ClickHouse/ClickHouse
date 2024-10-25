@@ -125,8 +125,6 @@ public:
 
     void shutdown() override;
 
-    void stopFlushThread() override;
-
     /** Creates new table if it does not exist.
       * Renames old table if its structure is not suitable.
       * This cannot be done in constructor to avoid deadlock while renaming a table under locked Context when SystemLog object is created.
@@ -136,9 +134,6 @@ public:
 protected:
     LoggerPtr log;
 
-    using ISystemLog::is_shutdown;
-    using ISystemLog::saving_thread;
-    using ISystemLog::thread_mutex;
     using Base::queue;
 
     StoragePtr getStorage() const;

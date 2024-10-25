@@ -1179,6 +1179,12 @@ public:
         const FormatSettings & format_settings,
         String & error) const override
     {
+        if (element.isNull() && format_settings.null_as_default)
+        {
+            column.insertDefault();
+            return true;
+        }
+
         auto & tuple = assert_cast<ColumnTuple &>(column);
         size_t old_size = column.size();
         bool were_valid_elements = false;
@@ -1298,6 +1304,12 @@ public:
         const FormatSettings & format_settings,
         String & error) const override
     {
+        if (element.isNull() && format_settings.null_as_default)
+        {
+            column.insertDefault();
+            return true;
+        }
+
         if (!element.isObject())
         {
             error = fmt::format("cannot read Map value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
@@ -1362,6 +1374,14 @@ public:
         String & error) const override
     {
         auto & column_variant = assert_cast<ColumnVariant &>(column);
+
+        /// Check if element is NULL.
+        if (element.isNull())
+        {
+            column_variant.insertDefault();
+            return true;
+        }
+
         for (size_t i : order)
         {
             auto & variant = column_variant.getVariantByGlobalDiscriminator(i);

@@ -120,8 +120,7 @@ ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, Contex
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "There is no metadata of table {} in database {}", table_name, database_name);
-        else
-            return {};
+        return {};
     }
     return it->second->clone();
 }
@@ -151,7 +150,7 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
     if (it == create_queries.end() || !it->second)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
 
-    applyMetadataChangesToCreateQuery(it->second, metadata);
+    applyMetadataChangesToCreateQuery(it->second, metadata, local_context);
 
     /// The create query of the table has been just changed, we need to update dependencies too.
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), it->second, local_context->getCurrentDatabase());

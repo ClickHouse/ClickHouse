@@ -5,7 +5,6 @@ import socketserver
 import sys
 import urllib.parse
 
-
 UPSTREAM_HOST = "minio1:9001"
 random.seed("No list objects/1.0")
 
@@ -111,7 +110,6 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.send_header(k, v)
         self.end_headers()
         self.wfile.write(r.content)
-        self.wfile.close()
 
 
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):

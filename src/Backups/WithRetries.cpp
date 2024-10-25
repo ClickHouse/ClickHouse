@@ -5,20 +5,30 @@
 
 namespace DB
 {
-
+namespace Setting
+{
+    extern const SettingsUInt64 backup_restore_keeper_max_retries;
+    extern const SettingsUInt64 backup_restore_keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 backup_restore_keeper_retry_max_backoff_ms;
+    extern const SettingsUInt64 backup_restore_batch_size_for_keeper_multiread;
+    extern const SettingsFloat backup_restore_keeper_fault_injection_probability;
+    extern const SettingsUInt64 backup_restore_keeper_fault_injection_seed;
+    extern const SettingsUInt64 backup_restore_keeper_value_max_size;
+    extern const SettingsUInt64 backup_restore_batch_size_for_keeper_multi;
+}
 
 WithRetries::KeeperSettings WithRetries::KeeperSettings::fromContext(ContextPtr context)
 {
     return
     {
-        .keeper_max_retries = context->getSettingsRef().backup_restore_keeper_max_retries,
-        .keeper_retry_initial_backoff_ms = context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,
-        .keeper_retry_max_backoff_ms = context->getSettingsRef().backup_restore_keeper_retry_max_backoff_ms,
-        .batch_size_for_keeper_multiread = context->getSettingsRef().backup_restore_batch_size_for_keeper_multiread,
-        .keeper_fault_injection_probability = context->getSettingsRef().backup_restore_keeper_fault_injection_probability,
-        .keeper_fault_injection_seed = context->getSettingsRef().backup_restore_keeper_fault_injection_seed,
-        .keeper_value_max_size = context->getSettingsRef().backup_restore_keeper_value_max_size,
-        .batch_size_for_keeper_multi = context->getSettingsRef().backup_restore_batch_size_for_keeper_multi,
+        .keeper_max_retries = context->getSettingsRef()[Setting::backup_restore_keeper_max_retries],
+        .keeper_retry_initial_backoff_ms = context->getSettingsRef()[Setting::backup_restore_keeper_retry_initial_backoff_ms],
+        .keeper_retry_max_backoff_ms = context->getSettingsRef()[Setting::backup_restore_keeper_retry_max_backoff_ms],
+        .batch_size_for_keeper_multiread = context->getSettingsRef()[Setting::backup_restore_batch_size_for_keeper_multiread],
+        .keeper_fault_injection_probability = context->getSettingsRef()[Setting::backup_restore_keeper_fault_injection_probability],
+        .keeper_fault_injection_seed = context->getSettingsRef()[Setting::backup_restore_keeper_fault_injection_seed],
+        .keeper_value_max_size = context->getSettingsRef()[Setting::backup_restore_keeper_value_max_size],
+        .batch_size_for_keeper_multi = context->getSettingsRef()[Setting::backup_restore_batch_size_for_keeper_multi],
     };
 }
 

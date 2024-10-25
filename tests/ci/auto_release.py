@@ -5,13 +5,13 @@ import os
 import sys
 from typing import List
 
-from get_robot_token import get_best_robot_token
-from github_helper import GitHub
-from ci_utils import Shell
-from env_helper import GITHUB_REPOSITORY
-from report import SUCCESS
 from ci_buddy import CIBuddy
 from ci_config import CI
+from ci_utils import Shell
+from env_helper import GITHUB_REPOSITORY
+from get_robot_token import get_best_robot_token
+from github_helper import GitHub
+from report import SUCCESS
 
 
 def parse_args():
@@ -46,6 +46,7 @@ def parse_args():
 
 MAX_NUMBER_OF_COMMITS_TO_CONSIDER_FOR_RELEASE = 5
 AUTORELEASE_INFO_FILE = "/tmp/autorelease_info.json"
+AUTORELEASE_MATRIX_PARAMS = "/tmp/autorelease_params.json"
 
 
 @dataclasses.dataclass
@@ -73,6 +74,14 @@ class AutoReleaseInfo:
         print(f"Dump release info into [{AUTORELEASE_INFO_FILE}]")
         with open(AUTORELEASE_INFO_FILE, "w", encoding="utf-8") as f:
             print(json.dumps(dataclasses.asdict(self), indent=2), file=f)
+
+        # dump file for GH action matrix that is similar to the file above but with dropped not ready release branches
+        params = dataclasses.asdict(self)
+        params["releases"] = [
+            release for release in params["releases"] if release["ready"]
+        ]
+        with open(AUTORELEASE_MATRIX_PARAMS, "w", encoding="utf-8") as f:
+            print(json.dumps(params, indent=2), file=f)
 
     @staticmethod
     def from_file() -> "AutoReleaseInfo":
@@ -102,7 +111,6 @@ def _prepare(token):
         refs = list(repo.get_git_matching_refs(f"tags/v{pr.head.ref}"))
         assert refs
 
-        refs.sort(key=lambda ref: ref.ref)
         latest_release_tag_ref = refs[-1]
         latest_release_tag = repo.get_git_tag(latest_release_tag_ref.object.sha)
 
@@ -110,6 +118,10 @@ def _prepare(token):
             f"git rev-list --first-parent {latest_release_tag.tag}..origin/{pr.head.ref}",
         ).split("\n")
         commit_num = len(commits)
+        if latest_release_tag.tag.endswith("new"):
+            print("It's a new release branch - skip auto release for it")
+            continue
+
         print(
             f"Previous release [{latest_release_tag.tag}] was [{commit_num}] commits ago, date [{latest_release_tag.tagger.date}]"
         )
@@ -133,16 +145,33 @@ def _prepare(token):
                 commits_to_branch_head += 1
                 continue
 
-            commit_ci_status = CI.GH.get_commit_status_by_name(
-                token=token,
-                commit_sha=commit,
-                status_name=(CI.JobNames.BUILD_CHECK, "ClickHouse build check"),
-            )
+            # TODO: switch to check if CI is entirely green
+            statuses = [
+                CI.GH.get_commit_status_by_name(
+                    token=token,
+                    commit_sha=commit,
+                    # handle old name for old releases
+                    status_name=(CI.JobNames.BUILD_CHECK, "ClickHouse build check"),
+                ),
+                CI.GH.get_commit_status_by_name(
+                    token=token,
+                    commit_sha=commit,
+                    # handle old name for old releases
+                    status_name=CI.JobNames.STATELESS_TEST_RELEASE,
+                ),
+                CI.GH.get_commit_status_by_name(
+                    token=token,
+                    commit_sha=commit,
+                    # handle old name for old releases
+                    status_name=CI.JobNames.STATEFUL_TEST_RELEASE,
+                ),
+            ]
             commit_sha = commit
-            if commit_ci_status == SUCCESS:
+            if any(status == SUCCESS for status in statuses):
+                commit_ci_status = SUCCESS
                 break
 
-            print(f"CI status [{commit_ci_status}] - skip")
+            print(f"CI status [{statuses}] - skip")
             commits_to_branch_head += 1
 
         ready = False
@@ -200,7 +229,7 @@ def main():
             )
         else:
             CIBuddy(dry_run=False).post_info(
-                title=f"Autorelease completed",
+                title="Autorelease completed",
                 body="",
                 with_wf_link=True,
             )
