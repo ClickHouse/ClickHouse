@@ -88,6 +88,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"min_free_disk_bytes_to_perform_insert", 0, 0, "New setting."},
             {"min_free_disk_ratio_to_perform_insert", 0.0, 0.0, "New setting."},
             {"enable_named_columns_in_function_tuple", false, false, "Disabled pending usability improvements"},
+            {"enable_named_columns_in_function_tuple", false, true, "Re-enable the setting since all known bugs are fixed"},
+            {"strict_named_tuple_conversion", true, true, "New setting"},
             {"cloud_mode_database_engine", 1, 1, "A setting for ClickHouse Cloud"},
             {"allow_experimental_shared_set_join", 1, 1, "A setting for ClickHouse Cloud"},
             {"read_through_distributed_cache", 0, 0, "A setting for ClickHouse Cloud"},
