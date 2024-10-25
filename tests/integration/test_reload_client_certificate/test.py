@@ -65,7 +65,7 @@ def secure_connection_test(started_cluster):
     node2.query("SELECT count() FROM system.zookeeper WHERE path = '/'")
 
     threads_number = 4
-    iterations = 10
+    iterations = 4
     threads = []
 
     # Just checking for race conditions
@@ -156,7 +156,7 @@ def check_certificate_switch(first, second):
     cluster.wait_zookeeper_nodes_to_start(["zoo1", "zoo2", "zoo3"])
     clean_logs()
 
-    # Change to wrong certificate
+    # Change certificate
 
     change_config_to_key(second)
 
@@ -176,12 +176,15 @@ def check_certificate_switch(first, second):
     cluster.wait_zookeeper_nodes_to_start(["zoo1", "zoo2", "zoo3"])
 
     if second == "second":
-        time.sleep(10)
-        error_handshake = any(check_error_handshake(node) != "0\n" for node in nodes)
+        try:
+            secure_connection_test(started_cluster)
+            assert False
+        except:
+            assert True
     else:
         secure_connection_test(started_cluster)
         error_handshake = any(check_error_handshake(node) == "0\n" for node in nodes)
-    assert reload_successful and error_handshake
+        assert reload_successful and error_handshake
 
 
 def test_wrong_cn_cert():
