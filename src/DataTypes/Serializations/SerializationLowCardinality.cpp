@@ -411,13 +411,15 @@ namespace
     {
         if (auto * data_uint8 = getIndexesData<UInt8>(column))
             return mapIndexWithAdditionalKeys(*data_uint8, dict_size);
-        if (auto * data_uint16 = getIndexesData<UInt16>(column))
+        else if (auto * data_uint16 = getIndexesData<UInt16>(column))
             return mapIndexWithAdditionalKeys(*data_uint16, dict_size);
-        if (auto * data_uint32 = getIndexesData<UInt32>(column))
+        else if (auto * data_uint32 = getIndexesData<UInt32>(column))
             return mapIndexWithAdditionalKeys(*data_uint32, dict_size);
-        if (auto * data_uint64 = getIndexesData<UInt64>(column))
+        else if (auto * data_uint64 = getIndexesData<UInt64>(column))
             return mapIndexWithAdditionalKeys(*data_uint64, dict_size);
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for mapIndexWithAdditionalKeys must be UInt, got {}", column.getName());
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for mapIndexWithAdditionalKeys must be UInt, got {}",
+                            column.getName());
     }
 }
 

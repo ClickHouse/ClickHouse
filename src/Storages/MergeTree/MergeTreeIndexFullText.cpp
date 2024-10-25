@@ -128,14 +128,14 @@ void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos,
                 "Position: {}, Block rows: {}.", *pos, block.rows());
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
-    auto start_row_id = store->getNextRowIDRange(rows_read);
+    auto row_id = store->getNextRowIDRange(rows_read);
+    auto start_row_id = row_id;
 
     for (size_t col = 0; col < index_columns.size(); ++col)
     {
         const auto & column_with_type = block.getByName(index_columns[col]);
         const auto & column = column_with_type.column;
         size_t current_position = *pos;
-        auto row_id = start_row_id;
 
         bool need_to_write = false;
         if (isArray(column_with_type.type))
@@ -418,7 +418,7 @@ bool MergeTreeConditionFullText::traverseAtomAST(const RPNBuilderTreeNode & node
                     out.function = RPNElement::FUNCTION_NOT_IN;
                     return true;
                 }
-                if (function_name == "in")
+                else if (function_name == "in")
                 {
                     out.function = RPNElement::FUNCTION_IN;
                     return true;
@@ -534,7 +534,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
     }
-    if (function_name == "has")
+    else if (function_name == "has")
     {
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_HAS;
@@ -553,7 +553,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
     }
-    if (function_name == "equals")
+    else if (function_name == "equals")
     {
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
@@ -562,7 +562,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
     }
-    if (function_name == "like")
+    else if (function_name == "like")
     {
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
@@ -571,7 +571,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
     }
-    if (function_name == "notLike")
+    else if (function_name == "notLike")
     {
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
@@ -580,7 +580,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
     }
-    if (function_name == "hasToken" || function_name == "hasTokenOrNull")
+    else if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
@@ -589,7 +589,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
     }
-    if (function_name == "startsWith")
+    else if (function_name == "startsWith")
     {
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
@@ -598,7 +598,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         token_extractor->substringToGinFilter(value.data(), value.size(), *out.gin_filter, true, false);
         return true;
     }
-    if (function_name == "endsWith")
+    else if (function_name == "endsWith")
     {
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
@@ -607,7 +607,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         token_extractor->substringToGinFilter(value.data(), value.size(), *out.gin_filter, false, true);
         return true;
     }
-    if (function_name == "multiSearchAny")
+    else if (function_name == "multiSearchAny")
     {
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_MULTI_SEARCH;
@@ -627,7 +627,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         out.set_gin_filters = std::move(gin_filters);
         return true;
     }
-    if (function_name == "match")
+    else if (function_name == "match")
     {
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_MATCH;
@@ -649,8 +649,8 @@ bool MergeTreeConditionFullText::traverseASTEquals(
             gin_filters.emplace_back();
             for (const auto & alternative : alternatives)
             {
-                gin_filters.back().emplace_back(params);
-                token_extractor->substringToGinFilter(alternative.data(), alternative.size(), gin_filters.back().back(), false, false);
+               gin_filters.back().emplace_back(params);
+               token_extractor->substringToGinFilter(alternative.data(), alternative.size(), gin_filters.back().back(), false, false);
             }
             out.set_gin_filters = std::move(gin_filters);
         }
@@ -661,6 +661,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
         }
 
         return true;
+
     }
 
     return false;
@@ -785,9 +786,11 @@ MergeTreeIndexPtr fullTextIndexCreator(
         auto tokenizer = std::make_unique<NgramTokenExtractor>(n);
         return std::make_shared<MergeTreeIndexFullText>(index, params, std::move(tokenizer));
     }
-
-    auto tokenizer = std::make_unique<SplitTokenExtractor>();
-    return std::make_shared<MergeTreeIndexFullText>(index, params, std::move(tokenizer));
+    else
+    {
+        auto tokenizer = std::make_unique<SplitTokenExtractor>();
+        return std::make_shared<MergeTreeIndexFullText>(index, params, std::move(tokenizer));
+    }
 }
 
 void fullTextIndexValidator(const IndexDescription & index, bool /*attach*/)

@@ -792,16 +792,18 @@ std::unique_ptr<SeekableReadBuffer> BackupImpl::readFileImpl(const SizeAndChecks
         /// Data comes completely from this backup, the base backup isn't used.
         return read_buffer;
     }
-    if (info.size == info.base_size)
+    else if (info.size == info.base_size)
     {
         /// Data comes completely from the base backup (nothing comes from this backup).
         return base_read_buffer;
     }
-
-    /// The beginning of the data comes from the base backup,
-    /// and the ending comes from this backup.
-    return std::make_unique<ConcatSeekableReadBuffer>(
-        std::move(base_read_buffer), info.base_size, std::move(read_buffer), info.size - info.base_size);
+    else
+    {
+        /// The beginning of the data comes from the base backup,
+        /// and the ending comes from this backup.
+        return std::make_unique<ConcatSeekableReadBuffer>(
+            std::move(base_read_buffer), info.base_size, std::move(read_buffer), info.size - info.base_size);
+    }
 }
 
 size_t BackupImpl::copyFileToDisk(const String & file_name,

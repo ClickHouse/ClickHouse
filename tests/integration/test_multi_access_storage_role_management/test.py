@@ -1,10 +1,8 @@
-import os
-
 import pytest
-
-from helpers.client import QueryRuntimeException
+import os
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
+from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(

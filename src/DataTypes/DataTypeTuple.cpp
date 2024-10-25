@@ -415,9 +415,10 @@ static DataTypePtr create(const ASTPtr & arguments)
 
     if (names.empty())
         return std::make_shared<DataTypeTuple>(nested_types);
-    if (names.size() != nested_types.size())
+    else if (names.size() != nested_types.size())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Names are specified not for all elements of Tuple type");
-    return std::make_shared<DataTypeTuple>(nested_types, names);
+    else
+        return std::make_shared<DataTypeTuple>(nested_types, names);
 }
 
 

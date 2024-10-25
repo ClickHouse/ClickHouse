@@ -117,20 +117,20 @@ bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
 }
 
 
-void AuthenticationData::setPassword(const String & password_, bool validate)
+void AuthenticationData::setPassword(const String & password_)
 {
     switch (type)
     {
         case AuthenticationType::PLAINTEXT_PASSWORD:
-            setPasswordHashBinary(Util::stringToDigest(password_), validate);
+            setPasswordHashBinary(Util::stringToDigest(password_));
             return;
 
         case AuthenticationType::SHA256_PASSWORD:
-            setPasswordHashBinary(Util::encodeSHA256(password_), validate);
+            setPasswordHashBinary(Util::encodeSHA256(password_));
             return;
 
         case AuthenticationType::DOUBLE_SHA1_PASSWORD:
-            setPasswordHashBinary(Util::encodeDoubleSHA1(password_), validate);
+            setPasswordHashBinary(Util::encodeDoubleSHA1(password_));
             return;
 
         case AuthenticationType::BCRYPT_PASSWORD:
@@ -149,12 +149,12 @@ void AuthenticationData::setPassword(const String & password_, bool validate)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setPassword(): authentication type {} not supported", toString(type));
 }
 
-void AuthenticationData::setPasswordBcrypt(const String & password_, int workfactor_, bool validate)
+void AuthenticationData::setPasswordBcrypt(const String & password_, int workfactor_)
 {
     if (type != AuthenticationType::BCRYPT_PASSWORD)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify bcrypt password for authentication type {}", toString(type));
 
-    setPasswordHashBinary(Util::encodeBcrypt(password_, workfactor_), validate);
+    setPasswordHashBinary(Util::encodeBcrypt(password_, workfactor_));
 }
 
 String AuthenticationData::getPassword() const
@@ -165,7 +165,7 @@ String AuthenticationData::getPassword() const
 }
 
 
-void AuthenticationData::setPasswordHashHex(const String & hash, bool validate)
+void AuthenticationData::setPasswordHashHex(const String & hash)
 {
     Digest digest;
     digest.resize(hash.size() / 2);
@@ -179,7 +179,7 @@ void AuthenticationData::setPasswordHashHex(const String & hash, bool validate)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read password hash in hex, check for valid characters [0-9a-fA-F] and length");
     }
 
-    setPasswordHashBinary(digest, validate);
+    setPasswordHashBinary(digest);
 }
 
 
@@ -195,7 +195,7 @@ String AuthenticationData::getPasswordHashHex() const
 }
 
 
-void AuthenticationData::setPasswordHashBinary(const Digest & hash, bool validate)
+void AuthenticationData::setPasswordHashBinary(const Digest & hash)
 {
     switch (type)
     {
@@ -217,7 +217,7 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash, bool validat
 
         case AuthenticationType::DOUBLE_SHA1_PASSWORD:
         {
-            if (validate && hash.size() != 20)
+            if (hash.size() != 20)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Password hash for the 'DOUBLE_SHA1_PASSWORD' authentication type has length {} "
                                 "but must be exactly 20 bytes.", hash.size());
@@ -231,7 +231,7 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash, bool validat
             /// However the library we use to encode it requires hash string to be 64 characters long,
             ///  so we also allow the hash of this length.
 
-            if (validate && hash.size() != 59 && hash.size() != 60 && hash.size() != 64)
+            if (hash.size() != 59 && hash.size() != 60 && hash.size() != 64)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Password hash for the 'BCRYPT_PASSWORD' authentication type has length {} "
                                 "but must be 59 or 60 bytes.", hash.size());
@@ -240,13 +240,10 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash, bool validat
             resized.resize(64);
 
 #if USE_BCRYPT
-            if (validate)
-            {
-                /// Verify that it is a valid hash
-                int ret = bcrypt_checkpw("", reinterpret_cast<const char *>(resized.data()));
-                if (ret == -1)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not decode the provided hash with 'bcrypt_hash'");
-            }
+            /// Verify that it is a valid hash
+            int ret = bcrypt_checkpw("", reinterpret_cast<const char *>(resized.data()));
+            if (ret == -1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not decode the provided hash with 'bcrypt_hash'");
 #endif
 
             password_hash = hash;
@@ -378,8 +375,7 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
             break;
         }
 
-        case AuthenticationType::NO_PASSWORD:
-            break;
+        case AuthenticationType::NO_PASSWORD: [[fallthrough]];
         case AuthenticationType::MAX:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "AST: Unexpected authentication type {}", toString(auth_type));
     }
@@ -388,7 +384,7 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
 }
 
 
-AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate)
+AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & query, ContextPtr context, bool check_password_rules)
 {
     if (query.type && query.type == AuthenticationType::NO_PASSWORD)
         return AuthenticationData();
@@ -434,7 +430,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         if (!query.type && !context)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get default password type without context");
 
-        if (validate && !context)
+        if (check_password_rules && !context)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot check password complexity rules without context");
 
         if (query.type == AuthenticationType::BCRYPT_PASSWORD && !context)
@@ -451,13 +447,13 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 
         AuthenticationData auth_data(current_type);
 
-        if (validate)
+        if (check_password_rules)
             context->getAccessControl().checkPasswordComplexityRules(value);
 
         if (query.type == AuthenticationType::BCRYPT_PASSWORD)
         {
             int workfactor = context->getAccessControl().getBcryptWorkfactor();
-            auth_data.setPasswordBcrypt(value, workfactor, validate);
+            auth_data.setPasswordBcrypt(value, workfactor);
             return auth_data;
         }
 
@@ -489,7 +485,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 #endif
         }
 
-        auth_data.setPassword(value, validate);
+        auth_data.setPassword(value);
         return auth_data;
     }
 
@@ -501,12 +497,13 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 
         if (query.type == AuthenticationType::BCRYPT_PASSWORD)
         {
-            auth_data.setPasswordHashBinary(AuthenticationData::Util::stringToDigest(value), validate);
+            auth_data.setPasswordHashBinary(AuthenticationData::Util::stringToDigest(value));
             return auth_data;
         }
-
-        auth_data.setPasswordHashHex(value, validate);
-
+        else
+        {
+            auth_data.setPasswordHashHex(value);
+        }
 
         if (query.type == AuthenticationType::SHA256_PASSWORD && args_size == 2)
         {

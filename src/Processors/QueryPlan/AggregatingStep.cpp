@@ -95,7 +95,7 @@ Block AggregatingStep::appendGroupingColumn(Block block, const Names & keys, boo
 }
 
 AggregatingStep::AggregatingStep(
-    const Header & input_header_,
+    const DataStream & input_stream_,
     Aggregator::Params params_,
     GroupingSetsParamsList grouping_sets_params_,
     bool final_,
@@ -111,8 +111,8 @@ AggregatingStep::AggregatingStep(
     bool memory_bound_merging_of_aggregation_results_enabled_,
     bool explicit_sorting_required_for_aggregation_in_order_)
     : ITransformingStep(
-        input_header_,
-        appendGroupingColumn(params_.getHeader(input_header_, final_), params_.keys, !grouping_sets_params_.empty(), group_by_use_nulls_),
+        input_stream_,
+        appendGroupingColumn(params_.getHeader(input_stream_.header, final_), params_.keys, !grouping_sets_params_.empty(), group_by_use_nulls_),
         getTraits(should_produce_results_in_order_of_bucket_number_),
         false)
     , params(std::move(params_))
@@ -130,21 +130,25 @@ AggregatingStep::AggregatingStep(
     , memory_bound_merging_of_aggregation_results_enabled(memory_bound_merging_of_aggregation_results_enabled_)
     , explicit_sorting_required_for_aggregation_in_order(explicit_sorting_required_for_aggregation_in_order_)
 {
+    if (memoryBoundMergingWillBeUsed())
+    {
+        output_stream->sort_description = group_by_sort_description;
+        output_stream->sort_scope = DataStream::SortScope::Global;
+    }
 }
 
 void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_)
 {
     sort_description_for_merging = std::move(sort_description_for_merging_);
     group_by_sort_description = std::move(group_by_sort_description_);
-    explicit_sorting_required_for_aggregation_in_order = false;
-}
 
-const SortDescription & AggregatingStep::getSortDescription() const
-{
     if (memoryBoundMergingWillBeUsed())
-        return group_by_sort_description;
+    {
+        output_stream->sort_description = group_by_sort_description;
+        output_stream->sort_scope = DataStream::SortScope::Global;
+    }
 
-    return IQueryPlanStep::getSortDescription();
+    explicit_sorting_required_for_aggregation_in_order = false;
 }
 
 ActionsDAG AggregatingStep::makeCreatingMissingKeysForGroupingSetDAG(
@@ -538,38 +542,41 @@ bool AggregatingStep::canUseProjection() const
     return grouping_sets_params.empty() && sort_description_for_merging.empty();
 }
 
-void AggregatingStep::requestOnlyMergeForAggregateProjection(const Header & input_header)
+void AggregatingStep::requestOnlyMergeForAggregateProjection(const DataStream & input_stream)
 {
     if (!canUseProjection())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot aggregate from projection");
 
-    auto output_header = getOutputHeader();
-    input_headers.front() = input_header;
+    auto output_header = getOutputStream().header;
+    input_streams.front() = input_stream;
     params.only_merge = true;
-    updateOutputHeader();
-    assertBlocksHaveEqualStructure(output_header, getOutputHeader(), "AggregatingStep");
+    updateOutputStream();
+    assertBlocksHaveEqualStructure(output_header, getOutputStream().header, "AggregatingStep");
 }
 
-std::unique_ptr<AggregatingProjectionStep> AggregatingStep::convertToAggregatingProjection(const Header & input_header) const
+std::unique_ptr<AggregatingProjectionStep> AggregatingStep::convertToAggregatingProjection(const DataStream & input_stream) const
 {
     if (!canUseProjection())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot aggregate from projection");
 
     auto aggregating_projection = std::make_unique<AggregatingProjectionStep>(
-        Headers{input_headers.front(), input_header},
+        DataStreams{input_streams.front(), input_stream},
         params,
         final,
         merge_threads,
         temporary_data_merge_threads
     );
 
-    assertBlocksHaveEqualStructure(getOutputHeader(), aggregating_projection->getOutputHeader(), "AggregatingStep");
+    assertBlocksHaveEqualStructure(getOutputStream().header, aggregating_projection->getOutputStream().header, "AggregatingStep");
     return aggregating_projection;
 }
 
-void AggregatingStep::updateOutputHeader()
+void AggregatingStep::updateOutputStream()
 {
-    output_header = appendGroupingColumn(params.getHeader(input_headers.front(), final), params.keys, !grouping_sets_params.empty(), group_by_use_nulls);
+    output_stream = createOutputStream(
+        input_streams.front(),
+        appendGroupingColumn(params.getHeader(input_streams.front().header, final), params.keys, !grouping_sets_params.empty(), group_by_use_nulls),
+        getDataStreamTraits());
 }
 
 bool AggregatingStep::memoryBoundMergingWillBeUsed() const
@@ -579,7 +586,7 @@ bool AggregatingStep::memoryBoundMergingWillBeUsed() const
 }
 
 AggregatingProjectionStep::AggregatingProjectionStep(
-    Headers input_headers_,
+    DataStreams input_streams_,
     Aggregator::Params params_,
     bool final_,
     size_t merge_threads_,
@@ -589,21 +596,22 @@ AggregatingProjectionStep::AggregatingProjectionStep(
     , merge_threads(merge_threads_)
     , temporary_data_merge_threads(temporary_data_merge_threads_)
 {
-    input_headers = std::move(input_headers_);
+    input_streams = std::move(input_streams_);
 
-    if (input_headers.size() != 2)
+    if (input_streams.size() != 2)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "AggregatingProjectionStep is expected to have two input streams, got {}",
-            input_headers.size());
+            input_streams.size());
 
-    auto normal_parts_header = params.getHeader(input_headers.front(), final);
+    auto normal_parts_header = params.getHeader(input_streams.front().header, final);
     params.only_merge = true;
-    auto projection_parts_header = params.getHeader(input_headers.back(), final);
+    auto projection_parts_header = params.getHeader(input_streams.back().header, final);
     params.only_merge = false;
 
     assertBlocksHaveEqualStructure(normal_parts_header, projection_parts_header, "AggregatingProjectionStep");
-    output_header = std::move(normal_parts_header);
+    output_stream.emplace();
+    output_stream->header = std::move(normal_parts_header);
 }
 
 QueryPipelineBuilderPtr AggregatingProjectionStep::updatePipeline(
@@ -654,7 +662,7 @@ QueryPipelineBuilderPtr AggregatingProjectionStep::updatePipeline(
     auto pipeline = std::make_unique<QueryPipelineBuilder>();
 
     for (auto & cur_pipeline : pipelines)
-        assertBlocksHaveEqualStructure(cur_pipeline->getHeader(), getOutputHeader(), "AggregatingProjectionStep");
+        assertBlocksHaveEqualStructure(cur_pipeline->getHeader(), getOutputStream().header, "AggregatingProjectionStep");
 
     *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), 0, &processors);
     pipeline->resize(1);

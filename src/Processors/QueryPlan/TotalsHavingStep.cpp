@@ -26,7 +26,7 @@ static ITransformingStep::Traits getTraits(bool has_filter)
 }
 
 TotalsHavingStep::TotalsHavingStep(
-    const Header & input_header_,
+    const DataStream & input_stream_,
     const AggregateDescriptions & aggregates_,
     bool overflow_row_,
     std::optional<ActionsDAG> actions_dag_,
@@ -36,14 +36,14 @@ TotalsHavingStep::TotalsHavingStep(
     double auto_include_threshold_,
     bool final_)
     : ITransformingStep(
-        input_header_,
+        input_stream_,
         TotalsHavingTransform::transformHeader(
-            input_header_,
+            input_stream_.header,
             actions_dag_ ? &*actions_dag_ : nullptr,
             filter_column_,
             remove_filter_,
             final_,
-            getAggregatesMask(input_header_, aggregates_)),
+            getAggregatesMask(input_stream_.header, aggregates_)),
         getTraits(!filter_column_.empty()))
     , aggregates(aggregates_)
     , overflow_row(overflow_row_)
@@ -129,16 +129,18 @@ void TotalsHavingStep::describeActions(JSONBuilder::JSONMap & map) const
     }
 }
 
-void TotalsHavingStep::updateOutputHeader()
+void TotalsHavingStep::updateOutputStream()
 {
-    output_header =
+    output_stream = createOutputStream(
+        input_streams.front(),
         TotalsHavingTransform::transformHeader(
-            input_headers.front(),
+            input_streams.front().header,
             getActions(),
             filter_column_name,
             remove_filter,
             final,
-            getAggregatesMask(input_headers.front(), aggregates));
+            getAggregatesMask(input_streams.front().header, aggregates)),
+        getDataStreamTraits());
 }
 
 

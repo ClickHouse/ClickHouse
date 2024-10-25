@@ -63,7 +63,7 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
     {
         return true;
     }
-    if (request->getOpNum() == Coordination::OpNum::Multi)
+    else if (request->getOpNum() == Coordination::OpNum::Multi)
     {
         Coordination::ZooKeeperMultiRequest & multi_req = dynamic_cast<Coordination::ZooKeeperMultiRequest &>(*request);
         Int64 memory_delta = 0;
@@ -73,26 +73,21 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
             switch (sub_zk_request->getOpNum())
             {
                 case Coordination::OpNum::Create:
-                case Coordination::OpNum::CreateIfNotExists: {
-                    Coordination::ZooKeeperCreateRequest & create_req
-                        = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*sub_zk_request);
+                case Coordination::OpNum::CreateIfNotExists:
+                {
+                    Coordination::ZooKeeperCreateRequest & create_req = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*sub_zk_request);
                     memory_delta += create_req.bytesSize();
                     break;
                 }
-                case Coordination::OpNum::Set: {
+                case Coordination::OpNum::Set:
+                {
                     Coordination::ZooKeeperSetRequest & set_req = dynamic_cast<Coordination::ZooKeeperSetRequest &>(*sub_zk_request);
                     memory_delta += set_req.bytesSize();
                     break;
                 }
-                case Coordination::OpNum::Remove: {
-                    Coordination::ZooKeeperRemoveRequest & remove_req
-                        = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*sub_zk_request);
-                    memory_delta -= remove_req.bytesSize();
-                    break;
-                }
-                case Coordination::OpNum::RemoveRecursive: {
-                    Coordination::ZooKeeperRemoveRecursiveRequest & remove_req
-                        = dynamic_cast<Coordination::ZooKeeperRemoveRecursiveRequest &>(*sub_zk_request);
+                case Coordination::OpNum::Remove:
+                {
+                    Coordination::ZooKeeperRemoveRequest & remove_req = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*sub_zk_request);
                     memory_delta -= remove_req.bytesSize();
                     break;
                 }
@@ -153,14 +148,7 @@ void KeeperDispatcher::requestThread()
                 Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
                 if (configuration_and_settings->standalone_keeper && isExceedingMemorySoftLimit() && checkIfRequestIncreaseMem(request.request))
                 {
-                    LOG_WARNING(
-                        log,
-                        "Processing requests refused because of max_memory_usage_soft_limit {}, the total allocated memory is {}, RSS is {}, request type "
-                        "is {}",
-                        ReadableSize(mem_soft_limit),
-                        ReadableSize(total_memory_tracker.get()),
-                        ReadableSize(total_memory_tracker.getRSS()),
-                        request.request->getOpNum());
+                    LOG_WARNING(log, "Processing requests refused because of max_memory_usage_soft_limit {}, the total used memory is {}, request type is {}", ReadableSize(mem_soft_limit), ReadableSize(total_memory_tracker.get()), request.request->getOpNum());
                     addErrorResponses({request}, Coordination::Error::ZCONNECTIONLOSS);
                     continue;
                 }
@@ -304,7 +292,7 @@ void KeeperDispatcher::requestThread()
                 if (has_read_request)
                 {
                     if (server->isLeaderAlive())
-                        server->putLocalReadRequest({request});
+                        server->putLocalReadRequest(request);
                     else
                         addErrorResponses({request}, Coordination::Error::ZCONNECTIONLOSS);
                 }

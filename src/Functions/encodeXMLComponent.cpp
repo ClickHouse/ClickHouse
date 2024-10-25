@@ -70,7 +70,7 @@ namespace
                 {
                     break;
                 }
-                if (*src_curr_pos == '<')
+                else if (*src_curr_pos == '<')
                 {
                     size_t bytes_to_copy = src_curr_pos - src_prev_pos;
                     memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
