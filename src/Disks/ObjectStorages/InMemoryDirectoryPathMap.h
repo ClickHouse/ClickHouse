@@ -4,6 +4,7 @@
 #include <map>
 #include <optional>
 #include <shared_mutex>
+#include <unordered_set>
 #include <base/defines.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/SharedMutex.h>
@@ -29,6 +30,7 @@ struct InMemoryDirectoryPathMap
     {
         std::string path;
         time_t last_modified = 0;
+        std::unordered_set<std::string> filenames;
     };
 
     using Map = std::map<std::filesystem::path, RemotePathInfo, PathComparator>;

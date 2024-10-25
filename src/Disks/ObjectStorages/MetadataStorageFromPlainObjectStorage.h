@@ -114,22 +114,19 @@ public:
 
     const IMetadataStorage & getStorageForNonTransactionalReads() const override;
 
-    void addBlobToMetadata(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override;
+    void addBlobToMetadata(const std::string & /* path */, ObjectStorageKey /* object_key */, uint64_t /* size_in_bytes */) override
+    {
+        // Noop
+    }
 
     void setLastModified(const String &, const Poco::Timestamp &) override
     {
         /// Noop
     }
 
-    void createEmptyMetadataFile(const std::string & /* path */) override
-    {
-        /// No metadata, no need to create anything.
-    }
+    void createEmptyMetadataFile(const std::string & /* path */) override;
 
-    void createMetadataFile(const std::string & /* path */, ObjectStorageKey /* object_key */, uint64_t /* size_in_bytes */) override
-    {
-        /// Noop
-    }
+    void createMetadataFile(const std::string & /* path */, ObjectStorageKey /* object_key */, uint64_t /* size_in_bytes */) override;
 
     void createDirectory(const std::string & path) override;
 
