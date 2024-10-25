@@ -1,0 +1,20 @@
+quantileExactWeightedInterpolated
+0	0	0	Decimal(38, 8)
+-25.5	-8.49999999	-5.1	Decimal(38, 8)
+0	0	0
+10	3.33333333	2
+20	6.66666666	4
+30	10	6
+40	13.33333333	8
+50	16.66666666	10
+[-50,-40,-30,-20,-10,0,10,20,30,40,50]
+[-16.66666666,-13.33333333,-10,-6.66666666,-3.33333333,0,3.33333333,6.66666666,10,13.33333333,16.66666666]
+[-10,-8,-6,-4,-2,0,2,4,6,8,10]
+quantileExactWeightedInterpolatedState
+[10000.6,20000.2,29999.8,39999.4]
+Test with filter that returns no rows
+0	0	0
+Test with dynamic weights
+21	7	4.2
+Test with all weights set to 0
+0	0	0
