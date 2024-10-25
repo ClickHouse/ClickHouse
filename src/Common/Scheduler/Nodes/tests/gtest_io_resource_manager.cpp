@@ -256,6 +256,8 @@ TEST(SchedulerIOResourceManager, Fairness)
     ClassifierPtr c = t.manager->acquire("leader");
     ResourceLink link = c->get("res1");
     t.blockResource(link);
+
+    t.wait(); // Wait for threads to finish before destructing locals
 }
 
 TEST(SchedulerIOResourceManager, DropNotEmptyQueue)
@@ -289,6 +291,8 @@ TEST(SchedulerIOResourceManager, DropNotEmptyQueue)
     sync_before_drop.arrive_and_wait(); // main thread triggers FifoQueue destruction by adding a unified child
     t.query("CREATE WORKLOAD leaf IN intermediate");
     sync_after_drop.arrive_and_wait();
+
+    t.wait(); // Wait for threads to finish before destructing locals
 }
 
 TEST(SchedulerIOResourceManager, DropNotEmptyQueueLong)
@@ -326,4 +330,6 @@ TEST(SchedulerIOResourceManager, DropNotEmptyQueueLong)
     sync_before_drop.arrive_and_wait(); // main thread triggers FifoQueue destruction by adding a unified child
     t.query("CREATE WORKLOAD leaf IN intermediate");
     sync_after_drop.arrive_and_wait();
+
+    t.wait(); // Wait for threads to finish before destructing locals
 }

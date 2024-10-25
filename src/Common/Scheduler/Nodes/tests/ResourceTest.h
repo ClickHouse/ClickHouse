@@ -373,8 +373,16 @@ struct ResourceTestManager : public ResourceTestBase
 
     ~ResourceTestManager()
     {
+        wait();
+    }
+
+    void wait()
+    {
         for (auto & thread : threads)
-            thread.join();
+        {
+            if (thread.joinable())
+                thread.join();
+        }
     }
 
     void update(const String & xml)
