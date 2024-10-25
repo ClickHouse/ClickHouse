@@ -136,6 +136,9 @@ private:
     using MarksForColumns = std::unordered_map<String, StreamsWithMarks>;
     MarksForColumns last_non_written_marks;
 
+    /// Set of columns to put marks in cache during write.
+    NameSet columns_to_load_marks;
+
     /// How many rows we have already written in the current mark.
     /// More than zero when incoming blocks are smaller then their granularity.
     size_t rows_written_in_last_mark = 0;
