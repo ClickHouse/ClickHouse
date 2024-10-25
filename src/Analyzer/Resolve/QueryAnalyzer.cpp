@@ -432,8 +432,13 @@ ProjectionName QueryAnalyzer::calculateWindowProjectionName(const QueryTreeNodeP
     return buffer.str();
 }
 
-ProjectionName QueryAnalyzer::calculateSortColumnProjectionName(const QueryTreeNodePtr & sort_column_node, const ProjectionName & sort_expression_projection_name,
-    const ProjectionName & fill_from_expression_projection_name, const ProjectionName & fill_to_expression_projection_name, const ProjectionName & fill_step_expression_projection_name)
+ProjectionName QueryAnalyzer::calculateSortColumnProjectionName(
+    const QueryTreeNodePtr & sort_column_node,
+    const ProjectionName & sort_expression_projection_name,
+    const ProjectionName & fill_from_expression_projection_name,
+    const ProjectionName & fill_to_expression_projection_name,
+    const ProjectionName & fill_step_expression_projection_name,
+    const ProjectionName & fill_staleness_expression_projection_name)
 {
     auto & sort_node_typed = sort_column_node->as<SortNode &>();
 
@@ -463,6 +468,9 @@ ProjectionName QueryAnalyzer::calculateSortColumnProjectionName(const QueryTreeN
 
         if (sort_node_typed.hasFillStep())
             sort_column_projection_name_buffer << " STEP " << fill_step_expression_projection_name;
+
+        if (sort_node_typed.hasFillStaleness())
+            sort_column_projection_name_buffer << " STALENESS " << fill_staleness_expression_projection_name;
     }
 
     return sort_column_projection_name_buffer.str();
@@ -3993,6 +4001,7 @@ ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_
     ProjectionNames fill_from_expression_projection_names;
     ProjectionNames fill_to_expression_projection_names;
     ProjectionNames fill_step_expression_projection_names;
+    ProjectionNames fill_staleness_expression_projection_names;
 
     auto & sort_node_list_typed = sort_node_list->as<ListNode &>();
     for (auto & node : sort_node_list_typed.getNodes())
@@ -4083,11 +4092,38 @@ ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_
                     fill_step_expression_projection_names_size);
         }
 
+        if (sort_node.hasFillStaleness())
+        {
+            fill_staleness_expression_projection_names = resolveExpressionNode(sort_node.getFillStaleness(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+            const auto * constant_node = sort_node.getFillStaleness()->as<ConstantNode>();
+            if (!constant_node)
+                throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                    "Sort FILL STALENESS expression must be constant with numeric or interval type. Actual {}. In scope {}",
+                    sort_node.getFillStaleness()->formatASTForErrorMessage(),
+                    scope.scope_node->formatASTForErrorMessage());
+
+            bool is_number = isColumnedAsNumber(constant_node->getResultType());
+            bool is_interval = WhichDataType(constant_node->getResultType()).isInterval();
+            if (!is_number && !is_interval)
+                throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                    "Sort FILL STALENESS expression must be constant with numeric or interval type. Actual {}. In scope {}",
+                    sort_node.getFillStaleness()->formatASTForErrorMessage(),
+                    scope.scope_node->formatASTForErrorMessage());
+
+            size_t fill_staleness_expression_projection_names_size = fill_staleness_expression_projection_names.size();
+            if (fill_staleness_expression_projection_names_size != 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Sort FILL STALENESS expression expected 1 projection name. Actual {}",
+                    fill_staleness_expression_projection_names_size);
+        }
+
         auto sort_column_projection_name = calculateSortColumnProjectionName(node,
             sort_expression_projection_names[0],
             fill_from_expression_projection_names.empty() ? "" : fill_from_expression_projection_names.front(),
             fill_to_expression_projection_names.empty() ? "" : fill_to_expression_projection_names.front(),
-            fill_step_expression_projection_names.empty() ? "" : fill_step_expression_projection_names.front());
+            fill_step_expression_projection_names.empty() ? "" : fill_step_expression_projection_names.front(),
+            fill_staleness_expression_projection_names.empty() ? "" : fill_staleness_expression_projection_names.front());
 
         result_projection_names.push_back(std::move(sort_column_projection_name));
 
@@ -4095,6 +4131,7 @@ ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_
         fill_from_expression_projection_names.clear();
         fill_to_expression_projection_names.clear();
         fill_step_expression_projection_names.clear();
+        fill_staleness_expression_projection_names.clear();
     }
 
     return result_projection_names;

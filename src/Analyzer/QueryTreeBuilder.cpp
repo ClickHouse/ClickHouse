@@ -498,6 +498,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildSortList(const ASTPtr & order_by_express
             sort_node->getFillTo() = buildExpression(order_by_element.getFillTo(), context);
         if (order_by_element.getFillStep())
             sort_node->getFillStep() = buildExpression(order_by_element.getFillStep(), context);
+        if (order_by_element.getFillStaleness())
+            sort_node->getFillStaleness() = buildExpression(order_by_element.getFillStaleness(), context);
 
         list_node->getNodes().push_back(std::move(sort_node));
     }

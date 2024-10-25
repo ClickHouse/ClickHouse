@@ -541,6 +541,7 @@ namespace DB
     MR_MACROS(YY, "YY") \
     MR_MACROS(YYYY, "YYYY") \
     MR_MACROS(ZKPATH, "ZKPATH") \
+    MR_MACROS(STALENESS, "STALENESS") \
 
 /// The list of keywords where underscore is intentional
 #define APPLY_FOR_PARSER_KEYWORDS_WITH_UNDERSCORES(MR_MACROS) \

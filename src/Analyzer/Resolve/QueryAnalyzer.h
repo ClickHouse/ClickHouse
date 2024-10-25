@@ -140,7 +140,8 @@ private:
         const ProjectionName & sort_expression_projection_name,
         const ProjectionName & fill_from_expression_projection_name,
         const ProjectionName & fill_to_expression_projection_name,
-        const ProjectionName & fill_step_expression_projection_name);
+        const ProjectionName & fill_step_expression_projection_name,
+        const ProjectionName & fill_staleness_expression_projection_name);
 
     QueryTreeNodePtr tryGetLambdaFromSQLUserDefinedFunctions(const std::string & function_name, ContextPtr context);
 

@@ -43,7 +43,7 @@ std::pair<Field, DataTypePtr> extractWithFillValue(const QueryTreeNodePtr & node
     return result;
 }
 
-std::pair<Field, std::optional<IntervalKind>> extractWithFillStepValue(const QueryTreeNodePtr & node)
+std::pair<Field, std::optional<IntervalKind>> extractWithFillValueWithIntervalKind(const QueryTreeNodePtr & node)
 {
     const auto & constant_node = node->as<ConstantNode &>();
 
@@ -77,7 +77,7 @@ FillColumnDescription extractWithFillDescription(const SortNode & sort_node)
 
     if (sort_node.hasFillStep())
     {
-        auto extract_result = extractWithFillStepValue(sort_node.getFillStep());
+        auto extract_result = extractWithFillValueWithIntervalKind(sort_node.getFillStep());
         fill_column_description.fill_step = std::move(extract_result.first);
         fill_column_description.step_kind = std::move(extract_result.second);
     }
@@ -87,9 +87,29 @@ FillColumnDescription extractWithFillDescription(const SortNode & sort_node)
         fill_column_description.fill_step = Field(direction_value);
     }
 
+    if (sort_node.getFillStaleness())
+    {
+        auto extract_result = extractWithFillValueWithIntervalKind(sort_node.getFillStaleness());
+        fill_column_description.fill_staleness = std::move(extract_result.first);
+        fill_column_description.staleness_kind = std::move(extract_result.second);
+    }
+
+    ///////////////////////////////////
+
     if (applyVisitor(FieldVisitorAccurateEquals(), fill_column_description.fill_step, Field{0}))
         throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
             "WITH FILL STEP value cannot be zero");
+
+    if (sort_node.hasFillStaleness())
+    {
+        if (sort_node.hasFillFrom())
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                "WITH FILL STALENESS cannot be used together with WITH FILL FROM");
+
+        if (applyVisitor(FieldVisitorAccurateLessOrEqual(), fill_column_description.fill_staleness, Field{0}))
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                "WITH FILL STALENESS value cannot be less or equal zero");
+    }
 
     if (sort_node.getSortDirection() == SortDirection::ASCENDING)
     {
