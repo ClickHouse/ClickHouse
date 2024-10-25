@@ -132,14 +132,14 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
             /// and current chunk has no duplicates (we assume that parts with non-zero level have no duplicates)
             /// We want to insert current cursor chunk directly in merged data.
 
-            size_t source_num = current->order;
-            auto current_chunk = std::move(*sources[source_num].chunk);
-            size_t chunk_num_rows = current_chunk.getNumRows();
-
             /// First if merged_data is not empty we need to flush it.
             /// We will get into the same condition on next merge call.
             if (merged_data->mergedRows() != 0)
                 return Status(merged_data->pull());
+
+            size_t source_num = current->order;
+            auto current_chunk = std::move(*sources[source_num].chunk);
+            size_t chunk_num_rows = current_chunk.getNumRows();
 
             /// We will get the next block from the corresponding source, if there is one.
             queue.removeTop();
