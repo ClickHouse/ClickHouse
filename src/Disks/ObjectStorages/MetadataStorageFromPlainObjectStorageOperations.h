@@ -109,9 +109,6 @@ private:
     std::filesystem::path remote_path;
     InMemoryDirectoryPathMap & path_map;
 
-    std::filesystem::path remote_parent_path;
-    std::string filename;
-
     bool unlinked = false;
 
 public:
