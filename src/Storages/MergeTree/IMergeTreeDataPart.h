@@ -400,8 +400,16 @@ public:
     virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists);
 
     /// Makes clone of a part in detached/ directory via hard links
-    virtual DataPartStoragePtr makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot,
-                                                   const DiskTransactionPtr & disk_transaction) const;
+    DataPartStoragePtr makeCloneInDetached(
+        const String & prefix, const StorageMetadataPtr & metadata_snapshot, const DiskTransactionPtr & disk_transaction) const;
+
+    DataPartStoragePtr makeCloneInDetached(
+        const String & prefix,
+        const StorageMetadataPtr & metadata_snapshot,
+        const DiskTransactionPtr & disk_transaction,
+        bool copy_instead_of_hardlink) const;
+
+    bool isReplicatedZeroCopy() const;
 
     /// Makes full clone of part in specified subdirectory (relative to storage data directory, e.g. "detached") on another disk
     MutableDataPartStoragePtr makeCloneOnDisk(
@@ -742,6 +750,8 @@ private:
 
     /// This ugly flag is needed for debug assertions only
     mutable bool part_is_probably_removed_from_disk = false;
+
+    LoggerPtr log = getLogger("IMergeTreeDataPart");
 };
 
 using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
