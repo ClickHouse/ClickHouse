@@ -60,9 +60,18 @@ struct QuantileExactWeighted
 
     void add(const Value & x, Weight weight)
     {
-        /// Ignore values with zero weight.
-        if (!isNaN(x) && weight)
-            map[x] += weight;
+        if constexpr (!interpolated)
+        {
+            /// Keep compatibility for function quantilesExactWeighted.
+            if (!isNaN(x))
+                map[x] += weight;
+        }
+        else
+        {
+            /// Ignore values with zero weight in function quantilesExactWeightedInterpolated.
+            if (!isNaN(x) && weight)
+                map[x] += weight;
+        }
     }
 
     void merge(const QuantileExactWeighted & rhs)
