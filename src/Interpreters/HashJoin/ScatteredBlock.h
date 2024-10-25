@@ -254,13 +254,11 @@ struct ScatteredBlock : private boost::noncopyable
     /// Whether `block` was scattered, i.e. `selector` != [0, block.rows())
     bool wasScattered() const
     {
-        chassert(block);
         return selector.size() != block.rows();
     }
 
     const ColumnWithTypeAndName & getByName(const std::string & name) const
     {
-        chassert(block);
         return block.getByName(name);
     }
 

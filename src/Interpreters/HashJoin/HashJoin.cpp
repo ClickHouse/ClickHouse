@@ -693,16 +693,14 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
 
             if (!flag_per_row && save_nullmap && is_inserted)
             {
-                data->blocks_nullmaps_allocated_size
-                    += null_map_holder->size() ? null_map_holder->allocatedBytes() * rows / null_map_holder->size() : 0;
                 data->blocks_nullmaps.emplace_back(stored_block, null_map_holder);
+                data->blocks_nullmaps_allocated_size += data->blocks_nullmaps.back().allocatedBytes();
             }
 
             if (!flag_per_row && not_joined_map && is_inserted)
             {
-                data->blocks_nullmaps_allocated_size
-                    += not_joined_map->size() ? not_joined_map->allocatedBytes() * rows / not_joined_map->size() : 0;
                 data->blocks_nullmaps.emplace_back(stored_block, std::move(not_joined_map));
+                data->blocks_nullmaps_allocated_size += data->blocks_nullmaps.back().allocatedBytes();
             }
 
             if (!flag_per_row && !is_inserted)

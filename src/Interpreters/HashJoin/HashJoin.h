@@ -337,7 +337,7 @@ public:
     using RawBlockPtr = const ScatteredBlock *;
     struct NullMapHolder
     {
-        size_t allocatedBytes() const { return column->size() ? column->allocatedBytes() * block->rows() / column->size() : 0; }
+        size_t allocatedBytes() const { return !column->empty() ? column->allocatedBytes() * block->rows() / column->size() : 0; }
 
         RawBlockPtr block;
         ColumnPtr column;
