@@ -1,7 +1,6 @@
 #pragma once
-#include <boost/noncopyable.hpp>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
+#include <boost/noncopyable.hpp>
 
 namespace DB
 {
