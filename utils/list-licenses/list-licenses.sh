@@ -97,4 +97,4 @@ do
 done
 
 # Special care for Rust
-find "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml' | xargs grep 'license = ' | grep -v -P 'MIT|Apache|MPL' && echo "Fatal error: unrecognized licenses in the Rust code" >&2 && exit 1
+find "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml' | xargs grep 'license = ' | (grep -v -P 'MIT|Apache|MPL' && echo "Fatal error: unrecognized licenses in the Rust code" >&2 && exit 1 || true)
