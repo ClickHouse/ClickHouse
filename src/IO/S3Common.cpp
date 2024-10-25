@@ -49,7 +49,6 @@ bool S3Exception::isRetryableError() const
 }
 
 }
-
 namespace DB::ErrorCodes
 {
     extern const int S3_ERROR;

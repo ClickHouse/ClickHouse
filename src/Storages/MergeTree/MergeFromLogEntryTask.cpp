@@ -372,6 +372,8 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
 {
     part = merge_task->getFuture().get();
 
+    part->is_prewarmed = true;
+
     storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, *transaction_ptr);
     /// Why we reset task here? Because it holds shared pointer to part and tryRemovePartImmediately will
     /// not able to remove the part and will throw an exception (because someone holds the pointer).

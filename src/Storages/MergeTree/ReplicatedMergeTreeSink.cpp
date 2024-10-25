@@ -3,8 +3,8 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
 #include <Interpreters/PartLog.h>
-#include <Common/Exception.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
+#include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/SipHash.h>
@@ -689,6 +689,8 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
     /// For now, consider it is ok. See 02461_alter_update_respect_part_column_type_bug for an example.
     ///
     /// metadata_snapshot->check(part->getColumns());
+
+    part->is_prewarmed = true;
 
     auto block_id_path = getBlockIdPath(storage.zookeeper_path, block_id);
 

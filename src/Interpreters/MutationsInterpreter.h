@@ -40,7 +40,6 @@ class MutationsInterpreter
 {
 private:
     struct Stage;
-
 public:
     struct Settings
     {
@@ -111,6 +110,10 @@ public:
     };
 
     MutationKind::MutationKindEnum getMutationKind() const { return mutation_kind.mutation_kind; }
+
+    /// Returns a chain of actions that can be
+    /// applied to block to execute mutation commands.
+    std::vector<MutationActions> getMutationActions() const;
 
     /// Internal class which represents a data part for MergeTree
     /// or just storage for other storages.
