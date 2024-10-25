@@ -1748,7 +1748,8 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     }
     else if (!is_interactive)
     {
-        sendDataFromStdin(sample, columns_description_for_query, parsed_query);
+        if (!is_local)
+            sendDataFromStdin(sample, columns_description_for_query, parsed_query);
     }
     else
         throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");

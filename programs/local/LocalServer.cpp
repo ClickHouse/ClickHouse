@@ -130,6 +130,11 @@ void applySettingsOverridesForLocal(ContextMutablePtr context)
     context->setSettings(settings);
 }
 
+LocalServer::LocalServer()
+{
+    is_local = true;
+}
+
 Poco::Util::LayeredConfiguration & LocalServer::getClientConfiguration()
 {
     return config();
