@@ -12,7 +12,7 @@ namespace buzzhouse {
 class FuzzConfig {
 public:
 	std::vector<const std::string> collations;
-	bool read_log = false, fuzz_floating_points;
+	bool read_log = false, fuzz_floating_points = true;
 	uint32_t seed = 0, max_depth = 3, max_width = 3, max_databases = 4,
 			 max_functions = 4, max_tables = 10, max_views = 5;
 	std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",

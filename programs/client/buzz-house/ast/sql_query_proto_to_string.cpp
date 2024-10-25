@@ -705,9 +705,7 @@ CONV_FN_QUOTE(ColumnPath, ic) {
 }
 
 CONV_FN(EnumDefValue, edf) {
-  ret += "'";
   ret += edf.enumv();
-  ret += "'";
   ret += " = ";
   ret += std::to_string(edf.number());
 }
