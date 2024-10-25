@@ -70,7 +70,6 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         if random.random() < 0.25 and len(r.content) > 1024 * 1024:
             r.content = r.content[: len(r.content) // 2]
         self.wfile.write(r.content)
-        self.wfile.close()
 
 
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
