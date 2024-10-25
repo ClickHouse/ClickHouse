@@ -20,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_SCHEDULER_NODE;
+    extern const int LOGICAL_ERROR;
 }
 
 class UnifiedSchedulerNode;
@@ -346,6 +347,7 @@ private:
         {
             if (auto branch_root = branch.attachUnifiedChild(event_queue_, child))
             {
+                // If both semaphore and throttler exist we should reparent to the farthest from the root
                 if (semaphore)
                     reparent(branch_root, semaphore);
                 else if (throttler)
@@ -530,8 +532,7 @@ protected: // Hide all the ISchedulerNode interface methods as an implementation
 
     bool equals(ISchedulerNode *) override
     {
-        assert(false);
-        return false;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "UnifiedSchedulerNode should not be used with CustomResourceManager");
     }
 
     /// Attaches an immediate child (used through `reparent()`)
