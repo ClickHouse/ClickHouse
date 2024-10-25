@@ -85,3 +85,14 @@ done
 ${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_9" --data-binary "SELECT 1" | grep -c -F 'SESSION_IS_LOCKED'
 ${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '${CLICKHOUSE_DATABASE}_9' SYNC FORMAT Null";
 wait
+
+echo "A session successfully closes when timeout first expires with refcount != 1 and another session is created in between"
+# Here we do not want an infinite loop - because we want this mechanism to be reliable in all cases
+# So it's better to give it enough time to complete even in constrained environments
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_10&session_timeout=1" --data-binary "CREATE TEMPORARY TABLE x (n UInt64) AS SELECT number FROM numbers(10)"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_10&session_timeout=1" --data-binary "SELECT sum(n), max(sleep(3)) FROM x" # This query ensures timeout expires with refcount > 1
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_10_2&session_timeout=1" --data-binary "CREATE TEMPORARY TABLE y (n UInt64) AS SELECT number FROM numbers(10)"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_10_2&session_timeout=1" --data-binary "SELECT sum(n), 0 FROM y"
+sleep 15
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_10&session_check=1" --data-binary "SELECT 1" | grep -c -F 'SESSION_NOT_FOUND'
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_10_2&session_check=1" --data-binary "SELECT 1" | grep -c -F 'SESSION_NOT_FOUND'
