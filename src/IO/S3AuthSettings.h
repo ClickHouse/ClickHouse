@@ -41,6 +41,7 @@ struct S3AuthSettings
 {
     S3AuthSettings();
     S3AuthSettings(const S3AuthSettings & settings);
+    S3AuthSettings(S3AuthSettings && settings) noexcept;
     S3AuthSettings(const Poco::Util::AbstractConfiguration & config, const DB::Settings & settings, const std::string & config_prefix);
     explicit S3AuthSettings(const DB::Settings & settings);
     ~S3AuthSettings();

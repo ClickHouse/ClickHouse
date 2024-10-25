@@ -75,7 +75,7 @@ namespace S3
 
 namespace
 {
-static bool setValueFromConfig(
+bool setValueFromConfig(
     const Poco::Util::AbstractConfiguration & config, const std::string & path, typename S3RequestSettingsImpl::SettingFieldRef & field)
 {
     if (!config.has(path))
@@ -104,6 +104,14 @@ S3RequestSettings::S3RequestSettings(const S3RequestSettings & settings)
     , put_request_throttler(settings.put_request_throttler)
     , proxy_resolver(settings.proxy_resolver)
     , impl(std::make_unique<S3RequestSettingsImpl>(*settings.impl))
+{
+}
+
+S3RequestSettings::S3RequestSettings(S3RequestSettings && settings) noexcept
+    : get_request_throttler(std::move(settings.get_request_throttler))
+    , put_request_throttler(std::move(settings.put_request_throttler))
+    , proxy_resolver(std::move(settings.proxy_resolver))
+    , impl(std::make_unique<S3RequestSettingsImpl>(std::move(*settings.impl)))
 {
 }
 

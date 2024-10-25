@@ -63,8 +63,7 @@ namespace S3
 
 namespace
 {
-
-static bool setValueFromConfig(
+bool setValueFromConfig(
     const Poco::Util::AbstractConfiguration & config, const std::string & path, typename S3AuthSettingsImpl::SettingFieldRef & field)
 {
     if (!config.has(path))
@@ -123,6 +122,14 @@ S3AuthSettings::S3AuthSettings(const S3AuthSettings & settings)
     , users(settings.users)
     , server_side_encryption_kms_config(settings.server_side_encryption_kms_config)
     , impl(std::make_unique<S3AuthSettingsImpl>(*settings.impl))
+{
+}
+
+S3AuthSettings::S3AuthSettings(S3AuthSettings && settings) noexcept
+    : headers(std::move(settings.headers))
+    , users(std::move(settings.users))
+    , server_side_encryption_kms_config(std::move(settings.server_side_encryption_kms_config))
+    , impl(std::make_unique<S3AuthSettingsImpl>(std::move(*settings.impl)))
 {
 }
 
