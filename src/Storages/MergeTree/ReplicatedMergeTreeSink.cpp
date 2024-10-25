@@ -690,8 +690,6 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
     ///
     /// metadata_snapshot->check(part->getColumns());
 
-    part->is_prewarmed = true;
-
     auto block_id_path = getBlockIdPath(storage.zookeeper_path, block_id);
 
     CommitRetryContext retry_context;
