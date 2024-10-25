@@ -86,10 +86,12 @@ private:
     static bool skipPredicateForShadowDir(const String & local_path)
     {
         // `shadow/{backup_name}/revision.txt` is not an object metadata file
+        // `shadow/../{part_name}/frozen_metadata.txt` is not an object metadata file
         const auto path = fs::path(local_path);
-        return path.filename() == "revision.txt" &&
+        return (path.filename() == "revision.txt" &&
                 path.parent_path().has_parent_path() &&
-                path.parent_path().parent_path().filename() == "shadow";
+                path.parent_path().parent_path().filename() == "shadow") ||
+                path.filename() == "frozen_metadata.txt";
     }
 
     const UInt64 max_block_size;
