@@ -832,8 +832,8 @@ def test_replicated_database_and_unavailable_s3(started_cluster):
     node1 = started_cluster.instances["node1"]
     node2 = started_cluster.instances["node2"]
 
-    DB_NAME = f"db_{uuid.uuid4()}"
-    TABLE_NAME = f"test_replicated_database_and_unavailable_s3_{uuid.uuid4()}"
+    DB_NAME = "db"
+    TABLE_NAME = "test_replicated_database_and_unavailable_s3"
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_restricted_bucket
 
