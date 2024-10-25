@@ -115,7 +115,7 @@ public:
             dequeued_cv.notify_one();
         }
 
-        // This function is executed inside scheduler thread and wakes thread issued this `request`.
+        // This function is executed inside scheduler thread and wakes thread that issued this `request`.
         // That thread will throw an exception.
         void failed(const std::exception_ptr & ptr) override
         {
