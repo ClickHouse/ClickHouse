@@ -387,9 +387,6 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     {
         ColumnPtr result;
 
-        null_map = ConstNullMapPtr();
-        null_map_holder = nullptr;
-
         const auto & column_before_cast = columns.at(i);
         ColumnWithTypeAndName column_to_cast
             = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
@@ -420,13 +417,16 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
 
             if (transform_null_in)
             {
-                null_map_holder = filtered_null_map_column;
-                null_map = &filtered_null_map_column->getData();
+                if (!null_map_holder)
+                    null_map_holder = filtered_null_map_column;
+                else
+                    null_map_holder = mergeNullMaps(null_map_holder, filtered_null_map_column);
+
+                null_map = &assert_cast<const ColumnUInt8 &>(*null_map_holder).getData();
             }
             else
             {
                 ColumnPtr merged_null_map_column = mergeNullMaps(existing_null_map_column, filtered_null_map_column);
-
                 result = ColumnNullable::create(nested_result_column->getPtr(), merged_null_map_column);
             }
         }
