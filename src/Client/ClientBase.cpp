@@ -1631,7 +1631,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         return;
 
     /// If it's clickhouse-local, and the input data reading is already baked into the query pipeline,
-    /// don't read the data again here.
+    /// don't read the data again here. This happens in some cases (e.g. input() table function) but not others (e.g. INFILE).
     if (!connection->isSendDataNeeded())
         return;
 
