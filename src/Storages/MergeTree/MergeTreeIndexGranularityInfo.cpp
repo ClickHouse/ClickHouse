@@ -12,6 +12,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool compress_marks;
     extern const MergeTreeSettingsUInt64 index_granularity;
+    extern const MergeTreeSettingsUInt64 index_granularity_bytes;
 }
 
 namespace ErrorCodes
@@ -114,8 +115,9 @@ MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData
 
 MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MarkType mark_type_)
     : mark_type(mark_type_)
+    , fixed_index_granularity((*storage.getSettings())[MergeTreeSetting::index_granularity])
+    , index_granularity_bytes((*storage.getSettings())[MergeTreeSetting::index_granularity_bytes])
 {
-    fixed_index_granularity = (*storage.getSettings())[MergeTreeSetting::index_granularity];
 }
 
 void MergeTreeIndexGranularityInfo::changeGranularityIfRequired(const IDataPartStorage & data_part_storage)

@@ -199,6 +199,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
     last_pipeline->setProcessListElement(build_pipeline_settings.process_list_element);
     last_pipeline->addResources(std::move(resources));
+    last_pipeline->setConcurrencyControl(getConcurrencyControl());
 
     return last_pipeline;
 }
@@ -457,39 +458,6 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
     }
 }
 
-static void updateDataStreams(QueryPlan::Node & root)
-{
-    class UpdateDataStreams : public QueryPlanVisitor<UpdateDataStreams, false>
-    {
-    public:
-        explicit UpdateDataStreams(QueryPlan::Node * root_) : QueryPlanVisitor<UpdateDataStreams, false>(root_) { }
-
-        static bool visitTopDownImpl(QueryPlan::Node * /*current_node*/, QueryPlan::Node * /*parent_node*/) { return true; }
-
-        static void visitBottomUpImpl(QueryPlan::Node * current_node, QueryPlan::Node * /*parent_node*/)
-        {
-            auto & current_step = *current_node->step;
-            if (!current_step.canUpdateInputHeader() || current_node->children.empty())
-                return;
-
-            for (const auto * child : current_node->children)
-            {
-                if (!child->step->hasOutputHeader())
-                    return;
-            }
-
-            Headers headers;
-            headers.reserve(current_node->children.size());
-            for (const auto * child : current_node->children)
-                headers.emplace_back(child->step->getOutputHeader());
-
-            current_step.updateInputHeaders(std::move(headers));
-        }
-    };
-
-    UpdateDataStreams(&root).visit();
-}
-
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// optimization need to be applied before "mergeExpressions" optimization
@@ -502,8 +470,6 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
     QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
     if (optimization_settings.build_sets)
         QueryPlanOptimizations::addStepsToBuildSets(*this, *root, nodes);
-
-    updateDataStreams(*root);
 }
 
 void QueryPlan::explainEstimate(MutableColumns & columns) const

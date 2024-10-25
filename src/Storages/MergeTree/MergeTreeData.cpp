@@ -263,6 +263,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int INCORRECT_QUERY;
+    extern const int INVALID_SETTING_VALUE;
     extern const int CANNOT_RESTORE_TABLE;
     extern const int ZERO_COPY_REPLICATION_ERROR;
     extern const int NOT_INITIALIZED;
@@ -760,6 +761,16 @@ void MergeTreeData::checkProperties(
             indices_names.insert(index.name);
         }
     }
+
+    /// If adaptive index granularity is disabled, certain vector search queries with PREWHERE run into LOGICAL_ERRORs.
+    ///     SET allow_experimental_vector_similarity_index = 1;
+    ///     CREATE TABLE tab (`id` Int32, `vec` Array(Float32), INDEX idx vec TYPE  vector_similarity('hnsw', 'L2Distance') GRANULARITY 100000000) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes = 0;
+    ///     INSERT INTO tab SELECT number, [toFloat32(number), 0.] FROM numbers(10000);
+    ///     WITH [1., 0.] AS reference_vec SELECT id, L2Distance(vec, reference_vec) FROM tab PREWHERE toLowCardinality(10) ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 100;
+    /// As a workaround, force enabled adaptive index granularity for now (it is the default anyways).
+    if (new_metadata.secondary_indices.hasType("vector_similarity") && (*getSettings())[MergeTreeSetting::index_granularity_bytes] == 0)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Experimental vector similarity index can only be used with MergeTree setting 'index_granularity_bytes' != 0");
 
     if (!new_metadata.projections.empty())
     {
@@ -2657,6 +2668,10 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
         for (const auto & part : parts)
         {
             part_log_elem.partition_id = part->info.partition_id;
+            {
+                WriteBufferFromString out(part_log_elem.partition);
+                part->partition.serializeText(part->storage, out, {});
+            }
             part_log_elem.part_name = part->name;
             part_log_elem.bytes_compressed_on_disk = part->getBytesOnDisk();
             part_log_elem.bytes_uncompressed = part->getBytesUncompressedOnDisk();
@@ -3312,6 +3327,16 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Experimental vector similarity index is disabled (turn on setting 'allow_experimental_vector_similarity_index')");
 
+    /// If adaptive index granularity is disabled, certain vector search queries with PREWHERE run into LOGICAL_ERRORs.
+    ///     SET allow_experimental_vector_similarity_index = 1;
+    ///     CREATE TABLE tab (`id` Int32, `vec` Array(Float32), INDEX idx vec TYPE  vector_similarity('hnsw', 'L2Distance') GRANULARITY 100000000) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes = 0;
+    ///     INSERT INTO tab SELECT number, [toFloat32(number), 0.] FROM numbers(10000);
+    ///     WITH [1., 0.] AS reference_vec SELECT id, L2Distance(vec, reference_vec) FROM tab PREWHERE toLowCardinality(10) ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 100;
+    /// As a workaround, force enabled adaptive index granularity for now (it is the default anyways).
+    if (AlterCommands::hasVectorSimilarityIndex(new_metadata) && (*getSettings())[MergeTreeSetting::index_granularity_bytes] == 0)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Experimental vector similarity index can only be used with MergeTree setting 'index_granularity_bytes' != 0");
+
     for (const auto & disk : getDisks())
         if (!disk->supportsHardLinks() && !commands.isSettingsAlter() && !commands.isCommentAlter())
             throw Exception(
@@ -3624,6 +3649,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
         local_context->checkMergeTreeSettingsConstraints(*settings_from_storage, new_changes);
 
+        bool found_disk_setting = false;
+        bool found_storage_policy_setting = false;
+
         for (const auto & changed_setting : new_changes)
         {
             const auto & setting_name = changed_setting.name;
@@ -3647,8 +3675,21 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             }
 
             if (setting_name == "storage_policy")
+            {
                 checkStoragePolicy(local_context->getStoragePolicy(new_value.safeGet<String>()));
+                found_storage_policy_setting = true;
+            }
+            else if (setting_name == "disk")
+            {
+                checkStoragePolicy(local_context->getStoragePolicyFromDisk(new_value.safeGet<String>()));
+                found_disk_setting = true;
+            }
         }
+
+        if (found_storage_policy_setting && found_disk_setting)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "MergeTree settings `storage_policy` and `disk` cannot be specified at the same time");
 
         /// Check if it is safe to reset the settings
         for (const auto & current_setting : current_changes)
@@ -3748,12 +3789,16 @@ void MergeTreeData::changeSettings(
         bool has_storage_policy_changed = false;
 
         const auto & new_changes = new_settings->as<const ASTSetQuery &>().changes;
+        StoragePolicyPtr new_storage_policy = nullptr;
 
         for (const auto & change : new_changes)
         {
-            if (change.name == "storage_policy")
+            if (change.name == "disk" || change.name == "storage_policy")
             {
-                StoragePolicyPtr new_storage_policy = getContext()->getStoragePolicy(change.value.safeGet<String>());
+                if (change.name == "disk")
+                    new_storage_policy = getContext()->getStoragePolicyFromDisk(change.value.safeGet<String>());
+                else
+                    new_storage_policy = getContext()->getStoragePolicy(change.value.safeGet<String>());
                 StoragePolicyPtr old_storage_policy = getStoragePolicy();
 
                 /// StoragePolicy of different version or name is guaranteed to have different pointer
@@ -4278,7 +4323,7 @@ DataPartsVector MergeTreeData::grabActivePartsToRemoveForDropRange(
             bool is_covered_by_min_max_block = part->info.min_block <= drop_range.min_block && part->info.max_block >= drop_range.max_block && part->info.getMutationVersion() >= drop_range.getMutationVersion();
             if (is_covered_by_min_max_block)
             {
-                LOG_INFO(log, "Skipping drop range for part {} because covering part {} already exists", drop_range.getPartNameForLogs(), part->name);
+                LOG_TRACE(LogFrequencyLimiter(log.load(), 1), "Skipping drop range for part {} because covering part {} already exists", drop_range.getPartNameForLogs(), part->name);
                 return {};
             }
         }
@@ -7877,7 +7922,8 @@ try
 
     part_log_elem.event_type = type;
 
-    if (part_log_elem.event_type == PartLogElement::MERGE_PARTS)
+    if (part_log_elem.event_type == PartLogElement::MERGE_PARTS
+        || part_log_elem.event_type == PartLogElement::MERGE_PARTS_START)
     {
         if (merge_entry)
         {
@@ -7902,6 +7948,20 @@ try
     part_log_elem.table_name = table_id.table_name;
     part_log_elem.table_uuid = table_id.uuid;
     part_log_elem.partition_id = MergeTreePartInfo::fromPartName(new_part_name, format_version).partition_id;
+
+    {
+        const DataPart * result_or_source_data_part = nullptr;
+        if (result_part)
+            result_or_source_data_part = result_part.get();
+        else if (!source_parts.empty())
+            result_or_source_data_part = source_parts.at(0).get();
+        if (result_or_source_data_part)
+        {
+            WriteBufferFromString out(part_log_elem.partition);
+            result_or_source_data_part->partition.serializeText(*this, out, {});
+        }
+    }
+
     part_log_elem.part_name = new_part_name;
 
     if (result_part)
@@ -7930,10 +7990,6 @@ try
     if (profile_counters)
     {
         part_log_elem.profile_counters = profile_counters;
-    }
-    else
-    {
-        LOG_WARNING(log, "Profile counters are not set");
     }
 
     part_log->add(std::move(part_log_elem));

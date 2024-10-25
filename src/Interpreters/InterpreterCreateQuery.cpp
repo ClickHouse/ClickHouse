@@ -129,7 +129,6 @@ namespace Setting
     extern const SettingsDefaultTableEngine default_temporary_table_engine;
     extern const SettingsString default_view_definer;
     extern const SettingsUInt64 distributed_ddl_entry_format_version;
-    extern const SettingsBool enable_deflate_qpl_codec;
     extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsBool flatten_nested;
     extern const SettingsBool fsync_metadata;
@@ -140,6 +139,13 @@ namespace Setting
     extern const SettingsBool restore_replace_external_engines_to_null;
     extern const SettingsBool restore_replace_external_table_functions_to_null;
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool ignore_empty_sql_security_in_create_view_query;
+    extern const ServerSettingsUInt64 max_database_num_to_throw;
+    extern const ServerSettingsUInt64 max_table_num_to_throw;
 }
 
 namespace ErrorCodes
@@ -191,7 +197,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists.", database_name);
     }
 
-    auto db_num_limit = getContext()->getGlobalContext()->getServerSettings().max_database_num_to_throw;
+    auto db_num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_database_num_to_throw];
     if (db_num_limit > 0 && !internal)
     {
         size_t db_count = DatabaseCatalog::instance().getDatabases().size();
@@ -660,7 +666,6 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     bool skip_checks = LoadingStrictnessLevel::SECONDARY_CREATE <= mode;
     bool sanity_check_compression_codecs = !skip_checks && !context_->getSettingsRef()[Setting::allow_suspicious_codecs];
     bool allow_experimental_codecs = skip_checks || context_->getSettingsRef()[Setting::allow_experimental_codecs];
-    bool enable_deflate_qpl_codec = skip_checks || context_->getSettingsRef()[Setting::enable_deflate_qpl_codec];
     bool enable_zstd_qat_codec = skip_checks || context_->getSettingsRef()[Setting::enable_zstd_qat_codec];
 
     ColumnsDescription res;
@@ -722,7 +727,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             if (col_decl.default_specifier == "ALIAS")
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
             column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_deflate_qpl_codec, enable_zstd_qat_codec);
+                col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_zstd_qat_codec);
         }
 
         if (col_decl.statistics_desc)
@@ -1462,7 +1467,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
     auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query || is_restore_from_backup);
 
-    if (!create.sql_security && create.supportSQLSecurity() && !getContext()->getServerSettings().ignore_empty_sql_security_in_create_view_query)
+    if (!create.sql_security && create.supportSQLSecurity() && !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query])
         create.sql_security = std::make_shared<ASTSQLSecurity>();
 
     if (create.sql_security)
@@ -1907,7 +1912,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
     }
 
-    UInt64 table_num_limit = getContext()->getGlobalContext()->getServerSettings().max_table_num_to_throw;
+    UInt64 table_num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_table_num_to_throw];
     if (table_num_limit > 0 && !internal)
     {
         UInt64 table_count = CurrentMetrics::get(CurrentMetrics::AttachedTable);
