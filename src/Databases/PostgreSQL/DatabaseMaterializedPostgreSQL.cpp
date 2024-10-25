@@ -1,4 +1,5 @@
 #include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
+#include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
 
 #if USE_LIBPQXX
 
@@ -35,6 +36,11 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 postgresql_connection_attempt_timeout;
+}
+
+namespace MaterializedPostgreSQLSetting
+{
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
 }
 
 namespace ErrorCodes
@@ -362,7 +368,7 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
 
         try
         {
-            auto tables_to_replicate = settings->materialized_postgresql_tables_list.value;
+            auto tables_to_replicate = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list].value;
             if (tables_to_replicate.empty())
                 tables_to_replicate = getFormattedTablesList();
 

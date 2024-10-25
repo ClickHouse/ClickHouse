@@ -14,6 +14,7 @@ class StorageS3Configuration : public StorageObjectStorage::Configuration
 public:
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
+    static constexpr auto type = ObjectStorageType::S3;
     static constexpr auto type_name = "s3";
     static constexpr auto namespace_name = "bucket";
     /// All possible signatures for S3 storage with structure argument (for example for s3 table function).
@@ -57,6 +58,7 @@ public:
     StorageS3Configuration() = default;
     StorageS3Configuration(const StorageS3Configuration & other);
 
+    ObjectStorageType getType() const override { return type; }
     std::string getTypeName() const override { return type_name; }
     std::string getEngineName() const override { return url.storage_name; }
     std::string getNamespaceType() const override { return namespace_name; }
