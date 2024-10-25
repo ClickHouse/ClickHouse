@@ -288,15 +288,11 @@ WorkloadEntityStorageBase::WorkloadEntityStorageBase(ContextPtr global_context_)
 
 ASTPtr WorkloadEntityStorageBase::get(const String & entity_name) const
 {
-    std::lock_guard lock(mutex);
-
-    auto it = entities.find(entity_name);
-    if (it == entities.end())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The workload entity name '{}' is not saved",
-            entity_name);
-
-    return it->second;
+    if (auto result = tryGet(entity_name))
+        return result;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "The workload entity name '{}' is not saved",
+        entity_name);
 }
 
 ASTPtr WorkloadEntityStorageBase::tryGet(const String & entity_name) const
@@ -513,7 +509,7 @@ scope_guard WorkloadEntityStorageBase::getAllEntitiesAndSubscribe(const OnChange
 
     std::vector<Event> current_state;
     {
-        std::unique_lock lock{mutex};
+        std::lock_guard lock{mutex};
         current_state = orderEntities(entities);
 
         std::lock_guard lock2{handlers->mutex};
