@@ -201,20 +201,6 @@ void registerStorageIceberg(StorageFactory & factory)
             .source_access_type = AccessType::AZURE,
         });
 #endif
-    factory.registerStorage(
-        "IcebergLocal",
-        [&](const StorageFactory::Arguments & args)
-        {
-            auto configuration = std::make_shared<StorageLocalIcebergConfiguration>();
-            StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, args.getLocalContext(), false);
-
-            return createStorageObjectStorage(args, configuration, args.getLocalContext());
-        },
-        {
-            .supports_settings = false,
-            .supports_schema_inference = true,
-            .source_access_type = AccessType::FILE,
-        });
 #if USE_HDFS
     factory.registerStorage(
         "IcebergHDFS",
@@ -231,10 +217,26 @@ void registerStorageIceberg(StorageFactory & factory)
             .source_access_type = AccessType::HDFS,
         });
 #endif
+    factory.registerStorage(
+        "IcebergLocal",
+        [&](const StorageFactory::Arguments & args)
+        {
+            auto configuration = std::make_shared<StorageLocalIcebergConfiguration>();
+            StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, args.getLocalContext(), false);
+
+            return createStorageObjectStorage(args, configuration, args.getLocalContext());
+        },
+        {
+            .supports_settings = false,
+            .supports_schema_inference = true,
+            .source_access_type = AccessType::FILE,
+        });
 }
 
 #endif
 
+
+#if USE_AWS_S3
 #if USE_PARQUET
 void registerStorageDeltaLake(StorageFactory & factory)
 {
@@ -272,4 +274,5 @@ void registerStorageHudi(StorageFactory & factory)
             .source_access_type = AccessType::S3,
         });
 }
+#endif
 }
