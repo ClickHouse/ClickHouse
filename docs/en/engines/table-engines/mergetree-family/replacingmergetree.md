@@ -162,3 +162,51 @@ All of the parameters excepting `ver` have the same meaning as in `MergeTree`.
 - `ver` - column with the version. Optional parameter. For a description, see the text above.
 
 </details>
+
+## Query time de-duplication & FINAL
+
+At merge time, the ReplacingMergeTree identifies duplicate rows, using the values of the `ORDER BY` columns (used to create the table) as a unique identifier, and either retains only the highest version or removes all duplicates if the latest version indicates a delete. This, however, offers eventual correctness only - it does not guarantee rows will be deduplicated, and you should not rely on it. Queries can, therefore, produce incorrect answers due to update and delete rows being considered in queries.
+
+To obtain correct answers, users will need to complement background merges with query time deduplication and deletion removal. This can be achieved using the `FINAL` operator. For example, consider the following example:
+
+```sql
+CREATE TABLE rmt_example
+(
+    `number` UInt16
+)
+ENGINE = ReplacingMergeTree
+ORDER BY number
+
+INSERT INTO rmt_example SELECT floor(randUniform(0, 100)) AS number
+FROM numbers(1000000000)
+
+0 rows in set. Elapsed: 19.958 sec. Processed 1.00 billion rows, 8.00 GB (50.11 million rows/s., 400.84 MB/s.)
+```
+Querying without `FINAL` produces an incorrect count (exact result will vary depending on merges):
+
+```sql
+SELECT count()
+FROM rmt_example
+
+┌─count()─┐
+│     200 │
+└─────────┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+Adding final produces a correct result:
+
+```sql
+SELECT count()
+FROM rmt_example
+FINAL
+
+┌─count()─┐
+│     100 │
+└─────────┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+For further details on `FINAL`, including how to optimize `FINAL` performance, we recommend reading our [detailed guide on ReplacingMergeTree](/docs/en/guides/replacing-merge-tree).
