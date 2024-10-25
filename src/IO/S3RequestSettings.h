@@ -41,6 +41,7 @@ struct S3RequestSettings
 {
     S3RequestSettings();
     S3RequestSettings(const S3RequestSettings & settings);
+    S3RequestSettings(S3RequestSettings && settings) noexcept;
 
     /// Create request settings from Config.
     S3RequestSettings(
