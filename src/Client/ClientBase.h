@@ -263,8 +263,6 @@ protected:
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool delayed_interactive = false;
 
-    bool is_local = false; /// clickhouse-local, otherwise clickhouse-client
-
     bool echo_queries = false; /// Print queries before execution in batch mode.
     bool ignore_error = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
 

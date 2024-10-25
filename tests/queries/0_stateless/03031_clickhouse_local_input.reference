@@ -9,3 +9,7 @@ bar
 bam
 # inferred destination table structure
 foo
+# direct
+foo
+# infile
+foo

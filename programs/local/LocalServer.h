@@ -23,7 +23,7 @@ namespace DB
 class LocalServer : public ClientApplicationBase, public Loggers
 {
 public:
-    LocalServer();
+    LocalServer() = default;
 
     void initialize(Poco::Util::Application & self) override;
 

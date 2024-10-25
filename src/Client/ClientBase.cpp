@@ -1630,6 +1630,11 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     if (!parsed_insert_query)
         return;
 
+    /// If it's clickhouse-local, and the input data reading is already baked into the query pipeline,
+    /// don't read the data again here.
+    if (!connection->isSendDataNeeded())
+        return;
+
     bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(std_in);
 
     if (need_render_progress)
@@ -1748,8 +1753,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     }
     else if (!is_interactive)
     {
-        if (!is_local)
-            sendDataFromStdin(sample, columns_description_for_query, parsed_query);
+        sendDataFromStdin(sample, columns_description_for_query, parsed_query);
     }
     else
         throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");

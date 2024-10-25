@@ -32,4 +32,12 @@ echo '# inferred destination table structure'
 $CLICKHOUSE_LOCAL --engine_file_truncate_on_insert=1 -q "insert into function file('$tmp_file', 'TSV') select * from input('x String') format LineAsString" <"$tmp_input"
 cat "$tmp_file"
 
+echo '# direct'
+$CLICKHOUSE_LOCAL --engine_file_truncate_on_insert=1 -q "insert into function file('$tmp_file', 'LineAsString', 'x String') format LineAsString" <"$tmp_input"
+cat "$tmp_file"
+
+echo '# infile'
+$CLICKHOUSE_LOCAL --engine_file_truncate_on_insert=1 -q "insert into function file('$tmp_file', 'LineAsString', 'x String') from infile '$tmp_input' format LineAsString"
+cat "$tmp_file"
+
 rm -f "${tmp_file:?}" "${tmp_input:?}"
