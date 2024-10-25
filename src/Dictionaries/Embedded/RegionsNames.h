@@ -35,10 +35,9 @@ class RegionsNames
     M(et, ru, 11) \
     M(pt, en, 12) \
     M(he, en, 13) \
-    M(vi, en, 14) \
-    M(es, en, 15)
+    M(vi, en, 14)
 
-    static constexpr size_t total_languages = 16;
+    static constexpr size_t total_languages = 15;
 
 public:
     enum class Language : size_t

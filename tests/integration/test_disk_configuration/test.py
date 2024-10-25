@@ -1,7 +1,4 @@
-import logging
-
 import pytest
-
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
@@ -222,8 +219,8 @@ def test_merge_tree_custom_disk_setting(start_cluster):
     count2 = len(list2)
 
     if count1 != count2:
-        logging.info(f"list1: {list1}")
-        logging.info(f"list2: {list2}")
+        print("list1: ", list1)
+        print("list2: ", list2)
 
     assert count1 == count2
     assert (
@@ -376,7 +373,7 @@ def test_merge_tree_setting_override(start_cluster):
         CREATE TABLE {TABLE_NAME} (a Int32)
         ENGINE = MergeTree()
         ORDER BY tuple()
-        SETTINGS disk = 's3', storage_policy = 's3';
+        SETTINGS disk = 'kek', storage_policy = 's3';
     """
         )
     )

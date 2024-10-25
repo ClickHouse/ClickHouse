@@ -1,23 +1,21 @@
-import concurrent
-import os.path
-import re
-import time
 from random import randint
-
 import pytest
-
+import os.path
+import time
+import concurrent
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
+import re
 
 cluster = ClickHouseCluster(__file__)
 
-num_nodes = 2
+num_nodes = 10
 
 
 def generate_cluster_def():
     path = os.path.join(
         os.path.dirname(os.path.realpath(__file__)),
-        "./_gen/cluster_for_test_disallow_concurrency.xml",
+        "./_gen/cluster_for_concurrency_test.xml",
     )
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
@@ -113,56 +111,22 @@ def create_and_fill_table():
         nodes[i].query(f"INSERT INTO tbl SELECT number FROM numbers(40000000)")
 
 
-def get_status_and_error(node, backup_or_restore_id):
-    return (
-        node.query(
-            f"SELECT status, error FROM system.backups WHERE id == '{backup_or_restore_id}'"
-        )
-        .rstrip("\n")
-        .split("\t")
-    )
-
-
-def wait_for_backup(node, backup_id):
-    assert_eq_with_retry(
-        node,
-        f"SELECT status FROM system.backups WHERE id = '{backup_id}'",
-        "BACKUP_CREATED",
-        sleep_time=2,
-        retry_count=50,
-    )
-
-
-def wait_for_restore(node, restore_id):
-    assert_eq_with_retry(
-        node,
-        f"SELECT status FROM system.backups WHERE id == '{restore_id}'",
-        "RESTORED",
-        sleep_time=2,
-        retry_count=50,
-    )
-
-
-def check_backup_error(error):
+def wait_for_fail_backup(node, backup_id, backup_name):
     expected_errors = [
         "Concurrent backups not supported",
-        "BACKUP_ALREADY_EXISTS",
+        f"Backup {backup_name} already exists",
     ]
-    assert any([expected_error in error for expected_error in expected_errors])
-
-
-def check_restore_error(error):
-    expected_errors = [
-        "Concurrent restores not supported",
-        "Cannot restore the table default.tbl because it already contains some data",
-    ]
-    assert any([expected_error in error for expected_error in expected_errors])
-
-
-def wait_for_backup_failure(node, backup_id):
-    status, error = get_status_and_error(node, backup_id)
+    status = node.query(
+        f"SELECT status FROM system.backups WHERE id == '{backup_id}'"
+    ).rstrip("\n")
     # It is possible that the second backup was picked up first, and then the async backup
-    if status == "CREATING_BACKUP":
+    if status == "BACKUP_FAILED":
+        error = node.query(
+            f"SELECT error FROM system.backups WHERE id == '{backup_id}'"
+        ).rstrip("\n")
+        assert any([expected_error in error for expected_error in expected_errors])
+        return
+    elif status == "CREATING_BACKUP":
         assert_eq_with_retry(
             node,
             f"SELECT status FROM system.backups WHERE id = '{backup_id}'",
@@ -170,17 +134,31 @@ def wait_for_backup_failure(node, backup_id):
             sleep_time=2,
             retry_count=50,
         )
-        status, error = get_status_and_error(node, backup_id)
-    if status == "BACKUP_FAILED":
-        check_backup_error(error)
+        error = node.query(
+            f"SELECT error FROM system.backups WHERE id == '{backup_id}'"
+        ).rstrip("\n")
+        assert re.search(f"Backup {backup_name} already exists", error)
+        return
     else:
         assert False, "Concurrent backups both passed, when one is expected to fail"
 
 
-def wait_for_restore_failure(node, restore_id):
-    status, error = get_status_and_error(node, restore_id)
+def wait_for_fail_restore(node, restore_id):
+    expected_errors = [
+        "Concurrent restores not supported",
+        "Cannot restore the table default.tbl because it already contains some data",
+    ]
+    status = node.query(
+        f"SELECT status FROM system.backups WHERE id == '{restore_id}'"
+    ).rstrip("\n")
     # It is possible that the second backup was picked up first, and then the async backup
-    if status == "RESTORING":
+    if status == "RESTORE_FAILED":
+        error = node.query(
+            f"SELECT error FROM system.backups WHERE id == '{restore_id}'"
+        ).rstrip("\n")
+        assert any([expected_error in error for expected_error in expected_errors])
+        return
+    elif status == "RESTORING":
         assert_eq_with_retry(
             node,
             f"SELECT status FROM system.backups WHERE id = '{restore_id}'",
@@ -188,9 +166,14 @@ def wait_for_restore_failure(node, restore_id):
             sleep_time=2,
             retry_count=50,
         )
-        status, error = get_status_and_error(node, restore_id)
-    if status == "RESTORE_FAILED":
-        check_restore_error(error)
+        error = node.query(
+            f"SELECT error FROM system.backups WHERE id == '{restore_id}'"
+        ).rstrip("\n")
+        assert re.search(
+            "Cannot restore the table default.tbl because it already contains some data",
+            error,
+        )
+        return
     else:
         assert False, "Concurrent restores both passed, when one is expected to fail"
 
@@ -205,28 +188,39 @@ def test_concurrent_backups_on_same_node():
 
     backup_name = new_backup_name()
 
-    # Backup #1.
-    id, status = (
+    id = (
         nodes[0]
         .query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC")
-        .rstrip("\n")
-        .split("\t")
+        .split("\t")[0]
     )
 
+    status = (
+        nodes[0]
+        .query(f"SELECT status FROM system.backups WHERE id == '{id}'")
+        .rstrip("\n")
+    )
     assert status in ["CREATING_BACKUP", "BACKUP_CREATED"]
 
-    # Backup #2.
-    _, error = nodes[0].query_and_get_answer_with_error(
+    result, error = nodes[0].query_and_get_answer_with_error(
         f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}"
     )
 
-    if error:
-        # Backup #2 failed, backup #1 should be successful.
-        check_backup_error(error)
-        wait_for_backup(nodes[0], id)
-    else:
-        # Backup #2 was successful, backup #1 should fail.
-        wait_for_backup_failure(nodes[0], id)
+    expected_errors = [
+        "Concurrent backups not supported",
+        f"Backup {backup_name} already exists",
+    ]
+    if not error:
+        wait_for_fail_backup(nodes[0], id, backup_name)
+
+    assert any([expected_error in error for expected_error in expected_errors])
+
+    assert_eq_with_retry(
+        nodes[0],
+        f"SELECT status FROM system.backups WHERE id = '{id}'",
+        "BACKUP_CREATED",
+        sleep_time=2,
+        retry_count=50,
+    )
 
     # This restore part is added to confirm creating an internal backup & restore work
     # even when a concurrent backup is stopped
@@ -244,38 +238,40 @@ def test_concurrent_backups_on_different_nodes():
 
     backup_name = new_backup_name()
 
-    # Backup #1.
-    id, status = (
-        nodes[0]
+    id = (
+        nodes[1]
         .query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC")
-        .rstrip("\n")
-        .split("\t")
+        .split("\t")[0]
     )
 
+    status = (
+        nodes[1]
+        .query(f"SELECT status FROM system.backups WHERE id == '{id}'")
+        .rstrip("\n")
+    )
     assert status in ["CREATING_BACKUP", "BACKUP_CREATED"]
 
-    # Backup #2.
-    _, error = nodes[1].query_and_get_answer_with_error(
+    result, error = nodes[0].query_and_get_answer_with_error(
         f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}"
     )
 
-    if error:
-        # Backup #2 failed, backup #1 should be successful.
-        check_backup_error(error)
-        wait_for_backup(nodes[0], id)
-    else:
-        # Backup #2 was successful, backup #1 should fail.
-        wait_for_backup_failure(nodes[0], id)
+    expected_errors = [
+        "Concurrent backups not supported",
+        f"Backup {backup_name} already exists",
+    ]
 
-    # This restore part is added to confirm creating an internal backup & restore work
-    # even when a concurrent backup is stopped
-    nodes[0].query(
-        f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC",
-        settings={
-            "distributed_ddl_task_timeout": 360,
-        },
+    if not error:
+        wait_for_fail_backup(nodes[1], id, backup_name)
+
+    assert any([expected_error in error for expected_error in expected_errors])
+
+    assert_eq_with_retry(
+        nodes[1],
+        f"SELECT status FROM system.backups WHERE id = '{id}'",
+        "BACKUP_CREATED",
+        sleep_time=2,
+        retry_count=50,
     )
-    nodes[0].query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
 
 
 def test_concurrent_restores_on_same_node():
@@ -292,28 +288,40 @@ def test_concurrent_restores_on_same_node():
         },
     )
 
-    # Restore #1.
-    restore_id, status = (
+    restore_id = (
         nodes[0]
         .query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} ASYNC")
-        .rstrip("\n")
-        .split("\t")
+        .split("\t")[0]
     )
 
+    status = (
+        nodes[0]
+        .query(f"SELECT status FROM system.backups WHERE id == '{restore_id}'")
+        .rstrip("\n")
+    )
     assert status in ["RESTORING", "RESTORED"]
 
-    # Restore #2.
-    _, error = nodes[0].query_and_get_answer_with_error(
+    result, error = nodes[0].query_and_get_answer_with_error(
         f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}"
     )
 
-    if error:
-        # Restore #2 failed, restore #1 should be successful.
-        check_restore_error(error)
-        wait_for_restore(nodes[0], restore_id)
-    else:
-        # Restore #2 was successful, restore #1 should fail.
-        wait_for_restore_failure(nodes[0], restore_id)
+    expected_errors = [
+        "Concurrent restores not supported",
+        "Cannot restore the table default.tbl because it already contains some data",
+    ]
+
+    if not error:
+        wait_for_fail_restore(nodes[0], restore_id)
+
+    assert any([expected_error in error for expected_error in expected_errors])
+
+    assert_eq_with_retry(
+        nodes[0],
+        f"SELECT status FROM system.backups WHERE id == '{restore_id}'",
+        "RESTORED",
+        sleep_time=2,
+        retry_count=50,
+    )
 
 
 def test_concurrent_restores_on_different_node():
@@ -330,25 +338,37 @@ def test_concurrent_restores_on_different_node():
         },
     )
 
-    # Restore #1.
-    restore_id, status = (
+    restore_id = (
         nodes[0]
         .query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} ASYNC")
-        .rstrip("\n")
-        .split("\t")
+        .split("\t")[0]
     )
 
+    status = (
+        nodes[0]
+        .query(f"SELECT status FROM system.backups WHERE id == '{restore_id}'")
+        .rstrip("\n")
+    )
     assert status in ["RESTORING", "RESTORED"]
 
-    # Restore #2.
-    _, error = nodes[1].query_and_get_answer_with_error(
+    result, error = nodes[1].query_and_get_answer_with_error(
         f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}"
     )
 
-    if error:
-        # Restore #2 failed, restore #1 should be successful.
-        check_restore_error(error)
-        wait_for_restore(nodes[0], restore_id)
-    else:
-        # Restore #2 was successful, restore #1 should fail.
-        wait_for_restore_failure(nodes[0], restore_id)
+    expected_errors = [
+        "Concurrent restores not supported",
+        "Cannot restore the table default.tbl because it already contains some data",
+    ]
+
+    if not error:
+        wait_for_fail_restore(nodes[0], restore_id)
+
+    assert any([expected_error in error for expected_error in expected_errors])
+
+    assert_eq_with_retry(
+        nodes[0],
+        f"SELECT status FROM system.backups WHERE id == '{restore_id}'",
+        "RESTORED",
+        sleep_time=2,
+        retry_count=50,
+    )

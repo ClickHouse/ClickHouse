@@ -89,8 +89,6 @@ void registerAggregateFunctionAnalysisOfVariance(AggregateFunctionFactory &);
 void registerAggregateFunctionFlameGraph(AggregateFunctionFactory &);
 void registerAggregateFunctionKolmogorovSmirnovTest(AggregateFunctionFactory & factory);
 void registerAggregateFunctionLargestTriangleThreeBuckets(AggregateFunctionFactory & factory);
-void registerAggregateFunctionDistinctDynamicTypes(AggregateFunctionFactory & factory);
-void registerAggregateFunctionDistinctJSONPathsAndTypes(AggregateFunctionFactory & factory);
 
 class AggregateFunctionCombinatorFactory;
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
@@ -193,8 +191,6 @@ void registerAggregateFunctions()
         registerAggregateFunctionFlameGraph(factory);
         registerAggregateFunctionKolmogorovSmirnovTest(factory);
         registerAggregateFunctionLargestTriangleThreeBuckets(factory);
-        registerAggregateFunctionDistinctDynamicTypes(factory);
-        registerAggregateFunctionDistinctJSONPathsAndTypes(factory);
 
         registerWindowFunctions(factory);
     }

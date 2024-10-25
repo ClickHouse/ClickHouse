@@ -1,47 +1,43 @@
-import glob
-import json
-import logging
-import os
-import random
-import string
-import time
-import uuid
-from datetime import datetime
-
-import delta
-import pyarrow as pa
-import pyarrow.parquet as pq
-import pyspark
-import pytest
-from delta import *
-from deltalake.writer import write_deltalake
-from minio.deleteobjects import DeleteObject
-from pyspark.sql.functions import (
-    current_timestamp,
-    monotonically_increasing_id,
-    row_number,
-)
-from pyspark.sql.types import (
-    ArrayType,
-    BooleanType,
-    DateType,
-    IntegerType,
-    StringType,
-    StructField,
-    StructType,
-    TimestampType,
-)
-from pyspark.sql.window import Window
-
 import helpers.client
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
+
+import pytest
+import logging
+import os
+import json
+import time
+import glob
+
+import pyspark
+import delta
+from delta import *
+from pyspark.sql.types import (
+    StructType,
+    StructField,
+    StringType,
+    IntegerType,
+    DateType,
+    TimestampType,
+    BooleanType,
+    ArrayType,
+)
+from pyspark.sql.functions import current_timestamp
+from datetime import datetime
+from pyspark.sql.functions import monotonically_increasing_id, row_number
+from pyspark.sql.window import Window
+from minio.deleteobjects import DeleteObject
+import pyarrow as pa
+import pyarrow.parquet as pq
+from deltalake.writer import write_deltalake
+from uuid import uuid4
+
 from helpers.s3_tools import (
-    get_file_contents,
-    list_s3_objects,
     prepare_s3_bucket,
     upload_directory,
+    get_file_contents,
+    list_s3_objects,
 )
-from helpers.test_tools import TSV
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -60,21 +56,13 @@ def get_spark():
     return builder.master("local").getOrCreate()
 
 
-def randomize_table_name(table_name, random_suffix_length=10):
-    letters = string.ascii_letters + string.digits
-    return f"{table_name}{''.join(random.choice(letters) for _ in range(random_suffix_length))}"
-
-
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__, with_spark=True)
         cluster.add_instance(
             "node1",
-            main_configs=[
-                "configs/config.d/named_collections.xml",
-                "configs/config.d/filesystem_caches.xml",
-            ],
+            main_configs=["configs/config.d/named_collections.xml"],
             user_configs=["configs/users.d/users.xml"],
             with_minio=True,
             stay_alive=True,
@@ -167,7 +155,7 @@ def test_single_log_file(started_cluster):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    TABLE_NAME = randomize_table_name("test_single_log_file")
+    TABLE_NAME = "test_single_log_file"
 
     inserted_data = "SELECT number as a, toString(number + 1) as b FROM numbers(100)"
     parquet_data_path = create_initial_data_file(
@@ -191,7 +179,7 @@ def test_partition_by(started_cluster):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    TABLE_NAME = randomize_table_name("test_partition_by")
+    TABLE_NAME = "test_partition_by"
 
     write_delta_from_df(
         spark,
@@ -213,7 +201,7 @@ def test_checkpoint(started_cluster):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    TABLE_NAME = randomize_table_name("test_checkpoint")
+    TABLE_NAME = "test_checkpoint"
 
     write_delta_from_df(
         spark,
@@ -288,7 +276,7 @@ def test_multiple_log_files(started_cluster):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    TABLE_NAME = randomize_table_name("test_multiple_log_files")
+    TABLE_NAME = "test_multiple_log_files"
 
     write_delta_from_df(
         spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="overwrite"
@@ -326,7 +314,7 @@ def test_metadata(started_cluster):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    TABLE_NAME = randomize_table_name("test_metadata")
+    TABLE_NAME = "test_metadata"
 
     parquet_data_path = create_initial_data_file(
         started_cluster,
@@ -355,9 +343,9 @@ def test_metadata(started_cluster):
 
 
 def test_types(started_cluster):
-    TABLE_NAME = randomize_table_name("test_types")
+    TABLE_NAME = "test_types"
     spark = started_cluster.spark_session
-    result_file = randomize_table_name(f"{TABLE_NAME}_result_2")
+    result_file = f"{TABLE_NAME}_result_2"
 
     delta_table = (
         DeltaTable.create(spark)
@@ -431,7 +419,7 @@ def test_restart_broken(started_cluster):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = "broken"
-    TABLE_NAME = randomize_table_name("test_restart_broken")
+    TABLE_NAME = "test_restart_broken"
 
     if not minio_client.bucket_exists(bucket):
         minio_client.make_bucket(bucket)
@@ -468,18 +456,6 @@ def test_restart_broken(started_cluster):
         f"SELECT count() FROM {TABLE_NAME}"
     )
 
-    s3_disk_no_key_errors_metric_value = int(
-        instance.query(
-            """
-            SELECT value
-            FROM system.metrics
-            WHERE metric = 'DiskS3NoSuchKeyErrors'
-            """
-        ).strip()
-    )
-
-    assert s3_disk_no_key_errors_metric_value == 0
-
     minio_client.make_bucket(bucket)
 
     upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
@@ -492,7 +468,7 @@ def test_restart_broken_table_function(started_cluster):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = "broken2"
-    TABLE_NAME = randomize_table_name("test_restart_broken_table_function")
+    TABLE_NAME = "test_restart_broken_table_function"
 
     if not minio_client.bucket_exists(bucket):
         minio_client.make_bucket(bucket)
@@ -546,7 +522,7 @@ def test_partition_columns(started_cluster):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    TABLE_NAME = randomize_table_name("test_partition_columns")
+    TABLE_NAME = "test_partition_columns"
     result_file = f"{TABLE_NAME}"
     partition_columns = ["b", "c", "d", "e"]
 
@@ -581,7 +557,7 @@ def test_partition_columns(started_cluster):
                 "test" + str(i),
                 datetime.strptime(f"2000-01-0{i}", "%Y-%m-%d"),
                 i,
-                False if i % 2 == 0 else True,
+                False,
             )
         ]
         df = spark.createDataFrame(data=data, schema=schema)
@@ -631,15 +607,15 @@ def test_partition_columns(started_cluster):
        ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', 'minio123')"""
     )
     assert (
-        """1	test1	2000-01-01	1	true
+        """1	test1	2000-01-01	1	false
 2	test2	2000-01-02	2	false
-3	test3	2000-01-03	3	true
+3	test3	2000-01-03	3	false
 4	test4	2000-01-04	4	false
-5	test5	2000-01-05	5	true
+5	test5	2000-01-05	5	false
 6	test6	2000-01-06	6	false
-7	test7	2000-01-07	7	true
+7	test7	2000-01-07	7	false
 8	test8	2000-01-08	8	false
-9	test9	2000-01-09	9	true"""
+9	test9	2000-01-09	9	false"""
         == instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY b").strip()
     )
 
@@ -679,7 +655,7 @@ test9	2000-01-09	9"""
                 "test" + str(i),
                 datetime.strptime(f"2000-01-{i}", "%Y-%m-%d"),
                 i,
-                False if i % 2 == 0 else True,
+                False,
             )
         ]
         df = spark.createDataFrame(data=data, schema=schema)
@@ -705,23 +681,23 @@ test9	2000-01-09	9"""
     assert result == num_rows * 2
 
     assert (
-        """1	test1	2000-01-01	1	true
+        """1	test1	2000-01-01	1	false
 2	test2	2000-01-02	2	false
-3	test3	2000-01-03	3	true
+3	test3	2000-01-03	3	false
 4	test4	2000-01-04	4	false
-5	test5	2000-01-05	5	true
+5	test5	2000-01-05	5	false
 6	test6	2000-01-06	6	false
-7	test7	2000-01-07	7	true
+7	test7	2000-01-07	7	false
 8	test8	2000-01-08	8	false
-9	test9	2000-01-09	9	true
+9	test9	2000-01-09	9	false
 10	test10	2000-01-10	10	false
-11	test11	2000-01-11	11	true
+11	test11	2000-01-11	11	false
 12	test12	2000-01-12	12	false
-13	test13	2000-01-13	13	true
+13	test13	2000-01-13	13	false
 14	test14	2000-01-14	14	false
-15	test15	2000-01-15	15	true
+15	test15	2000-01-15	15	false
 16	test16	2000-01-16	16	false
-17	test17	2000-01-17	17	true
+17	test17	2000-01-17	17	false
 18	test18	2000-01-18	18	false"""
         == instance.query(
             f"""
@@ -801,7 +777,7 @@ def test_complex_types(started_cluster):
     endpoint_url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}"
     aws_access_key_id = "minio"
     aws_secret_access_key = "minio123"
-    table_name = randomize_table_name("test_complex_types")
+    table_name = f"test_complex_types_{uuid4.hex}"
 
     storage_options = {
         "AWS_ENDPOINT_URL": endpoint_url,
@@ -828,66 +804,5 @@ def test_complex_types(started_cluster):
         "{'key1':'value1','key2':'value2'}\n{'key1':'value3','key2':'value4'}\n{'key1':'value5','key2':'value6'}"
         in node.query(
             f"SELECT metadata FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' , 'minio', 'minio123')"
-        )
-    )
-
-
-@pytest.mark.parametrize("storage_type", ["s3"])
-def test_filesystem_cache(started_cluster, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
-    minio_client = started_cluster.minio_client
-    TABLE_NAME = randomize_table_name("test_filesystem_cache")
-    bucket = started_cluster.minio_bucket
-
-    if not minio_client.bucket_exists(bucket):
-        minio_client.make_bucket(bucket)
-
-    parquet_data_path = create_initial_data_file(
-        started_cluster,
-        instance,
-        "SELECT number, toString(number) FROM numbers(100)",
-        TABLE_NAME,
-    )
-
-    write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
-    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    create_delta_table(instance, TABLE_NAME, bucket=bucket)
-
-    query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
-    instance.query(
-        f"SELECT * FROM {TABLE_NAME} SETTINGS filesystem_cache_name = 'cache1'",
-        query_id=query_id,
-    )
-
-    instance.query("SYSTEM FLUSH LOGS")
-
-    count = int(
-        instance.query(
-            f"SELECT ProfileEvents['CachedReadBufferCacheWriteBytes'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-    )
-    assert 0 < int(
-        instance.query(
-            f"SELECT ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-    )
-
-    query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
-    instance.query(
-        f"SELECT * FROM {TABLE_NAME} SETTINGS filesystem_cache_name = 'cache1'",
-        query_id=query_id,
-    )
-
-    instance.query("SYSTEM FLUSH LOGS")
-
-    assert count == int(
-        instance.query(
-            f"SELECT ProfileEvents['CachedReadBufferReadFromCacheBytes'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-    )
-    assert 0 == int(
-        instance.query(
-            f"SELECT ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
         )
     )

@@ -473,20 +473,28 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
         {
             return std::make_shared<AggregateFunctionIfNullUnary<true, true>>(nested_function->getName(), nested_func, arguments, params);
         }
-
-        if (need_to_serialize_flag)
-            return std::make_shared<AggregateFunctionIfNullUnary<false, true>>(nested_function->getName(), nested_func, arguments, params);
-        return std::make_shared<AggregateFunctionIfNullUnary<false, false>>(nested_function->getName(), nested_func, arguments, params);
+        else
+        {
+            if (need_to_serialize_flag)
+                return std::make_shared<AggregateFunctionIfNullUnary<false, true>>(nested_function->getName(), nested_func, arguments, params);
+            else
+                return std::make_shared<AggregateFunctionIfNullUnary<false, false>>(nested_function->getName(), nested_func, arguments, params);
+        }
     }
-
-    if (return_type_is_nullable)
+    else
     {
-        return std::make_shared<AggregateFunctionIfNullVariadic<true, true>>(nested_function, arguments, params);
+        if (return_type_is_nullable)
+        {
+            return std::make_shared<AggregateFunctionIfNullVariadic<true, true>>(nested_function, arguments, params);
+        }
+        else
+        {
+            if (need_to_serialize_flag)
+                return std::make_shared<AggregateFunctionIfNullVariadic<false, true>>(nested_function, arguments, params);
+            else
+                return std::make_shared<AggregateFunctionIfNullVariadic<false, false>>(nested_function, arguments, params);
+        }
     }
-
-    if (need_to_serialize_flag)
-        return std::make_shared<AggregateFunctionIfNullVariadic<false, true>>(nested_function, arguments, params);
-    return std::make_shared<AggregateFunctionIfNullVariadic<false, false>>(nested_function, arguments, params);
 }
 
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory & factory)

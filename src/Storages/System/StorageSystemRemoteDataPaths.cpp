@@ -20,10 +20,6 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool traverse_shadow_remote_data_paths;
-}
 
 namespace ErrorCodes
 {
@@ -132,7 +128,7 @@ public:
         const Block & header,
         UInt64 max_block_size_)
         : SourceStepWithFilter(
-            header,
+            {.header = header},
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -199,7 +195,7 @@ void StorageSystemRemoteDataPaths::read(
 
 void ReadFromSystemRemoteDataPaths::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & /*settings*/)
 {
-    const auto & header = getOutputHeader();
+    const auto & header = getOutputStream().header;
     auto source = std::make_shared<SystemRemoteDataPathsSource>(std::move(disks), header, max_block_size, context);
     source->setStorageLimits(storage_limits);
     processors.emplace_back(source);
@@ -222,7 +218,7 @@ bool SystemRemoteDataPathsSource::nextDisk()
         /// cases when children of a directory get deleted while traversal is running.
         current.names.push_back({"store", nullptr});
         current.names.push_back({"data", nullptr});
-        if (context->getSettingsRef()[Setting::traverse_shadow_remote_data_paths])
+        if (context->getSettingsRef().traverse_shadow_remote_data_paths)
             current.names.push_back({"shadow", skipPredicateForShadowDir});
 
         /// Start and move to the first file
@@ -403,7 +399,7 @@ Chunk SystemRemoteDataPathsSource::generate()
 
             if (cache)
             {
-                auto cache_paths = cache->tryGetCachePaths(FileCacheKey::fromPath(object.remote_path));
+                auto cache_paths = cache->tryGetCachePaths(cache->createKeyForPath(object.remote_path));
                 col_cache_paths->insert(Array(cache_paths.begin(), cache_paths.end()));
             }
             else

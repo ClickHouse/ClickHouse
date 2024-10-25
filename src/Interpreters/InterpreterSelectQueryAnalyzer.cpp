@@ -213,7 +213,7 @@ Block InterpreterSelectQueryAnalyzer::getSampleBlock(const QueryTreeNodePtr & qu
 Block InterpreterSelectQueryAnalyzer::getSampleBlock()
 {
     planner.buildQueryPlanIfNeeded();
-    return planner.getQueryPlan().getCurrentHeader();
+    return planner.getQueryPlan().getCurrentDataStream().header;
 }
 
 BlockIO InterpreterSelectQueryAnalyzer::execute()

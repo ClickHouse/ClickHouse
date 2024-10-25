@@ -11,6 +11,7 @@
 #include <Common/Throttler.h>
 #include <Interpreters/Cache/FileCache.h>
 
+#include <Common/Scheduler/ResourceGuard.h>
 #include <IO/WriteHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
@@ -95,7 +96,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     std::optional<std::map<String, String>> object_metadata_,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_,
     const WriteSettings & write_settings_)
-    : WriteBufferFromFileBase(std::min(buf_size_, static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE)), nullptr, 0)
+    : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , bucket(bucket_)
     , key(key_)
     , request_settings(request_settings_)
@@ -276,10 +277,12 @@ WriteBufferFromS3::~WriteBufferFromS3()
             "The file might not be written to S3. "
             "{}.",
             getVerboseLogDetails());
+        return;
     }
-    else if (!finalized)
+
+    /// That destructor could be call with finalized=false in case of exceptions
+    if (!finalized && !canceled)
     {
-        /// That destructor could be call with finalized=false in case of exceptions
         LOG_INFO(
             log,
             "WriteBufferFromS3 is not finalized in destructor. "
@@ -288,10 +291,9 @@ WriteBufferFromS3::~WriteBufferFromS3()
             getVerboseLogDetails());
     }
 
-    /// Wait for all tasks, because they contain reference to this write buffer.
     task_tracker->safeWaitAll();
 
-    if (!canceled && !multipart_upload_id.empty() && !multipart_upload_finished)
+    if (!multipart_upload_id.empty() && !multipart_upload_finished)
     {
         LOG_WARNING(log, "WriteBufferFromS3 was neither finished nor aborted, try to abort upload in destructor. {}.", getVerboseLogDetails());
         tryToAbortMultipartUpload();
@@ -351,21 +353,21 @@ void WriteBufferFromS3::allocateBuffer()
     buffer_allocation_policy->nextBuffer();
     chassert(0 == hidden_size);
 
-    /// First buffer was already allocated in BufferWithOwnMemory constructor with provided in constructor buffer size.
-    /// It will be reallocated in subsequent nextImpl calls up to the desired buffer size from buffer_allocation_policy.
     if (buffer_allocation_policy->getBufferNumber() == 1)
     {
-        /// Reduce memory size if initial size was larger then desired size from buffer_allocation_policy.
-        /// Usually it doesn't happen but we have it in unit tests.
-        if (memory.size() > buffer_allocation_policy->getBufferSize())
-        {
-            memory.resize(buffer_allocation_policy->getBufferSize());
-            WriteBuffer::set(memory.data(), memory.size());
-        }
+        allocateFirstBuffer();
         return;
     }
 
     memory = Memory(buffer_allocation_policy->getBufferSize());
+    WriteBuffer::set(memory.data(), memory.size());
+}
+
+void WriteBufferFromS3::allocateFirstBuffer()
+{
+    const auto max_first_buffer = buffer_allocation_policy->getBufferSize();
+    const auto size = std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), max_first_buffer);
+    memory = Memory(size);
     WriteBuffer::set(memory.data(), memory.size());
 }
 
@@ -557,11 +559,12 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
 
         auto & request = std::get<0>(*worker_data);
 
-        CurrentThread::IOScope io_scope(write_settings.io_scheduling);
-
+        ResourceCost cost = request.GetContentLength();
+        ResourceGuard rlock(write_settings.resource_link, cost);
         Stopwatch watch;
         auto outcome = client_ptr->UploadPart(request);
         watch.stop();
+        rlock.unlock(); // Avoid acquiring other locks under resource lock
 
         ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
@@ -575,6 +578,7 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
         if (!outcome.IsSuccess())
         {
             ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
+            write_settings.resource_link.accumulate(cost); // We assume no resource was used in case of failure
             throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
         }
 
@@ -712,11 +716,12 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
             if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3PutObject);
 
-            CurrentThread::IOScope io_scope(write_settings.io_scheduling);
-
+            ResourceCost cost = request.GetContentLength();
+            ResourceGuard rlock(write_settings.resource_link, cost);
             Stopwatch watch;
             auto outcome = client_ptr->PutObject(request);
             watch.stop();
+            rlock.unlock();
 
             ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
             if (blob_log)
@@ -730,6 +735,7 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
             }
 
             ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
+            write_settings.resource_link.accumulate(cost); // We assume no resource was used in case of failure
 
             if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
             {

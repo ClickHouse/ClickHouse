@@ -39,10 +39,12 @@ public:
 
         if (arg.type->lowCardinality())
             return arg.column;
-
-        auto column = res_type->createColumn();
-        typeid_cast<ColumnLowCardinality &>(*column).insertRangeFromFullColumn(*arg.column, 0, arg.column->size());
-        return column;
+        else
+        {
+            auto column = res_type->createColumn();
+            typeid_cast<ColumnLowCardinality &>(*column).insertRangeFromFullColumn(*arg.column, 0, arg.column->size());
+            return column;
+        }
     }
 };
 

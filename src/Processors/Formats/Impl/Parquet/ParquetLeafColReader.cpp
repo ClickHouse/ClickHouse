@@ -201,8 +201,9 @@ std::unique_ptr<ParquetDataValuesReader> createPlainReader(
     if (std::is_same_v<TColumn, ColumnDecimal<DateTime64>> && col_des.physical_type() == parquet::Type::INT96)
         return std::make_unique<ParquetPlainValuesReader<TColumn, ParquetReaderTypes::TimestampInt96>>(
             col_des.max_definition_level(), std::move(def_level_reader), std::move(buffer));
-    return std::make_unique<ParquetPlainValuesReader<TColumn>>(
-        col_des.max_definition_level(), std::move(def_level_reader), std::move(buffer));
+    else
+        return std::make_unique<ParquetPlainValuesReader<TColumn>>(
+            col_des.max_definition_level(), std::move(def_level_reader), std::move(buffer));
 }
 
 

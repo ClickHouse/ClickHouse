@@ -11,7 +11,6 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/JoinNode.h>
 #include <Analyzer/Utils.h>
 
 namespace DB
@@ -26,15 +25,8 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<ComparisonTupleEliminationPassVisitor>;
     using Base::Base;
 
-    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
+    static bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child)
     {
-        if (parent->getNodeType() == QueryTreeNodeType::JOIN)
-        {
-            /// In JOIN ON section comparison of tuples works a bit differently.
-            /// For example we can join on tuple(NULL) = tuple(NULL), join algorithms consider only NULLs on the top level.
-            if (parent->as<const JoinNode &>().getJoinExpression().get() == child.get())
-                return false;
-        }
         return child->getNodeType() != QueryTreeNodeType::TABLE_FUNCTION;
     }
 
@@ -137,7 +129,7 @@ private:
         if (constant_node_value.getType() != Field::Types::Which::Tuple)
             return {};
 
-        const auto & constant_tuple = constant_node_value.safeGet<const Tuple &>();
+        const auto & constant_tuple = constant_node_value.get<const Tuple &>();
 
         const auto & function_arguments_nodes = function_node_typed.getArguments().getNodes();
         size_t function_arguments_nodes_size = function_arguments_nodes.size();

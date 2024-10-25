@@ -906,13 +906,13 @@ void RangeHashedDictionary<dictionary_key_type>::setAttributeValue(Attribute & a
 
         if constexpr (std::is_same_v<AttributeType, String>)
         {
-            const auto & string = value.safeGet<String>();
+            const auto & string = value.get<String>();
             StringRef string_ref = copyStringInArena(string_arena, string);
             value_to_insert = string_ref;
         }
         else
         {
-            value_to_insert = static_cast<ValueType>(value.safeGet<ValueType>());
+            value_to_insert = static_cast<ValueType>(value.get<ValueType>());
         }
 
         container.back() = value_to_insert;

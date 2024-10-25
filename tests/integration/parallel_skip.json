@@ -1,7 +1,6 @@
 [
   "test_dns_cache/test.py::test_dns_cache_update",
   "test_dns_cache/test.py::test_ip_change_drop_dns_cache",
-  "test_dns_cache/test.py::test_dns_resolver_filter",
   "test_dns_cache/test.py::test_ip_change_update_dns_cache",
   "test_dns_cache/test.py::test_user_access_ip_change[node0]",
   "test_dns_cache/test.py::test_user_access_ip_change[node1]",
@@ -44,6 +43,7 @@
   "test_replicated_database/test.py::test_startup_without_zk",
   "test_replicated_database/test.py::test_sync_replica",
   "test_replicated_fetches_timeouts/test.py::test_no_stall",
+  "test_storage_kafka/test.py::test_kafka_no_holes_when_write_suffix_failed",
   "test_storage_s3/test.py::test_url_reconnect_in_the_middle",
   "test_system_metrics/test.py::test_readonly_metrics",
   "test_system_replicated_fetches/test.py::test_system_replicated_fetches",
@@ -73,7 +73,7 @@
   "test_keeper_map/test.py::test_keeper_map_without_zk",
 
   "test_replicated_merge_tree_wait_on_shutdown/test.py::test_shutdown_and_wait",
-
+  
   "test_http_failover/test.py::test_url_destination_host_with_multiple_addrs",
   "test_http_failover/test.py::test_url_invalid_hostname",
   "test_http_failover/test.py::test_url_ip_change",
@@ -171,5 +171,4 @@
   "test_storage_kerberized_kafka/test.py::test_kafka_json_as_string_request_new_ticket_after_expiration",
   "test_storage_kerberized_kafka/test.py::test_kafka_json_as_string_no_kdc",
   "test_storage_kerberized_kafka/test.py::test_kafka_config_from_sql_named_collection"
-
 ]

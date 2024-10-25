@@ -65,7 +65,7 @@ struct StatisticsNumeric
         memcpy(s.min_value.data(), &min, sizeof(T));
         memcpy(s.max_value.data(), &max, sizeof(T));
 
-        if constexpr (std::is_signed_v<T>)
+        if constexpr (std::is_signed<T>::value)
         {
             s.__set_min(s.min_value);
             s.__set_max(s.max_value);
@@ -139,8 +139,8 @@ struct StatisticsFixedStringCopy
     {
         if (s.empty)
             return;
-        addMin(s.min.data());
-        addMax(s.max.data());
+        addMin(&s.min[0]);
+        addMax(&s.max[0]);
         empty = false;
     }
 
