@@ -50,7 +50,7 @@ std::string getMetadataKeyPrefix(ObjectStoragePtr object_storage)
         : metadata_key_prefix;
 }
 
-void loadDirectory(InMemoryDirectoryPathMap::Map & map, ObjectStoragePtr object_storage)
+void loadDirectoryTree(InMemoryDirectoryPathMap::Map & map, ObjectStoragePtr object_storage)
 {
     const auto common_key_prefix = object_storage->getCommonKeyPrefix();
     LOG_DEBUG(getLogger("MetadataStorageFromPlainObjectStorage"), "Loading directory structure");
@@ -162,7 +162,7 @@ std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & 
 
     runner.waitForAllToFinishAndRethrowFirstError();
 
-    loadDirectory(map, object_storage);
+    loadDirectoryTree(map, object_storage);
     {
         std::lock_guard lock(result->mutex);
         result->map = std::move(map);
@@ -172,41 +172,6 @@ std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & 
         CurrentMetrics::add(metric, result->map.size());
     }
     return result;
-}
-
-void getDirectChildrenOnDiskImpl(
-    const std::filesystem::path & local_path,
-    const InMemoryDirectoryPathMap & path_map,
-    std::unordered_set<std::string> & result)
-{
-    {
-        /// Directories are retrieved from the in-memory path map.
-        SharedLockGuard lock(path_map.mutex);
-        const auto & local_path_prefixes = path_map.map;
-        const auto end_it = local_path_prefixes.end();
-        for (auto it = local_path_prefixes.lower_bound(local_path); it != end_it; ++it)
-        {
-            const auto & [k, _] = std::make_tuple(it->first.string(), it->second);
-            if (!k.starts_with(local_path.string()))
-                break;
-
-            auto slash_num = count(k.begin() + local_path.string().size(), k.end(), '/');
-            /// The local_path_prefixes comparator ensures that the paths with the smallest number of
-            /// hops from the local_path are iterated first. The paths do not end with '/', hence
-            /// break the loop if the number of slashes is greater than 0.
-            if (slash_num != 0)
-                break;
-
-            result.emplace(std::string(k.begin() + local_path.string().size(), k.end()) + "/");
-        }
-
-        /// Files.
-        auto it = path_map.map.find(local_path.parent_path());
-        if (it != path_map.map.end())
-        {
-            result.insert(it->second.filenames.begin(), it->second.filenames.end());
-        }
-    }
 }
 
 }
@@ -265,10 +230,8 @@ bool MetadataStorageFromPlainRewritableObjectStorage::existsDirectory(const std:
 
 std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDirectory(const std::string & path) const
 {
-    std::unordered_set<std::string> children;
-    getDirectChildrenOnDisk(std::filesystem::path(path) / "", children);
-
-    return std::vector<std::string>(std::make_move_iterator(children.begin()), std::make_move_iterator(children.end()));
+    std::unordered_set<std::string> result = getDirectChildrenOnDisk(std::filesystem::path(path) / "");
+    return std::vector<std::string>(std::make_move_iterator(result.begin()), std::make_move_iterator(result.end()));
 }
 
 std::optional<Poco::Timestamp> MetadataStorageFromPlainRewritableObjectStorage::getLastModifiedIfExists(const String & path) const
@@ -283,11 +246,38 @@ std::optional<Poco::Timestamp> MetadataStorageFromPlainRewritableObjectStorage::
     return std::nullopt;
 }
 
-void MetadataStorageFromPlainRewritableObjectStorage::getDirectChildrenOnDisk(
-    const std::string & local_path,
-    std::unordered_set<std::string> & result) const
+std::unordered_set<std::string>
+MetadataStorageFromPlainRewritableObjectStorage::getDirectChildrenOnDisk(const std::filesystem::path & local_path) const
 {
-    getDirectChildrenOnDiskImpl(local_path, *getPathMap(), result);
+    std::unordered_set<std::string> result;
+    SharedLockGuard lock(path_map->mutex);
+    // const auto & map = path_map->map;
+    const auto end_it = path_map->map.end();
+    /// Directories.
+    for (auto it = path_map->map.lower_bound(local_path); it != end_it; ++it)
+    {
+        const auto & [k, _] = std::make_tuple(it->first.string(), it->second);
+        if (!k.starts_with(local_path.string()))
+            break;
+
+        auto slash_num = count(k.begin() + local_path.string().size(), k.end(), '/');
+        /// The directory map comparator ensures that the paths with the smallest number of
+        /// hops from the local_path are iterated first. The paths do not end with '/', hence
+        /// break the loop if the number of slashes to the right from the offset is greater than 0.
+        if (slash_num != 0)
+            break;
+
+        result.emplace(std::string(k.begin() + local_path.string().size(), k.end()) + "/");
+    }
+
+    /// Files.
+    auto it = path_map->map.find(local_path.parent_path());
+    if (it != path_map->map.end())
+    {
+        result.insert(it->second.filenames.begin(), it->second.filenames.end());
+    }
+
+    return result;
 }
 
 bool MetadataStorageFromPlainRewritableObjectStorage::useSeparateLayoutForMetadata() const

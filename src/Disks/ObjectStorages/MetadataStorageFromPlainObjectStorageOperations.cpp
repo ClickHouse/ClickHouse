@@ -304,7 +304,10 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute(std::uniqu
     auto it = path_map.map.find(path.parent_path());
     /// Some paths (e.g., clickhouse_access_check) may not have parent directories.
     if (it == path_map.map.end())
-        LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), "{}", path);
+        LOG_TRACE(
+            getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"),
+            "Parrent dirrectory does not exist, skipping path {}",
+            path);
     else
         written = it->second.filenames.emplace(path.filename()).second;
 }
@@ -347,7 +350,12 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute(s
 
     std::lock_guard lock(path_map.mutex);
     auto it = path_map.map.find(path.parent_path());
-    if (it != path_map.map.end())
+    if (it == path_map.map.end())
+        LOG_TRACE(
+            getLogger("MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation"),
+            "Parent directory does not exist, skipping path {}",
+            path);
+    else
     {
         auto res = it->second.filenames.erase(filename);
         unlinked = res > 0;

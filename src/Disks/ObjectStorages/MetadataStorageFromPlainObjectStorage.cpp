@@ -277,7 +277,6 @@ UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainObjectStorageTrans
         metadata_storage.object_metadata_cache->remove(hash.get128());
     }
 
-    /// No hardlinks, so will always remove file.
     auto result = std::make_shared<UnlinkMetadataFileOperationOutcome>(UnlinkMetadataFileOperationOutcome{0});
     if (!metadata_storage.object_storage->isWriteOnce())
         addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation>(
