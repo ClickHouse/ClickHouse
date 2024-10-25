@@ -91,6 +91,12 @@ void CertificateReloader::tryLoad(const Poco::Util::AbstractConfiguration & conf
 }
 
 
+void CertificateReloader::tryLoadClient(const Poco::Util::AbstractConfiguration & config)
+{
+    tryLoad(config, nullptr, Poco::Net::SSLManager::CFG_CLIENT_PREFIX);
+}
+
+
 void CertificateReloader::tryLoad(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix)
 {
     std::lock_guard lock{data_mutex};
@@ -107,7 +113,12 @@ std::list<CertificateReloader::MultiData>::iterator CertificateReloader::findOrI
     else
     {
         if (!ctx)
-            ctx = Poco::Net::SSLManager::instance().defaultServerContext()->sslContext();
+        {
+            if (prefix == Poco::Net::SSLManager::CFG_CLIENT_PREFIX)
+                ctx = Poco::Net::SSLManager::instance().defaultClientContext()->sslContext();
+            else
+                ctx = Poco::Net::SSLManager::instance().defaultServerContext()->sslContext();
+        }
         data.push_back(MultiData(ctx));
         --it;
         data_index[prefix] = it;
