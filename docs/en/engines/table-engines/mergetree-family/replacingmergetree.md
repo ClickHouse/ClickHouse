@@ -12,6 +12,10 @@ Data deduplication occurs only during a merge. Merging occurs in the background 
 
 Thus, `ReplacingMergeTree` is suitable for clearing out duplicate data in the background in order to save space, but it does not guarantee the absence of duplicates.
 
+:::note
+A detailed guide on ReplacingMergeTree, including best practices and how to optimize performance, is availble [here](/docs/en/guides/replacing-merge-tree).
+:::
+
 ## Creating a Table {#creating-a-table}
 
 ``` sql
