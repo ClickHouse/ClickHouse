@@ -2188,6 +2188,14 @@ def test_alter_settings(started_cluster):
         f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
     )
 
+    assert '"tracked_files_ttl_sec":10000' in node1.query(
+        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    )
+
+    assert '"tracked_files_limit":50' in node1.query(
+        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    )
+
     node1.restart_clickhouse()
 
     assert '"processing_threads_num":5' in node1.query(
@@ -2202,9 +2210,17 @@ def test_alter_settings(started_cluster):
         f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
     )
 
+    assert '"tracked_files_ttl_sec":10000' in node1.query(
+        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    )
+
+    assert '"tracked_files_limit":50' in node1.query(
+        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    )
+
     node1.query(
         f"""
-        ALTER TABLE r.{table_name} RESET SETTING after_processing
+        ALTER TABLE r.{table_name} RESET SETTING after_processing, tracked_file_ttl_sec
     """
     )
 
@@ -2220,5 +2236,25 @@ def test_alter_settings(started_cluster):
         f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
     )
 
+    assert '"tracked_files_ttl_sec":0' in node1.query(
+        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    )
+
     node1.restart_clickhouse()
     assert expected_rows == get_count()
+
+    assert '"processing_threads_num":5' in node1.query(
+        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    )
+
+    assert '"loading_retries":10' in node1.query(
+        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    )
+
+    assert '"after_processing":"keep"' in node1.query(
+        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    )
+
+    assert '"tracked_files_ttl_sec":0' in node1.query(
+        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    )
