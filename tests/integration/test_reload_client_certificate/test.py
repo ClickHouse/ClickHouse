@@ -1,13 +1,9 @@
 import os
-
+import pytest
 import threading
-
 import time
 
-import pytest
-
 from helpers.cluster import ClickHouseCluster
-
 
 TEST_DIR = os.path.dirname(__file__)
 
@@ -32,6 +28,7 @@ node1 = cluster.add_instance(
     ],
     with_zookeeper_secure=True,
 )
+
 node2 = cluster.add_instance(
     "node2",
     main_configs=[
@@ -55,13 +52,11 @@ def started_cluster():
     try:
         cluster.start()
         yield cluster
-
     finally:
         cluster.shutdown()
 
-
 def secure_connection_test(started_cluster):
-    # no asserts, connection works
+    # No asserts, connection works
     node1.query("SELECT count() FROM system.zookeeper WHERE path = '/'")
     node2.query("SELECT count() FROM system.zookeeper WHERE path = '/'")
 
@@ -69,7 +64,7 @@ def secure_connection_test(started_cluster):
     iterations = 10
     threads = []
 
-    # just checking for race conditions
+    # Just checking for race conditions
     for _ in range(threads_number):
         threads.append(
             threading.Thread(
@@ -90,13 +85,11 @@ def secure_connection_test(started_cluster):
     for thread in threads:
         thread.join()
 
-
 def change_config_to_key(name):
     """
     * Generate config with certificate/key name from args.
     * Reload config.
     """
-
     for node in nodes:
         node.exec_in_container(
             [
@@ -119,9 +112,7 @@ def change_config_to_key(name):
         </client>
     </openSSL>
 </clickhouse>
-EOF""".format(
-                    cur_name=name
-                ),
+EOF""".format(cur_name=name),
             ]
         )
 
@@ -129,9 +120,7 @@ EOF""".format(
             ["bash", "-c", f"touch /etc/clickhouse-server/config.d/ssl_conf.xml"],
         )
 
-
-def check_reload_successful(
-    node, cert_name):
+def check_reload_successful(node, cert_name):
     return node.grep_in_log(f"Reloaded certificate (/etc/clickhouse-server/config.d/{cert_name}_client.crt)")
 
 def check_error_handshake(node):
@@ -147,9 +136,7 @@ def clean_logs():
             ]
         )
 
-def check_certificate_switch(
-    first, second
-):
+def check_certificate_switch(first, second):
     # Set first key
     change_config_to_key(first)
 
@@ -180,17 +167,13 @@ def check_certificate_switch(
     else:
         check_connection = secure_connection_test(started_cluster)
         error_handshake = any(check_error_handshake(node) == "0\n" for node in nodes)
-    assert reload_successful and error_handshake
 
+    assert reload_successful and error_handshake
 
 def test_wrong_cn_cert():
     """Checking the certificate reload with an incorrect CN, the expected behavior is Code: 210."""
     check_certificate_switch("first", "second")
 
-
 def test_correct_cn_cert():
     """Replacement with a valid certificate, the expected behavior is to restore the connection with Zookeeper."""
     check_certificate_switch("second", "third")
-
-
-
