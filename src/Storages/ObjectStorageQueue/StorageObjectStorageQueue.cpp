@@ -18,6 +18,7 @@
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -39,6 +40,29 @@ namespace Setting
     extern const SettingsBool use_concurrency_control;
 }
 
+namespace ObjectStorageQueueSetting
+{
+    extern const ObjectStorageQueueSettingsUInt32 cleanup_interval_max_ms;
+    extern const ObjectStorageQueueSettingsUInt32 cleanup_interval_min_ms;
+    extern const ObjectStorageQueueSettingsUInt32 enable_logging_to_queue_log;
+    extern const ObjectStorageQueueSettingsString keeper_path;
+    extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
+    extern const ObjectStorageQueueSettingsUInt64 max_processed_bytes_before_commit;
+    extern const ObjectStorageQueueSettingsUInt64 max_processed_files_before_commit;
+    extern const ObjectStorageQueueSettingsUInt64 max_processed_rows_before_commit;
+    extern const ObjectStorageQueueSettingsUInt64 max_processing_time_sec_before_commit;
+    extern const ObjectStorageQueueSettingsUInt32 polling_min_timeout_ms;
+    extern const ObjectStorageQueueSettingsUInt32 polling_max_timeout_ms;
+    extern const ObjectStorageQueueSettingsUInt32 polling_backoff_ms;
+    extern const ObjectStorageQueueSettingsUInt32 processing_threads_num;
+    extern const ObjectStorageQueueSettingsUInt32 buckets;
+    extern const ObjectStorageQueueSettingsUInt32 tracked_file_ttl_sec;
+    extern const ObjectStorageQueueSettingsUInt32 tracked_files_limit;
+    extern const ObjectStorageQueueSettingsString last_processed_path;
+    extern const ObjectStorageQueueSettingsUInt32 loading_retries;
+    extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -56,10 +80,10 @@ namespace
             zk_path_prefix = "/";
 
         std::string result_zk_path;
-        if (queue_settings.keeper_path.changed)
+        if (queue_settings[ObjectStorageQueueSetting::keeper_path].changed)
         {
             /// We do not add table uuid here on purpose.
-            result_zk_path = fs::path(zk_path_prefix) / queue_settings.keeper_path.value;
+            result_zk_path = fs::path(zk_path_prefix) / queue_settings[ObjectStorageQueueSetting::keeper_path].value;
         }
         else
         {
@@ -73,22 +97,22 @@ namespace
         ObjectStorageQueueSettings & queue_settings,
         bool is_attach)
     {
-        if (!is_attach && !queue_settings.mode.changed)
+        if (!is_attach && !queue_settings[ObjectStorageQueueSetting::mode].changed)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `mode` (Unordered/Ordered) is not specified, but is required.");
         }
         /// In case !is_attach, we leave Ordered mode as default for compatibility.
 
-        if (!queue_settings.processing_threads_num)
+        if (!queue_settings[ObjectStorageQueueSetting::processing_threads_num])
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `processing_threads_num` cannot be set to zero");
         }
 
-        if (queue_settings.cleanup_interval_min_ms > queue_settings.cleanup_interval_max_ms)
+        if (queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] > queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms])
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Setting `cleanup_interval_min_ms` ({}) must be less or equal to `cleanup_interval_max_ms` ({})",
-                            queue_settings.cleanup_interval_min_ms, queue_settings.cleanup_interval_max_ms);
+                            queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms], queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms]);
         }
     }
 
@@ -127,24 +151,26 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     const String & comment,
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_,
-    ASTStorage * /* engine_args */,
+    ASTStorage * engine_args,
     LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_)
+    , type(configuration_->getType())
+    , engine_name(engine_args->engine->name)
     , zk_path(chooseZooKeeperPath(table_id_, context_->getSettingsRef(), *queue_settings_))
-    , enable_logging_to_queue_log(queue_settings_->enable_logging_to_queue_log)
-    , polling_min_timeout_ms(queue_settings_->polling_min_timeout_ms)
-    , polling_max_timeout_ms(queue_settings_->polling_max_timeout_ms)
-    , polling_backoff_ms(queue_settings_->polling_backoff_ms)
+    , enable_logging_to_queue_log((*queue_settings_)[ObjectStorageQueueSetting::enable_logging_to_queue_log])
+    , polling_min_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
+    , polling_max_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_max_timeout_ms])
+    , polling_backoff_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_backoff_ms])
     , commit_settings(CommitSettings{
-        .max_processed_files_before_commit = queue_settings_->max_processed_files_before_commit,
-        .max_processed_rows_before_commit = queue_settings_->max_processed_rows_before_commit,
-        .max_processed_bytes_before_commit = queue_settings_->max_processed_bytes_before_commit,
-        .max_processing_time_sec_before_commit = queue_settings_->max_processing_time_sec_before_commit,
+        .max_processed_files_before_commit = (*queue_settings_)[ObjectStorageQueueSetting::max_processed_files_before_commit],
+        .max_processed_rows_before_commit = (*queue_settings_)[ObjectStorageQueueSetting::max_processed_rows_before_commit],
+        .max_processed_bytes_before_commit = (*queue_settings_)[ObjectStorageQueueSetting::max_processed_bytes_before_commit],
+        .max_processing_time_sec_before_commit = (*queue_settings_)[ObjectStorageQueueSetting::max_processing_time_sec_before_commit],
     })
     , configuration{configuration_}
     , format_settings(format_settings_)
-    , reschedule_processing_interval_ms(queue_settings_->polling_min_timeout_ms)
+    , reschedule_processing_interval_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
     , log(getLogger(fmt::format("Storage{}Queue ({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
     if (configuration->getPath().empty())
@@ -176,6 +202,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.settings_changes = engine_args->settings->ptr();
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
@@ -185,7 +212,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         zk_path, *queue_settings_, storage_metadata.getColumns(), configuration_->format, context_, is_attach, log);
 
     auto queue_metadata = std::make_unique<ObjectStorageQueueMetadata>(
-        zk_path, std::move(table_metadata), queue_settings_->cleanup_interval_min_ms, queue_settings_->cleanup_interval_max_ms);
+        zk_path, std::move(table_metadata), (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_min_ms], (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms]);
 
     files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata));
 
@@ -540,6 +567,33 @@ std::shared_ptr<StorageObjectStorageQueue::FileIterator> StorageObjectStorageQue
         object_storage, configuration, predicate, getVirtualsList(), local_context, nullptr, settings.list_object_keys_size, settings.throw_on_zero_files_match);
 
     return std::make_shared<FileIterator>(files_metadata, std::move(glob_iterator), shutdown_called, log);
+}
+
+ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
+{
+    /// We do not store queue settings
+    /// (because of the inconvenience of keeping them in sync with ObjectStorageQueueTableMetadata),
+    /// so let's reconstruct.
+    ObjectStorageQueueSettings settings;
+    const auto & table_metadata = getTableMetadata();
+    settings[ObjectStorageQueueSetting::after_processing] = table_metadata.after_processing;
+    settings[ObjectStorageQueueSetting::keeper_path] = zk_path;
+    settings[ObjectStorageQueueSetting::loading_retries] = table_metadata.loading_retries;
+    settings[ObjectStorageQueueSetting::processing_threads_num] = table_metadata.processing_threads_num;
+    settings[ObjectStorageQueueSetting::enable_logging_to_queue_log] = enable_logging_to_queue_log;
+    settings[ObjectStorageQueueSetting::last_processed_path] = table_metadata.last_processed_path;
+    settings[ObjectStorageQueueSetting::tracked_file_ttl_sec] = 0;
+    settings[ObjectStorageQueueSetting::tracked_files_limit] = 0;
+    settings[ObjectStorageQueueSetting::polling_min_timeout_ms] = polling_min_timeout_ms;
+    settings[ObjectStorageQueueSetting::polling_max_timeout_ms] = polling_max_timeout_ms;
+    settings[ObjectStorageQueueSetting::polling_backoff_ms] = polling_backoff_ms;
+    settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] = 0;
+    settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = 0;
+    settings[ObjectStorageQueueSetting::buckets] = table_metadata.buckets;
+    settings[ObjectStorageQueueSetting::max_processed_files_before_commit] = commit_settings.max_processed_files_before_commit;
+    settings[ObjectStorageQueueSetting::max_processed_rows_before_commit] = commit_settings.max_processed_rows_before_commit;
+    settings[ObjectStorageQueueSetting::max_processed_bytes_before_commit] = commit_settings.max_processed_bytes_before_commit;
+    return settings;
 }
 
 }
