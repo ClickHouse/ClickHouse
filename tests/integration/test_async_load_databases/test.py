@@ -238,3 +238,7 @@ def test_async_load_system_database(started_cluster):
 
         # Trigger async load of system database
         node2.restart_clickhouse()
+
+    for i in range(id - 1):
+        node2.query(f"drop table if exists system.text_log_{i + 1}_test")
+        node2.query(f"drop table if exists system.query_log_{i + 1}_test")
