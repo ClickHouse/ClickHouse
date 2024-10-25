@@ -100,14 +100,19 @@ std::stack<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTre
                 auto join_kind = join_node.getKind();
                 auto join_strictness = join_node.getStrictness();
 
-                bool can_parallelize_join =
-                    join_kind == JoinKind::Left
-                    || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All);
-
-                if (!can_parallelize_join)
+                if (join_kind == JoinKind::Left || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All))
+                {
+                    query_tree_node = join_node.getLeftTableExpression().get();
+                }
+                else if (join_kind == JoinKind::Right)
+                {
+                    query_tree_node = join_node.getRightTableExpression().get();
+                }
+                else
+                {
                     return {};
+                }
 
-                query_tree_node = join_node.getLeftTableExpression().get();
                 break;
             }
             default:
@@ -310,13 +315,15 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
 
 static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * query_tree_node)
 {
-    std::stack<const IQueryTreeNode *> right_join_nodes;
-    while (query_tree_node || !right_join_nodes.empty())
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "\n{}", StackTrace().toString());
+
+    std::stack<const IQueryTreeNode *> join_nodes;
+    while (query_tree_node || !join_nodes.empty())
     {
         if (!query_tree_node)
         {
-            query_tree_node = right_join_nodes.top();
-            right_join_nodes.pop();
+            query_tree_node = join_nodes.top();
+            join_nodes.pop();
         }
 
         auto join_tree_node_type = query_tree_node->getNodeType();
@@ -365,8 +372,23 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
             case QueryTreeNodeType::JOIN:
             {
                 const auto & join_node = query_tree_node->as<JoinNode &>();
-                query_tree_node = join_node.getLeftTableExpression().get();
-                right_join_nodes.push(join_node.getRightTableExpression().get());
+                const auto join_kind = join_node.getKind();
+                const auto join_strictness = join_node.getStrictness();
+
+                if (join_kind == JoinKind::Left || (join_kind == JoinKind::Inner and join_strictness == JoinStrictness::All))
+                {
+                    query_tree_node = join_node.getLeftTableExpression().get();
+                    join_nodes.push(join_node.getRightTableExpression().get());
+                }
+                else if (join_kind == JoinKind::Right)
+                {
+                    query_tree_node = join_node.getRightTableExpression().get();
+                    join_nodes.push(join_node.getLeftTableExpression().get());
+                }
+                else
+                {
+                    return nullptr;
+                }
                 break;
             }
             default:
@@ -400,7 +422,9 @@ const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tr
     if (!context->canUseParallelReplicasOnFollower())
         return nullptr;
 
-    return findTableForParallelReplicas(query_tree_node.get());
+    const auto * res = findTableForParallelReplicas(query_tree_node.get());
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Table found {}", res->getStorageID().getFullTableName());
+    return res;
 }
 
 JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
@@ -408,6 +432,8 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     const PlannerContextPtr & planner_context,
     std::shared_ptr<const StorageLimitsList> storage_limits)
 {
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "\n{}", StackTrace().toString());
+
     auto processed_stage = QueryProcessingStage::WithMergeableState;
     auto context = planner_context->getQueryContext();
 

@@ -665,6 +665,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     bool is_single_table_expression,
     bool wrap_read_columns_in_subquery)
 {
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "table_expression:\n{}", table_expression->dumpTree());
+
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
