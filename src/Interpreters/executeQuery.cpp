@@ -864,7 +864,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
 #ifndef NDEBUG
             /// Verify that AST formatting is consistent:
-            /// If you format AST, parse it back, and format it again, you get the same string.
+            /// If you format AST, parse it back, you get the same AST, and if you format it again, you get the same string.
 
             String formatted1 = ast->formatWithPossiblyHidingSensitiveData(
                 /*max_length=*/0,
@@ -900,6 +900,18 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             }
 
             chassert(ast2);
+
+            if (ast->getTreeHash(false) != ast2->getTreeHash(false))
+            {
+                WriteBufferFromOwnString ast_tree1;
+                WriteBufferFromOwnString ast_tree2;
+                ast->dumpTree(ast_tree1);
+                ast2->dumpTree(ast_tree2);
+
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Inconsistent AST formatting: the original AST:\n{}\n differs from the result of parsing back formatted AST:\n{}\n",
+                    ast_tree1.str(), ast_tree2.str());
+            }
 
             String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(
                 /*max_length=*/0,
