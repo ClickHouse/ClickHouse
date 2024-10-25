@@ -2750,6 +2750,15 @@ Result:
 └─────────────┴───────────┘
 ```
 )", 0) \
+    DECLARE(Int64, query_metric_log_interval, -1, R"(
+The interval in milliseconds at which the [query_metric_log](../../operations/system-tables/query_metric_log.md) for individual queries is collected.
+
+If set to any negative value, it will take the value `collect_interval_milliseconds` from the [query_metric_log setting](../../operations/server-configuration-parameters/settings.md#query_metric_log) or default to 1000 if not present.
+
+To disable the collection of a single query, set `query_metric_log_interval` to 0.
+
+Default value: -1
+    )", 0) \
     DECLARE(LogsLevel, send_logs_level, LogsLevel::fatal, R"(
 Send server text logs with specified minimum level to client. Valid values: 'trace', 'debug', 'information', 'warning', 'error', 'fatal', 'none'
 )", 0) \
