@@ -2999,7 +2999,7 @@ void Server::updateServers(
 
     for (auto * server : all_servers)
     {
-        if (!server->isStopping())
+        if (server->supportsRuntimeReconfiguration() && !server->isStopping())
         {
             std::string port_name = server->getPortName();
             bool has_host = false;
