@@ -12,6 +12,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds lock_acquire_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -61,7 +65,7 @@ BlockIO InterpreterDropIndexQuery::execute()
 
     alter_commands.emplace_back(std::move(command));
 
-    auto alter_lock = table->lockForAlter(current_context->getSettingsRef().lock_acquire_timeout);
+    auto alter_lock = table->lockForAlter(current_context->getSettingsRef()[Setting::lock_acquire_timeout]);
     StorageInMemoryMetadata metadata = table->getInMemoryMetadata();
     alter_commands.validate(table, current_context);
     alter_commands.prepare(metadata);

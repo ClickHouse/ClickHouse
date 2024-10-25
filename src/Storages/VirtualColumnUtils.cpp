@@ -57,6 +57,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool use_hive_partitioning;
+}
 
 namespace ErrorCodes
 {
@@ -171,7 +175,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
         const auto & type = pair.getTypeInStorage();
         if (storage_columns.has(name))
         {
-            if (!context->getSettingsRef().use_hive_partitioning)
+            if (!context->getSettingsRef()[Setting::use_hive_partitioning])
                 return;
 
             if (storage_columns.size() == 1)
@@ -188,7 +192,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
     for (const auto & item : getCommonVirtualsForFileLikeStorage())
         add_virtual(item);
 
-    if (context->getSettingsRef().use_hive_partitioning)
+    if (context->getSettingsRef()[Setting::use_hive_partitioning])
     {
         auto map = parseHivePartitioningKeysAndValues(path);
         auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
@@ -247,7 +251,7 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * pr
 
     Block block;
     NameSet common_virtuals;
-    if (context->getSettingsRef().use_hive_partitioning)
+    if (context->getSettingsRef()[Setting::use_hive_partitioning])
         common_virtuals = getVirtualNamesForFileLikeStorage();
     for (const auto & column : virtual_columns)
     {
@@ -271,7 +275,7 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
     for (size_t i = 0; i != paths.size(); ++i)
-        addPathAndFileToVirtualColumns(block, paths[i], i, getFormatSettings(context), context->getSettingsRef().use_hive_partitioning);
+        addPathAndFileToVirtualColumns(block, paths[i], i, getFormatSettings(context), context->getSettingsRef()[Setting::use_hive_partitioning]);
 
     filterBlockWithExpression(actions, block);
 
@@ -283,7 +287,7 @@ void addRequestedFileLikeStorageVirtualsToChunk(
     VirtualsForFileLikeStorage virtual_values, ContextPtr context)
 {
     std::unordered_map<std::string, std::string> hive_map;
-    if (context->getSettingsRef().use_hive_partitioning)
+    if (context->getSettingsRef()[Setting::use_hive_partitioning])
         hive_map = parseHivePartitioningKeysAndValues(virtual_values.path);
 
     for (const auto & virtual_column : requested_virtual_columns)
@@ -412,7 +416,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
 
             return &node_copy;
         }
-        else if (node->function_base->getName() == "or")
+        if (node->function_base->getName() == "or")
         {
             auto & node_copy = additional_nodes.emplace_back(*node);
             for (auto & child : node_copy.children)
@@ -421,7 +425,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
 
             return &node_copy;
         }
-        else if (node->function_base->getName() == "indexHint")
+        if (node->function_base->getName() == "indexHint")
         {
             if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node->function_base.get()))
             {
@@ -440,7 +444,8 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
 
                         if (atoms.size() > 1)
                         {
-                            FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+                            FunctionOverloadResolverPtr func_builder_and
+                                = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
                             res = &index_hint_dag.addFunction(func_builder_and, atoms, {});
                         }
 

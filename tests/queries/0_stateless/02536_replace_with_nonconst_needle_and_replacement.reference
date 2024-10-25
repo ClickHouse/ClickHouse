@@ -134,4 +134,31 @@
 3	Hello World	not_found	x	Hello World
 4	Hello World	[eo]	x	Hxllo World
 5	Hello World	.	x	xello World
-Check that an exception is thrown if the needle is empty
+- should not throw an exception if the needle is empty
+- non-const needle, const replacement
+Hexxo Worxd
+Hello World
+Hexlo World
+Hello World
+Hexxo Worxd
+Hello World
+Hexlo World
+Hello World
+- const needle, non-const replacement
+Hello World
+Hello World
+Hello World
+Hello World
+Hello World
+Hello World
+Hello World
+Hello World
+- non-const needle, non-const replacement
+Hexxo Worxd
+Hello World
+Hexlo World
+Hello World
+Hexxo Worxd
+Hello World
+Hexlo World
+Hello World

@@ -8,7 +8,6 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatFactory.h>
 #include <Formats/ParsedTemplateFormatString.h>
 #include <Formats/SchemaInferenceUtils.h>
 

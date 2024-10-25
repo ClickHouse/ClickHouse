@@ -28,6 +28,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_sessions_for_user;
+}
 
 namespace ErrorCodes
 {
@@ -125,17 +129,15 @@ public:
 
             return {session, true};
         }
-        else
-        {
-            /// Use existing session.
-            const auto & session = it->second;
 
-            LOG_TRACE(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
+        /// Use existing session.
+        const auto & session = it->second;
 
-            if (!isSharedPtrUnique(session))
-                throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session {} is locked by a concurrent client", session_id);
-            return {session, false};
-        }
+        LOG_TRACE(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
+
+        if (!isSharedPtrUnique(session))
+            throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session {} is locked by a concurrent client", session_id);
+        return {session, false};
     }
 
     void releaseSession(NamedSessionData & session)
@@ -538,7 +540,7 @@ ContextMutablePtr Session::makeSessionContext()
     session_tracker_handle = session_context->getSessionTracker().trackSession(
         *user_id,
         {},
-        session_context->getSettingsRef().max_sessions_for_user);
+        session_context->getSettingsRef()[Setting::max_sessions_for_user]);
 
     // Use QUERY source as for SET query for a session
     session_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
@@ -585,7 +587,7 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     if (!access->tryGetUser())
     {
         new_session_context->setUser(*user_id);
-        max_sessions_for_user = new_session_context->getSettingsRef().max_sessions_for_user;
+        max_sessions_for_user = new_session_context->getSettingsRef()[Setting::max_sessions_for_user];
     }
     else
     {

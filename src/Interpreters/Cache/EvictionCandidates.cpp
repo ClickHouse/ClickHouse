@@ -242,8 +242,7 @@ void EvictionCandidates::setSpaceHolder(
 {
     if (hold_space)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Space hold is already set");
-    else
-        hold_space = std::make_unique<IFileCachePriority::HoldSpace>(size, elements, priority, lock);
+    hold_space = std::make_unique<IFileCachePriority::HoldSpace>(size, elements, priority, lock);
 }
 
 }

@@ -27,6 +27,14 @@
 #include <Storages/ProjectionsDescription.h>
 #include <Parsers/queryToString.h>
 
+namespace DB
+{
+namespace Setting
+{
+    extern const SettingsString preferred_optimize_projection_name;
+}
+}
+
 namespace DB::QueryPlanOptimizations
 {
 
@@ -513,7 +521,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
             agg_projections.begin(),
             agg_projections.end(),
             [&](const auto * projection)
-            { return projection->name == context->getSettingsRef().preferred_optimize_projection_name.value; });
+            { return projection->name == context->getSettingsRef()[Setting::preferred_optimize_projection_name].value; });
 
         if (it != agg_projections.end())
         {
@@ -544,7 +552,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
 static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
 {
     IQueryPlanStep * step = node.step.get();
-    if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
+    if (auto * /*reading*/ _ = typeid_cast<ReadFromMergeTree *>(step))
         return &node;
 
     if (node.children.size() != 1)
@@ -790,7 +798,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
     }
 
     // LOG_TRACE(getLogger("optimizeUseProjections"), "Projection reading header {}",
-    //           projection_reading->getOutputStream().header.dumpStructure());
+    //           projection_reading->getOutputHeader().header.dumpStructure());
 
     projection_reading->setStepDescription(selected_projection_name);
     auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
@@ -806,14 +814,14 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
         {
             const auto & result_name = best_candidate->dag.getOutputs().front()->result_name;
             aggregate_projection_node->step = std::make_unique<FilterStep>(
-                projection_reading_node.step->getOutputStream(),
+                projection_reading_node.step->getOutputHeader(),
                 std::move(best_candidate->dag),
                 result_name,
                 true);
         }
         else
             aggregate_projection_node->step
-                = std::make_unique<ExpressionStep>(projection_reading_node.step->getOutputStream(), std::move(best_candidate->dag));
+                = std::make_unique<ExpressionStep>(projection_reading_node.step->getOutputHeader(), std::move(best_candidate->dag));
 
         aggregate_projection_node->children.push_back(&projection_reading_node);
     }
@@ -825,12 +833,12 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
     if (!has_ordinary_parts)
     {
         /// All parts are taken from projection
-        aggregating->requestOnlyMergeForAggregateProjection(aggregate_projection_node->step->getOutputStream());
+        aggregating->requestOnlyMergeForAggregateProjection(aggregate_projection_node->step->getOutputHeader());
         node.children.front() = aggregate_projection_node;
     }
     else
     {
-        node.step = aggregating->convertToAggregatingProjection(aggregate_projection_node->step->getOutputStream());
+        node.step = aggregating->convertToAggregatingProjection(aggregate_projection_node->step->getOutputHeader());
         node.children.push_back(aggregate_projection_node);
     }
 
