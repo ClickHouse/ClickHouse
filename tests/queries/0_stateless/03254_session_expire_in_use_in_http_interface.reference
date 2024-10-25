@@ -1,0 +1,5 @@
+A session successfully closes when timeout first expires with refcount != 1 and another session is created in between
+45
+45
+1
+1

@@ -140,10 +140,11 @@ public:
 
         if (session->close_time_bucket != std::chrono::steady_clock::time_point{})
         {
-            auto & bucket_sessions = close_time_buckets[session->close_time_bucket];
-            bucket_sessions.erase(std::ranges::remove(bucket_sessions, key).begin(), bucket_sessions.end());
+            auto bucket_it = close_time_buckets.find(session->close_time_bucket);
+            auto & bucket_sessions = bucket_it->second;
+            bucket_sessions.erase(key);
             if (bucket_sessions.empty())
-                close_time_buckets.erase(session->close_time_bucket);
+                close_time_buckets.erase(bucket_it);
 
             session->close_time_bucket = std::chrono::steady_clock::time_point{};
         }
@@ -193,8 +194,8 @@ private:
     using Container = std::unordered_map<Key, std::shared_ptr<NamedSessionData>, SessionKeyHash>;
     Container sessions;
 
-    // Ordered map of close times for sessions, groupped by the next multiple of close_interval
-    using CloseTimes = std::map<std::chrono::steady_clock::time_point, std::vector<Key>>;
+    // Ordered map of close times for sessions, grouped by the next multiple of close_interval
+    using CloseTimes = std::map<std::chrono::steady_clock::time_point, std::set<Key>>;
     CloseTimes close_time_buckets;
 
     constexpr static std::chrono::steady_clock::duration close_interval = std::chrono::milliseconds(1000);
@@ -210,10 +211,10 @@ private:
         const auto close_time_bucket = session_close_time + bucket_padding;
 
         session.close_time_bucket = close_time_bucket;
-        auto it = close_time_buckets.insert(std::make_pair(close_time_bucket, std::vector<Key>{}));
-        it.first->second.push_back(session.key);
+        auto it = close_time_buckets.insert(std::make_pair(close_time_bucket, std::set<Key>{}));
+        it.first->second.insert(session.key);
 
-        LOG_TRACE(log, "Schedule closing session with session_id: {}, user_id: {}",
+        LOG_TEST(log, "Schedule closing session with session_id: {}, user_id: {}",
             session.key.second, session.key.first);
     }
 
@@ -233,9 +234,9 @@ private:
     {
         const auto now = std::chrono::steady_clock::now();
 
-        while (!close_time_buckets.empty())
+        for (auto bucket_it = close_time_buckets.begin(); bucket_it != close_time_buckets.end(); bucket_it = close_time_buckets.erase(bucket_it))
         {
-            const auto & [time_bucket, session_keys] = *close_time_buckets.begin();
+            const auto & [time_bucket, session_keys] = *bucket_it;
             if (time_bucket > now)
                 break;
 
@@ -250,7 +251,7 @@ private:
 
                 if (session.use_count() != 1)
                 {
-                    LOG_TRACE(log, "Delay closing session with session_id: {}, user_id: {}, refcount: {}",
+                    LOG_TEST(log, "Delay closing session with session_id: {}, user_id: {}, refcount: {}",
                         key.second, key.first, session.use_count());
 
                     session->timeout = std::chrono::steady_clock::duration{0};
@@ -262,8 +263,6 @@ private:
 
                 sessions.erase(session_it);
             }
-
-            close_time_buckets.erase(close_time_buckets.begin());
         }
     }
 
