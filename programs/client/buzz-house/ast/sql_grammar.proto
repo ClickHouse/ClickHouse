@@ -2731,14 +2731,15 @@ enum TableEngineValues {
   AggregatingMergeTree = 4;
   CollapsingMergeTree = 5;
   VersionedCollapsingMergeTree = 6;
-  Memory = 7;
-  File = 8;
-  Null = 9;
-  Set = 10;
-  Join = 11;
+  File = 7;
+  Null = 8;
+  Set = 9;
+  Join = 10;
+  Memory = 11;
   StripeLog = 12;
   Log = 13;
   TinyLog = 14;
+  Buffer = 15;
 }
 
 enum TableEngineOption {
@@ -2754,6 +2755,9 @@ message TableEngineParam {
     InOutFormat in_out = 4;
     JoinType join_op = 5;
     JoinConst join_const = 6;
+    Database database = 7;
+    Table table = 8;
+    uint32 num = 9;
   }
 }
 

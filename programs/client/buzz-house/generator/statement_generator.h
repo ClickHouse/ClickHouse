@@ -206,6 +206,7 @@ private:
 									   const bool add_pkey, sql_query_grammar::TableEngine *te);
 	int GenerateFileEngineDetails(RandomGenerator &rg, sql_query_grammar::TableEngine *te);
 	int GenerateJoinEngineDetails(RandomGenerator &rg, sql_query_grammar::TableEngine *te);
+	int GenerateBufferEngineDetails(RandomGenerator &rg, sql_query_grammar::TableEngine *te);
 	int GenerateNextRefreshableView(RandomGenerator &rg, sql_query_grammar::RefreshableView *cv);
 	int GenerateNextCreateView(RandomGenerator &rg, sql_query_grammar::CreateView *cv);
 	int GenerateNextDrop(RandomGenerator &rg, sql_query_grammar::Drop *sq);

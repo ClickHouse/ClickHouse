@@ -92,6 +92,10 @@ public:
 	bool IsJoinEngine() const {
 		return teng == sql_query_grammar::TableEngineValues::Join;
 	}
+
+	bool IsBufferEngine() const {
+		return teng == sql_query_grammar::TableEngineValues::Buffer;
+	}
 };
 
 struct SQLTable : SQLBase {

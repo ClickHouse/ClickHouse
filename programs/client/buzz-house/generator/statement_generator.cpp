@@ -286,6 +286,42 @@ int StatementGenerator::GenerateJoinEngineDetails(RandomGenerator &rg, sql_query
 	return 0;
 }
 
+int StatementGenerator::GenerateBufferEngineDetails(RandomGenerator &rg, sql_query_grammar::TableEngine *te) {
+	const bool has_tables = CollectionHas<SQLTable>([](const SQLTable& t){return t.db && t.db->attached && t.attached;}),
+			   has_views = CollectionHas<SQLView>([](const SQLView& v){return v.db && v.db->attached && v.attached;});
+
+	if (has_tables && (!has_views || rg.NextSmallNumber() < 8)) {
+		const SQLTable &t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>([](const SQLTable& tt){return tt.db && tt.db->attached && tt.attached;}));
+
+		te->add_params()->mutable_database()->set_database("d" + std::to_string(t.db->dname));
+		te->add_params()->mutable_table()->set_table("t" + std::to_string(t.tname));
+	} else {
+		const SQLView &v = rg.PickRandomlyFromVector(FilterCollection<SQLView>([](const SQLView& vv){return vv.db && vv.db->attached && vv.attached;}));
+
+		te->add_params()->mutable_database()->set_database("d" + std::to_string(v.db->dname));
+		te->add_params()->mutable_table()->set_table("v" + std::to_string(v.vname));
+	}
+	//num_layers
+	te->add_params()->set_num(static_cast<int32_t>(rg.NextRandomUInt32() % 101));
+	//min_time, max_time, min_rows, max_rows, min_bytes, max_bytes
+	for (int i = 0; i < 6; i++) {
+		te->add_params()->set_num(static_cast<int32_t>(rg.NextRandomUInt32() % 1001));
+	}
+	if (rg.NextSmallNumber() < 7) {
+		//flush_time
+		te->add_params()->set_num(static_cast<int32_t>(rg.NextRandomUInt32() % 61));
+	}
+	if (rg.NextSmallNumber() < 7) {
+		//flush_rows
+		te->add_params()->set_num(static_cast<int32_t>(rg.NextRandomUInt32() % 1001));
+	}
+	if (rg.NextSmallNumber() < 7) {
+		//flush_bytes
+		te->add_params()->set_num(static_cast<int32_t>(rg.NextRandomUInt32() % 1001));
+	}
+	return 0;
+}
+
 int StatementGenerator::AddTableColumn(RandomGenerator &rg, SQLTable &t, const uint32_t cname, const bool staged,
 									   const bool modify, const bool is_pk, const ColumnSpecial special, sql_query_grammar::ColumnDef *cd) {
 	SQLColumn col;
@@ -532,14 +568,20 @@ int StatementGenerator::AddTableConstraint(RandomGenerator &rg, SQLTable &t, con
 }
 
 const std::vector<sql_query_grammar::TableEngineValues> like_engs = {
-  sql_query_grammar::TableEngineValues::Memory,
-  sql_query_grammar::TableEngineValues::MergeTree,
-  sql_query_grammar::TableEngineValues::ReplacingMergeTree,
-  sql_query_grammar::TableEngineValues::SummingMergeTree,
-  sql_query_grammar::TableEngineValues::AggregatingMergeTree,
-  sql_query_grammar::TableEngineValues::StripeLog,
-  sql_query_grammar::TableEngineValues::Log,
-  sql_query_grammar::TableEngineValues::TinyLog};
+	sql_query_grammar::TableEngineValues::MergeTree,
+	sql_query_grammar::TableEngineValues::ReplacingMergeTree,
+	sql_query_grammar::TableEngineValues::SummingMergeTree,
+	sql_query_grammar::TableEngineValues::AggregatingMergeTree,
+	sql_query_grammar::TableEngineValues::File,
+	sql_query_grammar::TableEngineValues::Null,
+	sql_query_grammar::TableEngineValues::Set,
+	sql_query_grammar::TableEngineValues::Join,
+	sql_query_grammar::TableEngineValues::Memory,
+	sql_query_grammar::TableEngineValues::StripeLog,
+	sql_query_grammar::TableEngineValues::Log,
+	sql_query_grammar::TableEngineValues::TinyLog,
+	sql_query_grammar::TableEngineValues::Buffer
+};
 
 int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_grammar::CreateTable *ct) {
 	SQLTable next;
@@ -572,7 +614,10 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 		//create table with definition
 		sql_query_grammar::TableDef *colsdef = ct->mutable_table_def();
 		std::uniform_int_distribution<uint32_t> table_engine(1,
-			rg.NextBool() ? sql_query_grammar::TableEngineValues::VersionedCollapsingMergeTree : sql_query_grammar::TableEngineValues_MAX);
+			rg.NextBool() ? sql_query_grammar::TableEngineValues::VersionedCollapsingMergeTree :
+			((CollectionHas<SQLTable>([](const SQLTable& t){return t.db && t.db->attached && t.attached;}) ||
+			  CollectionHas<SQLView>([](const SQLView& v){return v.db && v.db->attached && v.attached;})) ?
+				sql_query_grammar::TableEngineValues_MAX : (sql_query_grammar::TableEngineValues_MAX - 1)));
 		sql_query_grammar::TableEngineValues val = static_cast<sql_query_grammar::TableEngineValues>(table_engine(rg.gen));
 
 		next.teng = val;
@@ -671,7 +716,7 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 		next.constr_counter = t.constr_counter;
 		next.is_temp = t.is_temp;
 	}
-	if (next.IsMergeTreeFamily() || next.IsFileEngine() || next.IsJoinEngine()) {
+	if (next.IsMergeTreeFamily() || next.IsFileEngine() || next.IsJoinEngine() || next.IsBufferEngine()) {
 		const NestedType *ntp = nullptr;
 
 		assert(this->entries.empty());
@@ -695,6 +740,8 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator &rg, sql_query_g
 			GenerateFileEngineDetails(rg, te);
 		} else if (next.IsJoinEngine()) {
 			GenerateJoinEngineDetails(rg, te);
+		} else if (next.IsBufferEngine()) {
+			GenerateBufferEngineDetails(rg, te);
 		}
 		this->entries.clear();
 	}
@@ -773,12 +820,15 @@ int StatementGenerator::GenerateNextCreateView(RandomGenerator &rg, sql_query_gr
 	if (next.is_materialized) {
 		sql_query_grammar::TableEngine *te = cv->mutable_engine();
 		std::uniform_int_distribution<uint32_t> table_engine(1,
-			rg.NextBool() ? sql_query_grammar::TableEngineValues::VersionedCollapsingMergeTree : sql_query_grammar::TableEngineValues_MAX);
+			rg.NextBool() ? sql_query_grammar::TableEngineValues::VersionedCollapsingMergeTree :
+			((CollectionHas<SQLTable>([](const SQLTable& t){return t.db && t.db->attached && t.attached;}) ||
+			  CollectionHas<SQLView>([](const SQLView& v){return v.db && v.db->attached && v.attached;})) ?
+				sql_query_grammar::TableEngineValues_MAX : (sql_query_grammar::TableEngineValues_MAX - 1)));
 		sql_query_grammar::TableEngineValues val = static_cast<sql_query_grammar::TableEngineValues>(table_engine(rg.gen));
 
 		next.teng = val;
 		te->set_engine(val);
-		if (next.IsMergeTreeFamily() || next.IsFileEngine() || next.IsJoinEngine()) {
+		if (next.IsMergeTreeFamily() || next.IsFileEngine() || next.IsJoinEngine() || next.IsBufferEngine()) {
 			assert(this->entries.empty());
 			for (uint32_t i = 0 ; i < next.ncols ; i++) {
 				entries.push_back(InsertEntry(ColumnSpecial::NONE, i, std::nullopt, nullptr, std::nullopt));
@@ -794,6 +844,8 @@ int StatementGenerator::GenerateNextCreateView(RandomGenerator &rg, sql_query_gr
 				GenerateFileEngineDetails(rg, te);
 			} else if (next.IsJoinEngine()) {
 				GenerateJoinEngineDetails(rg, te);
+			} else if (next.IsBufferEngine()) {
+				GenerateBufferEngineDetails(rg, te);
 			}
 			this->entries.clear();
 		}

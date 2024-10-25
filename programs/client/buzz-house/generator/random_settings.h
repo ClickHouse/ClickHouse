@@ -570,14 +570,15 @@ const std::map<sql_query_grammar::TableEngineValues, std::map<std::string, std::
 	{sql_query_grammar::AggregatingMergeTree, MergeTreeTableSettings},
 	{sql_query_grammar::CollapsingMergeTree, MergeTreeTableSettings},
 	{sql_query_grammar::VersionedCollapsingMergeTree, MergeTreeTableSettings},
-	{sql_query_grammar::Memory, MemoryTableSettings},
 	{sql_query_grammar::File, {}},
 	{sql_query_grammar::Null, {}},
 	{sql_query_grammar::Set, SetTableSettings},
 	{sql_query_grammar::Join, JoinTableSettings},
+	{sql_query_grammar::Memory, MemoryTableSettings},
 	{sql_query_grammar::StripeLog, {}},
 	{sql_query_grammar::Log, {}},
 	{sql_query_grammar::TinyLog, {}},
+	{sql_query_grammar::Buffer, {}}
 };
 
 const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> MergeTreeColumnSettings = {
@@ -596,14 +597,15 @@ const std::map<sql_query_grammar::TableEngineValues, std::map<std::string, std::
 	{sql_query_grammar::AggregatingMergeTree, MergeTreeColumnSettings},
 	{sql_query_grammar::CollapsingMergeTree, MergeTreeColumnSettings},
 	{sql_query_grammar::VersionedCollapsingMergeTree, MergeTreeColumnSettings},
-	{sql_query_grammar::Memory, {}},
 	{sql_query_grammar::File, {}},
 	{sql_query_grammar::Null, {}},
 	{sql_query_grammar::Set, {}},
 	{sql_query_grammar::Join, {}},
+	{sql_query_grammar::Memory, {}},
 	{sql_query_grammar::StripeLog, {}},
 	{sql_query_grammar::Log, {}},
 	{sql_query_grammar::TinyLog, {}},
+	{sql_query_grammar::Buffer, {}}
 };
 
 void SetRandomSetting(RandomGenerator &rg, const std::map<std::string, std::function<void(RandomGenerator&,std::string&)>> &settings,

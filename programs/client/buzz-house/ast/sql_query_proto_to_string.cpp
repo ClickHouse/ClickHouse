@@ -1983,8 +1983,14 @@ CONV_FN(TableEngineParam, tep) {
     case TableEngineParamType::kJoinOp:
       ret += JoinType_Name(tep.join_op()).substr(2);
       break;
-    case TableEngineParamType::kJoinConst:
-      ret += JoinConst_Name(tep.join_const()).substr(2);
+    case TableEngineParamType::kDatabase:
+      DatabaseToString(ret, tep.database());
+      break;
+    case TableEngineParamType::kTable:
+      TableToString(ret, tep.table());
+      break;
+    case TableEngineParamType::kNum:
+      ret += std::to_string(tep.num());
       break;
     default:
       ret += "c0";
