@@ -77,6 +77,7 @@ namespace Setting
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 readonly;
+    extern const SettingsBool skip_busy_buffer_layers;
 }
 
 namespace ErrorCodes
@@ -102,6 +103,7 @@ std::unique_lock<std::mutex> StorageBuffer::Buffer::tryLock() const
 {
     std::unique_lock lock(mutex, std::try_to_lock);
     return lock;
+
 }
 std::unique_lock<std::mutex> StorageBuffer::Buffer::lockImpl(bool read) const
 {
@@ -259,7 +261,7 @@ void StorageBuffer::read(
     size_t num_streams)
 {
     bool allow_experimental_analyzer = local_context->getSettingsRef()[Setting::allow_experimental_analyzer];
-
+    bool skip_busy_layers = local_context->getSettingsRef()[Settings::skip_busy_buffer_layers];
     if (allow_experimental_analyzer && processed_stage > QueryProcessingStage::FetchColumns)
     {
         /** For query processing stages after FetchColumns, we do not allow using the same table more than once in the query.
@@ -416,8 +418,20 @@ void StorageBuffer::read(
     {
         Pipes pipes_from_buffers;
         pipes_from_buffers.reserve(num_shards);
-        for (auto & buf : buffers)
-            pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, storage_snapshot));
+        for (auto & buf : buffers) {
+            if (skip_busy_layers)
+                {
+                    auto lock = buf.tryLock();
+                    if (!lock)
+                        continue;  // Skip this buffer if it's busy
+                    pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, storage_snapshot));
+                }
+                else
+                {
+                    auto lock = buf.lockForReading();
+                    pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, storage_snapshot));
+                }
+        }
 
         pipe_from_buffers = Pipe::unitePipes(std::move(pipes_from_buffers));
         if (query_info.input_order_info)
