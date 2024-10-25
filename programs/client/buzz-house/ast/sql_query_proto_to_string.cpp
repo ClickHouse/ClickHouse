@@ -1088,6 +1088,22 @@ CONV_FN(SQLFuncCall, sfc) {
   }
 }
 
+CONV_FN(ExprOrderingWithFill, eowf) {
+  ret += "WITH FILL";
+  if (eowf.has_from_expr()) {
+    ret += " FROM ";
+    ExprToString(ret, eowf.from_expr());
+  }
+  if (eowf.has_to_expr()) {
+    ret += " TO ";
+    ExprToString(ret, eowf.to_expr());
+  }
+  if (eowf.has_step_expr()) {
+    ret += " STEP ";
+    ExprToString(ret, eowf.step_expr());
+  }
+}
+
 CONV_FN(ExprOrderingTerm, eot) {
   ExprToString(ret, eot.expr());
   if (eot.has_asc_desc()) {
@@ -1099,16 +1115,37 @@ CONV_FN(ExprOrderingTerm, eot) {
     ret += eot.collation();
     ret += "'";
   }
-  if (eot.with_fill()) {
-    ret += " WITH FILL";
+  if (eot.has_fill()) {
+    ret += " ";
+    ExprOrderingWithFillToString(ret, eot.fill());
   }
 }
 
 CONV_FN(OrderByList, ol) {
+  bool has_fill = false;
+
   ExprOrderingTermToString(ret, ol.ord_term());
+  has_fill |= ol.ord_term().has_fill();
   for (int i = 0; i < ol.extra_ord_terms_size(); i++) {
+    const sql_query_grammar::ExprOrderingTerm &eot = ol.extra_ord_terms(i);
+
     ret += ", ";
-    ExprOrderingTermToString(ret, ol.extra_ord_terms(i));
+    has_fill |= eot.has_fill();
+    ExprOrderingTermToString(ret, eot);
+  }
+  if (has_fill && ol.interpolate_size()) {
+    ret += " INTERPOLATE(";
+    for (int i = 0 ; i < ol.interpolate_size(); i++) {
+      const sql_query_grammar::InterpolateExpr &ie = ol.interpolate(i);
+
+      if (i != 0) {
+        ret += ", ";
+      }
+      ColumnToString(ret, true, ie.col());
+      ret += " AS ";
+      ExprToString(ret, ie.expr());
+    }
+    ret += ")";
   }
 }
 

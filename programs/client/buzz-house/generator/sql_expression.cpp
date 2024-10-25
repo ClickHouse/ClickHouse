@@ -803,11 +803,13 @@ int StatementGenerator::GenerateExpression(RandomGenerator &rg, sql_query_gramma
 	AddFieldAccess(rg, expr, 16);
 	if (eca && rg.NextSmallNumber() < 4) {
 		SQLRelation rel("");
-		const std::string cname = "c" + std::to_string(this->levels[this->current_level].aliases_counter++);
+		const uint32_t cname = this->levels[this->current_level].aliases_counter++;
+		const std::string cname_str = "c" + std::to_string(cname);
 
-		rel.cols.push_back(SQLRelationCol("", cname, std::nullopt));
+		rel.cols.push_back(SQLRelationCol("", cname_str, std::nullopt));
 		this->levels[this->current_level].rels.push_back(std::move(rel));
-		eca->mutable_col_alias()->set_column(cname);
+		eca->mutable_col_alias()->set_column(cname_str);
+		this->levels[this->current_level].projections.push_back(cname);
 	}
 	return 0;
 }

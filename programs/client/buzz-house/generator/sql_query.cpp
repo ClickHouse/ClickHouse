@@ -596,8 +596,9 @@ int StatementGenerator::GenerateOrderBy(RandomGenerator &rg, const uint32_t ncol
 	if (rg.NextSmallNumber() < 3) {
 		ob->set_oall(true);
 	} else {
-		sql_query_grammar::OrderByList *olist = ob->mutable_olist();
+		bool has_fill = false;
 		std::vector<GroupCol> available_cols;
+		sql_query_grammar::OrderByList *olist = ob->mutable_olist();
 
 		if (this->levels[this->current_level].group_by_all) {
 			for (const auto &entry : this->levels[this->current_level].projections) {
@@ -644,10 +645,46 @@ int StatementGenerator::GenerateOrderBy(RandomGenerator &rg, const uint32_t ncol
 				if (!this->fc.collations.empty() && rg.NextSmallNumber() < 3) {
 					eot->set_collation(rg.PickRandomlyFromVector(this->fc.collations));
 				}
-				eot->set_with_fill(rg.NextSmallNumber() < 3);
+				if (rg.NextSmallNumber() < 2) {
+					sql_query_grammar::ExprOrderingWithFill *eowf = eot->mutable_fill();
+
+					has_fill = true;
+					if (rg.NextSmallNumber() < 4) {
+						GenerateExpression(rg, eowf->mutable_from_expr());
+					}
+					if (rg.NextSmallNumber() < 4) {
+						GenerateExpression(rg, eowf->mutable_to_expr());
+					}
+					if (rg.NextSmallNumber() < 4) {
+						GenerateExpression(rg, eowf->mutable_step_expr());
+					}
+				}
 			}
 		}
 		this->width -= nclauses;
+		if (has_fill && !this->levels[this->current_level].projections.empty() &&
+			(this->levels[this->current_level].group_by_all ||
+			 (this->levels[this->current_level].gcols.empty() && !this->levels[this->current_level].global_aggregate)) &&
+			rg.NextSmallNumber() < 4) {
+			const uint32_t iclauses = std::min<uint32_t>(this->fc.max_width - this->width,
+				std::min<uint32_t>(UINT32_C(3), (rg.NextRandomUInt32() % this->levels[this->current_level].projections.size()) + 1));
+
+			assert(this->ids.empty());
+			this->ids.insert(this->ids.end(), this->levels[this->current_level].projections.begin(), this->levels[this->current_level].projections.end());
+			std::shuffle(this->ids.begin(), this->ids.end(), rg.gen);
+			for (uint32_t i = 0 ; i < iclauses; i++) {
+				sql_query_grammar::InterpolateExpr *ie = olist->add_interpolate();
+
+				ie->mutable_col()->set_column("c" + std::to_string(this->ids[i]));
+			}
+			this->ids.clear();
+
+			for (uint32_t i = 0 ; i < iclauses; i++) {
+				GenerateExpression(rg, &(const_cast<sql_query_grammar::Expr&>(olist->interpolate(i).expr())));
+				this->width++;
+			}
+			this->width -= iclauses;
+		}
 	}
 	return 0;
 }

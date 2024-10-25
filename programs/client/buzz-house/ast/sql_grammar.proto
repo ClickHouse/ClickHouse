@@ -1913,6 +1913,12 @@ message ExprFrameSpec {
   optional FrameSpecSubRightExpr right_expr = 3;
 }
 
+message ExprOrderingWithFill {
+  optional Expr from_expr = 1;
+  optional Expr to_expr = 2;
+  optional Expr step_expr = 3;
+}
+
 message ExprOrderingTerm {
   enum AscDesc {
     ASC = 1;
@@ -1921,12 +1927,18 @@ message ExprOrderingTerm {
   required Expr expr = 1;
   optional AscDesc asc_desc = 2;
   optional string collation = 3;
-  optional bool with_fill = 4;
+  optional ExprOrderingWithFill fill = 4;
+}
+
+message InterpolateExpr {
+  required Column col = 1;
+  required Expr expr = 2;
 }
 
 message OrderByList {
   required ExprOrderingTerm ord_term = 1;
   repeated ExprOrderingTerm extra_ord_terms = 2;
+  repeated InterpolateExpr interpolate = 3;
 }
 
 message OrderByStatement {
