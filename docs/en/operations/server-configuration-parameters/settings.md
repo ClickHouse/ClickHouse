@@ -2217,6 +2217,39 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 </query_log>
 ```
 
+# query_metric_log {#query_metric_log}
+
+It is disabled by default.
+
+**Enabling**
+
+To manually turn on metrics history collection [`system.query_metric_log`](../../operations/system-tables/query_metric_log.md), create `/etc/clickhouse-server/config.d/query_metric_log.xml` with the following content:
+
+``` xml
+<clickhouse>
+    <query_metric_log>
+        <database>system</database>
+        <table>query_metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </query_metric_log>
+</clickhouse>
+```
+
+**Disabling**
+
+To disable `query_metric_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_query_metric_log.xml` with the following content:
+
+``` xml
+<clickhouse>
+<query_metric_log remove="1" />
+</clickhouse>
+```
+
 ## query_cache {#server_configuration_parameters_query-cache}
 
 [Query cache](../query-cache.md) configuration.
@@ -3109,7 +3142,7 @@ By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests ove
 
 ### no_proxy
 By default, all requests will go through the proxy. In order to disable it for specific hosts, the `no_proxy` variable must be set.
-It can be set inside the `<proxy>` clause for list and remote resolvers and as an environment variable for environment resolver. 
+It can be set inside the `<proxy>` clause for list and remote resolvers and as an environment variable for environment resolver.
 It supports IP addresses, domains, subdomains and `'*'` wildcard for full bypass. Leading dots are stripped just like curl does.
 
 Example:
