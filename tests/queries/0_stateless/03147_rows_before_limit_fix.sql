@@ -1,3 +1,5 @@
+SET exact_rows_before_limit = 1;
+
 DROP TABLE IF EXISTS users;
 
 CREATE TABLE users (uid Int16, name String, age Int16) ENGINE=MergeTree ORDER BY uid;
