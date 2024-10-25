@@ -7,6 +7,7 @@
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/IServer.h>
 #include <Server/PrometheusMetricsWriter.h>
+#include <Server/HTTPHandler.h>
 #include "config.h"
 
 #include <Access/Credentials.h>
@@ -137,7 +138,7 @@ protected:
 
     bool authenticateUser(HTTPServerRequest & request, HTTPServerResponse & response)
     {
-        return authenticateUserByHTTP(request, *params, response, *session, request_credentials, server().context(), log());
+        return authenticateUserByHTTP(request, *params, response, *session, request_credentials, HTTPHandlerConnectionConfig{}, server().context(), log());
     }
 
     void makeContext(HTTPServerRequest & request)
