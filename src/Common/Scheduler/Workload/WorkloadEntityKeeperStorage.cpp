@@ -41,7 +41,7 @@ WorkloadEntityKeeperStorage::WorkloadEntityKeeperStorage(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path must be non-empty");
 
     if (zookeeper_path.back() == '/')
-        zookeeper_path.resize(zookeeper_path.size() - 1);
+        zookeeper_path.pop_back();
 
     /// If zookeeper chroot prefix is used, path should start with '/', because chroot concatenates without it.
     if (zookeeper_path.front() != '/')

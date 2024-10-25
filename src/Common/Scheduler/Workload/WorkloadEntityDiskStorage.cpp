@@ -47,6 +47,10 @@ namespace ErrorCodes
 
 namespace
 {
+    static constexpr std::string_view workload_prefix = "workload_";
+    static constexpr std::string_view resource_prefix = "resource_";
+    static constexpr std::string_view sql_suffix = ".sql";
+
     /// Converts a path to an absolute path and append it with a separator.
     String makeDirectoryPathCanonical(const String & directory_path)
     {
@@ -86,34 +90,22 @@ ASTPtr WorkloadEntityDiskStorage::tryLoadEntity(WorkloadEntityType entity_type, 
         String entity_create_query;
         readStringUntilEOF(entity_create_query, in);
 
+        auto parse = [&] (auto parser)
+        {
+            return parseQuery(
+                parser,
+                entity_create_query.data(),
+                entity_create_query.data() + entity_create_query.size(),
+                "",
+                0,
+                global_context->getSettingsRef()[Setting::max_parser_depth],
+                global_context->getSettingsRef()[Setting::max_parser_backtracks]);
+        };
+
         switch (entity_type)
         {
-            case WorkloadEntityType::Workload:
-            {
-                ParserCreateWorkloadQuery parser;
-                ASTPtr ast = parseQuery(
-                    parser,
-                    entity_create_query.data(),
-                    entity_create_query.data() + entity_create_query.size(),
-                    "",
-                    0,
-                    global_context->getSettingsRef()[Setting::max_parser_depth],
-                    global_context->getSettingsRef()[Setting::max_parser_backtracks]);
-                return ast;
-            }
-            case WorkloadEntityType::Resource:
-            {
-                ParserCreateResourceQuery parser;
-                ASTPtr ast = parseQuery(
-                    parser,
-                    entity_create_query.data(),
-                    entity_create_query.data() + entity_create_query.size(),
-                    "",
-                    0,
-                    global_context->getSettingsRef()[Setting::max_parser_depth],
-                    global_context->getSettingsRef()[Setting::max_parser_backtracks]);
-                return ast;
-            }
+            case WorkloadEntityType::Workload: return parse(ParserCreateWorkloadQuery());
+            case WorkloadEntityType::Resource: return parse(ParserCreateResourceQuery());
             case WorkloadEntityType::MAX: return nullptr;
         }
     }
@@ -152,11 +144,11 @@ void WorkloadEntityDiskStorage::loadEntitiesImpl()
 
         const String & file_name = it.name();
 
-        if (startsWith(file_name, "workload_") && endsWith(file_name, ".sql"))
+        if (file_name.starts_with(workload_prefix) && file_name.ends_with(sql_suffix))
         {
-            size_t prefix_length = strlen("workload_");
-            size_t suffix_length = strlen(".sql");
-            String name = unescapeForFileName(file_name.substr(prefix_length, file_name.length() - prefix_length - suffix_length));
+            String name = unescapeForFileName(file_name.substr(
+                workload_prefix.size(),
+                file_name.size() - workload_prefix.size() - sql_suffix.size()));
 
             if (name.empty())
                 continue;
@@ -166,11 +158,11 @@ void WorkloadEntityDiskStorage::loadEntitiesImpl()
                 entities_name_and_queries.emplace_back(name, ast);
         }
 
-        if (startsWith(file_name, "resource_") && endsWith(file_name, ".sql"))
+        if (file_name.starts_with(resource_prefix) && file_name.ends_with(sql_suffix))
         {
-            size_t prefix_length = strlen("resource_");
-            size_t suffix_length = strlen(".sql");
-            String name = unescapeForFileName(file_name.substr(prefix_length, file_name.length() - prefix_length - suffix_length));
+            String name = unescapeForFileName(file_name.substr(
+                resource_prefix.size(),
+                file_name.size() - resource_prefix.size() - sql_suffix.size()));
 
             if (name.empty())
                 continue;
@@ -219,17 +211,14 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityDiskStorage::storeEntit
             return OperationResult::Failed;
     }
 
-    WriteBufferFromOwnString create_statement_buf;
-    formatAST(*create_entity_query, create_statement_buf, false);
-    writeChar('\n', create_statement_buf);
-    String create_statement = create_statement_buf.str();
 
     String temp_file_path = file_path + ".tmp";
 
     try
     {
-        WriteBufferFromFile out(temp_file_path, create_statement.size());
-        writeString(create_statement, out);
+        WriteBufferFromFile out(temp_file_path);
+        formatAST(*create_entity_query, out, false);
+        writeChar('\n', out);
         out.next();
         if (settings[Setting::fsync_metadata])
             out.sync();
