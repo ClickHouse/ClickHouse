@@ -34,9 +34,9 @@ expect_after {
 # The sleep command in the bash loop ensures that interactive_delay will be reached.
 spawn bash -c "
     source $basedir/../shell_config.sh; \
-    for i in {1..100}; do \
-        yes | head -n 100; \
-        sleep 0.1; \
+    for i in {1..20}; do \
+        yes | head -n 500; \
+        sleep 0.05; \
     done | \$CLICKHOUSE_LOCAL \
             --progress \
             --interactive_delay=100 \
