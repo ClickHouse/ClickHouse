@@ -12,7 +12,9 @@
 #include <Core/ShortCircuitFunctionEvaluation.h>
 #include <Core/StreamingHandleErrorMode.h>
 #include <Formats/FormatSettings.h>
-#include <IO/ReadSettings.h>
+#include <IO/DistributedCacheLogMode.h>
+#include <IO/DistributedCachePoolBehaviourOnLimit.h>
+#include <IO/ReadMethod.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/ShellCommandSettings.h>
