@@ -3,6 +3,8 @@
 #include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorage.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
 
+#include <algorithm>
+#include <any>
 #include <cstddef>
 #include <exception>
 #include <iterator>
@@ -50,14 +52,18 @@ std::string getMetadataKeyPrefix(ObjectStoragePtr object_storage)
         : metadata_key_prefix;
 }
 
-void loadDirectoryTree(InMemoryDirectoryPathMap::Map & map, ObjectStoragePtr object_storage)
+void loadDirectoryTree(
+    InMemoryDirectoryPathMap::Map & map, InMemoryDirectoryPathMap::FileNames & unique_filenames, ObjectStoragePtr object_storage)
 {
+    using FileNamesIterator = InMemoryDirectoryPathMap::FileNamesIterator;
+    using FileNameIteratorComparator = InMemoryDirectoryPathMap::FileNameIteratorComparator;
     const auto common_key_prefix = object_storage->getCommonKeyPrefix();
     LOG_DEBUG(getLogger("MetadataStorageFromPlainObjectStorage"), "Loading directory structure");
     for (auto & [local_path, info] : map)
     {
         LOG_TRACE(getLogger("loadDirectory"), "Loading directories for local path: {}", local_path);
         const auto remote_path = std::filesystem::path(common_key_prefix) / info.path / "";
+        std::set<FileNamesIterator, FileNameIteratorComparator> filename_iterators;
         for (auto iterator = object_storage->iterate(remote_path, 0); iterator->isValid(); iterator->next())
         {
             auto file = iterator->current();
@@ -67,8 +73,12 @@ void loadDirectoryTree(InMemoryDirectoryPathMap::Map & map, ObjectStoragePtr obj
             auto filename = std::filesystem::path(path).filename();
             /// Check that the file is a direct child.
             if (path.substr(remote_path.string().size()) == filename)
-                info.filenames.emplace(filename);
+            {
+                auto filename_it = unique_filenames.emplace(filename).first;
+                filename_iterators.emplace(filename_it);
+            }
         }
+        info.filename_iterators = std::move(filename_iterators);
     }
 }
 
@@ -162,10 +172,12 @@ std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & 
 
     runner.waitForAllToFinishAndRethrowFirstError();
 
-    loadDirectoryTree(map, object_storage);
+    InMemoryDirectoryPathMap::FileNames unique_filenames;
+    loadDirectoryTree(map, unique_filenames, object_storage);
     {
         std::lock_guard lock(result->mutex);
         result->map = std::move(map);
+        result->unique_filenames = std::move(unique_filenames);
         LOG_DEBUG(log, "Loaded metadata for {} files, found {} directories", num_files, result->map.size());
 
         auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
@@ -274,7 +286,11 @@ MetadataStorageFromPlainRewritableObjectStorage::getDirectChildrenOnDisk(const s
     auto it = path_map->map.find(local_path.parent_path());
     if (it != path_map->map.end())
     {
-        result.insert(it->second.filenames.begin(), it->second.filenames.end());
+        for (const auto & filename_it : it->second.filename_iterators)
+        {
+            chassert(filename_it != path_map->unique_filenames.end());
+            result.insert(*filename_it);
+        }
     }
 
     return result;
