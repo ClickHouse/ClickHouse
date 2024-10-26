@@ -5190,6 +5190,7 @@ Limits the total number of optimizations applied to query plan, see setting [que
 Useful to avoid long optimization times for complex queries.
 If the actual number of optimizations exceeds this setting, an exception is thrown.
 
+
 :::note
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
 :::
