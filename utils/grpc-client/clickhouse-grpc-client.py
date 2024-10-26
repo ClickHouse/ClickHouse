@@ -79,6 +79,7 @@ class ClickHouseGRPCClient(cmd.Cmd):
         settings="",
         verbatim=False,
         show_debug_info=False,
+        params=[],
     ):
         super(ClickHouseGRPCClient, self).__init__(completekey=None)
         self.host = host
@@ -93,6 +94,7 @@ class ClickHouseGRPCClient(cmd.Cmd):
         self.channel = None
         self.stub = None
         self.session_id = None
+        self.params = params
 
     def __enter__(self):
         self.__connect()
@@ -101,8 +103,11 @@ class ClickHouseGRPCClient(cmd.Cmd):
     def __exit__(self, exc_type, exc_value, traceback):
         self.__disconnect()
 
+    def format_metadata(self):
+        return [("param_" + param, value) for param, value in self.params]
+
     # Executes a simple query and returns its output.
-    def get_simple_query_output(self, query_text):
+    def get_simple_query_output(self, query_text, params=[]):
         result = self.stub.ExecuteQuery(
             clickhouse_grpc_pb2.QueryInfo(
                 query=query_text,
@@ -113,7 +118,8 @@ class ClickHouseGRPCClient(cmd.Cmd):
                 settings=self.settings,
                 session_id=self.session_id,
                 query_id=str(uuid.uuid4()),
-            )
+            ),
+            metadata=self.format_metadata(),
         )
         if self.show_debug_info:
             print("\nresult={}".format(result))
@@ -171,7 +177,9 @@ class ClickHouseGRPCClient(cmd.Cmd):
                         if cancel_tries > 0:
                             yield clickhouse_grpc_pb2.QueryInfo(cancel=True)
 
-                for result in self.stub.ExecuteQueryWithStreamIO(send_query_info()):
+                for result in self.stub.ExecuteQueryWithStreamIO(
+                    send_query_info(), metadata=self.format_metadata()
+                ):
                     if self.show_debug_info:
                         print("\nresult={}".format(result))
                     ClickHouseGRPCClient.__check_no_errors(result)
@@ -290,6 +298,11 @@ class ClickHouseGRPCClient(cmd.Cmd):
             readline.write_history_file(histfile)
 
 
+def parse_param(arg):
+    key, value = arg.split("=")
+    return key, value
+
+
 # MAIN
 
 
@@ -342,6 +355,13 @@ def main(args):
         default="",
     )
     parser.add_argument(
+        "--param",
+        action="append",
+        type=parse_param,
+        help="Query parameters in key=value format. Can be used multiple times.",
+        default=[],
+    )
+    parser.add_argument(
         "--debug",
         dest="show_debug_info",
         help="Enables showing the debug information.",
@@ -370,6 +390,7 @@ def main(args):
             output_format=output_format,
             verbatim=verbatim,
             show_debug_info=args.show_debug_info,
+            params=args.param,
         ) as client:
             if interactive_mode:
                 client.cmdloop()
