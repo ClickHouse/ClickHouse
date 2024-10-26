@@ -42,7 +42,6 @@ spawn bash -c "
             --interactive_delay=100 \
             --min_chunk_bytes_for_parallel_parsing=1 \
             --input_format_parallel_parsing=1 \
-            --max_threads=4 \
             --query \"insert into function null('foo String') format TSV\"
 "
 
