@@ -309,7 +309,10 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute(std::uniqu
             "Parent dirrectory does not exist, skipping path {}",
             path);
     else
-        written = it->second.filenames.emplace(path.filename()).second;
+    {
+        auto filename_it = path_map.unique_filenames.emplace(path.filename()).first;
+        written = it->second.filename_iterators.emplace(filename_it).second;
+    }
 }
 
 void MetadataStorageFromPlainObjectStorageWriteFileOperation::undo(std::unique_lock<SharedMutex> &)
@@ -321,8 +324,12 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::undo(std::unique_l
         chassert(it != path_map.map.end());
         if (it != path_map.map.end())
         {
-            [[maybe_unused]] auto res = it->second.filenames.erase(path.filename());
-            chassert(res > 0);
+            auto filename_it = path_map.unique_filenames.find(path.filename());
+            if (filename_it != path_map.unique_filenames.end())
+            {
+                [[maybe_unused]] auto res = it->second.filename_iterators.erase(filename_it);
+                chassert(res > 0);
+            }
         }
     }
 }
@@ -352,8 +359,10 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute(s
             path);
     else
     {
-        auto res = it->second.filenames.erase(path.filename());
-        unlinked = res > 0;
+        auto & filename_iterators = it->second.filename_iterators;
+        auto filename_it = path_map.unique_filenames.find(path.filename());
+        if (filename_it != path_map.unique_filenames.end())
+            unlinked = (filename_iterators.erase(filename_it) > 0);
     }
 }
 
@@ -366,7 +375,9 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo(std:
         chassert(it != path_map.map.end());
         if (it != path_map.map.end())
         {
-            it->second.filenames.emplace(path.filename());
+            auto filename_it = path_map.unique_filenames.find(path.filename());
+            if (filename_it != path_map.unique_filenames.end())
+                it->second.filename_iterators.emplace(filename_it);
         }
     }
 }
