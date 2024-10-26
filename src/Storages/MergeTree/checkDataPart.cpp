@@ -135,6 +135,7 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     }
 }
 
+
 static IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     const IDataPartStorage & data_part_storage,
@@ -421,7 +422,6 @@ IMergeTreeDataPart::Checksums checkDataPart(
         }
 
         ReadSettings read_settings;
-        read_settings.read_through_distributed_cache = false;
         read_settings.enable_filesystem_cache = false;
         read_settings.enable_filesystem_cache_log = false;
         read_settings.enable_filesystem_read_prefetches_log = false;

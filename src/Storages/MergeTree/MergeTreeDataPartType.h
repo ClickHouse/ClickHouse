@@ -45,7 +45,6 @@ public:
     enum Value
     {
         Full,
-        Packed,
         Unknown,
     };
 

@@ -21,7 +21,7 @@ namespace ErrorCodes
 size_t chooseBufferSizeForRemoteReading(const DB::ReadSettings & settings, size_t file_size)
 {
     /// Only when cache is used we could download bigger portions of FileSegments than what we actually gonna read within particular task.
-    if (!settings.enable_filesystem_cache && !settings.read_through_distributed_cache)
+    if (!settings.enable_filesystem_cache)
         return settings.remote_fs_buffer_size;
 
     /// Buffers used for prefetch and pre-download better to have enough size, but not bigger than the whole file.
