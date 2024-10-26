@@ -64,6 +64,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.11",
         {
+            {"use_structure_from_insertion_table_in_table_functions", 2, 3, "Make INSERT SELECT from table functions be more conservative about inferring structure, limiting it only to cases where it's ~certainly correct"}
         }
     },
     {"24.10",

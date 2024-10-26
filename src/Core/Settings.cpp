@@ -4888,8 +4888,8 @@ Maximum memory usage for prefetches.
 Maximum number of prefetches. Zero means unlimited. A setting `filesystem_prefetches_max_memory_usage` is more recommended if you want to limit the number of prefetches
 )", 0) \
     \
-    DECLARE(UInt64, use_structure_from_insertion_table_in_table_functions, 2, R"(
-Use structure from insertion table instead of schema inference from data. Possible values: 0 - disabled, 1 - enabled, 2 - auto
+    DECLARE(UInt64, use_structure_from_insertion_table_in_table_functions, 3, R"(
+Use structure from insertion table instead of schema inference from data. Possible values: 0 - disabled, 1 - enabled, 2 - auto (aggressive, deprecated), 3 - auto (conservative)
 )", 0) \
     \
     DECLARE(UInt64, http_max_tries, 10, R"(

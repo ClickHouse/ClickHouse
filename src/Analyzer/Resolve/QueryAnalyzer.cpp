@@ -4721,11 +4721,27 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     auto table_function_ast = table_function_node_typed.toAST();
     table_function_ptr->parseArguments(table_function_ast, scope_context);
 
+    /// For `INSERT INTO target_table SELECT ... FROM table_function(...)` we can assume that
+    /// table_function should produce the same sequence of columns as target_table's schema.
+    ///
+    /// Apply this only in trivial cases, excluding e.g.:
+    ///  * Nontrivial SELECT: `INSERT INTO target_table SELECT x FROM file(...) WHERE y = 42`.
+    ///    Column y is not in target_table.
+    ///  * Subquery: `INSERT INTO target_table SELECT 42 FROM (SELECT x FROM file(...))`.
+    ///    Column x isn't inserted into target_table.
+    ///  * Asterisk with named columns: `INSERT INTO target_table SELECT * FROM file('a.parquet')`.
+    ///    This may incorrectly reorder or skip columns that are present in the file.
+    ///  * Function: `INSERT into target_table SELECT foo(x), y FROM file(...)`.
+    ///    We don't know the type of column `x`.
+    /// (But disable these checks in compatibility mode use_structure_from_insertion_table_in_table_functions = 2.)
 
     uint64_t use_structure_from_insertion_table_in_table_functions
         = scope_context->getSettingsRef()[Setting::use_structure_from_insertion_table_in_table_functions];
-    if (!nested_table_function && use_structure_from_insertion_table_in_table_functions && scope_context->hasInsertionTable()
-        && table_function_ptr->needStructureHint())
+    bool trivial_insert_select = scope.subquery_depth == 0 && !scope.may_need_columns_outside_select_list;
+    bool allow_nontrivial_cases = use_structure_from_insertion_table_in_table_functions != 3;
+    if (use_structure_from_insertion_table_in_table_functions != 0 && !nested_table_function &&
+        (trivial_insert_select || allow_nontrivial_cases) &&
+        scope_context->hasInsertionTable() && table_function_ptr->needStructureHint())
     {
         const auto & insertion_table = scope_context->getInsertionTable();
         if (!insertion_table.empty())
@@ -4755,7 +4771,6 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             {
                 if (auto * identifier_node = (*expression)->as<IdentifierNode>())
                 {
-
                     if (!virtual_column_names.contains(identifier_node->getIdentifier().getFullName()))
                     {
                         if (asterisk)
@@ -4802,6 +4817,13 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
                     asterisk = true;
                 }
+                else if (use_structure_from_insertion_table_in_table_functions == 3)
+                {
+                    /// This may be e.g. a function or a regex column matcher. We can't infer
+                    /// the types of required columns from that.
+                    use_columns_from_insert_query = false;
+                    break;
+                }
                 else if (auto * function = (*expression)->as<FunctionNode>())
                 {
                     if (use_structure_from_insertion_table_in_table_functions == 2 && findIdentifier(*function))
@@ -4828,13 +4850,28 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 }
             }
 
-            if (use_structure_from_insertion_table_in_table_functions == 2 && !asterisk)
+            if (use_columns_from_insert_query && use_structure_from_insertion_table_in_table_functions >= 2)
             {
+                bool supports_subset;
                 /// For input function we should check if input format supports reading subset of columns.
                 if (table_function_ptr->getName() == "input")
-                    use_columns_from_insert_query = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(scope.context->getInsertFormat(), scope.context);
+                    supports_subset = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(scope.context->getInsertFormat(), scope.context);
                 else
-                    use_columns_from_insert_query = table_function_ptr->supportsReadingSubsetOfColumns(scope.context);
+                    supports_subset = table_function_ptr->supportsReadingSubsetOfColumns(scope.context);
+
+                if (!asterisk && !supports_subset)
+                    use_columns_from_insert_query = false;
+
+                if (use_structure_from_insertion_table_in_table_functions == 3 && asterisk && supports_subset)
+                {
+                    /// For formats like Parquet, don't expand `SELECT *` using columns from insert
+                    /// query, because that may reorder or skip columns. '*' normally means
+                    /// "all columns of the *source* table, in the same order as in the source table",
+                    /// and it would be confusing to sometimes change its meaning to
+                    /// "all columns of the *destination* table". But we allow it if
+                    /// use_structure_from_insertion_table_in_table_functions was set to non-default value 1.
+                    use_columns_from_insert_query = false;
+                }
             }
 
             if (use_columns_from_insert_query)
@@ -5304,6 +5341,16 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         throw Exception(ErrorCodes::TOO_DEEP_SUBQUERIES, "Too deep subqueries. Maximum: {}", max_subquery_depth);
 
     auto & query_node_typed = query_node->as<QueryNode &>();
+
+    if (!query_node_typed.hasWith() && !query_node_typed.hasPrewhere() && !query_node_typed.hasWhere() &&
+        !query_node_typed.hasGroupBy() && !query_node_typed.hasHaving() && !query_node_typed.hasWindow() &&
+        !query_node_typed.hasQualify() && !query_node_typed.hasOrderBy() && !query_node_typed.hasInterpolate() &&
+        !query_node_typed.hasLimitBy())
+        {
+            auto jt = query_node_typed.getJoinTree();
+            if (jt && jt->getNodeType() != QueryTreeNodeType::JOIN && jt->getNodeType() != QueryTreeNodeType::ARRAY_JOIN)
+                scope.may_need_columns_outside_select_list = false;
+        }
 
     if (query_node_typed.isCTE())
         ctes_in_resolve_process.insert(query_node_typed.getCTEName());

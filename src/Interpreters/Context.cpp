@@ -2235,7 +2235,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                 }
                 else if (auto * func = (*expression)->as<ASTFunction>())
                 {
-                    if (use_structure_from_insertion_table_in_table_functions == 2 && findIdentifier(func))
+                    if (use_structure_from_insertion_table_in_table_functions >= 2 && findIdentifier(func))
                     {
                         use_columns_from_insert_query = false;
                         break;
@@ -2259,7 +2259,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                 }
             }
 
-            if (use_structure_from_insertion_table_in_table_functions == 2 && !asterisk)
+            if (use_structure_from_insertion_table_in_table_functions >= 2 && !asterisk)
             {
                 /// For input function we should check if input format supports reading subset of columns.
                 if (table_function_ptr->getName() == "input")

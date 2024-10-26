@@ -194,6 +194,10 @@ struct IdentifierResolveScope
     /// Subquery depth
     size_t subquery_depth = 0;
 
+    /// False if it's a simple SELECT with no WHERE, JOIN, or anything else that may require us to
+    /// read columns that are not listed after SELECT.
+    bool may_need_columns_outside_select_list = true;
+
     /** Scope join tree node for expression.
       * Valid only during analysis construction for single expression.
       */
