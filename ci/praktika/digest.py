@@ -39,7 +39,9 @@ class Digest:
             sorted=True,
         )
 
-        print(f"calc digest for job [{job_config.name}]: hash_key [{cache_key}], include [{len(included_files)}] files")
+        print(
+            f"calc digest for job [{job_config.name}]: hash_key [{cache_key}], include [{len(included_files)}] files"
+        )
         # Sort files to ensure consistent hash calculation
         included_files.sort()
 
@@ -98,8 +100,10 @@ class Digest:
         if Path(file_path).is_symlink():
             resolved_path = os.path.realpath(file_path)
             if not Path(resolved_path).is_file():
-                print(f"WARNING: No valid file resolved by link {file_path} -> {resolved_path} - skipping digest calculation")
-                return hash_md5.hexdigest()[:Settings.CACHE_DIGEST_LEN]
+                print(
+                    f"WARNING: No valid file resolved by link {file_path} -> {resolved_path} - skipping digest calculation"
+                )
+                return hash_md5.hexdigest()[: Settings.CACHE_DIGEST_LEN]
 
         with open(resolved_path, "rb") as f:
             for chunk in iter(lambda: f.read(4096), b""):
