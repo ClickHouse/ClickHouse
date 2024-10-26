@@ -64,7 +64,6 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Common/ThreadFuzzer.h>
-#include <IO/SharedThreadPools.h>
 #include <base/coverage.h>
 #include <csignal>
 #include <algorithm>
@@ -780,13 +779,13 @@ BlockIO InterpreterSystemQuery::execute()
             resetCoverage();
             break;
         }
+        case Type::LOAD_PRIMARY_KEY: {
+            loadPrimaryKeys();
+            break;
+        }
         case Type::UNLOAD_PRIMARY_KEY:
         {
             unloadPrimaryKeys();
-            break;
-        }
-        case Type::LOAD_PRIMARY_KEY: {
-            loadPrimaryKeys();
             break;
         }
 
@@ -1196,7 +1195,6 @@ void InterpreterSystemQuery::loadPrimaryKeys()
     {
         getContext()->checkAccess(AccessType::SYSTEM_LOAD_PRIMARY_KEY);
 
-        /// Process databases and tables sequentially, without thread pool concurrency at the table level
         for (auto & database : DatabaseCatalog::instance().getDatabases())
         {
             for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
@@ -1208,9 +1206,15 @@ void InterpreterSystemQuery::loadPrimaryKeys()
                         /// Calls the improved loadPrimaryKeys in MergeTreeData
                         merge_tree->loadPrimaryKeys();
                     }
+                    catch (const std::exception &ex)
+                    {
+                        LOG_ERROR(log, "Failed to load primary keys for table {}: {}", merge_tree->getStorageID().getFullTableName(), ex.what());
+                        throw; // Re-throw the exception to allow it to propagate
+                    }
                     catch (...)
                     {
-                        LOG_ERROR(log, "Failed to load primary keys for table {}: {}", merge_tree->getStorageID().getFullTableName(), ex.message());
+                        LOG_ERROR(log, "Failed to load primary keys for table {}: unknown exception occurred.", merge_tree->getStorageID().getFullTableName());
+                        throw;
                     }
                 }
             }

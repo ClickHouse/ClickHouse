@@ -92,7 +92,6 @@ public:
         Type part_type_,
         const IMergeTreeDataPart * parent_part_);
 
-
     virtual MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns_,
         const StorageSnapshotPtr & storage_snapshot,
@@ -373,8 +372,8 @@ public:
     void setIndex(const Columns & cols_);
     void setIndex(Columns && cols_);
     void loadIndex() const TSA_REQUIRES(index_mutex);
-    void unloadIndex();
     void loadIndexWithLock() const { std::scoped_lock lock(index_mutex); loadIndex(); }
+    void unloadIndex();
     bool isIndexLoaded() const;
 
     /// For data in RAM ('index')

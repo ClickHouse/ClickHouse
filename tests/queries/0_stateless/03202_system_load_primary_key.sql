@@ -6,7 +6,7 @@ DROP TABLE IF EXISTS test_load_primary_key_2;
 CREATE TABLE test_load_primary_key (id Int32, value String) ENGINE = MergeTree() ORDER BY id;
 CREATE TABLE test_load_primary_key_2 (id Int32, value String) ENGINE = MergeTree() ORDER BY id;
 
--- Inserting some data into both tables
+-- Insert data into both tables
 INSERT INTO test_load_primary_key VALUES (1, 'a'), (2, 'b'), (3, 'c');
 INSERT INTO test_load_primary_key_2 VALUES (1, 'x'), (2, 'y'), (3, 'z');
 
@@ -19,11 +19,10 @@ FROM system.parts
 WHERE database = currentDatabase()
 AND table IN ('test_load_primary_key', 'test_load_primary_key_2');
 
--- Load primary key for both tables
-SYSTEM LOAD PRIMARY KEY test_load_primary_key;
-SYSTEM LOAD PRIMARY KEY test_load_primary_key_2;
+-- Load primary keys for all tables in the database
+SYSTEM LOAD PRIMARY KEY;
 
--- Check primary key memory after loading for both tables
+-- Verify primary key memory after loading for both tables
 SELECT
     table,
     round(primary_key_bytes_in_memory, -7),
@@ -32,11 +31,22 @@ FROM system.parts
 WHERE database = currentDatabase()
 AND table IN ('test_load_primary_key', 'test_load_primary_key_2');
 
--- Unload primary key for both tables
-SYSTEM UNLOAD PRIMARY KEY test_load_primary_key;
-SYSTEM UNLOAD PRIMARY KEY test_load_primary_key_2;
+-- Unload primary keys for all tables in the database
+SYSTEM UNLOAD PRIMARY KEY;
 
--- Check primary key memory after unloading for both tables
+-- Verify primary key memory after unloading for both tables
+SELECT
+    table,
+    round(primary_key_bytes_in_memory, -7),
+    round(primary_key_bytes_in_memory_allocated, -7)
+FROM system.parts
+WHERE database = currentDatabase()
+AND table IN ('test_load_primary_key', 'test_load_primary_key_2');
+
+-- Load primary key for only one table
+SYSTEM LOAD PRIMARY KEY test_load_primary_key;
+
+-- Verify that only one table's primary key is loaded
 SELECT
     table,
     round(primary_key_bytes_in_memory, -7),
