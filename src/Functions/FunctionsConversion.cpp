@@ -3760,7 +3760,9 @@ private:
             {
                 const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
 
-                if (query_context)
+                // Avoid strict checks for background operations like part
+                // merging to achieve better backward compatibility.
+                if (query_context && !query_context->isBackgroundOperationContext())
                     strict_named_tuple_conversion = query_context->getSettingsRef()[Setting::strict_named_tuple_conversion];
             }
 
