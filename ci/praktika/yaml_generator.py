@@ -102,7 +102,11 @@ jobs:
         run: |
           . /tmp/praktika_setup_env.sh
           set -o pipefail
-          {PYTHON} -m praktika run --job '''{JOB_NAME}''' --workflow "{WORKFLOW_NAME}" --ci |& tee {RUN_LOG}
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run --job '''{JOB_NAME}''' --workflow "{WORKFLOW_NAME}" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+          else
+            python3 -m praktika run --job '''{JOB_NAME}''' --workflow "{WORKFLOW_NAME}" --ci |& tee /tmp/praktika/praktika_run.log
+          fi
 {UPLOADS_GITHUB}\
 """
 

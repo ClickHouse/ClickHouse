@@ -8,11 +8,9 @@ from praktika.utils import Utils
 
 class CacheRunnerHooks:
     @classmethod
-    def configure(cls, _workflow):
-        workflow_config = RunConfig.from_fs(_workflow.name)
+    def configure(cls, workflow):
+        workflow_config = RunConfig.from_fs(workflow.name)
         cache = Cache()
-        assert _Environment.get().WORKFLOW_NAME
-        workflow = _get_workflows(name=_Environment.get().WORKFLOW_NAME)[0]
         print(f"Workflow Configure, workflow [{workflow.name}]")
         assert (
             workflow.enable_cache

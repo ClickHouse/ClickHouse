@@ -318,7 +318,7 @@ class Result(MetaClasses.Serializable):
             files=[log_file] if log_file else None,
         )
 
-    def finish_job_accordingly(self):
+    def complete_job(self):
         self.dump()
         if not self.is_ok():
             print("ERROR: Job Failed")

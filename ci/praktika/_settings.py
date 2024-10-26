@@ -1,5 +1,4 @@
 import dataclasses
-from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 
@@ -8,6 +7,7 @@ class _Settings:
     ######################################
     #    Pipeline generation settings    #
     ######################################
+    MAIN_BRANCH = "main"
     CI_PATH = "./ci"
     WORKFLOW_PATH_PREFIX: str = "./.github/workflows"
     WORKFLOWS_DIRECTORY: str = f"{CI_PATH}/workflows"
@@ -111,6 +111,7 @@ _USER_DEFINED_SETTINGS = [
     "CI_DB_INSERT_TIMEOUT_SEC",
     "SECRET_GH_APP_PEM_KEY",
     "SECRET_GH_APP_ID",
+    "MAIN_BRANCH",
 ]
 
 

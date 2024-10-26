@@ -1,7 +1,6 @@
 import dataclasses
 from typing import List
 
-from praktika.environment import Environment
 from praktika.result import Result
 
 OK_SIGN = "[ OK "
@@ -250,7 +249,7 @@ class FTResultsProcessor:
         # test_results.sort(key=test_result_comparator)
 
         return Result.create_from(
-            name=Environment.JOB_NAME,
+            name="Tests",
             results=test_results,
             status=state,
             files=[self.tests_output_file],

@@ -59,6 +59,19 @@ job_build_amd_debug = Job.Config(
     provides=[ArtifactNames.ch_debug_binary],
 )
 
+stateless_tests_job = Job.Config(
+    name=JobNames.STATELESS_TESTS,
+    runs_on=[RunnerLabels.BUILDER],
+    command="python3 ./ci/jobs/functional_stateless_tests.py amd_debug",
+    run_in_docker="clickhouse/fasttest:latest",
+    digest_config=Job.CacheDigestConfig(
+        include_paths=[
+            "./ci/jobs/functional_stateless_tests.py",
+        ],
+    ),
+    requires=[ArtifactNames.ch_debug_binary],
+)
+
 workflow = Workflow.Config(
     name="PR",
     event=Workflow.Event.PULL_REQUEST,
@@ -67,6 +80,7 @@ workflow = Workflow.Config(
         style_check_job,
         fast_test_job,
         job_build_amd_debug,
+        stateless_tests_job,
     ],
     artifacts=[
         Artifact.Config(
@@ -91,4 +105,4 @@ if __name__ == "__main__":
     # local job test inside praktika environment
     from praktika.runner import Runner
 
-    Runner().run(workflow, fast_test_job, docker="fasttest", dummy_env=True)
+    Runner().run(workflow, fast_test_job, docker="fasttest", local_run=True)

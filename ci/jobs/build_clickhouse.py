@@ -13,8 +13,14 @@ class JobStages(metaclass=MetaClasses.WithIter):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Build Job")
-    parser.add_argument("BUILD_TYPE", help="Type: <amd|arm_debug|release_sanitizer>")
-    parser.add_argument("--param", help="Optional custom job start stage", default=None)
+    parser.add_argument(
+        "BUILD_TYPE", help="Type: <amd|arm>_<debug|release>_<asan|msan|..>"
+    )
+    parser.add_argument(
+        "--param",
+        help="Optional user-defined job start stage (for local run)",
+        default=None,
+    )
     return parser.parse_args()
 
 
@@ -95,7 +101,7 @@ def main():
         Shell.check(f"ls -l {build_dir}/programs/")
         res = results[-1].is_ok()
 
-    Result.create_from(results=results, stopwatch=stop_watch).finish_job_accordingly()
+    Result.create_from(results=results, stopwatch=stop_watch).complete_job()
 
 
 if __name__ == "__main__":

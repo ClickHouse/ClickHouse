@@ -38,6 +38,24 @@ def create_parser():
         default=None,
     )
     run_parser.add_argument(
+        "--pr",
+        help="PR number. Optional parameter for local run. Set if you want an required artifact to be uploaded from CI run in that PR",
+        type=int,
+        default=None,
+    )
+    run_parser.add_argument(
+        "--sha",
+        help="Commit sha. Optional parameter for local run. Set if you want an required artifact to be uploaded from CI run on that sha, head sha will be used if not set",
+        type=str,
+        default=None,
+    )
+    run_parser.add_argument(
+        "--branch",
+        help="Commit sha. Optional parameter for local run. Set if you want an required artifact to be uploaded from CI run on that branch, main branch name will be used if not set",
+        type=str,
+        default=None,
+    )
+    run_parser.add_argument(
         "--ci",
         help="When not set - dummy env will be generated, for local test",
         action="store_true",
@@ -85,9 +103,12 @@ if __name__ == "__main__":
                 workflow=workflow,
                 job=job,
                 docker=args.docker,
-                dummy_env=not args.ci,
+                local_run=not args.ci,
                 no_docker=args.no_docker,
                 param=args.param,
+                pr=args.pr,
+                branch=args.branch,
+                sha=args.sha,
             )
     else:
         parser.print_help()

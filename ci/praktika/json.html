@@ -89,6 +89,17 @@
             letter-spacing: -0.5px;
         }
 
+        .dropdown-value {
+            width: 100px;
+            font-weight: normal;
+            font-family: inherit;
+            background-color: transparent;
+            color: inherit;
+            /*border: none;*/
+            /*outline: none;*/
+            /*cursor: pointer;*/
+        }
+
         #result-container {
             background-color: var(--tile-background);
             margin-left: calc(var(--status-width) + 20px);
@@ -282,6 +293,12 @@
         }
     }
 
+    function updateUrlParameter(paramName, paramValue) {
+        const url = new URL(window.location.href);
+        url.searchParams.set(paramName, paramValue);
+        window.location.href = url.toString();
+    }
+
     // Attach the toggle function to the click event of the icon
     document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
 
@@ -291,14 +308,14 @@
         const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
             "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
         const month = monthNames[date.getMonth()];
-        const year = date.getFullYear();
+        //const year = date.getFullYear();
         const hours = String(date.getHours()).padStart(2, '0');
         const minutes = String(date.getMinutes()).padStart(2, '0');
         const seconds = String(date.getSeconds()).padStart(2, '0');
         //const milliseconds = String(date.getMilliseconds()).padStart(2, '0');
 
         return showDate
-            ? `${day}-${month}-${year} ${hours}:${minutes}:${seconds}`
+            ? `${day}'${month} ${hours}:${minutes}:${seconds}`
             : `${hours}:${minutes}:${seconds}`;
     }
 
@@ -346,7 +363,7 @@
         return 'status-other';
     }
 
-    function addKeyValueToStatus(key, value) {
+    function addKeyValueToStatus(key, value, options = null) {
 
         const statusContainer = document.getElementById('status-container');
 
@@ -357,10 +374,25 @@
         keyElement.className = 'json-key';
         keyElement.textContent = key + ':';
 
-        const valueElement = document.createElement('div');
-        valueElement.className = 'json-value';
-        valueElement.textContent = value;
-
+        let valueElement
+        if (value) {
+            valueElement = document.createElement('div');
+            valueElement.className = 'json-value';
+            valueElement.textContent = value;
+        } else if (options) {
+            valueElement = document.createElement('select');
+            valueElement.className = 'dropdown-value';
+            valueElement.addEventListener('change', (event) => {
+                const selectedValue = event.target.value;
+                updateUrlParameter(key, selectedValue);
+            });
+            options.forEach(optionValue => {
+                const option = document.createElement('option');
+                option.value = optionValue;
+                option.textContent = optionValue;
+                valueElement.appendChild(option);
+            });
+        }
         keyValuePair.appendChild(keyElement)
         keyValuePair.appendChild(valueElement)
         statusContainer.appendChild(keyValuePair);
@@ -487,7 +519,7 @@
 
     const columnSymbols = {
         name: '📂',
-        status: '✔️',
+        status: '⏯️',
         start_time: '🕒',
         duration: '⏳',
         info: 'ℹ️',
@@ -726,7 +758,7 @@
         } else {
             console.error("TODO")
         }
-        addKeyValueToStatus("sha", sha);
+        addKeyValueToStatus("sha", null, [sha, 'lala']);
         if (nameParams[1]) {
             addKeyValueToStatus("job", nameParams[1]);
         }
