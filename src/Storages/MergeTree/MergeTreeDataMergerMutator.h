@@ -106,11 +106,9 @@ public:
         PreformattedMessage & out_disable_reason,
         bool dry_run = false);
 
-    /// Actually the most fresh partition with biggest modification_time
     String getBestPartitionToOptimizeEntire(const PartitionsInfo & partitions_info) const;
 
     /// Useful to quickly get a list of partitions that contain parts that we may want to merge
-    /// The result is limited by top_number_of_partitions_to_consider_for_merge
     PartitionIdsHint getPartitionsThatMayBeMerged(
         size_t max_total_size_to_merge,
         const AllowedMergingPredicate & can_merge_callback,
