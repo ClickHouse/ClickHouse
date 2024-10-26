@@ -61,14 +61,12 @@ void loadDirectoryTree(
     LOG_DEBUG(getLogger("MetadataStorageFromPlainObjectStorage"), "Loading directory structure");
     for (auto & [local_path, info] : map)
     {
-        LOG_TRACE(getLogger("loadDirectory"), "Loading directories for local path: {}", local_path);
         const auto remote_path = std::filesystem::path(common_key_prefix) / info.path / "";
         std::set<FileNamesIterator, FileNameIteratorComparator> filename_iterators;
         for (auto iterator = object_storage->iterate(remote_path, 0); iterator->isValid(); iterator->next())
         {
             auto file = iterator->current();
             String path = file->getPath();
-            LOG_TRACE(getLogger("loadDirectory"), "Remote path: {}", path);
             chassert(path.starts_with(remote_path.string()));
             auto filename = std::filesystem::path(path).filename();
             /// Check that the file is a direct child.
@@ -78,6 +76,10 @@ void loadDirectoryTree(
                 filename_iterators.emplace(filename_it);
             }
         }
+
+        auto metric = object_storage->getMetadataStorageMetrics().file_count;
+        CurrentMetrics::add(metric, filename_iterators.size());
+
         info.filename_iterators = std::move(filename_iterators);
     }
 }
@@ -211,6 +213,9 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
         auto keys_gen = std::make_shared<CommonPathPrefixKeyGenerator>(object_storage->getCommonKeyPrefix(), path_map);
         object_storage->setKeysGenerator(keys_gen);
     }
+
+    auto metric = object_storage->getMetadataStorageMetrics().unique_filenames_count;
+    CurrentMetrics::add(metric, path_map->unique_filenames.size());
 }
 
 MetadataStorageFromPlainRewritableObjectStorage::~MetadataStorageFromPlainRewritableObjectStorage()

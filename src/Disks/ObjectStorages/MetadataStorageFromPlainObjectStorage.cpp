@@ -225,7 +225,8 @@ void MetadataStorageFromPlainObjectStorageTransaction::createEmptyMetadataFile(c
     if (metadata_storage.object_storage->isWriteOnce())
         return;
 
-    addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageWriteFileOperation>(path, *metadata_storage.getPathMap()));
+    addOperation(
+        std::make_unique<MetadataStorageFromPlainObjectStorageWriteFileOperation>(path, *metadata_storage.getPathMap(), object_storage));
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::createMetadataFile(

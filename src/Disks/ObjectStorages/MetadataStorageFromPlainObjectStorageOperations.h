@@ -92,11 +92,13 @@ class MetadataStorageFromPlainObjectStorageWriteFileOperation final : public IMe
 private:
     std::filesystem::path path;
     InMemoryDirectoryPathMap & path_map;
+    ObjectStoragePtr object_storage;
 
     bool written = false;
 
 public:
-    MetadataStorageFromPlainObjectStorageWriteFileOperation(const std::string & path, InMemoryDirectoryPathMap & path_map_);
+    MetadataStorageFromPlainObjectStorageWriteFileOperation(
+        const std::string & path, InMemoryDirectoryPathMap & path_map_, ObjectStoragePtr object_storage_);
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
     void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
@@ -108,6 +110,7 @@ private:
     std::filesystem::path path;
     std::filesystem::path remote_path;
     InMemoryDirectoryPathMap & path_map;
+    ObjectStoragePtr object_storage;
 
     bool unlinked = false;
 

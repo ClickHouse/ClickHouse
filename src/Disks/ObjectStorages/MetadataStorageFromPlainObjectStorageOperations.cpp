@@ -290,8 +290,8 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo(std::un
 }
 
 MetadataStorageFromPlainObjectStorageWriteFileOperation::MetadataStorageFromPlainObjectStorageWriteFileOperation(
-    const std::string & path_, InMemoryDirectoryPathMap & path_map_)
-    : path(path_), path_map(path_map_)
+    const std::string & path_, InMemoryDirectoryPathMap & path_map_, ObjectStoragePtr object_storage_)
+    : path(path_), path_map(path_map_), object_storage(object_storage_)
 {
 }
 
@@ -310,8 +310,18 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute(std::uniqu
             path);
     else
     {
-        auto filename_it = path_map.unique_filenames.emplace(path.filename()).first;
+        auto [filename_it, inserted] = path_map.unique_filenames.emplace(path.filename());
+        if (inserted)
+        {
+            auto metric = object_storage->getMetadataStorageMetrics().unique_filenames_count;
+            CurrentMetrics::add(metric, 1);
+        }
         written = it->second.filename_iterators.emplace(filename_it).second;
+        if (written)
+        {
+            auto metric = object_storage->getMetadataStorageMetrics().file_count;
+            CurrentMetrics::add(metric, 1);
+        }
     }
 }
 
@@ -327,8 +337,11 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::undo(std::unique_l
             auto filename_it = path_map.unique_filenames.find(path.filename());
             if (filename_it != path_map.unique_filenames.end())
             {
-                [[maybe_unused]] auto res = it->second.filename_iterators.erase(filename_it);
-                chassert(res > 0);
+                if (it->second.filename_iterators.erase(filename_it) > 0)
+                {
+                    auto metric = object_storage->getMetadataStorageMetrics().file_count;
+                    CurrentMetrics::sub(metric, 1);
+                }
             }
         }
     }
@@ -339,6 +352,7 @@ MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorag
     : path(path_)
     , remote_path(std::filesystem::path(object_storage_->generateObjectKeyForPath(path_, std::nullopt).serialize()))
     , path_map(path_map_)
+    , object_storage(object_storage_)
 {
 }
 
@@ -363,6 +377,12 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute(s
         auto filename_it = path_map.unique_filenames.find(path.filename());
         if (filename_it != path_map.unique_filenames.end())
             unlinked = (filename_iterators.erase(filename_it) > 0);
+
+        if (unlinked)
+        {
+            auto metric = object_storage->getMetadataStorageMetrics().file_count;
+            CurrentMetrics::sub(metric, 1);
+        }
     }
 }
 
@@ -377,7 +397,13 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo(std:
         {
             auto filename_it = path_map.unique_filenames.find(path.filename());
             if (filename_it != path_map.unique_filenames.end())
-                it->second.filename_iterators.emplace(filename_it);
+            {
+                if (it->second.filename_iterators.emplace(filename_it).second)
+                {
+                    auto metric = object_storage->getMetadataStorageMetrics().file_count;
+                    CurrentMetrics::add(metric, 1);
+                }
+            }
         }
     }
 }
