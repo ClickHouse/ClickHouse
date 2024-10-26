@@ -4,6 +4,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/Distributed/DistributedSettings.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -19,7 +20,6 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
-#include <base/range.h>
 #include "registerTableFunctions.h"
 
 

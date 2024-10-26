@@ -10,11 +10,14 @@ A popular benchmark which models the internal data warehouse of a wholesale supp
 The data is stored into a 3rd normal form representation, requiring lots of joins at query runtime.
 Despite its age and its unrealistic assumption that the data is uniformly and independently distributed, TPC-H remains the most popular OLAP benchmark to date.
 
-References
+**References**
+
 - [TPC-H](https://www.tpc.org/tpc_documents_current_versions/current_specifications5.asp)
 - [New TPC Benchmarks for Decision Support and Web Commerce](https://doi.org/10.1145/369275.369291) (Poess et. al., 2000)
 - [TPC-H Analyzed: Hidden Messages and Lessons Learned from an Influential Benchmark](https://doi.org/10.1007/978-3-319-04936-6_5) (Boncz et. al.), 2013
 - [Quantifying TPC-H Choke Points and Their Optimizations](https://doi.org/10.14778/3389133.3389138) (Dresseler et. al.), 2020
+
+## Data Generation and Import
 
 First, checkout the TPC-H repository and compile the data generator:
 
@@ -30,7 +33,17 @@ Then, generate the data. Parameter `-s` specifies the scale factor. For example,
 ./dbgen -s 100
 ```
 
-Now create tables in ClickHouse:
+Now create tables in ClickHouse.
+
+We stick as closely as possible to the rules of the TPC-H specification:
+- Primary keys are created only for the columns mentioned in section 1.4.2.2 of the specification.
+- Substitution parameters were replaced by the values for query validation in sections 2.1.x.4 of the specification.
+- As per section 1.4.2.1, the table definitions do not use the optional `NOT NULL` constraints, even if `dbgen` generates them by default.
+  The performance of `SELECT` queries in ClickHouse is not affected by the presence or absence of `NOT NULL` constraints.
+- As per section 1.3.1, we use ClickHouse's native datatypes (e.g. `Int32`, `String`) to implement the abstract datatypes mentioned in the
+  specification (e.g. `Identifier`, `Variable text, size N`). The only effect of this is better readability, the SQL-92 datatypes generated
+  by `dbgen` (e.g. `INTEGER`, `VARCHAR(40)`) would also work in ClickHouse.
+
 
 ```sql
 CREATE TABLE nation (
@@ -38,13 +51,13 @@ CREATE TABLE nation (
     n_name       String,
     n_regionkey  Int32,
     n_comment    String)
-ORDER BY (n_regionkey, n_name);
+ORDER BY (n_nationkey);
 
 CREATE TABLE region (
     r_regionkey  Int32,
     r_name       String,
     r_comment    String)
-ORDER BY (r_name);
+ORDER BY (r_regionkey);
 
 CREATE TABLE part (
     p_partkey     Int32,
@@ -56,7 +69,7 @@ CREATE TABLE part (
     p_container   String,
     p_retailprice Decimal(15,2),
     p_comment     String)
-ORDER BY (p_mfgr, p_brand, p_type, p_name);
+ORDER BY (p_partkey);
 
 CREATE TABLE supplier (
     s_suppkey     Int32,
@@ -66,7 +79,7 @@ CREATE TABLE supplier (
     s_phone       String,
     s_acctbal     Decimal(15,2),
     s_comment     String)
-ORDER BY (s_nationkey, s_address, s_name);
+ORDER BY (s_suppkey);
 
 CREATE TABLE partsupp (
     ps_partkey     Int32,
@@ -74,7 +87,7 @@ CREATE TABLE partsupp (
     ps_availqty    Int32,
     ps_supplycost  Decimal(15,2),
     ps_comment     String)
-ORDER BY (ps_suppkey, ps_availqty, ps_supplycost, ps_partkey);
+ORDER BY (ps_partkey, ps_suppkey);
 
 CREATE TABLE customer (
     c_custkey     Int32,
@@ -85,7 +98,7 @@ CREATE TABLE customer (
     c_acctbal     Decimal(15,2),
     c_mktsegment  String,
     c_comment     String)
-ORDER BY (c_nationkey, c_mktsegment, c_address, c_name, c_custkey);
+ORDER BY (c_custkey);
 
 CREATE TABLE orders  (
     o_orderkey       Int32,
@@ -97,7 +110,10 @@ CREATE TABLE orders  (
     o_clerk          String,
     o_shippriority   Int32,
     o_comment        String)
-ORDER BY (o_orderdate, o_orderstatus, o_custkey);
+ORDER BY (o_orderkey);
+-- The following is an alternative order key which is not compliant with the official TPC-H rules but recommended by sec. 4.5 in
+-- "Quantifying TPC-H Choke Points and Their Optimizations":
+-- ORDER BY (o_orderdate, o_orderkey);
 
 CREATE TABLE lineitem (
     l_orderkey       Int32,
@@ -116,7 +132,10 @@ CREATE TABLE lineitem (
     l_shipinstruct   String,
     l_shipmode       String,
     l_comment        String)
-ORDER BY (l_suppkey, l_partkey, l_shipdate, l_commitdate, l_receiptdate);
+ORDER BY (l_orderkey, l_linenumber);
+-- The following is an alternative order key which is not compliant with the official TPC-H rules but recommended by sec. 4.5 in
+-- "Quantifying TPC-H Choke Points and Their Optimizations":
+-- ORDER BY (l_shipdate, l_orderkey, l_linenumber);
 ```
 
 The data can be imported as follows:
@@ -127,19 +146,21 @@ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO region FORMAT 
 clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO part FORMAT CSV" < part.tbl
 clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO supplier FORMAT CSV" < supplier.tbl
 clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO partsupp FORMAT CSV" < partsupp.tbl
-clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO customers FORMAT CSV" < customers.tbl
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO customer FORMAT CSV" < customer.tbl
 clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO orders FORMAT CSV" < orders.tbl
 clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO lineitem FORMAT CSV" < lineitem.tbl
 ```
 
 The queries are generated by `./qgen -s <scaling_factor>`. Example queries for `s = 100`:
 
-::::warning
-TPC-H makes heavy use of correlated subqueries which are at the time of writing (September 2024) not supported by ClickHouse ([issue #6697](https://github.com/ClickHouse/ClickHouse/issues/6697)).
-As a result, many of below benchmark queries will fail with errors.
-::::
+## Queries
 
-Q1
+**Correctness**
+
+The result of the queries agrees with the official results unless mentioned otherwise. To verify, generate a TPC-H database with scale
+factor = 1 (`dbgen`, see above) and compare with the [expected results in tpch-kit](https://github.com/gregrahn/tpch-kit/tree/master/dbgen/answers).
+
+**Q1**
 
 ```sql
 SELECT
@@ -156,7 +177,7 @@ SELECT
 FROM
     lineitem
 WHERE
-    l_shipdate <= date '1998-12-01' - interval '100' day
+    l_shipdate <= DATE '1998-12-01' - INTERVAL '90' DAY
 GROUP BY
     l_returnflag,
     l_linestatus
@@ -165,7 +186,7 @@ ORDER BY
     l_linestatus;
 ```
 
-Q2
+**Q2**
 
 ```sql
 SELECT
@@ -186,11 +207,11 @@ FROM
 WHERE
     p_partkey = ps_partkey
     AND s_suppkey = ps_suppkey
-    AND p_size = 21
-    AND p_type LIKE '%COPPER'
+    AND p_size = 15
+    AND p_type LIKE '%BRASS'
     AND s_nationkey = n_nationkey
     AND n_regionkey = r_regionkey
-    AND r_name = 'AMERICA'
+    AND r_name = 'EUROPE'
     AND ps_supplycost = (
         SELECT
             min(ps_supplycost)
@@ -204,17 +225,72 @@ WHERE
             AND s_suppkey = ps_suppkey
             AND s_nationkey = n_nationkey
             AND n_regionkey = r_regionkey
-            AND r_name = 'AMERICA'
+            AND r_name = 'EUROPE'
     )
 ORDER BY
-    s_acctbal desc,
+    s_acctbal DESC,
     n_name,
     s_name,
-    p_partkey
-LIMIT 100;
+    p_partkey;
 ```
 
-Q3
+::::note
+As of October 2024, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
+
+This alternative formulation works and was verified to return the reference results.
+
+```sql
+WITH MinSupplyCost AS (
+    SELECT
+        ps_partkey,
+        MIN(ps_supplycost) AS min_supplycost
+    FROM
+        partsupp ps
+    JOIN
+        supplier s ON ps.ps_suppkey = s.s_suppkey
+    JOIN
+        nation n ON s.s_nationkey = n.n_nationkey
+    JOIN
+        region r ON n.n_regionkey = r.r_regionkey
+    WHERE
+        r.r_name = 'EUROPE'
+    GROUP BY
+        ps_partkey
+)
+SELECT
+    s.s_acctbal,
+    s.s_name,
+    n.n_name,
+    p.p_partkey,
+    p.p_mfgr,
+    s.s_address,
+    s.s_phone,
+    s.s_comment
+FROM
+    part p
+JOIN
+    partsupp ps ON p.p_partkey = ps.ps_partkey
+JOIN
+    supplier s ON s.s_suppkey = ps.ps_suppkey
+JOIN
+    nation n ON s.s_nationkey = n.n_nationkey
+JOIN
+    region r ON n.n_regionkey = r.r_regionkey
+JOIN
+    MinSupplyCost msc ON ps.ps_partkey = msc.ps_partkey AND ps.ps_supplycost = msc.min_supplycost
+WHERE
+    p.p_size = 15
+    AND p.p_type LIKE '%BRASS'
+    AND r.r_name = 'EUROPE'
+ORDER BY
+    s.s_acctbal DESC,
+    n.n_name,
+    s.s_name,
+    p.p_partkey;
+```
+::::
+
+**Q3**
 
 ```sql
 SELECT
@@ -230,19 +306,18 @@ WHERE
     c_mktsegment = 'BUILDING'
     AND c_custkey = o_custkey
     AND l_orderkey = o_orderkey
-    AND o_orderdate < date '1995-03-10'
-    AND l_shipdate > date '1995-03-10'
+    AND o_orderdate < DATE '1995-03-15'
+    AND l_shipdate > DATE '1995-03-15'
 GROUP BY
     l_orderkey,
     o_orderdate,
     o_shippriority
 ORDER BY
-    revenue desc,
-    o_orderdate
-LIMIT 10;
+    revenue DESC,
+    o_orderdate;
 ```
 
-Q4
+**Q4**
 
 ```sql
 SELECT
@@ -251,8 +326,8 @@ SELECT
 FROM
     orders
 WHERE
-    o_orderdate >= date '1994-07-01'
-    AND o_orderdate < date '1994-07-01' + interval '3' month
+    o_orderdate >= DATE '1993-07-01'
+    AND o_orderdate < DATE '1993-07-01' + INTERVAL '3' MONTH
     AND EXISTS (
         SELECT
             *
@@ -268,7 +343,40 @@ ORDER BY
     o_orderpriority;
 ```
 
-Q5
+::::note
+As of October 2024, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
+
+This alternative formulation works and was verified to return the reference results.
+
+```sql
+WITH ValidLineItems AS (
+    SELECT
+        l_orderkey
+    FROM
+        lineitem
+    WHERE
+        l_commitdate < l_receiptdate
+    GROUP BY
+        l_orderkey
+)
+SELECT
+    o.o_orderpriority,
+    COUNT(*) AS order_count
+FROM
+    orders o
+JOIN
+    ValidLineItems vli ON o.o_orderkey = vli.l_orderkey
+WHERE
+    o.o_orderdate >= DATE '1993-07-01'
+    AND o.o_orderdate < DATE '1993-07-01' + INTERVAL '3' MONTH
+GROUP BY
+    o.o_orderpriority
+ORDER BY
+    o.o_orderpriority;
+```
+::::
+
+**Q5**
 
 ```sql
 SELECT
@@ -288,16 +396,16 @@ WHERE
     AND c_nationkey = s_nationkey
     AND s_nationkey = n_nationkey
     AND n_regionkey = r_regionkey
-    AND r_name = 'MIDDLE EAST'
-    AND o_orderdate >= date '1994-01-01'
-    AND o_orderdate < date '1994-01-01' + interval '1' year
+    AND r_name = 'ASIA'
+    AND o_orderdate >= DATE '1994-01-01'
+    AND o_orderdate < DATE '1994-01-01' + INTERVAL '1' year
 GROUP BY
     n_name
 ORDER BY
-    revenue desc;
+    revenue DESC;
 ```
 
-Q6
+**Q6**
 
 ```sql
 SELECT
@@ -305,13 +413,31 @@ SELECT
 FROM
     lineitem
 WHERE
-    l_shipdate >= date '1994-01-01'
-    AND l_shipdate < date '1994-01-01' + interval '1' year
-    AND l_discount between 0.09 - 0.01 AND 0.09 + 0.01
+    l_shipdate >= DATE '1994-01-01'
+    AND l_shipdate < DATE '1994-01-01' + INTERVAL '1' year
+    AND l_discount BETWEEN 0.06 - 0.01 AND 0.06 + 0.01
     AND l_quantity < 24;
 ```
 
-Q7
+::::note
+As of October 2024, the query does not work out-of-the box due to a bug with Decimal addition. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/70136
+
+This alternative formulation works and was verified to return the reference results.
+
+```sql
+SELECT
+    sum(l_extendedprice * l_discount) AS revenue
+FROM
+    lineitem
+WHERE
+    l_shipdate >= DATE '1994-01-01'
+    AND l_shipdate < DATE '1994-01-01' + INTERVAL '1' year
+    AND l_discount BETWEEN 0.05 AND 0.07
+    AND l_quantity < 24;
+```
+::::
+
+**Q7**
 
 ```sql
 SELECT
@@ -319,31 +445,30 @@ SELECT
     cust_nation,
     l_year,
     sum(volume) AS revenue
-FROM
-    (
-        SELECT
-            n1.n_name AS supp_nation,
-            n2.n_name AS cust_nation,
-            extract(year FROM l_shipdate) AS l_year,
-            l_extendedprice * (1 - l_discount) AS volume
-        FROM
-            supplier,
-            lineitem,
-            orders,
-            customer,
-            nation n1,
-            nation n2
-        WHERE
-            s_suppkey = l_suppkey
-            AND o_orderkey = l_orderkey
-            AND c_custkey = o_custkey
-            AND s_nationkey = n1.n_nationkey
-            AND c_nationkey = n2.n_nationkey
-            AND (
-                (n1.n_name = 'UNITED KINGDOM' AND n2.n_name = 'ETHIOPIA')
-                OR (n1.n_name = 'ETHIOPIA' AND n2.n_name = 'UNITED KINGDOM')
-            )
-            AND l_shipdate between date '1995-01-01' AND date '1996-12-31'
+FROM (
+    SELECT
+        n1.n_name AS supp_nation,
+        n2.n_name AS cust_nation,
+        extract(year FROM l_shipdate) AS l_year,
+        l_extendedprice * (1 - l_discount) AS volume
+    FROM
+        supplier,
+        lineitem,
+        orders,
+        customer,
+        nation n1,
+        nation n2
+    WHERE
+        s_suppkey = l_suppkey
+        AND o_orderkey = l_orderkey
+        AND c_custkey = o_custkey
+        AND s_nationkey = n1.n_nationkey
+        AND c_nationkey = n2.n_nationkey
+        AND (
+            (n1.n_name = 'FRANCE' AND n2.n_name = 'GERMANY')
+            OR (n1.n_name = 'GERMANY' AND n2.n_name = 'FRANCE')
+        )
+        AND l_shipdate BETWEEN DATE '1995-01-01' AND DATE '1996-12-31'
     ) AS shipping
 GROUP BY
     supp_nation,
@@ -355,41 +480,41 @@ ORDER BY
     l_year;
 ```
 
-Q8
+**Q8**
 
 ```sql
 SELECT
     o_year,
     sum(CASE
-        WHEN nation = 'ETHIOPIA' THEN volume
-        ELSE 0
-    END) / sum(volume) AS mkt_share
-FROM
-    (
-        SELECT
-            extract(year FROM o_orderdate) AS o_year,
-            l_extendedprice * (1 - l_discount) AS volume,
-            n2.n_name AS nation
-        FROM
-            part,
-            supplier,
-            lineitem,
-            orders,
-            customer,
-            nation n1,
-            nation n2,
-            region
-        WHERE
-            p_partkey = l_partkey
-            AND s_suppkey = l_suppkey
-            AND l_orderkey = o_orderkey
-            AND o_custkey = c_custkey
-            AND c_nationkey = n1.n_nationkey
-            AND n1.n_regionkey = r_regionkey
-            AND r_name = 'AFRICA'
-            AND s_nationkey = n2.n_nationkey
-            AND o_orderdate between date '1995-01-01' AND date '1996-12-31'
-            AND p_type = 'SMALL POLISHED TIN'
+            WHEN nation = 'BRAZIL'
+            THEN volume
+            ELSE 0
+        END) / sum(volume) AS mkt_share
+FROM (
+    SELECT
+        extract(year FROM o_orderdate) AS o_year,
+        l_extendedprice * (1 - l_discount) AS volume,
+        n2.n_name AS nation
+    FROM
+        part,
+        supplier,
+        lineitem,
+        orders,
+        customer,
+        nation n1,
+        nation n2,
+        region
+    WHERE
+        p_partkey = l_partkey
+        AND s_suppkey = l_suppkey
+        AND l_orderkey = o_orderkey
+        AND o_custkey = c_custkey
+        AND c_nationkey = n1.n_nationkey
+        AND n1.n_regionkey = r_regionkey
+        AND r_name = 'AMERICA'
+        AND s_nationkey = n2.n_nationkey
+        AND o_orderdate BETWEEN DATE '1995-01-01' AND DATE '1996-12-31'
+        AND p_type = 'ECONOMY ANODIZED STEEL'
     ) AS all_nations
 GROUP BY
     o_year
@@ -397,44 +522,43 @@ ORDER BY
     o_year;
 ```
 
-Q9
+**Q9**
 
 ```sql
 SELECT
     nation,
     o_year,
     sum(amount) AS sum_profit
-FROM
-    (
-        SELECT
-            n_name AS nation,
-            extract(year FROM o_orderdate) AS o_year,
-            l_extendedprice * (1 - l_discount) - ps_supplycost * l_quantity AS amount
-        FROM
-            part,
-            supplier,
-            lineitem,
-            partsupp,
-            orders,
-            nation
-        WHERE
-            s_suppkey = l_suppkey
-            AND ps_suppkey = l_suppkey
-            AND ps_partkey = l_partkey
-            AND p_partkey = l_partkey
-            AND o_orderkey = l_orderkey
-            AND s_nationkey = n_nationkey
-            AND p_name LIKE '%drab%'
+FROM (
+    SELECT
+        n_name AS nation,
+        extract(year FROM o_orderdate) AS o_year,
+        l_extendedprice * (1 - l_discount) - ps_supplycost * l_quantity AS amount
+    FROM
+        part,
+        supplier,
+        lineitem,
+        partsupp,
+        orders,
+        nation
+    WHERE
+        s_suppkey = l_suppkey
+        AND ps_suppkey = l_suppkey
+        AND ps_partkey = l_partkey
+        AND p_partkey = l_partkey
+        AND o_orderkey = l_orderkey
+        AND s_nationkey = n_nationkey
+        AND p_name LIKE '%green%'
     ) AS profit
 GROUP BY
     nation,
     o_year
 ORDER BY
     nation,
-    o_year desc;
+    o_year DESC;
 ```
 
-Q10
+**Q10**
 
 ```sql
 SELECT
@@ -454,8 +578,8 @@ FROM
 WHERE
     c_custkey = o_custkey
     AND l_orderkey = o_orderkey
-    AND o_orderdate >= date '1993-06-01'
-    AND o_orderdate < date '1993-06-01' + interval '3' month
+    AND o_orderdate >= DATE '1993-10-01'
+    AND o_orderdate < DATE '1993-10-01' + INTERVAL '3' MONTH
     AND l_returnflag = 'R'
     AND c_nationkey = n_nationkey
 GROUP BY
@@ -467,11 +591,10 @@ GROUP BY
     c_address,
     c_comment
 ORDER BY
-    revenue desc
-LIMIT 20;
+    revenue DESC;
 ```
 
-Q11
+**Q11**
 
 ```sql
 SELECT
@@ -484,12 +607,12 @@ FROM
 WHERE
     ps_suppkey = s_suppkey
     AND s_nationkey = n_nationkey
-    AND n_name = 'MOZAMBIQUE'
+    AND n_name = 'GERMANY'
 GROUP BY
-    ps_partkey having
+    ps_partkey HAVING
         sum(ps_supplycost * ps_availqty) > (
             SELECT
-                sum(ps_supplycost * ps_availqty) * 0.0000010000
+                sum(ps_supplycost * ps_availqty) * 0.0001
             FROM
                 partsupp,
                 supplier,
@@ -497,89 +620,119 @@ GROUP BY
             WHERE
                 ps_suppkey = s_suppkey
                 AND s_nationkey = n_nationkey
-                AND n_name = 'MOZAMBIQUE'
+                AND n_name = 'GERMANY'
         )
 ORDER BY
-    value desc;
+    value DESC;
 ```
 
-Q12
+**Q12**
 
 ```sql
 SELECT
     l_shipmode,
     sum(CASE
-        WHEN o_orderpriority = '1-URGENT'
-            OR o_orderpriority = '2-HIGH'
+            WHEN o_orderpriority = '1-URGENT'
+                OR o_orderpriority = '2-HIGH'
             THEN 1
-        ELSE 0
-    END) AS high_line_count,
+            ELSE 0
+        END) AS high_line_count,
     sum(CASE
         WHEN o_orderpriority <> '1-URGENT'
-            AND o_orderpriority <> '2-HIGH'
+                AND o_orderpriority <> '2-HIGH'
             THEN 1
         ELSE 0
-    END) AS low_line_count
+        END) AS low_line_count
 FROM
     orders,
     lineitem
 WHERE
     o_orderkey = l_orderkey
-    AND l_shipmode in ('MAIL', 'AIR')
+    AND l_shipmode in ('MAIL', 'SHIP')
     AND l_commitdate < l_receiptdate
     AND l_shipdate < l_commitdate
-    AND l_receiptdate >= date '1996-01-01'
-    AND l_receiptdate < date '1996-01-01' + interval '1' year
+    AND l_receiptdate >= DATE '1994-01-01'
+    AND l_receiptdate < DATE '1994-01-01' + INTERVAL '1' year
 GROUP BY
     l_shipmode
 ORDER BY
     l_shipmode;
 ```
 
-Q13
+**Q13**
 
 ```sql
 SELECT
     c_count,
     count(*) AS custdist
-FROM
-    (
-        SELECT
-            c_custkey,
-            count(o_orderkey)
-        FROM
-            customer LEFT OUTER JOIN orders ON
-                c_custkey = o_custkey
-                AND o_comment NOT LIKE '%special%deposits%'
-        GROUP BY
-            c_custkey
+FROM (
+    SELECT
+        c_custkey,
+        count(o_orderkey)
+    FROM
+        customer LEFT OUTER JOIN orders ON
+            c_custkey = o_custkey
+            AND o_comment NOT LIKE '%special%requests%'
+    GROUP BY
+        c_custkey
     ) AS c_orders
 GROUP BY
     c_count
 ORDER BY
-    custdist desc,
-    c_count desc;
+    custdist DESC,
+    c_count DESC;
 ```
 
-Q14
+::::note
+As of October 2024, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
+
+This alternative formulation works and was verified to return the reference results.
+
+```sql
+WITH CustomerOrderCounts AS (
+    SELECT
+        c.c_custkey,
+        count(o.o_orderkey) AS order_count
+    FROM
+        customer c
+    LEFT OUTER JOIN
+        orders o ON c.c_custkey = o.o_custkey
+        AND o.o_comment NOT LIKE '%special%requests%'
+    GROUP BY
+        c.c_custkey
+)
+SELECT
+    order_count AS c_count,
+    count(*) AS custdist
+FROM
+    CustomerOrderCounts
+GROUP BY
+    order_count
+ORDER BY
+    custdist DESC,
+    c_count DESC;
+```
+::::
+
+**Q14**
 
 ```sql
 SELECT
     100.00 * sum(CASE
-        WHEN p_type LIKE 'PROMO%'
-            THEN l_extendedprice * (1 - l_discount)
-        ELSE 0
-    END) / sum(l_extendedprice * (1 - l_discount)) AS promo_revenue
+                    WHEN p_type LIKE 'PROMO%'
+                    THEN l_extendedprice * (1 - l_discount)
+                    ELSE 0
+                END) / sum(l_extendedprice * (1 - l_discount)) AS promo_revenue
 FROM
     lineitem,
     part
 WHERE
     l_partkey = p_partkey
-    AND l_shipdate >= date '1996-10-01'
-    AND l_shipdate < date '1996-10-01' + interval '1' month;
+    AND l_shipdate >= DATE '1995-09-01'
+    AND l_shipdate < DATE '1995-09-01' + INTERVAL '1' MONTH;
 ```
 
-Q15
+**Q15**
 
 ```sql
 CREATE VIEW revenue0 (supplier_no, total_revenue) AS
@@ -589,8 +742,8 @@ CREATE VIEW revenue0 (supplier_no, total_revenue) AS
     FROM
         lineitem
     WHERE
-        l_shipdate >= date '1997-06-01'
-        AND l_shipdate < date '1997-06-01' + interval '3' month
+        l_shipdate >= DATE '1996-01-01'
+        AND l_shipdate < DATE '1996-01-01' + INTERVAL '3' MONTH
     GROUP BY
         l_suppkey;
 
@@ -617,7 +770,27 @@ ORDER BY
 DROP VIEW revenue0;
 ```
 
-Q16
+::::note
+As of October 2024, the view definition does not work out-of-the box. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/70139
+
+This alternative view definition does work:
+
+```sql
+CREATE VIEW revenue0 AS
+    SELECT
+        l_suppkey AS supplier_no,
+        sum(l_extendedprice * (1 - l_discount)) AS total_revenue
+    FROM
+        lineitem
+    WHERE
+        l_shipdate >= DATE '1996-01-01'
+        AND l_shipdate < DATE '1996-01-01' + INTERVAL '3' MONTH
+    GROUP BY
+        l_suppkey;
+```
+::::
+
+**Q16**
 
 ```sql
 SELECT
@@ -630,9 +803,9 @@ FROM
     part
 WHERE
     p_partkey = ps_partkey
-    AND p_brand <> 'Brand#15'
-    AND p_type NOT LIKE 'SMALL POLISHED%'
-    AND p_size in (21, 9, 46, 34, 50, 33, 17, 36)
+    AND p_brand <> 'Brand#45'
+    AND p_type NOT LIKE 'MEDIUM POLISHED%'
+    AND p_size in (49, 14, 23,  45, 19, 3, 36, 9)
     AND ps_suppkey NOT in (
         SELECT
             s_suppkey
@@ -646,13 +819,13 @@ GROUP BY
     p_type,
     p_size
 ORDER BY
-    supplier_cnt desc,
+    supplier_cnt DESC,
     p_brand,
     p_type,
     p_size;
 ```
 
-Q17
+**Q17**
 
 ```sql
 SELECT
@@ -662,8 +835,8 @@ FROM
     part
 WHERE
     p_partkey = l_partkey
-    AND p_brand = 'Brand#52'
-    AND p_container = 'MED CASE'
+    AND p_brand = 'Brand#23'
+    AND p_container = 'MED BOX'
     AND l_quantity < (
         SELECT
             0.2 * avg(l_quantity)
@@ -674,7 +847,38 @@ WHERE
     );
 ```
 
-Q18
+::::note
+As of October 2024, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
+
+This alternative formulation works and was verified to return the reference results.
+
+```sql
+WITH AvgQuantity AS (
+    SELECT
+        l_partkey,
+        AVG(l_quantity) * 0.2 AS avg_quantity
+    FROM
+        lineitem
+    GROUP BY
+        l_partkey
+)
+SELECT
+    SUM(l.l_extendedprice) / 7.0 AS avg_yearly
+FROM
+    lineitem l
+JOIN
+    part p ON p.p_partkey = l.l_partkey
+JOIN
+    AvgQuantity aq ON l.l_partkey = aq.l_partkey
+WHERE
+    p.p_brand = 'Brand#23'
+    AND p.p_container = 'MED BOX'
+    AND l.l_quantity < aq.avg_quantity;
+
+```
+::::
+
+**Q18**
 
 ```sql
 SELECT
@@ -695,8 +899,9 @@ WHERE
         FROM
             lineitem
         GROUP BY
-            l_orderkey having
-                sum(l_quantity) > 313
+            l_orderkey
+        HAVING
+            sum(l_quantity) > 300
     )
     AND c_custkey = o_custkey
     AND o_orderkey = l_orderkey
@@ -707,52 +912,91 @@ GROUP BY
     o_orderdate,
     o_totalprice
 ORDER BY
-    o_totalprice desc,
-    o_orderdate
-LIMIT 100;
+    o_totalprice DESC,
+    o_orderdate;
 ```
 
-Q19
+**Q19**
 
 ```sql
 SELECT
-    sum(l_extendedprice* (1 - l_discount)) AS revenue
+    sum(l_extendedprice * (1 - l_discount)) AS revenue
 FROM
     lineitem,
     part
 WHERE
     (
         p_partkey = l_partkey
-        AND p_brand = 'Brand#31'
+        AND p_brand = 'Brand#12'
         AND p_container in ('SM CASE', 'SM BOX', 'SM PACK', 'SM PKG')
-        AND l_quantity >= 3 AND l_quantity <= 3 + 10
-        AND p_size between 1 AND 5
+        AND l_quantity >= 1 AND l_quantity <= 1 + 10
+        AND p_size BETWEEN 1 AND 5
         AND l_shipmode in ('AIR', 'AIR REG')
         AND l_shipinstruct = 'DELIVER IN PERSON'
     )
     OR
     (
         p_partkey = l_partkey
-        AND p_brand = 'Brand#54'
+        AND p_brand = 'Brand#23'
         AND p_container in ('MED BAG', 'MED BOX', 'MED PKG', 'MED PACK')
-        AND l_quantity >= 17 AND l_quantity <= 17 + 10
-        AND p_size between 1 AND 10
+        AND l_quantity >= 10 AND l_quantity <= 10 + 10
+        AND p_size BETWEEN 1 AND 10
         AND l_shipmode in ('AIR', 'AIR REG')
         AND l_shipinstruct = 'DELIVER IN PERSON'
     )
     OR
     (
         p_partkey = l_partkey
-        AND p_brand = 'Brand#54'
+        AND p_brand = 'Brand#34'
         AND p_container in ('LG CASE', 'LG BOX', 'LG PACK', 'LG PKG')
-        AND l_quantity >= 26 AND l_quantity <= 26 + 10
-        AND p_size between 1 AND 15
+        AND l_quantity >= 20 AND l_quantity <= 20 + 10
+        AND p_size BETWEEN 1 AND 15
         AND l_shipmode in ('AIR', 'AIR REG')
         AND l_shipinstruct = 'DELIVER IN PERSON'
     );
 ```
 
-Q20
+::::note
+As of October 2024, the query is extremely slow due to missing join predicate pushdown. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/70802
+
+This alternative formulation works and was verified to return the reference results.
+
+```sql
+SELECT
+     sum(l_extendedprice * (1 - l_discount)) AS revenue
+FROM
+     lineitem,
+     part
+WHERE
+    p_partkey = l_partkey
+    AND l_shipinstruct = 'DELIVER IN PERSON'
+    AND l_shipmode IN ('AIR', 'AIR REG')
+    AND (
+        (
+            p_brand = 'Brand#12'
+            AND p_container IN ('SM CASE', 'SM BOX', 'SM PACK', 'SM PKG')
+            AND l_quantity >= 1 AND l_quantity <= 1 + 10
+            AND p_size BETWEEN 1 AND 5
+        )
+        OR
+        (
+            p_brand = 'Brand#23'
+            AND p_container IN ('MED BAG', 'MED BOX', 'MED PKG', 'MED PACK')
+            AND l_quantity >= 10 AND l_quantity <= 10 + 10
+            AND p_size BETWEEN 1 AND 10
+        )
+        OR
+        (
+            p_brand = 'Brand#34'
+            AND p_container IN ('LG CASE', 'LG BOX', 'LG PACK', 'LG PKG')
+            AND l_quantity >= 20 AND l_quantity <= 20 + 10
+            AND p_size BETWEEN 1 AND 15
+        )
+    )
+```
+::::
+
+**Q20**
 
 ```sql
 SELECT
@@ -774,7 +1018,7 @@ WHERE
                 FROM
                     part
                 WHERE
-                    p_name LIKE 'chiffon%'
+                    p_name LIKE 'forest%'
             )
             AND ps_availqty > (
                 SELECT
@@ -784,17 +1028,21 @@ WHERE
                 WHERE
                     l_partkey = ps_partkey
                     AND l_suppkey = ps_suppkey
-                    AND l_shipdate >= date '1997-01-01'
-                    AND l_shipdate < date '1997-01-01' + interval '1' year
+                    AND l_shipdate >= DATE '1994-01-01'
+                    AND l_shipdate < DATE '1994-01-01' + INTERVAL '1' year
             )
     )
     AND s_nationkey = n_nationkey
-    AND n_name = 'MOZAMBIQUE'
+    AND n_name = 'CANADA'
 ORDER BY
     s_name;
 ```
 
-Q21
+::::note
+As of October 2024, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
+::::
+
+**Q21**
 
 ```sql
 SELECT
@@ -830,50 +1078,51 @@ WHERE
             AND l3.l_receiptdate > l3.l_commitdate
     )
     AND s_nationkey = n_nationkey
-    AND n_name = 'RUSSIA'
+    AND n_name = 'SAUDI ARABIA'
 GROUP BY
     s_name
 ORDER BY
-    numwait desc,
-    s_name
-LIMIT 100;
+    numwait DESC,
+    s_name;
 ```
+::::note
+As of October 2024, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
+::::
 
-Q22
+**Q22**
 
 ```sql
 SELECT
     cntrycode,
     count(*) AS numcust,
     sum(c_acctbal) AS totacctbal
-FROM
-    (
-        SELECT
-            substring(c_phone FROM 1 for 2) AS cntrycode,
-            c_acctbal
-        FROM
-            customer
-        WHERE
-            substring(c_phone FROM 1 for 2) in
-                ('26', '34', '10', '18', '27', '12', '11')
-            AND c_acctbal > (
-                SELECT
-                    avg(c_acctbal)
-                FROM
-                    customer
-                WHERE
-                    c_acctbal > 0.00
-                    AND substring(c_phone FROM 1 for 2) in
-                        ('26', '34', '10', '18', '27', '12', '11')
-            )
-            AND NOT EXISTS (
-                SELECT
-                    *
-                FROM
-                    orders
-                WHERE
-                    o_custkey = c_custkey
-            )
+FROM (
+    SELECT
+        substring(c_phone FROM 1 for 2) AS cntrycode,
+        c_acctbal
+    FROM
+        customer
+    WHERE
+        substring(c_phone FROM 1 for 2) in
+            ('13', '31', '23', '29', '30', '18', '17')
+        AND c_acctbal > (
+            SELECT
+                avg(c_acctbal)
+            FROM
+                customer
+            WHERE
+                c_acctbal > 0.00
+                AND substring(c_phone FROM 1 for 2) in
+                    ('13', '31', '23', '29', '30', '18', '17')
+        )
+        AND NOT EXISTS (
+            SELECT
+                *
+            FROM
+                orders
+            WHERE
+                o_custkey = c_custkey
+        )
     ) AS custsale
 GROUP BY
     cntrycode
