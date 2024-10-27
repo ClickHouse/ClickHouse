@@ -88,28 +88,6 @@ void IRowInputFormat::logError()
     errors_logger->logError(InputFormatErrorsLogger::ErrorEntry{now_time, total_rows, diagnostic, raw_data});
 }
 
-bool IRowInputFormat::overPreferredBlockSizeLimit(const MutableColumns & columns) const
-{
-    if (params.preferred_block_size_bytes || params.preferred_max_column_in_block_size_bytes)
-    {
-        size_t block_size_bytes = 0;
-        size_t max_column_in_block_size_bytes = 0;
-        for (const auto & column : columns)
-        {
-            block_size_bytes += column->byteSize();
-            max_column_in_block_size_bytes = std::max(max_column_in_block_size_bytes, column->byteSize());
-
-            if (params.preferred_block_size_bytes && block_size_bytes >= params.preferred_block_size_bytes)
-                return true;
-
-            if (params.preferred_max_column_in_block_size_bytes && max_column_in_block_size_bytes >= params.preferred_max_column_in_block_size_bytes)
-                return true;
-        }
-    }
-
-    return false;
-}
-
 Chunk IRowInputFormat::read()
 {
     if (total_rows == 0)
@@ -157,6 +135,28 @@ Chunk IRowInputFormat::read()
             return getChunkForCount(num_rows);
         }
 
+        auto over_preferred_block_size_limit = [&](const MutableColumns & cols)
+        {
+            if (params.preferred_block_size_bytes || params.preferred_max_column_in_block_size_bytes)
+            {
+                size_t block_size_bytes = 0;
+                size_t max_column_in_block_size_bytes = 0;
+                for (const auto & col : cols)
+                {
+                    block_size_bytes += col->byteSize();
+                    max_column_in_block_size_bytes = std::max(max_column_in_block_size_bytes, col->byteSize());
+
+                    if (params.preferred_block_size_bytes && block_size_bytes >= params.preferred_block_size_bytes)
+                        return true;
+
+                    if (params.preferred_max_column_in_block_size_bytes && max_column_in_block_size_bytes >= params.preferred_max_column_in_block_size_bytes)
+                        return true;
+                }
+            }
+
+            return false;
+        };
+
         RowReadExtension info;
         bool continue_reading = true;
         for (size_t rows = 0; (rows < params.max_block_size || num_rows == 0) && continue_reading; ++rows)
@@ -191,7 +191,7 @@ Chunk IRowInputFormat::read()
                 if (columns.empty())
                     ++num_rows;
 
-                if (overPreferredBlockSizeLimit(columns))
+                if (over_preferred_block_size_limit(columns))
                     break;
             }
             catch (Exception & e)
