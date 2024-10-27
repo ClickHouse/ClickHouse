@@ -53,6 +53,11 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_materialized_views_count_for_table;
 }
 
+namespace RefreshSetting
+{
+    extern const RefreshSettingsBool all_replicas;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -177,7 +182,7 @@ StorageMaterializedView::StorageMaterializedView(
                 RefreshSettings s;
                 if (query.refresh_strategy->settings)
                     s.applyChanges(query.refresh_strategy->settings->changes);
-                refresh_coordinated = !s.all_replicas;
+                refresh_coordinated = !s[RefreshSetting::all_replicas];
             }
             else
             {

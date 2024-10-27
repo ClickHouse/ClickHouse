@@ -870,9 +870,8 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     query_plan.addStep(std::move(filling_step));
 }
 
-void addLimitByStep(QueryPlan & query_plan,
-    const LimitByAnalysisResult & limit_by_analysis_result,
-    const QueryNode & query_node)
+void addLimitByStep(
+    QueryPlan & query_plan, const LimitByAnalysisResult & limit_by_analysis_result, const QueryNode & query_node, bool do_not_skip_offset)
 {
     /// Constness of LIMIT BY limit is validated during query analysis stage
     UInt64 limit_by_limit = query_node.getLimitByLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
@@ -882,6 +881,15 @@ void addLimitByStep(QueryPlan & query_plan,
     {
         /// Constness of LIMIT BY offset is validated during query analysis stage
         limit_by_offset = query_node.getLimitByOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+    }
+
+    if (do_not_skip_offset)
+    {
+        if (limit_by_limit > std::numeric_limits<UInt64>::max() - limit_by_offset)
+            return;
+
+        limit_by_limit += limit_by_offset;
+        limit_by_offset = 0;
     }
 
     auto limit_by_step = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(),
@@ -997,10 +1005,14 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(QueryPlan & query_plan,
     {
         auto & limit_by_analysis_result = expressions_analysis_result.getLimitBy();
         addExpressionStep(query_plan, limit_by_analysis_result.before_limit_by_actions, "Before LIMIT BY", useful_sets);
-        addLimitByStep(query_plan, limit_by_analysis_result, query_node);
+        /// We don't apply LIMIT BY on remote nodes at all in the old infrastructure.
+        /// https://github.com/ClickHouse/ClickHouse/blob/67c1e89d90ef576e62f8b1c68269742a3c6f9b1e/src/Interpreters/InterpreterSelectQuery.cpp#L1697-L1705
+        /// Let's be optimistic and only don't skip offset (it will be skipped on the initiator).
+        addLimitByStep(query_plan, limit_by_analysis_result, query_node, true /*do_not_skip_offset*/);
     }
 
-    if (query_node.hasLimit())
+    /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.
+    if (query_node.hasLimit() && !query_node.hasLimitByOffset() && !query_node.isLimitWithTies())
         addPreliminaryLimitStep(query_plan, query_analysis_result, planner_context, true /*do_not_skip_offset*/);
 }
 
@@ -1789,21 +1801,20 @@ void Planner::buildPlanForQueryNode()
         {
             auto & limit_by_analysis_result = expression_analysis_result.getLimitBy();
             addExpressionStep(query_plan, limit_by_analysis_result.before_limit_by_actions, "Before LIMIT BY", useful_sets);
-            addLimitByStep(query_plan, limit_by_analysis_result, query_node);
+            addLimitByStep(query_plan, limit_by_analysis_result, query_node, false /*do_not_skip_offset*/);
         }
 
         if (query_node.hasOrderBy())
             addWithFillStepIfNeeded(query_plan, query_analysis_result, planner_context, query_node);
 
-        bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
-
-        if (query_node.hasLimit() && query_node.isLimitWithTies() && apply_offset)
+        const bool apply_limit = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation;
+        const bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+        if (query_node.hasLimit() && query_node.isLimitWithTies() && apply_limit && apply_offset)
             addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
 
         addExtremesStepIfNeeded(query_plan, planner_context);
 
         bool limit_applied = applied_prelimit || (query_node.isLimitWithTies() && apply_offset);
-        bool apply_limit = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation;
 
         /** Limit is no longer needed if there is prelimit.
           *
