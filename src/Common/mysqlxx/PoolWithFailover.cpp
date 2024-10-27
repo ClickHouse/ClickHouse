@@ -58,6 +58,8 @@ PoolWithFailover::PoolWithFailover(
         replicas_by_priority[0].emplace_back(
             std::make_shared<Pool>(config_, config_name_, default_connections_, max_connections_));
     }
+
+    connection_reistablisher_timer.start(Poco::TimerCallback<PoolWithFailover>(*this, &PoolWithFailover::onProbeConnections));
 }
 
 
@@ -98,6 +100,8 @@ PoolWithFailover::PoolWithFailover(
             default_connections_,
             max_connections_));
     }
+
+    connection_reistablisher_timer.start(Poco::TimerCallback<PoolWithFailover>(*this, &PoolWithFailover::onProbeConnections));
 }
 
 
@@ -121,6 +125,8 @@ PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
             replicas_by_priority.emplace(priority_replicas.first, std::move(replicas));
         }
     }
+
+    connection_reistablisher_timer.start(Poco::TimerCallback<PoolWithFailover>(*this, &PoolWithFailover::onProbeConnections));
 }
 
 PoolWithFailover::Entry PoolWithFailover::get()
@@ -149,6 +155,9 @@ PoolWithFailover::Entry PoolWithFailover::get()
             for (size_t i = 0, size = replicas.size(); i < size; ++i)
             {
                 PoolPtr & pool = replicas[i];
+
+                if (!pool->isOnline())
+                    continue;
 
                 try
                 {

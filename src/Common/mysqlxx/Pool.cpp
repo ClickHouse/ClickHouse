@@ -381,18 +381,22 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
     {
         LOG_ERROR(log, "Failed to connect to MySQL ({}): {}", description, e.what());
 
-        if ((!was_successful && !dont_throw_if_failed_first_time)
+        if (!online
+            || (!was_successful && !dont_throw_if_failed_first_time)
             || e.errnum() == ER_ACCESS_DENIED_ERROR
             || e.errnum() == ER_DBACCESS_DENIED_ERROR
             || e.errnum() == ER_BAD_DB_ERROR)
         {
+            online = false;
             throw;
         }
+        online = false;
 
         return nullptr;
     }
 
     connections.push_back(conn_ptr.get());
+    online = true;
     was_successful = true;
     return conn_ptr.release();
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Pool.h"
+#include <Poco/Timer.h>
 
 
 #define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS 1
@@ -83,6 +84,26 @@ namespace mysqlxx
         bool shareable;
         /// Timeout for waiting free connection.
         uint64_t wait_timeout = 0;
+
+        void onProbeConnections(Poco::Timer &)
+        {
+            for (const auto & priority_replicas : replicas_by_priority)
+                for (const auto & pool : priority_replicas.second)
+                    if (!pool->isOnline())
+                    {
+                        try
+                        {
+                            pool->get();
+                            Poco::Util::Application::instance().logger().information("Reistablishing connection to " + pool->getDescription() + " has succeeded.");
+                        }
+                        catch (const mysqlxx::ConnectionFailed & e)
+                        {
+                            Poco::Util::Application::instance().logger().warning("Reistablishing connection to " + pool->getDescription() + " has failed: " + e.displayText());
+                        }
+                   }
+        }
+
+        Poco::Timer connection_reistablisher_timer {5000, 5000};
 
     public:
         using Entry = Pool::Entry;
