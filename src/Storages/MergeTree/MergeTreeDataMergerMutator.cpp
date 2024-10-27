@@ -254,7 +254,8 @@ MergeTreeDataMergerMutator::PartitionIdsHint MergeTreeDataMergerMutator::getPart
         if (status == SelectPartsDecision::SELECTED)
             res.insert(all_partition_ids[i]);
         else
-            LOG_TEST(log, "Nothing to merge in partition {}: {}", all_partition_ids[i], out_disable_reason.text);
+            LOG_TEST(log, "Nothing to merge in partition {} with max_total_size_to_merge = {} (looked up {} ranges): {}",
+                all_partition_ids[i], ReadableSize(max_total_size_to_merge), ranges_per_partition[i].size(), out_disable_reason.text);
     }
 
     String best_partition_id_to_optimize = getBestPartitionToOptimizeEntire(info.partitions_info);
