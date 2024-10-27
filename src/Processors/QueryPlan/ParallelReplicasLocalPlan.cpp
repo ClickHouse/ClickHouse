@@ -146,7 +146,8 @@ static void initCoordinator(ParallelReplicasReadingCoordinatorPtr coordinator, c
     auto order_info = read_from_merge_tree->getQueryInfo().input_order_info;
     if (order_info)
     {
-        mode = order_info->direction > 0 ? CoordinationMode::WithOrder : CoordinationMode::ReverseOrder;
+        chassert(order_info->direction == 1 || order_info->direction == -1);
+        mode = order_info->direction == 1 ? CoordinationMode::WithOrder : CoordinationMode::ReverseOrder;
     }
 
     size_t min_marks_per_task = 0;
