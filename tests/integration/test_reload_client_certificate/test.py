@@ -145,7 +145,7 @@ def clean_logs():
 
 
 def check_certificate_switch(first, second):
-    # Set first key
+    # Set first certificate
 
     change_config_to_key(first)
 
