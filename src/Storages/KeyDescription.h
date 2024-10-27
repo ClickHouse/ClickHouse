@@ -27,6 +27,9 @@ struct KeyDescription
     /// Column names in key definition, example: x, toStartOfMonth(date), a * b.
     Names column_names;
 
+    /// Indicator of key column being sorted reversely, example: x DESC, y -> {1, 0}.
+    std::vector<bool> reverse_flags;
+
     /// Types from sample block ordered in columns order.
     DataTypes data_types;
 

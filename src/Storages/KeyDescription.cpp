@@ -27,6 +27,7 @@ KeyDescription::KeyDescription(const KeyDescription & other)
     , expression_list_ast(other.expression_list_ast ? other.expression_list_ast->clone() : nullptr)
     , sample_block(other.sample_block)
     , column_names(other.column_names)
+    , reverse_flags(other.reverse_flags)
     , data_types(other.data_types)
     , additional_column(other.additional_column)
 {
@@ -57,6 +58,7 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
 
     sample_block = other.sample_block;
     column_names = other.column_names;
+    reverse_flags = other.reverse_flags;
     data_types = other.data_types;
 
     /// additional_column is constant property It should never be lost.
@@ -132,11 +134,26 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
     }
 
     const auto & children = result.expression_list_ast->children;
+    ASTPtr expr = std::make_shared<ASTExpressionList>();
     for (const auto & child : children)
+    {
+        if (auto * func = child->as<ASTFunction>())
+        {
+            if (func->name == "__descendingKey")
+            {
+                auto & key = func->arguments->children.front();
+                result.column_names.emplace_back(key->getColumnName());
+                result.reverse_flags.emplace_back(true);
+                expr->children.push_back(key->clone());
+                continue;
+            }
+        }
         result.column_names.emplace_back(child->getColumnName());
+        result.reverse_flags.emplace_back(false);
+        expr->children.push_back(child->clone());
+    }
 
     {
-        auto expr = result.expression_list_ast->clone();
         auto syntax_result = TreeRewriter(context).analyze(expr, columns.getAllPhysical());
         /// In expression we also need to store source columns
         result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false);

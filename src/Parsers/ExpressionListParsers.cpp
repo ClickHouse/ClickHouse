@@ -325,6 +325,12 @@ bool ParserNotEmptyExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected 
     return nested_parser.parse(pos, node, expected) && !node->children.empty();
 }
 
+bool ParserStorageOrderByExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return ParserList(std::make_unique<ParserStorageOrderByElement>(), std::make_unique<ParserToken>(TokenType::Comma), false)
+        .parse(pos, node, expected);
+}
+
 bool ParserOrderByExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserList(std::make_unique<ParserOrderByElement>(), std::make_unique<ParserToken>(TokenType::Comma), false)

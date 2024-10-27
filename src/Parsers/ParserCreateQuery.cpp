@@ -505,9 +505,13 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_sample_by(Keyword::SAMPLE_BY);
     ParserKeyword s_ttl(Keyword::TTL);
     ParserKeyword s_settings(Keyword::SETTINGS);
+    ParserToken s_lparen(TokenType::OpeningRoundBracket);
+    ParserToken s_rparen(TokenType::ClosingRoundBracket);
 
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
     ParserExpression expression_p;
+    ParserStorageOrderByExpressionList order_list_p;
+    ParserStorageOrderByElement order_elem_p;
     ParserSetQuery settings_p(/* parse_only_internals_ = */ true);
     ParserTTLExpressionList parser_ttl_list;
     ParserStringLiteral string_literal_parser;
@@ -556,11 +560,32 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (!order_by && s_order_by.ignore(pos, expected))
         {
-            if (expression_p.parse(pos, order_by, expected))
+            auto old_pos = pos;
+            if (pos->type == TokenType::BareWord && std::string_view(pos->begin, pos->size()) == "tuple")
+                ++pos;
+
+            if (s_lparen.ignore(pos, expected))
+            {
+                auto tuple_function = std::make_shared<ASTFunction>();
+                tuple_function->name = "tuple";
+                if (order_list_p.parse(pos, order_by, expected))
+                    tuple_function->arguments = std::move(order_by);
+                else
+                    tuple_function->arguments = std::make_shared<ASTExpressionList>();
+                tuple_function->children.push_back(tuple_function->arguments);
+                order_by = std::move(tuple_function);
+                s_rparen.check(pos, expected);
+                storage_like = true;
+                continue;
+            }
+
+            pos = old_pos;
+            if (order_elem_p.parse(pos, order_by, expected))
             {
                 storage_like = true;
                 continue;
             }
+
             return false;
         }
 

@@ -1,0 +1,68 @@
+3
+8
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+    MergeSortingTransform
+      LimitsCheckingTransform
+        PartialSortingTransform
+          (Expression)
+          ExpressionTransform
+            (ReadFromMergeTree)
+            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+99
+98
+97
+96
+95
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+      (Expression)
+      ExpressionTransform
+        (ReadFromMergeTree)
+        ReverseTransform
+          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InReverseOrder) 0 → 1
+0
+1
+2
+3
+4
+3	1003
+6
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+    FinishSortingTransform
+      PartialSortingTransform
+        (Expression)
+        ExpressionTransform
+          (ReadFromMergeTree)
+          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+0	1090
+0	1080
+0	1070
+0	1060
+0	1050
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+    FinishSortingTransform
+      PartialSortingTransform
+        (Expression)
+        ExpressionTransform
+          (ReadFromMergeTree)
+          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+0	1000
+0	1010
+0	1020
+0	1030
+0	1040

@@ -360,8 +360,8 @@ InputOrderInfoPtr buildInputOrderFromSortDescription(
     }
 
     /// This is a result direction we will read from MergeTree
-    ///  1 - in order,
-    /// -1 - in reverse order,
+    ///  1 - in same order of keys,
+    /// -1 - in reverse order of keys,
     ///  0 - usual read, don't apply optimization
     ///
     /// So far, 0 means any direction is possible. It is ok for constant prefix.
@@ -372,6 +372,7 @@ InputOrderInfoPtr buildInputOrderFromSortDescription(
     while (next_description_column < description.size() && next_sort_key < sorting_key.column_names.size())
     {
         const auto & sorting_key_column = sorting_key.column_names[next_sort_key];
+        int reverse_indicator = sorting_key.reverse_flags[next_sort_key] ? -1 : 1;
         const auto & sort_column_description = description[next_description_column];
 
         /// If required order depend on collation, it cannot be matched with primary key order.
@@ -405,8 +406,7 @@ InputOrderInfoPtr buildInputOrderFromSortDescription(
             if (sort_column_description.column_name != sorting_key_column)
                 break;
 
-            current_direction = sort_column_description.direction;
-
+            current_direction = sort_column_description.direction * reverse_indicator;
 
             //std::cerr << "====== (no dag) Found direct match" << std::endl;
 
@@ -433,7 +433,7 @@ InputOrderInfoPtr buildInputOrderFromSortDescription(
                 ///          'SELECT x, y FROM table WHERE x = 42 ORDER BY x + 1, y + 1'
                 /// Here, 'x + 1' would be a fixed point. But it is reasonable to read-in-order.
 
-                current_direction = sort_column_description.direction;
+                current_direction = sort_column_description.direction * reverse_indicator;
                 if (match.monotonicity)
                 {
                     current_direction *= match.monotonicity->direction;

@@ -194,6 +194,7 @@ namespace ErrorCodes
     DECLARE(String, storage_policy, "default", "Name of storage disk policy", 0) \
     DECLARE(String, disk, "", "Name of storage disk. Can be specified instead of storage policy.", 0) \
     DECLARE(Bool, allow_nullable_key, false, "Allow Nullable types as primary keys.", 0) \
+    DECLARE(Bool, allow_experimental_reverse_key, false, "Allow descending sorting key in MergeTree tables (experimental feature).", 0) \
     DECLARE(Bool, remove_empty_parts, true, "Remove empty parts after they were pruned by TTL, mutation, or collapsing merge algorithm.", 0) \
     DECLARE(Bool, assign_part_uuids, false, "Generate UUIDs for parts. Before enabling check that all replicas support new format.", 0) \
     DECLARE(Int64, max_partitions_to_read, -1, "Limit the max number of partitions that can be accessed in one query. <= 0 means unlimited. This setting is the default that can be overridden by the query-level setting with the same name.", 0) \

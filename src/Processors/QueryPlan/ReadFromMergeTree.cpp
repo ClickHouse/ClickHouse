@@ -221,10 +221,15 @@ static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
 
 /// build sort description for output stream
 static SortDescription getSortDescriptionForOutputHeader(
-    const Header & output_header, const Names & sorting_key_columns, const int sort_direction, InputOrderInfoPtr input_order_info, PrewhereInfoPtr prewhere_info, bool enable_vertical_final)
+    const Header & output_header,
+    const Names & sorting_key_columns,
+    const int sort_direction,
+    InputOrderInfoPtr input_order_info,
+    PrewhereInfoPtr prewhere_info,
+    bool enable_vertical_final)
 {
     /// Updating sort description can be done after PREWHERE actions are applied to the header.
-    /// Aftert PREWHERE actions are applied, column names in header can differ from storage column names due to aliases
+    /// After PREWHERE actions are applied, column names in header can differ from storage column names due to aliases
     /// To mitigate it, we're trying to build original header and use it to deduce sorting description
     /// TODO: this approach is fragile, it'd be more robust to update sorting description for the whole plan during plan optimization
     Block original_header = output_header.cloneEmpty();
@@ -1386,6 +1391,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             continue;
 
         Names sort_columns = storage_snapshot->metadata->getSortingKeyColumns();
+        std::vector<bool> reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
         SortDescription sort_description;
         sort_description.compile_sort_description = settings[Setting::compile_sort_description];
         sort_description.min_count_to_compile_sort_description = settings[Setting::min_count_to_compile_sort_description];
@@ -1396,7 +1402,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         Names partition_key_columns = storage_snapshot->metadata->getPartitionKey().column_names;
 
         for (size_t i = 0; i < sort_columns_size; ++i)
-            sort_description.emplace_back(sort_columns[i], 1, 1);
+        {
+            if (reverse_flags[i])
+                sort_description.emplace_back(sort_columns[i], -1, 1);
+            else
+                sort_description.emplace_back(sort_columns[i], 1, 1);
+        }
 
         for (auto & pipe : pipes)
             addMergingFinal(

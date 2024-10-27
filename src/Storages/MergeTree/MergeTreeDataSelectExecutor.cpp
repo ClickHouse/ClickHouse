@@ -1083,14 +1083,21 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
+    std::vector<bool> reverse_flags;
     const auto & key_indices = key_condition.getKeyIndices();
     DataTypes key_types;
     for (size_t i : key_indices)
     {
         if (i < index->size())
+        {
             index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
+            reverse_flags.push_back(primary_key.reverse_flags[i]);
+        }
         else
+        {
             index_columns->emplace_back(); /// The column of the primary key was not loaded in memory - we'll skip it.
+            reverse_flags.push_back(false);
+        }
 
         key_types.emplace_back(primary_key.data_types[i]);
     }
@@ -1138,28 +1145,32 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             {
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
+                    auto & left = reverse_flags[i] ? index_right[i] : index_left[i];
+                    auto & right = reverse_flags[i] ? index_left[i] : index_right[i];
                     if ((*index_columns)[i].column)
-                        create_field_ref(range.begin, i, index_left[i]);
+                        create_field_ref(range.begin, i, left);
                     else
-                        index_left[i] = NEGATIVE_INFINITY;
+                        left = NEGATIVE_INFINITY;
 
-                    index_right[i] = POSITIVE_INFINITY;
+                    right = POSITIVE_INFINITY;
                 }
             }
             else
             {
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
+                    auto & left = reverse_flags[i] ? index_right[i] : index_left[i];
+                    auto & right = reverse_flags[i] ? index_left[i] : index_right[i];
                     if ((*index_columns)[i].column)
                     {
-                        create_field_ref(range.begin, i, index_left[i]);
-                        create_field_ref(range.end, i, index_right[i]);
+                        create_field_ref(range.begin, i, left);
+                        create_field_ref(range.end, i, right);
                     }
                     else
                     {
                         /// If the PK column was not loaded in memory - exclude it from the analysis.
-                        index_left[i] = NEGATIVE_INFINITY;
-                        index_right[i] = POSITIVE_INFINITY;
+                        left = NEGATIVE_INFINITY;
+                        right = POSITIVE_INFINITY;
                     }
                 }
             }

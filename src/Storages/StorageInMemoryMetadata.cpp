@@ -513,6 +513,13 @@ Names StorageInMemoryMetadata::getSortingKeyColumns() const
     return {};
 }
 
+std::vector<bool> StorageInMemoryMetadata::getSortingKeyReverseFlags() const
+{
+    if (hasSortingKey())
+        return sorting_key.reverse_flags;
+    return {};
+}
+
 const KeyDescription & StorageInMemoryMetadata::getSamplingKey() const
 {
     return sampling_key;

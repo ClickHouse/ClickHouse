@@ -249,6 +249,12 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserStorageOrderByExpressionList : public IParserBase
+{
+protected:
+    const char * getName() const override { return "storage order by expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
 
 class ParserOrderByExpressionList : public IParserBase
 {
