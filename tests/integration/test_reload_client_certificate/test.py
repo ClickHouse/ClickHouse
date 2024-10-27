@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# Tags: no-parallel
+
 import os
 import threading
 import time
