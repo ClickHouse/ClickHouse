@@ -38,3 +38,6 @@ select lowerUTF8('ır') = 'ır';
 -- German language
 select upper('öäüß') = 'öäüß';
 select lower('ÖÄÜẞ') = 'ÖÄÜẞ';
+
+-- Bug 68680
+SELECT lengthUTF8(lowerUTF8('Ä\0'));

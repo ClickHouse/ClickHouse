@@ -1,7 +1,7 @@
 import copy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Union, Iterable, Optional, Literal, Any
+from typing import Any, Iterable, List, Literal, Optional, Union
 
 from ci_utils import WithIter
 from integration_test_images import IMAGES
@@ -22,6 +22,7 @@ class Labels:
     PR_CHERRYPICK = "pr-cherrypick"
     PR_CI = "pr-ci"
     PR_FEATURE = "pr-feature"
+    PR_PERFORMANCE = "pr-performance"
     PR_SYNCED_TO_CLOUD = "pr-synced-to-cloud"
     PR_SYNC_UPSTREAM = "pr-sync-upstream"
     RELEASE = "release"
@@ -62,7 +63,6 @@ class Runners(metaclass=WithIter):
     STYLE_CHECKER_ARM = "style-checker-aarch64"
     FUNC_TESTER = "func-tester"
     FUNC_TESTER_ARM = "func-tester-aarch64"
-    STRESS_TESTER = "stress-tester"
     FUZZER_UNIT_TESTER = "fuzzer-unit-tester"
 
 
@@ -100,12 +100,13 @@ class BuildNames(metaclass=WithIter):
     """
 
     PACKAGE_RELEASE = "package_release"
-    PACKAGE_AARCH64 = "package_aarch64"
     PACKAGE_ASAN = "package_asan"
     PACKAGE_UBSAN = "package_ubsan"
     PACKAGE_TSAN = "package_tsan"
     PACKAGE_MSAN = "package_msan"
     PACKAGE_DEBUG = "package_debug"
+    PACKAGE_AARCH64 = "package_aarch64"
+    PACKAGE_AARCH64_ASAN = "package_aarch64_asan"
     PACKAGE_RELEASE_COVERAGE = "package_release_coverage"
     BINARY_RELEASE = "binary_release"
     BINARY_TIDY = "binary_tidy"
@@ -204,7 +205,7 @@ class JobNames(metaclass=WithIter):
     PERFORMANCE_TEST_AMD64 = "Performance Comparison (release)"
     PERFORMANCE_TEST_ARM64 = "Performance Comparison (aarch64)"
 
-    SQL_LOGIC_TEST = "Sqllogic test (release)"
+    # SQL_LOGIC_TEST = "Sqllogic test (release)"
 
     SQLANCER = "SQLancer (release)"
     SQLANCER_DEBUG = "SQLancer (debug)"
@@ -336,7 +337,7 @@ class JobConfig:
     # sets number of batches for a multi-batch job
     num_batches: int = 1
     # label that enables job in CI, if set digest isn't used
-    run_by_label: str = ""
+    run_by_labels: List[str] = field(default_factory=list)
     # to run always regardless of the job digest or/and label
     run_always: bool = False
     # disables CI await for a given job
@@ -456,7 +457,7 @@ class CommonJobConfigs:
             docker=["clickhouse/stress-test"],
         ),
         run_command="stress_check.py",
-        runner_type=Runners.STRESS_TESTER,
+        runner_type=Runners.FUNC_TESTER,
         timeout=9000,
     )
     UPGRADE_TEST = JobConfig(
@@ -467,7 +468,7 @@ class CommonJobConfigs:
             docker=["clickhouse/stress-test"],
         ),
         run_command="upgrade_check.py",
-        runner_type=Runners.STRESS_TESTER,
+        runner_type=Runners.FUNC_TESTER,
         timeout=3600,
     )
     INTEGRATION_TEST = JobConfig(
@@ -482,7 +483,7 @@ class CommonJobConfigs:
             docker=IMAGES.copy(),
         ),
         run_command='integration_test_check.py "$CHECK_NAME"',
-        runner_type=Runners.STRESS_TESTER,
+        runner_type=Runners.FUNC_TESTER,
     )
     ASTFUZZER_TEST = JobConfig(
         job_name_keyword="ast",
@@ -517,7 +518,7 @@ class CommonJobConfigs:
             docker=["clickhouse/performance-comparison"],
         ),
         run_command="performance_comparison_check.py",
-        runner_type=Runners.STRESS_TESTER,
+        runner_type=Runners.FUNC_TESTER,
     )
     SQLLANCER_TEST = JobConfig(
         job_name_keyword="lancer",

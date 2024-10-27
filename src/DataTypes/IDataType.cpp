@@ -149,6 +149,8 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
 
     ISerialization::EnumerateStreamsSettings settings;
     settings.position_independent_encoding = false;
+    /// Don't enumerate dynamic subcolumns, they are handled separately.
+    settings.enumerate_dynamic_streams = false;
     data.serialization->enumerateStreams(settings, callback_with_data, data);
 
     if (!res && data.type->hasDynamicSubcolumnsData())
@@ -319,6 +321,8 @@ bool isUInt8(TYPE data_type) { return WhichDataType(data_type).isUInt8(); } \
 bool isUInt16(TYPE data_type) { return WhichDataType(data_type).isUInt16(); } \
 bool isUInt32(TYPE data_type) { return WhichDataType(data_type).isUInt32(); } \
 bool isUInt64(TYPE data_type) { return WhichDataType(data_type).isUInt64(); } \
+bool isUInt128(TYPE data_type) { return WhichDataType(data_type).isUInt128(); } \
+bool isUInt256(TYPE data_type) { return WhichDataType(data_type).isUInt256(); } \
 bool isNativeUInt(TYPE data_type) { return WhichDataType(data_type).isNativeUInt(); } \
 bool isUInt(TYPE data_type) { return WhichDataType(data_type).isUInt(); } \
 \
@@ -326,6 +330,8 @@ bool isInt8(TYPE data_type) { return WhichDataType(data_type).isInt8(); } \
 bool isInt16(TYPE data_type) { return WhichDataType(data_type).isInt16(); } \
 bool isInt32(TYPE data_type) { return WhichDataType(data_type).isInt32(); } \
 bool isInt64(TYPE data_type) { return WhichDataType(data_type).isInt64(); } \
+bool isInt128(TYPE data_type) { return WhichDataType(data_type).isInt128(); } \
+bool isInt256(TYPE data_type) { return WhichDataType(data_type).isInt256(); } \
 bool isNativeInt(TYPE data_type) { return WhichDataType(data_type).isNativeInt(); } \
 bool isInt(TYPE data_type) { return WhichDataType(data_type).isInt(); } \
 \

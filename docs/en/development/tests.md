@@ -91,6 +91,28 @@ SELECT 1
 In addition to the above settings, you can use `USE_*` flags from `system.build_options` to define usage of particular ClickHouse features.
 For example, if your test uses a MySQL table, you should add a tag `use-mysql`.
 
+### Specifying limits for random settings
+
+A test can specify minimum and maximum allowed values for settings that can be randomized during test run.
+
+For `.sh` tests limits are written as a comment on the line next to tags or on the second line if no tags are specified:
+
+```bash
+#!/usr/bin/env bash
+# Tags: no-fasttest
+# Random settings limits: max_block_size=(1000, 10000); index_granularity=(100, None)
+```
+
+For `.sql` tests tags are placed as a SQL comment in the line next to tags or in the first line:
+
+```sql
+-- Tags: no-fasttest
+-- Random settings limits: max_block_size=(1000, 10000); index_granularity=(100, None)
+SELECT 1
+```
+
+If you need to specify only one limit, you can use `None` for another one.
+
 ### Choosing the Test Name
 
 The name of the test starts with a five-digit prefix followed by a descriptive name, such as `00422_hash_function_constexpr.sql`. To choose the prefix, find the largest prefix already present in the directory, and increment it by one. In the meantime, some other tests might be added with the same numeric prefix, but this is OK and does not lead to any problems, you don't have to change it later.

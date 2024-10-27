@@ -62,23 +62,21 @@ source /repo/tests/docker_scripts/utils.lib
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
 if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then
-    sudo sed -i "/<use_compression>1<\/use_compression>/d" /etc/clickhouse-server/config.d/zookeeper.xml
-
-    # it contains some new settings, but we can safely remove it
-    rm /etc/clickhouse-server/config.d/handlers.yaml
-    rm /etc/clickhouse-server/users.d/s3_cache_new.xml
-    rm /etc/clickhouse-server/config.d/zero_copy_destructive_operations.xml
+    sudo sed -i "/<use_xid_64>1<\/use_xid_64>/d" /etc/clickhouse-server/config.d/zookeeper.xml
 
     function remove_keeper_config()
     {
         sudo sed -i "/<$1>$2<\/$1>/d" /etc/clickhouse-server/config.d/keeper_port.xml
     }
-    # commit_logs_cache_size_threshold setting doesn't exist on some older versions
-    remove_keeper_config "commit_logs_cache_size_threshold" "[[:digit:]]\+"
-    remove_keeper_config "latest_logs_cache_size_threshold" "[[:digit:]]\+"
+
+    remove_keeper_config "remove_recursive" "[[:digit:]]\+"
+    remove_keeper_config "use_xid_64" "[[:digit:]]\+"
 fi
 
 export IS_FLAKY_CHECK=0
+
+# Export NUM_TRIES so python scripts will see its value as env variable
+export NUM_TRIES
 
 # For flaky check we also enable thread fuzzer
 if [ "$NUM_TRIES" -gt "1" ]; then
@@ -177,26 +175,24 @@ setup_logs_replication
 attach_gdb_to_clickhouse
 
 # create tables for minio log webhooks
-clickhouse-client --query "CREATE TABLE minio_audit_logs
+clickhouse-client --allow_experimental_json_type=1 --query "CREATE TABLE minio_audit_logs
 (
-    log String,
-    event_time DateTime64(9) MATERIALIZED parseDateTime64BestEffortOrZero(trim(BOTH '\"' FROM JSONExtractRaw(log, 'time')), 9, 'UTC')
+    log JSON(time DateTime64(9))
 )
 ENGINE = MergeTree
 ORDER BY tuple()"
 
-clickhouse-client --query "CREATE TABLE minio_server_logs
+clickhouse-client --allow_experimental_json_type=1 --query "CREATE TABLE minio_server_logs
 (
-    log String,
-    event_time DateTime64(9) MATERIALIZED parseDateTime64BestEffortOrZero(trim(BOTH '\"' FROM JSONExtractRaw(log, 'time')), 9, 'UTC')
+    log JSON(time DateTime64(9))
 )
 ENGINE = MergeTree
 ORDER BY tuple()"
 
 # create minio log webhooks for both audit and server logs
 # use async inserts to avoid creating too many parts
-./mc admin config set clickminio logger_webhook:ch_server_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&query=INSERT%20INTO%20minio_server_logs%20FORMAT%20LineAsString" queue_size=1000000 batch_size=500
-./mc admin config set clickminio audit_webhook:ch_audit_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&query=INSERT%20INTO%20minio_audit_logs%20FORMAT%20LineAsString" queue_size=1000000 batch_size=500
+./mc admin config set clickminio logger_webhook:ch_server_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&date_time_input_format=best_effort&query=INSERT%20INTO%20minio_server_logs%20FORMAT%20JSONAsObject" queue_size=1000000 batch_size=500
+./mc admin config set clickminio audit_webhook:ch_audit_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&date_time_input_format=best_effort&query=INSERT%20INTO%20minio_audit_logs%20FORMAT%20JSONAsObject" queue_size=1000000 batch_size=500
 
 max_retries=100
 retry=1
@@ -336,7 +332,7 @@ export -f run_tests
 if [ "$NUM_TRIES" -gt "1" ]; then
     # We don't run tests with Ordinary database in PRs, only in master.
     # So run new/changed tests with Ordinary at least once in flaky check.
-    NUM_TRIES=1; USE_DATABASE_ORDINARY=1; run_tests \
+    NUM_TRIES=1 USE_DATABASE_ORDINARY=1 run_tests \
       | sed 's/All tests have finished/Redacted: a message about tests finish is deleted/' | sed 's/No tests were run/Redacted: a message about no tests run is deleted/' ||:
 fi
 
@@ -347,31 +343,31 @@ ls -la ./
 echo "Files in root directory"
 ls -la /
 
-/repo/tests/docker_scripts/process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
-
 clickhouse-client -q "system flush logs" ||:
 
 # stop logs replication to make it possible to dump logs tables via clickhouse-local
 stop_logs_replication
 
+logs_saver_client_options="--max_block_size 8192 --max_memory_usage 10G --max_threads 1 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0"
+
 # Try to get logs while server is running
 failed_to_save_logs=0
-for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log
+for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log query_metric_log
 do
-    if ! clickhouse-client -q "select * from system.$table into outfile '/test_output/$table.tsv.zst' format TSVWithNamesAndTypes"; then
+    if ! clickhouse-client ${logs_saver_client_options} -q "select * from system.$table into outfile '/test_output/$table.tsv.zst' format TSVWithNamesAndTypes"; then
         failed_to_save_logs=1
     fi
     if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-        if ! clickhouse-client --port 19000 -q "select * from system.$table into outfile '/test_output/$table.1.tsv.zst' format TSVWithNamesAndTypes"; then
+        if ! clickhouse-client ${logs_saver_client_options} --port 19000 -q "select * from system.$table into outfile '/test_output/$table.1.tsv.zst' format TSVWithNamesAndTypes"; then
             failed_to_save_logs=1
         fi
-        if ! clickhouse-client --port 29000 -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst' format TSVWithNamesAndTypes"; then
+        if ! clickhouse-client ${logs_saver_client_options} --port 29000 -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst' format TSVWithNamesAndTypes"; then
             failed_to_save_logs=1
         fi
     fi
 
     if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
-        if ! clickhouse-client --port 29000 -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst' format TSVWithNamesAndTypes"; then
+        if ! clickhouse-client ${logs_saver_client_options} --port 29000 -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst' format TSVWithNamesAndTypes"; then
             failed_to_save_logs=1
         fi
     fi
@@ -381,9 +377,9 @@ done
 # collect minio audit and server logs
 # wait for minio to flush its batch if it has any
 sleep 1
-clickhouse-client -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
-clickhouse-client --max_block_size 8192 --max_memory_usage 10G --max_threads 1 --max_result_bytes 0 --max_result_rows 0 --max_rows_to_read 0 --max_bytes_to_read 0 -q "SELECT log FROM minio_audit_logs ORDER BY event_time INTO OUTFILE '/test_output/minio_audit_logs.jsonl.zst' FORMAT JSONEachRow"
-clickhouse-client --max_block_size 8192 --max_memory_usage 10G --max_threads 1 --max_result_bytes 0 --max_result_rows 0 --max_rows_to_read 0 --max_bytes_to_read 0 -q "SELECT log FROM minio_server_logs ORDER BY event_time INTO OUTFILE '/test_output/minio_server_logs.jsonl.zst' FORMAT JSONEachRow"
+clickhouse-client -q "SYSTEM FLUSH ASYNC INSERT QUEUE" ||:
+clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_audit_logs ORDER BY log.time INTO OUTFILE '/test_output/minio_audit_logs.jsonl.zst' FORMAT JSONEachRow" ||:
+clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_server_logs ORDER BY log.time INTO OUTFILE '/test_output/minio_server_logs.jsonl.zst' FORMAT JSONEachRow" ||:
 
 # Stop server so we can safely read data with clickhouse-local.
 # Why do we read data with clickhouse-local?
@@ -423,17 +419,17 @@ if [ $failed_to_save_logs -ne 0 ]; then
     #   directly
     # - even though ci auto-compress some files (but not *.tsv) it does this only
     #   for files >64MB, we want this files to be compressed explicitly
-    for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log
+    for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log query_metric_log
     do
-        clickhouse-local "$data_path_config" --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
+        clickhouse-local ${logs_saver_client_options} "$data_path_config" --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
 
         if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-            clickhouse-local --path /var/lib/clickhouse1/ --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst ||:
-            clickhouse-local --path /var/lib/clickhouse2/ --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst ||:
+            clickhouse-local ${logs_saver_client_options} --path /var/lib/clickhouse1/ --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst ||:
+            clickhouse-local ${logs_saver_client_options} --path /var/lib/clickhouse2/ --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst ||:
         fi
 
         if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
-            clickhouse-local --path /var/lib/clickhouse1/ --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst ||:
+            clickhouse-local ${logs_saver_client_options} --path /var/lib/clickhouse1/ --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst ||:
         fi
     done
 fi
@@ -456,6 +452,10 @@ done
 
 # Grep logs for sanitizer asserts, crashes and other critical errors
 check_logs_for_critical_errors
+
+# Check test_result.txt with test results and test_results.tsv generated by grepping logs before
+/repo/tests/docker_scripts/process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
+
 
 # Compressed (FIXME: remove once only github actions will be left)
 rm /var/log/clickhouse-server/clickhouse-server.log

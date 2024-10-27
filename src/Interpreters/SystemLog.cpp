@@ -25,6 +25,7 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/ObjectStorageQueueLog.h>
@@ -53,6 +54,11 @@
 
 namespace DB
 {
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool prepare_system_log_tables_on_startup;
+}
 
 namespace ErrorCodes
 {
@@ -295,7 +301,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     if (session_log)
         global_context->addWarningMessage("Table system.session_log is enabled. It's unreliable and may contain garbage. Do not use it for any kind of security monitoring.");
 
-    bool should_prepare = global_context->getServerSettings().prepare_system_log_tables_on_startup;
+    bool should_prepare = global_context->getServerSettings()[ServerSetting::prepare_system_log_tables_on_startup];
     try
     {
         for (auto & log : getAllLogs())
@@ -316,14 +322,14 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     {
         size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
                                                                 DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        metric_log->startCollect(collect_interval_milliseconds);
+        metric_log->startCollect("MetricLog", collect_interval_milliseconds);
     }
 
     if (error_log)
     {
         size_t collect_interval_milliseconds = config.getUInt64("error_log.collect_interval_milliseconds",
                                                                 DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        error_log->startCollect(collect_interval_milliseconds);
+        error_log->startCollect("ErrorLog", collect_interval_milliseconds);
     }
 
     if (crash_log)
@@ -402,30 +408,11 @@ SystemLog<LogElement>::SystemLog(
 template <typename LogElement>
 void SystemLog<LogElement>::shutdown()
 {
-    stopFlushThread();
+    Base::stopFlushThread();
 
     auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
     if (table)
         table->flushAndShutdown();
-}
-
-template <typename LogElement>
-void SystemLog<LogElement>::stopFlushThread()
-{
-    {
-        std::lock_guard lock(thread_mutex);
-
-        if (!saving_thread || !saving_thread->joinable())
-            return;
-
-        if (is_shutdown)
-            return;
-
-        is_shutdown = true;
-        queue->shutdown();
-    }
-
-    saving_thread->join();
 }
 
 
