@@ -80,11 +80,11 @@ namespace Ternary
 
 #if USE_EMBEDDED_COMPILER
 
-/// Cast LLVM value with type to Tenary
-llvm::Value * nativeTenaryCast(llvm::IRBuilderBase & b, const DataTypePtr & from_type, llvm::Value * value);
+/// Cast LLVM value with type to Ternary
+llvm::Value * nativeTernaryCast(llvm::IRBuilderBase & b, const DataTypePtr & from_type, llvm::Value * value);
 
-/// Cast LLVM value with type to Tenary
-llvm::Value * nativeTenaryCast(llvm::IRBuilderBase & b, const ValueWithType & value_with_type);
+/// Cast LLVM value with type to Ternary
+llvm::Value * nativeTernaryCast(llvm::IRBuilderBase & b, const ValueWithType & value_with_type);
 
 #endif
 
@@ -113,7 +113,7 @@ struct AndImpl
         return builder.CreateAnd(a, b);
     }
 
-    static llvm::Value * tenaryApply(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * b)
+    static llvm::Value * ternaryApply(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * b)
     {
         return builder.CreateSelect(builder.CreateICmpUGT(a, b), b, a);
     }
@@ -137,7 +137,7 @@ struct OrImpl
         return builder.CreateOr(a, b);
     }
 
-    static llvm::Value * tenaryApply(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * b)
+    static llvm::Value * ternaryApply(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * b)
     {
         return builder.CreateSelect(builder.CreateICmpUGT(a, b), a, b);
     }
@@ -162,7 +162,7 @@ struct XorImpl
         return builder.CreateXor(a, b);
     }
 
-    static llvm::Value * tenaryApply(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * b)
+    static llvm::Value * ternaryApply(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * b)
     {
         llvm::Value * xor_result = builder.CreateXor(a, b);
         return builder.CreateSelect(xor_result, builder.getInt8(Ternary::True), builder.getInt8(Ternary::False));
@@ -251,16 +251,16 @@ public:
         else
         {
             /// First we need to cast all values to ternary logic
-            llvm::Value * tenary_result = nativeTenaryCast(b, values[0]);
+            llvm::Value * ternary_result = nativeTernaryCast(b, values[0]);
             for (size_t i = 1; i < values.size(); ++i)
             {
-                llvm::Value * casted_value = nativeTenaryCast(b, values[i]);
-                tenary_result = Impl::tenaryApply(b, tenary_result, casted_value);
+                llvm::Value * casted_value = nativeTernaryCast(b, values[i]);
+                ternary_result = Impl::ternaryApply(b, ternary_result, casted_value);
             }
 
             /// Then transform ternary logic to struct which represents nullable result
-            llvm::Value * is_null = b.CreateICmpEQ(tenary_result, b.getInt8(Ternary::Null));
-            llvm::Value * is_true = b.CreateICmpEQ(tenary_result, b.getInt8(Ternary::True));
+            llvm::Value * is_null = b.CreateICmpEQ(ternary_result, b.getInt8(Ternary::Null));
+            llvm::Value * is_true = b.CreateICmpEQ(ternary_result, b.getInt8(Ternary::True));
 
             auto * nullable_result_type = toNativeType(b, result_type);
             auto * nullable_result = llvm::Constant::getNullValue(nullable_result_type);

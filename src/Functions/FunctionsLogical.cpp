@@ -516,34 +516,34 @@ namespace FunctionsLogicalDetail
 
 #if USE_EMBEDDED_COMPILER
 
-/// Cast LLVM value with type to tenary
-llvm::Value * nativeTenaryCast(llvm::IRBuilderBase & b, const DataTypePtr & from_type, llvm::Value * value)
+/// Cast LLVM value with type to ternary
+llvm::Value * nativeTernaryCast(llvm::IRBuilderBase & b, const DataTypePtr & from_type, llvm::Value * value)
 {
     auto * result_type = llvm::Type::getInt8Ty(b.getContext());
 
     if (from_type->isNullable())
     {
-        auto * tenary_null = llvm::ConstantInt::get(result_type, 1);
-        auto * inner = nativeTenaryCast(b, removeNullable(from_type), b.CreateExtractValue(value, {0}));
+        auto * ternary_null = llvm::ConstantInt::get(result_type, 1);
+        auto * inner = nativeTernaryCast(b, removeNullable(from_type), b.CreateExtractValue(value, {0}));
         auto * is_null = b.CreateExtractValue(value, {1});
-        return b.CreateSelect(is_null, tenary_null, inner);
+        return b.CreateSelect(is_null, ternary_null, inner);
     }
 
     auto * zero = llvm::Constant::getNullValue(value->getType());
-    auto * tenary_true = llvm::ConstantInt::get(result_type, 2);
-    auto * tenary_false = llvm::ConstantInt::get(result_type, 0);
+    auto * ternary_true = llvm::ConstantInt::get(result_type, 2);
+    auto * ternary_false = llvm::ConstantInt::get(result_type, 0);
     if (value->getType()->isIntegerTy())
-        return b.CreateSelect(b.CreateICmpNE(value, zero), tenary_true, tenary_false);
+        return b.CreateSelect(b.CreateICmpNE(value, zero), ternary_true, ternary_false);
     else if (value->getType()->isFloatingPointTy())
-        return b.CreateSelect(b.CreateFCmpONE(value, zero), tenary_true, tenary_false);
+        return b.CreateSelect(b.CreateFCmpONE(value, zero), ternary_true, ternary_false);
     else
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast non-number {} to tenary", from_type->getName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast non-number {} to ternary", from_type->getName());
 }
 
-/// Cast LLVM value with type to tenary
-llvm::Value * nativeTenaryCast(llvm::IRBuilderBase & b, const ValueWithType & value_with_type)
+/// Cast LLVM value with type to ternary
+llvm::Value * nativeTernaryCast(llvm::IRBuilderBase & b, const ValueWithType & value_with_type)
 {
-    return nativeTenaryCast(b, value_with_type.type, value_with_type.value);
+    return nativeTernaryCast(b, value_with_type.type, value_with_type.value);
 }
 
 #endif
