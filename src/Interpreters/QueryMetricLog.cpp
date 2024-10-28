@@ -115,9 +115,8 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_t
             LOG_TRACE(logger, "Query {} finished already while this collecting task was running", query_id);
     });
 
-    status.task->scheduleAfter(interval_milliseconds);
-
     std::lock_guard lock(queries_mutex);
+    status.task->scheduleAfter(interval_milliseconds);
     queries.emplace(query_id, std::move(status));
 }
 
