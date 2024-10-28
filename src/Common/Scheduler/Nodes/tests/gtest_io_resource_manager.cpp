@@ -28,7 +28,7 @@ public:
         : WorkloadEntityStorageBase(Context::getGlobalContextInstance())
     {}
 
-    virtual void loadEntities() override {}
+    void loadEntities() override {}
 
     void executeQuery(const String & query)
     {
