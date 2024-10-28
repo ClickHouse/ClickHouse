@@ -306,7 +306,6 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
         select_row_exists->setExpression(
             ASTSelectQuery::Expression::WHERE,
             makeASTFunction("equals", std::make_shared<ASTIdentifier>("_row_exists"), std::make_shared<ASTLiteral>(1)));
-        // std::cout<<serializeAST(*query_ast_copy)<<std::endl;
     }
 
     auto builder = InterpreterSelectQuery(
