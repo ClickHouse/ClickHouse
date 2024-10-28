@@ -57,6 +57,11 @@ namespace Setting
     extern const SettingsBool optimize_trivial_approximate_count_query;
 }
 
+namespace RocksDBSetting
+{
+    extern const RocksDBSettingsBool optimize_for_bulk_insert;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -663,7 +668,7 @@ void ReadFromEmbeddedRocksDB::applyFilters(ActionDAGNodes added_filter_nodes)
 SinkToStoragePtr StorageEmbeddedRocksDB::write(
     const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr  query_context, bool /*async_insert*/)
 {
-    if (getSettings().optimize_for_bulk_insert)
+    if (getSettings()[RocksDBSetting::optimize_for_bulk_insert])
     {
         LOG_DEBUG(log, "Using bulk insert");
         return std::make_shared<EmbeddedRocksDBBulkSink>(query_context, *this, metadata_snapshot);
@@ -710,7 +715,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageEmbeddedRocksDB must require one column in primary key");
     }
     auto settings = std::make_unique<RocksDBSettings>();
-    settings->loadFromQuery(*args.storage_def, args.getContext());
+    settings->loadFromQuery(*args.storage_def);
     if (args.storage_def->settings)
         metadata.settings_changes = args.storage_def->settings->ptr();
     else
@@ -720,7 +725,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// SETTING queries. So we just add a setting with its default value.
         auto settings_changes = std::make_shared<ASTSetQuery>();
         settings_changes->is_standalone = false;
-        settings_changes->changes.insertSetting("optimize_for_bulk_insert", settings->optimize_for_bulk_insert.value);
+        settings_changes->changes.insertSetting("optimize_for_bulk_insert", (*settings)[RocksDBSetting::optimize_for_bulk_insert].value);
         metadata.settings_changes = settings_changes;
     }
     return std::make_shared<StorageEmbeddedRocksDB>(args.table_id, args.relative_data_path, metadata, args.mode, args.getContext(), std::move(settings), primary_key_names[0], ttl, std::move(rocksdb_dir), read_only);
