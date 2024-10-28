@@ -221,7 +221,7 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
                 read_settings,
                 blob_storage_log,
                 threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupReaderS3"),
-                /*fallback_file_reader=*/std::nullopt,
+                [&, this] { return readFile(path_in_backup); },
                 object_attributes);
 
             return file_size;
@@ -310,10 +310,12 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
 void BackupWriterS3::copyFile(const String & destination, const String & source, size_t size)
 {
     LOG_TRACE(log, "Copying file inside backup from {} to {} ", source, destination);
+
+    const auto source_key = fs::path(s3_uri.key) / source;
     copyS3File(
         client,
         /* src_bucket */ s3_uri.bucket,
-        /* src_key= */ fs::path(s3_uri.key) / source,
+        /* src_key= */ source_key,
         0,
         size,
         /* dest_s3_client= */ client,
@@ -322,7 +324,12 @@ void BackupWriterS3::copyFile(const String & destination, const String & source,
         s3_settings.request_settings,
         read_settings,
         blob_storage_log,
-        threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
+        threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"),
+        [&, this]
+        {
+            return std::make_unique<ReadBufferFromS3>(
+                client, s3_uri.bucket, source_key, s3_uri.version_id, s3_settings.request_settings, read_settings);
+        });
 }
 
 void BackupWriterS3::copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length)

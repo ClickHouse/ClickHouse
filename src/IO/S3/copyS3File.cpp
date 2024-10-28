@@ -891,7 +891,7 @@ void copyS3File(
     const ReadSettings & read_settings,
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    const std::optional<CreateReadBuffer>& fallback_file_reader,
+    const CreateReadBuffer& fallback_file_reader,
     const std::optional<std::map<String, String>> & object_metadata)
 {
     if (!dest_s3_client)
@@ -899,14 +899,9 @@ void copyS3File(
 
     std::function<void()> fallback_method = [&] mutable
     {
-        auto create_read_buffer
-            = [&] mutable -> std::unique_ptr<SeekableReadBuffer> {
-                if (fallback_file_reader)
-                    return (*fallback_file_reader)();
-                return std::make_unique<ReadBufferFromS3>(src_s3_client, src_bucket, src_key, "", settings, read_settings); };
 
         copyDataToS3File(
-            create_read_buffer,
+            fallback_file_reader,
             src_offset,
             src_size,
             dest_s3_client,

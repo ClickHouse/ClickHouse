@@ -43,7 +43,7 @@ void copyS3File(
     const ReadSettings & read_settings,
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    const std::optional<CreateReadBuffer>& fallback_file_reader = std::nullopt,
+    const CreateReadBuffer& fallback_file_reader,
     const std::optional<std::map<String, String>> & object_metadata = std::nullopt);
 
 /// Copies data from any seekable source to S3.

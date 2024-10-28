@@ -401,6 +401,7 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
         auto settings_ptr = s3_settings.get();
         auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {});
         auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "S3ObjStor_copy");
+        const auto read_settings_to_use = patchSettings(read_settings);
 
         try
         {
@@ -414,10 +415,10 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
                 /*dest_bucket=*/dest_s3->uri.bucket,
                 /*dest_key=*/object_to.remote_path,
                 settings_ptr->request_settings,
-                patchSettings(read_settings),
+                read_settings_to_use,
                 BlobStorageLogWriter::create(disk_name),
                 scheduler,
-                /*fallback_file_reader=*/std::nullopt,
+                [&, this]{ return readObject(object_from, read_settings_to_use);},
                 object_to_attributes);
             return;
         }
@@ -461,7 +462,7 @@ void S3ObjectStorage::copyObject( // NOLINT
         read_settings_to_use,
         BlobStorageLogWriter::create(disk_name),
         scheduler,
-        /*fallback_file_reader=*/std::nullopt,
+        [&, this]{ return readObject(object_from, read_settings_to_use);},
         object_to_attributes);
 }
 
