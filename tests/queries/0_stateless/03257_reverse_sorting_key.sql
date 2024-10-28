@@ -1,3 +1,5 @@
+set optimize_read_in_order = 1;
+
 drop table if exists x1;
 
 drop table if exists x2;
