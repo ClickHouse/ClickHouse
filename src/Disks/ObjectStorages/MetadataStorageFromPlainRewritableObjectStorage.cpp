@@ -16,13 +16,12 @@
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
 #include <Poco/Timestamp.h>
-#include "Common/Exception.h"
-#include "Common/Logger.h"
+#include <Common/Exception.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/SharedMutex.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 #include "CommonPathPrefixKeyGenerator.h"
-#include "Disks/ObjectStorages/IObjectStorage_fwd.h"
 
 
 namespace DB
@@ -58,31 +57,53 @@ void loadDirectoryTree(
     using FileNamesIterator = InMemoryDirectoryPathMap::FileNamesIterator;
     using FileNameIteratorComparator = InMemoryDirectoryPathMap::FileNameIteratorComparator;
     const auto common_key_prefix = object_storage->getCommonKeyPrefix();
-    LOG_DEBUG(getLogger("MetadataStorageFromPlainObjectStorage"), "Loading directory structure");
-    for (auto & [local_path, info] : map)
+    ThreadPool & pool = getIOThreadPool().get();
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, "PlainRWTreeLoad");
+
+    std::atomic<size_t> num_files = 0;
+    LOG_DEBUG(getLogger("MetadataStorageFromPlainObjectStorage"), "Loading directory tree");
+    std::mutex mutex;
+    for (auto & item : map)
     {
-        const auto remote_path = std::filesystem::path(common_key_prefix) / info.path / "";
-        std::set<FileNamesIterator, FileNameIteratorComparator> filename_iterators;
-        for (auto iterator = object_storage->iterate(remote_path, 0); iterator->isValid(); iterator->next())
-        {
-            auto file = iterator->current();
-            String path = file->getPath();
-            chassert(path.starts_with(remote_path.string()));
-            auto filename = std::filesystem::path(path).filename();
-            /// Check that the file is a direct child.
-            if (path.substr(remote_path.string().size()) == filename)
+        auto & remote_path_info = item.second;
+        const auto remote_path = std::filesystem::path(common_key_prefix) / remote_path_info.path / "";
+        runner(
+            [remote_path, &remote_path_info, &mutex, &unique_filenames, &object_storage, &num_files]
             {
-                auto filename_it = unique_filenames.emplace(filename).first;
-                [[maybe_unused]] auto inserted = filename_iterators.emplace(filename_it).second;
-                chassert(inserted);
-            }
-        }
+                setThreadName("PlainRWTreeLoad");
+                std::set<FileNamesIterator, FileNameIteratorComparator> filename_iterators;
+                for (auto iterator = object_storage->iterate(remote_path, 0); iterator->isValid(); iterator->next())
+                {
+                    auto file = iterator->current();
+                    String path = file->getPath();
+                    chassert(path.starts_with(remote_path.string()));
+                    auto filename = std::filesystem::path(path).filename();
+                    /// Check that the file is a direct child.
+                    if (path.substr(remote_path.string().size()) == filename)
+                    {
+                        auto filename_it = unique_filenames.emplace(filename).first;
+                        auto inserted = filename_iterators.emplace(filename_it).second;
+                        chassert(inserted);
+                        if (inserted)
+                            ++num_files;
+                    }
+                }
 
-        auto metric = object_storage->getMetadataStorageMetrics().file_count;
-        CurrentMetrics::add(metric, filename_iterators.size());
+                auto metric = object_storage->getMetadataStorageMetrics().file_count;
+                CurrentMetrics::add(metric, filename_iterators.size());
 
-        info.filename_iterators = std::move(filename_iterators);
+                {
+                    std::lock_guard lock(mutex);
+                    remote_path_info.filename_iterators = std::move(filename_iterators);
+                }
+            });
     }
+    runner.waitForAllToFinishAndRethrowFirstError();
+    LOG_DEBUG(
+        getLogger("MetadataStorageFromPlainObjectStorage"),
+        "Loaded directory tree for {} directories, found {} files",
+        map.size(),
+        num_files);
 }
 
 std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & metadata_key_prefix, ObjectStoragePtr object_storage)
@@ -176,12 +197,12 @@ std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & 
     runner.waitForAllToFinishAndRethrowFirstError();
 
     InMemoryDirectoryPathMap::FileNames unique_filenames;
+    LOG_DEBUG(log, "Loaded metadata for {} files, found {} directories", num_files, map.size());
     loadDirectoryTree(map, unique_filenames, object_storage);
     {
         std::lock_guard lock(result->mutex);
         result->map = std::move(map);
         result->unique_filenames = std::move(unique_filenames);
-        LOG_DEBUG(log, "Loaded metadata for {} files, found {} directories", num_files, result->map.size());
 
         auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
         CurrentMetrics::add(metric, result->map.size());
