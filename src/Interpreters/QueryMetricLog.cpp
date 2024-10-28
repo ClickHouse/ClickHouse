@@ -21,11 +21,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-};
-
 static auto logger = getLogger("QueryMetricLog");
 
 ColumnsDescription QueryMetricLogElement::getColumnsDescription()
