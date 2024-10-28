@@ -1081,7 +1081,7 @@ Default value: 0 bytes.
 
 Note that if both `min_free_disk_bytes_to_perform_insert` and `min_free_disk_ratio_to_perform_insert` are specified, ClickHouse will count on the value that will allow to perform inserts on a bigger amount of free memory.
 
-## min_free_disk_ratio_to_perform_insert 
+## min_free_disk_ratio_to_perform_insert
 
 The minimum free to total disk space ratio to perform an `INSERT`. Must be a floating point value between 0 and 1. Note that this setting:
 - takes into account the `keep_free_space_bytes` setting.
@@ -1095,3 +1095,28 @@ Possible values:
 Default value: 0.0
 
 Note that if both `min_free_disk_ratio_to_perform_insert` and `min_free_disk_bytes_to_perform_insert` are specified, ClickHouse will count on the value that will allow to perform inserts on a bigger amount of free memory.
+
+## allow_experimental_reverse_key
+
+Enables support for descending sort order in MergeTree sorting keys. This setting is particularly useful for time series analysis and Top-N queries, allowing data to be stored in reverse chronological order to optimize query performance.
+
+With `allow_experimental_reverse_key` enabled, you can define descending sort orders within the `ORDER BY` clause of a MergeTree table. This enables the use of more efficient `ReadInOrder` optimizations instead of `ReadInReverseOrder` for descending queries.
+
+**Example**
+
+```sql
+CREATE TABLE example
+(
+    time DateTime,
+    key Int32,
+    value String
+) ENGINE = MergeTree
+ORDER BY (time DESC, key)  -- Descending order on 'time' field
+SETTINGS allow_experimental_reverse_key = 1;
+
+SELECT * FROM example WHERE key = 'xxx' ORDER BY time DESC LIMIT 10;
+```
+
+By using `ORDER BY time DESC` in the query, `ReadInOrder` is applied.
+
+**Default Value:** false
