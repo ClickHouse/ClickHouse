@@ -1104,14 +1104,14 @@ int StatementGenerator::GenerateSelect(
     return res;
 }
 
-int StatementGenerator::GenerateTopSelect(RandomGenerator & rg, sql_query_grammar::TopSelect * ts)
+int StatementGenerator::GenerateTopSelect(RandomGenerator & rg, const uint32_t allowed_clauses, sql_query_grammar::TopSelect * ts)
 {
     int res = 0;
     const uint32_t ncols = std::max(std::min(this->fc.max_width - this->width, (rg.NextMediumNumber() % UINT32_C(5)) + 1), UINT32_C(1));
 
     assert(this->levels.empty());
     this->levels[this->current_level] = QueryLevel(this->current_level);
-    if ((res = GenerateSelect(rg, true, ncols, std::numeric_limits<uint32_t>::max(), ts->mutable_sel())))
+    if ((res = GenerateSelect(rg, true, ncols, allowed_clauses, ts->mutable_sel())))
     {
         return res;
     }

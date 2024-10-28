@@ -357,12 +357,6 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
          ret += rg.PickRandomlyFromVector(choices);
      }},
     {"prefer_localhost_replica", TrueOrFalse},
-    {"prefer_merge_sort_block_bytes",
-     [](RandomGenerator & rg, std::string & ret)
-     {
-         const std::vector<std::string> & choices = {"0", "1", "100000000"};
-         ret += rg.PickRandomlyFromVector(choices);
-     }},
     {"query_plan_aggregation_in_order", TrueOrFalse},
     {"query_plan_enable_optimizations", TrueOrFalse},
     {"read_from_filesystem_cache_if_exists_otherwise_bypass_cache", TrueOrFalse},

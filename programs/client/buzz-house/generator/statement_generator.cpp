@@ -756,8 +756,7 @@ const std::vector<sql_query_grammar::TableEngineValues> like_engs
        sql_query_grammar::TableEngineValues::StripeLog,
        sql_query_grammar::TableEngineValues::Log,
        sql_query_grammar::TableEngineValues::TinyLog,
-       sql_query_grammar::TableEngineValues::EmbeddedRocksDB,
-       sql_query_grammar::TableEngineValues::Buffer};
+       sql_query_grammar::TableEngineValues::EmbeddedRocksDB};
 
 int StatementGenerator::GenerateNextCreateTable(RandomGenerator & rg, sql_query_grammar::CreateTable * ct)
 {
@@ -2338,7 +2337,7 @@ int StatementGenerator::GenerateNextQuery(RandomGenerator & rg, sql_query_gramma
     {
         return GenerateNextCreateFunction(rg, sq->mutable_create_function());
     }
-    return GenerateTopSelect(rg, sq->mutable_select());
+    return GenerateTopSelect(rg, std::numeric_limits<uint32_t>::max(), sq->mutable_select());
 }
 
 static const std::vector<TestSetting> explain_settings{//QUERY TREE

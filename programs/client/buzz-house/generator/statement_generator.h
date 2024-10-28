@@ -346,7 +346,7 @@ private:
     int GenerateSelect(
         RandomGenerator & rg, const bool top, const uint32_t ncols, const uint32_t allowed_clauses, sql_query_grammar::Select * sel);
 
-    int GenerateTopSelect(RandomGenerator & rg, sql_query_grammar::TopSelect * sq);
+    int GenerateTopSelect(RandomGenerator & rg, const uint32_t allowed_clauses, sql_query_grammar::TopSelect * sq);
     int GenerateNextExplain(RandomGenerator & rg, sql_query_grammar::ExplainQuery * sq);
     int GenerateNextQuery(RandomGenerator & rg, sql_query_grammar::SQLQueryInner * sq);
 

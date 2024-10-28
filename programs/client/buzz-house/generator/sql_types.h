@@ -195,7 +195,7 @@ public:
                 {
                     ret += "\\";
                 }
-                ret += v.val;
+                ret += c;
             }
             ret += " = ";
             ret += std::to_string(v.number);
