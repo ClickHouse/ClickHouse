@@ -17,8 +17,6 @@
 
 #### Backward Incompatible Change
 * Allow to write `SETTINGS` before `FORMAT` in a chain of queries with `UNION` when subqueries are inside parentheses. This closes [#39712](https://github.com/ClickHouse/ClickHouse/issues/39712). Change the behavior when a query has the SETTINGS clause specified twice in a sequence. The closest SETTINGS clause will have a preference for the corresponding subquery. In the previous versions, the outermost SETTINGS clause could take a preference over the inner one. [#68614](https://github.com/ClickHouse/ClickHouse/pull/68614) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
-* Allow empty needle in function replace, the same behavior with PostgreSQL. [#69918](https://github.com/ClickHouse/ClickHouse/pull/69918) ([zhanglistar](https://github.com/zhanglistar)).
-* Allow empty needle in functions replaceRegexp*. [#70053](https://github.com/ClickHouse/ClickHouse/pull/70053) ([zhanglistar](https://github.com/zhanglistar)).
 * Reordering of filter conditions from `[PRE]WHERE` clause is now allowed by default. It could be disabled by setting `allow_reorder_prewhere_conditions` to `false`. [#70657](https://github.com/ClickHouse/ClickHouse/pull/70657) ([Nikita Taranov](https://github.com/nickitat)).
 * Fix `optimize_functions_to_subcolumns` optimization (previously could lead to `Invalid column type for ColumnUnique::insertRangeFrom. Expected String, got LowCardinality(String)` error), by preserving `LowCardinality` type in `mapKeys`/`mapValues`. [#70716](https://github.com/ClickHouse/ClickHouse/pull/70716) ([Azat Khuzhin](https://github.com/azat)).
 * Remove the `idxd-config` library, which has an incompatible license. This also removes the experimental Intel DeflateQPL codec. [#70987](https://github.com/ClickHouse/ClickHouse/pull/70987) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
@@ -62,6 +60,8 @@
 * Improve performance of FromUnixTimestamp/ToUnixTimestamp functions. [#71042](https://github.com/ClickHouse/ClickHouse/pull/71042) ([kevinyhzou](https://github.com/KevinyhZou)).
 
 #### Improvement
+* Allow empty needle in function replace, the same behavior with PostgreSQL. [#69918](https://github.com/ClickHouse/ClickHouse/pull/69918) ([zhanglistar](https://github.com/zhanglistar)).
+* Allow empty needle in functions replaceRegexp*. [#70053](https://github.com/ClickHouse/ClickHouse/pull/70053) ([zhanglistar](https://github.com/zhanglistar)).
 * Allow parametrised SQL aliases. [#50665](https://github.com/ClickHouse/ClickHouse/pull/50665) ([Anton Kozlov](https://github.com/tonickkozlov)).
 * `ALTER TABLE .. REPLACE PARTITION` doesn't wait anymore for mutations/merges that happen in other partitions. [#59138](https://github.com/ClickHouse/ClickHouse/pull/59138) ([Vasily Nemkov](https://github.com/Enmk)).
 * Refreshable materialized views are now supported in Replicated databases. [#60669](https://github.com/ClickHouse/ClickHouse/pull/60669) ([Michael Kolupaev](https://github.com/al13n321)).
