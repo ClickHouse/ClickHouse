@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-import pytest
-from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
-from kazoo.client import KazooClient
-from kazoo.retry import KazooRetry
-from kazoo.security import make_acl
-from kazoo.handlers.threading import KazooTimeoutError
 import os
 import time
+
+import pytest
+from kazoo.client import KazooClient
+from kazoo.handlers.threading import KazooTimeoutError
+from kazoo.retry import KazooRetry
+from kazoo.security import make_acl
+
+import helpers.keeper_utils as keeper_utils
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 

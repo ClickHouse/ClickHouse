@@ -34,7 +34,7 @@ curl https://clickhouse.com/ | sh
 
 Every month we get together with the community (users, contributors, customers, those interested in learning more about ClickHouse) to discuss what is coming in the latest release. If you are interested in sharing what you've built on ClickHouse, let us know.
 
-* [v24.9 Community Call](https://clickhouse.com/company/events/v24-9-community-release-call) - September 26
+* [v24.10 Community Call](https://clickhouse.com/company/events/v24-10-community-release-call) - October 31
 
 ## Upcoming Events
 
@@ -45,8 +45,8 @@ Upcoming meetups
 * [Jakarta Meetup](https://www.meetup.com/clickhouse-indonesia-user-group/events/303191359/) - October 1
 * [Singapore Meetup](https://www.meetup.com/clickhouse-singapore-meetup-group/events/303212064/) - October 3
 * [Madrid Meetup](https://www.meetup.com/clickhouse-spain-user-group/events/303096564/) - October 22
-* [Barcelona Meetup](https://www.meetup.com/clickhouse-spain-user-group/events/303096876/) - October 29
 * [Oslo Meetup](https://www.meetup.com/open-source-real-time-data-warehouse-real-time-analytics/events/302938622) - October 31
+* [Barcelona Meetup](https://www.meetup.com/clickhouse-spain-user-group/events/303096876/) - November 12
 * [Ghent Meetup](https://www.meetup.com/clickhouse-belgium-user-group/events/303049405/) - November 19
 * [Dubai Meetup](https://www.meetup.com/clickhouse-dubai-meetup-group/events/303096989/) - November 21
 * [Paris Meetup](https://www.meetup.com/clickhouse-france-user-group/events/303096434) - November 26

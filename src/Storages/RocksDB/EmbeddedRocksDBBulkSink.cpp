@@ -35,6 +35,11 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_rows;
 }
 
+namespace RocksDBSetting
+{
+    extern const RocksDBSettingsUInt64 bulk_insert_block_size;
+}
+
 namespace ErrorCodes
 {
     extern const int ROCKSDB_ERROR;
@@ -91,7 +96,7 @@ EmbeddedRocksDBBulkSink::EmbeddedRocksDBBulkSink(
 
     serializations = getHeader().getSerializations();
     min_block_size_rows
-        = std::max(storage.getSettings().bulk_insert_block_size, getContext()->getSettingsRef()[Setting::min_insert_block_size_rows]);
+        = std::max(storage.getSettings()[RocksDBSetting::bulk_insert_block_size], getContext()->getSettingsRef()[Setting::min_insert_block_size_rows]);
 
     /// If max_insert_threads > 1 we may have multiple EmbeddedRocksDBBulkSink and getContext()->getCurrentQueryId() is not guarantee to
     /// to have a distinct path. Also we cannot use query id as directory name here, because it could be defined by user and not suitable

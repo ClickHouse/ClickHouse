@@ -16,14 +16,23 @@ namespace Coordination
 
 using namespace DB;
 
-void ZooKeeperResponse::write(WriteBuffer & out) const
+void ZooKeeperResponse::write(WriteBuffer & out, bool use_xid_64) const
 {
-    auto response_size = Coordination::size(xid) + Coordination::size(zxid) + Coordination::size(error);
+    size_t response_size = 0;
+    if (use_xid_64)
+        response_size += sizeof(int64_t);
+    else
+        response_size += sizeof(int32_t);
+
+    response_size += Coordination::size(zxid) + Coordination::size(error);
     if (error == Error::ZOK)
         response_size += sizeImpl();
 
     Coordination::write(static_cast<int32_t>(response_size), out);
-    Coordination::write(xid, out);
+    if (use_xid_64)
+        Coordination::write(xid, out);
+    else
+        Coordination::write(static_cast<int32_t>(xid), out);
     Coordination::write(zxid, out);
     Coordination::write(error, out);
     if (error == Error::ZOK)
@@ -41,12 +50,21 @@ std::string ZooKeeperRequest::toString(bool short_format) const
         toStringImpl(short_format));
 }
 
-void ZooKeeperRequest::write(WriteBuffer & out) const
+void ZooKeeperRequest::write(WriteBuffer & out, bool use_xid_64) const
 {
-    auto request_size = Coordination::size(xid) + Coordination::size(getOpNum()) + sizeImpl();
+    size_t request_size = 0;
+    if (use_xid_64)
+        request_size += sizeof(int64_t);
+    else
+        request_size += sizeof(int32_t);
+
+    request_size += Coordination::size(getOpNum()) + sizeImpl();
 
     Coordination::write(static_cast<int32_t>(request_size), out);
-    Coordination::write(xid, out);
+    if (use_xid_64)
+        Coordination::write(static_cast<int64_t>(xid), out);
+    else
+        Coordination::write(static_cast<int32_t>(xid), out);
     Coordination::write(getOpNum(), out);
     writeImpl(out);
 }
@@ -150,10 +168,10 @@ size_t ZooKeeperWatchResponse::sizeImpl() const
     return Coordination::size(type) + Coordination::size(state) + Coordination::size(path);
 }
 
-void ZooKeeperWatchResponse::write(WriteBuffer & out) const
+void ZooKeeperWatchResponse::write(WriteBuffer & out, bool use_xid_64) const
 {
     if (error == Error::ZOK)
-        ZooKeeperResponse::write(out);
+        ZooKeeperResponse::write(out, use_xid_64);
     /// skip bad responses for watches
 }
 
@@ -732,15 +750,13 @@ void ZooKeeperMultiRequest::writeImpl(WriteBuffer & out) const
 size_t ZooKeeperMultiRequest::sizeImpl() const
 {
     size_t total_size = 0;
-    for (const auto & request : requests)
+    for (const auto & zk_request : requests)
     {
-        const auto & zk_request = dynamic_cast<const ZooKeeperRequest &>(*request);
-
         bool done = false;
         int32_t error = -1;
 
         total_size
-            += Coordination::size(zk_request.getOpNum()) + Coordination::size(done) + Coordination::size(error) + zk_request.sizeImpl();
+            += Coordination::size(zk_request->getOpNum()) + Coordination::size(done) + Coordination::size(error) + zk_request->sizeImpl();
     }
 
     OpNum op_num = OpNum::Error;
