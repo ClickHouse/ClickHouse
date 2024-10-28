@@ -668,6 +668,7 @@ public:
                     return applyScaled<true>(a, b, scale_a);
                 if (scale_b != 1)
                     return applyScaled<false>(a, b, scale_b);
+                return res = apply(a, b);
             }
             else
                 res = apply(a, b);
@@ -2345,6 +2346,9 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                                                               : checkAndGetColumn<ColumnNullable>(right_argument.column.get());
             const auto & right_null_map = nullable_column->getNullMapData();
             NullMap res_null_map(right_null_map.begin(), right_null_map.end());
+            if (is_const)
+                res_null_map.resize(input_rows_count, 0);
+
             auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &right_null_map, &res_null_map);
             return wrapInNullable(res, arguments, result_type, input_rows_count, &res_null_map);
         }

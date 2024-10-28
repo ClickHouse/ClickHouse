@@ -5,6 +5,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnsCommon.h>
 #include <Common/assert_cast.h>
 
 
@@ -219,7 +220,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & a
         result_null_map_column = nullable->getNullMapColumnPtr();
     }
 
-    if (res_null_map)
+    if (res_null_map && !memoryIsZero(res_null_map->data(), 0, res_null_map->size()))
     {
         if (!result_null_map_column)
             result_null_map_column = ColumnUInt8::create(input_rows_count, 0);
