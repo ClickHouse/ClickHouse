@@ -7,7 +7,7 @@
 #include <Core/Types.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Functions/FunctionDateOrDateTimeAddInterval.h>
-#include <Common/FieldVisitorMul.h>
+#include <Common/FieldVisitorScale.h>
 #include <Common/FieldVisitorSum.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
@@ -123,7 +123,7 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
         {
             auto shifted_step = step;
             if (jumps_count != 1)
-                applyVisitor(FieldVisitorMul(jumps_count), shifted_step);
+                applyVisitor(FieldVisitorScale(jumps_count), shifted_step);
 
             logDebug("field", field.dump());
             logDebug("step", step.dump());
