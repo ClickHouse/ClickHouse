@@ -620,7 +620,7 @@ void WorkloadEntityStorageBase::applyEvent(
 {
     if (event.entity) // CREATE || CREATE OR REPLACE
     {
-        LOG_DEBUG(log, "Create or replace entity: {}", serializeAST(*event.entity));
+        LOG_DEBUG(log, "Create or replace workload entity: {}", serializeAST(*event.entity));
 
         auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(event.entity.get());
 
@@ -643,7 +643,7 @@ void WorkloadEntityStorageBase::applyEvent(
         auto it = entities.find(event.name);
         chassert(it != entities.end());
 
-        LOG_DEBUG(log, "Drop entity: {}", event.name);
+        LOG_DEBUG(log, "Drop workload entity: {}", event.name);
 
         if (event.name == root_name)
             root_name.clear();
