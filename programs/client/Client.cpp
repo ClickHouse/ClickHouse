@@ -646,7 +646,8 @@ static bool queryHasWithClause(const IAST & ast)
     return false;
 }
 
-std::optional<bool> Client::processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query, const bool ignore_deep_recursion)
+std::optional<bool>
+Client::processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query, const bool ignore_deep_recursion)
 {
     processParsedSingleQuery(query_to_execute, query_to_execute, parsed_query);
 
@@ -678,9 +679,7 @@ std::optional<bool> Client::processFuzzingStep(const String & query_to_execute, 
         catch (...)
         {
             // Just report it, we'll terminate below.
-            fmt::print(stderr,
-                "Error while reconnecting to the server: {}\n",
-                getCurrentExceptionMessage(true));
+            fmt::print(stderr, "Error while reconnecting to the server: {}\n", getCurrentExceptionMessage(true));
 
             // The reconnection might fail, but we'll still be connected
             // in the sense of `connection->isConnected() = true`,
@@ -715,14 +714,15 @@ bool Client::processWithFuzzing(const String & full_query)
     try
     {
         const char * begin = full_query.data();
-        orig_ast = parseQuery(begin, begin + full_query.size(),
+        orig_ast = parseQuery(
+            begin,
+            begin + full_query.size(),
             client_context->getSettingsRef(),
-            /*allow_multi_statements=*/ true);
+            /*allow_multi_statements=*/true);
     }
     catch (const Exception & e)
     {
-        if (e.code() != ErrorCodes::SYNTAX_ERROR &&
-            e.code() != ErrorCodes::TOO_DEEP_RECURSION)
+        if (e.code() != ErrorCodes::SYNTAX_ERROR && e.code() != ErrorCodes::TOO_DEEP_RECURSION)
             throw;
     }
 
@@ -744,9 +744,9 @@ bool Client::processWithFuzzing(const String & full_query)
     {
         return true;
     }
-    if (auto *q = orig_ast->as<ASTSetQuery>())
+    if (auto * q = orig_ast->as<ASTSetQuery>())
     {
-        if (auto *set_dialect = q->changes.tryGet("dialect"); set_dialect && set_dialect->safeGet<String>() == "kusto")
+        if (auto * set_dialect = q->changes.tryGet("dialect"); set_dialect && set_dialect->safeGet<String>() == "kusto")
             return true;
     }
 
@@ -838,7 +838,9 @@ bool Client::processWithFuzzing(const String & full_query)
 
                 fmt::print(
                     stderr,
-                    "Found error: IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
+                    "Found error: IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its "
+                    "cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent "
+                    "node doesn't implement clone() correctly.");
 
                 _exit(1);
             }
@@ -857,16 +859,15 @@ bool Client::processWithFuzzing(const String & full_query)
         catch (...)
         {
             if (!ast_to_process)
-                fmt::print(stderr,
-                    "Error while forming new query: {}\n",
-                    getCurrentExceptionMessage(true));
+                fmt::print(stderr, "Error while forming new query: {}\n", getCurrentExceptionMessage(true));
 
             // Some functions (e.g. protocol parsers) don't throw, but
             // set last_exception instead, so we'll also do it here for
             // uniformity.
             // Surprisingly, this is a client exception, because we get the
             // server exception w/o throwing (see onReceiveException()).
-            client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
+            client_exception
+                = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
             have_error = true;
         }
 
@@ -926,7 +927,8 @@ bool Client::processWithFuzzing(const String & full_query)
         }
         catch (...)
         {
-            client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
+            client_exception
+                = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
             have_error = true;
         }
 
@@ -942,13 +944,13 @@ bool Client::processWithFuzzing(const String & full_query)
     return true;
 }
 
-void Client::ProcessQueryAndLog(std::ofstream &outf, const std::string &full_query)
+void Client::ProcessQueryAndLog(std::ofstream & outf, const std::string & full_query)
 {
     processTextAsSingleQuery(full_query);
     outf << full_query << std::endl;
 }
 
-bool Client::ProcessBuzzHouseQuery(const std::string &full_query)
+bool Client::ProcessBuzzHouseQuery(const std::string & full_query)
 {
     bool server_up = true;
     ASTPtr orig_ast;
@@ -1021,7 +1023,8 @@ bool Client::buzzHouse()
 
         processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
         processTextAsSingleQuery("CREATE DATABASE fuzztest Engine=Replicated('/test/db', 's1', 'r1');");
-        processTextAsSingleQuery("CREATE TABLE fuzztest.t0 (c0 Int) Engine=SharedMergeTree() ORDER BY tuple() SETTINGS storage_policy = 's3_with_keeper';");
+        processTextAsSingleQuery(
+            "CREATE TABLE fuzztest.t0 (c0 Int) Engine=SharedMergeTree() ORDER BY tuple() SETTINGS storage_policy = 's3_with_keeper';");
         has_cloud_features |= !have_error;
         std::cout << "Cloud features " << (has_cloud_features ? "" : "not ") << "detected" << std::endl;
         processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
@@ -1045,7 +1048,7 @@ bool Client::buzzHouse()
 
             if (total_create_database_tries < 10 && nsuccessfull_create_database < 3)
             {
-                (void) gen.GenerateNextCreateDatabase(rg, sq1.mutable_inner_query()->mutable_create_database());
+                (void)gen.GenerateNextCreateDatabase(rg, sq1.mutable_inner_query()->mutable_create_database());
                 buzzhouse::SQLQueryToString(full_query, sq1);
                 outf << full_query << std::endl;
                 server_up &= ProcessBuzzHouseQuery(full_query);
@@ -1054,10 +1057,11 @@ bool Client::buzzHouse()
                 nsuccessfull_create_database += (have_error ? 0 : 1);
                 total_create_database_tries++;
             }
-            else if (gen.CollectionHas<std::shared_ptr<buzzhouse::SQLDatabase>>(gen.attached_databases) &&
-                     total_create_table_tries < 30 && nsuccessfull_create_table < 10)
+            else if (
+                gen.CollectionHas<std::shared_ptr<buzzhouse::SQLDatabase>>(gen.attached_databases) && total_create_table_tries < 30
+                && nsuccessfull_create_table < 10)
             {
-                (void) gen.GenerateNextCreateTable(rg, sq1.mutable_inner_query()->mutable_create_table());
+                (void)gen.GenerateNextCreateTable(rg, sq1.mutable_inner_query()->mutable_create_table());
                 buzzhouse::SQLQueryToString(full_query, sq1);
                 outf << full_query << std::endl;
                 server_up &= ProcessBuzzHouseQuery(full_query);
@@ -1073,35 +1077,36 @@ bool Client::buzzHouse()
                 if (noption < 31)
                 {
                     //correctness test query
-                    (void) qo.GenerateCorrectnessTestFirstQuery(rg, gen, sq1);
+                    (void)qo.GenerateCorrectnessTestFirstQuery(rg, gen, sq1);
                     buzzhouse::SQLQueryToString(full_query, sq1);
                     outf << full_query << std::endl;
                     server_up &= ProcessBuzzHouseQuery(full_query);
-                    (void) qo.ProcessOracleQueryResult(true, !have_error, "Correctness query");
+                    (void)qo.ProcessOracleQueryResult(true, !have_error, "Correctness query");
 
                     sq2.Clear();
                     full_query.resize(0);
-                    (void) qo.GenerateCorrectnessTestSecondQuery(sq1, sq2);
+                    (void)qo.GenerateCorrectnessTestSecondQuery(sq1, sq2);
                     buzzhouse::SQLQueryToString(full_query, sq2);
                     outf << full_query << std::endl;
                     server_up &= ProcessBuzzHouseQuery(full_query);
-                    (void) qo.ProcessOracleQueryResult(false, !have_error, "Correctness query");
+                    (void)qo.ProcessOracleQueryResult(false, !have_error, "Correctness query");
                 }
                 else if (gen.CollectionHas<buzzhouse::SQLTable>(gen.attached_tables) && noption < 41)
                 {
                     bool second_success = true;
-                    const buzzhouse::SQLTable &t = rg.PickRandomlyFromVector(gen.FilterCollection<buzzhouse::SQLTable>(gen.attached_tables));
+                    const buzzhouse::SQLTable & t
+                        = rg.PickRandomlyFromVector(gen.FilterCollection<buzzhouse::SQLTable>(gen.attached_tables));
 
                     //test in and out formats
                     full_query2.resize(0);
-                    (void) qo.DumpTableContent(rg, t, sq1);
+                    (void)qo.DumpTableContent(rg, t, sq1);
                     buzzhouse::SQLQueryToString(full_query2, sq1);
                     outf << full_query2 << std::endl;
                     server_up &= ProcessBuzzHouseQuery(full_query2);
-                    (void) qo.ProcessOracleQueryResult(true, !have_error, "Dump and read table");
+                    (void)qo.ProcessOracleQueryResult(true, !have_error, "Dump and read table");
 
                     sq2.Clear();
-                    (void) qo.GenerateExportQuery(rg, t, sq2);
+                    (void)qo.GenerateExportQuery(rg, t, sq2);
                     buzzhouse::SQLQueryToString(full_query, sq2);
                     outf << full_query << std::endl;
                     server_up &= ProcessBuzzHouseQuery(full_query);
@@ -1109,7 +1114,7 @@ bool Client::buzzHouse()
 
                     sq3.Clear();
                     full_query.resize(0);
-                    (void) qo.GenerateClearQuery(t, sq3);
+                    (void)qo.GenerateClearQuery(t, sq3);
                     buzzhouse::SQLQueryToString(full_query, sq3);
                     outf << full_query << std::endl;
                     server_up &= ProcessBuzzHouseQuery(full_query);
@@ -1117,7 +1122,7 @@ bool Client::buzzHouse()
 
                     sq4.Clear();
                     full_query.resize(0);
-                    (void) qo.GenerateImportQuery(t, sq2, sq4);
+                    (void)qo.GenerateImportQuery(t, sq2, sq4);
                     buzzhouse::SQLQueryToString(full_query, sq4);
                     outf << full_query << std::endl;
                     server_up &= ProcessBuzzHouseQuery(full_query);
@@ -1126,38 +1131,38 @@ bool Client::buzzHouse()
                     outf << full_query2 << std::endl;
                     server_up &= ProcessBuzzHouseQuery(full_query2);
                     second_success &= !have_error;
-                    (void) qo.ProcessOracleQueryResult(false, second_success, "Dump and read table");
+                    (void)qo.ProcessOracleQueryResult(false, second_success, "Dump and read table");
                 }
                 else if (noption < 71)
                 {
                     //test running query with different settings
-                    (void) qo.GenerateFirstSetting(rg, sq1);
+                    (void)qo.GenerateFirstSetting(rg, sq1);
                     buzzhouse::SQLQueryToString(full_query, sq1);
                     outf << full_query << std::endl;
                     server_up &= ProcessBuzzHouseQuery(full_query);
 
                     sq2.Clear();
                     full_query2.resize(0);
-                    (void) qo.GenerateSettingQuery(rg, gen, sq2);
+                    (void)qo.GenerateSettingQuery(rg, gen, sq2);
                     buzzhouse::SQLQueryToString(full_query2, sq2);
                     outf << full_query2 << std::endl;
                     server_up &= ProcessBuzzHouseQuery(full_query2);
-                    (void) qo.ProcessOracleQueryResult(true, !have_error, "Multi setting query");
+                    (void)qo.ProcessOracleQueryResult(true, !have_error, "Multi setting query");
 
                     sq3.Clear();
                     full_query.resize(0);
-                    (void) qo.GenerateSecondSetting(sq1, sq3);
+                    (void)qo.GenerateSecondSetting(sq1, sq3);
                     buzzhouse::SQLQueryToString(full_query, sq3);
                     outf << full_query << std::endl;
                     server_up &= ProcessBuzzHouseQuery(full_query);
 
                     outf << full_query2 << std::endl;
                     server_up &= ProcessBuzzHouseQuery(full_query2);
-                    (void) qo.ProcessOracleQueryResult(false, !have_error, "Multi setting query");
+                    (void)qo.ProcessOracleQueryResult(false, !have_error, "Multi setting query");
                 }
                 else
                 {
-                    (void) gen.GenerateNextStatement(rg, sq1);
+                    (void)gen.GenerateNextStatement(rg, sq1);
                     buzzhouse::SQLQueryToString(full_query, sq1);
                     outf << full_query << std::endl;
                     server_up &= ProcessBuzzHouseQuery(full_query);
