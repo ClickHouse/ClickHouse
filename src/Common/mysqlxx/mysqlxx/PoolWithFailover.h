@@ -85,22 +85,25 @@ namespace mysqlxx
         /// Timeout for waiting free connection.
         uint64_t wait_timeout = 0;
 
+        Replicas replicas_ref;
+
         void onProbeConnections(Poco::Timer &)
         {
-            for (const auto & priority_replicas : replicas_by_priority)
-                for (const auto & pool : priority_replicas.second)
-                    if (!pool->isOnline())
+            for (const auto & pool : replicas_ref)
+            {
+                if (!pool->isOnline())
+                {
+                    try
                     {
-                        try
-                        {
-                            pool->get();
-                            Poco::Util::Application::instance().logger().information("Reistablishing connection to " + pool->getDescription() + " has succeeded.");
-                        }
-                        catch (const mysqlxx::ConnectionFailed & e)
-                        {
-                            Poco::Util::Application::instance().logger().warning("Reistablishing connection to " + pool->getDescription() + " has failed: " + e.displayText());
-                        }
-                   }
+                        pool->get();
+                        Poco::Util::Application::instance().logger().information("Reistablishing connection to " + pool->getDescription() + " has succeeded.");
+                    }
+                    catch (const mysqlxx::ConnectionFailed & e)
+                    {
+                        Poco::Util::Application::instance().logger().warning("Reistablishing connection to " + pool->getDescription() + " has failed: " + e.displayText());
+                    }
+                }
+            }
         }
 
         Poco::Timer connection_reistablisher_timer {5000, 5000};

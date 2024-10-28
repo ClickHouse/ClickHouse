@@ -40,6 +40,7 @@ PoolWithFailover::PoolWithFailover(
 
                 replicas_by_priority[priority].emplace_back(
                     std::make_shared<Pool>(config_, replica_name, default_connections_, max_connections_, config_name_.c_str()));
+                replicas_ref.push_back(replicas_by_priority[priority].back());
             }
         }
 
@@ -57,6 +58,7 @@ PoolWithFailover::PoolWithFailover(
     {
         replicas_by_priority[0].emplace_back(
             std::make_shared<Pool>(config_, config_name_, default_connections_, max_connections_));
+        replicas_ref.push_back(replicas_by_priority[0].back());
     }
 
     connection_reistablisher_timer.start(Poco::TimerCallback<PoolWithFailover>(*this, &PoolWithFailover::onProbeConnections));
@@ -99,6 +101,7 @@ PoolWithFailover::PoolWithFailover(
             rw_timeout_,
             default_connections_,
             max_connections_));
+        replicas_ref.push_back(replicas_by_priority[0].back());
     }
 
     connection_reistablisher_timer.start(Poco::TimerCallback<PoolWithFailover>(*this, &PoolWithFailover::onProbeConnections));
@@ -121,12 +124,15 @@ PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
             Replicas replicas;
             replicas.reserve(priority_replicas.second.size());
             for (const auto & pool : priority_replicas.second)
+            {
                 replicas.emplace_back(std::make_shared<Pool>(*pool));
+                replicas_ref.push_back(replicas.back());
+            }
             replicas_by_priority.emplace(priority_replicas.first, std::move(replicas));
         }
-    }
 
-    connection_reistablisher_timer.start(Poco::TimerCallback<PoolWithFailover>(*this, &PoolWithFailover::onProbeConnections));
+        connection_reistablisher_timer.start(Poco::TimerCallback<PoolWithFailover>(*this, &PoolWithFailover::onProbeConnections));
+    }
 }
 
 PoolWithFailover::Entry PoolWithFailover::get()
