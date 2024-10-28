@@ -37,6 +37,7 @@ namespace Setting
 {
     extern const SettingsBool check_referential_table_dependencies;
     extern const SettingsBool check_table_dependencies;
+    extern const SettingsBool allow_experimental_drop_detached_table;
     extern const SettingsBool database_atomic_wait_for_drop_and_detach_synchronously;
     extern const SettingsFloat ignore_drop_queries_probability;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -151,7 +152,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
     if (query.detached)
     {
-        if (!context_->getSettingsRef().get("allow_experimental_drop_detached_table").safeGet<bool>())
+        if (!context_->getSettingsRef()[Setting::allow_experimental_drop_detached_table])
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Experimental drop detached table feature is not enabled (the setting 'allow_experimental_drop_detached_table')");
