@@ -1309,10 +1309,10 @@ RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
 
 void InterpreterSystemQuery::prewarmMarkCache()
 {
-    getContext()->checkAccess(AccessType::SYSTEM_PREWARM_MARK_CACHE);
-
     if (table_id.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table is not specified for prewarming marks cache");
+
+    getContext()->checkAccess(AccessType::SYSTEM_PREWARM_MARK_CACHE, table_id);
 
     auto table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
     auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
