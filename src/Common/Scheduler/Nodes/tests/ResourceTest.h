@@ -117,7 +117,8 @@ class ResourceTestClass : public ResourceTestBase
 public:
     ~ResourceTestClass()
     {
-        dequeue(); // Just to avoid any leaks of `Request` object
+        if (root_node)
+            dequeue(); // Just to avoid any leaks of `Request` object
     }
 
     template <class TClass>
