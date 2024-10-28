@@ -205,8 +205,15 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     }
     if (!primary_key_asts.empty())
     {
-        select_expression_list->children.push_back(makeASTFunction("min", primary_key_asts.front()->clone()));
-        select_expression_list->children.push_back(makeASTFunction("max", primary_key_asts.front()->clone()));
+        ASTPtr first_key = primary_key_asts.front();
+        if (auto * func = first_key->as<ASTFunction>())
+        {
+            if (func->name == "__descendingKey")
+                first_key = func->arguments->children.front();
+        }
+
+        select_expression_list->children.push_back(makeASTFunction("min", first_key->clone()));
+        select_expression_list->children.push_back(makeASTFunction("max", first_key->clone()));
     }
     select_expression_list->children.push_back(makeASTFunction("count"));
     select_query->setExpression(ASTProjectionSelectQuery::Expression::SELECT, std::move(select_expression_list));
