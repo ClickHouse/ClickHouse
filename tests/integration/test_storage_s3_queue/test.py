@@ -2172,51 +2172,73 @@ def test_alter_settings(started_cluster):
     node1.query(
         f"""
         ALTER TABLE r.{table_name}
-        MODIFY SETTING processing_threads_num=5, loading_retries=10, after_processing='delete', tracked_files_limit=50, tracked_file_ttl_sec=10000
+        MODIFY SETTING processing_threads_num=5,
+        loading_retries=10,
+        after_processing='delete',
+        tracked_files_limit=50,
+        tracked_file_ttl_sec=10000,
+        polling_min_timeout_ms=222,
+        polling_max_timeout_ms=333,
+        polling_backoff_ms=111
     """
     )
 
-    assert '"processing_threads_num":5' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
+    int_settings = {
+        "processing_threads_num": 5,
+        "loading_retries": 10,
+        "tracked_files_ttl_sec": 10000,
+        "tracked_files_limit": 50,
+        "polling_min_timeout_ms": 222,
+        "polling_max_timeout_ms": 333,
+        "polling_backoff_ms": 111,
+    }
+    string_settings = {"after_processing": "delete"}
 
-    assert '"loading_retries":10' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
+    def with_keeper(setting):
+        return setting in {
+            "after_processing",
+            "loading_retries",
+            "processing_threads_num",
+            "tracked_files_limit",
+            "tracked_files_ttl_sec",
+        }
 
-    assert '"after_processing":"delete"' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
+    def check_int_settings(node, settings):
+        for setting, value in settings.items():
+            if with_keeper(setting):
+                assert f'"{setting}":{value}' in node.query(
+                    f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+                )
+            if setting == "tracked_files_ttl_sec":
+                setting = "tracked_file_ttl_sec"
+            assert (
+                str(value)
+                == node.query(
+                    f"SELECT value FROM system.s3_queue_settings WHERE name = '{setting}' and table = '{table_name}'"
+                ).strip()
+            )
 
-    assert '"tracked_files_ttl_sec":10000' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
+    def check_string_settings(node, settings):
+        for setting, value in settings.items():
+            if with_keeper(setting):
+                assert f'"{setting}":"{value}"' in node.query(
+                    f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+                )
+            assert (
+                str(value)
+                == node.query(
+                    f"SELECT value FROM system.s3_queue_settings WHERE name = '{setting}' and table = '{table_name}'"
+                ).strip()
+            )
 
-    assert '"tracked_files_limit":50' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
+    for node in [node1, node2]:
+        check_int_settings(node, int_settings)
+        check_string_settings(node, string_settings)
 
-    node1.restart_clickhouse()
+        node.restart_clickhouse()
 
-    assert '"processing_threads_num":5' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
-
-    assert '"loading_retries":10' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
-
-    assert '"after_processing":"delete"' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
-
-    assert '"tracked_files_ttl_sec":10000' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
-
-    assert '"tracked_files_limit":50' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
+        check_int_settings(node, int_settings)
+        check_string_settings(node, string_settings)
 
     node1.query(
         f"""
@@ -2224,37 +2246,20 @@ def test_alter_settings(started_cluster):
     """
     )
 
-    assert '"processing_threads_num":5' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
+    int_settings = {
+        "processing_threads_num": 5,
+        "loading_retries": 10,
+        "tracked_files_ttl_sec": 0,
+        "tracked_files_limit": 50,
+    }
+    string_settings = {"after_processing": "keep"}
 
-    assert '"loading_retries":10' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
+    for node in [node1, node2]:
+        check_int_settings(node, int_settings)
+        check_string_settings(node, string_settings)
 
-    assert '"after_processing":"keep"' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
+        node.restart_clickhouse()
+        assert expected_rows == get_count()
 
-    assert '"tracked_files_ttl_sec":0' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
-
-    node1.restart_clickhouse()
-    assert expected_rows == get_count()
-
-    assert '"processing_threads_num":5' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
-
-    assert '"loading_retries":10' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
-
-    assert '"after_processing":"keep"' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
-
-    assert '"tracked_files_ttl_sec":0' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
+        check_int_settings(node, int_settings)
+        check_string_settings(node, string_settings)

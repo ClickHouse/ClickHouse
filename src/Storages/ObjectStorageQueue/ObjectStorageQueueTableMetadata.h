@@ -77,6 +77,25 @@ struct ObjectStorageQueueTableMetadata
 
     void checkEquals(const ObjectStorageQueueTableMetadata & from_zk) const;
 
+    static bool isStoredInKeeper(const std::string & name)
+    {
+        static const std::unordered_set<std::string_view> settings_names
+        {
+            "format_name",
+            "columns",
+            "mode",
+            "buckets",
+            "last_processed_path",
+            "after_processing",
+            "loading_retries",
+            "processing_threads_num",
+            "tracked_files_limit",
+            "tracked_file_ttl_sec",
+            "tracked_files_ttl_sec",
+        };
+        return settings_names.contains(name);
+    }
+
 private:
     void checkImmutableFieldsEquals(const ObjectStorageQueueTableMetadata & from_zk) const;
 };

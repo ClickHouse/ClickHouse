@@ -52,9 +52,9 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt64 max_processed_files_before_commit;
     extern const ObjectStorageQueueSettingsUInt64 max_processed_rows_before_commit;
     extern const ObjectStorageQueueSettingsUInt64 max_processing_time_sec_before_commit;
-    extern const ObjectStorageQueueSettingsUInt32 polling_min_timeout_ms;
-    extern const ObjectStorageQueueSettingsUInt32 polling_max_timeout_ms;
-    extern const ObjectStorageQueueSettingsUInt32 polling_backoff_ms;
+    extern const ObjectStorageQueueSettingsUInt64 polling_min_timeout_ms;
+    extern const ObjectStorageQueueSettingsUInt64 polling_max_timeout_ms;
+    extern const ObjectStorageQueueSettingsUInt64 polling_backoff_ms;
     extern const ObjectStorageQueueSettingsUInt64 processing_threads_num;
     extern const ObjectStorageQueueSettingsUInt32 buckets;
     extern const ObjectStorageQueueSettingsUInt64 tracked_file_ttl_sec;
@@ -565,21 +565,33 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "after_processing",
     "tracked_files_limit",
     "tracked_file_ttl_sec",
+    "polling_min_timeout_ms",
+    "polling_max_timeout_ms",
+    "polling_backoff_ms",
     /// For compatibility.
     "s3queue_processing_threads_num",
     "s3queue_loading_retries",
     "s3queue_after_processing",
     "s3queue_tracked_files_limit",
     "s3queue_tracked_file_ttl_sec",
+    "s3queue_polling_min_timeout_ms",
+    "s3queue_polling_max_timeout_ms",
+    "s3queue_polling_backoff_ms",
 };
 
 static const std::unordered_set<std::string_view> changeable_settings_ordered_mode
 {
     "loading_retries",
     "after_processing",
+    "polling_min_timeout_ms",
+    "polling_max_timeout_ms",
+    "polling_backoff_ms",
     /// For compatibility.
     "s3queue_loading_retries",
     "s3queue_after_processing",
+    "s3queue_polling_min_timeout_ms",
+    "s3queue_polling_max_timeout_ms",
+    "s3queue_polling_backoff_ms",
 };
 
 static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode)
@@ -660,6 +672,8 @@ void StorageObjectStorageQueue::alter(
         }
 
         SettingsChanges changed_settings;
+        std::set<std::string> changed_settings_set;
+
         const auto mode = getTableMetadata().getMode();
         for (const auto & setting : new_settings)
         {
@@ -679,10 +693,30 @@ void StorageObjectStorageQueue::alter(
                     setting.name, magic_enum::enum_name(mode), getName());
             }
 
-            changed_settings.push_back(setting);
+            SettingChange result_setting(setting);
+            if (result_setting.name.starts_with("s3queue_"))
+                result_setting.name = result_setting.name.substr(std::strlen("s3queue_"));
+
+            changed_settings.push_back(result_setting);
+
+            auto inserted = changed_settings_set.emplace(result_setting.name).second;
+            if (!inserted)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is duplicated", setting.name);
         }
 
+        /// Alter settings which are stored in keeper.
         files_metadata->alterSettings(changed_settings);
+
+        /// Alter settings which are not stored in keeper.
+        for (const auto & change : changed_settings)
+        {
+            if (change.name == "polling_min_timeout_ms")
+                polling_min_timeout_ms = change.value.safeGet<UInt64>();
+            if (change.name == "polling_max_timeout_ms")
+                polling_max_timeout_ms = change.value.safeGet<UInt64>();
+            if (change.name == "polling_backoff_ms")
+                polling_backoff_ms = change.value.safeGet<UInt64>();
+        }
 
         StorageInMemoryMetadata metadata = getInMemoryMetadata();
         metadata.setSettingsChanges(new_metadata.settings_changes);
@@ -719,8 +753,8 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::processing_threads_num] = table_metadata.processing_threads_num;
     settings[ObjectStorageQueueSetting::enable_logging_to_queue_log] = enable_logging_to_queue_log;
     settings[ObjectStorageQueueSetting::last_processed_path] = table_metadata.last_processed_path;
-    settings[ObjectStorageQueueSetting::tracked_file_ttl_sec] = 0;
-    settings[ObjectStorageQueueSetting::tracked_files_limit] = 0;
+    settings[ObjectStorageQueueSetting::tracked_file_ttl_sec] = table_metadata.tracked_files_ttl_sec;
+    settings[ObjectStorageQueueSetting::tracked_files_limit] = table_metadata.tracked_files_limit;
     settings[ObjectStorageQueueSetting::polling_min_timeout_ms] = polling_min_timeout_ms;
     settings[ObjectStorageQueueSetting::polling_max_timeout_ms] = polling_max_timeout_ms;
     settings[ObjectStorageQueueSetting::polling_backoff_ms] = polling_backoff_ms;

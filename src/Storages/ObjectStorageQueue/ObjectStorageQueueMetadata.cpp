@@ -248,7 +248,10 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes)
 
     for (const auto & change : changes)
     {
-        if (endsWith(change.name, "processing_threads_num"))
+        if (!ObjectStorageQueueTableMetadata::isStoredInKeeper(change.name))
+            continue;
+
+        if (change.name == "processing_threads_num")
         {
             const auto value = change.value.safeGet<UInt64>();
             if (table_metadata.processing_threads_num == value)
@@ -259,7 +262,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes)
             }
             new_table_metadata.processing_threads_num = value;
         }
-        else if (endsWith(change.name, "loading_retries"))
+        else if (change.name == "loading_retries")
         {
             const auto value = change.value.safeGet<UInt64>();
             if (table_metadata.loading_retries == value)
@@ -270,7 +273,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes)
             }
             new_table_metadata.loading_retries = value;
         }
-        else if (endsWith(change.name, "after_processing"))
+        else if (change.name == "after_processing")
         {
             const auto value = ObjectStorageQueueTableMetadata::actionFromString(change.value.safeGet<String>());
             if (table_metadata.after_processing == value)
@@ -281,7 +284,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes)
             }
             new_table_metadata.after_processing = value;
         }
-        else if (endsWith(change.name, "tracked_files_limit"))
+        else if (change.name == "tracked_files_limit")
         {
             const auto value = change.value.safeGet<UInt64>();
             if (table_metadata.tracked_files_limit == value)
@@ -292,7 +295,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes)
             }
             new_table_metadata.tracked_files_limit = value;
         }
-        else if (endsWith(change.name, "tracked_file_ttl_sec"))
+        else if (change.name == "tracked_file_ttl_sec")
         {
             const auto value = change.value.safeGet<UInt64>();
             if (table_metadata.tracked_files_ttl_sec == value)
