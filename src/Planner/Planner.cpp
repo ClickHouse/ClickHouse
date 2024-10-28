@@ -847,9 +847,6 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         interpolate_description = std::make_shared<InterpolateDescription>(std::move(interpolate_actions_dag), empty_aliases);
     }
 
-    if (interpolate_description)
-        LOG_DEBUG(getLogger("addWithFillStepIfNeeded"), "InterpolateDescription: {}", interpolate_description->actions.dumpDAG());
-
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
     auto filling_step = std::make_unique<FillingStep>(
