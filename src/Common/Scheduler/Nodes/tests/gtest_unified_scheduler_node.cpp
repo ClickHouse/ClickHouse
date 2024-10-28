@@ -462,14 +462,16 @@ TEST(SchedulerUnifiedNode, ResourceGuardException)
     std::thread consumer([queue = all->getQueue()]
     {
         ResourceLink link{.queue = queue.get()};
+        bool caught = false;
         try
         {
             ResourceGuard rg(ResourceGuard::Metrics::getIOWrite(), link);
-            FAIL();
         }
         catch (...)
         {
+            caught = true;
         }
+        ASSERT_TRUE(caught);
     });
 
     // This will destroy the queue and fail both requests

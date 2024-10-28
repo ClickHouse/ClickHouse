@@ -189,7 +189,7 @@ public:
         ASSERT_TRUE(root_node.get() != nullptr); // root should be initialized first
         ISchedulerNode * node = root_node.get();
         size_t pos = 1;
-        while (pos < path.length())
+        while (node && pos < path.length())
         {
             size_t slash = path.find('/', pos);
             if (slash != String::npos)
@@ -204,12 +204,15 @@ public:
                 pos = String::npos;
             }
         }
-        enqueueImpl(dynamic_cast<ISchedulerQueue *>(node), costs);
+        if (node)
+            enqueueImpl(dynamic_cast<ISchedulerQueue *>(node), costs);
     }
 
     void enqueueImpl(ISchedulerQueue * queue, const std::vector<ResourceCost> & costs, const String & name = {})
     {
         ASSERT_TRUE(queue != nullptr); // not a queue
+        if (!queue)
+            return; // to make clang-analyzer-core.NonNullParamChecker happy
         for (ResourceCost cost : costs)
             queue->enqueueRequest(new Request(this, cost, name.empty() ? queue->basename : name));
         processEvents(); // to activate queues
