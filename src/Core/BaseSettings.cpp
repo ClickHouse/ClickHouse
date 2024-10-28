@@ -42,7 +42,7 @@ BaseSettingsHelpers::Flags BaseSettingsHelpers::readFlags(ReadBuffer & in)
 SettingsTierType BaseSettingsHelpers::getTier(Flags flags)
 {
     int8_t tier = (flags & Flags::TIER);
-    if (tier > SettingsTierType::OBSOLETE)
+    if (tier > SettingsTierType::BETA)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown tier value: '{}'", tier);
     return SettingsTierType{tier};
 }
