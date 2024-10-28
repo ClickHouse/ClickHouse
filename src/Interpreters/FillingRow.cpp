@@ -72,7 +72,8 @@ std::optional<Field> FillingRow::doJump(const FillColumnDescription& descr, size
     if (!descr.fill_to.isNull() && less(descr.fill_to, next_value, getDirection(column_ind)))
         return std::nullopt;
 
-    if (!descr.fill_staleness.isNull()) {
+    if (!descr.fill_staleness.isNull())
+    {
         Field staleness_border = staleness_base_row[column_ind];
         descr.staleness_step_func(staleness_border, 1);
 
@@ -92,7 +93,8 @@ std::optional<Field> FillingRow::doLongJump(const FillColumnDescription & descr,
     if (less(to, shifted_value, getDirection(column_ind)))
         return std::nullopt;
 
-    for (int32_t step_len = 1, step_no = 0; step_no < 100; ++step_no) {
+    for (int32_t step_len = 1, step_no = 0; step_no < 100; ++step_no)
+    {
         Field next_value = shifted_value;
         descr.step_func(next_value, step_len);
 
@@ -197,9 +199,8 @@ void FillingRow::initFromDefaults(size_t from_pos)
 
 void FillingRow::initStalenessRow(const Columns& base_row, size_t row_ind)
 {
-    for (size_t i = 0; i < size(); ++i) {
+    for (size_t i = 0; i < size(); ++i)
         staleness_base_row[i] = (*base_row[i])[row_ind];
-    }
 }
 
 String FillingRow::dump() const
