@@ -2684,8 +2684,6 @@ def do_run_tests(jobs, test_suite: TestSuite):
                 if not p.is_alive():
                     processes.remove(p)
 
-            sleep(5)
-
         run_tests_array(
             (
                 test_suite.sequential_tests,
