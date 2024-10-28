@@ -21,6 +21,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+};
+
 static auto logger = getLogger("QueryMetricLog");
 
 ColumnsDescription QueryMetricLogElement::getColumnsDescription()
@@ -106,8 +111,6 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint start_time, U
         auto elem = createLogMetricElement(query_id, *query_info, current_time);
         if (elem)
             add(std::move(elem.value()));
-        else
-            LOG_TRACE(logger, "Query {} finished already while this collecting task was running", query_id);
     });
 
     std::lock_guard lock(queries_mutex);
@@ -154,37 +157,58 @@ void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time,
     queries.erase(query_id);
 }
 
-std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint current_time, bool schedule_next)
+std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint query_info_time, bool schedule_next)
 {
     LOG_DEBUG(logger, "Collecting query_metric_log for query {}. Schedule next: {}", query_id, schedule_next);
-    std::lock_guard lock(queries_mutex);
+    std::unique_lock lock(queries_mutex);
     auto query_status_it = queries.find(query_id);
 
     /// The query might have finished while the scheduled task is running.
     if (query_status_it == queries.end() || !query_status_it->second.task)
+    {
+        lock.unlock();
+        LOG_TRACE(logger, "Query {} finished already while this collecting task was running", query_id);
         return {};
+    }
+
+    auto & query_status = query_status_it->second;
+    if (query_info_time < query_status.last_collect_time)
+    {
+        lock.unlock();
+        LOG_TRACE(logger, "Query {} has a more recent metrics collected. Skipping this one", query_id);
+        return {};
+    }
+
+    query_status.last_collect_time = query_info_time;
 
     QueryMetricLogElement elem;
-    elem.event_time = timeInSeconds(current_time);
-    elem.event_time_microseconds = timeInMicroseconds(current_time);
+    elem.event_time = timeInSeconds(query_info_time);
+    elem.event_time_microseconds = timeInMicroseconds(query_info_time);
     elem.query_id = query_status_it->first;
     elem.memory_usage = query_info.memory_usage > 0 ? query_info.memory_usage : 0;
     elem.peak_memory_usage = query_info.peak_memory_usage > 0 ? query_info.peak_memory_usage : 0;
 
-    auto & query_status = query_status_it->second;
     if (query_info.profile_counters)
     {
         for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
         {
             const auto & new_value = (*(query_info.profile_counters))[i];
             auto & prev_value = query_status.last_profile_events[i];
+
+            /// Profile event count is monotonically increasing.
+            if (new_value < prev_value)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Profile event count is not monotonically increasing for '{}': new value {} is smaller than previous value {}",
+                    ProfileEvents::getName(i), new_value, query_status.last_profile_events[i]);
+
             elem.profile_events[i] = new_value - prev_value;
             prev_value = new_value;
         }
     }
     else
     {
-        elem.profile_events = query_status.last_profile_events;
+        LOG_TRACE(logger, "Query {} has no profile counters", query_id);
+        elem.profile_events = std::vector<ProfileEvents::Count>(ProfileEvents::end());
     }
 
     if (schedule_next)
