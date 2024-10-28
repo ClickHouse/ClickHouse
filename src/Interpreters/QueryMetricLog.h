@@ -52,8 +52,8 @@ public:
     void shutdown() final;
 
     // Both startQuery and finishQuery are called from the thread that executes the query
-    void startQuery(const String & query_id, TimePoint query_start_time, UInt64 interval_milliseconds);
-    void finishQuery(const String & query_id, QueryStatusInfoPtr query_info = nullptr);
+    void startQuery(const String & query_id, TimePoint start_time, UInt64 interval_milliseconds);
+    void finishQuery(const String & query_id, TimePoint finish_time, QueryStatusInfoPtr query_info = nullptr);
 
 private:
     std::optional<QueryMetricLogElement> createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint current_time, bool schedule_next = true);
