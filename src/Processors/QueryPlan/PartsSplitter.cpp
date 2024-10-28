@@ -844,8 +844,93 @@ ASTs buildFilters(const KeyDescription & primary_key, const std::vector<Values> 
     }
     return filters;
 }
-}
 
+RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ranges_in_data_parts, const LoggerPtr & logger)
+{
+    IndexAccess index_access(ranges_in_data_parts);
+    std::vector<PartsRangesIterator> selected_ranges;
+    std::vector<PartsRangesIterator> rejected_ranges;
+
+    RangesInDataPartsBuilder result(ranges_in_data_parts);
+    bool earliest_part_found = false;
+
+    for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
+    {
+        const auto & index_granularity = ranges_in_data_parts[part_index].data_part->index_granularity;
+        std::vector<bool> is_selected_range(index_granularity.getMarksCountWithoutFinal(), false);
+        for (const auto & range : ranges_in_data_parts[part_index].ranges)
+        {
+            selected_ranges.push_back(
+                {index_access.getValue(part_index, range.begin), range, part_index, PartsRangesIterator::EventType::RangeStart});
+            for (auto i = range.begin; i < range.end;i++)
+               is_selected_range[i] = true;
+
+            earliest_part_found = true;
+        }
+        if (!earliest_part_found)
+            continue;
+        for (size_t range_begin = 0; range_begin < is_selected_range.size(); range_begin++)
+        {
+            if (is_selected_range[range_begin])
+                continue;
+            MarkRange rejected_range(range_begin, range_begin + 1);
+            rejected_ranges.push_back(
+                {index_access.getValue(part_index, rejected_range.begin), rejected_range, part_index, PartsRangesIterator::EventType::RangeStart});
+        }
+    }
+    LOG_TRACE(logger, "findPKRangesForFinalAfterSkipIndex : processed {} parts, selected ranges {}, rejected ranges {}", ranges_in_data_parts.size(), selected_ranges.size(), rejected_ranges.size());
+
+    ::sort(selected_ranges.begin(), selected_ranges.end());
+
+    ::sort(rejected_ranges.begin(), rejected_ranges.end());
+
+    std::vector<PartsRangesIterator>::iterator selected_ranges_iter = selected_ranges.begin();
+    std::vector<PartsRangesIterator>::iterator rejected_ranges_iter = rejected_ranges.begin();
+
+    while (selected_ranges_iter != selected_ranges.end() && rejected_ranges_iter != rejected_ranges.end())
+    {
+        auto start_value1 = selected_ranges_iter->value;
+        auto end_value1 = index_access.getValue(selected_ranges_iter->part_index, selected_ranges_iter->range.end);
+        auto start_value2 = rejected_ranges_iter->value;
+
+
+        int result1 = compareValues(start_value2, start_value1);
+        int result2 = compareValues(start_value2, end_value1);
+
+        if (result1 >= 0 && result2 <= 0)
+        {
+            result.addRange(rejected_ranges_iter->part_index, rejected_ranges_iter->range);
+            rejected_ranges_iter++;
+        }
+        else if (result1 > 0)
+        {
+            result.addRange(selected_ranges_iter->part_index, selected_ranges_iter->range);
+            selected_ranges_iter++;
+        }
+        else
+        {
+            rejected_ranges_iter++;
+        }
+    }
+
+    while (selected_ranges_iter != selected_ranges.end())
+    {
+        result.addRange(selected_ranges_iter->part_index, selected_ranges_iter->range);
+        selected_ranges_iter++;
+    }
+
+    auto result_final_ranges = result.getCurrentRangesInDataParts();
+    std::stable_sort(
+        result_final_ranges.begin(),
+        result_final_ranges.end(),
+        [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
+    for (size_t part_index = 0; part_index < result_final_ranges.size(); ++part_index)
+    {
+        std::sort(result_final_ranges[part_index].ranges.begin(), result_final_ranges[part_index].ranges.end());
+    }
+    return result_final_ranges;
+}
+}
 
 namespace DB
 {
@@ -951,4 +1036,15 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     return result;
 }
 
+RangesInDataParts findPKRangesForFinalAfterSkipIndex(
+    const KeyDescription & primary_key,
+    RangesInDataParts & ranges_in_data_parts,
+    const LoggerPtr & logger)
+{
+    if (!isSafePrimaryKey(primary_key))
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Primary key cannot be used in this query for expanding skip index results. Please reexecute query with setting use_skip_indexes_if_final = 0 & use_skip_indexes_if_final_exact_mode = 0.");
+    }
+    return findPKRangesForFinalAfterSkipIndexImpl(ranges_in_data_parts, logger);
+}
 }

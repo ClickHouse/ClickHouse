@@ -89,9 +89,6 @@ public:
     /// Returns whether there is such a column in the key.
     bool addCondition(const String & column, const Range & range);
 
-    bool addPrimaryKeyRangeCondition(const String &column, const Range &range, bool addAnd);
-    bool addAnOR();  /// Just put a OR in the stack
-
     String toString() const;
 
     /// Get the key indices of key names used in the condition.
@@ -444,5 +441,4 @@ private:
 
 String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
 
-using KeyConditionPtr = std::shared_ptr<KeyCondition>;
 }

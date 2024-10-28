@@ -176,6 +176,7 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_if_final;
     extern const SettingsBool use_uncompressed_cache;
     extern const SettingsUInt64 merge_tree_min_read_task_size;
+    extern const SettingsBool use_skip_indexes_if_final_exact_mode;
 }
 
 namespace MergeTreeSetting
@@ -1699,6 +1700,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
     size_t total_marks_pk = 0;
     size_t parts_before_pk = 0;
+    bool add_index_stat_row_for_pk_expand = false;
 
     {
         MergeTreeDataSelectExecutor::filterPartsByPartition(
@@ -1743,8 +1745,13 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             num_streams,
             result.index_stats,
             indexes->use_skip_indexes,
-            find_exact_ranges,
-            query_info_.isFinal());
+            find_exact_ranges);
+
+        if (indexes->use_skip_indexes && query_info_.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode])
+        {
+            result.parts_with_ranges = findPKRangesForFinalAfterSkipIndex(primary_key, result.parts_with_ranges, log);
+            add_index_stat_row_for_pk_expand = true;
+        }
     }
 
     size_t sum_marks_pk = total_marks_pk;
@@ -1761,6 +1768,15 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         sum_ranges += part.ranges.size();
         sum_marks += part.getMarksCount();
         sum_rows += part.getRowsCount();
+    }
+
+    if (add_index_stat_row_for_pk_expand)
+    {
+        result.index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::PrimaryKeyExpand,
+            .description = "PrimaryKeyExpandForFinal",
+            .num_parts_after = result.parts_with_ranges.size(),
+            .num_granules_after = sum_marks});
     }
 
     result.total_parts = total_parts;
@@ -2181,6 +2197,8 @@ static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
             return "PrimaryKey";
         case ReadFromMergeTree::IndexType::Skip:
             return "Skip";
+        case ReadFromMergeTree::IndexType::PrimaryKeyExpand:
+            return "PrimaryKeyExpand";
     }
 }
 
