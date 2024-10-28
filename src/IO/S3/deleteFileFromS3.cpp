@@ -56,7 +56,7 @@ void deleteFileFromS3(
 
     if (outcome.IsSuccess())
     {
-        LOG_INFO(log, "Object with path {} was removed from S3", key);
+        LOG_DEBUG(log, "Object with path {} was removed from S3", key);
     }
     else if (if_exists && S3::isNotFoundError(outcome.GetError().GetErrorType()))
     {
@@ -173,7 +173,7 @@ void deleteFilesFromS3(
                 if (errors.empty())
                 {
                     /// All the objects were removed.
-                    LOG_INFO(log, "Objects with paths [{}] were removed from S3", comma_separated_keys);
+                    LOG_DEBUG(log, "Objects with paths [{}] were removed from S3", comma_separated_keys);
                 }
                 else
                 {
@@ -210,7 +210,7 @@ void deleteFilesFromS3(
                                 removed_keys_comma_separated += ", ";
                             removed_keys_comma_separated += key;
                         }
-                        LOG_INFO(log, "Objects with paths [{}] were removed from S3", removed_keys_comma_separated);
+                        LOG_DEBUG(log, "Objects with paths [{}] were removed from S3", removed_keys_comma_separated);
                     }
 
                     if (!not_found_keys.empty())
