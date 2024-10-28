@@ -73,7 +73,8 @@ void loadDirectoryTree(
             if (path.substr(remote_path.string().size()) == filename)
             {
                 auto filename_it = unique_filenames.emplace(filename).first;
-                filename_iterators.emplace(filename_it);
+                [[maybe_unused]] auto inserted = filename_iterators.emplace(filename_it).second;
+                chassert(inserted);
             }
         }
 
