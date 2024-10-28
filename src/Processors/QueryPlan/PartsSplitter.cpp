@@ -924,9 +924,9 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
         result_final_ranges.begin(),
         result_final_ranges.end(),
         [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
-    for (size_t part_index = 0; part_index < result_final_ranges.size(); ++part_index)
+    for (auto & result_final_range : result_final_ranges)
     {
-        std::sort(result_final_ranges[part_index].ranges.begin(), result_final_ranges[part_index].ranges.end());
+        std::sort(result_final_range.ranges.begin(), result_final_range.ranges.end());
     }
     return result_final_ranges;
 }
