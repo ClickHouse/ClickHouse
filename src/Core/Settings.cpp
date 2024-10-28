@@ -1,7 +1,5 @@
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Core/BaseSettings.h>
-#include <Core/BaseSettingsFwdMacros.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
 #include <Core/DistributedCacheProtocol.h>
@@ -40,10 +38,15 @@ namespace ErrorCodes
   * Note: as an alternative, we could implement settings to be completely dynamic in the form of the map: String -> Field,
   *  but we are not going to do it, because settings are used everywhere as static struct fields.
   *
-  * `flags` can be either 0 or IMPORTANT.
+  * `flags` can be either 0 or IMPORTANT + a Tier (PRODUCTION | BETA | EXPERIMENTAL)
   * A setting is "IMPORTANT" if it affects the results of queries and can't be ignored by older versions.
+  * Tiers:
+  * EXPERIMENTAL: The feature is in active development stage. Mostly for developers or for ClickHouse enthusiasts.
+  * BETA: There are no known bugs problems in the functionality, but the outcome of using it together with other
+  * features/components is unknown and correctness is not guaranteed.
+  * PRODUCTION (Default): The feature is safe to use along with other features from the PRODUCTION tier.
   *
-  * When adding new or changing existing settings add them to the settings changes history in SettingsChangesHistory.h
+  * When adding new or changing existing settings add them to the settings changes history in SettingsChangesHistory.cpp
   * for tracking settings changes in different versions and for special `compatibility` settings to work correctly.
   */
 
@@ -6007,7 +6010,7 @@ void SettingsImpl::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfi
     {
         const auto & name = setting.getName();
         bool should_skip_check = name == "max_table_size_to_drop" || name == "max_partition_size_to_drop";
-        if (config.has(name) && !setting.isObsolete() && !should_skip_check)
+        if (config.has(name) && (setting.getTier() != SettingsTierType::OBSOLETE) && !should_skip_check)
         {
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "A setting '{}' appeared at top level in config {}."
                 " But it is user-level setting that should be located in users.xml inside <profiles> section for specific profile."
@@ -6183,7 +6186,7 @@ std::vector<std::string_view> Settings::getChangedAndObsoleteNames() const
     std::vector<std::string_view> setting_names;
     for (const auto & setting : impl->allChanged())
     {
-        if (setting.isObsolete())
+        if (setting.getTier() == SettingsTierType::OBSOLETE)
             setting_names.emplace_back(setting.getName());
     }
     return setting_names;
@@ -6232,7 +6235,8 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
         res_columns[6]->insert(writability == SettingConstraintWritability::CONST);
         res_columns[7]->insert(setting.getTypeName());
         res_columns[8]->insert(setting.getDefaultValueString());
-        res_columns[10]->insert(setting.isObsolete());
+        res_columns[10]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
+        res_columns[11]->insert(setting.getTier());
     };
 
     const auto & settings_to_aliases = SettingsImpl::Traits::settingsToAliases();

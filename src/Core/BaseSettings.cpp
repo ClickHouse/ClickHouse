@@ -8,6 +8,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int UNKNOWN_SETTING;
 }
 
@@ -36,6 +37,14 @@ BaseSettingsHelpers::Flags BaseSettingsHelpers::readFlags(ReadBuffer & in)
     UInt64 res;
     readVarUInt(res, in);
     return static_cast<Flags>(res);
+}
+
+SettingsTierType BaseSettingsHelpers::getTier(Flags flags)
+{
+    int8_t tier = (flags & Flags::TIER);
+    if (tier > SettingsTierType::OBSOLETE)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown tier value: '{}'", tier);
+    return SettingsTierType{tier};
 }
 
 
