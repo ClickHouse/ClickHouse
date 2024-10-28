@@ -105,19 +105,19 @@ public:
         return children[fill_step_child_index];
     }
 
-    /// Returns true if sort node has fill step, false otherwise
+    /// Returns true if sort node has fill staleness, false otherwise
     bool hasFillStaleness() const
     {
         return children[fill_staleness_child_index] != nullptr;
     }
 
-    /// Get fill step
+    /// Get fill staleness
     const QueryTreeNodePtr & getFillStaleness() const
     {
         return children[fill_staleness_child_index];
     }
 
-    /// Get fill step
+    /// Get fill staleness
     QueryTreeNodePtr & getFillStaleness()
     {
         return children[fill_staleness_child_index];

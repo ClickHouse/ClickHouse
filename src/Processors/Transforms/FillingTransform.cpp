@@ -125,10 +125,6 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
             if (jumps_count != 1)
                 applyVisitor(FieldVisitorScale(jumps_count), shifted_step);
 
-            logDebug("field", field.dump());
-            logDebug("step", step.dump());
-            logDebug("shifted field", shifted_step.dump());
-
             applyVisitor(FieldVisitorSum(shifted_step), field);
         };
     }
@@ -684,8 +680,8 @@ void FillingTransform::transformRange(
         }
 
         const auto [apply, changed] = filling_row.next(next_row, /*long_jump=*/true);
-        logDebug("apply", apply);
-        logDebug("changed", changed);
+        logDebug("long jump apply", apply);
+        logDebug("long jump changed", changed);
 
         if (changed)
             filling_row_changed = true;

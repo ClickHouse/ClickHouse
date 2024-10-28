@@ -1,10 +1,7 @@
 #pragma once
 
-#include <type_traits>
 #include <Common/FieldVisitors.h>
 #include <Common/FieldVisitorConvertToNumber.h>
-#include "base/Decimal.h"
-#include "base/extended_types.h"
 
 namespace DB
 {
