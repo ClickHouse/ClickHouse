@@ -549,13 +549,6 @@ void ParquetRleDictReader<ColumnString>::readBatch(
     );
 }
 
-template <>
-void ParquetRleDictReader<ColumnUInt8>::readBatch(
-    MutableColumnPtr & , LazyNullMap &, UInt32)
-{
-    assert(false);
-}
-
 template <typename TColumnVector>
 void ParquetRleDictReader<TColumnVector>::readBatch(
     MutableColumnPtr & col_ptr, LazyNullMap & null_map, UInt32 num_values)
