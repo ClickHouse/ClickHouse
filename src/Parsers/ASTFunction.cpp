@@ -284,7 +284,7 @@ static bool formatNamedArgWithHiddenValue(IAST * arg, const IAST::FormatSettings
 
 void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    /// Internal function for reversing MergeTree primary keys
+    /// Internal function for reversing MergeTree sorting keys
     if (name == "__descendingKey")
     {
         arguments->formatImpl(settings, state, frame);

@@ -560,7 +560,20 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (!order_by && s_order_by.ignore(pos, expected))
         {
-            auto old_pos = pos;
+            if (expression_p.parse(pos, order_by, expected))
+            {
+                storage_like = true;
+                continue;
+            }
+
+            /// Check possible ASC|DESC suffix for single key
+            if (order_elem_p.parse(pos, order_by, expected))
+            {
+                storage_like = true;
+                continue;
+            }
+
+            /// Check possible ASC|DESC suffix for a list of keys
             if (pos->type == TokenType::BareWord && std::string_view(pos->begin, pos->size()) == "tuple")
                 ++pos;
 
@@ -575,13 +588,6 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 tuple_function->children.push_back(tuple_function->arguments);
                 order_by = std::move(tuple_function);
                 s_rparen.check(pos, expected);
-                storage_like = true;
-                continue;
-            }
-
-            pos = old_pos;
-            if (order_elem_p.parse(pos, order_by, expected))
-            {
                 storage_like = true;
                 continue;
             }
