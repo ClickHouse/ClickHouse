@@ -68,6 +68,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.10",
         {
+            {"enable_job_stack_trace", false, true, "Enable by default collecting stack traces from job's scheduling."},
             {"enforce_strict_identifier_format", false, false, "New setting."},
             {"enable_parsing_to_custom_serialization", false, true, "New setting"},
             {"mongodb_throw_on_unsupported_query", false, true, "New setting."},
