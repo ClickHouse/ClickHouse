@@ -37,6 +37,7 @@ struct QueryMetricLogElement
 struct QueryMetricLogStatus
 {
     UInt64 interval_milliseconds;
+    std::chrono::system_clock::time_point last_collect_time;
     std::chrono::system_clock::time_point next_collect_time;
     std::vector<ProfileEvents::Count> last_profile_events = std::vector<ProfileEvents::Count>(ProfileEvents::end());
     BackgroundSchedulePool::TaskHolder task;
@@ -56,7 +57,7 @@ public:
     void finishQuery(const String & query_id, TimePoint finish_time, QueryStatusInfoPtr query_info = nullptr);
 
 private:
-    std::optional<QueryMetricLogElement> createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint current_time, bool schedule_next = true);
+    std::optional<QueryMetricLogElement> createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint query_info_time, bool schedule_next = true);
 
     std::recursive_mutex queries_mutex;
     std::unordered_map<String, QueryMetricLogStatus> queries;
