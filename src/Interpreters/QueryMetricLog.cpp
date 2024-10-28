@@ -21,6 +21,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+};
+
 static auto logger = getLogger("QueryMetricLog");
 
 ColumnsDescription QueryMetricLogElement::getColumnsDescription()
@@ -137,7 +142,7 @@ void QueryMetricLog::finishQuery(const String & query_id, QueryStatusInfoPtr que
     /// deactivating the task, which happens automatically on its destructor. Thus, we cannot
     /// deactivate/destroy the task while it's running. Now, the task locks `queries_mutex` to
     /// prevent concurrent edition of the queries. In short, the mutex order is: exec_mutex ->
-    /// queries_mutex. Thus, to prevent a deadblock we need to make sure that we always lock them in
+    /// queries_mutex. So, to prevent a deadblock we need to make sure that we always lock them in
     /// that order.
     {
         /// Take ownership of the task so that we can destroy it in this scope after unlocking `queries_lock`.
@@ -162,7 +167,7 @@ std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(cons
     auto query_status_it = queries.find(query_id);
 
     /// The query might have finished while the scheduled task is running.
-    if (query_status_it == queries.end())
+    if (query_status_it == queries.end() || !query_status_it->second.task)
         return {};
 
     QueryMetricLogElement elem;
@@ -178,8 +183,16 @@ std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(cons
         for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
         {
             const auto & new_value = (*(query_info.profile_counters))[i];
-            elem.profile_events[i] = new_value - query_status.last_profile_events[i];
-            query_status.last_profile_events[i] = new_value;
+            auto & prev_value = query_status.last_profile_events[i];
+
+            /// Profile event count is monotonically increasing.
+            if (new_value < prev_value)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Profile event count is not monotonically increasing for '{}': new value {} is smaller than previous value {}",
+                    ProfileEvents::getName(i), new_value, query_status.last_profile_events[i]);
+
+            elem.profile_events[i] = new_value - prev_value;
+            prev_value = new_value;
         }
     }
     else
