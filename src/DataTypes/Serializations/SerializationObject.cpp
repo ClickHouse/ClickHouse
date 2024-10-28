@@ -25,7 +25,7 @@ SerializationObject::SerializationObject(
     : typed_path_serializations(std::move(typed_path_serializations_))
     , paths_to_skip(paths_to_skip_)
     , dynamic_serialization(std::make_shared<SerializationDynamic>())
-    , shared_data_serialization(getTypeOfSharedData()->getDefaultSerialization())
+    , shared_data_serialization(DataTypeObject::getTypeOfSharedData()->getDefaultSerialization())
 {
     /// We will need sorted order of typed paths to serialize them in order for consistency.
     sorted_typed_paths.reserve(typed_path_serializations.size());
@@ -36,13 +36,6 @@ SerializationObject::SerializationObject(
     std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
     for (const auto & regexp_str : path_regexps_to_skip_)
         path_regexps_to_skip.emplace_back(regexp_str);
-}
-
-const DataTypePtr & SerializationObject::getTypeOfSharedData()
-{
-    /// Array(Tuple(String, String))
-    static const DataTypePtr type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}, Names{"paths", "values"}));
-    return type;
 }
 
 bool SerializationObject::shouldSkipPath(const String & path) const
@@ -168,7 +161,7 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
 
     settings.path.push_back(Substream::ObjectSharedData);
     auto shared_data_substream_data = SubstreamData(shared_data_serialization)
-                                          .withType(getTypeOfSharedData())
+                                          .withType(DataTypeObject::getTypeOfSharedData())
                                           .withColumn(column_object ? column_object->getSharedDataPtr() : nullptr)
                                           .withSerializationInfo(data.serialization_info)
                                           .withDeserializeState(deserialize_state ? deserialize_state->shared_data_state : nullptr);

@@ -111,9 +111,6 @@ private:
         DeserializeBinaryBulkSettings & settings,
         SubstreamsDeserializeStatesCache * cache);
 
-    /// Shared data has type Array(Tuple(String, String)).
-    static const DataTypePtr & getTypeOfSharedData();
-
     struct TypedPathSubcolumnCreator : public ISubcolumnCreator
     {
         String path;
