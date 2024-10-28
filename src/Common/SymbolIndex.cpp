@@ -141,7 +141,8 @@ void collectSymbolsFromProgramHeaders(
                     __msan_unpoison(buckets, hash[0] * sizeof(buckets[0]));
 
                     for (ElfW(Word) i = 0; i < hash[0]; ++i)
-                        sym_cnt = std::max<size_t>(sym_cnt, buckets[i]);
+                        if (buckets[i] > sym_cnt)
+                            sym_cnt = buckets[i];
 
                     if (sym_cnt)
                     {
@@ -460,11 +461,13 @@ const T * find(const void * address, const std::vector<T> & vec)
 
     if (it == vec.begin())
         return nullptr;
-    --it; /// Last range that has left boundary less or equals than address.
+    else
+        --it; /// Last range that has left boundary less or equals than address.
 
     if (address >= it->address_begin && address < it->address_end)
         return &*it;
-    return nullptr;
+    else
+        return nullptr;
 }
 
 }

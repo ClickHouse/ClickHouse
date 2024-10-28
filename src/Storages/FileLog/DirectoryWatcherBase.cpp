@@ -134,7 +134,7 @@ void DirectoryWatcherBase::watchFunc()
 DirectoryWatcherBase::~DirectoryWatcherBase()
 {
     stop();
-    [[maybe_unused]] int err = ::close(inotify_fd);
+    int err = ::close(inotify_fd);
     chassert(!err || errno == EINTR);
 }
 

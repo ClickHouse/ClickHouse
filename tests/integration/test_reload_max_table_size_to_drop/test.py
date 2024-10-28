@@ -2,7 +2,6 @@ import os
 import time
 
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)

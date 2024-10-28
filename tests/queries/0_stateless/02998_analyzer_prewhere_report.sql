@@ -15,4 +15,4 @@ SELECT
     arrayFilter(x -> (x IN (2, 3)), data) AS filtered
 FROM hits
 WHERE arrayExists(x -> (x IN (2, 3)), data)
-SETTINGS enable_analyzer = 1;
+SETTINGS allow_experimental_analyzer = 1;

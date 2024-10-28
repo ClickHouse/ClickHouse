@@ -305,16 +305,12 @@ set(libprotoc_files
   ${protobuf_source_dir}/src/google/protobuf/compiler/retention.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/ruby/ruby_generator.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/rust/accessors/accessors.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/rust/accessors/singular_message.cc
+  ${protobuf_source_dir}/src/google/protobuf/compiler/rust/accessors/singular_bytes.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/rust/accessors/singular_scalar.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/rust/accessors/singular_string.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/rust/accessors/unsupported_field.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/rust/context.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/rust/generator.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/rust/message.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/rust/naming.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/rust/oneof.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/rust/relative_path.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/subprocess.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/zip_writer.cc
 )
@@ -359,9 +355,7 @@ else ()
 
         execute_process(
             COMMAND mkdir -p ${PROTOC_BUILD_DIR}
-            COMMAND_ECHO STDOUT
-            COMMAND_ERROR_IS_FATAL ANY
-        )
+            COMMAND_ECHO STDOUT)
 
         execute_process(
             COMMAND ${CMAKE_COMMAND}
@@ -377,15 +371,11 @@ else ()
                 "-DABSL_ENABLE_INSTALL=0"
                 "${protobuf_source_dir}"
             WORKING_DIRECTORY "${PROTOC_BUILD_DIR}"
-            COMMAND_ECHO STDOUT
-            COMMAND_ERROR_IS_FATAL ANY
-        )
+            COMMAND_ECHO STDOUT)
 
         execute_process(
             COMMAND ${CMAKE_COMMAND} --build "${PROTOC_BUILD_DIR}"
-            COMMAND_ECHO STDOUT
-            COMMAND_ERROR_IS_FATAL ANY
-        )
+            COMMAND_ECHO STDOUT)
     endif ()
 
     add_executable(protoc IMPORTED GLOBAL)
