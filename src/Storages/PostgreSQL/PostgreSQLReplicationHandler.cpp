@@ -1,4 +1,3 @@
-#include "PostgreSQLReplicationHandler.h"
 
 #include <base/sort.h>
 
@@ -9,6 +8,8 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/Pipe.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
+#include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
+#include <Storages/PostgreSQL/PostgreSQLReplicationHandler.h>
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Interpreters/getTableOverride.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -25,6 +26,21 @@ namespace DB
 
 static const auto CLEANUP_RESCHEDULE_MS = 600000 * 3; /// 30 min
 static constexpr size_t replication_slot_name_max_size = 64;
+
+namespace MaterializedPostgreSQLSetting
+{
+    extern const MaterializedPostgreSQLSettingsUInt64 materialized_postgresql_backoff_factor;
+    extern const MaterializedPostgreSQLSettingsUInt64 materialized_postgresql_backoff_max_ms;
+    extern const MaterializedPostgreSQLSettingsUInt64 materialized_postgresql_backoff_min_ms;
+    extern const MaterializedPostgreSQLSettingsUInt64 materialized_postgresql_max_block_size;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_replication_slot;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_schema;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_schema_list;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_snapshot;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
+    extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_tables_list_with_schema;
+    extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_unique_replication_consumer_identifier;
+}
 
 namespace ErrorCodes
 {
@@ -103,10 +119,10 @@ namespace
         const String & clickhouse_uuid,
         const MaterializedPostgreSQLSettings & replication_settings)
     {
-        String slot_name = replication_settings.materialized_postgresql_replication_slot;
+        String slot_name = replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_replication_slot];
         if (slot_name.empty())
         {
-            if (replication_settings.materialized_postgresql_use_unique_replication_consumer_identifier)
+            if (replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_use_unique_replication_consumer_identifier])
                 slot_name = clickhouse_uuid;
             else
                 slot_name = postgres_table.empty() ? postgres_database : fmt::format("{}_{}_ch_replication_slot", postgres_database, postgres_table);
@@ -131,22 +147,22 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , log(getLogger("PostgreSQLReplicationHandler"))
     , is_attach(is_attach_)
     , postgres_database(postgres_database_)
-    , postgres_schema(replication_settings.materialized_postgresql_schema)
+    , postgres_schema(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_schema])
     , current_database_name(clickhouse_database_)
     , connection_info(connection_info_)
-    , max_block_size(replication_settings.materialized_postgresql_max_block_size)
+    , max_block_size(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_max_block_size])
     , is_materialized_postgresql_database(is_materialized_postgresql_database_)
-    , tables_list(replication_settings.materialized_postgresql_tables_list)
-    , schema_list(replication_settings.materialized_postgresql_schema_list)
-    , schema_as_a_part_of_table_name(!schema_list.empty() || replication_settings.materialized_postgresql_tables_list_with_schema)
-    , user_managed_slot(!replication_settings.materialized_postgresql_replication_slot.value.empty())
-    , user_provided_snapshot(replication_settings.materialized_postgresql_snapshot)
+    , tables_list(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list])
+    , schema_list(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_schema_list])
+    , schema_as_a_part_of_table_name(!schema_list.empty() || replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list_with_schema])
+    , user_managed_slot(!replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_replication_slot].value.empty())
+    , user_provided_snapshot(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_snapshot])
     , replication_slot(getReplicationSlotName(postgres_database_, postgres_table_, clickhouse_uuid_, replication_settings))
     , tmp_replication_slot(replication_slot + "_tmp")
     , publication_name(getPublicationName(postgres_database_, postgres_table_))
-    , reschedule_backoff_min_ms(replication_settings.materialized_postgresql_backoff_min_ms)
-    , reschedule_backoff_max_ms(replication_settings.materialized_postgresql_backoff_max_ms)
-    , reschedule_backoff_factor(replication_settings.materialized_postgresql_backoff_factor)
+    , reschedule_backoff_min_ms(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_backoff_min_ms])
+    , reschedule_backoff_max_ms(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_backoff_max_ms])
+    , reschedule_backoff_factor(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_backoff_factor])
     , milliseconds_to_wait(reschedule_backoff_min_ms)
 {
     if (!schema_list.empty() && !tables_list.empty())
@@ -160,8 +176,8 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     LOG_INFO(log, "Using replication slot {} and publication {}", replication_slot, doubleQuoteString(publication_name));
 
     startup_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ checkConnectionAndStart(); });
-    consumer_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ consumerFunc(); });
-    cleanup_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ cleanupFunc(); });
+    consumer_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaConsume", [this]{ consumerFunc(); });
+    cleanup_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaCleanup", [this]{ cleanupFunc(); });
 }
 
 
@@ -244,9 +260,17 @@ void PostgreSQLReplicationHandler::checkConnectionAndStart()
 void PostgreSQLReplicationHandler::shutdown()
 {
     stop_synchronization.store(true);
+
+    LOG_TRACE(log, "Deactivating startup task");
     startup_task->deactivate();
+
+    LOG_TRACE(log, "Deactivating consumer task");
     consumer_task->deactivate();
+
+    LOG_TRACE(log, "Deactivating cleanup task");
     cleanup_task->deactivate();
+
+    LOG_TRACE(log, "Resetting consumer");
     consumer.reset(); /// Clear shared pointers to inner storages.
 }
 
@@ -493,7 +517,9 @@ void PostgreSQLReplicationHandler::cleanupFunc()
         if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
             dropReplicationSlot(tx, /* temporary */true);
     });
-    cleanup_task->scheduleAfter(CLEANUP_RESCHEDULE_MS);
+
+    if (!stop_synchronization)
+        cleanup_task->scheduleAfter(CLEANUP_RESCHEDULE_MS);
 }
 
 PostgreSQLReplicationHandler::ConsumerPtr PostgreSQLReplicationHandler::getConsumer()
