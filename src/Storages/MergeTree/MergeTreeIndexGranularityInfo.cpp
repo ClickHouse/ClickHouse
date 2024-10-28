@@ -108,6 +108,14 @@ std::optional<MarkType> MergeTreeIndexGranularityInfo::getMarksTypeFromFilesyste
     return {};
 }
 
+MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(
+    MarkType mark_type_, size_t index_granularity_, size_t index_granularity_bytes_)
+    : mark_type(mark_type_)
+    , fixed_index_granularity(index_granularity_)
+    , index_granularity_bytes(index_granularity_bytes_)
+{
+}
+
 MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MergeTreeDataPartType type_)
     : MergeTreeIndexGranularityInfo(storage, {storage.canUseAdaptiveGranularity(), (*storage.getSettings())[MergeTreeSetting::compress_marks], type_.getValue()})
 {
