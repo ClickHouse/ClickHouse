@@ -301,7 +301,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
         query_ast_copy = query_ast->clone();
         auto * select_row_exists = query_ast_copy->as<ASTSelectQuery>();
         if (!select_row_exists)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get ASTSelectQuery whening adding _row_exists = 1. It's a bug");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get ASTSelectQuery when adding _row_exists = 1. It's a bug");
 
         select_row_exists->setExpression(
             ASTSelectQuery::Expression::WHERE,
