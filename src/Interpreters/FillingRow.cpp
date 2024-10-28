@@ -28,6 +28,7 @@ FillingRow::FillingRow(const SortDescription & sort_description_)
     : sort_description(sort_description_)
 {
     row.resize(sort_description.size());
+    staleness_base_row.resize(sort_description.size());
 }
 
 bool FillingRow::operator<(const FillingRow & other) const
@@ -63,7 +64,53 @@ bool FillingRow::isNull() const
     return true;
 }
 
-std::pair<bool, bool> FillingRow::next(const FillingRow & to_row)
+std::optional<Field> FillingRow::doJump(const FillColumnDescription& descr, size_t column_ind)
+{
+    Field next_value = row[column_ind];
+    descr.step_func(next_value, 1);
+
+    if (!descr.fill_to.isNull() && less(descr.fill_to, next_value, getDirection(column_ind)))
+        return std::nullopt;
+
+    if (!descr.fill_staleness.isNull()) {
+        Field staleness_border = staleness_base_row[column_ind];
+        descr.staleness_step_func(staleness_border, 1);
+
+        if (less(next_value, staleness_border, getDirection(column_ind)))
+            return next_value;
+        else
+            return std::nullopt;
+    }
+
+    return next_value;
+}
+
+std::optional<Field> FillingRow::doLongJump(const FillColumnDescription & descr, size_t column_ind, const Field & to)
+{
+    Field shifted_value = row[column_ind];
+
+    if (less(to, shifted_value, getDirection(column_ind)))
+        return std::nullopt;
+
+    for (int32_t step_len = 1, step_no = 0; step_no < 100; ++step_no) {
+        Field next_value = shifted_value;
+        descr.step_func(next_value, step_len);
+
+        if (less(next_value, to, getDirection(0)))
+        {
+            shifted_value = std::move(next_value);
+            step_len *= 2;
+        }
+        else
+        {
+            step_len /= 2;
+        }
+    }
+
+    return shifted_value;
+}
+
+std::pair<bool, bool> FillingRow::next(const FillingRow & to_row, bool long_jump)
 {
     const size_t row_size = size();
     size_t pos = 0;
@@ -85,23 +132,43 @@ std::pair<bool, bool> FillingRow::next(const FillingRow & to_row)
         if (fill_column_desc.fill_to.isNull() || row[i].isNull())
             continue;
 
-        Field next_value = row[i];
-        fill_column_desc.step_func(next_value);
-        if (less(next_value, fill_column_desc.fill_to, getDirection(i)))
+        auto next_value = doJump(fill_column_desc, i);
+        if (next_value.has_value() && !equals(next_value.value(), fill_column_desc.fill_to))
         {
-            row[i] = next_value;
+            row[i] = std::move(next_value.value());
             initFromDefaults(i + 1);
             return {true, true};
         }
     }
 
-    auto next_value = row[pos];
-    getFillDescription(pos).step_func(next_value);
+    auto & fill_column_desc = getFillDescription(pos);
+    std::optional<Field> next_value;
 
-    if (less(to_row.row[pos], next_value, getDirection(pos)) || equals(next_value, getFillDescription(pos).fill_to))
-        return {false, false};
+    if (long_jump)
+    {
+        next_value = doLongJump(fill_column_desc, pos, to_row[pos]);
 
-    row[pos] = next_value;
+        if (!next_value.has_value())
+            return {false, false};
+
+        Field calibration_jump_value = next_value.value();
+        fill_column_desc.step_func(calibration_jump_value, 1);
+
+        if (equals(calibration_jump_value, to_row[pos]))
+            next_value = calibration_jump_value;
+
+        if (!next_value.has_value() || less(to_row.row[pos], next_value.value(), getDirection(pos)) || equals(next_value.value(), getFillDescription(pos).fill_to))
+            return {false, false};
+    }
+    else
+    {
+        next_value = doJump(fill_column_desc, pos);
+
+        if (!next_value.has_value() || less(to_row.row[pos], next_value.value(), getDirection(pos)) || equals(next_value.value(), getFillDescription(pos).fill_to))
+            return {false, false};
+    }
+
+    row[pos] = std::move(next_value.value());
     if (equals(row[pos], to_row.row[pos]))
     {
         bool is_less = false;
@@ -126,6 +193,13 @@ void FillingRow::initFromDefaults(size_t from_pos)
 {
     for (size_t i = from_pos; i < sort_description.size(); ++i)
         row[i] = getFillDescription(i).fill_from;
+}
+
+void FillingRow::initStalenessRow(const Columns& base_row, size_t row_ind)
+{
+    for (size_t i = 0; i < size(); ++i) {
+        staleness_base_row[i] = (*base_row[i])[row_ind];
+    }
 }
 
 String FillingRow::dump() const

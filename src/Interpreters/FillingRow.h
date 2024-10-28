@@ -1,6 +1,6 @@
 #pragma once
-#include <Core/SortDescription.h>
 
+#include <Core/SortDescription.h>
 
 namespace DB
 {
@@ -15,6 +15,9 @@ bool equals(const Field & lhs, const Field & rhs);
  */
 class FillingRow
 {
+    std::optional<Field> doJump(const FillColumnDescription & descr, size_t column_ind);
+    std::optional<Field> doLongJump(const FillColumnDescription & descr, size_t column_ind, const Field & to);
+
 public:
     explicit FillingRow(const SortDescription & sort_description);
 
@@ -22,9 +25,10 @@ public:
     /// Return pair of boolean
     /// apply - true if filling values should be inserted into result set
     /// value_changed - true if filling row value was changed
-    std::pair<bool, bool> next(const FillingRow & to_row);
+    std::pair<bool, bool> next(const FillingRow & to_row, bool long_jump);
 
     void initFromDefaults(size_t from_pos = 0);
+    void initStalenessRow(const Columns& base_row, size_t row_ind);
 
     Field & operator[](size_t index) { return row[index]; }
     const Field & operator[](size_t index) const { return row[index]; }
@@ -42,6 +46,7 @@ public:
 
 private:
     Row row;
+    Row staleness_base_row;
     SortDescription sort_description;
 };
 

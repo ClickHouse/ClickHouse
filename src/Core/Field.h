@@ -185,6 +185,14 @@ public:
         return *this;
     }
 
+    const DecimalField<T> & operator *= (const DecimalField<T> & r)
+    {
+        if (scale != r.getScale())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Multiply different decimal fields");
+        dec *= r.getValue();
+        return *this;
+    }
+
     const DecimalField<T> & operator -= (const DecimalField<T> & r)
     {
         if (scale != r.getScale())

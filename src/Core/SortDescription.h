@@ -33,9 +33,12 @@ struct FillColumnDescription
     DataTypePtr fill_to_type;
     Field fill_step;        /// Default = +1 or -1 according to direction
     std::optional<IntervalKind> step_kind;
+    Field fill_staleness;   /// Default = Null - should not be considered
+    std::optional<IntervalKind> staleness_kind;
 
-    using StepFunction = std::function<void(Field &)>;
+    using StepFunction = std::function<void(Field &, Int32 jumps_count)>;
     StepFunction step_func;
+    StepFunction staleness_step_func;
 };
 
 /// Description of the sorting rule by one column.

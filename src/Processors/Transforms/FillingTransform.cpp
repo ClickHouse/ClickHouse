@@ -7,15 +7,17 @@
 #include <Core/Types.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Functions/FunctionDateOrDateTimeAddInterval.h>
+#include <Common/FieldVisitorMul.h>
 #include <Common/FieldVisitorSum.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
+#include <IO/Operators.h>
 
 
 namespace DB
 {
 
-constexpr bool debug_logging_enabled = false;
+constexpr bool debug_logging_enabled = true;
 
 template <typename T>
 void logDebug(String key, const T & value, const char * separator = " : ")
@@ -60,12 +62,75 @@ static FillColumnDescription::StepFunction getStepFunction(
     {
 #define DECLARE_CASE(NAME) \
         case IntervalKind::Kind::NAME: \
-            return [step, scale, &date_lut](Field & field) { \
+            return [step, scale, &date_lut](Field & field, Int32 jumps_count) { \
                 field = Add##NAME##sImpl::execute(static_cast<T>(\
-                    field.safeGet<T>()), static_cast<Int32>(step), date_lut, utc_time_zone, scale); };
+                    field.safeGet<T>()), static_cast<Int32>(step) * jumps_count, date_lut, utc_time_zone, scale); };
 
         FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
 #undef DECLARE_CASE
+    }
+}
+
+static FillColumnDescription::StepFunction getStepFunction(const Field & step, const std::optional<IntervalKind> & step_kind, const DataTypePtr & type)
+{
+    WhichDataType which(type);
+
+    if (step_kind)
+    {
+        if (which.isDate() || which.isDate32())
+        {
+            Int64 avg_seconds = step.safeGet<Int64>() * step_kind->toAvgSeconds();
+            if (std::abs(avg_seconds) < 86400)
+                throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                                "Value of step is to low ({} seconds). Must be >= 1 day", std::abs(avg_seconds));
+        }
+
+        if (which.isDate())
+            return getStepFunction<UInt16>(step_kind.value(), step.safeGet<Int64>(), DateLUT::instance());
+        else if (which.isDate32())
+            return getStepFunction<Int32>(step_kind.value(), step.safeGet<Int64>(), DateLUT::instance());
+        else if (const auto * date_time = checkAndGetDataType<DataTypeDateTime>(type.get()))
+            return getStepFunction<UInt32>(step_kind.value(), step.safeGet<Int64>(), date_time->getTimeZone());
+        else if (const auto * date_time64 = checkAndGetDataType<DataTypeDateTime64>(type.get()))
+        {
+            const auto & step_dec = step.safeGet<const DecimalField<Decimal64> &>();
+            Int64 converted_step = DecimalUtils::convertTo<Int64>(step_dec.getValue(), step_dec.getScale());
+            static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
+
+            switch (step_kind.value()) // NOLINT(bugprone-switch-missing-default-case)
+            {
+#define DECLARE_CASE(NAME) \
+                case IntervalKind::Kind::NAME: \
+                    return [converted_step, &time_zone = date_time64->getTimeZone()](Field & field, Int32 jumps_count) \
+                    { \
+                        auto field_decimal = field.safeGet<DecimalField<DateTime64>>(); \
+                        auto res = Add##NAME##sImpl::execute(field_decimal.getValue(), converted_step * jumps_count, time_zone, utc_time_zone, field_decimal.getScale()); \
+                        field = DecimalField(res, field_decimal.getScale()); \
+                    }; \
+                    break;
+
+                FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
+#undef DECLARE_CASE
+            }
+        }
+        else
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                            "STEP of Interval type can be used only with Date/DateTime types, but got {}", type->getName());
+    }
+    else
+    {
+        return [step](Field & field, Int32 jumps_count)
+        {
+            auto shifted_step = step;
+            if (jumps_count != 1)
+                applyVisitor(FieldVisitorMul(jumps_count), shifted_step);
+
+            logDebug("field", field.dump());
+            logDebug("step", step.dump());
+            logDebug("shifted field", shifted_step.dump());
+
+            applyVisitor(FieldVisitorSum(shifted_step), field);
+        };
     }
 }
 
@@ -125,7 +190,8 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
 
     if (descr.fill_from.getType() > max_type
         || descr.fill_to.getType() > max_type
-        || descr.fill_step.getType() > max_type)
+        || descr.fill_step.getType() > max_type
+        || descr.fill_staleness.getType() > max_type)
         return false;
 
     if (!descr.fill_from.isNull())
@@ -134,56 +200,11 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
         descr.fill_to = convertFieldToTypeOrThrow(descr.fill_to, *to_type);
     if (!descr.fill_step.isNull())
         descr.fill_step = convertFieldToTypeOrThrow(descr.fill_step, *to_type);
+    if (!descr.fill_staleness.isNull())
+        descr.fill_staleness = convertFieldToTypeOrThrow(descr.fill_staleness, *to_type);
 
-    if (descr.step_kind)
-    {
-        if (which.isDate() || which.isDate32())
-        {
-            Int64 avg_seconds = descr.fill_step.safeGet<Int64>() * descr.step_kind->toAvgSeconds();
-            if (std::abs(avg_seconds) < 86400)
-                throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                                "Value of step is to low ({} seconds). Must be >= 1 day", std::abs(avg_seconds));
-        }
-
-        if (which.isDate())
-            descr.step_func = getStepFunction<UInt16>(*descr.step_kind, descr.fill_step.safeGet<Int64>(), DateLUT::instance());
-        else if (which.isDate32())
-            descr.step_func = getStepFunction<Int32>(*descr.step_kind, descr.fill_step.safeGet<Int64>(), DateLUT::instance());
-        else if (const auto * date_time = checkAndGetDataType<DataTypeDateTime>(type.get()))
-            descr.step_func = getStepFunction<UInt32>(*descr.step_kind, descr.fill_step.safeGet<Int64>(), date_time->getTimeZone());
-        else if (const auto * date_time64 = checkAndGetDataType<DataTypeDateTime64>(type.get()))
-        {
-            const auto & step_dec = descr.fill_step.safeGet<const DecimalField<Decimal64> &>();
-            Int64 step = DecimalUtils::convertTo<Int64>(step_dec.getValue(), step_dec.getScale());
-            static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
-
-            switch (*descr.step_kind) // NOLINT(bugprone-switch-missing-default-case)
-            {
-#define DECLARE_CASE(NAME) \
-                case IntervalKind::Kind::NAME: \
-                    descr.step_func = [step, &time_zone = date_time64->getTimeZone()](Field & field) \
-                    { \
-                        auto field_decimal = field.safeGet<DecimalField<DateTime64>>(); \
-                        auto res = Add##NAME##sImpl::execute(field_decimal.getValue(), step, time_zone, utc_time_zone, field_decimal.getScale()); \
-                        field = DecimalField(res, field_decimal.getScale()); \
-                    }; \
-                    break;
-
-                FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
-#undef DECLARE_CASE
-            }
-        }
-        else
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                            "STEP of Interval type can be used only with Date/DateTime types, but got {}", type->getName());
-    }
-    else
-    {
-        descr.step_func = [step = descr.fill_step](Field & field)
-        {
-            applyVisitor(FieldVisitorSum(step), field);
-        };
-    }
+    descr.step_func = getStepFunction(descr.fill_step, descr.step_kind, type);
+    descr.staleness_step_func = getStepFunction(descr.fill_staleness, descr.staleness_kind, type);
 
     return true;
 }
@@ -482,8 +503,8 @@ bool FillingTransform::generateSuffixIfNeeded(
     MutableColumnRawPtrs res_sort_prefix_columns,
     MutableColumnRawPtrs res_other_columns)
 {
-    logDebug("generateSuffixIfNeeded() filling_row", filling_row);
-    logDebug("generateSuffixIfNeeded() next_row", next_row);
+    logDebug("generateSuffixIfNeeded filling_row", filling_row);
+    logDebug("generateSuffixIfNeeded next_row", next_row);
 
     /// Determines if we should insert filling row before start generating next rows
     bool should_insert_first = (next_row < filling_row && !filling_row_inserted) || next_row.isNull();
@@ -492,11 +513,11 @@ bool FillingTransform::generateSuffixIfNeeded(
     for (size_t i = 0, size = filling_row.size(); i < size; ++i)
         next_row[i] = filling_row.getFillDescription(i).fill_to;
 
-    logDebug("generateSuffixIfNeeded() next_row updated", next_row);
+    logDebug("generateSuffixIfNeeded next_row updated", next_row);
 
     if (filling_row >= next_row)
     {
-        logDebug("generateSuffixIfNeeded()", "no need to generate suffix");
+        logDebug("generateSuffixIfNeeded", "no need to generate suffix");
         return false;
     }
 
@@ -516,7 +537,7 @@ bool FillingTransform::generateSuffixIfNeeded(
     bool filling_row_changed = false;
     while (true)
     {
-        const auto [apply, changed] = filling_row.next(next_row);
+        const auto [apply, changed] = filling_row.next(next_row, /*long_jump=*/false);
         filling_row_changed = changed;
         if (!apply)
             break;
@@ -593,6 +614,9 @@ void FillingTransform::transformRange(
             const auto current_value = (*input_fill_columns[i])[range_begin];
             const auto & fill_from = filling_row.getFillDescription(i).fill_from;
 
+            logDebug("current value", current_value.dump());
+            logDebug("fill from", fill_from.dump());
+
             if (!fill_from.isNull() && !equals(current_value, fill_from))
             {
                 filling_row.initFromDefaults(i);
@@ -609,6 +633,9 @@ void FillingTransform::transformRange(
         }
     }
 
+    /// Init staleness first interval
+    filling_row.initStalenessRow(input_fill_columns, range_begin);
+
     for (size_t row_ind = range_begin; row_ind < range_end; ++row_ind)
     {
         logDebug("row", row_ind);
@@ -622,6 +649,9 @@ void FillingTransform::transformRange(
         {
             const auto current_value = (*input_fill_columns[i])[row_ind];
             const auto & fill_to = filling_row.getFillDescription(i).fill_to;
+
+            logDebug("current value", current_value.dump());
+            logDebug("fill to", fill_to.dump());
 
             if (fill_to.isNull() || less(current_value, fill_to, filling_row.getDirection(i)))
                 next_row[i] = current_value;
@@ -643,7 +673,7 @@ void FillingTransform::transformRange(
         bool filling_row_changed = false;
         while (true)
         {
-            const auto [apply, changed] = filling_row.next(next_row);
+            const auto [apply, changed] = filling_row.next(next_row, /*long_jump=*/false);
             filling_row_changed = changed;
             if (!apply)
                 break;
@@ -652,6 +682,14 @@ void FillingTransform::transformRange(
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
             copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
         }
+
+        const auto [apply, changed] = filling_row.next(next_row, /*long_jump=*/true);
+        logDebug("apply", apply);
+        logDebug("changed", changed);
+
+        if (changed)
+            filling_row_changed = true;
+
         /// new valid filling row was generated but not inserted, will use it during suffix generation
         if (filling_row_changed)
             filling_row_inserted = false;
@@ -662,6 +700,9 @@ void FillingTransform::transformRange(
         copyRowFromColumns(res_interpolate_columns, input_interpolate_columns, row_ind);
         copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
         copyRowFromColumns(res_other_columns, input_other_columns, row_ind);
+
+        /// Init next staleness interval with current row, because we have already made the long jump to it
+        filling_row.initStalenessRow(input_fill_columns, row_ind);
     }
 
     /// save sort prefix of last row in the range, it's used to generate suffix
