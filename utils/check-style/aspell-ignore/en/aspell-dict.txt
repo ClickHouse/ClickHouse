@@ -3151,3 +3151,7 @@ zookeeperSessionUptime
 zstd
 divideOrNull
 moduloOrNull
+tupleDivideOrNull
+tupleDivideOrNullByNumber
+tupleModuloByNumberOrNull
+tupleModuloOrNull
