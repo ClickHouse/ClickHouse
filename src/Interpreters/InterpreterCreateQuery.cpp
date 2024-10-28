@@ -98,6 +98,9 @@
 namespace CurrentMetrics
 {
     extern const Metric AttachedTable;
+    extern const Metric AttachedReplicatedTable;
+    extern const Metric AttachedDictionary;
+    extern const Metric AttachedView;
 }
 
 namespace DB
@@ -146,7 +149,10 @@ namespace ServerSetting
 {
     extern const ServerSettingsBool ignore_empty_sql_security_in_create_view_query;
     extern const ServerSettingsUInt64 max_database_num_to_throw;
+    extern const ServerSettingsUInt64 max_dictionary_num_to_throw;
     extern const ServerSettingsUInt64 max_table_num_to_throw;
+    extern const ServerSettingsUInt64 max_replicated_table_num_to_throw;
+    extern const ServerSettingsUInt64 max_view_num_to_throw;
 }
 
 namespace ErrorCodes
@@ -1914,16 +1920,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
     }
 
-    UInt64 table_num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_table_num_to_throw];
-    if (table_num_limit > 0 && !internal)
-    {
-        UInt64 table_count = CurrentMetrics::get(CurrentMetrics::AttachedTable);
-        if (table_count >= table_num_limit)
-            throw Exception(ErrorCodes::TOO_MANY_TABLES,
-                            "Too many tables. "
-                            "The limit (server configuration parameter `max_table_num_to_throw`) is set to {}, the current number of tables is {}",
-                            table_num_limit, table_count);
-    }
+    if (!internal)
+        throwIfTooManyEntities(create, res);
 
     database->createTable(getContext(), create.getTable(), res, query_ptr);
 
@@ -1947,6 +1945,51 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     res->startup();
     return true;
+}
+
+
+void InterpreterCreateQuery::throwIfTooManyEntities(ASTCreateQuery & create, StoragePtr storage) const
+{
+    if (auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(storage.get()))
+    {
+        UInt64 num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_replicated_table_num_to_throw];
+        UInt64 attached_count = CurrentMetrics::get(CurrentMetrics::AttachedReplicatedTable);
+        if (attached_count >= num_limit)
+            throw Exception(ErrorCodes::TOO_MANY_TABLES,
+                            "Too many replicated tables. "
+                            "The limit (server configuration parameter `max_replicated_table_num_to_throw`) is set to {}, the current number is {}",
+                            num_limit, attached_count);
+    }
+    else if (create.is_dictionary)
+    {
+        UInt64 num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_dictionary_num_to_throw];
+        UInt64 attached_count = CurrentMetrics::get(CurrentMetrics::AttachedDictionary);
+        if (attached_count >= num_limit)
+        throw Exception(ErrorCodes::TOO_MANY_TABLES,
+                        "Too many dictionaries. "
+                        "The limit (server configuration parameter `max_dictionary_num_to_throw`) is set to {}, the current number is {}",
+                        num_limit, attached_count);
+    }
+    else if (create.isView())
+    {
+        UInt64 num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_view_num_to_throw];
+        UInt64 attached_count = CurrentMetrics::get(CurrentMetrics::AttachedView);
+        if (attached_count >= num_limit)
+            throw Exception(ErrorCodes::TOO_MANY_TABLES,
+                            "Too many views. "
+                            "The limit (server configuration parameter `max_view_num_to_throw`) is set to {}, the current number is {}",
+                            num_limit, attached_count);
+    }
+    else
+    {
+        UInt64 num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_table_num_to_throw];
+        UInt64 attached_count = CurrentMetrics::get(CurrentMetrics::AttachedTable);
+        if (attached_count >= num_limit)
+            throw Exception(ErrorCodes::TOO_MANY_TABLES,
+                            "Too many tables. "
+                            "The limit (server configuration parameter `max_table_num_to_throw`) is set to {}, the current number is {}",
+                            num_limit, attached_count);
+    }
 }
 
 
