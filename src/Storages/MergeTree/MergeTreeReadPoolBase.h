@@ -6,6 +6,29 @@
 namespace DB
 {
 
+class MergeTreeReadPartsRanges
+{
+public:
+    explicit MergeTreeReadPartsRanges(RangesInDataParts parts_ranges_) : parts_ranges(std::move(parts_ranges_)) {}
+
+    struct LockedPartRannges
+    {
+        std::lock_guard<std::mutex> lock;
+        RangesInDataParts & parts_ranges;
+    };
+
+    LockedPartRannges get() TSA_NO_THREAD_SAFETY_ANALYSIS
+    {
+        return {std::lock_guard(mutex), parts_ranges};
+    }
+
+private:
+    RangesInDataParts parts_ranges;
+    std::mutex mutex;
+};
+
+using MergeTreeReadPartsRangesPtr = std::shared_ptr<MergeTreeReadPartsRanges>;
+
 class MergeTreeReadPoolBase : public IMergeTreeReadPool, protected WithContext
 {
 public:
@@ -37,9 +60,11 @@ public:
 
     Block getHeader() const override { return header; }
 
+    MergeTreeReadPartsRangesPtr getPartsWithRanges() { return parts_ranges_ptr; }
+
 protected:
     /// Initialized in constructor
-    const RangesInDataParts parts_ranges;
+    const MergeTreeReadPartsRangesPtr parts_ranges_ptr;
     const MutationsSnapshotPtr mutations_snapshot;
     const VirtualFields shared_virtual_fields;
     const StorageSnapshotPtr storage_snapshot;
@@ -51,9 +76,11 @@ protected:
     const MarkCachePtr owned_mark_cache;
     const UncompressedCachePtr owned_uncompressed_cache;
     const Block header;
+    const bool merge_tree_determine_task_size_by_prewhere_columns;
+    const UInt64 merge_tree_min_bytes_per_task_for_remote_reading;
 
-    void fillPerPartInfos(const Settings & settings);
-    std::vector<size_t> getPerPartSumMarks() const;
+    void fillPerPartInfos(const RangesInDataParts & parts_ranges);
+    static std::vector<size_t> getPerPartSumMarks(const RangesInDataParts & parts_ranges);
 
     MergeTreeReadTaskPtr createTask(
         MergeTreeReadTaskInfoPtr read_info,
@@ -62,6 +89,7 @@ protected:
 
     MergeTreeReadTask::Extras getExtras() const;
 
+    std::once_flag init_flag;
     std::vector<MergeTreeReadTaskInfoPtr> per_part_infos;
     std::vector<bool> is_part_on_remote_disk;
 

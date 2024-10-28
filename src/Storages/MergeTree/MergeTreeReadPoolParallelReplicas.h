@@ -5,7 +5,7 @@
 namespace DB
 {
 
-class MergeTreeReadPoolParallelReplicas : public MergeTreeReadPoolBase
+class MergeTreeReadPoolParallelReplicas final : public MergeTreeReadPoolBase
 {
 public:
     MergeTreeReadPoolParallelReplicas(

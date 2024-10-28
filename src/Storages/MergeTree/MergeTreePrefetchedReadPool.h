@@ -14,7 +14,7 @@ using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 /// A class which is responsible for creating read tasks
 /// which are later taken by readers via getTask method.
 /// Does prefetching for the read tasks it creates.
-class MergeTreePrefetchedReadPool : public MergeTreeReadPoolBase
+class MergeTreePrefetchedReadPool final : public MergeTreeReadPoolBase
 {
 public:
     MergeTreePrefetchedReadPool(
@@ -105,8 +105,8 @@ private:
     using TasksPerThread = std::map<size_t, ThreadTasks>;
     using PartStatistics = std::vector<PartStatistic>;
 
-    void fillPerPartStatistics();
-    void fillPerThreadTasks(size_t threads, size_t sum_marks);
+    void fillPerPartStatistics(const RangesInDataParts & parts_ranges);
+    void fillPerThreadTasks(const RangesInDataParts & parts_ranges, size_t threads, size_t sum_marks);
 
     void startPrefetches();
     void createPrefetchedReadersForTask(ThreadTask & task);

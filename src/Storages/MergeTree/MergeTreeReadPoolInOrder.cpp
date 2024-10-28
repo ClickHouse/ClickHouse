@@ -35,13 +35,23 @@ MergeTreeReadPoolInOrder::MergeTreeReadPoolInOrder(
     , has_limit_below_one_block(has_limit_below_one_block_)
     , read_type(read_type_)
 {
-    per_part_mark_ranges.reserve(parts_ranges.size());
-    for (const auto & part_with_ranges : parts_ranges)
-        per_part_mark_ranges.push_back(part_with_ranges.ranges);
 }
 
 MergeTreeReadTaskPtr MergeTreeReadPoolInOrder::getTask(size_t task_idx, MergeTreeReadTask * previous_task)
 {
+    auto init = [this]()
+    {
+        auto parts_ranges_and_lock = parts_ranges_ptr->get();
+        const auto & parts_ranges = parts_ranges_and_lock.parts_ranges;
+
+        fillPerPartInfos(parts_ranges);
+
+        per_part_mark_ranges.reserve(parts_ranges.size());
+        for (const auto & part_with_ranges : parts_ranges)
+            per_part_mark_ranges.push_back(part_with_ranges.ranges);
+    };
+    std::call_once(init_flag, init);
+
     if (task_idx >= per_part_infos.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Requested task with idx {}, but there are only {} parts",

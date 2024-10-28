@@ -29,7 +29,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     const PoolSettings & pool_settings_,
     const ContextPtr & context_)
     : WithContext(context_)
-    , parts_ranges(std::move(parts_))
+    , parts_ranges_ptr(std::make_shared<MergeTreeReadPartsRanges>(std::move(parts_)))
     , mutations_snapshot(std::move(mutations_snapshot_))
     , shared_virtual_fields(std::move(shared_virtual_fields_))
     , storage_snapshot(storage_snapshot_)
@@ -41,9 +41,11 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , owned_mark_cache(context_->getGlobalContext()->getMarkCache())
     , owned_uncompressed_cache(pool_settings_.use_uncompressed_cache ? context_->getGlobalContext()->getUncompressedCache() : nullptr)
     , header(storage_snapshot->getSampleBlockForColumns(column_names))
+    , merge_tree_determine_task_size_by_prewhere_columns(context_->getSettingsRef()[Setting::merge_tree_determine_task_size_by_prewhere_columns])
+    , merge_tree_min_bytes_per_task_for_remote_reading(context_->getSettingsRef()[Setting::merge_tree_min_bytes_per_task_for_remote_reading])
     , profile_callback([this](ReadBufferFromFileBase::ProfileInfo info_) { profileFeedback(info_); })
 {
-    fillPerPartInfos(context_->getSettingsRef());
+    //fillPerPartInfos(context_->getSettingsRef());
 }
 
 static size_t getApproxSizeOfPart(const IMergeTreeDataPart & part, const Names & columns_to_read)
@@ -60,7 +62,8 @@ static size_t calculateMinMarksPerTask(
     const Names & columns_to_read,
     PrewhereInfoPtr prewhere_info,
     const MergeTreeReadPoolBase::PoolSettings & pool_settings,
-    const Settings & settings)
+    bool merge_tree_determine_task_size_by_prewhere_columns,
+    UInt64 merge_tree_min_bytes_per_task_for_remote_reading)
 {
     size_t min_marks_per_task = pool_settings.min_marks_for_concurrent_read;
     const size_t part_marks_count = part.getMarksCount();
@@ -69,13 +72,13 @@ static size_t calculateMinMarksPerTask(
         /// We assume that most of the time prewhere does it's job good meaning that lion's share of the rows is filtered out.
         /// Which means in turn that for most of the rows we will read only the columns from prewhere clause.
         /// So it makes sense to use only them for the estimation.
-        const auto & columns = settings[Setting::merge_tree_determine_task_size_by_prewhere_columns] && prewhere_info
+        const auto & columns = merge_tree_determine_task_size_by_prewhere_columns && prewhere_info
             ? prewhere_info->prewhere_actions.getRequiredColumnsNames()
             : columns_to_read;
         const size_t part_compressed_bytes = getApproxSizeOfPart(*part.data_part, columns);
 
         const auto avg_mark_bytes = std::max<size_t>(part_compressed_bytes / part_marks_count, 1);
-        const auto min_bytes_per_task = settings[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
+        const auto min_bytes_per_task = merge_tree_min_bytes_per_task_for_remote_reading;
         /// We're taking min here because number of tasks shouldn't be too low - it will make task stealing impossible.
         /// We also create at least two tasks per thread to have something to steal from a slow thread.
         const auto heuristic_min_marks
@@ -95,7 +98,7 @@ static size_t calculateMinMarksPerTask(
     return min_marks_per_task;
 }
 
-void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
+void MergeTreeReadPoolBase::fillPerPartInfos(const RangesInDataParts & parts_ranges)
 {
     per_part_infos.reserve(parts_ranges.size());
     is_part_on_remote_disk.reserve(parts_ranges.size());
@@ -160,12 +163,12 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
 
         is_part_on_remote_disk.push_back(part_with_ranges.data_part->isStoredOnRemoteDisk());
         read_task_info.min_marks_per_task
-            = calculateMinMarksPerTask(part_with_ranges, column_names, prewhere_info, pool_settings, settings);
+            = calculateMinMarksPerTask(part_with_ranges, column_names, prewhere_info, pool_settings, merge_tree_determine_task_size_by_prewhere_columns, merge_tree_min_bytes_per_task_for_remote_reading);
         per_part_infos.push_back(std::make_shared<MergeTreeReadTaskInfo>(std::move(read_task_info)));
     }
 }
 
-std::vector<size_t> MergeTreeReadPoolBase::getPerPartSumMarks() const
+std::vector<size_t> MergeTreeReadPoolBase::getPerPartSumMarks(const RangesInDataParts & parts_ranges)
 {
     std::vector<size_t> per_part_sum_marks;
     per_part_sum_marks.reserve(parts_ranges.size());

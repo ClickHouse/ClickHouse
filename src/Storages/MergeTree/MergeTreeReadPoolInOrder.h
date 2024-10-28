@@ -4,7 +4,7 @@
 namespace DB
 {
 
-class MergeTreeReadPoolInOrder : public MergeTreeReadPoolBase
+class MergeTreeReadPoolInOrder final : public MergeTreeReadPoolBase
 {
 public:
     MergeTreeReadPoolInOrder(

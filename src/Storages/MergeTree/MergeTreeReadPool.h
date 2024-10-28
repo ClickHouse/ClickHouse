@@ -19,7 +19,7 @@ namespace DB
  *  it's workload, it either is signaled that no more work is available (`do_not_steal_tasks == false`) or
  *  continues taking small batches from other threads' workloads (`do_not_steal_tasks == true`).
  */
-class MergeTreeReadPool : public MergeTreeReadPoolBase
+class MergeTreeReadPool final : public MergeTreeReadPoolBase
 {
 public:
     struct BackoffSettings;
@@ -71,7 +71,7 @@ public:
     };
 
 private:
-    void fillPerThreadInfo(size_t threads, size_t sum_marks);
+    void fillPerThreadInfo(const RangesInDataParts & parts_ranges, size_t threads, size_t sum_marks);
 
     mutable std::mutex mutex;
 

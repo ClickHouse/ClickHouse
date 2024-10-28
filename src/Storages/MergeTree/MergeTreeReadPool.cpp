@@ -60,11 +60,21 @@ MergeTreeReadPool::MergeTreeReadPool(
     , backoff_settings{context_->getSettingsRef()}
     , backoff_state{pool_settings.threads}
 {
-    fillPerThreadInfo(pool_settings.threads, pool_settings.sum_marks);
+    //fillPerThreadInfo(pool_settings.threads, pool_settings.sum_marks);
 }
 
 MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t task_idx, MergeTreeReadTask * previous_task)
 {
+    auto init = [this]()
+    {
+        auto parts_ranges_and_lock = parts_ranges_ptr->get();
+        const auto & parts_ranges = parts_ranges_and_lock.parts_ranges;
+
+        fillPerPartInfos(parts_ranges);
+        fillPerThreadInfo(parts_ranges, pool_settings.threads, pool_settings.sum_marks);
+    };
+    std::call_once(init_flag, init);
+
     const std::lock_guard lock{mutex};
 
     /// If number of threads was lowered due to backoff, then will assign work only for maximum 'backoff_state.current_threads' threads.
@@ -192,7 +202,7 @@ void MergeTreeReadPool::profileFeedback(ReadBufferFromFileBase::ProfileInfo info
     LOG_DEBUG(log, "Will lower number of threads to {}", backoff_state.current_threads);
 }
 
-void MergeTreeReadPool::fillPerThreadInfo(size_t threads, size_t sum_marks)
+void MergeTreeReadPool::fillPerThreadInfo(const RangesInDataParts & parts_ranges, size_t threads, size_t sum_marks)
 {
     if (threads > 1000000ull)
         throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Too many threads ({}) requested", threads);
@@ -211,7 +221,7 @@ void MergeTreeReadPool::fillPerThreadInfo(size_t threads, size_t sum_marks)
     using PartsInfo = std::vector<PartInfo>;
     std::queue<PartsInfo> parts_queue;
 
-    auto per_part_sum_marks = getPerPartSumMarks();
+    auto per_part_sum_marks = getPerPartSumMarks(parts_ranges);
 
     {
         /// Group parts by disk name.

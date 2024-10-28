@@ -42,24 +42,34 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
     , mode(mode_)
     , min_marks_per_task(pool_settings.min_marks_for_concurrent_read)
 {
-    for (const auto & info : per_part_infos)
-        min_marks_per_task = std::max(min_marks_per_task, info->min_marks_per_task);
-
-    if (min_marks_per_task == 0)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
-
-    for (const auto & part : parts_ranges)
-        request.push_back({part.data_part->info, MarkRanges{}});
-
-    for (const auto & part : parts_ranges)
-        buffered_tasks.push_back({part.data_part->info, MarkRanges{}});
-
-    extension.sendInitialRequest(mode, parts_ranges, /*mark_segment_size_=*/0);
 }
 
 MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t task_idx, MergeTreeReadTask * previous_task)
 {
+    auto init = [this]()
+    {
+        auto parts_ranges_and_lock = parts_ranges_ptr->get();
+        const auto & parts_ranges = parts_ranges_and_lock.parts_ranges;
+
+        fillPerPartInfos(parts_ranges);
+
+        for (const auto & info : per_part_infos)
+            min_marks_per_task = std::max(min_marks_per_task, info->min_marks_per_task);
+
+        if (min_marks_per_task == 0)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
+
+        for (const auto & part : parts_ranges)
+            request.push_back({part.data_part->info, MarkRanges{}});
+
+        for (const auto & part : parts_ranges)
+            buffered_tasks.push_back({part.data_part->info, MarkRanges{}});
+
+        extension.sendInitialRequest(mode, parts_ranges, /*mark_segment_size_=*/0);
+    };
+    std::call_once(init_flag, init);
+
     std::lock_guard lock(mutex);
 
     if (task_idx >= per_part_infos.size())

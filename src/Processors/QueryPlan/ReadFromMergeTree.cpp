@@ -448,6 +448,9 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(RangesInDataParts parts_wit
         pool_settings,
         context);
 
+    if (dynamically_filtered_parts)
+        dynamically_filtered_parts->parts_ranges_ptr = pool->getPartsWithRanges();
+
     auto block_size_copy = block_size;
     block_size_copy.min_marks_to_read = pool_settings.min_marks_for_concurrent_read;
 
@@ -500,7 +503,7 @@ Pipe ReadFromMergeTree::readFromPool(
         all_parts_are_remote &= is_remote;
     }
 
-    MergeTreeReadPoolPtr pool;
+    std::shared_ptr<MergeTreeReadPoolBase> pool;
 
     bool allow_prefetched_remote = all_parts_are_remote && settings[Setting::allow_prefetched_read_pool_for_remote_filesystem]
         && MergeTreePrefetchedReadPool::checkReadMethodAllowed(reader_settings.read_settings.remote_fs_method);
@@ -543,6 +546,9 @@ Pipe ReadFromMergeTree::readFromPool(
             context);
     }
 
+    if (dynamically_filtered_parts)
+        dynamically_filtered_parts->parts_ranges_ptr = pool->getPartsWithRanges();
+
     LOG_DEBUG(log, "Reading approx. {} rows with {} streams", total_rows, pool_settings.threads);
 
     /// The reason why we change this setting is because MergeTreeReadPool takes the full task
@@ -584,7 +590,7 @@ Pipe ReadFromMergeTree::readInOrder(
     /// For reading in order it makes sense to read only
     /// one range per task to reduce number of read rows.
     bool has_limit_below_one_block = read_type != ReadType::Default && read_limit && read_limit < block_size.max_block_size_rows;
-    MergeTreeReadPoolPtr pool;
+    std::shared_ptr<MergeTreeReadPoolBase> pool;
 
     if (is_parallel_reading_from_replicas)
     {
@@ -645,6 +651,9 @@ Pipe ReadFromMergeTree::readInOrder(
             pool_settings,
             context);
     }
+
+    if (dynamically_filtered_parts)
+        dynamically_filtered_parts->parts_ranges_ptr = pool->getPartsWithRanges();
 
     /// If parallel replicas enabled, set total rows in progress here only on initiator with local plan
     /// Otherwise rows will counted multiple times
@@ -2170,6 +2179,14 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     // Attach QueryIdHolder if needed
     if (query_id_holder)
         pipeline.setQueryIdHolder(std::move(query_id_holder));
+}
+
+DynamiclyFilteredPartsRangesPtr ReadFromMergeTree::useDynamiclyFilteredParts()
+{
+    if (!dynamically_filtered_parts)
+        dynamically_filtered_parts = std::make_shared<DynamiclyFilteredPartsRanges>();
+
+    return dynamically_filtered_parts;
 }
 
 static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
