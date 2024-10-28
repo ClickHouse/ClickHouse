@@ -258,7 +258,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes)
             {
                 LOG_TRACE(log, "Setting `processing_threads_num` already equals {}. "
                         "Will do nothing", value);
-                return;
+                continue;
             }
             new_table_metadata.processing_threads_num = value;
         }
@@ -269,7 +269,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes)
             {
                 LOG_TRACE(log, "Setting `loading_retries` already equals {}. "
                         "Will do nothing", value);
-                return;
+                continue;
             }
             new_table_metadata.loading_retries = value;
         }
@@ -280,7 +280,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes)
             {
                 LOG_TRACE(log, "Setting `after_processing` already equals {}. "
                         "Will do nothing", value);
-                return;
+                continue;
             }
             new_table_metadata.after_processing = value;
         }
@@ -291,7 +291,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes)
             {
                 LOG_TRACE(log, "Setting `tracked_files_limit` already equals {}. "
                         "Will do nothing", value);
-                return;
+                continue;
             }
             new_table_metadata.tracked_files_limit = value;
         }
@@ -302,7 +302,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes)
             {
                 LOG_TRACE(log, "Setting `tracked_file_ttl_sec` already equals {}. "
                         "Will do nothing", value);
-                return;
+                continue;
             }
             new_table_metadata.tracked_files_ttl_sec = value;
         }
