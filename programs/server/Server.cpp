@@ -2082,7 +2082,7 @@ try
     auto & access_control = global_context->getAccessControl();
     try
     {
-        access_control.setUpFromMainConfig(config(), config_path, [&] { return global_context->getZooKeeper(); });
+        access_control.setupFromMainConfig(config(), config_path, [&] { return global_context->getZooKeeper(); });
     }
     catch (...)
     {
@@ -2266,6 +2266,21 @@ try
         tryLogCurrentException(log, "Caught exception while loading metadata");
         throw;
     }
+
+    bool found_stop_flag = false;
+
+    if (has_zookeeper && global_context->getMacros()->getMacroMap().contains("replica"))
+    {
+        auto zookeeper = global_context->getZooKeeper();
+        String stop_flag_path = "/clickhouse/stop_replicated_ddl_queries/{replica}";
+        stop_flag_path = global_context->getMacros()->expand(stop_flag_path);
+        found_stop_flag = zookeeper->exists(stop_flag_path);
+    }
+
+    if (found_stop_flag)
+        LOG_INFO(log, "Found a stop flag for replicated DDL queries. They will be disabled");
+    else
+        DatabaseCatalog::instance().startReplicatedDDLQueries();
 
     LOG_DEBUG(log, "Loaded metadata.");
 

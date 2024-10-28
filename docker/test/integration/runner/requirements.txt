@@ -23,6 +23,7 @@ charset-normalizer==3.3.2
 click==8.1.7
 confluent-kafka==2.3.0
 cryptography==42.0.0
+datacompy==0.7.3
 dbus-python==1.2.18
 delta-spark==2.3.0
 deltalake==0.16.0
@@ -60,6 +61,7 @@ oauthlib==3.2.0
 packaging==24.0
 paramiko==3.4.0
 pika==1.2.0
+pandas==2.2.3
 pip==24.1.1
 pluggy==1.5.0
 protobuf==4.25.2

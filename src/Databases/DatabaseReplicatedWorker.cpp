@@ -18,6 +18,14 @@ namespace Setting
     extern const SettingsUInt64 database_replicated_initial_query_timeout_sec;
 }
 
+namespace DatabaseReplicatedSetting
+{
+    extern const DatabaseReplicatedSettingsBool check_consistency;
+    extern const DatabaseReplicatedSettingsUInt64 max_replication_lag_to_enqueue;
+    extern const DatabaseReplicatedSettingsUInt64 max_retries_before_automatic_recovery;
+    extern const DatabaseReplicatedSettingsUInt64 wait_entry_commited_timeout_sec;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -70,8 +78,8 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
                 break;
             }
 
-            if (database->db_settings.max_retries_before_automatic_recovery &&
-                database->db_settings.max_retries_before_automatic_recovery <= subsequent_errors_count)
+            if (database->db_settings[DatabaseReplicatedSetting::max_retries_before_automatic_recovery]
+                && database->db_settings[DatabaseReplicatedSetting::max_retries_before_automatic_recovery] <= subsequent_errors_count)
             {
                 String current_task_name;
                 {
@@ -162,7 +170,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
 
     bool is_new_replica = our_log_ptr == 0;
     bool lost_according_to_log_ptr = our_log_ptr + logs_to_keep < max_log_ptr;
-    bool lost_according_to_digest = database->db_settings.check_consistency && local_digest != digest;
+    bool lost_according_to_digest = database->db_settings[DatabaseReplicatedSetting::check_consistency] && local_digest != digest;
 
     if (is_new_replica || lost_according_to_log_ptr || lost_according_to_digest)
     {
@@ -313,7 +321,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     UInt32 our_log_ptr = getLogPointer();
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
 
-    if (our_log_ptr + database->db_settings.max_replication_lag_to_enqueue < max_log_ptr)
+    if (our_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] < max_log_ptr)
         throw Exception(ErrorCodes::NOT_A_LEADER, "Cannot enqueue query on this replica, "
                         "because it has replication lag of {} queries. Try other replica.", max_log_ptr - our_log_ptr);
 
@@ -406,7 +414,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         /// Query is not committed yet. We cannot just skip it and execute next one, because reordering may break replication.
         LOG_TRACE(log, "Waiting for initiator {} to commit or rollback entry {}", initiator_name, entry_path);
         constexpr size_t wait_time_ms = 1000;
-        size_t max_iterations = database->db_settings.wait_entry_commited_timeout_sec;
+        size_t max_iterations = database->db_settings[DatabaseReplicatedSetting::wait_entry_commited_timeout_sec];
         size_t iteration = 0;
 
         while (!wait_committed_or_failed->tryWait(wait_time_ms))
