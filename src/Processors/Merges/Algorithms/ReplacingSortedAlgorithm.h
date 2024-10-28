@@ -13,8 +13,7 @@ class Logger;
 namespace DB
 {
 
-/** Use in skipping final to keep list of indices of selected row after merging final
-  */
+//// Used in skipping final to keep the list of indices of selected rows after merging.
 struct ChunkSelectFinalIndices : public ChunkInfoCloneable<ChunkSelectFinalIndices>
 {
     explicit ChunkSelectFinalIndices(MutableColumnPtr select_final_indices_);
@@ -22,6 +21,11 @@ struct ChunkSelectFinalIndices : public ChunkInfoCloneable<ChunkSelectFinalIndic
 
     const ColumnPtr column_holder;
     const ColumnUInt64 * select_final_indices = nullptr;
+};
+
+//// Used in skipping final to keep all rows in chunk after merging.
+struct ChunkSelectFinalAllRows : public ChunkInfoCloneable<ChunkSelectFinalAllRows>
+{
 };
 
 /** Merges several sorted inputs into one.

@@ -5,8 +5,6 @@
 #include <IO/WriteBuffer.h>
 #include <Columns/IColumn.h>
 #include <Processors/Merges/Algorithms/RowRef.h>
-#include "Common/Logger.h"
-#include <numeric>
 
 namespace DB
 {
@@ -165,13 +163,8 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
 
             if (enable_vertical_final)
             {
-                auto replace_final_selection = ColumnUInt64::create(chunk_num_rows);
-                auto & replace_final_data = replace_final_selection->getData();
-
-                std::iota(replace_final_data.begin(), replace_final_data.end(), 0);
-                current_chunk.getChunkInfos().add(std::make_shared<ChunkSelectFinalIndices>(std::move(replace_final_selection)));
-
-                Status status(std::move(current_chunk), false);
+                current_chunk.getChunkInfos().add(std::make_shared<ChunkSelectFinalAllRows>());
+                Status status(std::move(current_chunk));
                 status.required_source = source_num;
                 return status;
             }
@@ -188,7 +181,7 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
                     out_row_sources_buf->write(row_source.data);
             }
 
-            Status status(merged_data->pull(), false);
+            Status status(merged_data->pull());
             status.required_source = source_num;
             return status;
         }
