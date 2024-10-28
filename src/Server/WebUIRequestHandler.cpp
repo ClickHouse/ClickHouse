@@ -21,6 +21,7 @@ INCBIN(resource_dashboard_html, SOURCE_DIR "/programs/server/dashboard.html");
 INCBIN(resource_uplot_js, SOURCE_DIR "/programs/server/js/uplot.js");
 INCBIN(resource_lz_string_js, SOURCE_DIR "/programs/server/js/lz-string.js");
 INCBIN(resource_binary_html, SOURCE_DIR "/programs/server/binary.html");
+INCBIN(resource_merges_html, SOURCE_DIR "/programs/server/merges.html");
 
 
 namespace DB
@@ -29,6 +30,7 @@ namespace DB
 PlayWebUIRequestHandler::PlayWebUIRequestHandler(IServer & server_) : server(server_) {}
 DashboardWebUIRequestHandler::DashboardWebUIRequestHandler(IServer & server_) : server(server_) {}
 BinaryWebUIRequestHandler::BinaryWebUIRequestHandler(IServer & server_) : server(server_) {}
+MergesWebUIRequestHandler::MergesWebUIRequestHandler(IServer & server_) : server(server_) {}
 JavaScriptWebUIRequestHandler::JavaScriptWebUIRequestHandler(IServer & server_) : server(server_) {}
 
 static void handle(HTTPServerRequest & request, HTTPServerResponse & response, std::string_view html)
@@ -68,6 +70,11 @@ void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HT
 void BinaryWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
     handle(request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize});
+}
+
+void MergesWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+{
+    handle(request, response, {reinterpret_cast<const char *>(gresource_merges_htmlData), gresource_merges_htmlSize});
 }
 
 void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)

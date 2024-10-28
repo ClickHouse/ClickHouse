@@ -300,7 +300,8 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
         /// It may happen if max_distributed_connections > max_threads
         max_threads_limit = std::max(pipeline.max_threads, max_threads_limit);
 
-        concurrency_control = pipeline.getConcurrencyControl();
+        // Use concurrency control if at least one of pipelines is using it
+        concurrency_control = concurrency_control || pipeline.getConcurrencyControl();
     }
 
     QueryPipelineBuilder pipeline;
@@ -311,8 +312,8 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
     {
         pipeline.setMaxThreads(max_threads);
         pipeline.limitMaxThreads(max_threads_limit);
-        pipeline.setConcurrencyControl(concurrency_control);
     }
+    pipeline.setConcurrencyControl(concurrency_control);
 
     pipeline.setCollectedProcessors(nullptr);
     return pipeline;
