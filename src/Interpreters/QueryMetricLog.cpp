@@ -86,11 +86,11 @@ void QueryMetricLog::shutdown()
     Base::shutdown();
 }
 
-void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_time, UInt64 interval_milliseconds)
+void QueryMetricLog::startQuery(const String & query_id, TimePoint start_time, UInt64 interval_milliseconds)
 {
     QueryMetricLogStatus status;
     status.interval_milliseconds = interval_milliseconds;
-    status.next_collect_time = query_start_time + std::chrono::milliseconds(interval_milliseconds);
+    status.next_collect_time = start_time + std::chrono::milliseconds(interval_milliseconds);
 
     auto context = getContext();
     const auto & process_list = context->getProcessList();
@@ -115,7 +115,7 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_t
     queries.emplace(query_id, std::move(status));
 }
 
-void QueryMetricLog::finishQuery(const String & query_id, QueryStatusInfoPtr query_info)
+void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time, QueryStatusInfoPtr query_info)
 {
     std::unique_lock lock(queries_mutex);
     auto it = queries.find(query_id);
@@ -127,7 +127,7 @@ void QueryMetricLog::finishQuery(const String & query_id, QueryStatusInfoPtr que
 
     if (query_info)
     {
-        auto elem = createLogMetricElement(query_id, *query_info, std::chrono::system_clock::now(), false);
+        auto elem = createLogMetricElement(query_id, *query_info, finish_time, false);
         if (elem)
             add(std::move(elem.value()));
     }
@@ -187,7 +187,7 @@ std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(cons
         elem.profile_events = query_status.last_profile_events;
     }
 
-    if (query_status.task && schedule_next)
+    if (schedule_next)
     {
         query_status.next_collect_time += std::chrono::milliseconds(query_status.interval_milliseconds);
         const auto wait_time = std::chrono::duration_cast<std::chrono::milliseconds>(query_status.next_collect_time - std::chrono::system_clock::now()).count();
