@@ -22,6 +22,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_object_type", 1);
     context->setSetting("allow_experimental_variant_type", 1);
     context->setSetting("allow_experimental_dynamic_type", 1);
+    context->setSetting("allow_experimental_drop_detached_table", 1);
     context->setSetting("allow_experimental_json_type", 1);
     context->setSetting("allow_experimental_vector_similarity_index", 1);
     context->setSetting("allow_experimental_bigint_types", 1);
@@ -43,7 +44,6 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("enable_zstd_qat_codec", 1);
     context->setSetting("allow_create_index_without_type", 1);
     context->setSetting("allow_experimental_s3queue", 1);
-    context->setSetting("allow_experimental_drop_detached_table", 1);
     context->setSetting("allow_experimental_shared_set_join", 1);
 }
 
