@@ -342,7 +342,6 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
     {"output_format_sql_insert_include_column_names", TrueOrFalse},
     {"output_format_sql_insert_quote_names", TrueOrFalse},
     {"output_format_sql_insert_use_replace", TrueOrFalse},
-    {"output_format_tsv_crlf_end_of_line", TrueOrFalse},
     {"output_format_values_escape_quote_with_quote", TrueOrFalse},
     {"output_format_write_statistics", TrueOrFalse},
     {"page_cache_inject_eviction", TrueOrFalse},
