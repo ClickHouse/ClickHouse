@@ -5,6 +5,7 @@ import time
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
 
 TEST_DIR = os.path.dirname(__file__)
 
@@ -144,36 +145,106 @@ def clean_logs():
         )
 
 
+def drop_secure_zk_connection(pm, node, action="DROP"):
+    pm._check_instance(node)
+    pm._add_rule(
+        {
+            "source": node.ip_address,
+            "destination_port": 2281,
+            "action": action,
+        }
+    )
+    pm._add_rule(
+        {
+            "destination": node.ip_address,
+            "source_port": 2281,
+            "action": action,
+        }
+    )
+
+    if node.ipv6_address:
+        pm._add_rule(
+            {
+                "source": node.ipv6_address,
+                "destination_port": 2281,
+                "action": action,
+            }
+        )
+        pm._add_rule(
+            {
+                "destination": node.ipv6_address,
+                "source_port": 2281,
+                "action": action,
+            }
+        )
+
+
+def restore_secure_zk_connection(pm, node, action="DROP"):
+    pm._check_instance(node)
+    pm._delete_rule(
+        {
+            "source": node.ip_address,
+            "destination_port": 2281,
+            "action": action,
+        }
+    )
+    pm._delete_rule(
+        {
+            "destination": node.ip_address,
+            "source_port": 2281,
+            "action": action,
+        }
+    )
+
+    if node.ipv6_address:
+        pm._delete_rule(
+            {
+                "source": node.ipv6_address,
+                "destination_port": 2281,
+                "action": action,
+            }
+        )
+        pm._delete_rule(
+            {
+                "destination": node.ipv6_address,
+                "source_port": 2281,
+                "action": action,
+            }
+        )
+
+
 def check_certificate_switch(first, second):
     # Set first certificate
 
     change_config_to_key(first)
 
-    # Restart zookeeper to reload the session
+    # Restart zookeeper the connection
 
-    cluster.stop_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
-    cluster.start_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
-    cluster.wait_zookeeper_nodes_to_start(["zoo1", "zoo2", "zoo3"])
+    with PartitionManager() as pm:
+        for node in nodes:
+            drop_secure_zk_connection(pm, node)
+        for node in nodes:
+            restore_secure_zk_connection(pm, node)
+        clean_logs()
+
+        # Change certificate
+
+        change_config_to_key(second)
+
+        # Time to log
+
+        time.sleep(10)
+
+        # Check information about client certificates reloading in log
+
+        reload_successful = any(check_reload_successful(node, second) for node in nodes)
+
+        # Restart zookeeper to reload the session and clean logs for new check
+
+        for node in nodes:
+            drop_secure_zk_connection(pm, node)
+        restore_secure_zk_connection(pm, node)
     clean_logs()
-
-    # Change certificate
-
-    change_config_to_key(second)
-
-    # Time to log
-
-    time.sleep(10)
-
-    # Check information about client certificates reloading in log Clickhouse
-
-    reload_successful = any(check_reload_successful(node, second) for node in nodes)
-
-    # Restart zookeeper to reload the session and clean logs for new check
-
-    cluster.stop_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
-    cluster.start_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
-    clean_logs()
-    cluster.wait_zookeeper_nodes_to_start(["zoo1", "zoo2", "zoo3"])
 
     if second == "second":
         try:
