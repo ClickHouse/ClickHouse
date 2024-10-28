@@ -560,12 +560,6 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (!order_by && s_order_by.ignore(pos, expected))
         {
-            if (expression_p.parse(pos, order_by, expected))
-            {
-                storage_like = true;
-                continue;
-            }
-
             /// Check possible ASC|DESC suffix for single key
             if (order_elem_p.parse(pos, order_by, expected))
             {

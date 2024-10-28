@@ -923,6 +923,11 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitFunction(const QueryTreeNodePtr & node)
 {
     const auto & function_node = node->as<FunctionNode &>();
+
+    /// Special function __descendingKey
+    if (function_node.getFunctionName() == "__descendingKey")
+        return visitFunction(function_node.getChildren().front());
+
     if (function_node.getFunctionName() == "indexHint")
         return visitIndexHintFunction(node);
 

@@ -134,26 +134,23 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
     }
 
     const auto & children = result.expression_list_ast->children;
-    ASTPtr expr = std::make_shared<ASTExpressionList>();
     for (const auto & child : children)
     {
         if (auto * func = child->as<ASTFunction>())
         {
             if (func->name == "__descendingKey")
             {
-                auto & key = func->arguments->children.front();
-                result.column_names.emplace_back(key->getColumnName());
+                result.column_names.emplace_back(func->arguments->children.front()->getColumnName());
                 result.reverse_flags.emplace_back(true);
-                expr->children.push_back(key->clone());
                 continue;
             }
         }
         result.column_names.emplace_back(child->getColumnName());
         result.reverse_flags.emplace_back(false);
-        expr->children.push_back(child->clone());
     }
 
     {
+        auto expr = result.expression_list_ast->clone();
         auto syntax_result = TreeRewriter(context).analyze(expr, columns.getAllPhysical());
         /// In expression we also need to store source columns
         result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false);

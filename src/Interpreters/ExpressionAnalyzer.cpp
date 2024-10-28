@@ -1788,8 +1788,14 @@ ActionsDAG ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool remove_unuse
     else
         asts = ASTs(1, query);
 
-    for (const auto & ast : asts)
+    for (auto ast : asts)
     {
+        if (auto * func = ast->as<ASTFunction>())
+        {
+            if (func->name == "__descendingKey")
+                ast = func->arguments->children.front();
+        }
+
         std::string name = ast->getColumnName();
         std::string alias;
         if (add_aliases)

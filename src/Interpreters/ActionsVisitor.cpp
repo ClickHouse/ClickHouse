@@ -882,6 +882,13 @@ void checkFunctionHasEmptyNullsAction(const ASTFunction & node)
 
 void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & data)
 {
+    /// Special function __descendingKey
+    if (node.name == "__descendingKey")
+    {
+        visit(node.arguments->children.front(), data);
+        return;
+    }
+
     auto column_name = ast->getColumnName();
     if (data.hasColumn(column_name))
         return;
