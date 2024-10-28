@@ -153,22 +153,16 @@ std::pair<bool, bool> FillingRow::next(const FillingRow & to_row, bool long_jump
         if (!next_value.has_value())
             return {false, false};
 
-        Field calibration_jump_value = next_value.value();
-        fill_column_desc.step_func(calibration_jump_value, 1);
-
-        if (equals(calibration_jump_value, to_row[pos]))
-            next_value = calibration_jump_value;
-
-        if (!next_value.has_value() || less(to_row.row[pos], next_value.value(), getDirection(pos)) || equals(next_value.value(), getFillDescription(pos).fill_to))
-            return {false, false};
+        /// We need value >= to_row[pos]
+        fill_column_desc.step_func(next_value.value(), 1);
     }
     else
     {
         next_value = doJump(fill_column_desc, pos);
-
-        if (!next_value.has_value() || less(to_row.row[pos], next_value.value(), getDirection(pos)) || equals(next_value.value(), getFillDescription(pos).fill_to))
-            return {false, false};
     }
+
+    if (!next_value.has_value() || less(to_row.row[pos], next_value.value(), getDirection(pos)) || equals(next_value.value(), getFillDescription(pos).fill_to))
+        return {false, false};
 
     row[pos] = std::move(next_value.value());
     if (equals(row[pos], to_row.row[pos]))
