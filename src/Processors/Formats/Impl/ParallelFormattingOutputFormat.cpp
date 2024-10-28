@@ -50,6 +50,7 @@ namespace DB
             formatter->finalizeImpl();
 
         formatter->finalizeBuffers();
+        finishAndWait();
     }
 
     void ParallelFormattingOutputFormat::addChunk(Chunk chunk, ProcessingUnitType type, bool can_throw_exception)
