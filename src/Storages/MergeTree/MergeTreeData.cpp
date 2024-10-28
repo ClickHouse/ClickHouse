@@ -22,6 +22,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Core/QueryProcessingStage.h>
@@ -154,6 +155,7 @@ namespace
 
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsBool allow_drop_detached;
@@ -230,6 +232,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat zero_copy_concurrent_part_removal_max_postpone_ratio;
     extern const MergeTreeSettingsUInt64 zero_copy_concurrent_part_removal_max_split_times;
     extern const MergeTreeSettingsBool prewarm_mark_cache;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsDouble mark_cache_prewarm_ratio;
 }
 
 namespace ErrorCodes
@@ -2370,10 +2377,11 @@ void MergeTreeData::prewarmMarkCache(ThreadPool & pool)
     });
 
     ThreadPoolCallbackRunnerLocal<void> runner(pool, "PrewarmMarks");
+    double ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::mark_cache_prewarm_ratio];
 
     for (const auto & part : data_parts)
     {
-        if (mark_cache->sizeInBytes() >= mark_cache->maxSizeInBytes() * 0.95)
+        if (mark_cache->sizeInBytes() >= mark_cache->maxSizeInBytes() * ratio_to_prewarm)
             break;
 
         runner([&] { part->loadMarksToCache(column_names, mark_cache); });

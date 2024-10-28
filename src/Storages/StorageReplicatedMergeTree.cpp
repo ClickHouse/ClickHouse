@@ -5082,7 +5082,7 @@ bool StorageReplicatedMergeTree::fetchPart(
                 ProfileEvents::increment(ProfileEvents::ObsoleteReplicatedParts);
             }
 
-            if ((*getSettings())[MergeTreeSetting::prewarm_mark_cache])
+            if ((*getSettings())[MergeTreeSetting::prewarm_mark_cache] && getContext()->getMarkCache())
             {
                 auto column_names = getColumnsToPrewarmMarks(*getSettings(), part->getColumns());
                 part->loadMarksToCache(column_names, getContext()->getMarkCache().get());
