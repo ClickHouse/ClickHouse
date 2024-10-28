@@ -211,6 +211,7 @@ class TestCIOptions(unittest.TestCase):
                 "Integration tests (release)",
                 "Integration tests (asan)",
                 "Integration tests flaky check (asan)",
+                "Builds",
             ],
         )
 
@@ -338,5 +339,6 @@ class TestCIOptions(unittest.TestCase):
                 "package_msan",
                 "package_ubsan",
                 "binary_release",
+                "Builds",
             ],
         )

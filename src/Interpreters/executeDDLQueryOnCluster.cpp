@@ -18,6 +18,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTSystemQuery.h>
 #include <Parsers/queryToString.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <QueryPipeline/Pipe.h>
@@ -81,6 +82,12 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
 
     if (!context->getSettingsRef()[Setting::allow_distributed_ddl])
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Distributed DDL queries are prohibited for the user");
+
+    bool is_system_query = dynamic_cast<ASTSystemQuery *>(query_ptr.get()) != nullptr;
+    bool replicated_ddl_queries_enabled = DatabaseCatalog::instance().canPerformReplicatedDDLQueries();
+
+    if (!is_system_query && !replicated_ddl_queries_enabled)
+        throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Replicated DDL queries are disabled");
 
     if (const auto * query_alter = query_ptr->as<ASTAlterQuery>())
     {

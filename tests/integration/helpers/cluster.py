@@ -563,6 +563,7 @@ class ClickHouseCluster:
         self.minio_redirect_ip = None
         self.minio_redirect_port = 8080
         self.minio_docker_id = self.get_instance_docker_id(self.minio_host)
+        self.resolver_logs_dir = os.path.join(self.instances_dir, "resolver")
 
         self.spark_session = None
 
@@ -1445,6 +1446,8 @@ class ClickHouseCluster:
         env_variables["MINIO_DATA_DIR"] = self.minio_data_dir
         env_variables["MINIO_PORT"] = str(self.minio_port)
         env_variables["SSL_CERT_FILE"] = p.join(self.base_dir, cert_d, "public.crt")
+        env_variables["RESOLVER_LOGS"] = self.resolver_logs_dir
+        env_variables["RESOLVER_LOGS_FS"] = "bind"
 
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_minio.yml")]
@@ -2997,6 +3000,7 @@ class ClickHouseCluster:
                 os.mkdir(self.minio_dir)
                 if self.minio_certs_dir is None:
                     os.mkdir(os.path.join(self.minio_dir, "certs"))
+                    os.mkdir(os.path.join(self.minio_dir, "certs", "CAs"))
                 else:
                     shutil.copytree(
                         os.path.join(self.base_dir, self.minio_certs_dir),
@@ -3004,6 +3008,9 @@ class ClickHouseCluster:
                     )
                 os.mkdir(self.minio_data_dir)
                 os.chmod(self.minio_data_dir, stat.S_IRWXU | stat.S_IRWXO)
+
+                os.makedirs(self.resolver_logs_dir)
+                os.chmod(self.resolver_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 minio_start_cmd = self.base_minio_cmd + common_opts
 
