@@ -88,11 +88,10 @@ done
 
 # Find missing declarations (obsolete settings being used)
 # Note that SettingsDeclaration are first in the file
-#  Disabled for now pending fixing the code
-#awk '{print $1 " " $3}' "${SETTINGS_FILE}" | awk '{if (!seen[$1]++) print $0}' | grep -v SettingsDeclaration | while read -r setting;
-#do
-#    echo "Could not find setting (maybe obsolete?) $setting"
-#done
+awk '{print $1 " " $3}' "${SETTINGS_FILE}" | awk '{if (!seen[$1]++) print $0}' | grep -v SettingsDeclaration | while read -r setting;
+do
+    echo "Could not find setting (maybe obsolete?) $setting"
+done
 
 # Look for settings declared with multiple types
 # This works based on the fact that the if the setting declaration and usage have different types then the pair

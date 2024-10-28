@@ -212,12 +212,10 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_projections;
     extern const MergeTreeSettingsUInt64 max_suspicious_broken_parts_bytes;
     extern const MergeTreeSettingsUInt64 max_suspicious_broken_parts;
-    extern const MergeTreeSettingsUInt64 min_bytes_for_compact_part;
     extern const MergeTreeSettingsUInt64 min_bytes_for_wide_part;
     extern const MergeTreeSettingsUInt64 min_bytes_to_rebalance_partition_over_jbod;
     extern const MergeTreeSettingsUInt64 min_delay_to_insert_ms;
     extern const MergeTreeSettingsUInt64 min_delay_to_mutate_ms;
-    extern const MergeTreeSettingsUInt64 min_rows_for_compact_part;
     extern const MergeTreeSettingsUInt64 min_rows_for_wide_part;
     extern const MergeTreeSettingsUInt64 number_of_mutations_to_delay;
     extern const MergeTreeSettingsUInt64 number_of_mutations_to_throw;
@@ -8543,8 +8541,7 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
 {
     if (!canUseAdaptiveGranularity())
     {
-        if ((settings[MergeTreeSetting::min_rows_for_wide_part] != 0 || settings[MergeTreeSetting::min_bytes_for_wide_part] != 0
-            || settings[MergeTreeSetting::min_rows_for_compact_part] != 0 || settings[MergeTreeSetting::min_bytes_for_compact_part] != 0))
+        if (settings[MergeTreeSetting::min_rows_for_wide_part] != 0 || settings[MergeTreeSetting::min_bytes_for_wide_part] != 0)
         {
             out_reason = fmt::format(
                 "Table can't create parts with adaptive granularity, but settings"
