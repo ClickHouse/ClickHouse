@@ -28,7 +28,7 @@ FillingRow::FillingRow(const SortDescription & sort_description_)
     : sort_description(sort_description_)
 {
     row.resize(sort_description.size());
-    staleness_base_row.resize(sort_description.size());
+    staleness_border.resize(sort_description.size());
 }
 
 bool FillingRow::operator<(const FillingRow & other) const
@@ -74,10 +74,7 @@ std::optional<Field> FillingRow::doJump(const FillColumnDescription& descr, size
 
     if (!descr.fill_staleness.isNull())
     {
-        Field staleness_border = staleness_base_row[column_ind];
-        descr.staleness_step_func(staleness_border, 1);
-
-        if (less(next_value, staleness_border, getDirection(column_ind)))
+        if (less(next_value, staleness_border[column_ind], getDirection(column_ind)))
             return next_value;
         else
             return std::nullopt;
@@ -93,7 +90,7 @@ std::optional<Field> FillingRow::doLongJump(const FillColumnDescription & descr,
     if (less(to, shifted_value, getDirection(column_ind)))
         return std::nullopt;
 
-    for (int32_t step_len = 1, step_no = 0; step_no < 100; ++step_no)
+    for (int32_t step_len = 1, step_no = 0; step_no < 100 && step_len > 0; ++step_no)
     {
         Field next_value = shifted_value;
         descr.step_func(next_value, step_len);
@@ -194,7 +191,13 @@ void FillingRow::initFromDefaults(size_t from_pos)
 void FillingRow::initStalenessRow(const Columns& base_row, size_t row_ind)
 {
     for (size_t i = 0; i < size(); ++i)
-        staleness_base_row[i] = (*base_row[i])[row_ind];
+    {
+        staleness_border[i] = (*base_row[i])[row_ind];
+
+        const auto& descr = getFillDescription(i);
+        if (!descr.fill_staleness.isNull())
+            descr.staleness_step_func(staleness_border[i], 1);
+    }
 }
 
 String FillingRow::dump() const

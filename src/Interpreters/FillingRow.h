@@ -46,7 +46,7 @@ public:
 
 private:
     Row row;
-    Row staleness_base_row;
+    Row staleness_border;
     SortDescription sort_description;
 };
 
