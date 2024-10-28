@@ -5,6 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <Columns/IColumn.h>
 #include <Processors/Merges/Algorithms/RowRef.h>
+#include "Common/Logger.h"
 #include <numeric>
 
 namespace DB
@@ -122,7 +123,25 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
             return Status(current.impl->order);
         }
 
-        if (current.impl->isFirst()
+        RowRef current_row;
+        setRowRef(current_row, current);
+
+        bool key_differs = selected_row.empty() || rowsHaveDifferentSortColumns(selected_row, current_row);
+        if (key_differs)
+        {
+            /// If there are enough rows and the last one is calculated completely
+            if (merged_data->hasEnoughRows())
+                return Status(merged_data->pull());
+
+            /// Write the data for the previous primary key.
+            if (!selected_row.empty())
+                insertRow();
+
+            selected_row.clear();
+        }
+
+        if (current->isFirst()
+            && key_differs
             && is_deleted_column_number == -1 /// Ignore optimization if we need to filter deleted rows.
             && sources_origin_merge_tree_part_level[current->order] > 0
             && !skipLastRowFor(current->order) /// Ignore optimization if last row should be skipped.
@@ -152,9 +171,9 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
                 std::iota(replace_final_data.begin(), replace_final_data.end(), 0);
                 current_chunk.getChunkInfos().add(std::make_shared<ChunkSelectFinalIndices>(std::move(replace_final_selection)));
 
-                Status status(merged_data->pull(), false);
+                Status status(std::move(current_chunk), false);
                 status.required_source = source_num;
-                return Status(std::move(current_chunk), false);
+                return status;
             }
 
             merged_data->insertChunk(std::move(current_chunk), chunk_num_rows);
@@ -172,23 +191,6 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
             Status status(merged_data->pull(), false);
             status.required_source = source_num;
             return status;
-        }
-
-        RowRef current_row;
-        setRowRef(current_row, current);
-
-        bool key_differs = selected_row.empty() || rowsHaveDifferentSortColumns(selected_row, current_row);
-        if (key_differs)
-        {
-            /// If there are enough rows and the last one is calculated completely
-            if (merged_data->hasEnoughRows())
-                return Status(merged_data->pull());
-
-            /// Write the data for the previous primary key.
-            if (!selected_row.empty())
-                insertRow();
-
-            selected_row.clear();
         }
 
         /// Initially, skip all rows. Unskip last on insert.
