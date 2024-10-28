@@ -162,6 +162,12 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         if (database->isTableExist(table_name, context_))
         {
             throw Exception(
+                ErrorCodes::UNKNOWN_TABLE, "Table {} mustn't be attached for using DROP DETACHED TABLE", table_id.getNameForLogs());
+        }
+
+        if (!database->isTableDetached(table_name))
+        {
+            throw Exception(
                 ErrorCodes::UNKNOWN_TABLE, "Table {} should be detached for using DROP DETACHED TABLE", table_id.getNameForLogs());
         }
 

@@ -836,6 +836,13 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
     return create_table_query;
 }
 
+void DatabaseOnDisk::removeDetachedTableInfo(const StorageID & table_id)
+{
+    dropTableFromSnapshotDetachedTables(table_id.table_name);
+    setDetachedTableNotInUseForce(table_id.uuid);
+    removeTableFromPermanentlyDetachedTables(table_id.table_name);
+}
+
 void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context)
 {
     auto create_query = getCreateDatabaseQuery()->clone();

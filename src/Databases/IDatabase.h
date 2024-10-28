@@ -265,6 +265,12 @@ public:
     /// Check the existence of the table in memory (attached).
     virtual bool isTableExist(const String & name, ContextPtr context) const = 0;
 
+    /// Check the existence of the table not in memory (detached).
+    virtual bool isTableDetached(const String & /*table_name*/) const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
+    }
+
     /// Check the existence of the table in any state (in active / detached / detached permanently state).
     /// Throws exception when table exists.
     virtual void checkMetadataFilenameAvailability(const String & /*table_name*/) const {}

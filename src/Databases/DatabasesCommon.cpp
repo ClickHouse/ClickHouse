@@ -308,6 +308,12 @@ bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, ContextP
     return tables.find(table_name) != tables.end();
 }
 
+bool DatabaseWithOwnTablesBase::isTableDetached(const String & table_name) const
+{
+    std::lock_guard lock(mutex);
+    return snapshot_detached_tables.contains(table_name);
+}
+
 StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, ContextPtr) const
 {
     waitTableStarted(table_name);
@@ -432,6 +438,13 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
         LOG_TEST(log, "Counting attached table {} to database {}", table_name, database_name);
         CurrentMetrics::add(getAttachedCounterForStorage(table));
     }
+}
+
+void DatabaseWithOwnTablesBase::dropTableFromSnapshotDetachedTables(const String & table_name)
+{
+    LOG_DEBUG(log, "Remove table {} from snapshot detached tables", table_name);
+    std::lock_guard lock(mutex);
+    snapshot_detached_tables.erase(table_name);
 }
 
 void DatabaseWithOwnTablesBase::shutdown()

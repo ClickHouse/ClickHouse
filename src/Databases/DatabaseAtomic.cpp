@@ -218,18 +218,6 @@ void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & 
         tryRemoveSymlink(table_name);
     }
 
-    {
-        std::lock_guard lock(mutex);
-        detached_tables.erase(uuid_table);
-        permanently_detached_tables.erase(
-            std::remove_if(
-                permanently_detached_tables.begin(),
-                permanently_detached_tables.end(),
-                [&table_name](const auto & permanently_detached_table_name) { return permanently_detached_table_name == table_name; }),
-            permanently_detached_tables.end());
-        snapshot_detached_tables.erase(table_name);
-    }
-
     LOG_TRACE(log, "Table {} ready for remove.", table_name);
     DatabaseCatalog::instance().enqueueDroppedTableCleanup(storage_id, nullptr, table_metadata_path_drop, sync, true);
 }

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <atomic>
 #include <string>
 #include <mutex>
 #include <utility>
@@ -1079,7 +1080,7 @@ String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
 }
 
 void DatabaseCatalog::enqueueDroppedTableCleanup(
-    StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay, bool is_detached_table)
+    StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay, const bool is_detached_table)
 {
     assert(table_id.hasUUID());
     assert(!table || table->getStorageID().uuid == table_id.uuid);
@@ -1113,6 +1114,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
             {
                 table = createTableFromAST(*create, table_id.getDatabaseName(), data_path, getContext(), LoadingStrictnessLevel::FORCE_RESTORE).second;
                 table->is_dropped = true;
+                table->is_detached.store(is_detached_table, std::memory_order_relaxed);
             }
             catch (...)
             {
@@ -1381,7 +1383,7 @@ void DatabaseCatalog::dropTableDataTask()
     rescheduleDropTableTask();
 }
 
-void DatabaseCatalog::removeDetachedPermanentlyFlag(const TableMarkedAsDropped & table)
+void DatabaseCatalog::removeDetachedTableInfo(const TableMarkedAsDropped & table)
 {
     auto database = tryGetDatabase(table.table_id.getDatabaseName());
     if (!database)
@@ -1390,6 +1392,8 @@ void DatabaseCatalog::removeDetachedPermanentlyFlag(const TableMarkedAsDropped &
     auto * database_ptr = dynamic_cast<DatabaseOnDisk *>(database.get());
     if (!database_ptr)
         return;
+
+    database_ptr->removeDetachedTableInfo(table.table_id);
 
     database_ptr->DatabaseOnDisk::removeDetachedPermanentlyFlag(getContext(), table.table_id.getNameForLogs(), table.metadata_path, true);
 }
@@ -1415,8 +1419,8 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
     fs::remove(fs::path(table.metadata_path));
 
-    LOG_DEBUG(log, "Try remove permanently flag for detached table {}", table.table_id.getNameForLogs());
-    removeDetachedPermanentlyFlag(table);
+    if (table.table->is_detached.load(std::memory_order_relaxed))
+        removeDetachedTableInfo(table);
 
     removeUUIDMappingFinally(table.table_id.uuid);
     CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);
