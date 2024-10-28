@@ -1,11 +1,11 @@
-test_load_primary_key	0	0
-test_load_primary_key_2	0	0
-test_load_primary_key	0	0
-test_load_primary_key_2	0	0
-test_load_primary_key	0	0
-test_load_primary_key_2	0	0
-test_load_primary_key	0	0
-test_load_primary_key_2	0	0
+tab1	0	0
+tab2	0	0
+tab1	0	0
+tab2	0	0
+tab1	0	0
+tab2	0	0
+tab1	0	0
+tab2	0	0
 1	a
 2	b
 3	c

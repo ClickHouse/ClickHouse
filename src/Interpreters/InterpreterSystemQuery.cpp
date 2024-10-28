@@ -1168,32 +1168,36 @@ void InterpreterSystemQuery::waitLoadingParts()
 
 void InterpreterSystemQuery::loadPrimaryKeys()
 {
+    loadOrUnloadPrimaryKeysImpl(true);
+};
+
+void InterpreterSystemQuery::unloadPrimaryKeys()
+{
+    loadOrUnloadPrimaryKeysImpl(false);
+}
+
+void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
+{
     if (!table_id.empty())
     {
-        getContext()->checkAccess(AccessType::SYSTEM_LOAD_PRIMARY_KEY, table_id.database_name, table_id.table_name);
+        getContext()->checkAccess(load ? AccessType::SYSTEM_LOAD_PRIMARY_KEY : AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, table_id.database_name, table_id.table_name);
         StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
 
         if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
         {
-            LOG_TRACE(log, "Loading primary keys for table {}", table_id.getFullTableName());
-            try
-            {
-                merge_tree->loadPrimaryKeys();
-            }
-            catch (const Exception & ex)
-            {
-                LOG_ERROR(log, "Failed to load primary keys for table {}: {}", table_id.getFullTableName(), ex.message());
-            }
+            LOG_TRACE(log, "{} primary keys for table {}", load ? "Loading" : "Unloading", table_id.getFullTableName());
+            load ? merge_tree->loadPrimaryKeys() : merge_tree->unloadPrimaryKeys();
         }
         else
         {
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Command LOAD PRIMARY KEY is supported only for MergeTree tables, but got: {}", table->getName());
+                ErrorCodes::BAD_ARGUMENTS, "Command {} PRIMARY KEY is supported only for MergeTree tables, but got: {}", load ? "LOAD" : "UNLOAD", table->getName());
         }
     }
     else
     {
-        getContext()->checkAccess(AccessType::SYSTEM_LOAD_PRIMARY_KEY);
+        getContext()->checkAccess(load ? AccessType::SYSTEM_LOAD_PRIMARY_KEY : AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
+        LOG_TRACE(log, "{} primary keys for all tables", load ? "Loading" : "Unloading");
 
         for (auto & database : DatabaseCatalog::instance().getDatabases())
         {
@@ -1201,63 +1205,13 @@ void InterpreterSystemQuery::loadPrimaryKeys()
             {
                 if (auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get()))
                 {
-                    try
-                    {
-                        /// Calls the improved loadPrimaryKeys in MergeTreeData
-                        merge_tree->loadPrimaryKeys();
-                    }
-                    catch (const std::exception &ex)
-                    {
-                        LOG_ERROR(log, "Failed to load primary keys for table {}: {}", merge_tree->getStorageID().getFullTableName(), ex.what());
-                        throw; // Re-throw the exception to allow it to propagate
-                    }
-                    catch (...)
-                    {
-                        LOG_ERROR(log, "Failed to load primary keys for table {}: unknown exception occurred.", merge_tree->getStorageID().getFullTableName());
-                        throw;
-                    }
+                    load ? merge_tree->loadPrimaryKeys() : merge_tree->unloadPrimaryKeys();
                 }
             }
         }
     }
 }
 
-
-void InterpreterSystemQuery::unloadPrimaryKeys()
-{
-    if (!table_id.empty())
-    {
-        getContext()->checkAccess(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, table_id.database_name, table_id.table_name);
-        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
-
-        if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
-        {
-            LOG_TRACE(log, "Unloading primary keys for table {}", table_id.getFullTableName());
-            merge_tree->unloadPrimaryKeys();
-        }
-        else
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Command UNLOAD PRIMARY KEY is supported only for MergeTree table, but got: {}", table->getName());
-        }
-    }
-    else
-    {
-        getContext()->checkAccess(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
-        LOG_TRACE(log, "Unloading primary keys for all tables");
-
-        for (auto & database : DatabaseCatalog::instance().getDatabases())
-        {
-            for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
-            {
-                if (auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get()))
-                {
-                    merge_tree->unloadPrimaryKeys();
-                }
-            }
-        }
-    }
-}
 
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {

@@ -8659,11 +8659,10 @@ bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_ad
 
 void MergeTreeData::loadPrimaryKeys()
 {
-    DataPartStates affordable_states = { MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated, MergeTreeDataPartState::Deleting };
-
     /// Thread pool to process parts within each table in parallel
     auto & thread_pool = DB::getActivePartsLoadingThreadPool().get();
 
+    DataPartStates affordable_states = { MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated, MergeTreeDataPartState::Deleting };
     for (const auto & data_part : getDataParts(affordable_states))
     {
         if (data_part->isProjectionPart())
@@ -8673,7 +8672,7 @@ void MergeTreeData::loadPrimaryKeys()
         {
             /// Use thread pool to parallelize part loading
             thread_pool.scheduleOrThrowOnError([data_part] {
-                const_cast<IMergeTreeDataPart &>(*data_part).loadIndexWithLock();
+                const_cast<IMergeTreeDataPart &>(*data_part).loadIndex();
             });
         }
     }

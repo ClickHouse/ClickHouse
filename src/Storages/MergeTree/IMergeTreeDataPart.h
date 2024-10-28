@@ -371,8 +371,9 @@ public:
     Index getIndex() const;
     void setIndex(const Columns & cols_);
     void setIndex(Columns && cols_);
-    void loadIndex() const TSA_REQUIRES(index_mutex);
-    void loadIndexWithLock() const { std::scoped_lock lock(index_mutex); loadIndex(); }
+
+    void loadIndex() const { std::scoped_lock lock(index_mutex); loadIndexLocked(); }
+    void loadIndexLocked() const TSA_REQUIRES(index_mutex);
     void unloadIndex();
     bool isIndexLoaded() const;
 
