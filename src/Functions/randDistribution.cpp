@@ -13,6 +13,7 @@
 #include <Common/assert_cast.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/castColumn.h>
 
 #include <random>
 
@@ -224,10 +225,10 @@ private:
                             "Parameter number ({}) is greater than the size of arguments ({}). This is a bug",
                             parameter_number, arguments.size());
 
-        const IColumn * col = arguments[parameter_number].column.get();
+        const auto col = castColumnAccurate(arguments[parameter_number], std::make_shared<DataTypeFloat64>());
         std::optional<ResultType> parameter;
 
-        if (const auto * col_in = checkAndGetColumn<ColumnVector<ResultType>>(col))
+        if (const ColumnVector<ResultType> * const col_in = checkAndGetColumn<ColumnVector<ResultType>>(col.get()))
         {
             parameter = *col_in->getData().data();
         }
@@ -236,7 +237,7 @@ private:
             parameter = applyVisitor(FieldVisitorConvertToNumber<ResultType>(), assert_cast<const ColumnConst &>(*col).getField());
         }
 
-        if(!parameter.has_value())
+        if (!parameter.has_value())
         {
             auto expected_type = Field(Field::Types::Which(Field::TypeToEnum<std::decay_t<ResultType>>::value)).getTypeName();
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter number {} of function {} is expected to be {} but is {}",
