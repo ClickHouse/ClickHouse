@@ -269,23 +269,22 @@ MetadataStorageFromPlainRewritableObjectStorage::getDirectChildrenOnDisk(const s
 {
     std::unordered_set<std::string> result;
     SharedLockGuard lock(path_map->mutex);
-    // const auto & map = path_map->map;
     const auto end_it = path_map->map.end();
     /// Directories.
     for (auto it = path_map->map.lower_bound(local_path); it != end_it; ++it)
     {
-        const auto & [k, _] = std::make_tuple(it->first.string(), it->second);
-        if (!k.starts_with(local_path.string()))
+        const auto & subdirectory = it->first.string();
+        if (!subdirectory.starts_with(local_path.string()))
             break;
 
-        auto slash_num = count(k.begin() + local_path.string().size(), k.end(), '/');
+        auto slash_num = count(subdirectory.begin() + local_path.string().size(), subdirectory.end(), '/');
         /// The directory map comparator ensures that the paths with the smallest number of
         /// hops from the local_path are iterated first. The paths do not end with '/', hence
         /// break the loop if the number of slashes to the right from the offset is greater than 0.
         if (slash_num != 0)
             break;
 
-        result.emplace(std::string(k.begin() + local_path.string().size(), k.end()) + "/");
+        result.emplace(std::string(subdirectory.begin() + local_path.string().size(), subdirectory.end()) + "/");
     }
 
     /// Files.
