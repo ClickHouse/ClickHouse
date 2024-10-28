@@ -6372,7 +6372,7 @@ DetachedPartsInfo MergeTreeData::getDetachedParts() const
     for (const auto & disk : getDisks())
     {
         /// While it is possible to have detached parts on readonly/write-once disks
-        /// if they were produces on another machine, where it wasn't readonly,
+        /// (if they were produced on another machine, where it wasn't readonly)
         /// to avoid wasting resources for slow disks, avoid trying to enumerate them.
         if (disk->isReadOnly() || disk->isWriteOnce())
             continue;
