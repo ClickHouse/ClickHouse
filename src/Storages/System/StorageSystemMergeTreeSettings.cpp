@@ -1,4 +1,5 @@
-#include <Core/Settings.h>
+#include <Core/SettingsTierType.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -30,6 +31,14 @@ ColumnsDescription SystemMergeTreeSettings<replicated>::getColumnsDescription()
         },
         {"type",        std::make_shared<DataTypeString>(), "Setting type (implementation specific string value)."},
         {"is_obsolete", std::make_shared<DataTypeUInt8>(), "Shows whether a setting is obsolete."},
+        {"tier", getSettingsTierEnum(), R"(
+Support level for this feature. ClickHouse features are organized in tiers, varying depending on the current status of their
+development and the expectations one might have when using them:
+* PRODUCTION: The feature is stable, safe to use and does not have issues interacting with other PRODUCTION features.
+* BETA: The feature is stable and safe. The outcome of using it together with other features is unknown and correctness is not guaranteed. Testing and reports are welcome.
+* EXPERIMENTAL: The feature is under development. Only intended for developers and ClickHouse enthusiasts. The feature might or might not work and could be removed at any time.
+* OBSOLETE: No longer supported. Either it is already removed or it will be removed in future releases.
+)"},
     };
 }
 
