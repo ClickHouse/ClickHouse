@@ -164,7 +164,7 @@ def check_certificate_switch(first, second):
 
     time.sleep(10)
 
-    # Check information about client certificates reloading in log
+    # Check information about client certificates reloading in log Clickhouse
 
     reload_successful = any(check_reload_successful(node, second) for node in nodes)
 
