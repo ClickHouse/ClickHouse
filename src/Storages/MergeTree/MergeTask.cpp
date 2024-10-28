@@ -6,11 +6,8 @@
 #include <fmt/format.h>
 
 #include <Common/logger_useful.h>
-#include <Common/ActionBlocker.h>
 #include <Core/Settings.h>
 #include <Common/ProfileEvents.h>
-#include <Processors/Transforms/CheckSortedTransform.h>
-#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -20,10 +17,8 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
-#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
-#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
@@ -34,9 +29,6 @@
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/Transforms/TTLTransform.h>
-#include <Processors/Transforms/TTLCalcTransform.h>
-#include <Processors/Transforms/DistinctSortedTransform.h>
-#include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -48,9 +40,22 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#ifndef NDEBUG
+    #include <Processors/Transforms/CheckSortedTransform.h>
+#endif
+
+#ifdef CLICKHOUSE_CLOUD
+    #include <Interpreters/Cache/FileCacheFactory.h>
+    #include <Disks/ObjectStorages/DiskObjectStorage.h>
+    #include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
+    #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#endif
+
+
 namespace ProfileEvents
 {
     extern const Event Merge;
+    extern const Event MergeSourceParts;
     extern const Event MergedColumns;
     extern const Event GatheredColumns;
     extern const Event MergeTotalMilliseconds;
@@ -302,6 +307,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 {
     ProfileEvents::increment(ProfileEvents::Merge);
+    ProfileEvents::increment(ProfileEvents::MergeSourceParts, global_ctx->future_part->parts.size());
 
     String local_tmp_prefix;
     if (global_ctx->need_prefix)
@@ -1392,7 +1398,7 @@ bool MergeTask::execute()
 }
 
 
-/// Apply merge strategy (Ordinary, Colapsing, Aggregating, etc) to the stream
+/// Apply merge strategy (Ordinary, Collapsing, Aggregating, etc) to the stream
 class MergePartsStep : public ITransformingStep
 {
 public:
@@ -1428,7 +1434,7 @@ public:
         ///  that is going in insertion order.
         ProcessorPtr merged_transform;
 
-        const auto &header = pipeline.getHeader();
+        const auto & header = pipeline.getHeader();
         const auto input_streams_count = pipeline.getNumStreams();
 
         WriteBuffer * rows_sources_write_buf = nullptr;
@@ -1697,7 +1703,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             sort_description,
             partition_key_columns,
             global_ctx->merging_params,
-            (is_vertical_merge ? RowsSourcesTemporaryFile::FILE_ID : ""),  /// rows_sources temporaty file is used only for vertical merge
+            (is_vertical_merge ? RowsSourcesTemporaryFile::FILE_ID : ""),  /// rows_sources' temporary file is used only for vertical merge
             (*data_settings)[MergeTreeSetting::merge_max_block_size],
             (*data_settings)[MergeTreeSetting::merge_max_block_size_bytes],
             ctx->blocks_are_granules_size,
