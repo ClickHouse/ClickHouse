@@ -225,9 +225,9 @@ private:
                             parameter_number, arguments.size());
 
         const IColumn * col = arguments[parameter_number].column.get();
-        ResultType parameter = ResultType();
+        std::optional<ResultType> parameter;
 
-        if (const ColumnVector<ResultType> * col_in = checkAndGetColumn<ColumnVector<ResultType>>(col))
+        if (const auto * col_in = checkAndGetColumn<ColumnVector<ResultType>>(col))
         {
             parameter = *col_in->getData().data();
         }
@@ -235,17 +235,18 @@ private:
         {
             parameter = applyVisitor(FieldVisitorConvertToNumber<ResultType>(), assert_cast<const ColumnConst &>(*col).getField());
         }
-        else
+
+        if(!parameter.has_value())
         {
             auto expected_type = Field(Field::Types::Which(Field::TypeToEnum<std::decay_t<ResultType>>::value)).getTypeName();
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter number {} of function {} is expected to be {} but is {}",
                 parameter_number, getName(), expected_type, col->getName());
         }
 
-        if (isNaN(parameter) || !std::isfinite(parameter))
+        if (isNaN(parameter.value()) || !std::isfinite(parameter.value()))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter number {} of function {} cannot be NaN of infinite", parameter_number, getName());
 
-        return parameter;
+        return parameter.value();
     }
 
 public:
