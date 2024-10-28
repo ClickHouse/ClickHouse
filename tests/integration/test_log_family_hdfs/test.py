@@ -2,9 +2,9 @@ import logging
 import sys
 
 import pytest
-from helpers.cluster import ClickHouseCluster, is_arm
-
 from pyhdfs import HdfsClient
+
+from helpers.cluster import ClickHouseCluster, is_arm
 
 if is_arm():
     pytestmark = pytest.mark.skip

@@ -1,4 +1,5 @@
 #include <Access/Common/AccessEntityType.h>
+#include <Access/AccessControl.h>
 #include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromMemory.h>
@@ -181,17 +182,15 @@ Strings BackupEntriesCollector::setStage(const String & new_stage, const String 
     {
         return backup_coordination->waitForStage(new_stage, on_cluster_first_sync_timeout);
     }
-    else if (new_stage.starts_with(Stage::GATHERING_METADATA))
+    if (new_stage.starts_with(Stage::GATHERING_METADATA))
     {
         auto current_time = std::chrono::steady_clock::now();
         auto end_of_timeout = std::max(current_time, collect_metadata_end_time);
         return backup_coordination->waitForStage(
             new_stage, std::chrono::duration_cast<std::chrono::milliseconds>(end_of_timeout - current_time));
     }
-    else
-    {
-        return backup_coordination->waitForStage(new_stage);
-    }
+
+    return backup_coordination->waitForStage(new_stage);
 }
 
 void BackupEntriesCollector::checkIsQueryCancelled() const
@@ -715,23 +714,20 @@ bool BackupEntriesCollector::compareWithPrevious(String & mismatch_description)
         {
             if (mismatch->first == p_mismatch->first)
                 return {MismatchType::CHANGED, mismatch->first};
-            else if (mismatch->first < p_mismatch->first)
+            if (mismatch->first < p_mismatch->first)
                 return {MismatchType::ADDED, mismatch->first};
-            else
-                return {MismatchType::REMOVED, mismatch->first};
+            return {MismatchType::REMOVED, mismatch->first};
         }
-        else if (mismatch != metadata.end())
+        if (mismatch != metadata.end())
         {
             return {MismatchType::ADDED, mismatch->first};
         }
-        else if (p_mismatch != previous_metadata.end())
+        if (p_mismatch != previous_metadata.end())
         {
             return {MismatchType::REMOVED, p_mismatch->first};
         }
-        else
-        {
-            return {MismatchType::NONE, {}};
-        }
+
+        return {MismatchType::NONE, {}};
     };
 
     /// Databases must be the same as during the previous scan.
@@ -910,11 +906,20 @@ void BackupEntriesCollector::runPostTasks()
     LOG_TRACE(log, "All post tasks successfully executed");
 }
 
-size_t BackupEntriesCollector::getAccessCounter(AccessEntityType type)
+std::unordered_map<UUID, AccessEntityPtr> BackupEntriesCollector::getAllAccessEntities()
 {
     std::lock_guard lock(mutex);
-    access_counters.resize(static_cast<size_t>(AccessEntityType::MAX));
-    return access_counters[static_cast<size_t>(type)]++;
+    if (!all_access_entities)
+    {
+        all_access_entities.emplace();
+        auto entities_with_ids = context->getAccessControl().readAllWithIDs();
+        for (const auto & [id, entity] : entities_with_ids)
+        {
+            if (entity->isBackupAllowed())
+                all_access_entities->emplace(id, entity);
+        }
+    }
+    return *all_access_entities;
 }
 
 }

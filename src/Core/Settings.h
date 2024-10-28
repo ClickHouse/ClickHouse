@@ -5,9 +5,7 @@
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsWriteFormat.h>
-#include <Core/ParallelReplicasMode.h>
 #include <base/types.h>
-#include <Common/SettingConstraintWritability.h>
 #include <Common/SettingsChanges.h>
 
 #include <string_view>
@@ -54,11 +52,14 @@ class WriteBuffer;
     M(CLASS_NAME, DefaultDatabaseEngine) \
     M(CLASS_NAME, DefaultTableEngine) \
     M(CLASS_NAME, Dialect) \
+    M(CLASS_NAME, DistributedCacheLogMode) /* Cloud only */ \
+    M(CLASS_NAME, DistributedCachePoolBehaviourOnLimit) /* Cloud only */ \
     M(CLASS_NAME, DistributedDDLOutputMode) \
     M(CLASS_NAME, DistributedProductMode) \
     M(CLASS_NAME, Double) \
     M(CLASS_NAME, EscapingRule) \
     M(CLASS_NAME, Float) \
+    M(CLASS_NAME, IdentifierQuotingRule) \
     M(CLASS_NAME, IdentifierQuotingStyle) \
     M(CLASS_NAME, Int32) \
     M(CLASS_NAME, Int64) \

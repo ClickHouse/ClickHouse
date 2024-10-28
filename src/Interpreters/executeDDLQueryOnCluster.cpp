@@ -14,6 +14,7 @@
 #include <Core/Settings.h>
 #include <Common/Macros.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include "Parsers/ASTSystemQuery.h"
 #include <Databases/DatabaseReplicated.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -92,6 +93,12 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
 
     if (!context->getSettingsRef()[Setting::allow_distributed_ddl])
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Distributed DDL queries are prohibited for the user");
+
+    bool is_system_query = dynamic_cast<ASTSystemQuery *>(query_ptr.get()) != nullptr;
+    bool replicated_ddl_queries_enabled = DatabaseCatalog::instance().canPerformReplicatedDDLQueries();
+
+    if (!is_system_query && !replicated_ddl_queries_enabled)
+        throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Replicated DDL queries are disabled");
 
     if (const auto * query_alter = query_ptr->as<ASTAlterQuery>())
     {
@@ -304,17 +311,15 @@ Block DDLQueryStatusSource::getSampleBlock(ContextPtr context_, bool hosts_to_wa
             {std::make_shared<DataTypeUInt64>(), "num_hosts_active"},
         };
     }
-    else
-    {
-        return Block{
-            {std::make_shared<DataTypeString>(), "host"},
-            {std::make_shared<DataTypeUInt16>(), "port"},
-            {maybe_make_nullable(std::make_shared<DataTypeInt64>()), "status"},
-            {maybe_make_nullable(std::make_shared<DataTypeString>()), "error"},
-            {std::make_shared<DataTypeUInt64>(), "num_hosts_remaining"},
-            {std::make_shared<DataTypeUInt64>(), "num_hosts_active"},
-        };
-    }
+
+    return Block{
+        {std::make_shared<DataTypeString>(), "host"},
+        {std::make_shared<DataTypeUInt16>(), "port"},
+        {maybe_make_nullable(std::make_shared<DataTypeInt64>()), "status"},
+        {maybe_make_nullable(std::make_shared<DataTypeString>()), "error"},
+        {std::make_shared<DataTypeUInt64>(), "num_hosts_remaining"},
+        {std::make_shared<DataTypeUInt64>(), "num_hosts_active"},
+    };
 }
 
 DDLQueryStatusSource::DDLQueryStatusSource(
@@ -631,8 +636,7 @@ IProcessor::Status DDLQueryStatusSource::prepare()
         output.finish();
         return Status::Finished;
     }
-    else
-        return ISource::prepare();
+    return ISource::prepare();
 }
 
 Strings DDLQueryStatusSource::getNewAndUpdate(const Strings & current_list_of_finished_hosts)
