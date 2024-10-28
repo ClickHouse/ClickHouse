@@ -1604,7 +1604,8 @@ void TCPHandler::receiveHello()
                 session->authenticate(
                     SSLCertificateCredentials{user, extractSSLCertificateSubjects(secure_socket.peerCertificate())},
                     getClientAddress(client_info));
-                DatabaseCatalog::instance().assertDatabaseExists(default_database);
+                if (!default_database.empty())
+                    DatabaseCatalog::instance().assertDatabaseExists(default_database);
                 return;
             }
             catch (const Exception & e)
@@ -1672,13 +1673,15 @@ void TCPHandler::receiveHello()
 
         auto cred = SshCredentials(user, signature, prepare_string_for_ssh_validation(user, challenge));
         session->authenticate(cred, getClientAddress(client_info));
-        DatabaseCatalog::instance().assertDatabaseExists(default_database);
+        if (!default_database.empty())
+            DatabaseCatalog::instance().assertDatabaseExists(default_database);
         return;
     }
 #endif
 
     session->authenticate(user, password, getClientAddress(client_info));
-    DatabaseCatalog::instance().assertDatabaseExists(default_database);
+    if (!default_database.empty())
+        DatabaseCatalog::instance().assertDatabaseExists(default_database);
 }
 
 void TCPHandler::receiveAddendum()
