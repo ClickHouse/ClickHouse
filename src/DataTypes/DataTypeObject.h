@@ -63,6 +63,9 @@ public:
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
     size_t getMaxDynamicPaths() const { return max_dynamic_paths; }
 
+    /// Shared data has type Array(Tuple(String, String)).
+    static const DataTypePtr & getTypeOfSharedData();
+
 private:
     SchemaFormat schema_format;
     /// Set of paths with types that were specified in type declaration.
