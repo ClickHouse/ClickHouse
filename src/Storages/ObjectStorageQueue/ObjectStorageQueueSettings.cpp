@@ -29,9 +29,9 @@ namespace ErrorCodes
     DECLARE(String, last_processed_path, "", "For Ordered mode. Files that have lexicographically smaller file name are considered already processed", 0) \
     DECLARE(UInt64, tracked_files_limit, 1000, "For unordered mode. Max set size for tracking processed files in ZooKeeper", 0) \
     DECLARE(UInt64, tracked_file_ttl_sec, 0, "Maximum number of seconds to store processed files in ZooKeeper node (store forever by default)", 0) \
-    DECLARE(UInt32, polling_min_timeout_ms, 1000, "Minimal timeout before next polling", 0) \
-    DECLARE(UInt32, polling_max_timeout_ms, 10000, "Maximum timeout before next polling", 0) \
-    DECLARE(UInt32, polling_backoff_ms, 1000, "Polling backoff", 0) \
+    DECLARE(UInt64, polling_min_timeout_ms, 1000, "Minimal timeout before next polling", 0) \
+    DECLARE(UInt64, polling_max_timeout_ms, 10000, "Maximum timeout before next polling", 0) \
+    DECLARE(UInt64, polling_backoff_ms, 1000, "Polling backoff", 0) \
     DECLARE(UInt32, cleanup_interval_min_ms, 60000, "For unordered mode. Polling backoff min for cleanup", 0) \
     DECLARE(UInt32, cleanup_interval_max_ms, 60000, "For unordered mode. Polling backoff max for cleanup", 0) \
     DECLARE(UInt32, buckets, 0, "Number of buckets for Ordered mode parallel processing", 0) \
