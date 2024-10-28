@@ -100,7 +100,7 @@ private:
 
     /// Returns an ordered vector of `entities`
     std::vector<Event> orderEntities(
-        const std::unordered_map<String, ASTPtr> & all_entitites,
+        const std::unordered_map<String, ASTPtr> & all_entities,
         std::optional<Event> change = {});
 
     struct Handlers

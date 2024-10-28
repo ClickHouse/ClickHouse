@@ -47,9 +47,9 @@ namespace ErrorCodes
 
 namespace
 {
-    static constexpr std::string_view workload_prefix = "workload_";
-    static constexpr std::string_view resource_prefix = "resource_";
-    static constexpr std::string_view sql_suffix = ".sql";
+    constexpr std::string_view workload_prefix = "workload_";
+    constexpr std::string_view resource_prefix = "resource_";
+    constexpr std::string_view sql_suffix = ".sql";
 
     /// Converts a path to an absolute path and append it with a separator.
     String makeDirectoryPathCanonical(const String & directory_path)

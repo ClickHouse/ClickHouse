@@ -722,7 +722,7 @@ std::vector<WorkloadEntityStorageBase::Event> WorkloadEntityStorageBase::orderEn
     std::vector<Event> result;
 
     std::unordered_map<String, ASTPtr> workloads;
-    for (auto & [entity_name, ast] : all_entities)
+    for (const auto & [entity_name, ast] : all_entities)
     {
         if (typeid_cast<ASTCreateWorkloadQuery *>(ast.get()))
         {
