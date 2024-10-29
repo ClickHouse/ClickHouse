@@ -366,8 +366,8 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
         {
             QueryTreeNodePtr join_table_expression;
             const auto join_kind = join_node->getKind();
-            const auto join_strictness = join_node->getStrictness();
-            if (join_kind == JoinKind::Left || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All))
+            // const auto join_strictness = join_node->getStrictness();
+            if (join_kind == JoinKind::Left || (join_kind == JoinKind::Inner /* && join_strictness == JoinStrictness::All*/))
             {
                 join_table_expression = join_node->getRightTableExpression();
             }
