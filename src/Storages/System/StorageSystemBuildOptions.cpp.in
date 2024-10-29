@@ -66,6 +66,7 @@ const char * auto_config_build[]
     "GIT_BRANCH", R"IRjaNsZIL9Yh7FQ4(@GIT_BRANCH@)IRjaNsZIL9Yh7FQ4",
     "GIT_DATE", "@GIT_DATE@",
     "GIT_COMMIT_SUBJECT", R"Gi17KJMlbGCjErEN(@GIT_COMMIT_SUBJECT@)Gi17KJMlbGCjErEN",
+    "USE_JWT_CPP", "@USE_JWT_CPP@",
 
     nullptr, nullptr
 };

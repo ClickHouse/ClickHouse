@@ -298,7 +298,10 @@ bool Authentication::areCredentialsValid(
     const ClientInfo & client_info,
     SettingsChanges & settings)
 {
-    if (!credentials.isReady())
+    /// It is OK for TokenCredentials to be not ready:
+    /// When auth request happens, we do not even know the username.
+    /// Token is resolved a bit later and the user information will be put in credentials
+    if (!typeid_cast<const TokenCredentials *>(&credentials) && !credentials.isReady())
         return false;
 
     if (const auto * gss_acceptor_context = typeid_cast<const GSSAcceptorContext *>(&credentials))
@@ -339,6 +342,14 @@ bool Authentication::areCredentialsValid(
         return checkSSHLoginAuthentication(ssh_login_credentials, authentication_method);
     }
 #endif
+
+    if (const auto * token_credentials = typeid_cast<const TokenCredentials *>(&credentials))
+    {
+        if (authentication_method.getType() != AuthenticationType::JWT)
+            return false;
+
+        return external_authenticators.checkTokenCredentials(*token_credentials);
+    }
 
     if ([[maybe_unused]] const auto * always_allow_credentials = typeid_cast<const AlwaysAllowCredentials *>(&credentials))
         return true;
