@@ -28,12 +28,15 @@
 #     include <bcrypt.h>
 #endif
 
+#if USE_JWT_CPP
+#include <picojson/picojson.h>
+#endif
+
 namespace CurrentMetrics
 {
     extern const Metric BcryptCacheBytes;
     extern const Metric BcryptCacheSize;
 }
-
 
 namespace DB
 {
@@ -402,7 +405,10 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         }
         case AuthenticationType::JWT:
         {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is available only in ClickHouse Cloud");
+            const auto & claims = getJWTClaims();
+            if (!claims.empty())
+                node->children.push_back(std::make_shared<ASTLiteral>(claims));
+            break;
         }
         case AuthenticationType::KERBEROS:
         {
@@ -680,6 +686,22 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         auth_data.setHTTPAuthenticationServerName(server);
         auth_data.setHTTPAuthenticationScheme(scheme);
     }
+#if USE_JWT_CPP
+    else if (query.type == AuthenticationType::JWT)
+    {
+        if (!args.empty())
+        {
+            String value = checkAndGetLiteralArgument<String>(args[0], "claims");
+            picojson::value json_obj;
+            auto error = picojson::parse(json_obj, value);
+            if (!error.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad JWT claims: {}", error);
+            if (!json_obj.is<picojson::object>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad JWT claims: is not an object");
+            auth_data.setJWTClaims(value);
+        }
+    }
+#endif
     else
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected ASTAuthenticationData structure");

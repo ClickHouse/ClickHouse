@@ -422,7 +422,6 @@ void AccessControl::addLDAPStorage(const String & storage_name_, const Poco::Uti
     LOG_DEBUG(getLogger(), "Added {} access storage '{}', LDAP server name: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getLDAPServerName());
 }
 
-
 void AccessControl::addStoragesFromUserDirectoriesConfig(
     const Poco::Util::AbstractConfiguration & config,
     const String & key,
