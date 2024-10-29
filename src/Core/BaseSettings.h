@@ -38,9 +38,9 @@ struct BaseSettingsHelpers
         /// If adding new flags, consider first if Tier might need more bits
     };
 
-    static SettingsTierType getTier(Flags flags);
+    static SettingsTierType getTier(UInt64 flags);
     static void writeFlags(Flags flags, WriteBuffer & out);
-    static Flags readFlags(ReadBuffer & in);
+    static UInt64 readFlags(ReadBuffer & in);
 };
 
 /** Template class to define collections of settings.
@@ -481,7 +481,7 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
         size_t index = accessor.find(name);
 
         using Flags = BaseSettingsHelpers::Flags;
-        Flags flags{0};
+        UInt64 flags{0};
         if (format >= SettingsWriteFormat::STRINGS_WITH_FLAGS)
             flags = BaseSettingsHelpers::readFlags(in);
         bool is_important = (flags & Flags::IMPORTANT);
@@ -860,7 +860,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
                 String name; \
                 const char * type; \
                 const char * description; \
-                BaseSettingsHelpers::Flags flags; \
+                UInt64 flags; \
                 Field (*cast_value_util_function)(const Field &); \
                 String (*value_to_string_util_function)(const Field &); \
                 Field (*string_to_value_util_function)(const String &); \
@@ -972,7 +972,7 @@ struct DefineAliases
 #define IMPLEMENT_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
     res.field_infos.emplace_back( \
         FieldInfo{#NAME, #TYPE, DESCRIPTION, \
-            static_cast<BaseSettingsHelpers::Flags>(FLAGS), \
+            static_cast<UInt64>(FLAGS), \
             [](const Field & value) -> Field { return static_cast<Field>(SettingField##TYPE{value}); }, \
             [](const Field & value) -> String { return SettingField##TYPE{value}.toString(); }, \
             [](const String & str) -> Field { SettingField##TYPE temp; temp.parseFromString(str); return static_cast<Field>(temp); }, \
