@@ -1446,6 +1446,9 @@ void ClientBase::onProfileEvents(Block & block)
 /// Flush all buffers.
 void ClientBase::resetOutput()
 {
+    if (need_render_progress_table && tty_buf)
+        progress_table.clearTableOutput(*tty_buf);
+
     /// Order is important: format, compression, file
 
     if (output_format)
