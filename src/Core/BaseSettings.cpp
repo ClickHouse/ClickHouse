@@ -32,14 +32,14 @@ void BaseSettingsHelpers::writeFlags(Flags flags, WriteBuffer & out)
 }
 
 
-BaseSettingsHelpers::Flags BaseSettingsHelpers::readFlags(ReadBuffer & in)
+UInt64 BaseSettingsHelpers::readFlags(ReadBuffer & in)
 {
     UInt64 res;
     readVarUInt(res, in);
-    return static_cast<Flags>(res);
+    return res;
 }
 
-SettingsTierType BaseSettingsHelpers::getTier(Flags flags)
+SettingsTierType BaseSettingsHelpers::getTier(UInt64 flags)
 {
     int8_t tier = (flags & Flags::TIER);
     if (tier > SettingsTierType::BETA)
