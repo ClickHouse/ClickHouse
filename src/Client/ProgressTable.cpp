@@ -180,9 +180,12 @@ void writeWithWidth(Out & out, std::string_view s, size_t width)
 template <typename Out>
 void writeWithWidthStrict(Out & out, std::string_view s, size_t width)
 {
-    chassert(width != 0);
+    constexpr std::string_view ellipsis = "…";
     if (s.size() > width)
-        out << s.substr(0, width - 1) << "…";
+        if (width <= ellipsis.size())
+            out << s.substr(0, width);
+        else
+            out << s.substr(0, width - ellipsis.size()) << ellipsis;
     else
         out << s;
 }
@@ -219,7 +222,9 @@ void ProgressTable::writeTable(WriteBufferFromFileDescriptor & message, bool sho
     writeWithWidth(message, COLUMN_EVENT_NAME, column_event_name_width);
     writeWithWidth(message, COLUMN_VALUE, COLUMN_VALUE_WIDTH);
     writeWithWidth(message, COLUMN_PROGRESS, COLUMN_PROGRESS_WIDTH);
-    writeWithWidth(message, COLUMN_DOCUMENTATION_NAME, COLUMN_DOCUMENTATION_WIDTH);
+    auto col_doc_width = getColumnDocumentationWith(terminal_width);
+    if (col_doc_width)
+        writeWithWidth(message, COLUMN_DOCUMENTATION_NAME, col_doc_width);
     message << CLEAR_TO_END_OF_LINE;
 
     double elapsed_sec = watch.elapsedSeconds();
@@ -257,9 +262,12 @@ void ProgressTable::writeTable(WriteBufferFromFileDescriptor & message, bool sho
 
         writeWithWidth(message, formatReadableValue(value_type, progress) + "/s", COLUMN_PROGRESS_WIDTH);
 
-        message << setColorForDocumentation();
-        const auto * doc = getDocumentation(event_name_to_event.at(name));
-        writeWithWidthStrict(message, doc, COLUMN_DOCUMENTATION_WIDTH);
+        if (col_doc_width)
+        {
+            message << setColorForDocumentation();
+            const auto * doc = getDocumentation(event_name_to_event.at(name));
+            writeWithWidthStrict(message, doc, col_doc_width);
+        }
 
         message << RESET_COLOR;
         message << CLEAR_TO_END_OF_LINE;
@@ -370,6 +378,14 @@ size_t ProgressTable::tableSize() const
 {
     /// Number of lines + header.
     return metrics.empty() ? 0 : metrics.size() + 1;
+}
+
+size_t ProgressTable::getColumnDocumentationWith(size_t terminal_width) const
+{
+    auto fixed_columns_width = column_event_name_width + COLUMN_VALUE_WIDTH + COLUMN_PROGRESS_WIDTH;
+    if (terminal_width < fixed_columns_width + COLUMN_DOCUMENTATION_MIN_WIDTH)
+        return 0;
+    return terminal_width - fixed_columns_width;
 }
 
 ProgressTable::MetricInfo::MetricInfo(ProfileEvents::Type t) : type(t)

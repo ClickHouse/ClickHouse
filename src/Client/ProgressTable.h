@@ -87,6 +87,7 @@ private:
     };
 
     size_t tableSize() const;
+    size_t getColumnDocumentationWith(size_t terminal_width) const;
 
     using MetricName = String;
 
@@ -110,7 +111,7 @@ private:
     static constexpr std::string_view COLUMN_DOCUMENTATION_NAME = "Documentation";
     static constexpr size_t COLUMN_VALUE_WIDTH = 20;
     static constexpr size_t COLUMN_PROGRESS_WIDTH = 20;
-    static constexpr size_t COLUMN_DOCUMENTATION_WIDTH = 100;
+    static constexpr size_t COLUMN_DOCUMENTATION_MIN_WIDTH = COLUMN_DOCUMENTATION_NAME.size();
 
     std::ostream & output_stream;
     int in_fd;
