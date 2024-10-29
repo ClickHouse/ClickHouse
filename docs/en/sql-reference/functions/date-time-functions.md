@@ -2971,7 +2971,42 @@ The same as ‘today() - 1’.
 
 ## timeSlot
 
-Rounds the time to the half hour.
+Round the time to the start of a half-an-hour length interval.
+
+**Syntax**
+
+```sql
+timeSlot(time[, time_zone])
+```
+
+**Arguments**
+
+- `time` — Time to round to the start of a half-an-hour length interval. [DateTime](../data-types/datetime.md)/[Date32](../data-types/date32.md)/[DateTime64](../data-types/datetime64.md).
+- `time_zone` — A String type const value or an expression representing the time zone. [String](../data-types/string.md).
+
+:::note
+Though this function can take values of the extended types `Date32` and `DateTime64` as an argument, passing it a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results.
+:::
+
+**Return type**
+
+- Returns the time rounded to the start of a half-an-hour length interval. [DateTime](../data-types/datetime.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT timeSlot(toDateTime('2000-01-02 03:04:05', 'UTC'));
+```
+
+Result:
+
+```response
+┌─timeSlot(toDateTime('2000-01-02 03:04:05', 'UTC'))─┐
+│                                2000-01-02 03:00:00 │
+└────────────────────────────────────────────────────┘
+```
 
 ## toYYYYMM
 

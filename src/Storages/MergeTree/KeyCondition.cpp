@@ -17,6 +17,7 @@
 #include <Functions/indexHint.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionDateOrDateTime.h>
 #include <Functions/geometryConverters.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/HilbertUtils.h>
@@ -817,7 +818,7 @@ void KeyCondition::getAllSpaceFillingCurves()
 KeyCondition::KeyCondition(
     const ActionsDAG * filter_dag,
     ContextPtr context,
-    const Names & key_column_names,
+    const Names & key_column_names_,
     const ExpressionActionsPtr & key_expr_,
     bool single_point_)
     : key_expr(key_expr_)
@@ -825,7 +826,7 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
 {
     size_t key_index = 0;
-    for (const auto & name : key_column_names)
+    for (const auto & name : key_column_names_)
     {
         if (!key_columns.contains(name))
         {
@@ -1446,6 +1447,30 @@ public:
 
     IFunctionBase::Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
+        if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(func.get()))
+        {
+            if (dynamic_cast<FunctionDateOrDateTimeBase *>(adaptor->getFunction().get()) && kind == Kind::RIGHT_CONST)
+            {
+                auto time_zone = extractTimeZoneNameFromColumn(const_arg.column.get(), const_arg.name);
+
+                const IDataType * type_ptr = &type;
+                if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type_ptr))
+                    type_ptr = low_cardinality_type->getDictionaryType().get();
+
+                if (type_ptr->isNullable())
+                    type_ptr = static_cast<const DataTypeNullable &>(*type_ptr).getNestedType().get();
+
+                DataTypePtr type_with_time_zone;
+                if (typeid_cast<const DataTypeDateTime *>(type_ptr))
+                    type_with_time_zone = std::make_shared<DataTypeDateTime>(time_zone);
+                else if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(type_ptr))
+                    type_with_time_zone = std::make_shared<DataTypeDateTime64>(dt64->getScale(), time_zone);
+                else
+                    return {}; /// In case we will have other types with time zone
+
+                return func->getMonotonicityForRange(*type_with_time_zone, left, right);
+            }
+        }
         return func->getMonotonicityForRange(type, left, right);
     }
 
