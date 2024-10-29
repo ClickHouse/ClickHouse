@@ -409,8 +409,14 @@ def kill_process_group(pgid):
 
 
 def cleanup_child_processes(pid):
-    pgid = os.getpgid(os.getpid())
     print(f"Child processes of {pid}:")
+    try:
+        pgid = os.getpgid(os.getpid())
+    except OSError as e:
+        if e.errno == ESRCH:
+            print(f"Process {pid} does not exist. Ignoring.")
+            return
+        raise
     print(
         subprocess.check_output(
             f"pgrep --parent {pid} -a", shell=True, stderr=subprocess.STDOUT
@@ -2353,7 +2359,8 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool
             while True:
                 # This is the upper level timeout
                 # It helps with completely frozen processes, like in case of gdb errors
-                def timeout_handler(signum, frame):
+                def timeout_handler(_signum, _frame):
+                    stop_tests()
                     raise TimeoutError("Test execution timed out")
 
                 signal.signal(signal.SIGALRM, timeout_handler)
@@ -2659,8 +2666,8 @@ def do_run_tests(jobs, test_suite: TestSuite):
                     max_http_retries=20,
                     timeout=10,
                 )
-            except Exception:
-                print("Hung check failed")
+            except Exception as e:
+                print(f"Hung check failed: {str(e)}")
                 server_died.set()
 
             if server_died.is_set():
@@ -2676,8 +2683,6 @@ def do_run_tests(jobs, test_suite: TestSuite):
             for p in processes[:]:
                 if not p.is_alive():
                     processes.remove(p)
-
-            sleep(5)
 
         run_tests_array(
             (

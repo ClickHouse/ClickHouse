@@ -22,6 +22,7 @@
 #include <Parsers/ParserExternalDDLQuery.h>
 #include <Parsers/ParserTransactionControl.h>
 #include <Parsers/ParserDeleteQuery.h>
+#include <Parsers/ParserSelectQuery.h>
 
 #include <Parsers/Access/ParserCreateQuotaQuery.h>
 #include <Parsers/Access/ParserCreateRoleQuery.h>
@@ -40,7 +41,9 @@ namespace DB
 
 bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    /// QueryWithOutput includes SELECT, SELECT with UNION ALL, SHOW, and similar:
     ParserQueryWithOutput query_with_output_p(end, allow_settings_after_format_in_insert);
+
     ParserInsertQuery insert_p(end, allow_settings_after_format_in_insert);
     ParserUseQuery use_p;
     ParserSetQuery set_p;
@@ -69,6 +72,11 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserTransactionControl transaction_control_p;
     ParserDeleteQuery delete_p;
 
+    /// SELECT queries are already attempted to parse by ParserQueryWithOutput,
+    /// but here we also try "implicit SELECT" after all other options.
+    /// It allows to use ClickHouse as a calculator, to process queries like `1 + 2` without the SELECT keyword.
+    ParserSelectQuery implicit_select_p(true);
+
     bool res = query_with_output_p.parse(pos, node, expected)
         || insert_p.parse(pos, node, expected)
         || use_p.parse(pos, node, expected)
@@ -96,7 +104,8 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || grant_p.parse(pos, node, expected)
         || external_ddl_p.parse(pos, node, expected)
         || transaction_control_p.parse(pos, node, expected)
-        || delete_p.parse(pos, node, expected);
+        || delete_p.parse(pos, node, expected)
+        || (implicit_select && implicit_select_p.parse(pos, node, expected));
 
     return res;
 }

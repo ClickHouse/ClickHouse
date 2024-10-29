@@ -34,7 +34,11 @@ IntersectOrExceptStep::IntersectOrExceptStep(
     : current_operator(operator_)
     , max_threads(max_threads_)
 {
-    input_headers = std::move(input_headers_);
+    updateInputHeaders(std::move(input_headers_));
+}
+
+void IntersectOrExceptStep::updateOutputHeader()
+{
     output_header = checkHeaders(input_headers);
 }
 
