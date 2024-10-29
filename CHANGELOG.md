@@ -18,7 +18,6 @@
 #### Backward Incompatible Change
 * Allow to write `SETTINGS` before `FORMAT` in a chain of queries with `UNION` when subqueries are inside parentheses. This closes [#39712](https://github.com/ClickHouse/ClickHouse/issues/39712). Change the behavior when a query has the SETTINGS clause specified twice in a sequence. The closest SETTINGS clause will have a preference for the corresponding subquery. In the previous versions, the outermost SETTINGS clause could take a preference over the inner one. [#68614](https://github.com/ClickHouse/ClickHouse/pull/68614) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * Reordering of filter conditions from `[PRE]WHERE` clause is now allowed by default. It could be disabled by setting `allow_reorder_prewhere_conditions` to `false`. [#70657](https://github.com/ClickHouse/ClickHouse/pull/70657) ([Nikita Taranov](https://github.com/nickitat)).
-* Fix `optimize_functions_to_subcolumns` optimization (previously could lead to `Invalid column type for ColumnUnique::insertRangeFrom. Expected String, got LowCardinality(String)` error), by preserving `LowCardinality` type in `mapKeys`/`mapValues`. [#70716](https://github.com/ClickHouse/ClickHouse/pull/70716) ([Azat Khuzhin](https://github.com/azat)).
 * Remove the `idxd-config` library, which has an incompatible license. This also removes the experimental Intel DeflateQPL codec. [#70987](https://github.com/ClickHouse/ClickHouse/pull/70987) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 
 #### New Feature
