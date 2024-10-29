@@ -142,19 +142,18 @@ void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time,
     /// queries_mutex. So, to prevent a deadblock we need to make sure that we always lock them in
     /// that order.
     {
-        /// Take ownership of the task so that we can destroy it in this scope after unlocking `queries_lock`.
+        /// Take ownership of the task so that we can destroy it in this scope after unlocking `queries_mutex`.
         auto task = std::move(it->second.task);
 
         /// Build an empty task for the old task to make sure it does not lock any mutex on its destruction.
         it->second.task = {};
 
+        queries.erase(query_id);
+
         /// Ensure `queries_mutex` is unlocked before calling task's destructor at the end of this
         /// scope which will lock `exec_mutex`.
         lock.unlock();
     }
-
-    lock.lock();
-    queries.erase(query_id);
 }
 
 std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint query_info_time, bool schedule_next)
@@ -164,7 +163,7 @@ std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(cons
     auto query_status_it = queries.find(query_id);
 
     /// The query might have finished while the scheduled task is running.
-    if (query_status_it == queries.end() || !query_status_it->second.task)
+    if (query_status_it == queries.end())
     {
         lock.unlock();
         LOG_TRACE(logger, "Query {} finished already while this collecting task was running", query_id);
