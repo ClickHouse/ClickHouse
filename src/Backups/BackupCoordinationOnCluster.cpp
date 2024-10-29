@@ -1,7 +1,4 @@
-#include <Backups/BackupCoordinationRemote.h>
-
-#include <base/hex.h>
-#include <boost/algorithm/string/split.hpp>
+#include <Backups/BackupCoordinationOnCluster.h>
 
 #include <Access/Common/AccessEntityType.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
@@ -25,8 +22,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
-
-namespace Stage = BackupCoordinationStage;
 
 namespace
 {
@@ -149,144 +144,152 @@ namespace
     };
 }
 
-size_t BackupCoordinationRemote::findCurrentHostIndex(const Strings & all_hosts, const String & current_host)
+Strings BackupCoordinationOnCluster::excludeInitiator(const Strings & all_hosts)
+{
+    Strings all_hosts_without_initiator = all_hosts;
+    bool has_initiator = (std::erase(all_hosts_without_initiator, kInitiator) > 0);
+    chassert(has_initiator);
+    return all_hosts_without_initiator;
+}
+
+size_t BackupCoordinationOnCluster::findCurrentHostIndex(const String & current_host, const Strings & all_hosts)
 {
     auto it = std::find(all_hosts.begin(), all_hosts.end(), current_host);
     if (it == all_hosts.end())
-        return 0;
+        return all_hosts.size();
     return it - all_hosts.begin();
 }
 
-BackupCoordinationRemote::BackupCoordinationRemote(
-    zkutil::GetZooKeeper get_zookeeper_,
+
+BackupCoordinationOnCluster::BackupCoordinationOnCluster(
+    const UUID & backup_uuid_,
+    bool is_plain_backup_,
     const String & root_zookeeper_path_,
+    zkutil::GetZooKeeper get_zookeeper_,
     const BackupKeeperSettings & keeper_settings_,
-    const String & backup_uuid_,
-    const Strings & all_hosts_,
     const String & current_host_,
-    bool plain_backup_,
-    bool is_internal_,
+    const Strings & all_hosts_,
+    bool allow_concurrent_backup_,
+    BackupConcurrencyCounters & concurrency_counters_,
+    ThreadPoolCallbackRunnerUnsafe<void> schedule_,
     QueryStatusPtr process_list_element_)
     : root_zookeeper_path(root_zookeeper_path_)
-    , zookeeper_path(root_zookeeper_path_ + "/backup-" + backup_uuid_)
+    , zookeeper_path(root_zookeeper_path_ + "/backup-" + toString(backup_uuid_))
     , keeper_settings(keeper_settings_)
     , backup_uuid(backup_uuid_)
     , all_hosts(all_hosts_)
+    , all_hosts_without_initiator(excludeInitiator(all_hosts))
     , current_host(current_host_)
-    , current_host_index(findCurrentHostIndex(all_hosts, current_host))
-    , plain_backup(plain_backup_)
-    , is_internal(is_internal_)
-    , log(getLogger("BackupCoordinationRemote"))
-    , with_retries(
-        log,
-        get_zookeeper_,
-        keeper_settings,
-        process_list_element_,
-        [my_zookeeper_path = zookeeper_path, my_current_host = current_host, my_is_internal = is_internal]
-        (WithRetries::FaultyKeeper & zk)
-        {
-            /// Recreate this ephemeral node to signal that we are alive.
-            if (my_is_internal)
-            {
-                String alive_node_path = my_zookeeper_path + "/stage/alive|" + my_current_host;
-
-                /// Delete the ephemeral node from the previous connection so we don't have to wait for keeper to do it automatically.
-                zk->tryRemove(alive_node_path);
-
-                zk->createAncestors(alive_node_path);
-                zk->create(alive_node_path, "", zkutil::CreateMode::Ephemeral);
-            }
-        })
+    , current_host_index(findCurrentHostIndex(current_host, all_hosts))
+    , plain_backup(is_plain_backup_)
+    , log(getLogger("BackupCoordinationOnCluster"))
+    , with_retries(log, get_zookeeper_, keeper_settings, process_list_element_, [root_zookeeper_path_](Coordination::ZooKeeperWithFaultInjection::Ptr zk) { zk->sync(root_zookeeper_path_); })
+    , concurrency_check(backup_uuid_, /* is_restore = */ false, /* on_cluster = */ true, allow_concurrent_backup_, concurrency_counters_)
+    , stage_sync(/* is_restore = */ false, fs::path{zookeeper_path} / "stage", current_host, all_hosts, allow_concurrent_backup_, with_retries, schedule_, process_list_element_, log)
+    , cleaner(zookeeper_path, with_retries, log)
 {
     createRootNodes();
-
-    stage_sync.emplace(
-        zookeeper_path,
-        with_retries,
-        log);
 }
 
-BackupCoordinationRemote::~BackupCoordinationRemote()
+BackupCoordinationOnCluster::~BackupCoordinationOnCluster()
 {
-    try
-    {
-        if (!is_internal)
-            removeAllNodes();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    tryFinishImpl();
 }
 
-void BackupCoordinationRemote::createRootNodes()
+void BackupCoordinationOnCluster::createRootNodes()
 {
-    auto holder = with_retries.createRetriesControlHolder("createRootNodes");
+    auto holder = with_retries.createRetriesControlHolder("createRootNodes", WithRetries::kInitialization);
     holder.retries_ctl.retryLoop(
     [&, &zk = holder.faulty_zookeeper]()
     {
         with_retries.renewZooKeeper(zk);
 
         zk->createAncestors(zookeeper_path);
-
-        Coordination::Requests ops;
-        Coordination::Responses responses;
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_part_names", "", zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_mutations", "", zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_data_paths", "", zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_access", "", zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_sql_objects", "", zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/keeper_map_tables", "", zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/file_infos", "", zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/writing_files", "", zkutil::CreateMode::Persistent));
-        zk->tryMulti(ops, responses);
+        zk->createIfNotExists(zookeeper_path, "");
+        zk->createIfNotExists(zookeeper_path + "/repl_part_names", "");
+        zk->createIfNotExists(zookeeper_path + "/repl_mutations", "");
+        zk->createIfNotExists(zookeeper_path + "/repl_data_paths", "");
+        zk->createIfNotExists(zookeeper_path + "/repl_access", "");
+        zk->createIfNotExists(zookeeper_path + "/repl_sql_objects", "");
+        zk->createIfNotExists(zookeeper_path + "/keeper_map_tables", "");
+        zk->createIfNotExists(zookeeper_path + "/file_infos", "");
+        zk->createIfNotExists(zookeeper_path + "/writing_files", "");
     });
 }
 
-void BackupCoordinationRemote::removeAllNodes()
+Strings BackupCoordinationOnCluster::setStage(const String & new_stage, const String & message, bool sync)
 {
-    auto holder = with_retries.createRetriesControlHolder("removeAllNodes");
-    holder.retries_ctl.retryLoop(
-    [&, &zk = holder.faulty_zookeeper]()
+    stage_sync.setStage(new_stage, message);
+
+    if (!sync)
+        return {};
+
+    return stage_sync.waitForHostsToReachStage(new_stage, all_hosts_without_initiator);
+}
+
+void BackupCoordinationOnCluster::setBackupQueryWasSentToOtherHosts()
+{
+    backup_query_was_sent_to_other_hosts = true;
+}
+
+bool BackupCoordinationOnCluster::trySetError(std::exception_ptr exception)
+{
+    return stage_sync.trySetError(exception);
+}
+
+void BackupCoordinationOnCluster::finish()
+{
+    bool other_hosts_also_finished = false;
+    stage_sync.finish(other_hosts_also_finished);
+
+    if ((current_host == kInitiator) && (other_hosts_also_finished || !backup_query_was_sent_to_other_hosts))
+        cleaner.cleanup();
+}
+
+bool BackupCoordinationOnCluster::tryFinishAfterError() noexcept
+{
+    return tryFinishImpl();
+}
+
+bool BackupCoordinationOnCluster::tryFinishImpl() noexcept
+{
+    bool other_hosts_also_finished = false;
+    if (!stage_sync.tryFinishAfterError(other_hosts_also_finished))
+        return false;
+
+    if ((current_host == kInitiator) && (other_hosts_also_finished || !backup_query_was_sent_to_other_hosts))
     {
-        /// Usually this function is called by the initiator when a backup is complete so we don't need the coordination anymore.
-        ///
-        /// However there can be a rare situation when this function is called after an error occurs on the initiator of a query
-        /// while some hosts are still making the backup. Removing all the nodes will remove the parent node of the backup coordination
-        /// at `zookeeper_path` which might cause such hosts to stop with exception "ZNONODE". Or such hosts might still do some useless part
-        /// of their backup work before that. Anyway in this case backup won't be finalized (because only an initiator can do that).
-        with_retries.renewZooKeeper(zk);
-        zk->removeRecursive(zookeeper_path);
-    });
+        if (!cleaner.tryCleanupAfterError())
+            return false;
+    }
+
+    return true;
 }
 
-
-void BackupCoordinationRemote::setStage(const String & new_stage, const String & message)
+void BackupCoordinationOnCluster::waitForOtherHostsToFinish()
 {
-    if (is_internal)
-        stage_sync->set(current_host, new_stage, message);
-    else
-        stage_sync->set(current_host, new_stage, /* message */ "", /* all_hosts */ true);
+    if ((current_host != kInitiator) || !backup_query_was_sent_to_other_hosts)
+        return;
+    stage_sync.waitForOtherHostsToFinish();
 }
 
-void BackupCoordinationRemote::setError(const Exception & exception)
+bool BackupCoordinationOnCluster::tryWaitForOtherHostsToFinishAfterError() noexcept
 {
-    stage_sync->setError(current_host, exception);
+    if (current_host != kInitiator)
+        return false;
+    if (!backup_query_was_sent_to_other_hosts)
+        return true;
+    return stage_sync.tryWaitForOtherHostsToFinishAfterError();
 }
 
-Strings BackupCoordinationRemote::waitForStage(const String & stage_to_wait)
+ZooKeeperRetriesInfo BackupCoordinationOnCluster::getOnClusterInitializationKeeperRetriesInfo() const
 {
-    return stage_sync->wait(all_hosts, stage_to_wait);
+    return ZooKeeperRetriesInfo{keeper_settings.max_retries_while_initializing,
+                                static_cast<UInt64>(keeper_settings.retry_initial_backoff_ms.count()),
+                                static_cast<UInt64>(keeper_settings.retry_max_backoff_ms.count())};
 }
 
-Strings BackupCoordinationRemote::waitForStage(const String & stage_to_wait, std::chrono::milliseconds timeout)
-{
-    return stage_sync->waitFor(all_hosts, stage_to_wait, timeout);
-}
-
-
-void BackupCoordinationRemote::serializeToMultipleZooKeeperNodes(const String & path, const String & value, const String & logging_name)
+void BackupCoordinationOnCluster::serializeToMultipleZooKeeperNodes(const String & path, const String & value, const String & logging_name)
 {
     {
         auto holder = with_retries.createRetriesControlHolder(logging_name + "::create");
@@ -301,7 +304,7 @@ void BackupCoordinationRemote::serializeToMultipleZooKeeperNodes(const String & 
     if (value.empty())
         return;
 
-    size_t max_part_size = keeper_settings.keeper_value_max_size;
+    size_t max_part_size = keeper_settings.value_max_size;
     if (!max_part_size)
         max_part_size = value.size();
 
@@ -324,7 +327,7 @@ void BackupCoordinationRemote::serializeToMultipleZooKeeperNodes(const String & 
     }
 }
 
-String BackupCoordinationRemote::deserializeFromMultipleZooKeeperNodes(const String & path, const String & logging_name) const
+String BackupCoordinationOnCluster::deserializeFromMultipleZooKeeperNodes(const String & path, const String & logging_name) const
 {
     Strings part_names;
 
@@ -357,7 +360,7 @@ String BackupCoordinationRemote::deserializeFromMultipleZooKeeperNodes(const Str
 }
 
 
-void BackupCoordinationRemote::addReplicatedPartNames(
+void BackupCoordinationOnCluster::addReplicatedPartNames(
     const String & table_zk_path,
     const String & table_name_for_logs,
     const String & replica_name,
@@ -381,14 +384,14 @@ void BackupCoordinationRemote::addReplicatedPartNames(
     });
 }
 
-Strings BackupCoordinationRemote::getReplicatedPartNames(const String & table_zk_path, const String & replica_name) const
+Strings BackupCoordinationOnCluster::getReplicatedPartNames(const String & table_zk_path, const String & replica_name) const
 {
     std::lock_guard lock{replicated_tables_mutex};
     prepareReplicatedTables();
     return replicated_tables->getPartNames(table_zk_path, replica_name);
 }
 
-void BackupCoordinationRemote::addReplicatedMutations(
+void BackupCoordinationOnCluster::addReplicatedMutations(
     const String & table_zk_path,
     const String & table_name_for_logs,
     const String & replica_name,
@@ -412,7 +415,7 @@ void BackupCoordinationRemote::addReplicatedMutations(
         });
 }
 
-std::vector<IBackupCoordination::MutationInfo> BackupCoordinationRemote::getReplicatedMutations(const String & table_zk_path, const String & replica_name) const
+std::vector<IBackupCoordination::MutationInfo> BackupCoordinationOnCluster::getReplicatedMutations(const String & table_zk_path, const String & replica_name) const
 {
     std::lock_guard lock{replicated_tables_mutex};
     prepareReplicatedTables();
@@ -420,7 +423,7 @@ std::vector<IBackupCoordination::MutationInfo> BackupCoordinationRemote::getRepl
 }
 
 
-void BackupCoordinationRemote::addReplicatedDataPath(
+void BackupCoordinationOnCluster::addReplicatedDataPath(
     const String & table_zk_path, const String & data_path)
 {
     {
@@ -441,7 +444,7 @@ void BackupCoordinationRemote::addReplicatedDataPath(
     });
 }
 
-Strings BackupCoordinationRemote::getReplicatedDataPaths(const String & table_zk_path) const
+Strings BackupCoordinationOnCluster::getReplicatedDataPaths(const String & table_zk_path) const
 {
     std::lock_guard lock{replicated_tables_mutex};
     prepareReplicatedTables();
@@ -449,7 +452,7 @@ Strings BackupCoordinationRemote::getReplicatedDataPaths(const String & table_zk
 }
 
 
-void BackupCoordinationRemote::prepareReplicatedTables() const
+void BackupCoordinationOnCluster::prepareReplicatedTables() const
 {
     if (replicated_tables)
         return;
@@ -536,7 +539,7 @@ void BackupCoordinationRemote::prepareReplicatedTables() const
         replicated_tables->addDataPath(std::move(data_paths));
 }
 
-void BackupCoordinationRemote::addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & file_path)
+void BackupCoordinationOnCluster::addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & file_path)
 {
     {
         std::lock_guard lock{replicated_access_mutex};
@@ -558,14 +561,14 @@ void BackupCoordinationRemote::addReplicatedAccessFilePath(const String & access
     });
 }
 
-Strings BackupCoordinationRemote::getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type) const
+Strings BackupCoordinationOnCluster::getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type) const
 {
     std::lock_guard lock{replicated_access_mutex};
     prepareReplicatedAccess();
     return replicated_access->getFilePaths(access_zk_path, access_entity_type, current_host);
 }
 
-void BackupCoordinationRemote::prepareReplicatedAccess() const
+void BackupCoordinationOnCluster::prepareReplicatedAccess() const
 {
     if (replicated_access)
         return;
@@ -601,7 +604,7 @@ void BackupCoordinationRemote::prepareReplicatedAccess() const
         replicated_access->addFilePath(std::move(file_path));
 }
 
-void BackupCoordinationRemote::addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & dir_path)
+void BackupCoordinationOnCluster::addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & dir_path)
 {
     {
         std::lock_guard lock{replicated_sql_objects_mutex};
@@ -631,14 +634,14 @@ void BackupCoordinationRemote::addReplicatedSQLObjectsDir(const String & loader_
     });
 }
 
-Strings BackupCoordinationRemote::getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const
+Strings BackupCoordinationOnCluster::getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const
 {
     std::lock_guard lock{replicated_sql_objects_mutex};
     prepareReplicatedSQLObjects();
     return replicated_sql_objects->getDirectories(loader_zk_path, object_type, current_host);
 }
 
-void BackupCoordinationRemote::prepareReplicatedSQLObjects() const
+void BackupCoordinationOnCluster::prepareReplicatedSQLObjects() const
 {
     if (replicated_sql_objects)
         return;
@@ -674,7 +677,7 @@ void BackupCoordinationRemote::prepareReplicatedSQLObjects() const
         replicated_sql_objects->addDirectory(std::move(directory));
 }
 
-void BackupCoordinationRemote::addKeeperMapTable(const String & table_zookeeper_root_path, const String & table_id, const String & data_path_in_backup)
+void BackupCoordinationOnCluster::addKeeperMapTable(const String & table_zookeeper_root_path, const String & table_id, const String & data_path_in_backup)
 {
     {
         std::lock_guard lock{keeper_map_tables_mutex};
@@ -695,7 +698,7 @@ void BackupCoordinationRemote::addKeeperMapTable(const String & table_zookeeper_
     });
 }
 
-void BackupCoordinationRemote::prepareKeeperMapTables() const
+void BackupCoordinationOnCluster::prepareKeeperMapTables() const
 {
     if (keeper_map_tables)
         return;
@@ -740,7 +743,7 @@ void BackupCoordinationRemote::prepareKeeperMapTables() const
 
 }
 
-String BackupCoordinationRemote::getKeeperMapDataPath(const String & table_zookeeper_root_path) const
+String BackupCoordinationOnCluster::getKeeperMapDataPath(const String & table_zookeeper_root_path) const
 {
     std::lock_guard lock(keeper_map_tables_mutex);
     prepareKeeperMapTables();
@@ -748,7 +751,7 @@ String BackupCoordinationRemote::getKeeperMapDataPath(const String & table_zooke
 }
 
 
-void BackupCoordinationRemote::addFileInfos(BackupFileInfos && file_infos_)
+void BackupCoordinationOnCluster::addFileInfos(BackupFileInfos && file_infos_)
 {
     {
         std::lock_guard lock{file_infos_mutex};
@@ -761,21 +764,21 @@ void BackupCoordinationRemote::addFileInfos(BackupFileInfos && file_infos_)
     serializeToMultipleZooKeeperNodes(zookeeper_path + "/file_infos/" + current_host, file_infos_str, "addFileInfos");
 }
 
-BackupFileInfos BackupCoordinationRemote::getFileInfos() const
+BackupFileInfos BackupCoordinationOnCluster::getFileInfos() const
 {
     std::lock_guard lock{file_infos_mutex};
     prepareFileInfos();
     return file_infos->getFileInfos(current_host);
 }
 
-BackupFileInfos BackupCoordinationRemote::getFileInfosForAllHosts() const
+BackupFileInfos BackupCoordinationOnCluster::getFileInfosForAllHosts() const
 {
     std::lock_guard lock{file_infos_mutex};
     prepareFileInfos();
     return file_infos->getFileInfosForAllHosts();
 }
 
-void BackupCoordinationRemote::prepareFileInfos() const
+void BackupCoordinationOnCluster::prepareFileInfos() const
 {
     if (file_infos)
         return;
@@ -801,7 +804,7 @@ void BackupCoordinationRemote::prepareFileInfos() const
     }
 }
 
-bool BackupCoordinationRemote::startWritingFile(size_t data_file_index)
+bool BackupCoordinationOnCluster::startWritingFile(size_t data_file_index)
 {
     {
         /// Check if this host is already writing this file.
@@ -840,68 +843,6 @@ bool BackupCoordinationRemote::startWritingFile(size_t data_file_index)
         std::lock_guard lock{writing_files_mutex};
         return writing_files.emplace(data_file_index).second; /// Return false if this host is already writing this file.
     }
-}
-
-bool BackupCoordinationRemote::hasConcurrentBackups(const std::atomic<size_t> &) const
-{
-    /// If its internal concurrency will be checked for the base backup
-    if (is_internal)
-        return false;
-
-    std::string backup_stage_path = zookeeper_path + "/stage";
-
-    bool result = false;
-
-    auto holder = with_retries.createRetriesControlHolder("getAllArchiveSuffixes");
-    holder.retries_ctl.retryLoop(
-        [&, &zk = holder.faulty_zookeeper]()
-    {
-        with_retries.renewZooKeeper(zk);
-
-        if (!zk->exists(root_zookeeper_path))
-            zk->createAncestors(root_zookeeper_path);
-
-        for (size_t attempt = 0; attempt < MAX_ZOOKEEPER_ATTEMPTS; ++attempt)
-        {
-            Coordination::Stat stat;
-            zk->get(root_zookeeper_path, &stat);
-            Strings existing_backup_paths = zk->getChildren(root_zookeeper_path);
-
-            for (const auto & existing_backup_path : existing_backup_paths)
-            {
-                if (startsWith(existing_backup_path, "restore-"))
-                    continue;
-
-                String existing_backup_uuid = existing_backup_path;
-                existing_backup_uuid.erase(0, String("backup-").size());
-
-                if (existing_backup_uuid == toString(backup_uuid))
-                    continue;
-
-                String status;
-                if (zk->tryGet(root_zookeeper_path + "/" + existing_backup_path + "/stage", status))
-                {
-                    /// Check if some other backup is in progress
-                    if (status == Stage::SCHEDULED_TO_START)
-                    {
-                        LOG_WARNING(log, "Found a concurrent backup: {}, current backup: {}", existing_backup_uuid, toString(backup_uuid));
-                        result = true;
-                        return;
-                    }
-                }
-            }
-
-            zk->createIfNotExists(backup_stage_path, "");
-            auto code = zk->trySet(backup_stage_path, Stage::SCHEDULED_TO_START, stat.version);
-            if (code == Coordination::Error::ZOK)
-                break;
-            bool is_last_attempt = (attempt == MAX_ZOOKEEPER_ATTEMPTS - 1);
-            if ((code != Coordination::Error::ZBADVERSION) || is_last_attempt)
-                throw zkutil::KeeperException::fromPath(code, backup_stage_path);
-        }
-    });
-
-    return result;
 }
 
 }

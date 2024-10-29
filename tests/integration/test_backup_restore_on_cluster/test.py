@@ -1153,7 +1153,7 @@ def test_get_error_from_other_host():
     node1.query("INSERT INTO tbl VALUES (3)")
 
     backup_name = new_backup_name()
-    expected_error = "Got error from node2.*Table default.tbl was not found"
+    expected_error = "Got error from host node2.*Table default.tbl was not found"
     assert re.search(
         expected_error,
         node1.query_and_get_error(

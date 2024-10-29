@@ -2,6 +2,8 @@
 #include <Interpreters/InterpreterBackupQuery.h>
 
 #include <Backups/BackupsWorker.h>
+#include <Backups/BackupSettings.h>
+#include <Parsers/ASTBackupQuery.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -18,13 +20,13 @@ namespace DB
 
 namespace
 {
-    Block getResultRow(const BackupOperationInfo & info)
+    Block getResultRow(const String & id, BackupStatus status)
     {
         auto column_id = ColumnString::create();
         auto column_status = ColumnInt8::create();
 
-        column_id->insert(info.id);
-        column_status->insert(static_cast<Int8>(info.status));
+        column_id->insert(id);
+        column_status->insert(static_cast<Int8>(status));
 
         Block res_columns;
         res_columns.insert(0, {std::move(column_id), std::make_shared<DataTypeString>(), "id"});
@@ -36,15 +38,18 @@ namespace
 
 BlockIO InterpreterBackupQuery::execute()
 {
+    const ASTBackupQuery & backup_query = query_ptr->as<const ASTBackupQuery &>();
     auto & backups_worker = context->getBackupsWorker();
-    auto id = backups_worker.start(query_ptr, context);
 
-    auto info = backups_worker.getInfo(id);
-    if (info.exception)
-        std::rethrow_exception(info.exception);
+    auto [id, status] = backups_worker.start(query_ptr, context);
+
+    /// Wait if it's a synchronous operation.
+    bool async = BackupSettings::isAsync(backup_query);
+    if (!async)
+        status = backups_worker.wait(id);
 
     BlockIO res_io;
-    res_io.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(getResultRow(info)));
+    res_io.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(getResultRow(id, status)));
     return res_io;
 }
 
