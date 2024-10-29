@@ -1555,10 +1555,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             SortingStep::Settings sort_settings(*query_context);
 
             auto sorting_step = std::make_unique<SortingStep>(
-                plan.getCurrentHeader(),
-                std::move(sort_description),
-                0 /*limit*/,
-                sort_settings);
+                plan.getCurrentHeader(), std::move(sort_description), 0 /*limit*/, sort_settings, true /*is_sorting_for_merge_join*/);
             sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_table_side));
             plan.addStep(std::move(sorting_step));
         };

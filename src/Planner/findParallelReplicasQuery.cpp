@@ -215,7 +215,7 @@ const QueryNode * findQueryForParallelReplicas(
                 const auto * creating_sets = typeid_cast<DelayedCreatingSetsStep *>(step);
                 bool allowed_creating_sets = settings[Setting::parallel_replicas_allow_in_with_subquery] && creating_sets;
 
-                if (!expression && !filter && !allowed_creating_sets && !(sorting && sorting->getStepDescription().contains("before JOIN")))
+                if (!expression && !filter && !allowed_creating_sets && !(sorting && sorting->isSortingForMergeJoin()))
                 {
                     can_distribute_full_node = false;
                     currently_inside_join = inside_join;
