@@ -34,9 +34,12 @@ public:
 
     std::string getEngineName() const override { return DataLakeMetadata::name; }
 
-    void update(ObjectStoragePtr object_storage, ContextPtr local_context) override
+    void update(ObjectStoragePtr object_storage, ContextPtr local_context, bool update_base) override
     {
-        // BaseStorageConfiguration::update(object_storage, local_context);
+        if (update_base)
+        {
+            BaseStorageConfiguratixon::update(object_storage, local_context);
+        }
         auto new_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
         if (current_metadata && *current_metadata == *new_metadata)
             return;
