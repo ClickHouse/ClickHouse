@@ -320,12 +320,7 @@ void ParquetBitPlainReader<ColumnUInt8>::readBatch(
         },
         /* repeated_visitor */ [&](size_t nest_cursor, UInt32 count)
         {
-            for (UInt32 i = 0; i < count; i++)
-            {
-                uint8_t byte;
-                bit_reader->GetValue(1, &byte);
-                container[nest_cursor++] = byte;
-            }
+            bit_reader->GetBatch(1, &container[nest_cursor], count);
         }
     );
 }
