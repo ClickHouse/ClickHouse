@@ -124,7 +124,7 @@ int QueryOracle::DumpTableContent(RandomGenerator & rg, const SQLTable & t, sql_
     {
         if (entry.second.CanBeInserted())
         {
-            const std::string &cname = "c" + std::to_string(entry.first);
+            const std::string & cname = "c" + std::to_string(entry.first);
             sql_query_grammar::ExprOrderingTerm * eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
 
             sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_col()->set_column(cname);
@@ -295,7 +295,8 @@ int QueryOracle::GenerateImportQuery(const SQLTable & t, const sql_query_grammar
     {
         iff->set_fcomp(ff.fcomp());
     }
-    if (iff->format() == sql_query_grammar::IN_CSV) {
+    if (iff->format() == sql_query_grammar::IN_CSV)
+    {
         sql_query_grammar::SettingValues * vals = iff->mutable_settings();
         sql_query_grammar::SetValue * sv = vals->mutable_set_value();
 

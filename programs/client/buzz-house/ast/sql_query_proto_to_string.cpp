@@ -2394,6 +2394,11 @@ CONV_FN(TableEngineParam, tep)
         case TableEngineParamType::kNum:
             ret += std::to_string(tep.num());
             break;
+        case TableEngineParamType::kSvalue:
+            ret += "'";
+            ret += tep.svalue();
+            ret += "'";
+            break;
         default:
             ret += "c0";
     }

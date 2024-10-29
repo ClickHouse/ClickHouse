@@ -2741,6 +2741,9 @@ enum TableEngineValues {
     TinyLog = 14;
     EmbeddedRocksDB = 15;
     Buffer = 16;
+    MySQL = 17;
+    PostgreSQL = 18;
+    SQLite = 19;
 }
 
 enum TableEngineOption {
@@ -2759,6 +2762,7 @@ message TableEngineParam {
         Database database = 7;
         Table table = 8;
         uint32 num = 9;
+        string svalue = 10;
     }
 }
 

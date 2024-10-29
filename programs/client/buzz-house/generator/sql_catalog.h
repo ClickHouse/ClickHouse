@@ -75,6 +75,7 @@ public:
 struct SQLBase
 {
 public:
+    uint32_t tname = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
     bool attached = true;
     std::optional<sql_query_grammar::TableEngineOption> toption;
@@ -93,13 +94,19 @@ public:
     bool IsBufferEngine() const { return teng == sql_query_grammar::TableEngineValues::Buffer; }
 
     bool IsRocksEngine() const { return teng == sql_query_grammar::TableEngineValues::EmbeddedRocksDB; }
+
+    bool IsMySQLEngine() const { return teng == sql_query_grammar::TableEngineValues::MySQL; }
+
+    bool IsPostgreSQLEngine() const { return teng == sql_query_grammar::TableEngineValues::PostgreSQL; }
+
+    bool IsSQLiteEngine() const { return teng == sql_query_grammar::TableEngineValues::SQLite; }
 };
 
 struct SQLTable : SQLBase
 {
 public:
     bool is_temp = false;
-    uint32_t tname = 0, col_counter = 0, idx_counter = 0, proj_counter = 0, constr_counter = 0;
+    uint32_t col_counter = 0, idx_counter = 0, proj_counter = 0, constr_counter = 0;
     std::map<uint32_t, SQLColumn> cols, staged_cols;
     std::map<uint32_t, SQLIndex> idxs, staged_idxs;
     std::set<uint32_t> projs, staged_projs, constrs, staged_constrs;
@@ -143,7 +150,7 @@ struct SQLView : SQLBase
 {
 public:
     bool is_materialized = false, is_refreshable = false;
-    uint32_t vname = 0, ncols = 1, staged_ncols = 1;
+    uint32_t ncols = 1, staged_ncols = 1;
 };
 
 struct SQLFunction

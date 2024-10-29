@@ -161,7 +161,7 @@ int StatementGenerator::GenerateFromElement(RandomGenerator & rg, const uint32_t
         {
             est->mutable_database()->set_database("d" + std::to_string(v.db->dname));
         }
-        est->mutable_table()->set_table("v" + std::to_string(v.vname));
+        est->mutable_table()->set_table("v" + std::to_string(v.tname));
         jt->mutable_table_alias()->set_table(name);
         jt->set_final(!v.is_materialized && (this->enforce_final || rg.NextSmallNumber() < 3));
         for (uint32_t i = 0; i < v.ncols; i++)

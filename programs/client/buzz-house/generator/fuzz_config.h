@@ -10,16 +10,102 @@ using json = nlohmann::json;
 namespace buzzhouse
 {
 
+class ServerCredentials
+{
+public:
+    std::string hostname;
+    uint32_t port;
+    std::string unix_socket, user, password;
+
+    ServerCredentials() : hostname("localhost"), port(0), unix_socket(""), user("test"), password("") { }
+
+    ServerCredentials(const std::string & h, const uint32_t p, const std::string & us, const std::string & u, const std::string & pass)
+        : hostname(h), port(p), unix_socket(us), user(u), password(pass)
+    {
+    }
+
+    ServerCredentials(const ServerCredentials & c)
+    {
+        this->hostname = c.hostname;
+        this->port = c.port;
+        this->user = c.user;
+        this->unix_socket = c.unix_socket;
+        this->password = c.password;
+    }
+    ServerCredentials(ServerCredentials && c)
+    {
+        this->hostname = c.hostname;
+        this->port = c.port;
+        this->user = c.user;
+        this->unix_socket = c.unix_socket;
+        this->password = c.password;
+    }
+    ServerCredentials & operator=(const ServerCredentials & c)
+    {
+        this->hostname = c.hostname;
+        this->port = c.port;
+        this->user = c.user;
+        this->unix_socket = c.unix_socket;
+        this->password = c.password;
+        return *this;
+    }
+    ServerCredentials & operator=(ServerCredentials && c)
+    {
+        this->hostname = c.hostname;
+        this->port = c.port;
+        this->user = c.user;
+        this->unix_socket = c.unix_socket;
+        this->password = c.password;
+        return *this;
+    }
+};
+
+static const ServerCredentials LoadServerCredentials(const json & val, const uint32_t & default_port)
+{
+    uint32_t port = default_port;
+    std::string hostname = "localhost", unix_socket = "", user = "test", password = "";
+
+    for (const auto & [key, value] : val.items())
+    {
+        if (key == "hostname")
+        {
+            hostname = static_cast<std::string>(value);
+        }
+        else if (key == "port")
+        {
+            port = static_cast<uint32_t>(value);
+        }
+        else if (key == "unix_socket")
+        {
+            unix_socket = static_cast<std::string>(value);
+        }
+        else if (key == "user")
+        {
+            user = static_cast<std::string>(value);
+        }
+        else if (key == "password")
+        {
+            password = static_cast<std::string>(value);
+        }
+        else
+        {
+            throw std::runtime_error("Unknown option: " + key);
+        }
+    }
+    return ServerCredentials(hostname, port, unix_socket, user, password);
+}
+
 class FuzzConfig
 {
 public:
     std::vector<const std::string> collations;
+    ServerCredentials mysql_server, postgresql_server;
     bool read_log = false, fuzz_floating_points = true;
     uint32_t seed = 0, max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5;
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
                           db_file_path = std::filesystem::temp_directory_path() / "db";
 
-    FuzzConfig() { }
+    FuzzConfig() : mysql_server(), postgresql_server() { }
 
     FuzzConfig(const std::string & path)
     {
@@ -71,6 +157,14 @@ public:
             else if (key == "fuzz_floating_points")
             {
                 fuzz_floating_points = static_cast<bool>(value);
+            }
+            else if (key == "mysql")
+            {
+                mysql_server = LoadServerCredentials(value, 33060);
+            }
+            else if (key == "postgresql")
+            {
+                postgresql_server = LoadServerCredentials(value, 5432);
             }
             else
             {
