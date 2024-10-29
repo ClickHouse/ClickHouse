@@ -111,7 +111,7 @@ void ObjectStorageQueueUnorderedFileMetadata::setProcessedImpl()
 
     const auto zk_client = getZooKeeper();
     Coordination::Requests requests;
-    std::map<RequestType, UInt8> request_id;
+    std::map<RequestType, UInt8> request_index;
 
     if (processing_id_version.has_value())
     {
@@ -121,14 +121,14 @@ void ObjectStorageQueueUnorderedFileMetadata::setProcessedImpl()
 
         /// The order is important:
         /// we must first check processing nodes and set processed_path the last.
-        request_id[CHECK_PROCESSING_ID_PATH] = 0;
-        request_id[REMOVE_PROCESSING_ID_PATH] = 1;
-        request_id[REMOVE_PROCESSING_PATH] = 2;
-        request_id[SET_PROCESSED_PATH] = 3;
+        request_index[CHECK_PROCESSING_ID_PATH] = 0;
+        request_index[REMOVE_PROCESSING_ID_PATH] = 1;
+        request_index[REMOVE_PROCESSING_PATH] = 2;
+        request_index[SET_PROCESSED_PATH] = 3;
     }
     else
     {
-        request_id[SET_PROCESSED_PATH] = 0;
+        request_index[SET_PROCESSED_PATH] = 0;
     }
 
     requests.push_back(
@@ -138,9 +138,10 @@ void ObjectStorageQueueUnorderedFileMetadata::setProcessedImpl()
     Coordination::Responses responses;
     auto is_request_failed = [&](RequestType type)
     {
-        if (!request_id.contains(type))
+        if (!request_index.contains(type))
             return false;
-        return responses[request_id[type]]->error != Coordination::Error::ZOK;
+        chassert(request_index[type] < responses.size());
+        return responses[request_index[type]]->error != Coordination::Error::ZOK;
     };
 
     const auto code = zk_client->tryMulti(requests, responses);

@@ -389,7 +389,6 @@ void ObjectStorageQueueOrderedFileMetadata::setProcessedImpl()
 
     const auto zk_client = getZooKeeper();
     std::string failure_reason;
-    std::map<RequestType, UInt8> request_id;
 
     while (true)
     {
