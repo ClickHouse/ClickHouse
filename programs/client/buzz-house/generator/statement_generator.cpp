@@ -1216,9 +1216,16 @@ int StatementGenerator::GenerateNextOptimizeTable(RandomGenerator & rg, sql_quer
         est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
     }
     est->mutable_table()->set_table("t" + std::to_string(t.tname));
-    if (t.IsMergeTreeFamily() && rg.NextBool())
+    if (t.IsMergeTreeFamily())
     {
-        ot->mutable_partition();
+        if (rg.NextBool())
+        {
+            ot->mutable_partition();
+        }
+        if (rg.NextSmallNumber() < 3)
+        {
+            ot->set_cleanup(true);
+        }
     }
     if (rg.NextSmallNumber() < 4)
     {

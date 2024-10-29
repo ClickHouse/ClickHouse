@@ -2927,6 +2927,7 @@ message OptimizeTable {
     optional TableKey partition = 2;
     optional bool final = 3;
     optional DeduplicateExpr dedup = 4;
+    optional bool cleanup = 5;
 }
 
 message ExchangeTables {

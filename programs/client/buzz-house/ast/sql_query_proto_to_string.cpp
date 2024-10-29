@@ -2718,6 +2718,10 @@ CONV_FN(OptimizeTable, ot)
     {
         DeduplicateExprToString(ret, ot.dedup());
     }
+    if (ot.cleanup())
+    {
+        ret += " CLEANUP";
+    }
 }
 
 CONV_FN(ExchangeTables, et)

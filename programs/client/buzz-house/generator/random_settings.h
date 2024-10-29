@@ -435,9 +435,9 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
             ret += "'";
         }},
        {"detach_not_byte_identical_parts", TrueOrFalse},
-       {"disable_freeze_partition_for_zero_copy_replication", TrueOrFalse},
        {"disable_detach_partition_for_zero_copy_replication", TrueOrFalse},
        {"disable_fetch_partition_for_zero_copy_replication", TrueOrFalse},
+       {"disable_freeze_partition_for_zero_copy_replication", TrueOrFalse},
        {"enable_block_number_column", TrueOrFalse},
        {"enable_block_offset_column", TrueOrFalse},
        {"enable_mixed_granularity_parts", TrueOrFalse},
