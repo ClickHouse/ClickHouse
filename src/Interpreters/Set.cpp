@@ -343,6 +343,45 @@ ColumnPtr mergeNullMaps(const ColumnPtr & null_map_column1, const ColumnUInt8::P
     return merged_null_map_column;
 }
 
+void Set::processDateTime64Column(
+    const ColumnWithTypeAndName & column_to_cast,
+    ColumnPtr & result,
+    ColumnPtr & null_map_holder,
+    ConstNullMapPtr & null_map) const 
+{
+    // Check for sub-second precision and create a null map
+    ColumnUInt8::Ptr filtered_null_map_column = checkDateTimePrecision(column_to_cast);
+
+    // Extract existing null map and nested column from the result
+    const ColumnNullable * result_nullable_column = typeid_cast<const ColumnNullable *>(result.get());
+    const IColumn * nested_result_column = result_nullable_column
+        ? &result_nullable_column->getNestedColumn()
+        : result.get();
+
+    ColumnPtr existing_null_map_column = result_nullable_column
+        ? result_nullable_column->getNullMapColumnPtr()
+        : nullptr;
+
+    if (transform_null_in)
+    {
+        if (!null_map_holder)
+            null_map_holder = filtered_null_map_column;
+        else
+            null_map_holder = mergeNullMaps(null_map_holder, filtered_null_map_column);
+
+        const ColumnUInt8 * null_map_column = checkAndGetColumn<ColumnUInt8>(null_map_holder.get());
+        if (!null_map_column)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Null map must be ColumnUInt8");
+
+        null_map = &null_map_column->getData();
+    }
+    else
+    {
+        ColumnPtr merged_null_map_column = mergeNullMaps(existing_null_map_column, filtered_null_map_column);
+        result = ColumnNullable::create(nested_result_column->getPtr(), merged_null_map_column);
+    }
+}
+
 ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) const
 {
     size_t num_key_columns = columns.size();
@@ -403,32 +442,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         // If the original column is DateTime64, check for sub-second precision
         if (isDateTime64(column_to_cast.column->getDataType()))
         {
-            ColumnUInt8::Ptr filtered_null_map_column = checkDateTimePrecision(column_to_cast);
-
-            // Extract existing null map and nested column from the result
-            const ColumnNullable * result_nullable_column = typeid_cast<const ColumnNullable *>(result.get());
-            const IColumn * nested_result_column = result_nullable_column
-                ? &result_nullable_column->getNestedColumn()
-                : result.get();
-
-            ColumnPtr existing_null_map_column = result_nullable_column
-                ? result_nullable_column->getNullMapColumnPtr()
-                : nullptr;
-
-            if (transform_null_in)
-            {
-                if (!null_map_holder)
-                    null_map_holder = filtered_null_map_column;
-                else
-                    null_map_holder = mergeNullMaps(null_map_holder, filtered_null_map_column);
-
-                null_map = &assert_cast<const ColumnUInt8 &>(*null_map_holder).getData();
-            }
-            else
-            {
-                ColumnPtr merged_null_map_column = mergeNullMaps(existing_null_map_column, filtered_null_map_column);
-                result = ColumnNullable::create(nested_result_column->getPtr(), merged_null_map_column);
-            }
+            processDateTime64Column(column_to_cast, result, null_map_holder, null_map);
         }
 
         // Append the result to materialized columns
