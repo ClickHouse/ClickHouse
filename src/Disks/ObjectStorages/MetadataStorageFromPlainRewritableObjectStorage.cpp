@@ -95,11 +95,7 @@ void loadDirectoryTree(
 
                 auto metric = object_storage->getMetadataStorageMetrics().file_count;
                 CurrentMetrics::add(metric, filename_iterators.size());
-
-                {
-                    std::lock_guard lock(mutex);
-                    remote_path_info.filename_iterators = std::move(filename_iterators);
-                }
+                remote_path_info.filename_iterators = std::move(filename_iterators);
             });
     }
     runner.waitForAllToFinishAndRethrowFirstError();
