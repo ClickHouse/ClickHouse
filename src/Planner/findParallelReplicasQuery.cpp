@@ -171,11 +171,17 @@ const QueryNode * findQueryForParallelReplicas(
     const std::unordered_map<const QueryNode *, const QueryPlan::Node *> & mapping,
     const Settings & settings)
 {
+    struct Frame
+    {
+        const QueryPlan::Node * node = nullptr;
+        bool inside_join = false;
+    };
+
     const QueryNode * res = nullptr;
 
     while (!stack.empty())
     {
-        const QueryNode * subquery_node = stack.top();
+        const QueryNode * const subquery_node = stack.top();
         stack.pop();
 
         auto it = mapping.find(subquery_node);
@@ -183,23 +189,22 @@ const QueryNode * findQueryForParallelReplicas(
         if (it == mapping.end())
             break;
 
-        const QueryPlan::Node * const curr_node = it->second;
-        std::deque<std::pair<const QueryPlan::Node *, bool>> nodes_to_check;
-        nodes_to_check.push_front(std::make_pair(curr_node, false));
+        std::stack<Frame> nodes_to_check;
+        nodes_to_check.push({.node = it->second, .inside_join = false});
         bool can_distribute_full_node = true;
-        bool in = false;
+        bool currently_inside_join = false;
 
         while (!nodes_to_check.empty())
         {
-            const auto & [next_node_to_check, digging_into_rabbit_hole] = nodes_to_check.front();
-            nodes_to_check.pop_front();
+            const auto & [next_node_to_check, inside_join] = nodes_to_check.top();
+            nodes_to_check.pop();
             const auto & children = next_node_to_check->children;
             auto * step = next_node_to_check->step.get();
 
             if (children.empty())
             {
                 /// Found a source step. This should be possible only in the first iteration.
-                nodes_to_check = {};
+                break;
             }
             else if (children.size() == 1)
             {
@@ -213,10 +218,10 @@ const QueryNode * findQueryForParallelReplicas(
                 if (!expression && !filter && !allowed_creating_sets && !(sorting && sorting->getStepDescription().contains("before JOIN")))
                 {
                     can_distribute_full_node = false;
-                    in = digging_into_rabbit_hole;
+                    currently_inside_join = inside_join;
                 }
 
-                nodes_to_check.push_front(std::pair(children.front(), digging_into_rabbit_hole));
+                nodes_to_check.push({.node = children.front(), .inside_join = inside_join});
             }
             else
             {
@@ -227,7 +232,7 @@ const QueryNode * findQueryForParallelReplicas(
                     return res;
 
                 for (const auto & child : children)
-                    nodes_to_check.push_front(std::make_pair(child, true));
+                    nodes_to_check.push({.node = child, .inside_join = true});
             }
         }
 
@@ -240,7 +245,8 @@ const QueryNode * findQueryForParallelReplicas(
             if (!res)
                 return nullptr;
 
-            return in ? res : subquery_node;
+            /// todo
+            return currently_inside_join ? res : subquery_node;
         }
 
         /// Query is simple enough to be fully distributed.
