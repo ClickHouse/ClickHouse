@@ -7,6 +7,8 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
+#include <Formats/FormatFactory.h>
 #include "registerTableFunctions.h"
 
 
@@ -31,8 +33,9 @@ public:
     static constexpr auto name = "input";
     std::string getName() const override { return name; }
     bool hasStaticStructure() const override { return true; }
-    bool needStructureHint() const override { return true; }
+    TableFunctionNeedStructureHint needStructureHint() const override { return structure == "auto" ? TableFunctionNeedStructureHint::Auto : TableFunctionNeedStructureHint::No; }
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
+    bool supportsReadingSubsetOfColumns(const ContextPtr & context) override;
 
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
@@ -80,6 +83,11 @@ ColumnsDescription TableFunctionInput::getActualTableStructure(ContextPtr contex
         return structure_hint;
     }
     return parseColumnsListFromString(structure, context);
+}
+
+bool TableFunctionInput::supportsReadingSubsetOfColumns(const ContextPtr & context)
+{
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(context->getInsertFormat(), context);
 }
 
 StoragePtr TableFunctionInput::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const

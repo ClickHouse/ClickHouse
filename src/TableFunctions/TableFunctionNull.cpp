@@ -30,7 +30,7 @@ public:
     static constexpr auto name = "null";
     std::string getName() const override { return name; }
 
-    bool needStructureHint() const override { return structure == "auto"; }
+    TableFunctionNeedStructureHint needStructureHint() const override { return structure == "auto" ? TableFunctionNeedStructureHint::Required : TableFunctionNeedStructureHint::No; }
 
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 

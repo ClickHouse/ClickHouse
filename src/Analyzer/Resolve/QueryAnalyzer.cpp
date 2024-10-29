@@ -4721,6 +4721,17 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     auto table_function_ast = table_function_node_typed.toAST();
     table_function_ptr->parseArguments(table_function_ast, scope_context);
 
+    calculateStructureHintForTableFunctionIfNeeded(table_function_ptr, scope, nested_table_function);
+
+    auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr);
+    table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context, std::move(skip_analysis_arguments_indexes));
+}
+
+void QueryAnalyzer::calculateStructureHintForTableFunctionIfNeeded(
+    const TableFunctionPtr & table_function_ptr,
+    IdentifierResolveScope & scope,
+    bool nested_table_function)
+{
     /// For `INSERT INTO target_table SELECT ... FROM table_function(...)` we can assume that
     /// table_function should produce the same sequence of columns as target_table's schema.
     ///
@@ -4735,172 +4746,169 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     ///    We don't know the type of column `x`.
     /// (But disable these checks in compatibility mode use_structure_from_insertion_table_in_table_functions = 2.)
 
+    auto & scope_context = scope.context;
     uint64_t use_structure_from_insertion_table_in_table_functions
         = scope_context->getSettingsRef()[Setting::use_structure_from_insertion_table_in_table_functions];
     bool trivial_insert_select = scope.subquery_depth == 0 && !scope.may_need_columns_outside_select_list;
     bool allow_nontrivial_cases = use_structure_from_insertion_table_in_table_functions != 3;
-    if (use_structure_from_insertion_table_in_table_functions != 0 && !nested_table_function &&
-        (trivial_insert_select || allow_nontrivial_cases) &&
-        scope_context->hasInsertionTable() && table_function_ptr->needStructureHint())
+    if (use_structure_from_insertion_table_in_table_functions == 0 || nested_table_function ||
+        (!trivial_insert_select && !allow_nontrivial_cases) || !scope_context->hasInsertionTable())
+        return;
+
+    auto need_structure_hint = table_function_ptr->needStructureHint();
+    if (need_structure_hint == TableFunctionNeedStructureHint::No)
+        return;
+
+    const auto & insertion_table = scope_context->getInsertionTable();
+    if (insertion_table.empty())
+        return;
+
+    const auto & insert_columns = DatabaseCatalog::instance()
+                                        .getTable(insertion_table, scope_context)
+                                        ->getInMemoryMetadataPtr()
+                                        ->getColumns();
+    const auto & insert_column_names = scope_context->hasInsertionTableColumnNames() ? *scope_context->getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
+    DB::ColumnsDescription structure_hint;
+
+    /// Insert table matches columns against SELECT expression by position, so we want to map
+    /// insert table columns to table function columns through names from SELECT expression.
+
+    auto insert_column_name_it = insert_column_names.begin();
+    auto insert_column_names_end = insert_column_names.end();  /// end iterator of the range covered by possible asterisk
+    auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
+    bool asterisk = false;
+    const auto & expression_list = scope.scope_node->as<QueryNode &>().getProjection();
+    auto expression = expression_list.begin();
+
+    /// We want to go through SELECT expression list and correspond each expression to column in insert table
+    /// which type will be used as a hint for the file structure inference.
+    for (; expression != expression_list.end() && insert_column_name_it != insert_column_names_end; ++expression)
     {
-        const auto & insertion_table = scope_context->getInsertionTable();
-        if (!insertion_table.empty())
+        if (auto * identifier_node = (*expression)->as<IdentifierNode>())
         {
-            const auto & insert_columns = DatabaseCatalog::instance()
-                                              .getTable(insertion_table, scope_context)
-                                              ->getInMemoryMetadataPtr()
-                                              ->getColumns();
-            const auto & insert_column_names = scope_context->hasInsertionTableColumnNames() ? *scope_context->getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
-            DB::ColumnsDescription structure_hint;
-
-            bool use_columns_from_insert_query = true;
-
-            /// Insert table matches columns against SELECT expression by position, so we want to map
-            /// insert table columns to table function columns through names from SELECT expression.
-
-            auto insert_column_name_it = insert_column_names.begin();
-            auto insert_column_names_end = insert_column_names.end();  /// end iterator of the range covered by possible asterisk
-            auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
-            bool asterisk = false;
-            const auto & expression_list = scope.scope_node->as<QueryNode &>().getProjection();
-            auto expression = expression_list.begin();
-
-            /// We want to go through SELECT expression list and correspond each expression to column in insert table
-            /// which type will be used as a hint for the file structure inference.
-            for (; expression != expression_list.end() && insert_column_name_it != insert_column_names_end; ++expression)
+            if (!virtual_column_names.contains(identifier_node->getIdentifier().getFullName()))
             {
-                if (auto * identifier_node = (*expression)->as<IdentifierNode>())
+                if (asterisk)
                 {
-                    if (!virtual_column_names.contains(identifier_node->getIdentifier().getFullName()))
-                    {
-                        if (asterisk)
-                        {
-                            if (use_structure_from_insertion_table_in_table_functions == 1)
-                                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Asterisk cannot be mixed with column list in INSERT SELECT query.");
+                    if (use_structure_from_insertion_table_in_table_functions == 1)
+                        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Asterisk cannot be mixed with column list in INSERT SELECT query.");
 
-                            use_columns_from_insert_query = false;
-                            break;
-                        }
-
-                        ColumnDescription column = insert_columns.get(*insert_column_name_it);
-                        column.name = identifier_node->getIdentifier().getFullName();
-                        /// Change ephemeral columns to default columns.
-                        column.default_desc.kind = ColumnDefaultKind::Default;
-                        structure_hint.add(std::move(column));
-                    }
-
-                    /// Once we hit asterisk we want to find end of the range covered by asterisk
-                    /// contributing every further SELECT expression to the tail of insert structure
-                    if (asterisk)
-                        --insert_column_names_end;
-                    else
-                        ++insert_column_name_it;
+                    return;
                 }
-                else if (auto * matcher_node = (*expression)->as<MatcherNode>(); matcher_node && matcher_node->getMatcherType() == MatcherNodeType::ASTERISK)
-                {
-                    if (asterisk)
-                    {
-                        if (use_structure_from_insertion_table_in_table_functions == 1)
-                            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Only one asterisk can be used in INSERT SELECT query.");
 
-                        use_columns_from_insert_query = false;
-                        break;
-                    }
-                    if (!structure_hint.empty())
-                    {
-                        if (use_structure_from_insertion_table_in_table_functions == 1)
-                            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Asterisk cannot be mixed with column list in INSERT SELECT query.");
-
-                        use_columns_from_insert_query = false;
-                        break;
-                    }
-
-                    asterisk = true;
-                }
-                else if (use_structure_from_insertion_table_in_table_functions == 3)
-                {
-                    /// This may be e.g. a function or a regex column matcher. We can't infer
-                    /// the types of required columns from that.
-                    use_columns_from_insert_query = false;
-                    break;
-                }
-                else if (auto * function = (*expression)->as<FunctionNode>())
-                {
-                    if (use_structure_from_insertion_table_in_table_functions == 2 && findIdentifier(*function))
-                    {
-                        use_columns_from_insert_query = false;
-                        break;
-                    }
-
-                    /// Once we hit asterisk we want to find end of the range covered by asterisk
-                    /// contributing every further SELECT expression to the tail of insert structure
-                    if (asterisk)
-                        --insert_column_names_end;
-                    else
-                        ++insert_column_name_it;
-                }
-                else
-                {
-                    /// Once we hit asterisk we want to find end of the range covered by asterisk
-                    /// contributing every further SELECT expression to the tail of insert structure
-                    if (asterisk)
-                        --insert_column_names_end;
-                    else
-                        ++insert_column_name_it;
-                }
+                ColumnDescription column = insert_columns.get(*insert_column_name_it);
+                column.name = identifier_node->getIdentifier().getFullName();
+                /// Change ephemeral columns to default columns.
+                column.default_desc.kind = ColumnDefaultKind::Default;
+                structure_hint.add(std::move(column));
             }
 
-            if (use_columns_from_insert_query && use_structure_from_insertion_table_in_table_functions >= 2)
+            /// Once we hit asterisk we want to find end of the range covered by asterisk
+            /// contributing every further SELECT expression to the tail of insert structure
+            if (asterisk)
+                --insert_column_names_end;
+            else
+                ++insert_column_name_it;
+        }
+        else if (auto * matcher_node = (*expression)->as<MatcherNode>(); matcher_node && matcher_node->getMatcherType() == MatcherNodeType::ASTERISK)
+        {
+            if (asterisk)
             {
-                bool supports_subset;
-                /// For input function we should check if input format supports reading subset of columns.
-                if (table_function_ptr->getName() == "input")
-                    supports_subset = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(scope.context->getInsertFormat(), scope.context);
-                else
-                    supports_subset = table_function_ptr->supportsReadingSubsetOfColumns(scope.context);
+                if (use_structure_from_insertion_table_in_table_functions == 1)
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Only one asterisk can be used in INSERT SELECT query.");
 
-                if (!asterisk && !supports_subset)
-                    use_columns_from_insert_query = false;
+                return;
+            }
+            if (!structure_hint.empty())
+            {
+                if (use_structure_from_insertion_table_in_table_functions == 1)
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Asterisk cannot be mixed with column list in INSERT SELECT query.");
 
-                if (use_structure_from_insertion_table_in_table_functions == 3 && asterisk && supports_subset)
-                {
-                    /// For formats like Parquet, don't expand `SELECT *` using columns from insert
-                    /// query, because that may reorder or skip columns. '*' normally means
-                    /// "all columns of the *source* table, in the same order as in the source table",
-                    /// and it would be confusing to sometimes change its meaning to
-                    /// "all columns of the *destination* table". But we allow it if
-                    /// use_structure_from_insertion_table_in_table_functions was set to non-default value 1.
-                    use_columns_from_insert_query = false;
-                }
+                return;
             }
 
-            if (use_columns_from_insert_query)
-            {
-                if (expression == expression_list.end())
-                {
-                    /// Append tail of insert structure to the hint
-                    if (asterisk)
-                    {
-                        for (; insert_column_name_it != insert_column_names_end; ++insert_column_name_it)
-                        {
-                            ColumnDescription column = insert_columns.get(*insert_column_name_it);
-                            /// Change ephemeral columns to default columns.
-                            column.default_desc.kind = ColumnDefaultKind::Default;
-                            structure_hint.add(std::move(column));
-                        }
-                    }
+            asterisk = true;
+        }
+        else if (use_structure_from_insertion_table_in_table_functions == 3)
+        {
+            /// This may be e.g. a function or a regex column matcher. We can't infer
+            /// the types of required columns from that.
+            return;
+        }
+        else if (auto * function = (*expression)->as<FunctionNode>())
+        {
+            if (use_structure_from_insertion_table_in_table_functions == 2 && findIdentifier(*function))
+                return;
 
-                    if (!structure_hint.empty())
-                        table_function_ptr->setStructureHint(structure_hint);
-                }
-                else if (use_structure_from_insertion_table_in_table_functions == 1)
-                    throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns in insert table less than required by SELECT expression.");
-            }
+            /// Once we hit asterisk we want to find end of the range covered by asterisk
+            /// contributing every further SELECT expression to the tail of insert structure
+            if (asterisk)
+                --insert_column_names_end;
+            else
+                ++insert_column_name_it;
+        }
+        else
+        {
+            /// Once we hit asterisk we want to find end of the range covered by asterisk
+            /// contributing every further SELECT expression to the tail of insert structure
+            if (asterisk)
+                --insert_column_names_end;
+            else
+                ++insert_column_name_it;
         }
     }
 
-    auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr);
-    table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context, std::move(skip_analysis_arguments_indexes));
+    if (use_structure_from_insertion_table_in_table_functions >= 2)
+    {
+        bool supports_subset = table_function_ptr->supportsReadingSubsetOfColumns(scope.context);
+
+        if (!asterisk && !supports_subset)
+            return;
+
+        /// For input formats, we currently assume there are only 2 kinds:
+        ///  1. Formats like CSV have no schema (column names and types), don't support reading
+        /// subset of columns, and need structure hint in case of `INSERT ... SELECT *`.
+        ///  2. Formats like Parquet have schema, support reading subset of columns, and shouldn't
+        ///     use structure hint for `INSERT ... SELECT *` (because it may change behavior).
+        if (need_structure_hint == TableFunctionNeedStructureHint::Auto)
+            need_structure_hint = supports_subset ? TableFunctionNeedStructureHint::Optional : TableFunctionNeedStructureHint::Required;
+
+        if (use_structure_from_insertion_table_in_table_functions == 3 && asterisk && need_structure_hint == TableFunctionNeedStructureHint::Optional)
+        {
+            /// For formats like Parquet, don't expand `SELECT *` using columns from insert
+            /// query, because that may reorder or skip columns. '*' normally means
+            /// "all columns of the *source* table, in the same order as in the source table",
+            /// and it would be confusing to sometimes change its meaning to
+            /// "all columns of the *destination* table". But we allow it if
+            /// use_structure_from_insertion_table_in_table_functions was set to non-default value 1.
+            return;
+        }
+    }
+
+    if (expression != expression_list.end())
+    {
+        if (use_structure_from_insertion_table_in_table_functions == 1)
+            throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns in insert table less than required by SELECT expression.");
+
+        return;
+    }
+
+    /// Append tail of insert structure to the hint
+    if (asterisk)
+    {
+        for (; insert_column_name_it != insert_column_names_end; ++insert_column_name_it)
+        {
+            ColumnDescription column = insert_columns.get(*insert_column_name_it);
+            /// Change ephemeral columns to default columns.
+            column.default_desc.kind = ColumnDefaultKind::Default;
+            structure_hint.add(std::move(column));
+        }
+    }
+
+    if (structure_hint.empty())
+        return;
+
+    table_function_ptr->setStructureHint(structure_hint);
 }
 
 /// Resolve array join node in scope

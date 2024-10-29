@@ -2158,7 +2158,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
         uint64_t use_structure_from_insertion_table_in_table_functions
             = getSettingsRef()[Setting::use_structure_from_insertion_table_in_table_functions];
-        if (select_query_hint && use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint()
+        if (select_query_hint && use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint() != TableFunctionNeedStructureHint::No
             && hasInsertionTable())
         {
             const auto & insert_columns = DatabaseCatalog::instance()
