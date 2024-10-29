@@ -16,7 +16,6 @@
 #include "IO/CompressionMethod.h"
 #include <Core/Settings.h>
 #include <Parsers/ASTLiteral.h>
-#include <Formats/FormatFactory.h>
 
 
 namespace DB
