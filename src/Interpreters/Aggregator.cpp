@@ -1504,7 +1504,6 @@ bool Aggregator::executeOnBlock(Columns columns,
         && worth_convert_to_two_level)
     {
         size_t size = current_memory_usage + params.min_free_disk_space;
-        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: {} {}", __FILE__, __LINE__, current_memory_usage, params.min_free_disk_space);
         writeToTemporaryFile(result, size);
     }
 
@@ -1521,7 +1520,6 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
     size_t rows = data_variants.size();
 
     std::unique_lock lk(tmp_files_mutex);
-    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: max_temp_file_size {}", __FILE__, __LINE__, max_temp_file_size);
     auto & out_stream = tmp_files.emplace_back(getHeader(false), tmp_data.get(), max_temp_file_size);
     lk.unlock();
 
@@ -2934,7 +2932,6 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
         && worth_convert_to_two_level)
     {
         size_t size = current_memory_usage + params.min_free_disk_space;
-        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: {} {}", __FILE__, __LINE__, current_memory_usage, params.min_free_disk_space);
         writeToTemporaryFile(result, size);
     }
 
