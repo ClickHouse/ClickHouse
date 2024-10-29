@@ -18,7 +18,7 @@ public:
     using StoragePtr = std::shared_ptr<Storage>;
     using ConstStoragePtr = std::shared_ptr<const Storage>;
 
-    explicit MultipleAccessStorage(const String & storage_name_ = STORAGE_TYPE);
+    explicit MultipleAccessStorage(UInt64 access_entities_num_limit_, const String & storage_name_ = STORAGE_TYPE);
     ~MultipleAccessStorage() override;
 
     void shutdown() override;
@@ -62,12 +62,14 @@ public:
     void restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup) override;
     bool containsStorage(std::string_view storage_type) const;
 
+    void updateAccessEntitiesLimit(UInt64 limit) override;
+
 protected:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
     std::optional<std::pair<String, AccessEntityType>> readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const override;
-    bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id) override;
+    IAccessStorage::InsertResult insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id) override;
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
     std::optional<AuthResult> authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists, bool allow_no_password, bool allow_plaintext_password) const override;

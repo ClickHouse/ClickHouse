@@ -2,6 +2,7 @@
 #include <Access/Credentials.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Access/IAccessStorage.h>
 #include <base/range.h>
 #include <base/insertAtEnd.h>
 #include <boost/range/adaptor/map.hpp>
@@ -25,8 +26,8 @@ using ConstStoragePtr = std::shared_ptr<const Storage>;
 using Storages = std::vector<StoragePtr>;
 
 
-MultipleAccessStorage::MultipleAccessStorage(const String & storage_name_)
-    : IAccessStorage(storage_name_)
+MultipleAccessStorage::MultipleAccessStorage(UInt64 access_entities_num_limit_, const String & storage_name_)
+    : IAccessStorage(access_entities_num_limit_, storage_name_)
     , nested_storages(std::make_shared<Storages>())
     , ids_cache(512 /* cache size */)
 {
@@ -66,6 +67,7 @@ void MultipleAccessStorage::addStorage(const StoragePtr & new_storage)
     std::lock_guard lock{mutex};
     if (boost::range::find(*nested_storages, new_storage) != nested_storages->end())
         return;
+    new_storage->updateAccessEntitiesLimit(this->access_entities_num_limit);
     auto new_storages = std::make_shared<Storages>(*nested_storages);
     new_storages->push_back(new_storage);
     nested_storages = new_storages;
@@ -353,7 +355,7 @@ void MultipleAccessStorage::reload(ReloadMode reload_mode)
 }
 
 
-bool MultipleAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
+IAccessStorage::InsertResult MultipleAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
 {
     std::shared_ptr<IAccessStorage> storage_for_insertion;
 
@@ -376,14 +378,14 @@ bool MultipleAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & 
             getStorageName());
     }
 
-    if (storage_for_insertion->insert(id, entity, replace_if_exists, throw_if_exists, conflicting_id))
+    auto result = storage_for_insertion->insert(id, entity, replace_if_exists, throw_if_exists, conflicting_id);
+    if (result != IAccessStorage::ALREADY_EXISTS)
     {
         std::lock_guard lock{mutex};
         ids_cache.set(id, storage_for_insertion);
-        return true;
     }
 
-    return false;
+    return result;
 }
 
 
@@ -534,5 +536,14 @@ bool MultipleAccessStorage::containsStorage(std::string_view storage_type) const
             return true;
     }
     return false;
+}
+
+void MultipleAccessStorage::updateAccessEntitiesLimit(UInt64 limit)
+{
+    access_entities_num_limit = limit;
+
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+        storage->updateAccessEntitiesLimit(limit);
 }
 }

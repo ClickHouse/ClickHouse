@@ -11,6 +11,7 @@
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Common/callOnce.h>
+#include <Common/CurrentMetrics.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Poco/UUIDGenerator.h>
@@ -24,6 +25,11 @@
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm_ext/erase.hpp>
 
+namespace CurrentMetrics
+{
+    extern const Metric AttachedUser;
+}
+
 namespace DB
 {
 namespace ErrorCodes
@@ -36,6 +42,7 @@ namespace ErrorCodes
     extern const int IP_ADDRESS_NOT_ALLOWED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int TOO_MANY_ACCESS_ENTITIES;
 }
 
 
@@ -207,7 +214,7 @@ std::optional<UUID> IAccessStorage::insert(const AccessEntityPtr & entity, bool 
 }
 
 
-bool IAccessStorage::insert(const DB::UUID & id, const DB::AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
+IAccessStorage::InsertResult IAccessStorage::insert(const DB::UUID & id, const DB::AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
 {
     return insertImpl(id, entity, replace_if_exists, throw_if_exists, conflicting_id);
 }
@@ -233,8 +240,21 @@ std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & mu
         else
             id = generateRandomID();
 
-        if (insert(id, multiple_entities[0], replace_if_exists, throw_if_exists))
+        auto result = insert(id, multiple_entities[0], replace_if_exists, throw_if_exists);
+        if (result != IAccessStorage::InsertResult::ALREADY_EXISTS)
+        {
+            if (result == IAccessStorage::InsertResult::INSERTED)
+            {
+                UInt64 attached_count = CurrentMetrics::get(CurrentMetrics::AttachedUser) + 1;
+                if (entityLimitReached(attached_count))
+                {
+                    remove(id, throw_if_exists = false);
+                    throwTooManyEntities(attached_count);
+                }
+                CurrentMetrics::add(CurrentMetrics::AttachedUser);
+            }
             return {id};
+        }
         return {};
     }
 
@@ -252,8 +272,19 @@ std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & mu
             else
                 id = generateRandomID();
 
-            if (insert(id, entity, replace_if_exists, throw_if_exists))
+            auto result = insert(id, entity, replace_if_exists, throw_if_exists);
+            if (result != IAccessStorage::InsertResult::ALREADY_EXISTS)
             {
+                if (result == IAccessStorage::InsertResult::INSERTED)
+                {
+                    UInt64 attached_count = CurrentMetrics::get(CurrentMetrics::AttachedUser) + 1;
+                    if (entityLimitReached(attached_count))
+                    {
+                        remove(id, throw_if_exists = false);
+                        throwTooManyEntities(attached_count);
+                    }
+                    CurrentMetrics::add(CurrentMetrics::AttachedUser);
+                }
                 successfully_inserted.push_back(entity);
                 new_ids.push_back(id);
             }
@@ -303,7 +334,7 @@ std::vector<UUID> IAccessStorage::insertOrReplace(const std::vector<AccessEntity
 }
 
 
-bool IAccessStorage::insertImpl(const UUID &, const AccessEntityPtr & entity, bool, bool, UUID *)
+IAccessStorage::InsertResult IAccessStorage::insertImpl(const UUID &, const AccessEntityPtr & entity, bool, bool, UUID *)
 {
     if (isReadOnly())
         throwReadonlyCannotInsert(entity->getType(), entity->getName());
@@ -322,7 +353,12 @@ std::vector<UUID> IAccessStorage::remove(const std::vector<UUID> & ids, bool thr
     if (ids.empty())
         return {};
     if (ids.size() == 1)
-        return remove(ids[0], throw_if_not_exists) ? ids : std::vector<UUID>{};
+    {
+        auto result = remove(ids[0], throw_if_not_exists) ? ids : std::vector<UUID>{};
+        if (!result.empty())
+            CurrentMetrics::sub(CurrentMetrics::AttachedUser);
+        return result;
+    }
 
     Strings removed_names;
     try
@@ -340,6 +376,7 @@ std::vector<UUID> IAccessStorage::remove(const std::vector<UUID> & ids, bool thr
                 auto name = tryReadName(id);
                 if (remove(id, throw_if_not_exists))
                 {
+                    CurrentMetrics::sub(CurrentMetrics::AttachedUser);
                     removed_ids.push_back(id);
                     if (name)
                         removed_names.push_back(std::move(name).value());
@@ -355,6 +392,7 @@ std::vector<UUID> IAccessStorage::remove(const std::vector<UUID> & ids, bool thr
             auto name = tryReadName(id);
             if (remove(id, throw_if_not_exists))
             {
+                CurrentMetrics::sub(CurrentMetrics::AttachedUser);
                 removed_ids.push_back(id);
                 if (name)
                     removed_names.push_back(std::move(name).value());
@@ -743,6 +781,10 @@ LoggerPtr IAccessStorage::getLogger() const
     return log;
 }
 
+bool IAccessStorage::entityLimitReached(UInt64 entity_count) const
+{
+    return access_entities_num_limit > 0 && entity_count >= access_entities_num_limit;
+}
 
 void IAccessStorage::throwNotFound(const UUID & id) const
 {
@@ -827,4 +869,11 @@ void IAccessStorage::throwRestoreNotAllowed() const
     throw Exception(ErrorCodes::ACCESS_STORAGE_DOESNT_ALLOW_BACKUP, "Restore of access entities is not allowed in {}", getStorageName());
 }
 
+void IAccessStorage::throwTooManyEntities(UInt64 current_number) const
+{
+    throw Exception(ErrorCodes::TOO_MANY_ACCESS_ENTITIES,
+                                    "Too many access entities. "
+                                    "The limit (server configuration parameter `max_user_num_to_throw`) is set to {}, the current number is {}",
+                                        access_entities_num_limit, current_number);
+}
 }

@@ -22,7 +22,7 @@ public:
 
     static constexpr char STORAGE_TYPE[] = "users_xml";
 
-    UsersConfigAccessStorage(const String & storage_name_, AccessControl & access_control_, bool allow_backup_);
+    UsersConfigAccessStorage(const String & storage_name_, AccessControl & access_control_, bool allow_backup_, UInt64 access_entities_num_limit_);
     ~UsersConfigAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }

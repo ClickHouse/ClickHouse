@@ -12,6 +12,7 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
+#include <Access/IAccessStorage.h>
 #include <base/range.h>
 #include <base/sleep.h>
 #include <boost/range/algorithm_ext/erase.hpp>
@@ -38,12 +39,13 @@ ReplicatedAccessStorage::ReplicatedAccessStorage(
     const String & zookeeper_path_,
     zkutil::GetZooKeeper get_zookeeper_,
     AccessChangesNotifier & changes_notifier_,
-    bool allow_backup_)
-    : IAccessStorage(storage_name_)
+    bool allow_backup_,
+    UInt64 access_entities_num_limit_)
+    : IAccessStorage(access_entities_num_limit_, storage_name_)
     , zookeeper_path(zookeeper_path_)
     , get_zookeeper(get_zookeeper_)
     , watched_queue(std::make_shared<ConcurrentBoundedQueue<UUID>>(std::numeric_limits<size_t>::max()))
-    , memory_storage(storage_name_, changes_notifier_, false)
+    , memory_storage(storage_name_, changes_notifier_, false, access_entities_num_limit_)
     , changes_notifier(changes_notifier_)
     , backup_allowed(allow_backup_)
 {
@@ -115,25 +117,25 @@ static void retryOnZooKeeperUserError(size_t attempts, Func && function)
     }
 }
 
-bool ReplicatedAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
+IAccessStorage::InsertResult ReplicatedAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
 {
     const AccessEntityTypeInfo type_info = AccessEntityTypeInfo::get(new_entity->getType());
     const String & name = new_entity->getName();
     LOG_DEBUG(getLogger(), "Inserting entity of type {} named {} with id {}", type_info.name, name, toString(id));
 
     auto zookeeper = getZooKeeper();
-    bool ok = false;
-    retryOnZooKeeperUserError(10, [&]{ ok = insertZooKeeper(zookeeper, id, new_entity, replace_if_exists, throw_if_exists, conflicting_id); });
+    auto result = IAccessStorage::InsertResult::INSERTED;
+    retryOnZooKeeperUserError(10, [&]{ result = insertZooKeeper(zookeeper, id, new_entity, replace_if_exists, throw_if_exists, conflicting_id); });
 
-    if (!ok)
-        return false;
+    if (result == IAccessStorage::InsertResult::ALREADY_EXISTS)
+        return result;
 
     refreshEntity(zookeeper, id);
-    return true;
+    return result;
 }
 
 
-bool ReplicatedAccessStorage::insertZooKeeper(
+IAccessStorage::InsertResult ReplicatedAccessStorage::insertZooKeeper(
     const zkutil::ZooKeeperPtr & zookeeper,
     const UUID & id,
     const AccessEntityPtr & new_entity,
@@ -184,7 +186,7 @@ bool ReplicatedAccessStorage::insertZooKeeper(
                 {
                     if (conflicting_id)
                         *conflicting_id = id;
-                    return false;
+                    return IAccessStorage::InsertResult::ALREADY_EXISTS;
                 }
             }
             else if (responses[1]->error == Coordination::Error::ZNODEEXISTS)
@@ -203,7 +205,7 @@ bool ReplicatedAccessStorage::insertZooKeeper(
                         /// If that happens, then retryOnZooKeeperUserError() will just retry the operation from the start.
                         *conflicting_id = parseUUID(zookeeper->get(name_path));
                     }
-                    return false;
+                    return IAccessStorage::InsertResult::ALREADY_EXISTS;
                 }
             }
             else
@@ -260,14 +262,14 @@ bool ReplicatedAccessStorage::insertZooKeeper(
         zookeeper->multi(replace_ops);
 
         /// Everything's fine, the new entity has been inserted instead of an existing entity.
-        return true;
+        return IAccessStorage::InsertResult::REPLACED;
     }
 
     /// If this fails, then we'll just retry from the start.
     zkutil::KeeperMultiException::check(res, ops, responses);
 
     /// Everything's fine, the new entity has been inserted.
-    return true;
+    return IAccessStorage::InsertResult::INSERTED;
 }
 
 bool ReplicatedAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists)
