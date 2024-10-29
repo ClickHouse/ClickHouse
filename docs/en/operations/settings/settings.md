@@ -9746,3 +9746,5 @@ Type: Int64
 Default value: 0
 
 Allows you to select the max window log of ZSTD (it will not be used for MergeTree family)
+
+
