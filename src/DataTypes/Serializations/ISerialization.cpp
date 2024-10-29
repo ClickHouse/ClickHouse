@@ -161,7 +161,7 @@ String getNameForSubstreamPath(
     String stream_name,
     SubstreamIterator begin,
     SubstreamIterator end,
-    bool escape_tuple_delimiter)
+    bool escape_for_file_name)
 {
     using Substream = ISerialization::Substream;
 
@@ -186,7 +186,7 @@ String getNameForSubstreamPath(
             /// Because nested data may be represented not by Array of Tuple,
             /// but by separate Array columns with names in a form of a.b,
             /// and name is encoded as a whole.
-            if (it->type == Substream::TupleElement && escape_tuple_delimiter)
+            if (it->type == Substream::TupleElement && escape_for_file_name)
                 stream_name += escapeForFileName(substream_name);
             else
                 stream_name += substream_name;
@@ -206,7 +206,7 @@ String getNameForSubstreamPath(
         else if (it->type == SubstreamType::ObjectSharedData)
             stream_name += ".object_shared_data";
         else if (it->type == SubstreamType::ObjectTypedPath || it->type == SubstreamType::ObjectDynamicPath)
-            stream_name += "." + escapeForFileName(it->object_path_name);
+            stream_name += "." + (escape_for_file_name ? escapeForFileName(it->object_path_name) : it->object_path_name);
     }
 
     return stream_name;
