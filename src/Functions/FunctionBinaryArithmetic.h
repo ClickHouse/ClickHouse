@@ -2345,14 +2345,21 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             const ColumnNullable * nullable_column = is_const ? checkAndGetColumnConstData<ColumnNullable>(right_argument.column.get())
                                                               : checkAndGetColumn<ColumnNullable>(right_argument.column.get());
             const auto & right_null_map = nullable_column->getNullMapData();
-            NullMap res_null_map(right_null_map.begin(), right_null_map.end());
-            if (is_const)
-                res_null_map.resize(input_rows_count, 0);
+            /// Process operation is divideOrNull, moduloOrNull etc. which may return NULL when divide zero.
+            if constexpr (is_divide_or_null || is_modulo_or_null)
+            {
+                NullMap res_null_map(right_null_map.begin(), right_null_map.end());
+                if (is_const)
+                    res_null_map.resize_fill(input_rows_count, 0);
 
-            auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &right_null_map, &res_null_map);
-            return wrapInNullable(res, arguments, result_type, input_rows_count, &res_null_map);
+                auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &right_null_map, &res_null_map);
+                return wrapInNullable(res, arguments, result_type, input_rows_count, &res_null_map);
+            }
+
+            auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &right_null_map, nullptr);
+            return wrapInNullable(res, arguments, result_type, input_rows_count, nullptr);
         }
-        /// Process special case when operation is divideOrNull and moduloOrNull which will return NULL divided zero.
+        /// Process when operation is divideOrNull and moduloOrNull, when right argument is not Nullable.
         else if ((is_divide_or_null || is_modulo_or_null) && !res_nullmap)
         {
             NullMap res_null_map(input_rows_count, 0);
