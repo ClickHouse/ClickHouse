@@ -15,6 +15,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <chrono>
+#include <fmt/chrono.h>
 #include <mutex>
 
 
@@ -158,7 +159,11 @@ void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time,
 
 std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint query_info_time, bool schedule_next)
 {
-    LOG_DEBUG(logger, "Collecting query_metric_log for query {}. Schedule next: {}", query_id, schedule_next);
+    /// fmtlib supports subsecond formatting in 10.0.0. We're in 9.1.0, so we need to add the milliseconds ourselves.
+    auto seconds = std::chrono::time_point_cast<std::chrono::seconds>(query_info_time);
+    auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(query_info_time - seconds).count();
+    LOG_DEBUG(logger, "Collecting query_metric_log for query {} with QueryStatusInfo from {:%Y.%m.%d %H:%M:%S}.{:05}. Schedule next: {}", query_id, seconds, milliseconds, schedule_next);
+
     std::unique_lock lock(queries_mutex);
     auto query_status_it = queries.find(query_id);
 
