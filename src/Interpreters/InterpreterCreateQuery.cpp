@@ -1950,46 +1950,25 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
 void InterpreterCreateQuery::throwIfTooManyEntities(ASTCreateQuery & create, StoragePtr storage) const
 {
+    auto check_and_throw = [&](auto setting, CurrentMetrics::Metric metric, String setting_name, String entity_name)
+        {
+            UInt64 num_limit = getContext()->getGlobalContext()->getServerSettings()[setting];
+            UInt64 attached_count = CurrentMetrics::get(metric);
+            if (num_limit > 0 && attached_count >= num_limit)
+                throw Exception(ErrorCodes::TOO_MANY_TABLES,
+                                "Too many {}. "
+                                "The limit (server configuration parameter `{}`) is set to {}, the current number is {}",
+                                entity_name, setting_name, num_limit, attached_count);
+        };
+
     if (auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(storage.get()))
-    {
-        UInt64 num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_replicated_table_num_to_throw];
-        UInt64 attached_count = CurrentMetrics::get(CurrentMetrics::AttachedReplicatedTable);
-        if (attached_count >= num_limit)
-            throw Exception(ErrorCodes::TOO_MANY_TABLES,
-                            "Too many replicated tables. "
-                            "The limit (server configuration parameter `max_replicated_table_num_to_throw`) is set to {}, the current number is {}",
-                            num_limit, attached_count);
-    }
+        check_and_throw(ServerSetting::max_replicated_table_num_to_throw, CurrentMetrics::AttachedReplicatedTable, "max_replicated_table_num_to_throw", "replicated tables");
     else if (create.is_dictionary)
-    {
-        UInt64 num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_dictionary_num_to_throw];
-        UInt64 attached_count = CurrentMetrics::get(CurrentMetrics::AttachedDictionary);
-        if (attached_count >= num_limit)
-        throw Exception(ErrorCodes::TOO_MANY_TABLES,
-                        "Too many dictionaries. "
-                        "The limit (server configuration parameter `max_dictionary_num_to_throw`) is set to {}, the current number is {}",
-                        num_limit, attached_count);
-    }
+        check_and_throw(ServerSetting::max_dictionary_num_to_throw, CurrentMetrics::AttachedDictionary, "max_dictionary_num_to_throw", "dictionaries");
     else if (create.isView())
-    {
-        UInt64 num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_view_num_to_throw];
-        UInt64 attached_count = CurrentMetrics::get(CurrentMetrics::AttachedView);
-        if (attached_count >= num_limit)
-            throw Exception(ErrorCodes::TOO_MANY_TABLES,
-                            "Too many views. "
-                            "The limit (server configuration parameter `max_view_num_to_throw`) is set to {}, the current number is {}",
-                            num_limit, attached_count);
-    }
+        check_and_throw(ServerSetting::max_view_num_to_throw, CurrentMetrics::AttachedView, "max_view_num_to_throw", "views");
     else
-    {
-        UInt64 num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_table_num_to_throw];
-        UInt64 attached_count = CurrentMetrics::get(CurrentMetrics::AttachedTable);
-        if (attached_count >= num_limit)
-            throw Exception(ErrorCodes::TOO_MANY_TABLES,
-                            "Too many tables. "
-                            "The limit (server configuration parameter `max_table_num_to_throw`) is set to {}, the current number is {}",
-                            num_limit, attached_count);
-    }
+        check_and_throw(ServerSetting::max_table_num_to_throw, CurrentMetrics::AttachedTable, "max_table_num_to_throw", "tables");
 }
 
 
