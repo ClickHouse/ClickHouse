@@ -77,13 +77,11 @@ static ITransformingStep::Traits getTraits(size_t limit)
 }
 
 SortingStep::SortingStep(
-    const Header & input_header,
-    SortDescription description_,
-    UInt64 limit_,
-    const Settings & settings_)
+    const Header & input_header, SortDescription description_, UInt64 limit_, const Settings & settings_, bool is_sorting_for_merge_join_)
     : ITransformingStep(input_header, input_header, getTraits(limit_))
     , type(Type::Full)
     , result_description(std::move(description_))
+    , is_sorting_for_merge_join(is_sorting_for_merge_join_)
     , limit(limit_)
     , sort_settings(settings_)
 {

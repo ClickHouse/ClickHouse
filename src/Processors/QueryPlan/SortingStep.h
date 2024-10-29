@@ -39,7 +39,8 @@ public:
         const Header & input_header,
         SortDescription description_,
         UInt64 limit_,
-        const Settings & settings_);
+        const Settings & settings_,
+        bool is_sorting_for_merge_join_ = false);
 
     /// Full with partitioning
     SortingStep(
@@ -80,6 +81,8 @@ public:
     const SortDescription & getSortDescription() const override { return result_description; }
 
     bool hasPartitions() const { return !partition_by_description.empty(); }
+
+    bool isSortingForMergeJoin() const { return is_sorting_for_merge_join; }
 
     void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_);
 
@@ -124,6 +127,7 @@ private:
     const SortDescription result_description;
 
     SortDescription partition_by_description;
+    bool is_sorting_for_merge_join = false;
 
     UInt64 limit;
     bool always_read_till_end = false;
