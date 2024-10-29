@@ -1,4 +1,6 @@
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <Poco/Logger.h>
+#include "Common/logger_useful.h"
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -135,6 +137,8 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
     {
         String endpoint = config.getString(config_prefix + ".endpoint");
 
+        LOG_DEBUG(&Poco::Logger::get("Inside Azure"), "AzureBlobStorage: processing endpoint: {}", endpoint);
+
         /// For some authentication methods account name is not present in the endpoint
         /// 'endpoint_contains_account_name' bool is used to understand how to split the endpoint (default : true)
         bool endpoint_contains_account_name = config.getBool(config_prefix + ".endpoint_contains_account_name", true);
@@ -193,11 +197,13 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
     else if (config.has(config_prefix + ".connection_string"))
     {
         storage_url = config.getString(config_prefix + ".connection_string");
+        LOG_DEBUG(&Poco::Logger::get("Inside Azure"), "AzureBlobStorage: processing connection_string: {}", storage_url);
         container_name = get_container_name();
     }
     else if (config.has(config_prefix + ".storage_account_url"))
     {
         storage_url = config.getString(config_prefix + ".storage_account_url");
+        LOG_DEBUG(&Poco::Logger::get("Inside Azure"), "AzureBlobStorage: processing storage_url: {}", storage_url);
         validateStorageAccountUrl(storage_url);
         container_name = get_container_name();
     }

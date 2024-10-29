@@ -252,6 +252,27 @@ ReadFromFormatInfo StorageObjectStorage::prepareReadingFromFormat(
     return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns);
 }
 
+void printConfiguration(const Poco::Util::AbstractConfiguration & config, std::string log_name, const std::string & prefix = "")
+{
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(prefix, keys);
+
+    for (const auto & key : keys)
+    {
+        std::string full_key = prefix.empty() ? key : (prefix + "." + key);
+
+        if (config.hasProperty(full_key))
+        {
+            std::string value = config.getString(full_key);
+            LOG_DEBUG(&Poco::Logger::get(log_name), "{} = {}", full_key, value);
+        }
+
+        // Recursively print sub-configurations
+        printConfiguration(config, full_key, log_name);
+    }
+}
+
+
 void StorageObjectStorage::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -262,6 +283,7 @@ void StorageObjectStorage::read(
     size_t max_block_size,
     size_t num_streams)
 {
+    printConfiguration(local_context->getConfigRef(), "Select query");
     updateConfiguration(local_context);
     if (partition_by && configuration->withPartitionWildcard())
     {
