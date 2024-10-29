@@ -176,6 +176,10 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         {
             connection_timeout_ms = config.getInt(config_name + "." + key);
         }
+        else if (key == "num_connection_retries")
+        {
+            num_connection_retries = config.getInt(config_name + "." + key);
+        }
         else if (key == "enable_fault_injections_during_startup")
         {
             enable_fault_injections_during_startup = config.getBool(config_name + "." + key);
