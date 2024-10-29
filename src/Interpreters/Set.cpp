@@ -347,7 +347,7 @@ void Set::processDateTime64Column(
     const ColumnWithTypeAndName & column_to_cast,
     ColumnPtr & result,
     ColumnPtr & null_map_holder,
-    ConstNullMapPtr & null_map) const 
+    ConstNullMapPtr & null_map) const
 {
     // Check for sub-second precision and create a null map
     ColumnUInt8::Ptr filtered_null_map_column = checkDateTimePrecision(column_to_cast);
