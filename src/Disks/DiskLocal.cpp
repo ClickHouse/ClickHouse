@@ -148,8 +148,7 @@ public:
     {
         if (entry->is_directory())
             return dir_path / entry->path().filename() / "";
-        else
-            return dir_path / entry->path().filename();
+        return dir_path / entry->path().filename();
     }
 
     String name() const override { return entry->path().filename(); }
@@ -211,10 +210,9 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes)
         reserved_bytes += bytes;
         return {unreserved_space - bytes};
     }
-    else
-    {
-        LOG_TRACE(logger, "Could not reserve {} on local disk {}. Not enough unreserved space", ReadableSize(bytes), backQuote(name));
-    }
+
+    LOG_TRACE(logger, "Could not reserve {} on local disk {}. Not enough unreserved space", ReadableSize(bytes), backQuote(name));
+
 
     return {};
 }
@@ -264,17 +262,17 @@ std::optional<UInt64> DiskLocal::getUnreservedSpace() const
     return available_space;
 }
 
-bool DiskLocal::exists(const String & path) const
+bool DiskLocal::existsFileOrDirectory(const String & path) const
 {
     return fs::exists(fs::path(disk_path) / path);
 }
 
-bool DiskLocal::isFile(const String & path) const
+bool DiskLocal::existsFile(const String & path) const
 {
     return fs::is_regular_file(fs::path(disk_path) / path);
 }
 
-bool DiskLocal::isDirectory(const String & path) const
+bool DiskLocal::existsDirectory(const String & path) const
 {
     return fs::is_directory(fs::path(disk_path) / path);
 }
@@ -310,8 +308,7 @@ DirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path) const
     fs::path meta_path = fs::path(disk_path) / path;
     if (!broken && fs::exists(meta_path) && fs::is_directory(meta_path))
         return std::make_unique<DiskLocalDirectoryIterator>(disk_path, path);
-    else
-        return std::make_unique<DiskLocalDirectoryIterator>();
+    return std::make_unique<DiskLocalDirectoryIterator>();
 }
 
 void DiskLocal::moveFile(const String & from_path, const String & to_path)
@@ -372,8 +369,11 @@ void DiskLocal::removeFile(const String & path)
 void DiskLocal::removeFileIfExists(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
-    if (0 != unlink(fs_path.c_str()) && errno != ENOENT)
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, fs_path, "Cannot unlink file {}", fs_path);
+    if (0 != unlink(fs_path.c_str()))
+    {
+        if (errno != ENOENT)
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, fs_path, "Cannot unlink file {}", fs_path);
+    }
 }
 
 void DiskLocal::removeDirectory(const String & path)
@@ -641,7 +641,7 @@ void DiskLocal::setup()
 
     try
     {
-        if (exists(disk_checker_path))
+        if (existsFile(disk_checker_path))
         {
             auto magic_number = readDiskCheckerMagicNumber();
             if (magic_number)

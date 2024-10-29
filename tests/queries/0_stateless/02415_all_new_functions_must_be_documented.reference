@@ -321,7 +321,6 @@ geohashesInBox
 getMacro
 getOSKernelVersion
 getServerPort
-getSetting
 getSizeOfEnumType
 getTypeSerializationStreams
 globalIn
@@ -520,6 +519,9 @@ parseDateTime64BestEffortOrZero
 parseDateTime64BestEffortUS
 parseDateTime64BestEffortUSOrNull
 parseDateTime64BestEffortUSOrZero
+parseDateTime64InJodaSyntax
+parseDateTime64InJodaSyntaxOrNull
+parseDateTime64InJodaSyntaxOrZero
 parseDateTimeBestEffort
 parseDateTimeBestEffortOrNull
 parseDateTimeBestEffortOrZero

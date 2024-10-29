@@ -78,7 +78,6 @@ namespace Setting
     extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsBool calculate_text_stack_trace;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
-    extern const SettingsBool enable_deflate_qpl_codec;
     extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsUInt64 idle_connection_timeout;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
@@ -100,6 +99,12 @@ namespace Setting
     extern const SettingsUInt64 unknown_packet_in_send_data;
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
+    extern const SettingsBool use_concurrency_control;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool validate_tcp_client_information;
 }
 }
 
@@ -1062,7 +1067,7 @@ void TCPHandler::processInsertQuery()
             sendInsertProfileEvents();
             return;
         }
-        else if (result.status == AsynchronousInsertQueue::PushResult::TOO_MUCH_DATA)
+        if (result.status == AsynchronousInsertQueue::PushResult::TOO_MUCH_DATA)
         {
             LOG_DEBUG(log, "Setting async_insert=1, but INSERT query will be executed synchronously because it has too much data");
             processed_block = std::move(result.insert_block);
@@ -1110,6 +1115,7 @@ void TCPHandler::processOrdinaryQuery()
 
     {
         PullingAsyncPipelineExecutor executor(pipeline);
+        pipeline.setConcurrencyControl(query_context->getSettingsRef()[Setting::use_concurrency_control]);
         CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
 
         /// The following may happen:
@@ -1138,7 +1144,7 @@ void TCPHandler::processOrdinaryQuery()
                 executor.cancel();
                 break;
             }
-            else if (cancellation_status == CancellationStatus::READ_CANCELLED)
+            if (cancellation_status == CancellationStatus::READ_CANCELLED)
             {
                 executor.cancelReading();
             }
@@ -1543,9 +1549,8 @@ void TCPHandler::receiveHello()
             writeString(formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(server.config()), *out);
             throw Exception(ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT, "Client has connected to wrong port");
         }
-        else
-            throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
-                               "Unexpected packet from client (expected Hello, got {})", packet_type);
+        throw NetException(
+            ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client (expected Hello, got {})", packet_type);
     }
 
     readStringBinary(client_name, *in);
@@ -1830,11 +1835,11 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
             decreaseCancellationStatus("Received 'Cancel' packet from the client, canceling the read task.");
             return {};
         }
-        else
-        {
-            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Received {} packet after requesting read task",
-                    Protocol::Client::toString(packet_type));
-        }
+
+        throw Exception(
+            ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+            "Received {} packet after requesting read task",
+            Protocol::Client::toString(packet_type));
     }
     UInt64 version;
     readVarUInt(version, *in);
@@ -1857,11 +1862,11 @@ std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTas
             decreaseCancellationStatus("Received 'Cancel' packet from the client, canceling the MergeTree read task.");
             return std::nullopt;
         }
-        else
-        {
-            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Received {} packet after requesting read task",
-                    Protocol::Client::toString(packet_type));
-        }
+
+        throw Exception(
+            ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+            "Received {} packet after requesting read task",
+            Protocol::Client::toString(packet_type));
     }
     ParallelReadResponse response;
     response.deserialize(*in);
@@ -1900,7 +1905,7 @@ void TCPHandler::receiveQuery()
 
         correctQueryClientInfo(session->getClientInfo(), client_info);
         const auto & config_ref = Context::getGlobalContextInstance()->getServerSettings();
-        if (config_ref.validate_tcp_client_information)
+        if (config_ref[ServerSetting::validate_tcp_client_information])
             validateClientInfo(session->getClientInfo(), client_info);
     }
 
@@ -2232,7 +2237,6 @@ void TCPHandler::initBlockOutput(const Block & block)
                     level,
                     !query_settings[Setting::allow_suspicious_codecs],
                     query_settings[Setting::allow_experimental_codecs],
-                    query_settings[Setting::enable_deflate_qpl_codec],
                     query_settings[Setting::enable_zstd_qat_codec]);
 
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
@@ -2540,8 +2544,7 @@ Poco::Net::SocketAddress TCPHandler::getClientAddress(const ClientInfo & client_
     String forwarded_address = client_info.getLastForwardedFor();
     if (!forwarded_address.empty() && server.config().getBool("auth_use_forwarded_address", false))
         return Poco::Net::SocketAddress(forwarded_address, socket().peerAddress().port());
-    else
-        return socket().peerAddress();
+    return socket().peerAddress();
 }
 
 }

@@ -34,7 +34,10 @@ class TestCIConfig(unittest.TestCase):
                     f"Job [{job}] must have style-checker(-aarch64) runner",
                 )
             elif "binary_" in job.lower() or "package_" in job.lower():
-                if job.lower() == CI.BuildNames.PACKAGE_AARCH64:
+                if job.lower() in (
+                    CI.BuildNames.PACKAGE_AARCH64,
+                    CI.BuildNames.PACKAGE_AARCH64_ASAN,
+                ):
                     self.assertTrue(
                         CI.JOB_CONFIGS[job].runner_type in (CI.Runners.BUILDER_ARM,),
                         f"Job [{job}] must have [{CI.Runners.BUILDER_ARM}] runner",
@@ -304,7 +307,7 @@ class TestCIConfig(unittest.TestCase):
         for job, config in CI.JOB_CONFIGS.items():
             if (
                 CI.is_build_job(job)
-                and not config.run_by_label
+                and not config.run_by_labels
                 and job not in expected_jobs_to_do
             ):
                 # expected to run all builds jobs
@@ -358,7 +361,7 @@ class TestCIConfig(unittest.TestCase):
                 continue
             if config.release_only:
                 continue
-            if config.run_by_label:
+            if config.run_by_labels:
                 continue
             expected_jobs_to_do.append(job)
 
@@ -391,7 +394,7 @@ class TestCIConfig(unittest.TestCase):
         for job, config in CI.JOB_CONFIGS.items():
             if config.pr_only:
                 continue
-            if config.run_by_label:
+            if config.run_by_labels:
                 continue
             if job in CI.MQ_JOBS:
                 continue

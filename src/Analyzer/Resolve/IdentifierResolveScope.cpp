@@ -120,7 +120,7 @@ void IdentifierResolveScope::popExpressionNode()
 {
     buffer << "Scope node " << scope_node->formatConvertedASTForErrorMessage() << '\n';
 
-    if (auto* query = scope_node->as<QueryNode>())
+    if (scope_node->as<QueryNode>())
     {
         buffer << "Table expression data: ";
         auto it = table_expression_node_to_data.find(scope_node);

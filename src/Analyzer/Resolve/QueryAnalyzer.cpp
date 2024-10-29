@@ -107,6 +107,7 @@ namespace Setting
     extern const SettingsBool single_join_prefer_left_table;
     extern const SettingsBool transform_null_in;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
+    extern const SettingsBool use_concurrency_control;
 }
 
 
@@ -593,6 +594,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             PullingAsyncPipelineExecutor executor(io.pipeline);
             io.pipeline.setProgressCallback(context->getProgressCallback());
             io.pipeline.setProcessListElement(context->getProcessListElement());
+            io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
             Block block;
 
@@ -1251,9 +1253,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
             }
             return {};
         }
-        else if (identifier_lookup.isFunctionLookup() || identifier_lookup.isTableExpressionLookup())
+        if (identifier_lookup.isFunctionLookup() || identifier_lookup.isTableExpressionLookup())
         {
-            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+            throw Exception(
+                ErrorCodes::UNKNOWN_IDENTIFIER,
                 "Compound identifier '{}' cannot be resolved as {}. In scope {}",
                 identifier_lookup.identifier.getFullName(),
                 identifier_lookup.isFunctionLookup() ? "function" : "table expression",
@@ -1991,7 +1994,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
     {
         bool table_expression_in_resolve_process = nearest_query_scope->table_expressions_in_resolve_process.contains(table_expression.get());
 
-        if (auto * array_join_node = table_expression->as<ArrayJoinNode>())
+        if (table_expression->as<ArrayJoinNode>())
         {
             if (table_expressions_column_nodes_with_names_stack.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -3216,14 +3219,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             node = std::move(result_list);
             return result_projection_names;
         }
-        else if (function_name == "grouping")
+        if (function_name == "grouping")
         {
             /// It is responsibility of planner to perform additional handling of grouping function
             if (function_arguments_size == 0)
-                throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                    "Function GROUPING expects at least one argument");
-            else if (function_arguments_size > 64)
-                throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
+                throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function GROUPING expects at least one argument");
+            if (function_arguments_size > 64)
+                throw Exception(
+                    ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
                     "Function GROUPING can have up to 64 arguments, but {} provided",
                     function_arguments_size);
             checkFunctionNodeHasEmptyNullsAction(function_node);
@@ -3791,11 +3794,11 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                 resolved_expression_it = resolved_expressions.find(node);
                 if (resolved_expression_it != resolved_expressions.end())
                     return resolved_expression_it->second;
-                else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Identifier '{}' resolve into list node and list node projection names are not initialized. In scope {}",
-                        unresolved_identifier.getFullName(),
-                        scope.scope_node->formatASTForErrorMessage());
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Identifier '{}' resolve into list node and list node projection names are not initialized. In scope {}",
+                    unresolved_identifier.getFullName(),
+                    scope.scope_node->formatASTForErrorMessage());
             }
 
             if (result_projection_names.empty())
@@ -4074,9 +4077,10 @@ ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_
 
             const auto * constant_node = sort_node.getFillTo()->as<ConstantNode>();
             if (!constant_node || !isColumnedAsNumber(constant_node->getResultType()))
-                throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                throw Exception(
+                    ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                     "Sort FILL TO expression must be constant with numeric type. Actual {}. In scope {}",
-                    sort_node.getFillFrom()->formatASTForErrorMessage(),
+                    sort_node.getFillTo()->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
 
             size_t fill_to_expression_projection_names_size = fill_to_expression_projection_names.size();
@@ -4247,7 +4251,7 @@ NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePt
 
     for (size_t i = 0; i < projection_nodes_size; ++i)
     {
-        auto projection_node = projection_nodes[i];
+        const auto & projection_node = projection_nodes[i];
 
         if (!IdentifierResolver::isExpressionNodeType(projection_node->getNodeType()))
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -4667,10 +4671,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 "Unknown table function {}. Maybe you meant: {}",
                 table_function_name,
                 DB::toString(hints));
-        else
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
-                "Unknown table function {}",
-                table_function_name);
+        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}", table_function_name);
     }
 
     QueryTreeNodes result_table_function_arguments;
@@ -4706,7 +4707,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
             continue;
         }
-        else if (auto * table_function_argument_function = table_function_argument->as<FunctionNode>())
+        if (auto * table_function_argument_function = table_function_argument->as<FunctionNode>())
         {
             const auto & table_function_argument_function_name = table_function_argument_function->getFunctionName();
             if (TableFunctionFactory::instance().isTableFunctionName(table_function_argument_function_name))

@@ -1,6 +1,7 @@
 #include <Interpreters/Context.h>
 #include "ICommand.h"
 
+#include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
@@ -33,14 +34,14 @@ public:
         auto in = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
         {
             if (!path_from.has_value())
-            {
                 return std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
-            }
-            else
-            {
-                String relative_path_from = disk.getRelativeFromRoot(path_from.value());
-                return disk.getDisk()->readFile(relative_path_from, getReadSettings());
-            }
+
+            String relative_path_from = disk.getRelativeFromRoot(path_from.value());
+            auto res = disk.getDisk()->readFileIfExists(relative_path_from, getReadSettings());
+            if (res)
+                return res;
+            /// For backward compatibility.
+            return std::make_unique<ReadBufferFromEmptyFile>();
         }();
 
         auto out = disk.getDisk()->writeFile(path_to);
