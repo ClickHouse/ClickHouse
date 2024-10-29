@@ -95,13 +95,15 @@ def create_s3_table(node, table_name):
 
 
 def check_no_table_in_detached_table(node, table_name: str):
-    query = f"SELECT count(table) FROM system.detached_tables WHERE table='{table_name}'"
+    query = (
+        f"SELECT count(table) FROM system.detached_tables WHERE table='{table_name}'"
+    )
     assert_eq_with_retry(instance=node, query=query, expectation="0")
 
 
 def test_drop_replicated_table(start_cluster):
     objects_before = list_objects(cluster, "data/")
-    table_name="test_replicated_table"
+    table_name = "test_replicated_table"
 
     create_replicated_table(node=replica1, table_name=table_name)
 
@@ -110,9 +112,7 @@ def test_drop_replicated_table(start_cluster):
     )
     replica1.query(f"SYSTEM SYNC REPLICA {table_name};", timeout=20)
 
-    replica1.query(
-        f"DETACH TABLE {table_name} ON CLUSTER test_cluster PERMANENTLY;"
-    )
+    replica1.query(f"DETACH TABLE {table_name} ON CLUSTER test_cluster PERMANENTLY;")
 
     zk = cluster.get_kazoo_client("zoo1")
 
@@ -164,7 +164,7 @@ def test_drop_replicated_table(start_cluster):
 
 def test_drop_s3_table(start_cluster):
     objects_before = list_objects(cluster, "data/")
-    table_name="test_replicated_table"
+    table_name = "test_replicated_table"
 
     create_s3_table(node_s3, table_name)
 
