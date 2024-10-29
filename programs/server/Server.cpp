@@ -168,9 +168,11 @@ namespace ServerSetting
 {
     extern const ServerSettingsUInt32 asynchronous_heavy_metrics_update_period_s;
     extern const ServerSettingsUInt32 asynchronous_metrics_update_period_s;
+    extern const ServerSettingsBool asynchronous_metrics_enable_heavy_metrics;
     extern const ServerSettingsBool async_insert_queue_flush_on_shutdown;
     extern const ServerSettingsUInt64 async_insert_threads;
     extern const ServerSettingsBool async_load_databases;
+    extern const ServerSettingsBool async_load_system_database;
     extern const ServerSettingsUInt64 background_buffer_flush_schedule_pool_size;
     extern const ServerSettingsUInt64 background_common_pool_size;
     extern const ServerSettingsUInt64 background_distributed_schedule_pool_size;
@@ -1060,6 +1062,7 @@ try
     ServerAsynchronousMetrics async_metrics(
         global_context,
         server_settings[ServerSetting::asynchronous_metrics_update_period_s],
+        server_settings[ServerSetting::asynchronous_metrics_enable_heavy_metrics],
         server_settings[ServerSetting::asynchronous_heavy_metrics_update_period_s],
         [&]() -> std::vector<ProtocolServerMetrics>
         {
@@ -2199,6 +2202,7 @@ try
 
     LOG_INFO(log, "Loading metadata from {}", path_str);
 
+    LoadTaskPtrs load_system_metadata_tasks;
     LoadTaskPtrs load_metadata_tasks;
 
     // Make sure that if exception is thrown during startup async, new async loading jobs are not going to be called.
@@ -2222,12 +2226,8 @@ try
         auto & database_catalog = DatabaseCatalog::instance();
         /// We load temporary database first, because projections need it.
         database_catalog.initializeAndLoadTemporaryDatabase();
-        auto system_startup_tasks = loadMetadataSystem(global_context);
-        maybeConvertSystemDatabase(global_context, system_startup_tasks);
-        /// This has to be done before the initialization of system logs,
-        /// otherwise there is a race condition between the system database initialization
-        /// and creation of new tables in the database.
-        waitLoad(TablesLoaderForegroundPoolId, system_startup_tasks);
+        load_system_metadata_tasks = loadMetadataSystem(global_context, server_settings[ServerSetting::async_load_system_database]);
+        maybeConvertSystemDatabase(global_context, load_system_metadata_tasks);
 
         /// Startup scripts can depend on the system log tables.
         if (config().has("startup_scripts") && !server_settings[ServerSetting::prepare_system_log_tables_on_startup].changed)
@@ -2409,10 +2409,12 @@ try
                     "DDLWorker",
                     &CurrentMetrics::MaxDDLEntryID,
                     &CurrentMetrics::MaxPushedDDLEntryID),
-                load_metadata_tasks);
+                joinTasks(load_system_metadata_tasks, load_metadata_tasks));
         }
 
         /// Do not keep tasks in server, they should be kept inside databases. Used here to make dependent tasks only.
+        load_system_metadata_tasks.clear();
+        load_system_metadata_tasks.shrink_to_fit();
         load_metadata_tasks.clear();
         load_metadata_tasks.shrink_to_fit();
 
