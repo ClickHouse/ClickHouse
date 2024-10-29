@@ -918,11 +918,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 /// It is just a safety check needed until we have a proper sending plan to replicas.
                 /// If we have a non-trivial storage like View it might create its own Planner inside read(), run findTableForParallelReplicas()
                 /// and find some other table that might be used for reading with parallel replicas. It will lead to errors.
-                // const bool other_table_already_chosen_for_reading_with_parallel_replicas
-                //     = planner_context->getGlobalPlannerContext()->parallel_replicas_table
-                //     && !table_expression_query_info.current_table_chosen_for_reading_with_parallel_replicas;
-                // if (other_table_already_chosen_for_reading_with_parallel_replicas)
-                //     planner_context->getMutableQueryContext()->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                const bool other_table_already_chosen_for_reading_with_parallel_replicas
+                    = planner_context->getGlobalPlannerContext()->parallel_replicas_table
+                    && !table_expression_query_info.current_table_chosen_for_reading_with_parallel_replicas;
+                if (other_table_already_chosen_for_reading_with_parallel_replicas)
+                    planner_context->getMutableQueryContext()->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
 
                 storage->read(
                     query_plan,
@@ -933,8 +933,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     from_stage,
                     max_block_size,
                     max_streams);
-
-                LOG_DEBUG(getLogger("dumpQueryPlan"), "\n{}", dumpQueryPlan(query_plan));
 
                 auto parallel_replicas_enabled_for_storage = [](const StoragePtr & table, const Settings & query_settings)
                 {
@@ -1255,8 +1253,6 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
     const ColumnIdentifierSet & outer_scope_columns,
     PlannerContextPtr & planner_context)
 {
-    // LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Join expression: {}", join_table_expression->dumpTree());
-
     auto & join_node = join_table_expression->as<JoinNode &>();
     if (left_join_tree_query_plan.from_stage != QueryProcessingStage::FetchColumns)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -1928,8 +1924,6 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Expected 1 query plan for JOIN TREE. Actual {}",
             query_plans_stack.size());
-
-    // LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "JOIN query plan:\n{}", dumpQueryPlan(query_plans_stack.back().query_plan));
 
     return std::move(query_plans_stack.back());
 }

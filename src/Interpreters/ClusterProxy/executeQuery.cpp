@@ -477,8 +477,8 @@ void executeQueryWithParallelReplicas(
     QueryPlanStepPtr analyzed_read_from_merge_tree)
 {
     auto logger = getLogger("executeQueryWithParallelReplicas");
-    LOG_DEBUG(logger, "Executing read from {}, header {}, query ({}), stage {} with parallel replicas\n{}",
-        storage_id.getNameForLogs(), header.dumpStructure(), query_ast->formatForLogging(), processed_stage, StackTrace().toString());
+    LOG_DEBUG(logger, "Executing read from {}, header {}, query ({}), stage {} with parallel replicas",
+        storage_id.getNameForLogs(), header.dumpStructure(), query_ast->formatForLogging(), processed_stage);
 
     const auto & settings = context->getSettingsRef();
 

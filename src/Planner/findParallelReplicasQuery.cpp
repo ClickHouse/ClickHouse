@@ -250,7 +250,7 @@ const QueryNode * findQueryForParallelReplicas(
     return res;
 }
 
-const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tree_node, SelectQueryOptions & select_query_options)
+const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options)
 {
     if (select_query_options.only_analyze)
         return nullptr;
@@ -404,7 +404,7 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
     return nullptr;
 }
 
-const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, SelectQueryOptions & select_query_options)
+const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options)
 {
     if (select_query_options.only_analyze)
         return nullptr;
