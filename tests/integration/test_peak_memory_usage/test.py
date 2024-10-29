@@ -68,7 +68,8 @@ def get_memory_usage_from_client_output_and_close(client_output):
     for line in client_output:
         print(f"'{line}'\n")
         if not peek_memory_usage_str_found:
-            peek_memory_usage_str_found = "Peak memory usage" in line
+            # Can be both Peak/peak
+            peek_memory_usage_str_found = "eak memory usage" in line
 
         if peek_memory_usage_str_found:
             search_obj = re.search(r"[+-]?[0-9]+\.[0-9]+", line)
@@ -92,13 +93,13 @@ def test_clickhouse_client_max_peak_memory_usage_distributed(started_cluster):
         client1.send(
             "SELECT COUNT(*) FROM distributed_fixed_numbers JOIN fixed_numbers_2 ON distributed_fixed_numbers.number=fixed_numbers_2.number",
         )
-        client1.expect("Peak memory usage", timeout=60)
+        client1.expect("Query peak memory usage", timeout=60)
         client1.expect(prompt)
 
     peak_memory_usage = get_memory_usage_from_client_output_and_close(client_output)
     assert peak_memory_usage
     assert shard_2.contains_in_log(
-        f"Peak memory usage (for query): {peak_memory_usage}"
+        f"Query peak memory usage: {peak_memory_usage}"
     )
 
 
@@ -113,11 +114,11 @@ def test_clickhouse_client_max_peak_memory_single_node(started_cluster):
         client1.send(
             "SELECT COUNT(*) FROM (SELECT number FROM numbers(1,300000) INTERSECT SELECT number FROM numbers(10000,1200000))"
         )
-        client1.expect("Peak memory usage", timeout=60)
+        client1.expect("Query peak memory usage", timeout=60)
         client1.expect(prompt)
 
     peak_memory_usage = get_memory_usage_from_client_output_and_close(client_output)
     assert peak_memory_usage
     assert shard_1.contains_in_log(
-        f"Peak memory usage (for query): {peak_memory_usage}"
+        f"Query peak memory usage: {peak_memory_usage}"
     )
