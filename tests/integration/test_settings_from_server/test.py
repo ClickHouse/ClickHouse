@@ -50,3 +50,4 @@ def test_settings_from_server(started_cluster):
     node.query("create user u identified with plaintext_password by '' settings date_time_output_format='unix_timestamp'")
     res = node.query("select toDateTime64('1970-01-02 00:00:00', 0)", user='u')
     assert res == '86400\n'
+    node.query("drop user u")
