@@ -109,7 +109,7 @@ public:
 
     ~ParallelFormattingOutputFormat() override
     {
-        finishAndWait();
+        finishAndWait(/* emergency_stop_ */ true);
     }
 
     String getName() const override { return "ParallelFormattingOutputFormat"; }
@@ -271,7 +271,7 @@ private:
     bool collected_suffix = false;
     bool collected_finalize = false;
 
-    void finishAndWait() noexcept;
+    void finishAndWait(bool emergency_stop_) noexcept;
 
     void onBackgroundException()
     {

@@ -50,7 +50,7 @@ namespace DB
             formatter->finalizeImpl();
 
         formatter->finalizeBuffers();
-        finishAndWait();
+        finishAndWait(/* emergency_stop_ */ false);
     }
 
     void ParallelFormattingOutputFormat::addChunk(Chunk chunk, ProcessingUnitType type, bool can_throw_exception)
@@ -97,9 +97,9 @@ namespace DB
     }
 
 
-    void ParallelFormattingOutputFormat::finishAndWait() noexcept
+    void ParallelFormattingOutputFormat::finishAndWait(bool emergency_stop_) noexcept
     {
-        emergency_stop = true;
+        emergency_stop = emergency_stop_;
 
         {
             std::unique_lock<std::mutex> lock(mutex);
