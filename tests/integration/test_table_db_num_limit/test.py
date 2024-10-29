@@ -48,6 +48,18 @@ def test_table_db_limit(started_cluster):
         "create table default.tx (a Int32) Engine = Log"
     )
 
+    # Dictionaries
+    for i in range(10):
+        node.query(
+            "create dictionary d{} (a Int32) primary key a source(null()) layout(flat()) lifetime(1000)".format(
+                i
+            )
+        )
+
+    assert "TOO_MANY_TABLES" in node.query_and_get_error(
+        "create dictionary dx (a Int32) primary key a source(null()) layout(flat()) lifetime(1000)"
+    )
+
     # Replicated tables
     for i in range(10):
         node.query("drop table t{}".format(i))

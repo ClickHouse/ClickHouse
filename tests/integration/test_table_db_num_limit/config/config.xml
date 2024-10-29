@@ -10,6 +10,7 @@
 		</cluster>
 	</remote_servers>
 
+    <max_dictionary_num_to_throw>10</max_dictionary_num_to_throw>
     <max_table_num_to_throw>10</max_table_num_to_throw>
     <max_replicated_table_num_to_throw>5</max_replicated_table_num_to_throw>
     <max_database_num_to_throw>10</max_database_num_to_throw>
