@@ -1,6 +1,6 @@
 services:
     hdfs1:
-        image: prasanthj/docker-hadoop:2.6.0
+        image: gvacaliuc/hadoop-docker:2.7.4
         hostname: hdfs1
         restart: always
         expose:
