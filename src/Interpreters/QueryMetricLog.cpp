@@ -21,10 +21,10 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-};
+// namespace ErrorCodes
+// {
+//     extern const int LOGICAL_ERROR;
+// };
 
 static auto logger = getLogger("QueryMetricLog");
 
@@ -196,9 +196,11 @@ std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(cons
 
             /// Profile event count is monotonically increasing.
             if (new_value < prev_value)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Profile event count is not monotonically increasing for '{}': new value {} is smaller than previous value {}",
+                LOG_TRACE(logger, "PMO: Profile event count is not monotonically increasing for '{}': new value {} is smaller than previous value {}",
                     ProfileEvents::getName(i), new_value, query_status.last_profile_events[i]);
+                // throw Exception(ErrorCodes::LOGICAL_ERROR,
+                //     "Profile event count is not monotonically increasing for '{}': new value {} is smaller than previous value {}",
+                //     ProfileEvents::getName(i), new_value, query_status.last_profile_events[i]);
 
             elem.profile_events[i] = new_value - prev_value;
             prev_value = new_value;
