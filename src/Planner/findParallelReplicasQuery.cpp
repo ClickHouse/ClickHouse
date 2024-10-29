@@ -423,7 +423,10 @@ const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tr
         return nullptr;
 
     const auto * res = findTableForParallelReplicas(query_tree_node.get());
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Table found {}", res->getStorageID().getFullTableName());
+    if (res)
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Table found {}", res->getStorageID().getFullTableName());
+    else
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Not table found");
     return res;
 }
 
