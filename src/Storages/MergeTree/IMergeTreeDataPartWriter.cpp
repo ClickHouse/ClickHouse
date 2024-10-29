@@ -91,6 +91,13 @@ Columns IMergeTreeDataPartWriter::releaseIndexColumns()
     return result;
 }
 
+PlainMarksByName IMergeTreeDataPartWriter::releaseCachedMarks()
+{
+    PlainMarksByName res;
+    std::swap(cached_marks, res);
+    return res;
+}
+
 SerializationPtr IMergeTreeDataPartWriter::getSerialization(const String & column_name) const
 {
     auto it = serializations.find(column_name);
