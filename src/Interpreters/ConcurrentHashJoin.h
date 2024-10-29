@@ -61,7 +61,11 @@ public:
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
 
-    bool isCloneSupported() const override { return true; }
+    bool isCloneSupported() const override
+    {
+        return !getTotals() && getTotalRowCount() == 0;
+    }
+
     std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_, const Block &, const Block & right_sample_block_) const override
     {
         return std::make_shared<ConcurrentHashJoin>(context, table_join_, slots, right_sample_block_, stats_collecting_params);
