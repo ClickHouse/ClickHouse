@@ -5467,7 +5467,7 @@ Only available in ClickHouse Cloud. Number of background threads for speculative
 Only available in ClickHouse Cloud. Exclude new data parts from SELECT queries until they're either pre-warmed (see cache_populated_by_fetch) or this many seconds old. Only for Replicated-/SharedMergeTree.
 )", 0) \
     DECLARE(Bool, short_circuit_function_evaluation_for_nulls, true, R"(
-Whether to enable short-circuit evaluation for rows with at least one null in arguments in functions where useDefaultImplementationForNulls() is true.
+Allows to execute functions with Nullable arguments only on rows with non-NULL values in all arguments when ratio of NULL values in arguments exceeds short_circuit_function_evaluation_for_nulls_threshold. Applies only to functions that return NULL value for rows with at least one NULL value in arguments. 
 )", 0) \
     DECLARE(Double, short_circuit_function_evaluation_for_nulls_threshold, 1.0, R"(
 Ratio threshold for short-circuit evaluation for rows with at least one null in arguments in functions where useDefaultImplementationForNulls() is true. This is only valid when short_circuit_function_evaluation_for_nulls is true.
