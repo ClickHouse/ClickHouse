@@ -24,6 +24,7 @@ public:
         CompressionCodecPtr default_codec_,
         TransactionID tid,
         bool reset_columns_ = false,
+        bool save_marks_in_cache = false,
         bool blocks_are_granules_size = false,
         const WriteSettings & write_settings = {},
         const MergeTreeIndexGranularity & computed_index_granularity = {});

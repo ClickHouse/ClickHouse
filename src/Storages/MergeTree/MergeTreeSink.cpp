@@ -243,6 +243,15 @@ void MergeTreeSink::finishDelayedChunk()
         /// Part can be deduplicated, so increment counters and add to part log only if it's really added
         if (added)
         {
+            if (auto * mark_cache = storage.getContext()->getMarkCache().get())
+            {
+                for (const auto & stream : partition.temp_part.streams)
+                {
+                    auto marks = stream.stream->releaseCachedMarks();
+                    addMarksToCache(*part, marks, mark_cache);
+                }
+            }
+
             auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
             PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot));
             StorageMergeTree::incrementInsertedPartsProfileEvent(part->getType());
