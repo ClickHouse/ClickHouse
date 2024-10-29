@@ -36,7 +36,7 @@ public:
 
     void update(ObjectStoragePtr object_storage, ContextPtr local_context) override
     {
-        BaseStorageConfiguration::update(object_storage, local_context);
+        // BaseStorageConfiguration::update(object_storage, local_context);
         auto new_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
         if (current_metadata && *current_metadata == *new_metadata)
             return;

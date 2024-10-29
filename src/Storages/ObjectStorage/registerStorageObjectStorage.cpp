@@ -51,13 +51,14 @@ static std::shared_ptr<StorageObjectStorage> createStorageObjectStorage(
 
     return std::make_shared<StorageObjectStorage>(
         configuration,
-        configuration->createObjectStorage(context, /* is_readonly */false),
+        configuration->createObjectStorage(context, /* is_readonly */ false),
         args.getContext(),
         args.table_id,
         args.columns,
         args.constraints,
         args.comment,
         format_settings,
+        args.mode,
         /* distributed_processing */ false,
         partition_by);
 }

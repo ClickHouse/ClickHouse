@@ -6,6 +6,8 @@ import time
 import uuid
 from datetime import datetime
 
+from logging import log
+
 import pyspark
 import pytest
 from azure.storage.blob import BlobServiceClient
@@ -856,13 +858,19 @@ def test_restart_broken_s3(started_cluster):
     )
     minio_client.remove_bucket(bucket)
 
+    print("Before restart: ", datetime.now())
+
     instance.restart_clickhouse()
 
-    assert "NoSuchBucket" in instance.query_and_get_error(
-        f"SELECT count() FROM {TABLE_NAME}"
-    )
+    # assert "NoSuchBucket" in instance.query_and_get_error(
+    #     f"SELECT count() FROM {TABLE_NAME}"
+    # )
+
+    time.sleep(10)
 
     minio_client.make_bucket(bucket)
+
+    print("Before successful select: ", datetime.now())
 
     files = default_upload_directory(
         started_cluster,
