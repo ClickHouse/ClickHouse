@@ -80,6 +80,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+            clear-repository: true
+            ref: ${{{{ github.event.pull_reguest.head.sha }}}}
 {JOB_ADDONS}
       - name: Prepare env script
         run: |

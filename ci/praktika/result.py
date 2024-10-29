@@ -1,7 +1,6 @@
 import dataclasses
 import datetime
 import sys
-from collections.abc import Container
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -68,8 +67,9 @@ class Result(MetaClasses.Serializable):
         if isinstance(status, bool):
             status = Result.Status.SUCCESS if status else Result.Status.FAILED
         if not results and not status:
-            print("ERROR: Either .results or .status must be provided")
-            raise
+            Utils.raise_with_error(
+                f"Either .results ({results}) or .status ({status}) must be provided"
+            )
         if not name:
             name = _Environment.get().JOB_NAME
             if not name:
@@ -78,10 +78,10 @@ class Result(MetaClasses.Serializable):
         result_status = status or Result.Status.SUCCESS
         infos = []
         if info:
-            if isinstance(info, Container):
-                infos += info
+            if isinstance(info, str):
+                infos += [info]
             else:
-                infos.append(info)
+                infos += info
         if results and not status:
             for result in results:
                 if result.status not in (Result.Status.SUCCESS, Result.Status.FAILED):
@@ -112,7 +112,7 @@ class Result(MetaClasses.Serializable):
         return self.status not in (Result.Status.PENDING, Result.Status.RUNNING)
 
     def is_running(self):
-        return self.status not in (Result.Status.RUNNING,)
+        return self.status in (Result.Status.RUNNING,)
 
     def is_ok(self):
         return self.status in (Result.Status.SKIPPED, Result.Status.SUCCESS)
@@ -178,6 +178,11 @@ class Result(MetaClasses.Serializable):
                 print(
                     f"NOTE: start_time is not set for job [{self.name}] Result - do not update duration"
                 )
+        return self
+
+    def set_timing(self, stopwatch: Utils.Stopwatch):
+        self.start_time = stopwatch.start_time
+        self.duration = stopwatch.duration
         return self
 
     def update_sub_result(self, result: "Result"):

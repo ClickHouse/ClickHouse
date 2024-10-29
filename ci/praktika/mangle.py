@@ -58,7 +58,6 @@ def _update_workflow_artifacts(workflow):
     artifact_job = {}
     for job in workflow.jobs:
         for artifact_name in job.provides:
-            assert artifact_name not in artifact_job
             artifact_job[artifact_name] = job.name
     for artifact in workflow.artifacts:
         artifact._provided_by = artifact_job[artifact.name]

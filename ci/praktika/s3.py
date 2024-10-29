@@ -52,7 +52,7 @@ class S3:
             cmd += " --content-type text/plain"
         res = cls.run_command_with_retries(cmd)
         if not res:
-            raise
+            raise RuntimeError()
         bucket = s3_path.split("/")[0]
         endpoint = Settings.S3_BUCKET_TO_HTTP_ENDPOINT[bucket]
         assert endpoint

@@ -8,23 +8,30 @@ class RunnerLabels:
     CI_SERVICES = "ci_services"
     CI_SERVICES_EBS = "ci_services_ebs"
     BUILDER = "builder"
+    STYLE_CHECKER = "style-checker"
 
 
 BASE_BRANCH = "master"
+
+azure_secret = Secret.Config(
+    name="azure_connection_string",
+    type=Secret.Type.AWS_SSM_VAR,
+)
 
 SECRETS = [
     Secret.Config(
         name="dockerhub_robot_password",
         type=Secret.Type.AWS_SSM_VAR,
     ),
-    Secret.Config(
-        name="woolenwolf_gh_app.clickhouse-app-id",
-        type=Secret.Type.AWS_SSM_SECRET,
-    ),
-    Secret.Config(
-        name="woolenwolf_gh_app.clickhouse-app-key",
-        type=Secret.Type.AWS_SSM_SECRET,
-    ),
+    azure_secret,
+    # Secret.Config(
+    #     name="woolenwolf_gh_app.clickhouse-app-id",
+    #     type=Secret.Type.AWS_SSM_SECRET,
+    # ),
+    # Secret.Config(
+    #     name="woolenwolf_gh_app.clickhouse-app-key",
+    #     type=Secret.Type.AWS_SSM_SECRET,
+    # ),
 ]
 
 DOCKERS = [
@@ -118,12 +125,12 @@ DOCKERS = [
     #     platforms=Docker.Platforms.arm_amd,
     #     depends_on=["clickhouse/test-base"],
     # ),
-    # Docker.Config(
-    #     name="clickhouse/stateless-test",
-    #     path="./ci/docker/test/stateless",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/test-base"],
-    # ),
+    Docker.Config(
+        name="clickhouse/stateless-test",
+        path="./ci/docker/stateless-test",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
     # Docker.Config(
     #     name="clickhouse/stateful-test",
     #     path="./ci/docker/test/stateful",
@@ -230,5 +237,6 @@ DOCKERS = [
 class JobNames:
     STYLE_CHECK = "Style Check"
     FAST_TEST = "Fast test"
-    BUILD_AMD_DEBUG = "Build amd64 debug"
+    BUILD = "Build"
+    BUILD_AMD_DEBUG = "Build (amd, debug)"
     STATELESS_TESTS = "Stateless tests (amd, debug)"

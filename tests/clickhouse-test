@@ -2153,9 +2153,9 @@ class TestSuite:
         self.sequential_tests = []
         self.parallel_tests = []
         for test_name in self.all_tests:
-            if self.is_sequential_test(test_name):
+            if self.is_sequential_test(test_name) and not args.no_sequential:
                 self.sequential_tests.append(test_name)
-            else:
+            elif not args.no_parallel:
                 self.parallel_tests.append(test_name)
 
     def is_sequential_test(self, test_name):
@@ -3290,7 +3290,10 @@ def parse_args():
         help='Replace random database name with "default" in stderr',
     )
     parser.add_argument(
-        "--parallel", default="1/1", help="One parallel test run number/total"
+        "--no-sequential", action="store_true", help="Not run no-parallel"
+    )
+    parser.add_argument(
+        "--no-parallel", action="store_true", help="Run only no-parallel"
     )
     parser.add_argument(
         "-j", "--jobs", default=1, nargs="?", type=int, help="Run all tests in parallel"
@@ -3339,7 +3342,7 @@ def parse_args():
     parser.add_argument(
         "--sequential",
         nargs="+",
-        help="Run these tests sequentially even if --parallel specified",
+        help="Run all tests sequentially",
     )
     parser.add_argument(
         "--no-long", action="store_true", dest="no_long", help="Do not run long tests"

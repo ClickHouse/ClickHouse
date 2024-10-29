@@ -151,7 +151,7 @@ def _config_workflow(workflow: Workflow.Config, job_name):
             status = Result.Status.ERROR
             print("ERROR: ", info)
         else:
-            Shell.check(f"{Settings.PYTHON_INTERPRETER} -m praktika --generate")
+            assert Shell.check(f"{Settings.PYTHON_INTERPRETER} -m praktika yaml")
             exit_code, output, err = Shell.get_res_stdout_stderr(
                 f"git diff-index HEAD -- {Settings.WORKFLOW_PATH_PREFIX}"
             )
@@ -249,6 +249,9 @@ def _config_workflow(workflow: Workflow.Config, job_name):
             job_status = Result.Status.ERROR
             info_lines.append(job_name + ": " + info)
         results.append(result_)
+
+    if workflow.enable_merge_commit:
+        assert False, "NOT implemented"
 
     # config:
     if workflow.dockers:

@@ -11,50 +11,112 @@ from praktika.result import Result, ResultInfo
 from praktika.runtime import RunConfig
 from praktika.s3 import S3
 from praktika.settings import Settings
-from praktika.utils import Shell, Utils
+from praktika.utils import Utils
 
 
 @dataclasses.dataclass
 class GitCommit:
-    date: str
-    message: str
+    # date: str
+    # message: str
     sha: str
 
     @staticmethod
-    def from_json(json_data: str) -> List["GitCommit"]:
+    def from_json(file) -> List["GitCommit"]:
         commits = []
+        json_data = None
         try:
-            data = json.loads(json_data)
-
+            with open(file, "r", encoding="utf-8") as f:
+                json_data = json.load(f)
             commits = [
                 GitCommit(
-                    message=commit["messageHeadline"],
-                    sha=commit["oid"],
-                    date=commit["committedDate"],
+                    # message=commit["messageHeadline"],
+                    sha=commit["sha"],
+                    # date=commit["committedDate"],
                 )
-                for commit in data.get("commits", [])
+                for commit in json_data
             ]
         except Exception as e:
             print(
-                f"ERROR: Failed to deserialize commit's data: [{json_data}], ex: [{e}]"
+                f"ERROR: Failed to deserialize commit's data [{json_data}], ex: [{e}]"
             )
 
         return commits
+
+    @classmethod
+    def update_s3_data(cls):
+        env = _Environment.get()
+        sha = env.SHA
+        if not sha:
+            print("WARNING: Failed to retrieve commit sha")
+            return
+        commits = cls.pull_from_s3()
+        for commit in commits:
+            if sha == commit.sha:
+                print(
+                    f"INFO: Sha already present in commits data [{sha}] - skip data update"
+                )
+                return
+        commits.append(GitCommit(sha=sha))
+        cls.push_to_s3(commits)
+        return
+
+    @classmethod
+    def dump(cls, commits):
+        commits_ = []
+        for commit in commits:
+            commits_.append(dataclasses.asdict(commit))
+        with open(cls.file_name(), "w", encoding="utf8") as f:
+            json.dump(commits_, f)
+
+    @classmethod
+    def pull_from_s3(cls):
+        local_path = Path(cls.file_name())
+        file_name = local_path.name
+        env = _Environment.get()
+        s3_path = f"{Settings.HTML_S3_PATH}/{cls.get_s3_prefix(pr_number=env.PR_NUMBER, branch=env.BRANCH)}/{file_name}"
+        if not S3.copy_file_from_s3(s3_path=s3_path, local_path=local_path):
+            print(f"WARNING: failed to cp file [{s3_path}] from s3")
+            return []
+        return cls.from_json(local_path)
+
+    @classmethod
+    def push_to_s3(cls, commits):
+        print(f"INFO: push commits data to s3, commits num [{len(commits)}]")
+        cls.dump(commits)
+        local_path = Path(cls.file_name())
+        file_name = local_path.name
+        env = _Environment.get()
+        s3_path = f"{Settings.HTML_S3_PATH}/{cls.get_s3_prefix(pr_number=env.PR_NUMBER, branch=env.BRANCH)}/{file_name}"
+        if not S3.copy_file_to_s3(s3_path=s3_path, local_path=local_path, text=True):
+            print(f"WARNING: failed to cp file [{local_path}] to s3")
+
+    @classmethod
+    def get_s3_prefix(cls, pr_number, branch):
+        prefix = ""
+        assert pr_number or branch
+        if pr_number and pr_number > 0:
+            prefix += f"{pr_number}"
+        else:
+            prefix += f"{branch}"
+        return prefix
+
+    @classmethod
+    def file_name(cls):
+        return f"{Settings.TEMP_DIR}/commits.json"
+
+    # def _get_pr_commits(pr_number):
+    #     res = []
+    #     if not pr_number:
+    #         return res
+    #     output = Shell.get_output(f"gh pr view {pr_number}  --json commits")
+    #     if output:
+    #         res = GitCommit.from_json(output)
+    #     return res
 
 
 class HtmlRunnerHooks:
     @classmethod
     def configure(cls, _workflow):
-
-        def _get_pr_commits(pr_number):
-            res = []
-            if not pr_number:
-                return res
-            output = Shell.get_output(f"gh pr view {pr_number}  --json commits")
-            if output:
-                res = GitCommit.from_json(output)
-            return res
-
         # generate pending Results for all jobs in the workflow
         if _workflow.enable_cache:
             skip_jobs = RunConfig.from_fs(_workflow.name).cache_success
@@ -106,11 +168,9 @@ class HtmlRunnerHooks:
             Utils.raise_with_error(
                 "Failed to set both GH commit status and PR comment with Workflow Status, cannot proceed"
             )
-
         if env.PR_NUMBER:
-            commits = _get_pr_commits(env.PR_NUMBER)
-            # TODO: upload commits data to s3 to visualise it on a report page
-            print(commits)
+            # TODO: enable for branch, add commit number limiting
+            GitCommit.update_s3_data()
 
     @classmethod
     def pre_run(cls, _workflow, _job):

@@ -125,15 +125,24 @@ class Runner:
         return 0
 
     def _run(self, workflow, job, docker="", no_docker=False, param=None):
+        # re-set envs for local run
+        env = _Environment.get()
+        env.JOB_NAME = job.name
+        env.PARAMETER = job.parameter
+        env.dump()
+
         if param:
             if not isinstance(param, str):
                 Utils.raise_with_error(
                     f"Custom param for local tests must be of type str, got [{type(param)}]"
                 )
-            env = _Environment.get()
-            env.dump()
 
         if job.run_in_docker and not no_docker:
+            job.run_in_docker, docker_settings = (
+                job.run_in_docker.split("+")[0],
+                job.run_in_docker.split("+")[1:],
+            )
+            from_root = "root" in docker_settings
             if ":" in job.run_in_docker:
                 docker_name, docker_tag = job.run_in_docker.split(":")
                 print(
@@ -145,7 +154,7 @@ class Runner:
                     RunConfig.from_fs(workflow.name).digest_dockers[job.run_in_docker],
                 )
             docker = docker or f"{docker_name}:{docker_tag}"
-            cmd = f"docker run --rm --user \"$(id -u):$(id -g)\" -e PYTHONPATH='{Settings.DOCKER_WD}:{Settings.DOCKER_WD}/ci' --volume ./:{Settings.DOCKER_WD} --volume {Settings.TEMP_DIR}:{Settings.TEMP_DIR} --workdir={Settings.DOCKER_WD} {docker} {job.command}"
+            cmd = f"docker run --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='{Settings.DOCKER_WD}:{Settings.DOCKER_WD}/ci' --volume ./:{Settings.DOCKER_WD} --volume {Settings.TEMP_DIR}:{Settings.TEMP_DIR} --workdir={Settings.DOCKER_WD} {docker} {job.command}"
         else:
             cmd = job.command
 
@@ -226,7 +235,8 @@ class Runner:
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
 
-        result.set_files(files=[Settings.RUN_LOG])
+        if not result.is_ok():
+            result.set_files(files=[Settings.RUN_LOG])
         result.update_duration().dump()
 
         if result.info and result.status != Result.Status.SUCCESS:
@@ -329,7 +339,7 @@ class Runner:
                 workflow, job, pr=pr, branch=branch, sha=sha
             )
 
-        if res:
+        if res and (not local_run or pr or sha or branch):
             res = False
             print(f"=== Pre run script [{job.name}], workflow [{workflow.name}] ===")
             try:

@@ -200,10 +200,7 @@
         }
 
         th.name-column, td.name-column {
-            max-width: 400px; /* Set the maximum width for the column */
-            white-space: nowrap; /* Prevent text from wrapping */
-            overflow: hidden; /* Hide the overflowed text */
-            text-overflow: ellipsis; /* Show ellipsis (...) for overflowed text */
+            min-width: 350px;
         }
 
         th.status-column, td.status-column {
@@ -364,7 +361,6 @@
     }
 
     function addKeyValueToStatus(key, value, options = null) {
-
         const statusContainer = document.getElementById('status-container');
 
         let keyValuePair = document.createElement('div');
@@ -374,27 +370,40 @@
         keyElement.className = 'json-key';
         keyElement.textContent = key + ':';
 
-        let valueElement
-        if (value) {
-            valueElement = document.createElement('div');
-            valueElement.className = 'json-value';
-            valueElement.textContent = value;
-        } else if (options) {
+        let valueElement;
+
+        if (options) {
+            // Create dropdown if options are provided
             valueElement = document.createElement('select');
             valueElement.className = 'dropdown-value';
+
+            options.forEach(optionValue => {
+                const option = document.createElement('option');
+                option.value = optionValue;
+                option.textContent = optionValue.slice(0, 10);
+
+                // Set the initially selected option
+                if (optionValue === value) {
+                    option.selected = true;
+                }
+
+                valueElement.appendChild(option);
+            });
+
+            // Update the URL parameter when the selected value changes
             valueElement.addEventListener('change', (event) => {
                 const selectedValue = event.target.value;
                 updateUrlParameter(key, selectedValue);
             });
-            options.forEach(optionValue => {
-                const option = document.createElement('option');
-                option.value = optionValue;
-                option.textContent = optionValue;
-                valueElement.appendChild(option);
-            });
+        } else {
+            // Create a simple text display if no options are provided
+            valueElement = document.createElement('div');
+            valueElement.className = 'json-value';
+            valueElement.textContent = value || 'N/A'; // Display 'N/A' if value is null
         }
-        keyValuePair.appendChild(keyElement)
-        keyValuePair.appendChild(valueElement)
+
+        keyValuePair.appendChild(keyElement);
+        keyValuePair.appendChild(valueElement);
         statusContainer.appendChild(keyValuePair);
     }
 
@@ -518,12 +527,12 @@
     const columns = ['name', 'status', 'start_time', 'duration', 'info'];
 
     const columnSymbols = {
-        name: '📂',
-        status: '⏯️',
+        name: '🗂️',
+        status: '🧾',
         start_time: '🕒',
         duration: '⏳',
-        info: 'ℹ️',
-        files: '📄'
+        info: '📝',
+        files: '📎'
     };
 
     function createResultsTable(results, nest_level) {
@@ -532,16 +541,14 @@
             const thead = document.createElement('thead');
             const tbody = document.createElement('tbody');
 
-            // Get the current URL parameters
-            const currentUrl = new URL(window.location.href);
-
             // Create table headers based on the fixed columns
             const headerRow = document.createElement('tr');
             columns.forEach(column => {
                 const th = document.createElement('th');
-                th.textContent = th.textContent = columnSymbols[column] || column;
+                th.textContent = columnSymbols[column] || column;
                 th.style.cursor = 'pointer'; // Make headers clickable
-                th.addEventListener('click', () => sortTable(results, column, tbody, nest_level)); // Add click event to sort the table
+                th.setAttribute('data-sort-direction', 'asc'); // Default sort direction
+                th.addEventListener('click', () => sortTable(results, column, columnSymbols[column] || column, tbody, nest_level, columns)); // Add click event to sort the table
                 headerRow.appendChild(th);
             });
             thead.appendChild(headerRow);
@@ -605,39 +612,33 @@
         });
     }
 
-    function sortTable(results, key, tbody, nest_level) {
+    function sortTable(results, column, key, tbody, nest_level, columns) {
         // Find the table header element for the given key
-        let th = null;
-        const tableHeaders = document.querySelectorAll('th'); // Select all table headers
-        tableHeaders.forEach(header => {
-            if (header.textContent.trim().toLowerCase() === key.toLowerCase()) {
-                th = header;
-            }
-        });
+        const tableHeaders = document.querySelectorAll('th');
+        let th = Array.from(tableHeaders).find(header => header.textContent === key);
 
         if (!th) {
             console.error(`No table header found for key: ${key}`);
             return;
         }
 
-        // Determine the current sort direction
-        let ascending = th.getAttribute('data-sort-direction') === 'asc' ? false : true;
+        const ascending = th.getAttribute('data-sort-direction') === 'asc';
+        th.setAttribute('data-sort-direction', ascending ? 'desc' : 'asc');
 
-        // Toggle the sort direction for the next click
-        th.setAttribute('data-sort-direction', ascending ? 'asc' : 'desc');
-
-        // Sort the results array by the given key
         results.sort((a, b) => {
-            if (a[key] < b[key]) return ascending ? -1 : 1;
-            if (a[key] > b[key]) return ascending ? 1 : -1;
+            if (a[column] < b[column]) return ascending ? -1 : 1;
+            if (a[column] > b[column]) return ascending ? 1 : -1;
             return 0;
         });
+
+        // Clear the existing rows in tbody
+        tbody.innerHTML = '';
 
         // Re-populate the table with sorted data
         populateTableRows(tbody, results, columns, nest_level);
     }
 
-    function loadJSON(PR, sha, nameParams) {
+    function loadResultsJSON(PR, sha, nameParams) {
         const infoElement = document.getElementById('info-container');
         let lastModifiedTime = null;
         const task = nameParams[0].toLowerCase();
@@ -753,22 +754,61 @@
             }
         });
 
-        if (PR) {
-            addKeyValueToStatus("PR", PR)
-        } else {
-            console.error("TODO")
-        }
-        addKeyValueToStatus("sha", null, [sha, 'lala']);
-        if (nameParams[1]) {
-            addKeyValueToStatus("job", nameParams[1]);
-        }
-        addKeyValueToStatus("workflow", nameParams[0]);
+        let path_commits_json = '';
+        let commitsArray = [];
 
-        if (PR && sha && root_name) {
-            loadJSON(PR, sha, nameParams);
+        if (PR) {
+            addKeyValueToStatus("PR", PR);
+            const baseUrl = window.location.origin + window.location.pathname.replace('/json.html', '');
+            path_commits_json = `${baseUrl}/${encodeURIComponent(PR)}/commits.json`;
         } else {
-            document.getElementById('title').textContent = 'Error: Missing required URL parameters: PR, sha, or name_0';
+            // Placeholder for a different path when PR is missing
+            console.error("PR parameter is missing. Setting alternate commits path.");
+            path_commits_json = '/path/to/alternative/commits.json';
         }
+
+        function loadCommitsArray(path) {
+            return fetch(path, { cache: "no-cache" })
+                .then(response => {
+                    if (!response.ok) {
+                        console.error(`HTTP error! status: ${response.status}`)
+                        return [];
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (Array.isArray(data) && data.every(item => typeof item === 'object' && item.hasOwnProperty('sha'))) {
+                        return data.map(item => item.sha);
+                    } else {
+                        throw new Error('Invalid data format: expected array of objects with a "sha" key');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading commits JSON:', error);
+                    return []; // Return an empty array if an error occurs
+                });
+        }
+
+        loadCommitsArray(path_commits_json)
+            .then(data => {
+                commitsArray = data;
+            })
+            .finally(() => {
+                // Proceed with the rest of the initialization
+                addKeyValueToStatus("sha", sha || "latest", commitsArray.concat(["latest"]));
+
+                if (nameParams[1]) {
+                    addKeyValueToStatus("job", nameParams[1]);
+                }
+                addKeyValueToStatus("workflow", nameParams[0]);
+
+                // Check if all required parameters are present to load JSON
+                if (PR && sha && root_name) {
+                    loadResultsJSON(PR, sha, nameParams);
+                } else {
+                    document.getElementById('title').textContent = 'Error: Missing required URL parameters: PR, sha, or name_0';
+                }
+            });
     }
 
     window.onload = init;

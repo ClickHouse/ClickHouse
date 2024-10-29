@@ -30,6 +30,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+            clear-repository: true
+            ref: ${{ github.event.pull_reguest.head.sha }}
 
       - name: Prepare env script
         run: |
@@ -68,6 +71,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+            clear-repository: true
+            ref: ${{ github.event.pull_reguest.head.sha }}
 
       - name: Prepare env script
         run: |
@@ -106,6 +112,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+            clear-repository: true
+            ref: ${{ github.event.pull_reguest.head.sha }}
 
       - name: Prepare env script
         run: |
@@ -144,6 +153,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+            clear-repository: true
+            ref: ${{ github.event.pull_reguest.head.sha }}
 
       - name: Prepare env script
         run: |
@@ -172,16 +184,19 @@ jobs:
             python3 -m praktika run --job '''Fast test''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
           fi
 
-  build_amd64_debug:
+  build_amd_debug:
     runs-on: [builder]
     needs: [config_workflow, docker_builds]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgYW1kNjQgZGVidWc=') }}
-    name: "Build amd64 debug"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9kZWJ1Zyk=') }}
+    name: "Build (amd_debug)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+            clear-repository: true
+            ref: ${{ github.event.pull_reguest.head.sha }}
 
       - name: Prepare env script
         run: |
@@ -205,21 +220,24 @@ jobs:
           . /tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run --job '''Build amd64 debug''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run --job '''Build (amd_debug)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
           else
-            python3 -m praktika run --job '''Build amd64 debug''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run --job '''Build (amd_debug)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
           fi
 
-  stateless_tests_amd_debug:
+  build_amd_release:
     runs-on: [builder]
-    needs: [config_workflow, docker_builds, build_amd64_debug]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWQsIGRlYnVnKQ==') }}
-    name: "Stateless tests (amd, debug)"
+    needs: [config_workflow, docker_builds]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9yZWxlYXNlKQ==') }}
+    name: "Build (amd_release)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+            clear-repository: true
+            ref: ${{ github.event.pull_reguest.head.sha }}
 
       - name: Prepare env script
         run: |
@@ -243,14 +261,137 @@ jobs:
           . /tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run --job '''Stateless tests (amd, debug)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run --job '''Build (amd_release)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
           else
-            python3 -m praktika run --job '''Stateless tests (amd, debug)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run --job '''Build (amd_release)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+          fi
+
+  stateless_tests_amd_debug_parallel_1_2:
+    runs-on: [builder]
+    needs: [config_workflow, docker_builds, build_amd_debug]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWQsIGRlYnVnKSAocGFyYWxsZWwgMS8yKQ==') }}
+    name: "Stateless tests (amd, debug) (parallel 1/2)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+            clear-repository: true
+            ref: ${{ github.event.pull_reguest.head.sha }}
+
+      - name: Prepare env script
+        run: |
+          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.
+
+          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
+          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
+
+      - name: Run
+        id: run
+        run: |
+          . /tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run --job '''Stateless tests (amd, debug) (parallel 1/2)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+          else
+            python3 -m praktika run --job '''Stateless tests (amd, debug) (parallel 1/2)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+          fi
+
+  stateless_tests_amd_debug_parallel_2_2:
+    runs-on: [builder]
+    needs: [config_workflow, docker_builds, build_amd_debug]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWQsIGRlYnVnKSAocGFyYWxsZWwgMi8yKQ==') }}
+    name: "Stateless tests (amd, debug) (parallel 2/2)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+            clear-repository: true
+            ref: ${{ github.event.pull_reguest.head.sha }}
+
+      - name: Prepare env script
+        run: |
+          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.
+
+          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
+          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
+
+      - name: Run
+        id: run
+        run: |
+          . /tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run --job '''Stateless tests (amd, debug) (parallel 2/2)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+          else
+            python3 -m praktika run --job '''Stateless tests (amd, debug) (parallel 2/2)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+          fi
+
+  stateless_tests_amd_debug_non_parallel:
+    runs-on: [style-checker]
+    needs: [config_workflow, docker_builds, build_amd_debug]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWQsIGRlYnVnKSAobm9uLXBhcmFsbGVsKQ==') }}
+    name: "Stateless tests (amd, debug) (non-parallel)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+            clear-repository: true
+            ref: ${{ github.event.pull_reguest.head.sha }}
+
+      - name: Prepare env script
+        run: |
+          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.
+
+          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
+          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
+
+      - name: Run
+        id: run
+        run: |
+          . /tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run --job '''Stateless tests (amd, debug) (non-parallel)''' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+          else
+            python3 -m praktika run --job '''Stateless tests (amd, debug) (non-parallel)''' --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
           fi
 
   finish_workflow:
     runs-on: [ci_services]
-    needs: [config_workflow, docker_builds, style_check, fast_test, build_amd64_debug, stateless_tests_amd_debug]
+    needs: [config_workflow, docker_builds, style_check, fast_test, build_amd_debug, build_amd_release, stateless_tests_amd_debug_parallel_1_2, stateless_tests_amd_debug_parallel_2_2, stateless_tests_amd_debug_non_parallel]
     if: ${{ !cancelled() }}
     name: "Finish Workflow"
     outputs:
@@ -258,6 +399,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+            clear-repository: true
+            ref: ${{ github.event.pull_reguest.head.sha }}
 
       - name: Prepare env script
         run: |
