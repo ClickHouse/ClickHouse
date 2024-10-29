@@ -7,7 +7,15 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node1",
     with_zookeeper=True,
-    main_configs=["config/config.xml"],
+    macros={"replica": "r1"},
+    main_configs=["config/config.xml", "config/config1.xml"],
+)
+
+node2 = cluster.add_instance(
+    "node2",
+    with_zookeeper=True,
+    macros={"replica": "r2"},
+    main_configs=["config/config.xml", "config/config2.xml"],
 )
 
 
@@ -64,15 +72,27 @@ def test_table_db_limit(started_cluster):
     for i in range(10):
         node.query("drop table t{}".format(i))
 
-    for i in range(5):
+    for i in range(3):
         node.query(
-            "create table t{} (a Int32) Engine = ReplicatedMergeTree('/clickhouse/tables/t{}', 'r1') order by a".format(
+            "create table t{} on cluster 'cluster' (a Int32) Engine = ReplicatedMergeTree('/clickhouse/tables/t{}', '{{replica}}') order by a".format(
+                i, i
+            )
+        )
+
+    # Test limit on other replica
+    assert "Too many replicated tables" in node2.query_and_get_error(
+        "create table tx (a Int32) Engine = ReplicatedMergeTree('/clickhouse/tables/tx', '{replica}') order by a"
+    )
+
+    for i in range(3, 5):
+        node.query(
+            "create table t{} (a Int32) Engine = ReplicatedMergeTree('/clickhouse/tables/t{}', '{{replica}}') order by a".format(
                 i, i
             )
         )
 
     assert "Too many replicated tables" in node.query_and_get_error(
-        "create table tx (a Int32) Engine = ReplicatedMergeTree('/clickhouse/tables/tx', 'r1') order by a"
+        "create table tx (a Int32) Engine = ReplicatedMergeTree('/clickhouse/tables/tx', '{replica}') order by a"
     )
 
     # Checks that replicated tables are also counted as regular tables
@@ -82,3 +102,15 @@ def test_table_db_limit(started_cluster):
     assert "TOO_MANY_TABLES" in node.query_and_get_error(
         "create table tx (a Int32) Engine = Log"
     )
+
+    # Cleanup
+    for i in range(10):
+        node.query("drop table t{} sync".format(i))
+    for i in range(3):
+        node2.query("drop table t{} sync".format(i))
+    node.query("system drop replica 'r1' from ZKPATH '/clickhouse/tables/tx'")
+    node.query("system drop replica 'r2' from ZKPATH '/clickhouse/tables/tx'")
+    for i in range(9):
+        node.query("drop database db{}".format(i))
+    for i in range(10):
+        node.query("drop dictionary d{}".format(i))
