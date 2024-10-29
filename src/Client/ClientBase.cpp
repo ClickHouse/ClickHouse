@@ -470,8 +470,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     {
         if (!need_render_progress && select_into_file && !select_into_file_and_stdout)
             error_stream << "\r";
-        bool toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle", true);
-        progress_table.writeTable(*tty_buf, progress_table_toggle_on.load(), toggle_enabled);
+        progress_table.writeTable(*tty_buf, progress_table_toggle_on.load(), progress_table_toggle_enabled);
     }
 }
 
@@ -825,6 +824,9 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
     if (!need_render_progress && !need_render_progress_table)
         return;
 
+    progress_table_toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle");
+    progress_table_toggle_on = !progress_table_toggle_enabled;
+
     /// If need_render_progress and need_render_progress_table are enabled,
     /// use ProgressOption that was set for the progress bar for progress table as well.
     ProgressOption progress = progress_option ? progress_option : progress_table_option;
@@ -881,7 +883,7 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
 
 void ClientBase::initKeystrokeInterceptor()
 {
-    if (is_interactive && need_render_progress_table && getClientConfiguration().getBool("enable-progress-table-toggle", true))
+    if (is_interactive && need_render_progress_table && progress_table_toggle_enabled)
     {
         keystroke_interceptor = std::make_unique<TerminalKeystrokeInterceptor>(in_fd, error_stream);
         keystroke_interceptor->registerCallback(' ', [this]() { progress_table_toggle_on = !progress_table_toggle_on; });
@@ -1151,6 +1153,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
 
     if (keystroke_interceptor)
     {
+        progress_table_toggle_on = false;
         try
         {
             keystroke_interceptor->startIntercept();
