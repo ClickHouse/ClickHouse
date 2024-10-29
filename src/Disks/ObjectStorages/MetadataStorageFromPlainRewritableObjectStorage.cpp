@@ -68,7 +68,7 @@ void loadDirectoryTree(
         auto & remote_path_info = item.second;
         const auto remote_path = std::filesystem::path(common_key_prefix) / remote_path_info.path / "";
         runner(
-            [remote_path, &remote_path_info, &mutex, &unique_filenames, &object_storage, &num_files]
+            [remote_path, &mutex, &remote_path_info, &unique_filenames, &object_storage, &num_files]
             {
                 setThreadName("PlainRWTreeLoad");
                 std::set<FileNamesIterator, FileNameIteratorComparator> filename_iterators;
@@ -81,7 +81,11 @@ void loadDirectoryTree(
                     /// Check that the file is a direct child.
                     if (path.substr(remote_path.string().size()) == filename)
                     {
-                        auto filename_it = unique_filenames.emplace(filename).first;
+                        auto filename_it = unique_filenames.end();
+                        {
+                            std::lock_guard lock(mutex);
+                            filename_it = unique_filenames.emplace(filename).first;
+                        }
                         auto inserted = filename_iterators.emplace(filename_it).second;
                         chassert(inserted);
                         if (inserted)
