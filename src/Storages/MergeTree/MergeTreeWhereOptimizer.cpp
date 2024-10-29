@@ -361,11 +361,23 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
     UInt64 total_size_of_moved_conditions = 0;
     UInt64 total_number_of_moved_columns = 0;
 
+    /// Remember positions of conditions in where_conditions list
+    /// to keep original order of conditions in prewhere_conditions while moving.
+    std::unordered_map<const Condition *, size_t> condition_positions;
+    size_t position= 0;
+    for (const auto & condition : where_conditions)
+        condition_positions[&condition] = position++;
+
     /// Move condition and all other conditions depend on the same set of columns.
     auto move_condition = [&](Conditions::iterator cond_it)
     {
         LOG_TRACE(log, "Condition {} moved to PREWHERE", cond_it->node.getColumnName());
-        prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, cond_it);
+        /// Keep the original order of conditions in prewhere_conditions.
+        position = condition_positions[&(*cond_it)];
+        auto prewhere_it = prewhere_conditions.begin();
+        while (condition_positions[&(*prewhere_it)] < position && prewhere_it != prewhere_conditions.end())
+            ++prewhere_it;
+        prewhere_conditions.splice(prewhere_it, where_conditions, cond_it);
         total_size_of_moved_conditions += cond_it->columns_size;
         total_number_of_moved_columns += cond_it->table_columns.size();
 
@@ -375,7 +387,12 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
             if (jt->viable && jt->columns_size == cond_it->columns_size && jt->table_columns == cond_it->table_columns)
             {
                 LOG_TRACE(log, "Condition {} moved to PREWHERE", jt->node.getColumnName());
-                prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, jt++);
+                /// Keep the original order of conditions in prewhere_conditions.
+                position = condition_positions[&(*jt)];
+                prewhere_it = prewhere_conditions.begin();
+                while (condition_positions[&(*prewhere_it)] < position && prewhere_it != prewhere_conditions.end())
+                    ++prewhere_it;
+                prewhere_conditions.splice(prewhere_it, where_conditions, jt++);
             }
             else
             {

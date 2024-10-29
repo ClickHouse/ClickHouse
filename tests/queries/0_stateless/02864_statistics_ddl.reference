@@ -2,7 +2,7 @@ CREATE TABLE default.tab\n(\n    `a` Float64 STATISTICS(tdigest),\n    `b` Int64
 After insert
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(less(a, 10), less(b, 10)) (removed)
+          Prewhere filter column: and(less(b, 10), less(a, 10)) (removed)
 10
 0
 After drop statistic
@@ -16,16 +16,16 @@ CREATE TABLE default.tab\n(\n    `a` Float64 STATISTICS(tdigest),\n    `b` Int64
 After materialize statistic
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(less(a, 10), less(b, 10)) (removed)
+          Prewhere filter column: and(less(b, 10), less(a, 10)) (removed)
 20
 After merge
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(less(a, 10), less(b, 10)) (removed)
+          Prewhere filter column: and(less(b, 10), less(a, 10)) (removed)
 20
 CREATE TABLE default.tab\n(\n    `a` Float64 STATISTICS(tdigest),\n    `c` Int64 STATISTICS(tdigest),\n    `pk` String\n)\nENGINE = MergeTree\nORDER BY pk\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
 After rename
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(less(a, 10), less(c, 10)) (removed)
+          Prewhere filter column: and(less(c, 10), less(a, 10)) (removed)
 20
