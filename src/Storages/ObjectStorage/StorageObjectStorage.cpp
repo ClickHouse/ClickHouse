@@ -76,16 +76,16 @@ void printConfiguration(const Poco::Util::AbstractConfiguration & config, std::s
 
     for (const auto & key : keys)
     {
-        std::string fullKey = prefix.empty() ? key : (prefix + "." + key);
+        std::string full_key = prefix.empty() ? key : (prefix + "." + key);
 
-        if (config.hasProperty(fullKey))
+        if (config.hasProperty(full_key))
         {
-            std::string value = config.getString(fullKey);
-            LOG_DEBUG(&Poco::Logger::get(log_name), "{} = {}", fullKey, value);
+            std::string value = config.getString(full_key);
+            LOG_DEBUG(&Poco::Logger::get(log_name), "{} = {}", full_key, value);
         }
 
         // Recursively print sub-configurations
-        printConfiguration(config, fullKey, log_name);
+        printConfiguration(config, full_key, log_name);
     }
 }
 
@@ -114,7 +114,7 @@ StorageObjectStorage::StorageObjectStorage(
     printConfiguration(context->getConfigRef(), "Storage create");
     try
     {
-        // configuration->update(object_storage, context);
+        configuration->update(object_storage, context);
     }
     catch (...)
     {
@@ -166,7 +166,7 @@ bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) c
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context, format_settings);
 }
 
-void StorageObjectStorage::Configuration::update(ObjectStoragePtr object_storage_ptr, ContextPtr context)
+void StorageObjectStorage::Configuration::update(ObjectStoragePtr object_storage_ptr, ContextPtr context, [[maybe_unused]] bool update_base)
 {
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
@@ -309,7 +309,7 @@ void StorageObjectStorage::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    configuration->update(object_storage, local_context);
+    configuration->update(object_storage, local_context, true);
     printConfiguration(local_context->getConfigRef(), "Select query");
     if (partition_by && configuration->withPartitionWildcard())
     {

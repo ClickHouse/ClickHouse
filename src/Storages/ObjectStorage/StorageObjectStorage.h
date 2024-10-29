@@ -216,7 +216,7 @@ public:
     String compression_method = "auto";
     String structure = "auto";
 
-    virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
+    virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context, [[maybe_unused]] bool update_base = false);
 
 
 protected:
