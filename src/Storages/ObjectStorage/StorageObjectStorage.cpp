@@ -69,27 +69,6 @@ String StorageObjectStorage::getPathSample(StorageInMemoryMetadata metadata, Con
     return "";
 }
 
-void printConfiguration(const Poco::Util::AbstractConfiguration & config, std::string log_name, const std::string & prefix = "")
-{
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys(prefix, keys);
-
-    for (const auto & key : keys)
-    {
-        std::string full_key = prefix.empty() ? key : (prefix + "." + key);
-
-        if (config.hasProperty(full_key))
-        {
-            std::string value = config.getString(full_key);
-            LOG_DEBUG(&Poco::Logger::get(log_name), "{} = {}", full_key, value);
-        }
-
-        // Recursively print sub-configurations
-        printConfiguration(config, full_key, log_name);
-    }
-}
-
-
 StorageObjectStorage::StorageObjectStorage(
     ConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
@@ -110,17 +89,14 @@ StorageObjectStorage::StorageObjectStorage(
     , distributed_processing(distributed_processing_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
-    // LOG_DEBUG(&Poco::Logger::get("StorageObjectStorage Creation"), "Columns size {}", columns.size());
-    printConfiguration(context->getConfigRef(), "Storage create");
     try
     {
         configuration->update(object_storage, context);
     }
     catch (...)
     {
-        if (mode <= LoadingStrictnessLevel::CREATE || columns_.empty()
-            || (configuration->format
-                == "auto")) // If we don't have format or schema yet, we can't ignore failed configuration update, because relevant configuration is crucial for format and schema inference
+        // If we don't have format or schema yet, we can't ignore failed configuration update, because relevant configuration is crucial for format and schema inference
+        if (mode <= LoadingStrictnessLevel::CREATE || columns_.empty() || (configuration->format == "auto"))
         {
             throw;
         }
