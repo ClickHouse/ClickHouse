@@ -222,7 +222,7 @@ void ProgressTable::writeTable(WriteBufferFromFileDescriptor & message, bool sho
     writeWithWidth(message, COLUMN_EVENT_NAME, column_event_name_width);
     writeWithWidth(message, COLUMN_VALUE, COLUMN_VALUE_WIDTH);
     writeWithWidth(message, COLUMN_PROGRESS, COLUMN_PROGRESS_WIDTH);
-    auto col_doc_width = getColumnDocumentationWith(terminal_width);
+    auto col_doc_width = getColumnDocumentationWidth(terminal_width);
     if (col_doc_width)
         writeWithWidth(message, COLUMN_DOCUMENTATION_NAME, col_doc_width);
     message << CLEAR_TO_END_OF_LINE;
@@ -380,7 +380,7 @@ size_t ProgressTable::tableSize() const
     return metrics.empty() ? 0 : metrics.size() + 1;
 }
 
-size_t ProgressTable::getColumnDocumentationWith(size_t terminal_width) const
+size_t ProgressTable::getColumnDocumentationWidth(size_t terminal_width) const
 {
     auto fixed_columns_width = column_event_name_width + COLUMN_VALUE_WIDTH + COLUMN_PROGRESS_WIDTH;
     if (terminal_width < fixed_columns_width + COLUMN_DOCUMENTATION_MIN_WIDTH)

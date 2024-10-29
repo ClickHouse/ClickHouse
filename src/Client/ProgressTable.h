@@ -87,7 +87,7 @@ private:
     };
 
     size_t tableSize() const;
-    size_t getColumnDocumentationWith(size_t terminal_width) const;
+    size_t getColumnDocumentationWidth(size_t terminal_width) const;
 
     using MetricName = String;
 
