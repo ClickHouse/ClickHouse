@@ -88,6 +88,12 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserStorageOrderByClause : public IParserBase
+{
+protected:
+    const char * getName() const override { return "storage order by clause"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
 
 template <typename NameParser>
 class IParserColumnDeclaration : public IParserBase

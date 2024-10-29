@@ -14,7 +14,10 @@ struct KeyDescription
     /// primary key in merge tree can be part of sorting key)
     ASTPtr definition_ast;
 
-    /// ASTExpressionList with key fields, example: (x, toStartOfMonth(date))).
+    /// Original user defined ASTExpressionList with key fields, example: (x DESC, toStartOfMonth(date))).
+    ASTPtr original_expression_list_ast;
+
+    /// Same as above but without special function __descendingKey, a.k.a, ASC|DESC suffix.
     ASTPtr expression_list_ast;
 
     /// Expression from expression_list_ast created by ExpressionAnalyzer. Useful,

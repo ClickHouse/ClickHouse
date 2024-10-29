@@ -9,7 +9,7 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Common/quoteString.h>
 #include <Interpreters/FunctionNameNormalizer.h>
-#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
 
@@ -24,6 +24,7 @@ namespace ErrorCodes
 
 KeyDescription::KeyDescription(const KeyDescription & other)
     : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)
+    , original_expression_list_ast(other.original_expression_list_ast ? other.original_expression_list_ast->clone() : nullptr)
     , expression_list_ast(other.expression_list_ast ? other.expression_list_ast->clone() : nullptr)
     , sample_block(other.sample_block)
     , column_names(other.column_names)
@@ -45,11 +46,15 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
     else
         definition_ast.reset();
 
+    if (other.original_expression_list_ast)
+        original_expression_list_ast = other.original_expression_list_ast->clone();
+    else
+        original_expression_list_ast.reset();
+
     if (other.expression_list_ast)
         expression_list_ast = other.expression_list_ast->clone();
     else
         expression_list_ast.reset();
-
 
     if (other.expression)
         expression = other.expression->clone();
@@ -124,29 +129,33 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
 {
     KeyDescription result;
     result.definition_ast = definition_ast;
-    result.expression_list_ast = extractKeyExpressionList(definition_ast);
+    result.original_expression_list_ast = extractKeyExpressionList(definition_ast);
 
     if (additional_column)
     {
         result.additional_column = additional_column;
         ASTPtr column_identifier = std::make_shared<ASTIdentifier>(*additional_column);
-        result.expression_list_ast->children.push_back(column_identifier);
+        result.original_expression_list_ast->children.push_back(column_identifier);
     }
 
-    const auto & children = result.expression_list_ast->children;
+    result.expression_list_ast = std::make_shared<ASTExpressionList>();
+    const auto & children = result.original_expression_list_ast->children;
     for (const auto & child : children)
     {
         if (auto * func = child->as<ASTFunction>())
         {
             if (func->name == "__descendingKey")
             {
-                result.column_names.emplace_back(func->arguments->children.front()->getColumnName());
+                auto & real_key = func->arguments->children.front();
+                result.column_names.emplace_back(real_key->getColumnName());
                 result.reverse_flags.emplace_back(true);
+                result.expression_list_ast->children.push_back(real_key->clone());
                 continue;
             }
         }
         result.column_names.emplace_back(child->getColumnName());
         result.reverse_flags.emplace_back(false);
+        result.expression_list_ast->children.push_back(child->clone());
     }
 
     {
@@ -173,6 +182,7 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
 KeyDescription KeyDescription::buildEmptyKey()
 {
     KeyDescription result;
+    result.original_expression_list_ast = std::make_shared<ASTExpressionList>();
     result.expression_list_ast = std::make_shared<ASTExpressionList>();
     result.expression = std::make_shared<ExpressionActions>(ActionsDAG(), ExpressionActionsSettings{});
     return result;
@@ -184,7 +194,7 @@ KeyDescription KeyDescription::parse(const String & str, const ColumnsDescriptio
     if (str.empty())
         return result;
 
-    ParserExpression parser;
+    ParserStorageOrderByClause parser;
     ASTPtr ast = parseQuery(parser, "(" + str + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     FunctionNameNormalizer::visit(ast.get());
 

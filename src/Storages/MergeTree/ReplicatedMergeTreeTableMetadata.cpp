@@ -78,14 +78,14 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     /// - When we have only ORDER BY, than store it in "primary key:" row of /metadata
     /// - When we have both, than store PRIMARY KEY in "primary key:" row and ORDER BY in "sorting key:" row of /metadata
 
-    primary_key = formattedASTNormalized(metadata_snapshot->getPrimaryKey().expression_list_ast);
+    primary_key = formattedASTNormalized(metadata_snapshot->getPrimaryKey().original_expression_list_ast);
     if (metadata_snapshot->isPrimaryKeyDefined())
     {
-        /// We don't use preparsed AST `sorting_key.expression_list_ast` because
+        /// We don't use preparsed AST `sorting_key.original_expression_list_ast` because
         /// it contain version column for VersionedCollapsingMergeTree, which
         /// is not stored in ZooKeeper for compatibility reasons. So the best
         /// compatible way is just to convert definition_ast to list and
-        /// serialize it. In all other places key.expression_list_ast should be
+        /// serialize it. In all other places key.original_expression_list_ast should be
         /// used.
         sorting_key = formattedASTNormalized(extractKeyExpressionList(metadata_snapshot->getSortingKey().definition_ast));
     }
@@ -93,7 +93,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     data_format_version = data.format_version;
 
     if (data.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-        partition_key = formattedASTNormalized(metadata_snapshot->getPartitionKey().expression_list_ast);
+        partition_key = formattedASTNormalized(metadata_snapshot->getPartitionKey().original_expression_list_ast);
 
     ttl_table = formattedASTNormalized(metadata_snapshot->getTableTTLs().definition_ast);
 
@@ -301,7 +301,7 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const Replicat
 
     /// NOTE: You can make a less strict check of match expressions so that tables do not break from small changes
     ///    in formatAST code.
-    String parsed_zk_primary_key = formattedAST(KeyDescription::parse(from_zk.primary_key, columns, context).expression_list_ast);
+    String parsed_zk_primary_key = formattedAST(KeyDescription::parse(from_zk.primary_key, columns, context).original_expression_list_ast);
     if (primary_key != parsed_zk_primary_key)
         throw Exception(ErrorCodes::METADATA_MISMATCH, "Existing table metadata in ZooKeeper differs in primary key. "
             "Stored in ZooKeeper: {}, parsed from ZooKeeper: {}, local: {}",
@@ -313,7 +313,7 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const Replicat
                         "Stored in ZooKeeper: {}, local: {}", DB::toString(from_zk.data_format_version.toUnderType()),
                         DB::toString(data_format_version.toUnderType()));
 
-    String parsed_zk_partition_key = formattedAST(KeyDescription::parse(from_zk.partition_key, columns, context).expression_list_ast);
+    String parsed_zk_partition_key = formattedAST(KeyDescription::parse(from_zk.partition_key, columns, context).original_expression_list_ast);
     if (partition_key != parsed_zk_partition_key)
         throw Exception(ErrorCodes::METADATA_MISMATCH,
                         "Existing table metadata in ZooKeeper differs in partition key expression. "
