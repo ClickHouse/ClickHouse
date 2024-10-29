@@ -9,8 +9,10 @@
 namespace buzzhouse
 {
 
-const constexpr uint32_t allow_nullable = (1 << 0), allow_dynamic = (1 << 1), allow_nested = (1 << 2), allow_variant = (1 << 3),
-                         allow_json = (1 << 4), allow_enum = (1 << 5);
+const constexpr uint32_t allow_unsigned_int = (1 << 0), allow_int8 = (1 << 1), allow_date32 = (1 << 2), allow_datetime64 = (1 << 3),
+                         allow_uuid = (1 << 4), allow_enum = (1 << 5), allow_dynamic = (1 << 6), allow_json = (1 << 7),
+                         allow_nullable = (1 << 8), allow_low_cardinality = (1 << 9), allow_array = (1 << 10), allow_map = (1 << 11),
+                         allow_tuple = (1 << 12), allow_variant = (1 << 13), allow_nested = (1 << 14);
 
 class SQLType
 {
@@ -476,8 +478,8 @@ bool HasType(const SQLType * tp)
     return false;
 }
 
-std::tuple<const SQLType *, sql_query_grammar::Integers> RandomIntType(RandomGenerator & rg);
+std::tuple<const SQLType *, sql_query_grammar::Integers> RandomIntType(RandomGenerator & rg, const uint32_t allowed_types);
 std::tuple<const SQLType *, sql_query_grammar::FloatingPoints> RandomFloatType(RandomGenerator & rg);
-std::tuple<const SQLType *, sql_query_grammar::Dates> RandomDateType(RandomGenerator & rg, const bool low_card);
+std::tuple<const SQLType *, sql_query_grammar::Dates> RandomDateType(RandomGenerator & rg, const uint32_t allowed_types);
 
 }

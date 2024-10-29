@@ -487,14 +487,14 @@ int StatementGenerator::AddTableColumn(
     {
         sql_query_grammar::Integers nint;
 
-        std::tie(tp, nint) = RandomIntType(rg);
+        std::tie(tp, nint) = RandomIntType(rg, std::numeric_limits<uint32_t>::max());
         cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_integers(nint);
     }
     else if (special == ColumnSpecial::VERSION)
     {
         sql_query_grammar::Dates dd;
 
-        std::tie(tp, dd) = RandomDateType(rg, false);
+        std::tie(tp, dd) = RandomDateType(rg, std::numeric_limits<uint32_t>::max());
         cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_dates(dd);
     }
     else
