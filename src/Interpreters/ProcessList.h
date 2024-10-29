@@ -109,6 +109,9 @@ protected:
     /// KILL was send to the query
     std::atomic<bool> is_killed { false };
 
+    std::exception_ptr cancellation_exception TSA_GUARDED_BY(cancellation_exception_mutex);
+    mutable std::mutex cancellation_exception_mutex;
+
     /// All data to the client already had been sent.
     /// Including EndOfStream or Exception.
     std::atomic<bool> is_all_data_sent { false };
@@ -126,6 +129,8 @@ protected:
     /// Be careful using it (this function contains no synchronization).
     /// A weak pointer is used here because it's a ProcessListEntry which owns this QueryStatus, and not vice versa.
     void setProcessListEntry(std::weak_ptr<ProcessListEntry> process_list_entry_);
+
+    [[noreturn]] void throwQueryWasCancelled() const;
 
     mutable std::mutex executors_mutex;
 
@@ -225,7 +230,9 @@ public:
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
-    CancellationCode cancelQuery(bool kill);
+    /// Cancels the current query.
+    /// Optional argument `exception` allows to set an exception which checkTimeLimit() will throw instead of "QUERY_WAS_CANCELLED".
+    CancellationCode cancelQuery(bool kill, std::exception_ptr exception = nullptr);
 
     bool isKilled() const { return is_killed; }
 
