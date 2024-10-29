@@ -1,4 +1,5 @@
 set optimize_read_in_order = 1;
+set read_in_order_two_level_merge_threshold=100;
 
 drop table if exists x1;
 
