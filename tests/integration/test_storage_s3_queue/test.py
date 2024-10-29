@@ -4,7 +4,7 @@ import logging
 import random
 import string
 import time
-from uuid import uuid4
+import uuid
 
 import pytest
 
@@ -166,6 +166,16 @@ def started_cluster():
             ],
             with_installed_binary=True,
             use_old_analyzer=True,
+        )
+        cluster.add_instance(
+            "node_cloud_mode",
+            with_zookeeper=True,
+            stay_alive=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+            ],
+            user_configs=["configs/cloud_mode.xml"],
         )
 
         logging.info("Starting cluster...")
@@ -981,7 +991,7 @@ def test_max_set_age(started_cluster):
     ).encode()
 
     # use a different filename for each test to allow running a bunch of them sequentially with --count
-    file_with_error = f"max_set_age_fail_{uuid4().hex[:8]}.csv"
+    file_with_error = f"max_set_age_fail_{uuid.uuid4().hex[:8]}.csv"
     put_s3_file_content(started_cluster, f"{files_path}/{file_with_error}", values_csv)
 
     wait_for_condition(lambda: failed_count + 1 == get_object_storage_failures())
@@ -1087,7 +1097,7 @@ def test_drop_table(started_cluster):
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=100000
     )
     create_mv(node, table_name, dst_table_name)
-    node.wait_for_log_line(f"Reading from file: test_drop_data")
+    node.wait_for_log_line(f"rows from file: test_drop_data")
     node.query(f"DROP TABLE {table_name} SYNC")
     assert node.contains_in_log(
         f"StorageS3Queue (default.{table_name}): Table is being dropped"
@@ -1913,10 +1923,10 @@ def test_commit_on_limit(started_cluster):
 def test_upgrade_2(started_cluster):
     node = started_cluster.instances["instance_24.5"]
 
-    table_name = f"test_upgrade_2_{uuid4().hex[:8]}"
+    table_name = f"test_upgrade_2_{uuid.uuid4().hex[:8]}"
     dst_table_name = f"{table_name}_dst"
     # A unique path is necessary for repeatable tests
-    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     files_to_generate = 10
 
@@ -1957,9 +1967,9 @@ def test_replicated(started_cluster):
     node1 = started_cluster.instances["node1"]
     node2 = started_cluster.instances["node2"]
 
-    table_name = f"test_replicated"
+    table_name = f"test_replicated_{uuid.uuid4().hex[:8]}"
     dst_table_name = f"{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     files_to_generate = 1000
 
@@ -2009,3 +2019,83 @@ def test_replicated(started_cluster):
             break
         time.sleep(1)
     assert expected_rows == get_count()
+
+
+def test_bad_settings(started_cluster):
+    node = started_cluster.instances["node_cloud_mode"]
+
+    table_name = f"test_bad_settings_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 10
+
+    try:
+        create_table(
+            started_cluster,
+            node,
+            table_name,
+            "ordered",
+            files_path,
+            additional_settings={
+                "keeper_path": keeper_path,
+                "processing_threads_num": 1,
+                "buckets": 0,
+            },
+        )
+        assert False
+    except Exception as e:
+        assert "Ordered mode in cloud without either" in str(e)
+
+
+def test_processing_threads(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    table_name = f"test_processing_threads_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 10
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+        },
+    )
+
+    assert '"processing_threads_num":16' in node.query(
+        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    )
+
+    assert 16 == int(
+        node.query(
+            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'processing_threads_num'"
+        )
+    )
+
+    total_values = generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    def get_count():
+        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    expected_rows = 10
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+
+    assert expected_rows == get_count()
+
+    assert node.contains_in_log(
+        f"StorageS3Queue (default.{table_name}): Using 16 processing threads"
+    )

@@ -6,11 +6,24 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 
 
 namespace DB
 {
+
+namespace ObjectStorageQueueSetting
+{
+    extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
+    extern const ObjectStorageQueueSettingsUInt32 buckets;
+    extern const ObjectStorageQueueSettingsString last_processed_path;
+    extern const ObjectStorageQueueSettingsUInt32 loading_retries;
+    extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
+    extern const ObjectStorageQueueSettingsUInt32 processing_threads_num;
+    extern const ObjectStorageQueueSettingsUInt32 tracked_files_limit;
+    extern const ObjectStorageQueueSettingsUInt32 tracked_file_ttl_sec;
+
+}
 
 namespace ErrorCodes
 {
@@ -43,19 +56,19 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     const std::string & format_)
     : format_name(format_)
     , columns(columns_.toString())
-    , after_processing(engine_settings.after_processing.toString())
-    , mode(engine_settings.mode.toString())
-    , tracked_files_limit(engine_settings.tracked_files_limit)
-    , tracked_files_ttl_sec(engine_settings.tracked_file_ttl_sec)
-    , buckets(engine_settings.buckets)
-    , last_processed_path(engine_settings.last_processed_path)
-    , loading_retries(engine_settings.loading_retries)
+    , after_processing(engine_settings[ObjectStorageQueueSetting::after_processing].toString())
+    , mode(engine_settings[ObjectStorageQueueSetting::mode].toString())
+    , tracked_files_limit(engine_settings[ObjectStorageQueueSetting::tracked_files_limit])
+    , tracked_files_ttl_sec(engine_settings[ObjectStorageQueueSetting::tracked_file_ttl_sec])
+    , buckets(engine_settings[ObjectStorageQueueSetting::buckets])
+    , last_processed_path(engine_settings[ObjectStorageQueueSetting::last_processed_path])
+    , loading_retries(engine_settings[ObjectStorageQueueSetting::loading_retries])
 {
-    processing_threads_num_changed = engine_settings.processing_threads_num.changed;
-    if (!processing_threads_num_changed && engine_settings.processing_threads_num <= 1)
-        processing_threads_num = std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
+    processing_threads_num_changed = engine_settings[ObjectStorageQueueSetting::processing_threads_num].changed;
+    if (!processing_threads_num_changed && engine_settings[ObjectStorageQueueSetting::processing_threads_num] <= 1)
+        processing_threads_num = std::max<uint32_t>(getNumberOfCPUCoresToUse(), 16);
     else
-        processing_threads_num = engine_settings.processing_threads_num;
+        processing_threads_num = engine_settings[ObjectStorageQueueSetting::processing_threads_num];
 }
 
 String ObjectStorageQueueTableMetadata::toString() const

@@ -8,6 +8,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/Statistics/Statistics.h>
+#include <Storages/MarkCache.h>
 
 namespace DB
 {

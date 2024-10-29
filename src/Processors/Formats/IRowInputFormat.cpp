@@ -56,7 +56,10 @@ bool isParseError(int code)
 }
 
 IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
-    : IInputFormat(std::move(header), &in_), serializations(getPort().getHeader().getSerializations()), params(params_)
+    : IInputFormat(std::move(header), &in_)
+    , serializations(getPort().getHeader().getSerializations())
+    , params(params_)
+    , block_missing_values(getPort().getHeader().columns())
 {
 }
 
@@ -108,6 +111,10 @@ Chunk IRowInputFormat::read()
     for (size_t i = 0; i < num_columns; ++i)
         columns[i] = header.getByPosition(i).type->createColumn(*serializations[i]);
 
+    ColumnCheckpoints checkpoints(columns.size());
+    for (size_t column_idx = 0; column_idx < columns.size(); ++column_idx)
+        checkpoints[column_idx] = columns[column_idx]->getCheckpoint();
+
     block_missing_values.clear();
 
     size_t num_rows = 0;
@@ -133,6 +140,9 @@ Chunk IRowInputFormat::read()
         {
             try
             {
+                for (size_t column_idx = 0; column_idx < columns.size(); ++column_idx)
+                    columns[column_idx]->updateCheckpoint(*checkpoints[column_idx]);
+
                 info.read_columns.clear();
                 continue_reading = readRow(columns, info);
 
@@ -196,14 +206,9 @@ Chunk IRowInputFormat::read()
 
                 syncAfterError();
 
-                /// Truncate all columns in block to initial size (remove values, that was appended to only part of columns).
-
+                /// Rollback all columns in block to initial size (remove values, that was appended to only part of columns).
                 for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
-                {
-                    auto & column = columns[column_idx];
-                    if (column->size() > num_rows)
-                        column->popBack(column->size() - num_rows);
-                }
+                    columns[column_idx]->rollback(*checkpoints[column_idx]);
             }
         }
     }
@@ -271,7 +276,8 @@ size_t IRowInputFormat::countRows(size_t)
 
 void IRowInputFormat::setSerializationHints(const SerializationInfoByName & hints)
 {
-    serializations = getPort().getHeader().getSerializations(hints);
+    if (supportsCustomSerializations())
+        serializations = getPort().getHeader().getSerializations(hints);
 }
 
 

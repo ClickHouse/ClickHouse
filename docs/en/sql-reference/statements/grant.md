@@ -78,6 +78,10 @@ Specifying privileges you can use asterisk (`*`) instead of a table or a databas
 Also, you can omit database name. In this case privileges are granted for current database.
 For example, `GRANT SELECT ON * TO john` grants the privilege on all the tables in the current database, `GRANT SELECT ON mytable TO john` grants the privilege on the `mytable` table in the current database.
 
+:::note
+The feature described below is available starting with the 24.10 ClickHouse version.
+:::
+
 You can also put asterisks at the end of a table or a database name. This feature allows you to grant privileges on an abstract prefix of the table's path.
 Example: `GRANT SELECT ON db.my_tables* TO john`. This query allows `john` to execute the `SELECT` query over all the `db` database tables with the prefix `my_tables*`.
 
@@ -233,15 +237,20 @@ Hierarchy of privileges:
     - `addressToSymbol`
     - `demangle`
 - [SOURCES](#sources)
+    - `AZURE`
     - `FILE`
-    - `URL`
-    - `REMOTE`
-    - `YSQL`
-    - `ODBC`
-    - `JDBC`
     - `HDFS`
-    - `S3`
+    - `HIVE`
+    - `JDBC`
+    - `MONGO`
+    - `MYSQL`
+    - `ODBC`
     - `POSTGRES`
+    - `REDIS`
+    - `REMOTE`
+    - `S3`
+    - `SQLITE`
+    - `URL`
 - [dictGet](#dictget)
 - [displaySecretsInShowAndSelect](#displaysecretsinshowandselect)
 - [NAMED COLLECTION ADMIN](#named-collection-admin)
@@ -510,15 +519,20 @@ Allows using [introspection](../../operations/optimizing-performance/sampling-qu
 Allows using external data sources. Applies to [table engines](../../engines/table-engines/index.md) and [table functions](../../sql-reference/table-functions/index.md#table-functions).
 
 - `SOURCES`. Level: `GROUP`
+    - `AZURE`. Level: `GLOBAL`
     - `FILE`. Level: `GLOBAL`
-    - `URL`. Level: `GLOBAL`
-    - `REMOTE`. Level: `GLOBAL`
-    - `YSQL`. Level: `GLOBAL`
-    - `ODBC`. Level: `GLOBAL`
-    - `JDBC`. Level: `GLOBAL`
     - `HDFS`. Level: `GLOBAL`
-    - `S3`. Level: `GLOBAL`
+    - `HIVE`. Level: `GLOBAL`
+    - `JDBC`. Level: `GLOBAL`
+    - `MONGO`. Level: `GLOBAL`
+    - `MYSQL`. Level: `GLOBAL`
+    - `ODBC`. Level: `GLOBAL`
     - `POSTGRES`. Level: `GLOBAL`
+    - `REDIS`. Level: `GLOBAL`
+    - `REMOTE`. Level: `GLOBAL`
+    - `S3`. Level: `GLOBAL`
+    - `SQLITE`. Level: `GLOBAL`
+    - `URL`. Level: `GLOBAL`
 
 The `SOURCES` privilege enables use of all the sources. Also you can grant a privilege for each source individually. To use sources, you need additional privileges.
 

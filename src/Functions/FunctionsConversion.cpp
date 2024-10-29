@@ -83,7 +83,7 @@ namespace Setting
     extern const SettingsBool input_format_ipv4_default_on_conversion_error;
     extern const SettingsBool input_format_ipv6_default_on_conversion_error;
     extern const SettingsBool precise_float_parsing;
-    extern const SettingsBool cast_to_json_disable_dynamic_subcolumns;
+    extern const SettingsBool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
 }
 
 namespace ErrorCodes
@@ -1398,9 +1398,18 @@ struct ConvertImpl
                 offsets_to.resize(size);
 
                 WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
-                const auto & type = static_cast<const FromDataType &>(*col_with_type_and_name.type);
+                const FromDataType & type = static_cast<const FromDataType &>(*col_with_type_and_name.type);
 
                 ColumnUInt8::MutablePtr null_map = copyNullMap(datetime_arg.column);
+
+                bool cut_trailing_zeros_align_to_groups_of_thousands = false;
+                if (DB::CurrentThread::isInitialized())
+                {
+                    const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
+
+                    if (query_context)
+                        cut_trailing_zeros_align_to_groups_of_thousands = query_context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands];
+                }
 
                 if (!null_map && arguments.size() > 1)
                     null_map = copyNullMap(arguments[1].column->convertToFullColumnIfConst());
@@ -1416,7 +1425,18 @@ struct ConvertImpl
                             else
                                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
                         }
-                        bool is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                        bool is_ok = true;
+                        if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
+                        {
+                            if (cut_trailing_zeros_align_to_groups_of_thousands)
+                                writeDateTimeTextCutTrailingZerosAlignToGroupOfThousands(DateTime64(vec_from[i]), type.getScale(), write_buffer, *time_zone);
+                            else
+                                is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                        }
+                        else
+                        {
+                            is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                        }
                         null_map->getData()[i] |= !is_ok;
                         writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
@@ -1433,7 +1453,17 @@ struct ConvertImpl
                             else
                                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
                         }
-                        FormatImpl<FromDataType>::template execute<void>(vec_from[i], write_buffer, &type, time_zone);
+                        if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
+                        {
+                            if (cut_trailing_zeros_align_to_groups_of_thousands)
+                                writeDateTimeTextCutTrailingZerosAlignToGroupOfThousands(DateTime64(vec_from[i]), type.getScale(), write_buffer, *time_zone);
+                            else
+                                FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                        }
+                        else
+                        {
+                            FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                        }
                         writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
@@ -4607,26 +4637,124 @@ private:
             return [to_max_types]
                    (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t) -> ColumnPtr
             {
-                const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arguments[0].column);
+                const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*arguments[0].column);
                 /// We should use the same limit as already used in column and change only global limit.
                 /// It's needed because shared variant should contain values only when limit is exceeded,
                 /// so if there are already some data, we cannot increase the limit.
-                return ColumnDynamic::create(column_dynamic.getVariantColumnPtr(), column_dynamic.getVariantInfo(), column_dynamic.getMaxDynamicTypes(), to_max_types);
+                return ColumnDynamic::create(dynamic_column.getVariantColumnPtr(), dynamic_column.getVariantInfo(), dynamic_column.getMaxDynamicTypes(), to_max_types);
             };
         }
 
         return [to_max_types]
                (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t) -> ColumnPtr
         {
-            const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arguments[0].column);
+            const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*arguments[0].column);
             /// If real limit in the column is not greater than desired, just use the same variant column.
-            if (column_dynamic.getMaxDynamicTypes() <= to_max_types)
-                return ColumnDynamic::create(column_dynamic.getVariantColumnPtr(), column_dynamic.getVariantInfo(), column_dynamic.getMaxDynamicTypes(), to_max_types);
+            if (dynamic_column.getMaxDynamicTypes() <= to_max_types)
+                return ColumnDynamic::create(dynamic_column.getVariantColumnPtr(), dynamic_column.getVariantInfo(), dynamic_column.getMaxDynamicTypes(), to_max_types);
 
-            /// Otherwise some variants should go to the shared variant. In this case we can just insert all
-            /// the data into resulting column and it will do all the logic with shared variant.
-            auto result_dynamic_column = ColumnDynamic::create(to_max_types);
-            result_dynamic_column->insertRangeFrom(column_dynamic, 0, column_dynamic.size());
+            /// Otherwise some variants should go to the shared variant. We try to keep the most frequent variants.
+            const auto & variant_info = dynamic_column.getVariantInfo();
+            const auto & variants = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
+            const auto & statistics = dynamic_column.getStatistics();
+            const auto & variant_column = dynamic_column.getVariantColumn();
+            auto shared_variant_discr = dynamic_column.getSharedVariantDiscriminator();
+            std::vector<std::tuple<size_t, String, DataTypePtr>> variants_with_sizes;
+            variants_with_sizes.reserve(variant_info.variant_names.size());
+            for (const auto & [name, discr] : variant_info.variant_name_to_discriminator)
+            {
+                /// Don't include shared variant.
+                if (discr == shared_variant_discr)
+                    continue;
+
+                size_t size = variant_column.getVariantByGlobalDiscriminator(discr).size();
+                /// If column has statistics from the data part, use size from it for consistency.
+                /// It's important to keep the same dynamic structure of the result column during ALTER.
+                if (statistics)
+                {
+                    auto statistics_it = statistics->variants_statistics.find(name);
+                    if (statistics_it != statistics->variants_statistics.end())
+                        size = statistics_it->second;
+                }
+                variants_with_sizes.emplace_back(size, name, variants[discr]);
+            }
+
+            std::sort(variants_with_sizes.begin(), variants_with_sizes.end(), std::greater());
+            DataTypes result_variants;
+            result_variants.reserve(to_max_types + 1); /// +1 for shared variant.
+            /// Add new variants from sorted list until we reach to_max_types.
+            for (const auto & [size, name, type] : variants_with_sizes)
+            {
+                if (result_variants.size() < to_max_types)
+                    result_variants.push_back(type);
+                else
+                    break;
+            }
+
+            /// Add shared variant.
+            result_variants.push_back(ColumnDynamic::getSharedVariantDataType());
+            /// Create resulting Variant type and Dynamic column.
+            auto result_variant_type = std::make_shared<DataTypeVariant>(result_variants);
+            auto result_dynamic_column = ColumnDynamic::create(result_variant_type->createColumn(), result_variant_type, to_max_types, to_max_types);
+            const auto & result_variant_info = result_dynamic_column->getVariantInfo();
+            auto & result_variant_column = result_dynamic_column->getVariantColumn();
+            auto result_shared_variant_discr = result_dynamic_column->getSharedVariantDiscriminator();
+            /// Create mapping from old discriminators to the new ones.
+            std::vector<ColumnVariant::Discriminator> old_to_new_discriminators;
+            old_to_new_discriminators.resize(variant_info.variant_name_to_discriminator.size(), result_shared_variant_discr);
+            for (const auto & [name, discr] : result_variant_info.variant_name_to_discriminator)
+            {
+                auto old_discr = variant_info.variant_name_to_discriminator.at(name);
+                old_to_new_discriminators[old_discr] = discr;
+                /// Reuse old variant column if it's not shared variant.
+                if (discr != result_shared_variant_discr)
+                    result_variant_column.getVariantPtrByGlobalDiscriminator(discr) = variant_column.getVariantPtrByGlobalDiscriminator(old_discr);
+            }
+
+            const auto & local_discriminators = variant_column.getLocalDiscriminators();
+            const auto & offsets = variant_column.getOffsets();
+            const auto & shared_variant = dynamic_column.getSharedVariant();
+            auto & result_local_discriminators = result_variant_column.getLocalDiscriminators();
+            result_local_discriminators.reserve(local_discriminators.size());
+            auto & result_offsets = result_variant_column.getOffsets();
+            result_offsets.reserve(offsets.size());
+            auto & result_shared_variant = result_dynamic_column->getSharedVariant();
+            for (size_t i = 0; i != local_discriminators.size(); ++i)
+            {
+                auto global_discr = variant_column.globalDiscriminatorByLocal(local_discriminators[i]);
+                if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+                {
+                    result_local_discriminators.push_back(ColumnVariant::NULL_DISCRIMINATOR);
+                    result_offsets.emplace_back();
+                }
+                else if (global_discr == shared_variant_discr)
+                {
+                    result_local_discriminators.push_back(result_variant_column.localDiscriminatorByGlobal(result_shared_variant_discr));
+                    result_offsets.push_back(result_shared_variant.size());
+                    result_shared_variant.insertFrom(shared_variant, offsets[i]);
+                }
+                else
+                {
+                    auto result_global_discr = old_to_new_discriminators[global_discr];
+                    if (result_global_discr == result_shared_variant_discr)
+                    {
+                        result_local_discriminators.push_back(result_variant_column.localDiscriminatorByGlobal(result_shared_variant_discr));
+                        result_offsets.push_back(result_shared_variant.size());
+                        ColumnDynamic::serializeValueIntoSharedVariant(
+                            result_shared_variant,
+                            variant_column.getVariantByGlobalDiscriminator(global_discr),
+                            variants[global_discr],
+                            variants[global_discr]->getDefaultSerialization(),
+                            offsets[i]);
+                    }
+                    else
+                    {
+                        result_local_discriminators.push_back(result_variant_column.localDiscriminatorByGlobal(result_global_discr));
+                        result_offsets.push_back(offsets[i]);
+                    }
+                }
+            }
+
             return result_dynamic_column;
         };
     }

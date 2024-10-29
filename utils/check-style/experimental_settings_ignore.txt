@@ -47,3 +47,4 @@ allow_settings_after_format_in_insert
 allow_statistic_optimize
 allow_statistics_optimize
 allow_unrestricted_reads_from_keeper
+allow_reorder_prewhere_conditions

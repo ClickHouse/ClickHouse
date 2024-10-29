@@ -5,8 +5,8 @@
 #if USE_AWS_S3
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Disks/ObjectStorages/S3/S3Capabilities.h>
 #include <memory>
+#include <IO/S3/S3Capabilities.h>
 #include <IO/S3Settings.h>
 #include <Common/MultiVersion.h>
 #include <Common/ObjectStorageKeyGenerator.h>
@@ -20,8 +20,8 @@ struct S3ObjectStorageSettings
     S3ObjectStorageSettings() = default;
 
     S3ObjectStorageSettings(
-        const S3::RequestSettings & request_settings_,
-        const S3::AuthSettings & auth_settings_,
+        const S3::S3RequestSettings & request_settings_,
+        const S3::S3AuthSettings & auth_settings_,
         uint64_t min_bytes_for_seek_,
         int32_t list_object_keys_size_,
         int32_t objects_chunk_size_to_delete_,
@@ -34,8 +34,8 @@ struct S3ObjectStorageSettings
         , read_only(read_only_)
     {}
 
-    S3::RequestSettings request_settings;
-    S3::AuthSettings auth_settings;
+    S3::S3RequestSettings request_settings;
+    S3::S3AuthSettings auth_settings;
 
     uint64_t min_bytes_for_seek;
     int32_t list_object_keys_size;
@@ -85,12 +85,6 @@ public:
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
-        const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const override;
-
-    std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
-        const StoredObjects & objects,
         const ReadSettings & read_settings,
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const override;
@@ -153,8 +147,6 @@ public:
     std::string getObjectsNamespace() const override { return uri.bucket; }
 
     bool isRemote() const override { return true; }
-
-    void setCapabilitiesSupportBatchDelete(bool value) { s3_capabilities.support_batch_delete = value; }
 
     std::unique_ptr<IObjectStorage> cloneObjectStorage(
         const std::string & new_namespace,

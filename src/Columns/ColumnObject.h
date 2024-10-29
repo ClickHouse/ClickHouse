@@ -54,6 +54,8 @@ private:
         size_t max_dynamic_types_,
         const StatisticsPtr & statistics_ = {});
 
+    ColumnObject(const ColumnObject & other);
+
     /// Use StringHashForHeterogeneousLookup hash for hash maps to be able to use std::string_view in find() method.
     using PathToColumnMap = std::unordered_map<String, WrappedPtr, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
     using PathToDynamicColumnPtrMap = std::unordered_map<String, ColumnDynamic *, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
@@ -159,6 +161,9 @@ public:
     size_t byteSizeAt(size_t n) const override;
     size_t allocatedBytes() const override;
     void protect() override;
+    ColumnCheckpointPtr getCheckpoint() const override;
+    void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
+    void rollback(const ColumnCheckpoint & checkpoint) override;
 
     void forEachSubcolumn(MutableColumnCallback callback) override;
 
@@ -221,6 +226,7 @@ public:
     void addNewDynamicPath(std::string_view path);
 
     void setDynamicPaths(const std::vector<String> & paths);
+    void setDynamicPaths(const std::vector<std::pair<String, ColumnPtr>> & paths);
     void setMaxDynamicPaths(size_t max_dynamic_paths_);
     void setGlobalMaxDynamicPaths(size_t global_max_dynamic_paths_);
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }

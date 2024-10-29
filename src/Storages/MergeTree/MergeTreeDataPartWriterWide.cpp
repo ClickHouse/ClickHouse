@@ -6,11 +6,19 @@
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnSparse.h>
 #include <Common/logger_useful.h>
+#include <Storages/MergeTree/MergeTreeMarksLoader.h>
+#include <Storages/MarkCache.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
 namespace DB
 {
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsUInt64 max_file_name_length;
+    extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
+}
 
 namespace ErrorCodes
 {
@@ -99,6 +107,12 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
             indices_to_recalc_, stats_to_recalc_, marks_file_extension_,
             default_codec_, settings_, index_granularity_)
 {
+    if (settings.save_marks_in_cache)
+    {
+        auto columns_vec = getColumnsToPrewarmMarks(*storage_settings, columns_list);
+        columns_to_load_marks = NameSet(columns_vec.begin(), columns_vec.end());
+    }
+
     for (const auto & column : columns_list)
     {
         auto compression = getCodecDescOrDefault(column.name, default_codec);
@@ -122,7 +136,7 @@ void MergeTreeDataPartWriterWide::addStreams(
         auto full_stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
 
         String stream_name;
-        if (storage_settings->replace_long_file_name_to_hash && full_stream_name.size() > storage_settings->max_file_name_length)
+        if ((*storage_settings)[MergeTreeSetting::replace_long_file_name_to_hash] && full_stream_name.size() > (*storage_settings)[MergeTreeSetting::max_file_name_length])
             stream_name = sipHash128String(full_stream_name);
         else
             stream_name = full_stream_name;
@@ -174,6 +188,9 @@ void MergeTreeDataPartWriterWide::addStreams(
             marks_compression_codec,
             settings.marks_compress_block_size,
             query_write_settings);
+
+        if (columns_to_load_marks.contains(name_and_type.name))
+            cached_marks.emplace(stream_name, std::make_unique<MarksInCompressedFile::PlainArray>());
 
         full_name_to_stream_name.emplace(full_stream_name, stream_name);
         stream_name_to_full_name.emplace(stream_name, full_stream_name);
@@ -346,8 +363,12 @@ void MergeTreeDataPartWriterWide::flushMarkToFile(const StreamNameAndMark & stre
 
     writeBinaryLittleEndian(stream_with_mark.mark.offset_in_compressed_file, marks_out);
     writeBinaryLittleEndian(stream_with_mark.mark.offset_in_decompressed_block, marks_out);
+
     if (settings.can_use_adaptive_granularity)
         writeBinaryLittleEndian(rows_in_mark, marks_out);
+
+    if (auto it = cached_marks.find(stream_with_mark.stream_name); it != cached_marks.end())
+        it->second->push_back(stream_with_mark.mark);
 }
 
 StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
@@ -508,7 +529,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
     String bin_path = escaped_name + DATA_FILE_EXTENSION;
 
     /// Some columns may be removed because of ttl. Skip them.
-    if (!getDataPartStorage().exists(mrk_path))
+    if (!getDataPartStorage().existsFile(mrk_path))
         return;
 
     auto mrk_file_in = getDataPartStorage().readFile(mrk_path, {}, std::nullopt, std::nullopt);
@@ -722,7 +743,6 @@ void MergeTreeDataPartWriterWide::fillChecksums(MergeTreeDataPartChecksums & che
         fillPrimaryIndexChecksums(checksums);
 
     fillSkipIndicesChecksums(checksums);
-
     fillStatisticsChecksums(checksums);
 }
 
@@ -736,7 +756,6 @@ void MergeTreeDataPartWriterWide::finish(bool sync)
         finishPrimaryIndexSerialization(sync);
 
     finishSkipIndicesSerialization(sync);
-
     finishStatisticsSerialization(sync);
 }
 

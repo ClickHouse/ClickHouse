@@ -580,7 +580,7 @@ AsynchronousInsertQueue::Milliseconds AsynchronousInsertQueue::getBusyWaitTimeou
     /// that is, if the time since the last insert and the difference between the last two queue flushes were both
     /// long enough (exceeding the adjusted timeout).
     /// This ensures the timeout value converges to the minimum over time for non-frequent inserts.
-    else if (last_insert_time + decreased_timeout_ms < now && t1 + decreased_timeout_ms < t2)
+    if (last_insert_time + decreased_timeout_ms < now && t1 + decreased_timeout_ms < t2)
         return normalize(decreased_timeout_ms);
 
     return normalize(shard.busy_timeout_ms);
@@ -1050,15 +1050,14 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
             adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(header, columns, *format, insert_context);
     }
 
-    auto on_error = [&](const MutableColumns & result_columns, Exception & e)
+    auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
     {
         current_exception = e.displayText();
         LOG_ERROR(logger, "Failed parsing for query '{}' with query id {}. {}",
             key.query_str, current_entry->query_id, current_exception);
 
-        for (const auto & column : result_columns)
-            if (column->size() > total_rows)
-                column->popBack(column->size() - total_rows);
+        for (size_t i = 0; i < result_columns.size(); ++i)
+            result_columns[i]->rollback(*checkpoints[i]);
 
         current_entry->finish(std::current_exception());
         return 0;

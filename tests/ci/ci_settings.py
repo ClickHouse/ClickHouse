@@ -151,10 +151,10 @@ class CiSettings:
                 return True
             return False
 
-        if job_config.run_by_label:
-            if job_config.run_by_label in labels and is_pr:
+        if job_config.run_by_labels:
+            if set(job_config.run_by_labels).intersection(labels) and is_pr:
                 print(
-                    f"Job [{job}] selected by GH label [{job_config.run_by_label}] - pass"
+                    f"Job [{job}] selected by GH label [{job_config.run_by_labels}] - pass"
                 )
                 return True
             return False
@@ -168,9 +168,12 @@ class CiSettings:
 
         to_deny = False
         if self.include_keywords:
-            # do not exclude builds
-            if job == CI.JobNames.STYLE_CHECK or CI.is_build_job(job):
-                # never exclude Style Check by include keywords
+            # never exclude builds, build report, style check
+            if (
+                job == CI.JobNames.STYLE_CHECK
+                or CI.is_build_job(job)
+                or job == CI.JobNames.BUILD_CHECK
+            ):
                 return True
             for keyword in self.include_keywords:
                 if keyword in CI.Utils.normalize_string(job):
