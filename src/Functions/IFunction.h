@@ -122,8 +122,8 @@ private:
     ColumnPtr executeWithoutSparseColumns(
             const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
-    bool short_circuit_default_implementation_for_nulls = false;
-    double short_circuit_default_implementation_for_nulls_threshold = 0.0;
+    bool short_circuit_function_evaluation_for_nulls = false;
+    double short_circuit_function_evaluation_for_nulls_threshold = 0.0;
 };
 
 using ExecutableFunctionPtr = std::shared_ptr<IExecutableFunction>;

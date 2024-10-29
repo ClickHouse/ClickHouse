@@ -64,6 +64,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.11",
         {
+            {"short_circuit_function_evaluation_for_nulls", false, true, "Whether to enable short-circuit evaluation for rows with at least one null in arguments in functions where useDefaultImplementationForNulls() is true."},
+            {"short_circuit_function_evaluation_for_nulls_threshold", 1.0, 1.0, "Ratio threshold for short-circuit evaluation for rows with at least one null in arguments in functions where useDefaultImplementationForNulls() is true. This is only valid when short_circuit_function_evaluation_for_nulls is true."},
         }
     },
     {"24.10",
@@ -103,8 +105,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"distributed_cache_read_alignment", 0, 0, "A setting for ClickHouse Cloud"},
             {"distributed_cache_max_unacked_inflight_packets", 10, 10, "A setting for ClickHouse Cloud"},
             {"distributed_cache_data_packet_ack_window", 5, 5, "A setting for ClickHouse Cloud"},
-            {"short_circuit_default_implementation_for_nulls", false, true, "Setting for short-circuit default implementations for null in function with useDefaultImplementationForNulls() = true. If true, function will not actually evaluate for rows in which there are at least one argument with null value."},
-            {"short_circuit_default_implementation_for_nulls_threshold", 0.0, 0.0, "Ratio threshold for short-circuit default implementations for nulls in function with useDefaultImplementationForNulls() = true. It is only valid when short_circuit_default_implementation_for_nulls is true."},
             {"input_format_parquet_enable_row_group_prefetch", false, true, "Enable row group prefetching during parquet parsing. Currently, only single-threaded parsing can prefetch."},
             {"input_format_orc_dictionary_as_low_cardinality", false, true, "Treat ORC dictionary encoded columns as LowCardinality columns while reading ORC files"},
             {"allow_experimental_refreshable_materialized_view", false, true, "Not experimental anymore"},

@@ -42,8 +42,8 @@ namespace DB
 
 namespace Setting
 {
-extern const SettingsBool short_circuit_default_implementation_for_nulls;
-extern const SettingsDouble short_circuit_default_implementation_for_nulls_threshold;
+extern const SettingsBool short_circuit_function_evaluation_for_nulls;
+extern const SettingsDouble short_circuit_function_evaluation_for_nulls_threshold;
 }
 
 namespace ErrorCodes
@@ -254,8 +254,8 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
         size_t rows_without_nulls  = countBytesInFilter(mask.data(), 0, mask.size());
         size_t rows_with_nulls = mask.size() - rows_without_nulls;
         double null_ratio = rows_with_nulls / static_cast<double>(mask.size());
-        bool should_short_circuit = short_circuit_default_implementation_for_nulls && !all_columns_constant
-            && null_ratio >= short_circuit_default_implementation_for_nulls_threshold;
+        bool should_short_circuit = short_circuit_function_evaluation_for_nulls && !all_columns_constant
+            && null_ratio >= short_circuit_function_evaluation_for_nulls_threshold;
         ProfileEvents::increment(ProfileEvents::DefaultImplementationForNullsRows, mask.size());
         ProfileEvents::increment(ProfileEvents::DefaultImplementationForNullsRowsWithNulls, rows_with_nulls);
 
@@ -361,10 +361,10 @@ IExecutableFunction::IExecutableFunction()
     if (CurrentThread::isInitialized())
     {
         auto query_context = CurrentThread::get().getQueryContext();
-        if (query_context && query_context->getSettingsRef()[Setting::short_circuit_default_implementation_for_nulls])
+        if (query_context && query_context->getSettingsRef()[Setting::short_circuit_function_evaluation_for_nulls])
         {
-            short_circuit_default_implementation_for_nulls = true;
-            short_circuit_default_implementation_for_nulls_threshold = query_context->getSettingsRef()[Setting::short_circuit_default_implementation_for_nulls_threshold];
+            short_circuit_function_evaluation_for_nulls = true;
+            short_circuit_function_evaluation_for_nulls_threshold = query_context->getSettingsRef()[Setting::short_circuit_function_evaluation_for_nulls_threshold];
         }
     }
 }
