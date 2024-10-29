@@ -58,6 +58,7 @@ namespace DB
     DECLARE(Double, cannot_allocate_thread_fault_injection_probability, 0, "For testing purposes.", 0) \
     DECLARE(Int32, max_connections, 1024, "Max server connections.", 0) \
     DECLARE(UInt32, asynchronous_metrics_update_period_s, 1, "Period in seconds for updating asynchronous metrics.", 0) \
+    DECLARE(Bool, asynchronous_metrics_enable_heavy_metrics, false, "Enable the calculation of heavy asynchronous metrics.", 0) \
     DECLARE(UInt32, asynchronous_heavy_metrics_update_period_s, 120, "Period in seconds for updating heavy asynchronous metrics.", 0) \
     DECLARE(String, default_database, "default", "Default database name.", 0) \
     DECLARE(String, tmp_policy, "", "Policy for storage with temporary data.", 0) \
@@ -147,6 +148,7 @@ namespace DB
     DECLARE(UInt64, tables_loader_foreground_pool_size, 0, "The maximum number of threads that will be used for foreground (that is being waited for by a query) loading of tables. Also used for synchronous loading of tables before the server start. Zero means use all CPUs.", 0) \
     DECLARE(UInt64, tables_loader_background_pool_size, 0, "The maximum number of threads that will be used for background async loading of tables. Zero means use all CPUs.", 0) \
     DECLARE(Bool, async_load_databases, false, "Enable asynchronous loading of databases and tables to speedup server startup. Queries to not yet loaded entity will be blocked until load is finished.", 0) \
+    DECLARE(Bool, async_load_system_database, false, "Enable asynchronous loading of system tables that are not required on server startup. Queries to not yet loaded tables will be blocked until load is finished.", 0) \
     DECLARE(Bool, display_secrets_in_show_and_select, false, "Allow showing secrets in SHOW and SELECT queries via a format setting and a grant", 0) \
     DECLARE(Seconds, keep_alive_timeout, DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT, "The number of seconds that ClickHouse waits for incoming requests before closing the connection.", 0) \
     DECLARE(UInt64, max_keep_alive_requests, 10000, "The maximum number of requests handled via a single http keepalive connection before the server closes this connection.", 0) \
