@@ -665,7 +665,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     bool is_single_table_expression,
     bool wrap_read_columns_in_subquery)
 {
-    const auto & query_context = planner_context->getQueryContext();
+    auto query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
     LOG_DEBUG(
@@ -922,17 +922,33 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     = planner_context->getGlobalPlannerContext()->parallel_replicas_table
                     && !table_expression_query_info.current_table_chosen_for_reading_with_parallel_replicas;
                 if (other_table_already_chosen_for_reading_with_parallel_replicas)
-                    planner_context->getMutableQueryContext()->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                {
+                    chassert(query_context->canUseParallelReplicasOnFollower());
 
-                storage->read(
-                    query_plan,
-                    columns_names,
-                    storage_snapshot,
-                    table_expression_query_info,
-                    query_context,
-                    from_stage,
-                    max_block_size,
-                    max_streams);
+                    auto mutable_context = Context::createCopy(query_context);
+                    mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                    storage->read(
+                        query_plan,
+                        columns_names,
+                        storage_snapshot,
+                        table_expression_query_info,
+                        mutable_context,
+                        from_stage,
+                        max_block_size,
+                        max_streams);
+                }
+                else
+                {
+                    storage->read(
+                        query_plan,
+                        columns_names,
+                        storage_snapshot,
+                        table_expression_query_info,
+                        query_context,
+                        from_stage,
+                        max_block_size,
+                        max_streams);
+                }
 
                 auto parallel_replicas_enabled_for_storage = [](const StoragePtr & table, const Settings & query_settings)
                 {
