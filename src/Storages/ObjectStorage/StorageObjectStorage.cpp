@@ -22,6 +22,7 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
+#include "Databases/LoadingStrictnessLevel.h"
 #include "Storages/ColumnsDescription.h"
 
 
@@ -68,6 +69,27 @@ String StorageObjectStorage::getPathSample(StorageInMemoryMetadata metadata, Con
     return "";
 }
 
+void printConfiguration(const Poco::Util::AbstractConfiguration & config, std::string log_name, const std::string & prefix = "")
+{
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(prefix, keys);
+
+    for (const auto & key : keys)
+    {
+        std::string fullKey = prefix.empty() ? key : (prefix + "." + key);
+
+        if (config.hasProperty(fullKey))
+        {
+            std::string value = config.getString(fullKey);
+            LOG_DEBUG(&Poco::Logger::get(log_name), "{} = {}", fullKey, value);
+        }
+
+        // Recursively print sub-configurations
+        printConfiguration(config, fullKey, log_name);
+    }
+}
+
+
 StorageObjectStorage::StorageObjectStorage(
     ConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
@@ -77,6 +99,7 @@ StorageObjectStorage::StorageObjectStorage(
     const ConstraintsDescription & constraints_,
     const String & comment,
     std::optional<FormatSettings> format_settings_,
+    LoadingStrictnessLevel mode,
     bool distributed_processing_,
     ASTPtr partition_by_)
     : IStorage(table_id_)
@@ -87,11 +110,27 @@ StorageObjectStorage::StorageObjectStorage(
     , distributed_processing(distributed_processing_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
-    ColumnsDescription columns{columns_};
-    LOG_DEBUG(&Poco::Logger::get("StorageObjectStorage Creation"), "Columns size {}", columns.size());
-    configuration->update(object_storage, context);
+    // LOG_DEBUG(&Poco::Logger::get("StorageObjectStorage Creation"), "Columns size {}", columns.size());
+    printConfiguration(context->getConfigRef(), "Storage create");
+    try
+    {
+        // configuration->update(object_storage, context);
+    }
+    catch (...)
+    {
+        if (mode <= LoadingStrictnessLevel::CREATE)
+        {
+            throw;
+        }
+        else
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            return;
+        }
+    }
 
     std::string sample_path;
+    ColumnsDescription columns{columns_};
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
     configuration->check(context);
 
@@ -271,6 +310,7 @@ void StorageObjectStorage::read(
     size_t num_streams)
 {
     configuration->update(object_storage, local_context);
+    printConfiguration(local_context->getConfigRef(), "Select query");
     if (partition_by && configuration->withPartitionWildcard())
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,

@@ -41,9 +41,10 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration>::execute
             StorageID(Base::getDatabaseName(), table_name),
             columns,
             ConstraintsDescription{},
-            /* comment */String{},
-            /* format_settings */std::nullopt, /// No format_settings
-            /* distributed_processing */true,
+            /* comment */ String{},
+            /* format_settings */ std::nullopt, /// No format_settings
+            /* mode */ LoadingStrictnessLevel::CREATE,
+            /* distributed_processing */ true,
             /*partition_by_=*/nullptr);
     }
     else

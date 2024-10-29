@@ -5,4 +5,5 @@
       <path>cache1</path>
     </cache1>
   </filesystem_caches>
+  <!-- <async_load_databases>false</async_load_databases> -->
 </clickhouse>

@@ -57,6 +57,7 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         std::optional<FormatSettings> format_settings_,
+        LoadingStrictnessLevel mode,
         bool distributed_processing_ = false,
         ASTPtr partition_by_ = nullptr);
 
@@ -216,6 +217,7 @@ public:
     String structure = "auto";
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
+
 
 protected:
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;

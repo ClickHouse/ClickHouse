@@ -1,6 +1,9 @@
 #include "Common.h"
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Poco/DateTimeFormat.h>
+#include <Poco/DateTimeFormatter.h>
+#include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -13,6 +16,10 @@ std::vector<String> listFiles(
 {
     auto key = std::filesystem::path(configuration.getPath()) / prefix;
     RelativePathsWithMetadata files_with_metadata;
+    // time_t now = time(nullptr);
+    Poco::DateTime now;
+    std::string formatted = Poco::DateTimeFormatter::format(now, Poco::DateTimeFormat::ISO8601_FORMAT);
+    LOG_ERROR(&Poco::Logger::get("Inside listFiles"), "Time of files listing: {}", formatted);
     object_storage.listObjects(key, files_with_metadata, 0);
     Strings res;
     for (const auto & file_with_metadata : files_with_metadata)
