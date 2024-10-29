@@ -206,7 +206,7 @@ String getNameForSubstreamPath(
         else if (it->type == SubstreamType::ObjectSharedData)
             stream_name += ".object_shared_data";
         else if (it->type == SubstreamType::ObjectTypedPath || it->type == SubstreamType::ObjectDynamicPath)
-            stream_name += "." + it->object_path_name;
+            stream_name += "." + escapeForFileName(it->object_path_name);
     }
 
     return stream_name;
