@@ -2010,6 +2010,38 @@ Result:
 
 Converts a date, or date with time, to a UInt8 number containing the ISO Week number.
 
+**Syntax**
+
+```sql
+toISOWeek(value)
+```
+
+**Arguments**
+
+- `value` — The value with date or date with time.
+
+**Returned value**
+
+- `value` converted to the current ISO week number. [UInt8](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+  toISOWeek(toDate('2024/10/02')) AS week1,
+  toISOWeek(toDateTime('2024/10/02 01:30:00')) AS week2
+```
+
+Response:
+
+```response
+┌─week1─┬─week2─┐
+│    40 │    40 │
+└───────┴───────┘
+```
+
 ## toWeek
 
 This function returns the week number for date or datetime. The two-argument form of `toWeek()` enables you to specify whether the week starts on Sunday or Monday and whether the return value should be in the range from 0 to 53 or from 1 to 53. If the mode argument is omitted, the default mode is 0.
@@ -2901,7 +2933,42 @@ The same as ‘today() - 1’.
 
 ## timeSlot
 
-Rounds the time to the half hour.
+Round the time to the start of a half-an-hour length interval.
+
+**Syntax**
+
+```sql
+timeSlot(time[, time_zone])
+```
+
+**Arguments**
+
+- `time` — Time to round to the start of a half-an-hour length interval. [DateTime](../data-types/datetime.md)/[Date32](../data-types/date32.md)/[DateTime64](../data-types/datetime64.md).
+- `time_zone` — A String type const value or an expression representing the time zone. [String](../data-types/string.md).
+
+:::note
+Though this function can take values of the extended types `Date32` and `DateTime64` as an argument, passing it a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results.
+:::
+
+**Return type**
+
+- Returns the time rounded to the start of a half-an-hour length interval. [DateTime](../data-types/datetime.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT timeSlot(toDateTime('2000-01-02 03:04:05', 'UTC'));
+```
+
+Result:
+
+```response
+┌─timeSlot(toDateTime('2000-01-02 03:04:05', 'UTC'))─┐
+│                                2000-01-02 03:00:00 │
+└────────────────────────────────────────────────────┘
+```
 
 ## toYYYYMM
 

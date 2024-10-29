@@ -38,6 +38,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
+#include <IO/SharedThreadPools.h>
 
 
 namespace DB
@@ -57,6 +58,7 @@ namespace Setting
     extern const SettingsBool optimize_throw_if_noop;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
+    extern const SettingsUInt64 max_parts_to_move;
 }
 
 namespace MergeTreeSetting
@@ -89,6 +91,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TABLE_IS_READ_ONLY;
+    extern const int TOO_MANY_PARTS;
 }
 
 namespace ActionLocks
@@ -139,7 +142,6 @@ StorageMergeTree::StorageMergeTree(
 {
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
 
-
     loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);
 
     if (mode < LoadingStrictnessLevel::ATTACH && !getDataPartsForInternalUsage().empty() && !isStaticStorage())
@@ -153,6 +155,7 @@ StorageMergeTree::StorageMergeTree(
 
     loadMutations();
     loadDeduplicationLog();
+    prewarmMarkCache(getActivePartsLoadingThreadPool().get());
 }
 
 
@@ -923,8 +926,8 @@ void StorageMergeTree::loadDeduplicationLog()
     auto disk = getDisks()[0];
     std::string path = fs::path(relative_data_path) / "deduplication_logs";
 
-    /// If either there is already a deduplication log, or we will be able to use it.
-    if (!disk->isReadOnly() || disk->exists(path))
+    /// Deduplication log only matters on INSERTs.
+    if (!disk->isReadOnly())
     {
         deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(path, (*settings)[MergeTreeSetting::non_replicated_deduplication_window], format_version, disk);
         deduplication_log->load();
@@ -2344,9 +2347,9 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
     // Use the same back-pressure (delay/throw) logic as for INSERTs to be consistent and avoid possibility of exceeding part limits using MOVE PARTITION queries
     dest_table_storage->delayInsertOrThrowIfNeeded(nullptr, local_context, true);
-
-    auto lock1 = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
-    auto lock2 = dest_table->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    const auto & settings = local_context->getSettingsRef();
+    auto lock1 = lockForShare(local_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+    auto lock2 = dest_table->lockForShare(local_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
     auto merges_blocker = stopMergesAndWait();
 
     auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr();
@@ -2358,6 +2361,18 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     String partition_id = getPartitionIDFromQuery(partition, local_context);
 
     DataPartsVector src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
+    if (src_parts.size() > settings[Setting::max_parts_to_move])
+    {
+        /// Moving a large number of parts at once can take a long time or get stuck in a retry loop in case of an S3 error, for example.
+        /// Since merging is blocked, it can lead to a kind of deadlock:
+        /// MOVE cannot be done because of the number of parts, and merges are not executed because of the MOVE.
+        /// So abort the operation until parts are merged and user should retry
+        throw Exception(ErrorCodes::TOO_MANY_PARTS,
+                        "Cannot move {} parts at once, the limit is {}. "
+                        "Wait until some parts are merged and retry, move smaller partitions, or increase the setting 'max_parts_to_move'.",
+                        src_parts.size(), settings[Setting::max_parts_to_move]);
+    }
+
     MutableDataPartsVector dst_parts;
     std::vector<scope_guard> dst_parts_locks;
 
@@ -2485,7 +2500,7 @@ std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPt
         /// If the checksums file is not present, calculate the checksums and write them to disk.
         static constexpr auto checksums_path = "checksums.txt";
         bool noop;
-        if (part->isStoredOnDisk() && !part->getDataPartStorage().exists(checksums_path))
+        if (part->isStoredOnDisk() && !part->getDataPartStorage().existsFile(checksums_path))
         {
             try
             {

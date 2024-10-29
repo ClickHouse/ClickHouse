@@ -103,6 +103,7 @@
 #include <Backups/RestorerFromBackup.h>
 
 #include <Common/scope_guard_safe.h>
+#include <IO/SharedThreadPools.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -207,6 +208,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool use_minimalistic_checksums_in_zookeeper;
     extern const MergeTreeSettingsBool use_minimalistic_part_header_in_zookeeper;
     extern const MergeTreeSettingsMilliseconds wait_for_unique_parts_send_before_shutdown_ms;
+    extern const MergeTreeSettingsBool prewarm_mark_cache;
 }
 
 namespace FailPoints
@@ -328,7 +330,7 @@ String StorageReplicatedMergeTree::getEndpointName() const
 
 static ConnectionTimeouts getHTTPTimeouts(ContextPtr context)
 {
-    return ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings().keep_alive_timeout);
+    return ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
 }
 
 static MergeTreePartInfo makeDummyDropRangeForMovePartitionOrAttachPartitionFrom(const String & partition_id)
@@ -507,6 +509,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
 
     loadDataParts(skip_sanity_checks, expected_parts_on_this_replica);
+    prewarmMarkCache(getActivePartsLoadingThreadPool().get());
 
     if (LoadingStrictnessLevel::ATTACH <= mode)
     {
@@ -1623,7 +1626,7 @@ void StorageReplicatedMergeTree::paranoidCheckForCoveredPartsInZooKeeperOnStart(
 
         bool found = false;
         for (const DiskPtr & disk : disks)
-            if (disk->exists(fs::path(path) / part_name))
+            if (disk->existsDirectory(fs::path(path) / part_name))
                 found = true;
 
         if (!found)
@@ -5077,6 +5080,12 @@ bool StorageReplicatedMergeTree::fetchPart(
             {
                 LOG_DEBUG(log, "Part {} is rendered obsolete by fetching part {}", replaced_part->name, part_name);
                 ProfileEvents::increment(ProfileEvents::ObsoleteReplicatedParts);
+            }
+
+            if ((*getSettings())[MergeTreeSetting::prewarm_mark_cache] && getContext()->getMarkCache())
+            {
+                auto column_names = getColumnsToPrewarmMarks(*getSettings(), part->getColumns());
+                part->loadMarksToCache(column_names, getContext()->getMarkCache().get());
             }
 
             write_part_log({});
@@ -9624,7 +9633,7 @@ StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part, co
     }
 
     /// If part is temporary refcount file may be absent
-    if (part.getDataPartStorage().exists(IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK))
+    if (part.getDataPartStorage().existsFile(IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK))
     {
         auto ref_count = part.getDataPartStorage().getRefCount(IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK);
         if (ref_count > 0) /// Keep part shard info for frozen backups
@@ -10552,7 +10561,7 @@ bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const St
         throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Invalid detached part name {} on disk {}", path, disk->getName());
 
     fs::path checksums = fs::path(path) / IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK;
-    if (disk->exists(checksums))
+    if (disk->existsFile(checksums))
     {
         if (disk->getRefCount(checksums) == 0)
         {

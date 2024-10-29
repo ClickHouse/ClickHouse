@@ -563,6 +563,7 @@ class ClickHouseCluster:
         self.minio_redirect_ip = None
         self.minio_redirect_port = 8080
         self.minio_docker_id = self.get_instance_docker_id(self.minio_host)
+        self.resolver_logs_dir = os.path.join(self.instances_dir, "resolver")
 
         self.spark_session = None
 
@@ -1445,6 +1446,8 @@ class ClickHouseCluster:
         env_variables["MINIO_DATA_DIR"] = self.minio_data_dir
         env_variables["MINIO_PORT"] = str(self.minio_port)
         env_variables["SSL_CERT_FILE"] = p.join(self.base_dir, cert_d, "public.crt")
+        env_variables["RESOLVER_LOGS"] = self.resolver_logs_dir
+        env_variables["RESOLVER_LOGS_FS"] = "bind"
 
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_minio.yml")]
@@ -2349,7 +2352,7 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
 
-    def wait_rabbitmq_to_start(self, timeout=60):
+    def wait_rabbitmq_to_start(self, timeout=120):
         self.print_all_docker_pieces()
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
@@ -2691,7 +2694,8 @@ class ClickHouseCluster:
                     [
                         "bash",
                         "-c",
-                        f"/opt/bitnami/openldap/bin/ldapsearch -x -H ldap://{self.ldap_host}:{self.ldap_port} -D cn=admin,dc=example,dc=org -w clickhouse -b dc=example,dc=org"
+                        "test -f /tmp/.openldap-initialized"
+                        f"&& /opt/bitnami/openldap/bin/ldapsearch -x -H ldap://{self.ldap_host}:{self.ldap_port} -D cn=admin,dc=example,dc=org -w clickhouse -b dc=example,dc=org"
                         f'| grep -c -E "member: cn=j(ohn|ane)doe"'
                         f"| grep 2 >> /dev/null",
                     ],
@@ -2996,6 +3000,7 @@ class ClickHouseCluster:
                 os.mkdir(self.minio_dir)
                 if self.minio_certs_dir is None:
                     os.mkdir(os.path.join(self.minio_dir, "certs"))
+                    os.mkdir(os.path.join(self.minio_dir, "certs", "CAs"))
                 else:
                     shutil.copytree(
                         os.path.join(self.base_dir, self.minio_certs_dir),
@@ -3003,6 +3008,9 @@ class ClickHouseCluster:
                     )
                 os.mkdir(self.minio_data_dir)
                 os.chmod(self.minio_data_dir, stat.S_IRWXU | stat.S_IRWXO)
+
+                os.makedirs(self.resolver_logs_dir)
+                os.chmod(self.resolver_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 minio_start_cmd = self.base_minio_cmd + common_opts
 
@@ -3936,11 +3944,11 @@ class ClickHouseInstance:
         )
         logging.info(f"PS RESULT:\n{ps_clickhouse}")
         pid = self.get_process_pid("clickhouse")
-        if pid is not None:
-            self.exec_in_container(
-                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
-                user="root",
-            )
+        # if pid is not None:
+        #     self.exec_in_container(
+        #         ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
+        #         user="root",
+        #     )
         if last_err is not None:
             raise last_err
 
