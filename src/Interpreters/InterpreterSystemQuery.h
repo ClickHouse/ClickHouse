@@ -82,9 +82,6 @@ private:
 
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     void startStopAction(StorageActionBlockType action_type, bool start);
-
-    void stopReplicatedDDLQueries();
-    void startReplicatedDDLQueries();
 };
 
 

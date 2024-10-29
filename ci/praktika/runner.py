@@ -42,7 +42,6 @@ class Runner:
             INSTANCE_ID="",
             INSTANCE_TYPE="",
             INSTANCE_LIFE_CYCLE="",
-            LOCAL_RUN=True,
         ).dump()
         workflow_config = RunConfig(
             name=workflow.name,
@@ -76,6 +75,9 @@ class Runner:
             value = value.strip()
             os.environ[key] = value
             print(f"Set environment variable {key}.")
+
+        # TODO: remove
+        os.environ["PYTHONPATH"] = os.getcwd()
 
         print("Read GH Environment")
         env = _Environment.from_env()
@@ -130,7 +132,9 @@ class Runner:
                     f"Custom param for local tests must be of type str, got [{type(param)}]"
                 )
             env = _Environment.get()
+            env.LOCAL_RUN_PARAM = param
             env.dump()
+            print(f"Custom param for local tests [{param}] dumped into Environment")
 
         if job.run_in_docker and not no_docker:
             # TODO: add support for any image, including not from ci config (e.g. ubuntu:latest)
@@ -138,13 +142,9 @@ class Runner:
                 job.run_in_docker
             ]
             docker = docker or f"{job.run_in_docker}:{docker_tag}"
-            cmd = f"docker run --rm --user \"$(id -u):$(id -g)\" -e PYTHONPATH='{Settings.DOCKER_WD}:{Settings.DOCKER_WD}/ci' --volume ./:{Settings.DOCKER_WD} --volume {Settings.TEMP_DIR}:{Settings.TEMP_DIR} --workdir={Settings.DOCKER_WD} {docker} {job.command}"
+            cmd = f"docker run --rm --user \"$(id -u):$(id -g)\" -e PYTHONPATH='{Settings.DOCKER_WD}' --volume ./:{Settings.DOCKER_WD} --volume {Settings.TEMP_DIR}:{Settings.TEMP_DIR} --workdir={Settings.DOCKER_WD} {docker} {job.command}"
         else:
             cmd = job.command
-
-        if param:
-            print(f"Custom --param [{param}] will be passed to job's script")
-            cmd += f" --param {param}"
         print(f"--- Run command [{cmd}]")
 
         with TeePopen(cmd, timeout=job.timeout) as process:

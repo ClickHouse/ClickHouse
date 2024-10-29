@@ -2352,7 +2352,7 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
 
-    def wait_rabbitmq_to_start(self, timeout=120):
+    def wait_rabbitmq_to_start(self, timeout=60):
         self.print_all_docker_pieces()
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
@@ -3944,11 +3944,11 @@ class ClickHouseInstance:
         )
         logging.info(f"PS RESULT:\n{ps_clickhouse}")
         pid = self.get_process_pid("clickhouse")
-        # if pid is not None:
-        #     self.exec_in_container(
-        #         ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
-        #         user="root",
-        #     )
+        if pid is not None:
+            self.exec_in_container(
+                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
+                user="root",
+            )
         if last_err is not None:
             raise last_err
 

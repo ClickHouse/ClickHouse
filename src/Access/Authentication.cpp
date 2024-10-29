@@ -12,7 +12,6 @@
 
 #include "config.h"
 
-
 namespace DB
 {
 

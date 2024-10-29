@@ -70,14 +70,9 @@ SELECT count(*) FROM s3Cluster(
 )
 ```
 
-## Accessing private and public buckets
-
-Users can use the same approaches as document for the s3 function [here](/docs/en/sql-reference/table-functions/s3#accessing-public-buckets).
-
 ## Optimizing performance
 
 For details on optimizing the performance of the s3 function see [our detailed guide](/docs/en/integrations/s3/performance).
-
 
 **See Also**
 
