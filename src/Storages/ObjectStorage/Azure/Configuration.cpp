@@ -213,7 +213,7 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
             if (with_structure)
             {
                 format = fourth_arg;
-                compression_method = checkAn/dGetLiteralArgument<String>(engine_args[4], "compression");
+                compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
                 structure = checkAndGetLiteralArgument<String>(engine_args[5], "structure");
             }
             else
