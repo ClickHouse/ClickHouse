@@ -5,6 +5,7 @@ import logging
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -93,87 +94,90 @@ def create_s3_table(node, table_name):
     )
 
 
+def check_no_table_in_detached_table(node, table_name: str):
+    query = f"SELECT count(table) FROM system.detached_tables WHERE table='{table_name}'"
+    assert_eq_with_retry(instance=node, query=query, expectation="0")
+
+
 def test_drop_replicated_table(start_cluster):
     objects_before = list_objects(cluster, "data/")
+    table_name="test_replicated_table"
 
-    create_replicated_table(node=replica1, table_name="test_replicated_table")
+    create_replicated_table(node=replica1, table_name=table_name)
 
     replica1.query(
-        "INSERT INTO test_replicated_table SELECT number FROM system.numbers LIMIT 6;"
+        f"INSERT INTO {table_name} SELECT number FROM system.numbers LIMIT 6;"
     )
-    replica1.query("SYSTEM SYNC REPLICA test_replicated_table;", timeout=20)
+    replica1.query(f"SYSTEM SYNC REPLICA {table_name};", timeout=20)
 
     replica1.query(
-        "DETACH TABLE test_replicated_table ON CLUSTER test_cluster PERMANENTLY;"
+        f"DETACH TABLE {table_name} ON CLUSTER test_cluster PERMANENTLY;"
     )
 
     zk = cluster.get_kazoo_client("zoo1")
 
     exists_replica = check_exists(
         zk,
-        "/clickhouse/tables/shard1/{table_name}/replicas/{replica}".format(
-            table_name="test_replicated_table", replica=replica1.name
-        ),
+        f"/clickhouse/tables/shard1/{table_name}/replicas/{replica1.name}",
     )
     assert exists_replica != None
 
     replica1.query(
-        "SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE test_replicated_table SYNC;"
+        f"SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE {table_name} SYNC;"
     )
+
+    check_no_table_in_detached_table(node=replica1, table_name=table_name)
 
     exists_replica = check_exists(
         zk,
-        "/clickhouse/tables/shard1/{table_name}/replicas/{replica}".format(
-            table_name="test_replicated_table", replica=replica1.name
-        ),
+        f"/clickhouse/tables/shard1/{table_name}/replicas/{replica1.name}",
     )
     assert exists_replica == None
 
     exists_replica = check_exists(
         zk,
-        "/clickhouse/tables/shard1/{table_name}/replicas/{replica}".format(
-            table_name="test_replicated_table", replica=replica2.name
-        ),
+        f"/clickhouse/tables/shard1/{table_name}/replicas/{replica2.name}",
     )
     assert exists_replica != None
 
     replica2.query(
-        "SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE test_replicated_table SYNC;"
+        f"SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE {table_name} SYNC;"
     )
+
+    check_no_table_in_detached_table(node=replica2, table_name=table_name)
 
     objects_after = list_objects(cluster, "data/")
     assert len(objects_before) == len(objects_after)
 
     exists_replica = check_exists(
         zk,
-        "/clickhouse/tables/shard1/{table_name}/replicas/{replica}".format(
-            table_name="test_replicated_table", replica=replica1.name
-        ),
+        f"/clickhouse/tables/shard1/{table_name}/replicas/{replica1.name}",
     )
     assert exists_replica == None
 
     exists_replica = check_exists(
         zk,
-        "/clickhouse/tables/shard1/{table_name}/replicas/{replica}".format(
-            table_name="test_replicated_table", replica=replica2.name
-        ),
+        f"/clickhouse/tables/shard1/{table_name}/replicas/{replica2.name}",
     )
     assert exists_replica == None
 
 
 def test_drop_s3_table(start_cluster):
     objects_before = list_objects(cluster, "data/")
+    table_name="test_replicated_table"
 
-    create_s3_table(node_s3, "test_s3_table")
+    create_s3_table(node_s3, table_name)
 
     node_s3.query(
-        "INSERT INTO test_s3_table SELECT number FROM system.numbers LIMIT 6;"
+        f"INSERT INTO {table_name} SELECT number FROM system.numbers LIMIT 6;"
     )
 
-    node_s3.query("DETACH TABLE test_s3_table PERMANENTLY;")
+    node_s3.query(f"DETACH TABLE {table_name} PERMANENTLY;")
     node_s3.query(
-        "SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE test_s3_table SYNC;"
+        f"SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE {table_name} SYNC;"
     )
+
+    check_no_table_in_detached_table(node=node_s3, table_name=table_name)
 
     objects_after = list_objects(cluster, "data/")
     assert len(objects_before) == len(objects_after)
@@ -195,6 +199,8 @@ def test_drop_distributed_table(start_cluster):
     replica1.query(
         f"SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE {test_table_name} SYNC;"
     )
+
+    check_no_table_in_detached_table(node=replica1, table_name=test_table_name)
 
     assert (
         "0"
