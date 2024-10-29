@@ -145,6 +145,10 @@ void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
     registerStorageAzureQueue(factory);
 #endif
 
+#if USE_AVRO
+    registerStorageIceberg(factory);
+#endif
+
 #if USE_AWS_S3
     registerStorageHudi(factory);
     registerStorageS3Queue(factory);
@@ -153,14 +157,10 @@ void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
     registerStorageDeltaLake(factory);
     #endif
 
-    #if USE_AVRO
-    registerStorageIceberg(factory);
-    #endif
+#endif
 
-    #endif
-
-    #if USE_HDFS
-    #if USE_HIVE
+#if USE_HDFS
+#    if USE_HIVE
     registerStorageHive(factory);
     #endif
     #endif
