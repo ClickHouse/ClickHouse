@@ -22,11 +22,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-};
-
 static auto logger = getLogger("QueryMetricLog");
 
 ColumnsDescription QueryMetricLogElement::getColumnsDescription()
@@ -176,7 +171,7 @@ std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(cons
     }
 
     auto & query_status = query_status_it->second;
-    if (query_info_time < query_status.last_collect_time)
+    if (query_info_time <= query_status.last_collect_time)
     {
         lock.unlock();
         LOG_TRACE(logger, "Query {} has a more recent metrics collected. Skipping this one", query_id);
@@ -197,16 +192,18 @@ std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(cons
         for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
         {
             const auto & new_value = (*(query_info.profile_counters))[i];
-            auto & prev_value = query_status.last_profile_events[i];
+            auto & old_value = query_status.last_profile_events[i];
 
-            /// Profile event count is monotonically increasing.
-            if (new_value < prev_value)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Profile event count is not monotonically increasing for '{}': new value {} is smaller than previous value {}",
-                    ProfileEvents::getName(i), new_value, query_status.last_profile_events[i]);
+            /// Profile event counters are supposed to be monotonic. However, at least the `NetworkReceiveBytes` can be inaccurate.
+            /// So, since in the future the counter should always have a bigger value than in the past, we skip this event.
+            /// It can be reproduced with the following integration tests:
+            /// - test_hedged_requests/test.py::test_receive_timeout2
+            /// - test_secure_socket::test
+            if (new_value < old_value)
+                continue;
 
-            elem.profile_events[i] = new_value - prev_value;
-            prev_value = new_value;
+            elem.profile_events[i] = new_value - old_value;
+            old_value = new_value;
         }
     }
     else
