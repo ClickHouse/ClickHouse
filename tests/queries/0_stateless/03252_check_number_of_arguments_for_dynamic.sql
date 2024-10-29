@@ -1,3 +1,4 @@
+set enable_analyzer=1;
 set allow_experimental_json_type=1;
 
 CREATE TABLE t
