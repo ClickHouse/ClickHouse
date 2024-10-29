@@ -9,7 +9,7 @@ namespace DB
 {
 
 /** Writes the data to a string.
-  * Note: before using the resulting string, destroy this object.
+  * Note: before using the resulting string, destroy this object or call finalize().
   */
 using WriteBufferFromString = WriteBufferFromVector<std::string>;
 

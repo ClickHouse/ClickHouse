@@ -6284,6 +6284,11 @@ void Settings::read(ReadBuffer & in, SettingsWriteFormat format)
     impl->read(in, format);
 }
 
+void Settings::writeEmpty(WriteBuffer & out)
+{
+    BaseSettingsHelpers::writeString("", out);
+}
+
 void Settings::addToProgramOptions(boost::program_options::options_description & options)
 {
     addProgramOptions(*impl, options);

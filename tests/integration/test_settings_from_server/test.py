@@ -1,0 +1,47 @@
+import pytest
+
+from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
+
+cluster = ClickHouseCluster(__file__)
+node = cluster.add_instance(
+    "node",
+    main_configs=[],
+    user_configs=[
+        "configs/users.d/users.xml",
+    ],
+)
+
+@pytest.fixture(scope="module")
+def started_cluster():
+    try:
+        cluster.start()
+        yield cluster
+    finally:
+        cluster.shutdown()
+
+def test_settings_from_server(started_cluster):
+    # Setting changed by server (default user).
+    res = node.query("select 42::UInt64 as x format JSON")
+    assert '"x": 42' in res, "should be unquoted"
+
+    # Setting changed by server to a different value (other user).
+    res = node.query("select 42::UInt64 as x format JSON", user='second_user')
+    assert '"x": "42"' in res, "should be quoted"
+
+    # Setting not changed by server (default user).
+    res = node.query("select 42::UInt64 as x format JSONEachRow")
+    assert '[' not in res, "should not be formatted as a JSON array"
+
+    # Setting changed by server (other user).
+    res = node.query("select 42::UInt64 as x format JSONEachRow", user='second_user')
+    assert '[' in res, "should be formatted as a JSON array"
+
+    # Setting changed by server but changed back by the query.
+    res = node.query("select 42::UInt64 as x settings output_format_json_array_of_rows=0 format JSONEachRow", user='second_user')
+    assert '[' not in res, "should not be formatted as a JSON array"
+
+    # Setting changed by server but changed back client command line.
+    res = node.query("select 42::UInt64 as x format JSONEachRow", user='second_user', settings={"output_format_json_array_of_rows": "0"})
+    assert '[' not in res, "should not be formatted as a JSON array"

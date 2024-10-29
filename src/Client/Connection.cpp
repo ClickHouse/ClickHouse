@@ -5,6 +5,7 @@
 #include <Core/Settings.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <IO/LimitReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
@@ -74,6 +75,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 Connection::~Connection()
@@ -575,6 +577,22 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
             readIntBinary(read_nonce, *in);
             nonce.emplace(read_nonce);
         }
+        if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_HELLO_EXTRAS)
+        {
+            UInt64 extras_size;
+            readVarUInt(extras_size, *in);
+            LimitReadBuffer extras(*in, extras_size, /*throw_exception_*/ false, /*exact_limit_*/ extras_size);
+
+            if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_SETTINGS)
+            {
+                Settings settings;
+                settings.read(extras, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+                settings_from_server = settings.changes();
+            }
+
+            if (!extras.eof())
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected size of Hello message extras: expected {}, got {}", extras.count(), extras_size);
+        }
     }
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();
@@ -598,6 +616,12 @@ void Connection::setDefaultDatabase(const String & database)
 const String & Connection::getDefaultDatabase() const
 {
     return default_database;
+}
+
+const SettingsChanges & Connection::settingsFromServer() const
+{
+    chassert(connected);
+    return settings_from_server;
 }
 
 const String & Connection::getDescription(bool with_extra) const /// NOLINT
@@ -833,9 +857,23 @@ void Connection::sendQuery(
     /// Per query settings.
     if (settings)
     {
+        std::optional<Settings> modified_settings;
+        const Settings * settings_to_send = settings;
+        if (!settings_from_server.empty())
+        {
+            /// Don't send settings that we got from the server in the first place.
+            modified_settings.emplace(*settings);
+            for (const SettingChange & change : settings_from_server)
+            {
+                if (settings->get(change.name) == change.value)
+                    modified_settings->setDefaultValue(change.name);
+            }
+            settings_to_send = &*modified_settings;
+        }
+
         auto settings_format = (server_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
                                                                                                           : SettingsWriteFormat::BINARY;
-        settings->write(*out, settings_format);
+        settings_to_send->write(*out, settings_format);
     }
     else
         writeStringBinary("" /* empty string is a marker of the end of settings */, *out);
