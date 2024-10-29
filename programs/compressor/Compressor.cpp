@@ -33,12 +33,12 @@ namespace DB
 namespace
 {
 
-/// Outputs sizes of uncompressed and compressed blocks for compressed file.
+/// Outputs method, sizes of uncompressed and compressed blocks for compressed file.
 void checkAndWriteHeader(DB::ReadBuffer & in, DB::WriteBuffer & out)
 {
     while (!in.eof())
     {
-        in.ignore(16);    /// checksum
+        in.ignore(16); /// checksum
 
         char header[COMPRESSED_BLOCK_HEADER_SIZE];
         in.readStrict(header, COMPRESSED_BLOCK_HEADER_SIZE);
@@ -50,6 +50,13 @@ void checkAndWriteHeader(DB::ReadBuffer & in, DB::WriteBuffer & out)
 
         UInt32 size_decompressed = unalignedLoad<UInt32>(&header[5]);
 
+        auto method_byte = static_cast<uint8_t>(header[0]);
+        auto method = magic_enum::enum_cast<DB::CompressionMethodByte>(method_byte);
+        if (method)
+            DB::writeText(magic_enum::enum_name(*method), out);
+        else
+            DB::writeText(fmt::format("UNKNOWN({})", method_byte), out);
+        DB::writeChar('\t', out);
         DB::writeText(size_decompressed, out);
         DB::writeChar('\t', out);
         DB::writeText(size_compressed, out);
