@@ -64,8 +64,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.11",
         {
-            {"short_circuit_function_evaluation_for_nulls", false, true, "Whether to enable short-circuit evaluation for rows with at least one null in arguments in functions where useDefaultImplementationForNulls() is true."},
-            {"short_circuit_function_evaluation_for_nulls_threshold", 1.0, 1.0, "Ratio threshold for short-circuit evaluation for rows with at least one null in arguments in functions where useDefaultImplementationForNulls() is true. This is only valid when short_circuit_function_evaluation_for_nulls is true."},
+            {"short_circuit_function_evaluation_for_nulls", false, true, "Allow to execute functions with Nullable arguments only on rows with non-NULL values in all arguments"},
+            {"short_circuit_function_evaluation_for_nulls_threshold", 1.0, 1.0, "Ratio threshold of NULL values to execute functions with Nullable arguments only on rows with non-NULL values in all arguments. Applies when setting short_circuit_function_evaluation_for_nulls is enabled."},
         }
     },
     {"24.10",
