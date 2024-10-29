@@ -127,7 +127,7 @@ public:
 
     void onCancel() noexcept override
     {
-        finishAndWait();
+        finishAndWait(/* emergency_stop_ */ true);
     }
 
     void onProgress(const Progress & value) override
