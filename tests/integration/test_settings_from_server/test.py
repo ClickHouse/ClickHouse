@@ -45,3 +45,8 @@ def test_settings_from_server(started_cluster):
     # Setting changed by server but changed back client command line.
     res = node.query("select 42::UInt64 as x format JSONEachRow", user='second_user', settings={"output_format_json_array_of_rows": "0"})
     assert '[' not in res, "should not be formatted as a JSON array"
+
+    # User created at runtime.
+    node.query("create user u identified with plaintext_password by '' settings date_time_output_format='unix_timestamp'")
+    res = node.query("select toDateTime64('1970-01-02 00:00:00', 0)", user='u')
+    assert res == '86400\n'
