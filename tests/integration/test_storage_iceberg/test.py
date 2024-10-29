@@ -862,9 +862,9 @@ def test_restart_broken_s3(started_cluster):
 
     instance.restart_clickhouse()
 
-    # assert "NoSuchBucket" in instance.query_and_get_error(
-    #     f"SELECT count() FROM {TABLE_NAME}"
-    # )
+    assert "NoSuchBucket" in instance.query_and_get_error(
+        f"SELECT count() FROM {TABLE_NAME}"
+    )
 
     time.sleep(10)
 

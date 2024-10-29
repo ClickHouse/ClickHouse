@@ -166,7 +166,7 @@ bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) c
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context, format_settings);
 }
 
-void StorageObjectStorage::Configuration::update(ObjectStoragePtr object_storage_ptr, ContextPtr context, [[maybe_unused]] bool update_base)
+void StorageObjectStorage::Configuration::update(ObjectStoragePtr object_storage_ptr, ContextPtr context)
 {
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
@@ -309,7 +309,7 @@ void StorageObjectStorage::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    configuration->update(object_storage, local_context, true);
+    configuration->update(object_storage, local_context);
     printConfiguration(local_context->getConfigRef(), "Select query");
     if (partition_by && configuration->withPartitionWildcard())
     {
