@@ -17,12 +17,11 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
-#include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/buildQueryTreeForShard.h>
-#include "Processors/QueryPlan/SortingStep.h"
 
 namespace DB
 {
@@ -54,30 +53,22 @@ std::stack<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTre
         {
             case QueryTreeNodeType::TABLE:
             {
-                LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
                 const auto & table_node = query_tree_node->as<TableNode &>();
                 const auto & storage = table_node.getStorage();
                 /// Here we check StorageDummy as well, to support a query tree with replaced storages.
                 if (std::dynamic_pointer_cast<MergeTreeData>(storage) || typeid_cast<const StorageDummy *>(storage.get()))
                 {
-                    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
                     /// parallel replicas is not supported with FINAL
                     if (table_node.getTableExpressionModifiers() && table_node.getTableExpressionModifiers()->hasFinal())
-                    {
-                        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
                         return {};
-                    }
 
-                    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
                     return res;
                 }
 
-                LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
                 return {};
             }
             case QueryTreeNodeType::TABLE_FUNCTION:
             {
-                LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
                 return {};
             }
             case QueryTreeNodeType::QUERY:
@@ -85,7 +76,6 @@ std::stack<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTre
                 const auto & query_node_to_process = query_tree_node->as<QueryNode &>();
                 query_tree_node = query_node_to_process.getJoinTree().get();
                 res.push(&query_node_to_process);
-                LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
                 break;
             }
             case QueryTreeNodeType::UNION:
@@ -94,20 +84,15 @@ std::stack<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTre
                 const auto & union_queries = union_node.getQueries().getNodes();
 
                 if (union_queries.empty())
-                {
-                    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
                     return {};
-                }
 
                 query_tree_node = union_queries.front().get();
-                LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
                 break;
             }
             case QueryTreeNodeType::ARRAY_JOIN:
             {
                 const auto & array_join_node = query_tree_node->as<ArrayJoinNode &>();
                 query_tree_node = array_join_node.getTableExpression().get();
-                LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
                 break;
             }
             case QueryTreeNodeType::JOIN:
@@ -121,13 +106,9 @@ std::stack<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTre
                     || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All);
 
                 if (!can_parallelize_join)
-                {
-                    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
                     return {};
-                }
 
                 query_tree_node = join_node.getLeftTableExpression().get();
-                LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
                 break;
             }
             default:
@@ -190,23 +171,17 @@ const QueryNode * findQueryForParallelReplicas(
     const std::unordered_map<const QueryNode *, const QueryPlan::Node *> & mapping,
     const Settings & settings)
 {
-    const QueryPlan::Node * prev_checked_node = nullptr;
     const QueryNode * res = nullptr;
 
-    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
     while (!stack.empty())
     {
-        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         const QueryNode * subquery_node = stack.top();
         stack.pop();
 
         auto it = mapping.find(subquery_node);
         /// This should not happen ideally.
         if (it == mapping.end())
-        {
-            LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
             break;
-        }
 
         const QueryPlan::Node * const curr_node = it->second;
         std::deque<std::pair<const QueryPlan::Node *, bool>> nodes_to_check;
@@ -214,34 +189,20 @@ const QueryNode * findQueryForParallelReplicas(
         bool can_distribute_full_node = true;
         bool in = false;
 
-        while (!nodes_to_check.empty() /* && nodes_to_check.front() != prev_checked_node*/)
+        while (!nodes_to_check.empty())
         {
-            LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
             const auto & [next_node_to_check, digging_into_rabbit_hole] = nodes_to_check.front();
-            LOG_DEBUG(
-                &Poco::Logger::get("debug"),
-                "next_node_to_check->step->getName()={}, next_node_to_check->step->getStepDescription());={}",
-                next_node_to_check->step->getName(),
-                next_node_to_check->step->getStepDescription());
             nodes_to_check.pop_front();
             const auto & children = next_node_to_check->children;
             auto * step = next_node_to_check->step.get();
 
             if (children.empty())
             {
-                LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
                 /// Found a source step. This should be possible only in the first iteration.
-                if (prev_checked_node)
-                {
-                    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
-                    // return nullptr;
-                }
-
                 nodes_to_check = {};
             }
             else if (children.size() == 1)
             {
-                LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
                 const auto * expression = typeid_cast<ExpressionStep *>(step);
                 const auto * filter = typeid_cast<FilterStep *>(step);
                 const auto * sorting = typeid_cast<SortingStep *>(step);
@@ -251,7 +212,6 @@ const QueryNode * findQueryForParallelReplicas(
 
                 if (!expression && !filter && !allowed_creating_sets && !(sorting && sorting->getStepDescription().contains("before JOIN")))
                 {
-                    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
                     can_distribute_full_node = false;
                     in = digging_into_rabbit_hole;
                 }
@@ -260,22 +220,16 @@ const QueryNode * findQueryForParallelReplicas(
             }
             else
             {
-                LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
                 const auto * join = typeid_cast<JoinStep *>(step);
                 /// We've checked that JOIN is INNER/LEFT in query tree.
                 /// Don't distribute UNION node.
                 if (!join)
-                {
-                    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
                     return res;
-                }
 
                 for (const auto & child : children)
                     nodes_to_check.push_front(std::make_pair(child, true));
             }
         }
-
-        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
 
         /// Current node contains steps like GROUP BY / DISTINCT
         /// Will try to execute query up to WithMergableStage
@@ -283,24 +237,16 @@ const QueryNode * findQueryForParallelReplicas(
         {
             /// Current query node does not contain subqueries.
             /// We can execute parallel replicas over storage::read.
-            LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
             if (!res)
-            {
-                LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
                 return nullptr;
-            }
 
             return in ? res : subquery_node;
         }
 
-        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
-
         /// Query is simple enough to be fully distributed.
         res = subquery_node;
-        prev_checked_node = curr_node;
     }
 
-    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
     return res;
 }
 
@@ -320,26 +266,16 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     auto context = query_node ? query_node->getContext() : union_node->getContext();
 
     if (!context->canUseParallelReplicasOnInitiator())
-    {
-        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         return nullptr;
-    }
 
-    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
     auto stack = getSupportingParallelReplicasQuery(query_tree_node.get());
     /// Empty stack means that storage does not support parallel replicas.
     if (stack.empty())
-    {
-        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         return nullptr;
-    }
 
     /// We don't have any subquery and storage can process parallel replicas by itself.
     if (stack.top() == query_tree_node.get())
-    {
-        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         return nullptr;
-    }
 
     /// This is needed to avoid infinite recursion.
     auto mutable_context = Context::createCopy(context);
@@ -364,22 +300,16 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     /// Now, return a query from initial stack.
     if (res)
     {
-        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         while (!new_stack.empty())
         {
-            LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
             if (res == new_stack.top())
-            {
-                LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
                 return stack.top();
-            }
 
             stack.pop();
             new_stack.pop();
         }
     }
 
-    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
     return res;
 }
 
