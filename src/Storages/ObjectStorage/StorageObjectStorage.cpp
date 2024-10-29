@@ -118,14 +118,15 @@ StorageObjectStorage::StorageObjectStorage(
     }
     catch (...)
     {
-        if (mode <= LoadingStrictnessLevel::CREATE)
+        if (mode <= LoadingStrictnessLevel::CREATE || columns_.empty()
+            || (configuration->format
+                == "auto")) // If we don't have format or schema yet, we can't ignore failed configuration update, because relevant configuration is crucial for format and schema inference
         {
             throw;
         }
         else
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
-            return;
         }
     }
 
