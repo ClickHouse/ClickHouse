@@ -11,6 +11,10 @@ option (ARCH_NATIVE "Add -march=native compiler flag. This makes your binaries n
 if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 
+    # Populate the ENABLE_ option flags. This is required for the build of some third-party dependencies, specifically snappy, which
+    # (somewhat weirdly) expects the relative SNAPPY_HAVE_ preprocessor variables to be populated, in addition to the microarchitecture
+    # feature flags being enabled in the compiler. This fixes the ARCH_NATIVE flag by automatically populating the ENABLE_ option flags
+    # according to the current CPU's capabilities, detected using clang.
     if (ARCH_AMD64)
         execute_process(
             COMMAND sh -c "clang -E - -march=native -###"
