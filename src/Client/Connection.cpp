@@ -866,7 +866,7 @@ void Connection::sendQuery(
             for (const SettingChange & change : settings_from_server)
             {
                 if (settings->get(change.name) == change.value)
-                    modified_settings->setDefaultValue(change.name);
+                    modified_settings->setDefaultValue(change.name); // mark as unchanged so it's not sent
             }
             settings_to_send = &*modified_settings;
         }
