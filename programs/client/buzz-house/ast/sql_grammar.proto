@@ -2830,7 +2830,8 @@ message InsertIntoTable {
 message InsertFromFile {
     required string path = 1;
     optional FileCompression fcomp = 2;
-    required InFormat format = 3;
+    optional SettingValues settings = 3;
+    required InFormat format = 4;
 }
 
 message Insert {

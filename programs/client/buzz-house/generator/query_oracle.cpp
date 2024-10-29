@@ -124,10 +124,11 @@ int QueryOracle::DumpTableContent(RandomGenerator & rg, const SQLTable & t, sql_
     {
         if (entry.second.CanBeInserted())
         {
+            const std::string &cname = "c" + std::to_string(entry.first);
             sql_query_grammar::ExprOrderingTerm * eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
-            sql_query_grammar::ExprColumn * ecol = eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col();
 
-            ecol->mutable_col()->set_column("c" + std::to_string(entry.first));
+            sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_col()->set_column(cname);
+            eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_col()->set_column(cname);
             if (rg.NextBool())
             {
                 eot->set_asc_desc(
@@ -293,6 +294,13 @@ int QueryOracle::GenerateImportQuery(const SQLTable & t, const sql_query_grammar
     if (ff.has_fcomp())
     {
         iff->set_fcomp(ff.fcomp());
+    }
+    if (iff->format() == sql_query_grammar::IN_CSV) {
+        sql_query_grammar::SettingValues * vals = iff->mutable_settings();
+        sql_query_grammar::SetValue * sv = vals->mutable_set_value();
+
+        sv->set_property("input_format_csv_detect_header");
+        sv->set_value("0");
     }
     return 0;
 }

@@ -2584,6 +2584,11 @@ CONV_FN(InsertFromFile, ffile)
         ret += FileCompression_Name(ffile.fcomp()).substr(4);
         ret += "'";
     }
+    if (ffile.has_settings())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, ffile.settings());
+    }
     ret += " FORMAT ";
     ret += InFormat_Name(ffile.format()).substr(3);
 }
