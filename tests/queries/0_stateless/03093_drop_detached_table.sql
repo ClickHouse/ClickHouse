@@ -11,6 +11,7 @@ INSERT INTO test_db.test_table_03093_merge_tree SELECT number FROM system.number
 DETACH TABLE test_db.test_table_03093_merge_tree;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
 DROP DETACHED TABLE test_db.test_table_03093_merge_tree SYNC;
+SELECT sleep(1) FORMAT Null;
 SELECT count(table) FROM system.detached_tables WHERE database='test_db';
 
 SELECT 'MergeTree DETACH PERMANENTLY';
@@ -19,6 +20,7 @@ INSERT INTO test_db.test_table_03093_merge_tree_perm SELECT number FROM system.n
 DETACH TABLE test_db.test_table_03093_merge_tree_perm PERMANENTLY;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
 DROP DETACHED TABLE test_db.test_table_03093_merge_tree_perm SYNC;
+SELECT sleep(1) FORMAT Null;
 SELECT count(table) FROM system.detached_tables WHERE database='test_db';
 
 SELECT 'ReplacingMergeTree';
@@ -27,6 +29,7 @@ INSERT INTO test_db.test_table_03093_repl_merge_tree SELECT number FROM system.n
 DETACH TABLE test_db.test_table_03093_repl_merge_tree;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
 DROP DETACHED TABLE test_db.test_table_03093_repl_merge_tree SYNC;
+SELECT sleep(1) FORMAT Null;
 SELECT count(table) FROM system.detached_tables WHERE database='test_db';
 
 SELECT 'ReplacingMergeTree DETACH PERMANENTLY';
@@ -35,6 +38,7 @@ INSERT INTO test_db.test_table_03093_repl_merge_tree_perm SELECT number FROM sys
 DETACH TABLE test_db.test_table_03093_repl_merge_tree_perm PERMANENTLY;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
 DROP DETACHED TABLE test_db.test_table_03093_repl_merge_tree_perm SYNC;
+SELECT sleep(1) FORMAT Null;
 SELECT count(table) FROM system.detached_tables WHERE database='test_db';
 
 SELECT 'SummingMergeTree';
@@ -43,6 +47,7 @@ INSERT INTO test_db.test_table_03093_sum_merge_tree SELECT number FROM system.nu
 DETACH TABLE test_db.test_table_03093_sum_merge_tree;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
 DROP DETACHED TABLE test_db.test_table_03093_sum_merge_tree SYNC;
+SELECT sleep(1) FORMAT Null;
 SELECT count(table) FROM system.detached_tables WHERE database='test_db';
 
 SELECT 'SummingMergeTree DETACH PERMANENTLY';
@@ -51,6 +56,7 @@ INSERT INTO test_db.test_table_03093_sum_merge_tree_perm SELECT number FROM syst
 DETACH TABLE test_db.test_table_03093_sum_merge_tree_perm PERMANENTLY;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
 DROP DETACHED TABLE test_db.test_table_03093_sum_merge_tree_perm SYNC;
+SELECT sleep(1) FORMAT Null;
 SELECT count(table) FROM system.detached_tables WHERE database='test_db';
 
 SELECT 'AggregatingMergeTree';
@@ -59,6 +65,7 @@ INSERT INTO test_db.test_table_03093_agg_merge_tree SELECT number FROM system.nu
 DETACH TABLE test_db.test_table_03093_agg_merge_tree;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
 DROP DETACHED TABLE test_db.test_table_03093_agg_merge_tree SYNC;
+SELECT sleep(1) FORMAT Null;
 SELECT count(table) FROM system.detached_tables WHERE database='test_db';
 
 SELECT 'AggregatingMergeTree DETACH PERMANENTLY';
@@ -67,6 +74,7 @@ INSERT INTO test_db.test_table_03093_agg_merge_tree_perm SELECT number FROM syst
 DETACH TABLE test_db.test_table_03093_agg_merge_tree_perm PERMANENTLY;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
 DROP DETACHED TABLE test_db.test_table_03093_agg_merge_tree_perm SYNC;
+SELECT sleep(1) FORMAT Null;
 SELECT count(table) FROM system.detached_tables WHERE database='test_db';
 
 SELECT 'CollapsingMergeTree';
@@ -75,6 +83,7 @@ INSERT INTO test_db.test_table_03093_col_merge_tree SELECT number, 1 FROM system
 DETACH TABLE test_db.test_table_03093_col_merge_tree;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
 DROP DETACHED TABLE test_db.test_table_03093_col_merge_tree SYNC;
+SELECT sleep(1) FORMAT Null;
 SELECT count(table) FROM system.detached_tables WHERE database='test_db';
 
 SELECT 'CollapsingMergeTree DETACH PERMANENTLY';
@@ -83,6 +92,7 @@ INSERT INTO test_db.test_table_03093_col_merge_tree_perm SELECT number, 1 FROM s
 DETACH TABLE test_db.test_table_03093_col_merge_tree_perm PERMANENTLY;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
 DROP DETACHED TABLE test_db.test_table_03093_col_merge_tree_perm SYNC;
+SELECT sleep(1) FORMAT Null;
 SELECT count(table) FROM system.detached_tables WHERE database='test_db';
 
 SELECT 'VersionedCollapsingMergeTree';
@@ -91,6 +101,7 @@ INSERT INTO test_db.test_table_03093_vcol_merge_tree SELECT number, 1, 1 FROM sy
 DETACH TABLE test_db.test_table_03093_vcol_merge_tree;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
 DROP DETACHED TABLE test_db.test_table_03093_vcol_merge_tree SYNC;
+SELECT sleep(1) FORMAT Null;
 SELECT count(table) FROM system.detached_tables WHERE database='test_db';
 
 SELECT 'VersionedCollapsingMergeTree DETACH PERMANENTLY';
@@ -99,6 +110,7 @@ INSERT INTO test_db.test_table_03093_vcol_merge_tree_perm SELECT number, 1, 1 FR
 DETACH TABLE test_db.test_table_03093_vcol_merge_tree_perm PERMANENTLY;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
 DROP DETACHED TABLE test_db.test_table_03093_vcol_merge_tree_perm SYNC;
+SELECT sleep(1) FORMAT Null;
 SELECT count(table) FROM system.detached_tables WHERE database='test_db';
 
 SELECT 'Log';
@@ -107,6 +119,7 @@ INSERT INTO test_db.test_table_03093_log SELECT number, 'some string' FROM syste
 DETACH TABLE test_db.test_table_03093_log;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
 DROP DETACHED TABLE test_db.test_table_03093_log SYNC;
+SELECT sleep(1) FORMAT Null;
 SELECT count(table) FROM system.detached_tables WHERE database='test_db';
 
 SELECT 'Log DETACH PERMANENTLY';
@@ -115,6 +128,7 @@ INSERT INTO test_db.test_table_03093_log_perm SELECT number, 'some string' FROM 
 DETACH TABLE test_db.test_table_03093_log_perm PERMANENTLY;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
 DROP DETACHED TABLE test_db.test_table_03093_log_perm SYNC;
+SELECT sleep(1) FORMAT Null;
 SELECT count(table) FROM system.detached_tables WHERE database='test_db';
 
 SELECT 'TinyLog';
@@ -123,6 +137,7 @@ INSERT INTO test_db.test_table_03093_tiny_log SELECT number, 'some string' FROM 
 DETACH TABLE test_db.test_table_03093_tiny_log;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
 DROP DETACHED TABLE test_db.test_table_03093_tiny_log SYNC;
+SELECT sleep(1) FORMAT Null;
 SELECT count(table) FROM system.detached_tables WHERE database='test_db';
 
 SELECT 'TinyLog DETACH PERMANENTLY';
@@ -131,6 +146,7 @@ INSERT INTO test_db.test_table_03093_tiny_log_perm SELECT number, 'some string' 
 DETACH TABLE test_db.test_table_03093_tiny_log_perm PERMANENTLY;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
 DROP DETACHED TABLE test_db.test_table_03093_tiny_log_perm SYNC;
+SELECT sleep(1) FORMAT Null;
 SELECT count(table) FROM system.detached_tables WHERE database='test_db';
 
 SELECT 'StripeLog';
@@ -139,6 +155,7 @@ INSERT INTO test_db.test_table_03093_stripe_log SELECT number FROM system.number
 DETACH TABLE test_db.test_table_03093_stripe_log;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
 DROP DETACHED TABLE test_db.test_table_03093_stripe_log SYNC;
+SELECT sleep(1) FORMAT Null;
 SELECT count(table) FROM system.detached_tables WHERE database='test_db';
 
 SELECT 'StripeLog DETACH PERMANENTLY';
@@ -147,6 +164,7 @@ INSERT INTO test_db.test_table_03093_stripe_log_perm SELECT number FROM system.n
 DETACH TABLE test_db.test_table_03093_stripe_log_perm PERMANENTLY;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
 DROP DETACHED TABLE test_db.test_table_03093_stripe_log_perm SYNC;
+SELECT sleep(1) FORMAT Null;
 SELECT count(table) FROM system.detached_tables WHERE database='test_db';
 
 SELECT 'Null';
@@ -155,6 +173,7 @@ INSERT INTO test_db.test_table_03093_null SELECT number FROM system.numbers LIMI
 DETACH TABLE test_db.test_table_03093_null;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
 DROP DETACHED TABLE test_db.test_table_03093_null SYNC;
+SELECT sleep(1) FORMAT Null;
 SELECT count(table) FROM system.detached_tables WHERE database='test_db';
 
 SELECT 'Null DETACH PERMANENTLY';
@@ -163,6 +182,7 @@ INSERT INTO test_db.test_table_03093_null_perm SELECT number FROM system.numbers
 DETACH TABLE test_db.test_table_03093_null_perm PERMANENTLY;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
 DROP DETACHED TABLE test_db.test_table_03093_null_perm SYNC;
+SELECT sleep(1) FORMAT Null;
 SELECT count(table) FROM system.detached_tables WHERE database='test_db';
 
 SELECT 'Buffer';
@@ -180,6 +200,7 @@ INSERT INTO test_db.test_table_03093_buffer SELECT toUInt64(number) FROM system.
 DETACH TABLE test_db.test_table_03093_buffer;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
 DROP DETACHED TABLE test_db.test_table_03093_buffer SYNC;
+SELECT sleep(1) FORMAT Null;
 SELECT count(table) FROM system.detached_tables WHERE database='test_db';
 
 SELECT 'Buffer DETACH PERMANENTLY';
@@ -197,6 +218,7 @@ INSERT INTO test_db.test_table_03093_buffer_perm SELECT toUInt64(number) FROM sy
 DETACH TABLE test_db.test_table_03093_buffer_perm PERMANENTLY;
 SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db' FORMAT TabSeparated;
 DROP DETACHED TABLE test_db.test_table_03093_buffer_perm SYNC;
+SELECT sleep(1) FORMAT Null;
 SELECT count(table) FROM system.detached_tables WHERE database='test_db';
 
 SELECT 'total';
