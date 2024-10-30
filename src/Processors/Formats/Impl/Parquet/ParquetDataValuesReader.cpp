@@ -296,16 +296,12 @@ void ParquetPlainValuesReader<ColumnString>::readBatch(
     );
 }
 
-template <>
-void ParquetBitPlainReader<ColumnUInt8>::readBatch(
+template <typename TColumn>
+void ParquetBitPlainReader<TColumn>::readBatch(
     MutableColumnPtr & col_ptr, LazyNullMap & null_map, UInt32 num_values)
 {
-    auto & column = *assert_cast<ColumnUInt8 *>(col_ptr.get());
-    auto cursor = column.size();
-
-    auto & container = column.getData();
-
-    container.resize(cursor + num_values);
+    auto cursor = col_ptr->size();
+    auto * column_data = getResizedPrimitiveData(*assert_cast<TColumn *>(col_ptr.get()), cursor + num_values);
 
     def_level_reader->visitNullableValues(
     cursor,
@@ -316,11 +312,11 @@ void ParquetBitPlainReader<ColumnUInt8>::readBatch(
         {
             uint8_t byte;
             bit_reader->GetValue(1, &byte);
-            container[nest_cursor] = byte;
+            column_data[nest_cursor] = byte;
         },
         /* repeated_visitor */ [&](size_t nest_cursor, UInt32 count)
         {
-            bit_reader->GetBatch(1, &container[nest_cursor], count);
+            bit_reader->GetBatch(1, &column_data[nest_cursor], count);
         }
     );
 }
@@ -591,6 +587,8 @@ template class ParquetPlainValuesReader<ColumnDecimal<Decimal64>>;
 template class ParquetPlainValuesReader<ColumnDecimal<DateTime64>>;
 template class ParquetPlainValuesReader<ColumnString>;
 template class ParquetPlainValuesReader<ColumnUInt8>;
+
+template class ParquetBitPlainReader<ColumnUInt8>;
 
 template class ParquetFixedLenPlainReader<ColumnDecimal<Decimal128>>;
 template class ParquetFixedLenPlainReader<ColumnDecimal<Decimal256>>;
