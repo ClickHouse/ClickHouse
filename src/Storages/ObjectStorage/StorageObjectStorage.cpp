@@ -287,7 +287,6 @@ void StorageObjectStorage::read(
     size_t num_streams)
 {
     configuration->update(object_storage, local_context);
-    printConfiguration(local_context->getConfigRef(), "Select query");
     if (partition_by && configuration->withPartitionWildcard())
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
