@@ -19,7 +19,7 @@ class FillingRow
     std::optional<Field> doLongJump(const FillColumnDescription & descr, size_t column_ind, const Field & to);
 
     bool hasSomeConstraints(size_t pos) const;
-    bool isConstraintsComplete(size_t pos) const;
+    bool isConstraintsSatisfied(size_t pos) const;
 
 public:
     explicit FillingRow(const SortDescription & sort_description);
@@ -32,7 +32,7 @@ public:
     bool shift(const FillingRow & next_original_row, bool& value_changed);
 
     bool hasSomeConstraints() const;
-    bool isConstraintsComplete() const;
+    bool isConstraintsSatisfied() const;
 
     void initUsingFrom(size_t from_pos = 0);
     void initUsingTo(size_t from_pos = 0);

@@ -13,7 +13,7 @@ namespace DB
 constexpr static bool debug_logging_enabled = false;
 
 template <class... Args>
-static void logDebug(String fmt_str, Args&&... args)
+inline static void logDebug(String fmt_str, Args&&... args)
 {
     if constexpr (debug_logging_enabled)
         LOG_DEBUG(getLogger("FillingRow"), "{}", fmt::format(fmt::runtime(fmt_str), std::forward<Args>(args)...));
@@ -111,7 +111,7 @@ bool FillingRow::hasSomeConstraints(size_t pos) const
     return !constraints[pos].isNull();
 }
 
-bool FillingRow::isConstraintsComplete(size_t pos) const
+bool FillingRow::isConstraintsSatisfied(size_t pos) const
 {
     chassert(!row[pos].isNull());
     chassert(hasSomeConstraints(pos));
@@ -288,14 +288,14 @@ bool FillingRow::hasSomeConstraints() const
     return false;
 }
 
-bool FillingRow::isConstraintsComplete() const
+bool FillingRow::isConstraintsSatisfied() const
 {
     for (size_t pos = 0; pos < size(); ++pos)
     {
         if (row[pos].isNull() || !hasSomeConstraints(pos))
             continue;
 
-        return isConstraintsComplete(pos);
+        return isConstraintsSatisfied(pos);
     }
 
     return true;

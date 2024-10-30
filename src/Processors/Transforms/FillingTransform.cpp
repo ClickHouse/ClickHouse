@@ -20,7 +20,7 @@ namespace DB
 constexpr static bool debug_logging_enabled = false;
 
 template <typename T>
-static void logDebug(String key, const T & value, const char * separator = " : ")
+inline static void logDebug(String key, const T & value, const char * separator = " : ")
 {
     if constexpr (debug_logging_enabled)
     {
@@ -511,7 +511,7 @@ bool FillingTransform::generateSuffixIfNeeded(
 
     logDebug("generateSuffixIfNeeded next_row updated", next_row);
 
-    if (!filling_row.hasSomeConstraints() || !filling_row.isConstraintsComplete())
+    if (!filling_row.hasSomeConstraints() || !filling_row.isConstraintsSatisfied())
     {
         logDebug("generateSuffixIfNeeded", "will not generate suffix");
         return false;
@@ -647,7 +647,7 @@ void FillingTransform::transformRange(
         /// The condition is true when filling row is initialized by value(s) in FILL FROM,
         /// and there are row(s) in current range with value(s) < then in the filling row.
         /// It can happen only once for a range.
-        if (should_insert_first && filling_row < next_row && filling_row.isConstraintsComplete())
+        if (should_insert_first && filling_row < next_row && filling_row.isConstraintsSatisfied())
         {
             interpolate(result_columns, interpolate_block);
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
