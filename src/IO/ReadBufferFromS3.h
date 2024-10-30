@@ -28,7 +28,7 @@ private:
     String bucket;
     String key;
     String version_id;
-    const S3::S3RequestSettings request_settings;
+    const S3::RequestSettings request_settings;
 
     /// These variables are atomic because they can be used for `logging only`
     /// (where it is not important to get consistent result)
@@ -47,7 +47,7 @@ public:
         const String & bucket_,
         const String & key_,
         const String & version_id_,
-        const S3::S3RequestSettings & request_settings_,
+        const S3::RequestSettings & request_settings_,
         const ReadSettings & settings_,
         bool use_external_buffer = false,
         size_t offset_ = 0,
@@ -63,7 +63,7 @@ public:
 
     off_t getPosition() override;
 
-    std::optional<size_t> tryGetFileSize() override;
+    size_t getFileSize() override;
 
     void setReadUntilPosition(size_t position) override;
     void setReadUntilEnd() override;
@@ -86,7 +86,7 @@ private:
 
     /// Call inside catch() block if GetObject fails. Bumps metrics, logs the error.
     /// Returns true if the error looks retriable.
-    bool processException(size_t read_offset, size_t attempt) const;
+    bool processException(Poco::Exception & e, size_t read_offset, size_t attempt) const;
 
     Aws::S3::Model::GetObjectResult sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const;
 

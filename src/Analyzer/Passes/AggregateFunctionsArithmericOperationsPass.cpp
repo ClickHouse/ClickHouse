@@ -15,11 +15,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool optimize_arithmetic_operations_in_aggregate_functions;
-}
-
 
 namespace ErrorCodes
 {
@@ -40,10 +35,6 @@ Field zeroField(const Field & value)
         case Field::Types::Int128: return static_cast<Int128>(0);
         case Field::Types::UInt256: return static_cast<UInt256>(0);
         case Field::Types::Int256: return static_cast<Int256>(0);
-        case Field::Types::Decimal32: return static_cast<Decimal32>(0);
-        case Field::Types::Decimal64: return static_cast<Decimal64>(0);
-        case Field::Types::Decimal128: return static_cast<Decimal128>(0);
-        case Field::Types::Decimal256: return static_cast<Decimal256>(0);
         default:
             break;
     }
@@ -65,7 +56,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings()[Setting::optimize_arithmetic_operations_in_aggregate_functions])
+        if (!getSettings().optimize_arithmetic_operations_in_aggregate_functions)
             return;
 
         auto * aggregate_function_node = node->as<FunctionNode>();
@@ -118,9 +109,10 @@ public:
         {
             if (aggregate_function_name == "min")
                 return "max";
-            if (aggregate_function_name == "max")
+            else if (aggregate_function_name == "max")
                 return "min";
-            return aggregate_function_name;
+            else
+                return aggregate_function_name;
         };
 
         size_t arithmetic_function_argument_index = 0;

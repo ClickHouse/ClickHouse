@@ -285,8 +285,6 @@ static bool formatNamedArgWithHiddenValue(IAST * arg, const IAST::FormatSettings
 void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.expression_list_prepend_whitespace = false;
-    if (kind == Kind::CODEC || kind == Kind::STATISTICS || kind == Kind::BACKUP_NAME)
-        frame.allow_operators = false;
     FormatStateStacked nested_need_parens = frame;
     FormatStateStacked nested_dont_need_parens = frame;
     nested_need_parens.need_parens = true;
@@ -310,7 +308,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
     /// Should this function to be written as operator?
     bool written = false;
-    if (arguments && !parameters && frame.allow_operators && nulls_action == NullsAction::EMPTY)
+    if (arguments && !parameters && nulls_action == NullsAction::EMPTY)
     {
         /// Unary prefix operators.
         if (arguments->children.size() == 1)
@@ -332,20 +330,15 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 const auto * literal = arguments->children[0]->as<ASTLiteral>();
                 const auto * function = arguments->children[0]->as<ASTFunction>();
                 const auto * subquery = arguments->children[0]->as<ASTSubquery>();
-                bool is_tuple = (literal && literal->value.getType() == Field::Types::Tuple)
-                             || (function && function->name == "tuple" && function->arguments && function->arguments->children.size() > 1);
-                bool is_array = (literal && literal->value.getType() == Field::Types::Array)
-                             || (function && function->name == "array");
-
-                /// Do not add parentheses for tuple and array literal, otherwise extra parens will be added `-((3, 7, 3), 1)` -> `-(((3, 7, 3), 1))`, `-[1]` -> `-([1])`
-                bool literal_need_parens = literal && !is_tuple && !is_array;
+                bool is_tuple = literal && literal->value.getType() == Field::Types::Tuple;
+                /// Do not add parentheses for tuple literal, otherwise extra parens will be added `-((3, 7, 3), 1)` -> `-(((3, 7, 3), 1))`
+                bool literal_need_parens = literal && !is_tuple;
 
                 /// Negate always requires parentheses, otherwise -(-1) will be printed as --1
-                /// Also extra parentheses are needed for subqueries and tuple, because NOT can be parsed as a function:
+                /// Also extra parentheses are needed for subqueries, because NOT can be parsed as a function:
                 /// not(SELECT 1) cannot be parsed, while not((SELECT 1)) can.
-                /// not((1, 2, 3)) is a function of one argument, while not(1, 2, 3) is a function of three arguments.
                 bool inside_parens = (name == "negate" && (literal_need_parens || (function && function->name == "negate")))
-                    || (subquery && name == "not") || (is_tuple && name == "not");
+                    || (subquery && name == "not");
 
                 /// We DO need parentheses around a single literal
                 /// For example, SELECT (NOT 0) + (NOT 0) cannot be transformed into SELECT NOT 0 + NOT 0, since
@@ -527,7 +520,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 if (tuple_arguments_valid && lit_right)
                 {
                     if (isInt64OrUInt64FieldType(lit_right->value.getType())
-                        && lit_right->value.safeGet<Int64>() >= 0)
+                        && lit_right->value.get<Int64>() >= 0)
                     {
                         if (frame.need_parens)
                             settings.ostr << '(';
@@ -727,14 +720,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                         assert_cast<const ASTFunction *>(argument.get())->arguments->children[0]->formatImpl(settings, state, nested_dont_need_parens);
                         settings.ostr << (settings.hilite ? hilite_operator : "") << " = " << (settings.hilite ? hilite_none : "");
                     }
-                    if (!secret_arguments.replacement.empty())
-                    {
-                        settings.ostr << "'" << secret_arguments.replacement << "'";
-                    }
-                    else
-                    {
-                        settings.ostr << "'[HIDDEN]'";
-                    }
+                    settings.ostr << "'[HIDDEN]'";
                     if (size <= secret_arguments.start + secret_arguments.count && !secret_arguments.are_named)
                         break; /// All other arguments should also be hidden.
                     continue;

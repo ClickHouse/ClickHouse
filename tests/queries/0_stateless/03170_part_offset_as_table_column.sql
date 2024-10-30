@@ -9,12 +9,12 @@ ORDER BY key;
 INSERT INTO test_table (key) SELECT number
 FROM numbers(10);
 
-set enable_analyzer=0;
+set allow_experimental_analyzer=0;
 
 SELECT *
 FROM test_table;
 
-set enable_analyzer=1;
+set allow_experimental_analyzer=1;
 
 SELECT *
 FROM test_table;

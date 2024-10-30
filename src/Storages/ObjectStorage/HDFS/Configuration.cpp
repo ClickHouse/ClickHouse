@@ -20,19 +20,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool hdfs_create_new_file_on_insert;
-    extern const SettingsBool hdfs_ignore_file_doesnt_exist;
-    extern const SettingsUInt64 hdfs_replication;
-    extern const SettingsBool hdfs_skip_empty_files;
-    extern const SettingsBool hdfs_throw_on_zero_files_match;
-    extern const SettingsBool hdfs_truncate_on_insert;
-    extern const SettingsUInt64 remote_read_min_bytes_for_seek;
-    extern const SettingsSchemaInferenceMode schema_inference_mode;
-    extern const SettingsBool schema_inference_use_cache_for_hdfs;
-}
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -61,7 +48,10 @@ ObjectStoragePtr StorageHDFSConfiguration::createObjectStorage( /// NOLINT
 {
     assertInitialized();
     const auto & settings = context->getSettingsRef();
-    auto hdfs_settings = std::make_unique<HDFSObjectStorageSettings>(settings[Setting::remote_read_min_bytes_for_seek], settings[Setting::hdfs_replication]);
+    auto hdfs_settings = std::make_unique<HDFSObjectStorageSettings>(
+        settings.remote_read_min_bytes_for_seek,
+        settings.hdfs_replication
+    );
     return std::make_shared<HDFSObjectStorage>(
         url, std::move(hdfs_settings), context->getConfigRef(), /* lazy_initialize */true);
 }
@@ -81,14 +71,14 @@ StorageObjectStorage::QuerySettings StorageHDFSConfiguration::getQuerySettings(c
 {
     const auto & settings = context->getSettingsRef();
     return StorageObjectStorage::QuerySettings{
-        .truncate_on_insert = settings[Setting::hdfs_truncate_on_insert],
-        .create_new_file_on_insert = settings[Setting::hdfs_create_new_file_on_insert],
-        .schema_inference_use_cache = settings[Setting::schema_inference_use_cache_for_hdfs],
-        .schema_inference_mode = settings[Setting::schema_inference_mode],
-        .skip_empty_files = settings[Setting::hdfs_skip_empty_files],
+        .truncate_on_insert = settings.hdfs_truncate_on_insert,
+        .create_new_file_on_insert = settings.hdfs_create_new_file_on_insert,
+        .schema_inference_use_cache = settings.schema_inference_use_cache_for_hdfs,
+        .schema_inference_mode = settings.schema_inference_mode,
+        .skip_empty_files = settings.hdfs_skip_empty_files,
         .list_object_keys_size = 0, /// HDFS does not support listing in batches.
-        .throw_on_zero_files_match = settings[Setting::hdfs_throw_on_zero_files_match],
-        .ignore_non_existent_file = settings[Setting::hdfs_ignore_file_doesnt_exist],
+        .throw_on_zero_files_match = settings.hdfs_throw_on_zero_files_match,
+        .ignore_non_existent_file = settings.hdfs_ignore_file_doesnt_exist,
     };
 }
 
@@ -154,11 +144,11 @@ void StorageHDFSConfiguration::setURL(const std::string & url_)
 {
     auto pos = url_.find("//");
     if (pos == std::string::npos)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad HDFS URL: {}. It should have the following structure 'hdfs://<host_name>:<port>/path'", url_);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad hdfs url: {}", url_);
 
     pos = url_.find('/', pos + 2);
     if (pos == std::string::npos)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad HDFS URL: {}. It should have the following structure 'hdfs://<host_name>:<port>/path'", url_);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad hdfs url: {}", url_);
 
     path = url_.substr(pos + 1);
     if (!path.starts_with('/'))
@@ -167,7 +157,7 @@ void StorageHDFSConfiguration::setURL(const std::string & url_)
     url = url_.substr(0, pos);
     paths = {path};
 
-    LOG_TRACE(getLogger("StorageHDFSConfiguration"), "Using URL: {}, path: {}", url, path);
+    LOG_TRACE(getLogger("StorageHDFSConfiguration"), "Using url: {}, path: {}", url, path);
 }
 
 void StorageHDFSConfiguration::addStructureAndFormatToArgsIfNeeded(

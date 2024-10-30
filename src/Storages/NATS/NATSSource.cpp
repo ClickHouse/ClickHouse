@@ -1,18 +1,13 @@
 #include <Storages/NATS/NATSSource.h>
 
-#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
-#include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/NATS/NATSConsumer.h>
+#include <IO/EmptyReadBuffer.h>
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsMilliseconds rabbitmq_max_wait_ms;
-}
 
 static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot)
 {
@@ -91,7 +86,7 @@ Chunk NATSSource::generate()
 {
     if (!consumer)
     {
-        auto timeout = std::chrono::milliseconds(context->getSettingsRef()[Setting::rabbitmq_max_wait_ms].totalMilliseconds());
+        auto timeout = std::chrono::milliseconds(context->getSettingsRef().rabbitmq_max_wait_ms.totalMilliseconds());
         consumer = storage.popConsumer(timeout);
         consumer->subscribe();
     }
@@ -107,24 +102,29 @@ Chunk NATSSource::generate()
         storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, 1);
     std::optional<String> exception_message;
     size_t total_rows = 0;
-    auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
+    auto on_error = [&](const MutableColumns & result_columns, Exception & e)
     {
         if (handle_error_mode == StreamingHandleErrorMode::STREAM)
         {
             exception_message = e.message();
-            for (size_t i = 0; i < result_columns.size(); ++i)
+            for (const auto & column : result_columns)
             {
-                // We could already push some rows to result_columns before exception, we need to fix it.
-                result_columns[i]->rollback(*checkpoints[i]);
+                // We could already push some rows to result_columns
+                // before exception, we need to fix it.
+                auto cur_rows = column->size();
+                if (cur_rows > total_rows)
+                    column->popBack(cur_rows - total_rows);
 
                 // All data columns will get default value in case of error.
-                result_columns[i]->insertDefault();
+                column->insertDefault();
             }
 
             return 1;
         }
-
-        throw std::move(e);
+        else
+        {
+            throw std::move(e);
+        }
     };
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
