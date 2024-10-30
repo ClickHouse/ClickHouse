@@ -924,37 +924,38 @@ DataFileInfos IcebergMetadata::getDataFileInfos(const ActionsDAG * filter_dag) c
             std::vector<Range> ranges;
             for (size_t j = 0; j < partition_transforms.size(); ++j)
             {
-                chassert((partition_transforms[j] == PartitionTransform::Year) || (partition_transforms[j] == PartitionTransform::Month));
-                auto type = partition_types[j];
-                auto year_column = dynamic_cast<const ColumnNullable *>(partition_columns[j].get())->getNestedColumnPtr();
+                // chassert((partition_transforms[j] == PartitionTransform::Year) || (partition_transforms[j] == PartitionTransform::Month));
+                // auto type = partition_types[j];
+                // auto year_column = dynamic_cast<const ColumnNullable *>(partition_columns[j].get())->getNestedColumnPtr();
 
-                // if (year_column->getDataType()->getNested() != TypeIndex::Int32)
-                // {
-                //     throw Exception(
-                //         ErrorCodes::ILLEGAL_COLUMN,
-                //         "The parsed column from Avro file of `{}` field should be Int type, got {}",
-                //         partition_names[i],
-                //         year_column->getFamilyName());
-                // }
-                auto year_int_column = assert_cast<const ColumnInt32 *>(year_column.get());
-                auto year = year_int_column->getInt(i);
+                // // if (year_column->getDataType()->getNested() != TypeIndex::Int32)
+                // // {
+                // //     throw Exception(
+                // //         ErrorCodes::ILLEGAL_COLUMN,
+                // //         "The parsed column from Avro file of `{}` field should be Int type, got {}",
+                // //         partition_names[i],
+                // //         year_column->getFamilyName());
+                // // }
+                // auto year_int_column = assert_cast<const ColumnInt32 *>(year_column.get());
+                // auto year = year_int_column->getInt(i);
 
-                const UInt64 year_beginning = DateLUT::instance().LUTIndexByYearSinceEpochStartsZeroIndexing(year);
-                const UInt64 next_year_beginning = DateLUT::instance().LUTIndexByYearSinceEpochStartsZeroIndexing(year + 1);
-                Field year_beginning_field(year_beginning);
-                Field next_year_beginning_field(next_year_beginning);
-                // ColumnVector<UInt16>(1, year_beginning)->get(0, year_beginning_field);
-                // ColumnVector<UInt16>(1, next_year_beginning)->get(0, next_year_beginning_field);
-                ranges.emplace_back(year_beginning_field, true, next_year_beginning_field, false);
-                LOG_DEBUG(
-                    &Poco::Logger::get("Partition years"),
-                    "Print partition date years: file_path: {}, year from epoch: {}, year_begin: {}, year_exclusive_end: {}, "
-                    "clickhouse_column_name: {}",
-                    file_path,
-                    year,
-                    year_beginning,
-                    next_year_beginning,
-                    partition_names[j]);
+                // const UInt64 year_beginning = DateLUT::instance().LUTIndexByYearSinceEpochStartsZeroIndexing(year);
+                // const UInt64 next_year_beginning = DateLUT::instance().LUTIndexByYearSinceEpochStartsZeroIndexing(year + 1);
+                // Field year_beginning_field(year_beginning);
+                // Field next_year_beginning_field(next_year_beginning);
+                // // ColumnVector<UInt16>(1, year_beginning)->get(0, year_beginning_field);
+                // // ColumnVector<UInt16>(1, next_year_beginning)->get(0, next_year_beginning_field);
+                ranges.push_back(getPartitionRange(partition_transforms[j], i, partition_columns[j], partition_types[j]));
+                // ranges.emplace_back(year_beginning_field, true, next_year_beginning_field, false);
+                // LOG_DEBUG(
+                //     &Poco::Logger::get("Partition years"),
+                //     "Print partition date years: file_path: {}, year from epoch: {}, year_begin: {}, year_exclusive_end: {}, "
+                //     "clickhouse_column_name: {}",
+                //     file_path,
+                //     year,
+                //     year_beginning,
+                //     next_year_beginning,
+                //     partition_names[j]);
             }
 
 

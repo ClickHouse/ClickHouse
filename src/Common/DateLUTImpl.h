@@ -1171,16 +1171,16 @@ public:
         return LUTIndex{std::min(index, static_cast<UInt32>(DATE_LUT_SIZE - 1))};
     }
 
-    LUTIndex LUTIndexByMonthSinceEpochStartsZeroIndexing(Int32 months) const
+    Values lutIndexByMonthSinceEpochStartsZeroIndexing(Int32 months) const
     {
         Int16 year = 1970 + months / 12;
         UInt8 month = months % 12 + 1;
-        return makeLUTIndex(year, month, 1) - DAYNUM_OFFSET_EPOCH;
+        return lut_saturated[makeLUTIndex(year, month, 1) - DAYNUM_OFFSET_EPOCH];
     }
 
-    LUTIndex LUTIndexByYearSinceEpochStartsZeroIndexing(Int16 years) const
+    Values lutIndexByYearSinceEpochStartsZeroIndexing(Int16 years) const
     {
-        return makeLUTIndex(years + 1970, 1, 1) - DAYNUM_OFFSET_EPOCH;
+        return lut_saturated[makeLUTIndex(years + 1970, 1, 1) - DAYNUM_OFFSET_EPOCH];
     }
 
     /// Create DayNum from year, month, day of month.
