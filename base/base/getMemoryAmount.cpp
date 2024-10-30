@@ -19,6 +19,9 @@ std::optional<uint64_t> getCgroupsV2MemoryLimit()
     if (!cgroupsV2Enabled())
         return {};
 
+    if (!cgroupsV2MemoryControllerEnabled())
+        return {};
+
     std::filesystem::path current_cgroup = cgroupV2PathOfProcess();
     if (current_cgroup.empty())
         return {};
@@ -33,7 +36,8 @@ std::optional<uint64_t> getCgroupsV2MemoryLimit()
             uint64_t value;
             if (setting_file >> value)
                 return {value};
-            return {}; /// e.g. the cgroups default "max"
+            else
+                return {}; /// e.g. the cgroups default "max"
         }
         current_cgroup = current_cgroup.parent_path();
     }

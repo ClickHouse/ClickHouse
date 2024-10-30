@@ -10,15 +10,6 @@ DataTypePtr IAggregateFunction::getStateType() const
     return std::make_shared<DataTypeAggregateFunction>(shared_from_this(), argument_types, parameters);
 }
 
-DataTypePtr IAggregateFunction::getNormalizedStateType() const
-{
-    DataTypes normalized_argument_types;
-    normalized_argument_types.reserve(argument_types.size());
-    for (const auto & arg : argument_types)
-        normalized_argument_types.emplace_back(arg->getNormalizedType());
-    return std::make_shared<DataTypeAggregateFunction>(shared_from_this(), normalized_argument_types, parameters);
-}
-
 String IAggregateFunction::getDescription() const
 {
     String description;

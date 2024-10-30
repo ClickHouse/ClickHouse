@@ -22,10 +22,10 @@ ORDER BY Distance(vectors, Point)
 LIMIT N
 ```
 
-`vectors` contains N-dimensional values of type [Array(Float32)](../../../sql-reference/data-types/array.md) or Array(Float64), for example
-embeddings. Function `Distance` computes the distance between two vectors. Often, the Euclidean (L2) distance is chosen as distance function
-but [other distance functions](/docs/en/sql-reference/functions/distance-functions.md) are also possible. `Point` is the reference point,
-e.g. `(0.17, 0.33, ...)`, and `N` limits the number of search results.
+`vectors` contains N-dimensional values of type [Array(Float32)](../../../sql-reference/data-types/array.md), for example embeddings.
+Function `Distance` computes the distance between two vectors. Often, the Euclidean (L2) distance is chosen as distance function but [other
+distance functions](/docs/en/sql-reference/functions/distance-functions.md) are also possible. `Point` is the reference point, e.g. `(0.17,
+0.33, ...)`, and `N` limits the number of search results.
 
 This query returns the top-`N` closest points to the reference point. Parameter `N` limits the number of returned values which is useful for
 situations where `MaxDistance` is difficult to determine in advance.
@@ -43,7 +43,7 @@ CREATE TABLE table
 (
   id Int64,
   vectors Array(Float32),
-  INDEX index_name vectors TYPE vector_similarity(method, distance_function[, quantization, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction]) [GRANULARITY N]
+  INDEX index_name vectors TYPE vector_similarity(method, distance_function[, quantization, connectivity, expansion_add, expansion_search]) [GRANULARITY N]
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -54,14 +54,10 @@ Parameters:
 - `distance_function`: either `L2Distance` (the [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance) - the length of a
   line between two points in Euclidean space), or `cosineDistance` (the [cosine
   distance](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance)- the angle between two non-zero vectors).
-- `quantization`: either `f64`, `f32`, `f16`, `bf16`, or `i8` for storing the vector with reduced precision (optional, default: `bf16`)
-- `hnsw_max_connections_per_layer`: the number of neighbors per HNSW graph node, also known as `M` in the [HNSW
-  paper](https://doi.org/10.1109/TPAMI.2018.2889473) (optional, default: 32)
-- `hnsw_candidate_list_size_for_construction`: the size of the dynamic candidate list when constructing the HNSW graph, also known as
-  `ef_construction` in the original [HNSW paper](https://doi.org/10.1109/TPAMI.2018.2889473) (optional, default: 128)
-
-Values 0 for parameters `hnsw_max_connections_per_layer` and `hnsw_candidate_list_size_for_construction` means using the default values of
-these parameters.
+- `quantization`: either `f32`, `f16`, or `i8` for storing the vector with reduced precision (optional, default: `f32`)
+- `m`: the number of neighbors per graph node (optional, default: 16)
+- `ef_construction`: (optional, default: 128)
+- `ef_search`: (optional, default: 64)
 
 Example:
 
@@ -109,30 +105,19 @@ The vector similarity index currently does not work with per-table, non-default 
 [here](https://github.com/ClickHouse/ClickHouse/pull/51325#issuecomment-1605920475)). If necessary, the value must be changed in config.xml.
 :::
 
-Vector index creation is known to be slow. To speed the process up, index creation can be parallelized. The maximum number of threads can be
-configured using server configuration
-setting [max_build_vector_similarity_index_thread_pool_size](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters_max_build_vector_similarity_index_thread_pool_size).
-
 ANN indexes are built during column insertion and merge. As a result, `INSERT` and `OPTIMIZE` statements will be slower than for ordinary
 tables. ANNIndexes are ideally used only with immutable or rarely changed data, respectively when are far more read requests than write
 requests.
 
-:::tip
-To reduce the cost of building vector similarity indexes, consider setting `materialize_skip_indexes_on_insert` which disables the
-construction of skipping indexes on newly inserted parts. Search would fall back to exact search but as inserted parts are typically small
-compared to the total table size, the performance impact of that would be negligible.
+ANN indexes support these queries:
 
-ANN indexes support this type of query:
-
-``` sql
-WITH [...] AS reference_vector
-SELECT *
-FROM table
-WHERE ...                       -- WHERE clause is optional
-ORDER BY Distance(vectors, reference_vector)
-LIMIT N
-SETTINGS enable_analyzer = 0;   -- Temporary limitation, will be lifted
-```
+  ``` sql
+  SELECT *
+  FROM table
+  [WHERE ...]
+  ORDER BY Distance(vectors, Point)
+  LIMIT N
+  ```
 
 :::tip
 To avoid writing out large vectors, you can use [query
@@ -142,10 +127,6 @@ parameters](/docs/en/interfaces/cli.md#queries-with-parameters-cli-queries-with-
 clickhouse-client --param_vec='hello' --query="SELECT * FROM table WHERE L2Distance(vectors, {vec: Array(Float32)}) < 1.0"
 ```
 :::
-
-To search using a different value of HNSW parameter `hnsw_candidate_list_size_for_search` (default: 256), also known as `ef_search` in the
-original [HNSW paper](https://doi.org/10.1109/TPAMI.2018.2889473), run the `SELECT` query with `SETTINGS hnsw_candidate_list_size_for_search
-= <value>`.
 
 **Restrictions**: Approximate algorithms used to determine the nearest neighbors require a limit, hence queries without `LIMIT` clause
 cannot utilize ANN indexes. Also, ANN indexes are only used if the query has a `LIMIT` value smaller than setting
