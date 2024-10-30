@@ -218,7 +218,7 @@ int QueryOracle::GenerateExportQuery(RandomGenerator & rg, const SQLTable & t, s
             }
             buf += cname;
             buf += " ";
-            buf += entry.second.tp->TypeName(true);
+            entry.second.tp->TypeName(buf, true);
             if (entry.second.nullable.has_value())
             {
                 buf += entry.second.nullable.value() ? "" : " NOT";

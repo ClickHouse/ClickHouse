@@ -121,7 +121,7 @@ std::tuple<const SQLType *, sql_query_grammar::Integers> RandomIntType(RandomGen
 {
     const uint32_t mimv
         = (allowed_types & allow_unsigned_int) ? ((allowed_types & allow_int8) ? 1 : 2) : ((allowed_types & allow_int8) ? 7 : 8);
-    std::uniform_int_distribution<uint32_t> next_dist(mimv, 12);
+    std::uniform_int_distribution<uint32_t> next_dist(mimv, (allowed_types & allow_hugeint) ? 12 : 10);
     const uint32_t nopt = next_dist(rg.gen);
 
     switch (nopt)
@@ -444,7 +444,7 @@ const SQLType * StatementGenerator::BottomType(
                     this->depth++;
                     desc += " ";
                     const SQLType * jtp = RandomNextType(rg, ~(allow_nested | allow_enum), col_counter, tp ? jpt->mutable_type() : nullptr);
-                    desc += jtp->TypeName(false);
+                    jtp->TypeName(desc, false);
                     delete jtp;
                     this->depth--;
                 }
@@ -1128,7 +1128,7 @@ void StatementGenerator::StrAppendAnyValue(RandomGenerator & rg, std::string & r
     if (rg.NextSmallNumber() < 7)
     {
         ret += "::";
-        ret += tp->TypeName(false);
+        tp->TypeName(ret, false);
     }
 }
 
