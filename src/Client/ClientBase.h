@@ -340,6 +340,7 @@ protected:
     ProgressTable progress_table;
     bool need_render_progress = true;
     bool need_render_progress_table = true;
+    bool progress_table_toggle_enabled = true;
     std::atomic_bool progress_table_toggle_on = false;
     bool need_render_profile_events = true;
     bool written_first_block = false;
