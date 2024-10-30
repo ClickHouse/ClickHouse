@@ -11,13 +11,14 @@
 #include <Common/FieldVisitorSum.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
+#include "Interpreters/FillingRow.h"
 #include <IO/Operators.h>
 
 
 namespace DB
 {
 
-constexpr bool debug_logging_enabled = false;
+constexpr bool debug_logging_enabled = true;
 
 template <typename T>
 void logDebug(String key, const T & value, const char * separator = " : ")
@@ -507,18 +508,39 @@ bool FillingTransform::generateSuffixIfNeeded(
     logDebug("should_insert_first", should_insert_first);
 
     for (size_t i = 0, size = filling_row.size(); i < size; ++i)
-        next_row[i] = filling_row.getFillDescription(i).fill_to;
+        next_row[i] = Field{};
 
     logDebug("generateSuffixIfNeeded next_row updated", next_row);
 
-    if (filling_row >= next_row)
+    // if (!filling_row.isFillToConfigured() && !filling_row.isStalenessConfigured())
+    // {
+    //     logDebug("generateSuffixIfNeeded", "no other constraints, will not generate suffix");
+    //     return false;
+    // }
+
+    // logDebug("filling_row.isLessFillTo()", filling_row.isLessFillTo());
+    // logDebug("filling_row.isLessStaleness()", filling_row.isLessStaleness());
+
+    // if (filling_row.isFillToConfigured() && !filling_row.isLessFillTo())
+    // {
+    //     logDebug("generateSuffixIfNeeded", "not less than fill to, will not generate suffix");
+    //     return false;
+    // }
+
+    // if (filling_row.isStalenessConfigured() && !filling_row.isLessStaleness())
+    // {
+    //     logDebug("generateSuffixIfNeeded", "not less than staleness border, will not generate suffix");
+    //     return false;
+    // }
+
+    if (!filling_row.isConstraintsComplete())
     {
-        logDebug("generateSuffixIfNeeded", "no need to generate suffix");
+        logDebug("generateSuffixIfNeeded", "will not generate suffix");
         return false;
     }
 
     Block interpolate_block;
-    if (should_insert_first && filling_row < next_row)
+    if (should_insert_first)
     {
         interpolate(result_columns, interpolate_block);
         insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
@@ -533,7 +555,7 @@ bool FillingTransform::generateSuffixIfNeeded(
     bool filling_row_changed = false;
     while (true)
     {
-        const auto [apply, changed] = filling_row.next(next_row, /*long_jump=*/false);
+        const auto [apply, changed] = filling_row.next(next_row);
         filling_row_changed = changed;
         if (!apply)
             break;
@@ -615,7 +637,7 @@ void FillingTransform::transformRange(
 
             if (!fill_from.isNull() && !equals(current_value, fill_from))
             {
-                filling_row.initFromDefaults(i);
+                filling_row.initWithFrom(i);
                 filling_row_inserted = false;
                 if (less(fill_from, current_value, filling_row.getDirection(i)))
                 {
@@ -642,24 +664,14 @@ void FillingTransform::transformRange(
         logDebug("should_insert_first", should_insert_first);
 
         for (size_t i = 0, size = filling_row.size(); i < size; ++i)
-        {
-            const auto current_value = (*input_fill_columns[i])[row_ind];
-            const auto & fill_to = filling_row.getFillDescription(i).fill_to;
+            next_row[i] = (*input_fill_columns[i])[row_ind];
 
-            logDebug("current value", current_value.dump());
-            logDebug("fill to", fill_to.dump());
-
-            if (fill_to.isNull() || less(current_value, fill_to, filling_row.getDirection(i)))
-                next_row[i] = current_value;
-            else
-                next_row[i] = fill_to;
-        }
         logDebug("next_row updated", next_row);
 
         /// The condition is true when filling row is initialized by value(s) in FILL FROM,
         /// and there are row(s) in current range with value(s) < then in the filling row.
         /// It can happen only once for a range.
-        if (should_insert_first && filling_row < next_row)
+        if (should_insert_first && filling_row < next_row && filling_row.isConstraintsComplete())
         {
             interpolate(result_columns, interpolate_block);
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
@@ -669,7 +681,7 @@ void FillingTransform::transformRange(
         bool filling_row_changed = false;
         while (true)
         {
-            const auto [apply, changed] = filling_row.next(next_row, /*long_jump=*/false);
+            const auto [apply, changed] = filling_row.next(next_row);
             filling_row_changed = changed;
             if (!apply)
                 break;
@@ -679,12 +691,36 @@ void FillingTransform::transformRange(
             copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
         }
 
-        const auto [apply, changed] = filling_row.next(next_row, /*long_jump=*/true);
-        logDebug("long jump apply", apply);
-        logDebug("long jump changed", changed);
+        {
+            filling_row.initStalenessRow(input_fill_columns, row_ind);
 
-        if (changed)
-            filling_row_changed = true;
+            bool shift_apply = filling_row.shift(next_row, filling_row_changed);
+            logDebug("shift_apply", shift_apply);
+            logDebug("filling_row_changed", filling_row_changed);
+
+            while (shift_apply)
+            {
+                logDebug("after shift", filling_row);
+
+                while (true)
+                {
+                    logDebug("filling_row in prefix", filling_row);
+
+                    interpolate(result_columns, interpolate_block);
+                    insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
+                    copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
+
+                    const auto [apply, changed] = filling_row.next(next_row);
+                    logDebug("filling_row in prefix", filling_row);
+
+                    filling_row_changed = changed;
+                    if (!apply)
+                        break;
+                }
+
+                shift_apply = filling_row.shift(next_row, filling_row_changed);
+            }
+        }
 
         /// new valid filling row was generated but not inserted, will use it during suffix generation
         if (filling_row_changed)
@@ -697,8 +733,8 @@ void FillingTransform::transformRange(
         copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
         copyRowFromColumns(res_other_columns, input_other_columns, row_ind);
 
-        /// Init next staleness interval with current row, because we have already made the long jump to it
-        filling_row.initStalenessRow(input_fill_columns, row_ind);
+        // /// Init next staleness interval with current row, because we have already made the long jump to it
+        // filling_row.initStalenessRow(input_fill_columns, row_ind);
     }
 
     /// save sort prefix of last row in the range, it's used to generate suffix
@@ -744,7 +780,7 @@ void FillingTransform::transform(Chunk & chunk)
         /// if no data was processed, then need to initialize filling_row
         if (last_row.empty())
         {
-            filling_row.initFromDefaults();
+            filling_row.initWithFrom();
             filling_row_inserted = false;
         }
 

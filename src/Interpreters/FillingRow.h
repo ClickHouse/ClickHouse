@@ -25,9 +25,22 @@ public:
     /// Return pair of boolean
     /// apply - true if filling values should be inserted into result set
     /// value_changed - true if filling row value was changed
-    std::pair<bool, bool> next(const FillingRow & to_row, bool long_jump);
+    std::pair<bool, bool> next(const FillingRow & next_original_row);
 
-    void initFromDefaults(size_t from_pos = 0);
+    /// Returns true if need to generate some prefix for to_row
+    bool shift(const FillingRow & next_original_row, bool& value_changed);
+
+    bool isConstraintComplete(size_t pos) const;
+    bool isConstraintsComplete() const;
+
+    bool isLessStaleness() const;
+    bool isStalenessConfigured() const;
+
+    bool isLessFillTo() const;
+    bool isFillToConfigured() const;
+
+    void initWithFrom(size_t from_pos = 0);
+    void initWithTo(size_t from_pos = 0);
     void initStalenessRow(const Columns& base_row, size_t row_ind);
 
     Field & operator[](size_t index) { return row[index]; }
@@ -39,6 +52,7 @@ public:
     bool isNull() const;
 
     int getDirection(size_t index) const { return sort_description[index].direction; }
+    Field getStalenessBorder(size_t index) const { return staleness_border[index]; }
     FillColumnDescription & getFillDescription(size_t index) { return sort_description[index].fill_description; }
     const FillColumnDescription & getFillDescription(size_t index) const { return sort_description[index].fill_description; }
 
