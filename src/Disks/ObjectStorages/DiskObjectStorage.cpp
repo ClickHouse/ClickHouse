@@ -419,7 +419,7 @@ void DiskObjectStorage::removeSharedRecursiveWithLimit(
         if (check_limit_reached())
             remove();
 
-        if (metadata_storage->isFile(path_to_remove))
+        if (metadata_storage->existsFile(path_to_remove))
         {
             chassert(path_to_remove.starts_with(path));
             local_paths.emplace_back(path_to_remove);
