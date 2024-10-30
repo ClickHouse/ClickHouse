@@ -1,3 +1,6 @@
+/// For magic_enum to properly get enum name of DB::CompressionMethodByte
+#define MAGIC_ENUM_RANGE_MAX 256
+
 #include <iostream>
 #include <optional>
 #include <boost/program_options.hpp>
