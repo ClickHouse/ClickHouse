@@ -46,11 +46,13 @@ AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
     ImplPtr impl_,
     IAsynchronousReader & reader_,
     const ReadSettings & settings_,
+    size_t buffer_size_,
     AsyncReadCountersPtr async_read_counters_,
     FilesystemReadPrefetchesLogPtr prefetches_log_)
     : ReadBufferFromFileBase(0, nullptr, 0)
     , impl(std::move(impl_))
     , read_settings(settings_)
+    , buffer_size(buffer_size_)
     , reader(reader_)
     , query_id(CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr ? CurrentThread::getQueryId() : "")
     , current_reader_id(getRandomASCIIString(8))
@@ -112,7 +114,7 @@ void AsynchronousBoundedReadBuffer::prefetch(Priority priority)
     last_prefetch_info.submit_time = std::chrono::system_clock::now();
     last_prefetch_info.priority = priority;
 
-    prefetch_buffer.resize(chooseBufferSizeForRemoteReading(read_settings, impl->getFileSize()));
+    prefetch_buffer.resize(buffer_size);
     prefetch_future = readAsync(prefetch_buffer.data(), prefetch_buffer.size(), priority);
     ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
 }
@@ -211,7 +213,7 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
     }
     else
     {
-        memory.resize(chooseBufferSizeForRemoteReading(read_settings, impl->getFileSize()));
+        memory.resize(buffer_size);
 
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::SynchronousRemoteReadWaitMicroseconds);
