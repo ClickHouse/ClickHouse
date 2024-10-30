@@ -533,7 +533,7 @@ bool FillingTransform::generateSuffixIfNeeded(
     //     return false;
     // }
 
-    if (!filling_row.isConstraintsComplete())
+    if (!filling_row.hasSomeConstraints() || !filling_row.isConstraintsComplete())
     {
         logDebug("generateSuffixIfNeeded", "will not generate suffix");
         return false;

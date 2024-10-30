@@ -18,6 +18,9 @@ class FillingRow
     std::optional<Field> doJump(const FillColumnDescription & descr, size_t column_ind);
     std::optional<Field> doLongJump(const FillColumnDescription & descr, size_t column_ind, const Field & to);
 
+    bool hasSomeConstraints(size_t pos) const;
+    bool isConstraintsComplete(size_t pos) const;
+
 public:
     explicit FillingRow(const SortDescription & sort_description);
 
@@ -30,7 +33,7 @@ public:
     /// Returns true if need to generate some prefix for to_row
     bool shift(const FillingRow & next_original_row, bool& value_changed);
 
-    bool isConstraintComplete(size_t pos) const;
+    bool hasSomeConstraints() const;
     bool isConstraintsComplete() const;
 
     bool isLessStaleness() const;
@@ -52,7 +55,6 @@ public:
     bool isNull() const;
 
     int getDirection(size_t index) const { return sort_description[index].direction; }
-    Field getStalenessBorder(size_t index) const { return staleness_border[index]; }
     FillColumnDescription & getFillDescription(size_t index) { return sort_description[index].fill_description; }
     const FillColumnDescription & getFillDescription(size_t index) const { return sort_description[index].fill_description; }
 

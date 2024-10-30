@@ -3,6 +3,7 @@
 #include "Common/Logger.h"
 #include "Common/logger_useful.h"
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include "base/defines.h"
 #include <IO/Operators.h>
 
 
@@ -120,6 +121,43 @@ std::optional<Field> FillingRow::doLongJump(const FillColumnDescription & descr,
     }
 
     return shifted_value;
+}
+
+bool FillingRow::hasSomeConstraints(size_t pos) const
+{
+    const auto & descr = getFillDescription(pos);
+
+    if (!descr.fill_to.isNull())
+        return true;
+
+    if (!descr.fill_staleness.isNull())
+        return true;
+
+    return false;
+}
+
+bool FillingRow::isConstraintsComplete(size_t pos) const
+{
+    auto logger = getLogger("FillingRow::isConstraintComplete");
+    chassert(!row[pos].isNull());
+    chassert(hasSomeConstraints(pos));
+
+    const auto & descr = getFillDescription(pos);
+    int direction = getDirection(pos);
+
+    if (!descr.fill_to.isNull() && !less(row[pos], descr.fill_to, direction))
+    {
+        LOG_DEBUG(logger, "fill to: {}, row: {}, direction: {}", descr.fill_to.dump(), row[pos].dump(), direction);
+        return false;
+    }
+
+    if (!descr.fill_staleness.isNull() && !less(row[pos], staleness_border[pos], direction))
+    {
+        LOG_DEBUG(logger, "staleness border: {}, row: {}, direction: {}", staleness_border[pos].dump(), row[pos].dump(), direction);
+        return false;
+    }
+
+    return true;
 }
 
 Field findMin(Field a, Field b, Field c, int dir)
@@ -300,43 +338,26 @@ bool FillingRow::shift(const FillingRow & next_original_row, bool& value_changed
     return false;
 }
 
-bool FillingRow::isConstraintComplete(size_t pos) const
+bool FillingRow::hasSomeConstraints() const
 {
-    auto logger = getLogger("FillingRow::isConstraintComplete");
+    for (size_t pos = 0; pos < size(); ++pos)
+        if (hasSomeConstraints(pos))
+            return true;
 
-    if (row[pos].isNull())
-    {
-        LOG_DEBUG(logger, "disabled");
-        return true; /// disabled
-    }
-
-    const auto & descr = getFillDescription(pos);
-    int direction = getDirection(pos);
-
-    if (!descr.fill_to.isNull() && !less(row[pos], descr.fill_to, direction))
-    {
-        LOG_DEBUG(logger, "fill to: {}, row: {}, direction: {}", descr.fill_to.dump(), row[pos].dump(), direction);
-        return false;
-    }
-
-    if (!staleness_border[pos].isNull() && !less(row[pos], staleness_border[pos], direction))
-    {
-        LOG_DEBUG(logger, "staleness border: {}, row: {}, direction: {}", staleness_border[pos].dump(), row[pos].dump(), direction);
-        return false;
-    }
-
-    return true;
+    return false;
 }
 
 bool FillingRow::isConstraintsComplete() const
 {
     for (size_t pos = 0; pos < size(); ++pos)
     {
-        if (isConstraintComplete(pos))
-            return true;
+        if (row[pos].isNull() || !hasSomeConstraints(pos))
+            continue;
+
+        return isConstraintsComplete(pos);
     }
 
-    return false;
+    return true;
 }
 
 bool FillingRow::isLessStaleness() const
