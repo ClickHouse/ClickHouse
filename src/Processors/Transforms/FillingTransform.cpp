@@ -11,7 +11,6 @@
 #include <Common/FieldVisitorSum.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
-#include "Interpreters/FillingRow.h"
 #include <IO/Operators.h>
 
 
@@ -534,9 +533,7 @@ bool FillingTransform::generateSuffixIfNeeded(
     bool filling_row_changed = false;
     while (true)
     {
-        const auto [apply, changed] = filling_row.next(next_row);
-        filling_row_changed = changed;
-        if (!apply)
+        if (!filling_row.next(next_row, filling_row_changed))
             break;
 
         interpolate(result_columns, interpolate_block);
@@ -660,9 +657,7 @@ void FillingTransform::transformRange(
         bool filling_row_changed = false;
         while (true)
         {
-            const auto [apply, changed] = filling_row.next(next_row);
-            filling_row_changed = changed;
-            if (!apply)
+            if (!filling_row.next(next_row, filling_row_changed))
                 break;
 
             interpolate(result_columns, interpolate_block);
@@ -670,35 +665,22 @@ void FillingTransform::transformRange(
             copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
         }
 
+        /// Initialize staleness border for current row to generate it's prefix
+        filling_row.initStalenessRow(input_fill_columns, row_ind);
+
+        while (filling_row.shift(next_row, filling_row_changed))
         {
-            filling_row.initStalenessRow(input_fill_columns, row_ind);
+            logDebug("filling_row after shift", filling_row);
 
-            bool shift_apply = filling_row.shift(next_row, filling_row_changed);
-            logDebug("shift_apply", shift_apply);
-            logDebug("filling_row_changed", filling_row_changed);
-
-            while (shift_apply)
+            do
             {
-                logDebug("after shift", filling_row);
+                logDebug("inserting prefix filling_row", filling_row);
 
-                while (true)
-                {
-                    logDebug("filling_row in prefix", filling_row);
+                interpolate(result_columns, interpolate_block);
+                insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
+                copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
 
-                    interpolate(result_columns, interpolate_block);
-                    insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
-                    copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
-
-                    const auto [apply, changed] = filling_row.next(next_row);
-                    logDebug("filling_row in prefix", filling_row);
-
-                    filling_row_changed = changed;
-                    if (!apply)
-                        break;
-                }
-
-                shift_apply = filling_row.shift(next_row, filling_row_changed);
-            }
+            } while (filling_row.next(next_row, filling_row_changed));
         }
 
         /// new valid filling row was generated but not inserted, will use it during suffix generation

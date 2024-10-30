@@ -1,10 +1,10 @@
 #include <cstddef>
-#include <Interpreters/FillingRow.h>
-#include "Common/Logger.h"
-#include "Common/logger_useful.h"
-#include <Common/FieldVisitorsAccurateComparison.h>
-#include "base/defines.h"
+
 #include <IO/Operators.h>
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Interpreters/FillingRow.h>
 
 
 namespace DB
@@ -145,7 +145,7 @@ Field findMin(Field a, Field b, Field c, int dir)
     return a;
 }
 
-std::pair<bool, bool> FillingRow::next(const FillingRow & next_original_row)
+bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
 {
     auto logger = getLogger("FillingRow");
 
@@ -169,18 +169,18 @@ std::pair<bool, bool> FillingRow::next(const FillingRow & next_original_row)
     LOG_DEBUG(logger, "pos: {}", pos);
 
     if (pos == row_size)
-        return {false, false};
+        return false;
 
     const auto & pos_descr = getFillDescription(pos);
 
     if (!next_original_row[pos].isNull() && less(next_original_row[pos], row[pos], getDirection(pos)))
-        return {false, false};
+        return false;
 
     if (!staleness_border[pos].isNull() && !less(row[pos], staleness_border[pos], getDirection(pos)))
-        return {false, false};
+        return false;
 
     if (!pos_descr.fill_to.isNull() && !less(row[pos], pos_descr.fill_to, getDirection(pos)))
-        return {false, false};
+        return false;
 
     /// If we have any 'fill_to' value at position greater than 'pos' or configured staleness,
     /// we need to generate rows up to one of this borders.
@@ -205,20 +205,22 @@ std::pair<bool, bool> FillingRow::next(const FillingRow & next_original_row)
 
         row[i] = next_value;
         initUsingFrom(i + 1);
-        return {true, true};
+
+        value_changed = true;
+        return true;
     }
 
     auto next_value = row[pos];
     getFillDescription(pos).step_func(next_value, 1);
 
     if (!next_original_row[pos].isNull() && less(next_original_row[pos], next_value, getDirection(pos)))
-        return {false, false};
+        return false;
 
     if (!staleness_border[pos].isNull() && !less(next_value, staleness_border[pos], getDirection(pos)))
-        return {false, false};
+        return false;
 
     if (!pos_descr.fill_to.isNull() && !less(next_value, pos_descr.fill_to, getDirection(pos)))
-        return {false, false};
+        return false;
 
     row[pos] = next_value;
     if (equals(row[pos], next_original_row[pos]))
@@ -239,11 +241,14 @@ std::pair<bool, bool> FillingRow::next(const FillingRow & next_original_row)
             );
         }
 
-        return {is_less, true};
+        value_changed = true;
+        return is_less;
     }
 
     initUsingFrom(pos + 1);
-    return {true, true};
+
+    value_changed = true;
+    return true;
 }
 
 bool FillingRow::shift(const FillingRow & next_original_row, bool& value_changed)
