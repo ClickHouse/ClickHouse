@@ -49,7 +49,7 @@ Default value: 8192.
 
 Maximum size of data granules in bytes.
 
-Default value: 10485760 (ca. 10 MiB).
+Default value: 10Mb.
 
 To restrict the granule size only by number of rows, set to 0 (not recommended).
 
@@ -118,6 +118,11 @@ The value specified when table is created overrides the global value for this se
 Minimum size of blocks of uncompressed data required for compression when writing the next mark.
 You can also specify this setting in the global settings (see [min_compress_block_size](/docs/en/operations/settings/settings.md/#min-compress-block-size) setting).
 The value specified when table is created overrides the global value for this setting.
+
+## max_partitions_to_read
+
+Limits the maximum number of partitions that can be accessed in one query.
+You can also specify setting [max_partitions_to_read](/docs/en/operations/settings/merge-tree-settings.md/#max-partitions-to-read) in the global setting.
 
 ## max_suspicious_broken_parts
 
@@ -686,8 +691,6 @@ Possible values:
 
 Default value: -1 (unlimited).
 
-You can also specify a query complexity setting [max_partitions_to_read](query-complexity#max-partitions-to-read) at a query / session / profile level.
-
 ## min_age_to_force_merge_seconds {#min_age_to_force_merge_seconds}
 
 Merge parts if every part in the range is older than the value of `min_age_to_force_merge_seconds`.
@@ -1041,57 +1044,3 @@ Compression rates of LZ4 or ZSTD improve on average by 20-40%.
 
 This setting works best for tables with no primary key or a low-cardinality primary key, i.e. a table with only few distinct primary key values.
 High-cardinality primary keys, e.g. involving timestamp columns of type `DateTime64`, are not expected to benefit from this setting.
-
-## lightweight_mutation_projection_mode
-
-By default, lightweight delete `DELETE` does not work for tables with projections. This is because rows in a projection may be affected by a `DELETE` operation. So the default value would be `throw`.
-However, this option can change the behavior. With the value either `drop` or `rebuild`, deletes will work with projections. `drop` would delete the projection so it might be fast in the current query as projection gets deleted but slow in future queries as no projection attached.
-`rebuild` would rebuild the projection which might affect the performance of the current query, but might speedup for future queries. A good thing is that these options would only work in the part level,
-which means projections in the part that don't get touched would stay intact instead of triggering any action like drop or rebuild.
-
-Possible values:
-
-- throw, drop, rebuild
-
-Default value: throw
-
-## deduplicate_merge_projection_mode
-
-Whether to allow create projection for the table with non-classic MergeTree, that is not (Replicated, Shared) MergeTree. Ignore option is purely for compatibility which might result in incorrect answer. Otherwise, if allowed, what is the action when merge projections, either drop or rebuild. So classic MergeTree would ignore this setting.
-It also controls `OPTIMIZE DEDUPLICATE` as well, but has effect on all MergeTree family members. Similar to the option `lightweight_mutation_projection_mode`, it is also part level.
-
-Possible values:
-
-- ignore, throw, drop, rebuild
-
-Default value: throw
-
-## min_free_disk_bytes_to_perform_insert
-
-The minimum number of bytes that should be free in disk space in order to insert data. If the number of available free bytes is less than `min_free_disk_bytes_to_throw_insert` then an exception is thrown and the insert is not executed. Note that this setting:
-- takes into account the `keep_free_space_bytes` setting.
-- does not take into account the amount of data that will be written by the `INSERT` operation.
-- is only checked if a positive (non-zero) number of bytes is specified
-
-Possible values:
-
-- Any positive integer.
-
-Default value: 0 bytes.
-
-Note that if both `min_free_disk_bytes_to_perform_insert` and `min_free_disk_ratio_to_perform_insert` are specified, ClickHouse will count on the value that will allow to perform inserts on a bigger amount of free memory.
-
-## min_free_disk_ratio_to_perform_insert 
-
-The minimum free to total disk space ratio to perform an `INSERT`. Must be a floating point value between 0 and 1. Note that this setting:
-- takes into account the `keep_free_space_bytes` setting.
-- does not take into account the amount of data that will be written by the `INSERT` operation.
-- is only checked if a positive (non-zero) ratio is specified
-
-Possible values:
-
-- Float, 0.0 - 1.0
-
-Default value: 0.0
-
-Note that if both `min_free_disk_ratio_to_perform_insert` and `min_free_disk_bytes_to_perform_insert` are specified, ClickHouse will count on the value that will allow to perform inserts on a bigger amount of free memory.

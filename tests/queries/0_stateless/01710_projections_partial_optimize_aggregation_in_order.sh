@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -m -q "
+$CLICKHOUSE_CLIENT -nm -q "
     DROP TABLE IF EXISTS in_order_agg_partial_01710;
 
     CREATE TABLE in_order_agg_partial_01710

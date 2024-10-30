@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP DICTIONARY IF EXISTS null_dict;
 CREATE DICTIONARY null_dict (
     id              UInt64,

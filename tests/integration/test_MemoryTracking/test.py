@@ -14,9 +14,7 @@
 # asynchronous_metrics_update_period_s.xml.
 
 import logging
-
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)

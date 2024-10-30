@@ -8,6 +8,7 @@
 #include "ConnectionHolder.h"
 #include <mutex>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/StoragePostgreSQL.h>
 
 
@@ -19,12 +20,12 @@ namespace postgres
 
 class PoolWithFailover
 {
-public:
-    using ReplicasConfigurationByPriority = std::map<size_t, std::vector<DB::StoragePostgreSQL::Configuration>>;
-    using RemoteDescription = std::vector<std::pair<String, uint16_t>>;
 
+using RemoteDescription = std::vector<std::pair<String, uint16_t>>;
+
+public:
     PoolWithFailover(
-        const ReplicasConfigurationByPriority & configurations_by_priority,
+        const DB::ExternalDataSourcesConfigurationByPriority & configurations_by_priority,
         size_t pool_size,
         size_t pool_wait_timeout,
         size_t max_tries_,

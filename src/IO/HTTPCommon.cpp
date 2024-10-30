@@ -34,20 +34,14 @@ namespace ErrorCodes
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
 }
 
-void setResponseDefaultHeaders(HTTPServerResponse & response)
+void setResponseDefaultHeaders(HTTPServerResponse & response, size_t keep_alive_timeout)
 {
     if (!response.getKeepAlive())
         return;
 
-    const size_t keep_alive_timeout = response.getSession().getKeepAliveTimeout();
-    const size_t keep_alive_max_requests = response.getSession().getMaxKeepAliveRequests();
-    if (keep_alive_timeout)
-    {
-        if (keep_alive_max_requests)
-            response.set("Keep-Alive", fmt::format("timeout={}, max={}", keep_alive_timeout, keep_alive_max_requests));
-        else
-            response.set("Keep-Alive", fmt::format("timeout={}", keep_alive_timeout));
-    }
+    Poco::Timespan timeout(keep_alive_timeout, 0);
+    if (timeout.totalSeconds())
+        response.set("Keep-Alive", "timeout=" + std::to_string(timeout.totalSeconds()));
 }
 
 HTTPSessionPtr makeHTTPSession(
@@ -84,9 +78,11 @@ void assertResponseIsOk(const String & uri, Poco::Net::HTTPResponse & response, 
             ? ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
             : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 
-        istr.seekg(0, std::ios::end);
-        size_t body_length = istr.tellg();
-        throw HTTPException(code, uri, status, response.getReason(), body_length);
+        std::stringstream body; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        body.exceptions(std::ios::failbit);
+        body << istr.rdbuf();
+
+        throw HTTPException(code, uri, status, response.getReason(), body.str());
     }
 }
 
@@ -95,13 +91,13 @@ Exception HTTPException::makeExceptionMessage(
     const std::string & uri,
     Poco::Net::HTTPResponse::HTTPStatus http_status,
     const std::string & reason,
-    size_t body_length)
+    const std::string & body)
 {
     return Exception(code,
         "Received error from remote server {}. "
-        "HTTP status code: {} '{}', "
-        "body length: {} bytes",
-        uri, static_cast<int>(http_status), reason, body_length);
+        "HTTP status code: {} {}, "
+        "body: {}",
+        uri, static_cast<int>(http_status), reason, body);
 }
 
 }

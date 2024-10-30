@@ -4,10 +4,8 @@
 #include <Access/User.h>
 #include <Access/AccessBackup.h>
 #include <Backups/BackupEntriesCollector.h>
-#include <Backups/IBackupCoordination.h>
-#include <Backups/IRestoreCoordination.h>
-#include <Backups/RestoreSettings.h>
 #include <Backups/RestorerFromBackup.h>
+#include <Backups/RestoreSettings.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Common/callOnce.h>
@@ -16,7 +14,6 @@
 #include <Poco/UUIDGenerator.h>
 #include <Poco/Logger.h>
 #include <base/FnTraits.h>
-#include <base/range.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/range/adaptor/map.hpp>
@@ -36,6 +33,7 @@ namespace ErrorCodes
     extern const int IP_ADDRESS_NOT_ALLOWED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int AUTHENTICATION_FAILED;
 }
 
 
@@ -71,18 +69,6 @@ std::vector<UUID> IAccessStorage::find(AccessEntityType type, const Strings & na
             ids.push_back(*id);
     }
     return ids;
-}
-
-
-std::vector<UUID> IAccessStorage::findAllImpl() const
-{
-    std::vector<UUID> res;
-    for (auto type : collections::range(AccessEntityType::MAX))
-    {
-        auto ids = findAllImpl(type);
-        res.insert(res.end(), ids.begin(), ids.end());
-    }
-    return res;
 }
 
 
@@ -542,32 +528,15 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
             if (!isAddressAllowed(*user, address))
                 throwAddressNotAllowed(address);
 
-            bool skipped_not_allowed_authentication_methods = false;
+            auto auth_type = user->auth_data.getType();
+            if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
+                ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
+                throwAuthenticationTypeNotAllowed(auth_type);
 
-            for (const auto & auth_method : user->authentication_methods)
-            {
-                auto auth_type = auth_method.getType();
-                if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
-                    ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
-                {
-                    skipped_not_allowed_authentication_methods = true;
-                    continue;
-                }
+            if (!areCredentialsValid(*user, credentials, external_authenticators, auth_result.settings))
+                throwInvalidCredentials();
 
-                if (areCredentialsValid(user->getName(), user->valid_until, auth_method, credentials, external_authenticators, auth_result.settings))
-                {
-                    auth_result.authentication_data = auth_method;
-                    return auth_result;
-                }
-            }
-
-            if (skipped_not_allowed_authentication_methods)
-            {
-                LOG_INFO(log, "Skipped the check for not allowed authentication methods,"
-                              "check allow_no_password and allow_plaintext_password settings in the server configuration");
-            }
-
-            throwInvalidCredentials();
+            return auth_result;
         }
     }
 
@@ -577,10 +546,9 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
         return std::nullopt;
 }
 
+
 bool IAccessStorage::areCredentialsValid(
-    const std::string & user_name,
-    time_t valid_until,
-    const AuthenticationData & authentication_method,
+    const User & user,
     const Credentials & credentials,
     const ExternalAuthenticators & external_authenticators,
     SettingsChanges & settings) const
@@ -588,19 +556,20 @@ bool IAccessStorage::areCredentialsValid(
     if (!credentials.isReady())
         return false;
 
-    if (credentials.getUserName() != user_name)
+    if (credentials.getUserName() != user.getName())
         return false;
 
-    if (valid_until)
+    if (user.valid_until)
     {
         const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
-        if (now > valid_until)
+        if (now > user.valid_until)
             return false;
     }
 
-    return Authentication::areCredentialsValid(credentials, authentication_method, external_authenticators, settings);
+    return Authentication::areCredentialsValid(credentials, user.auth_data, external_authenticators, settings);
 }
+
 
 bool IAccessStorage::isAddressAllowed(const User & user, const Poco::Net::IPAddress & address) const
 {
@@ -613,59 +582,67 @@ void IAccessStorage::backup(BackupEntriesCollector & backup_entries_collector, c
     if (!isBackupAllowed())
         throwBackupNotAllowed();
 
-    auto entities_ids = findAll(type);
-    if (entities_ids.empty())
+    auto entities = readAllWithIDs(type);
+    std::erase_if(entities, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
+
+    if (entities.empty())
         return;
 
-    auto backup_entry_with_path = makeBackupEntryForAccessEntities(
-        entities_ids,
-        backup_entries_collector.getAllAccessEntities(),
-        backup_entries_collector.getBackupSettings().write_access_entities_dependents,
-        data_path_in_backup);
+    auto backup_entry = makeBackupEntryForAccess(
+        entities,
+        data_path_in_backup,
+        backup_entries_collector.getAccessCounter(type),
+        backup_entries_collector.getContext()->getAccessControl());
 
-    if (isReplicated())
-    {
-        auto backup_coordination = backup_entries_collector.getBackupCoordination();
-        auto replication_id = getReplicationID();
-        backup_coordination->addReplicatedAccessFilePath(replication_id, type, backup_entry_with_path.first);
-
-        backup_entries_collector.addPostTask(
-            [backup_entry = backup_entry_with_path.second,
-            replication_id,
-            type,
-            &backup_entries_collector,
-            backup_coordination]
-            {
-                for (const String & path : backup_coordination->getReplicatedAccessFilePaths(replication_id, type))
-                    backup_entries_collector.addBackupEntry(path, backup_entry);
-            });
-    }
-    else
-    {
-        backup_entries_collector.addBackupEntry(backup_entry_with_path);
-    }
+    backup_entries_collector.addBackupEntry(backup_entry);
 }
 
 
-void IAccessStorage::restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup)
+void IAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
 {
     if (!isRestoreAllowed())
         throwRestoreNotAllowed();
 
-    if (isReplicated())
-    {
-        auto restore_coordination = restorer.getRestoreCoordination();
-        if (!restore_coordination->acquireReplicatedAccessStorage(getReplicationID()))
-            return;
-    }
+    if (isReplicated() && !acquireReplicatedRestore(restorer))
+        return;
 
-    restorer.addDataRestoreTask(
-        [this, &restorer, data_path_in_backup]
+    auto entities = restorer.getAccessEntitiesToRestore();
+    if (entities.empty())
+        return;
+
+    auto create_access = restorer.getRestoreSettings().create_access;
+    bool replace_if_exists = (create_access == RestoreAccessCreationMode::kReplace);
+    bool throw_if_exists = (create_access == RestoreAccessCreationMode::kCreate);
+
+    restorer.addDataRestoreTask([this, entities_to_restore = std::move(entities), replace_if_exists, throw_if_exists] mutable
+    {
+        std::unordered_map<UUID, UUID> new_to_existing_ids;
+        for (auto & [id, entity] : entities_to_restore)
         {
-            auto entities_to_restore = restorer.getAccessEntitiesToRestore(data_path_in_backup);
-            const auto & restore_settings = restorer.getRestoreSettings();
-            restoreAccessEntitiesFromBackup(*this, entities_to_restore, restore_settings);
-        });
+            UUID existing_entity_id;
+            if (!insert(id, entity, replace_if_exists, throw_if_exists, &existing_entity_id))
+            {
+                /// Couldn't insert `entity` because there is an existing entity with the same name.
+                new_to_existing_ids[id] = existing_entity_id;
+            }
+        }
+
+        if (!new_to_existing_ids.empty())
+        {
+            /// If new entities restored from backup have dependencies on other entities from backup which were not restored because they existed,
+            /// then we should correct those dependencies.
+            auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
+            {
+                auto res = entity;
+                IAccessEntity::replaceDependencies(res, new_to_existing_ids);
+                return res;
+            };
+            std::vector<UUID> ids;
+            ids.reserve(entities_to_restore.size());
+            boost::copy(entities_to_restore | boost::adaptors::map_keys, std::back_inserter(ids));
+            tryUpdate(ids, update_func);
+        }
+    });
 }
 
 
@@ -810,6 +787,14 @@ void IAccessStorage::throwReadonlyCannotRemove(AccessEntityType type, const Stri
 void IAccessStorage::throwAddressNotAllowed(const Poco::Net::IPAddress & address)
 {
     throw Exception(ErrorCodes::IP_ADDRESS_NOT_ALLOWED, "Connections from {} are not allowed", address.toString());
+}
+
+void IAccessStorage::throwAuthenticationTypeNotAllowed(AuthenticationType auth_type)
+{
+    throw Exception(
+        ErrorCodes::AUTHENTICATION_FAILED,
+        "Authentication type {} is not allowed, check the setting allow_{} in the server configuration",
+        toString(auth_type), AuthenticationTypeInfo::get(auth_type).name);
 }
 
 void IAccessStorage::throwInvalidCredentials()

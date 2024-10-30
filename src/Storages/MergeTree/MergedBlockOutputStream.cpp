@@ -25,7 +25,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     CompressionCodecPtr default_codec_,
     TransactionID tid,
     bool reset_columns_,
-    bool save_marks_in_cache,
     bool blocks_are_granules_size,
     const WriteSettings & write_settings_,
     const MergeTreeIndexGranularity & computed_index_granularity)
@@ -35,12 +34,11 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     , write_settings(write_settings_)
 {
     MergeTreeWriterSettings writer_settings(
-        data_part->storage.getContext()->getSettingsRef(),
+        data_part->storage.getContext()->getSettings(),
         write_settings,
         storage_settings,
         data_part->index_granularity_info.mark_type.adaptive,
         /* rewrite_primary_key = */ true,
-        save_marks_in_cache,
         blocks_are_granules_size);
 
     /// TODO: looks like isStoredOnDisk() is always true for MergeTreeDataPart

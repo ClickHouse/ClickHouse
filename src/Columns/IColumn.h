@@ -49,40 +49,6 @@ struct EqualRange
 
 using EqualRanges = std::vector<EqualRange>;
 
-/// A checkpoint that contains size of column and all its subcolumns.
-/// It can be used to rollback column to the previous state, for example
-/// after failed parsing when column may be in inconsistent state.
-struct ColumnCheckpoint
-{
-    size_t size;
-
-    explicit ColumnCheckpoint(size_t size_) : size(size_) {}
-    virtual ~ColumnCheckpoint() = default;
-};
-
-using ColumnCheckpointPtr = std::shared_ptr<ColumnCheckpoint>;
-using ColumnCheckpoints = std::vector<ColumnCheckpointPtr>;
-
-struct ColumnCheckpointWithNested : public ColumnCheckpoint
-{
-    ColumnCheckpointWithNested(size_t size_, ColumnCheckpointPtr nested_)
-        : ColumnCheckpoint(size_), nested(std::move(nested_))
-    {
-    }
-
-    ColumnCheckpointPtr nested;
-};
-
-struct ColumnCheckpointWithMultipleNested : public ColumnCheckpoint
-{
-    ColumnCheckpointWithMultipleNested(size_t size_, ColumnCheckpoints nested_)
-        : ColumnCheckpoint(size_), nested(std::move(nested_))
-    {
-    }
-
-    ColumnCheckpoints nested;
-};
-
 /// Declares interface to store columns in memory.
 class IColumn : public COW<IColumn>
 {
@@ -509,18 +475,6 @@ public:
     /// It affects performance only (not correctness).
     virtual void reserve(size_t /*n*/) {}
 
-    /// Returns the number of elements allocated in reserve.
-    virtual size_t capacity() const { return size(); }
-
-    /// Reserve memory before squashing all specified source columns into this column.
-    virtual void prepareForSquashing(const std::vector<Ptr> & source_columns)
-    {
-        size_t new_size = size();
-        for (const auto & source_column : source_columns)
-            new_size += source_column->size();
-        reserve(new_size);
-    }
-
     /// Requests the removal of unused capacity.
     /// It is a non-binding request to reduce the capacity of the underlying container to its size.
     virtual void shrinkToFit() {}
@@ -542,17 +496,6 @@ public:
     /// Make memory region readonly with mprotect if it is large enough.
     /// The operation is slow and performed only for debug builds.
     virtual void protect() {}
-
-    /// Returns checkpoint of current state of column.
-    virtual ColumnCheckpointPtr getCheckpoint() const { return std::make_shared<ColumnCheckpoint>(size()); }
-
-    /// Updates the checkpoint with current state. It is used to avoid extra allocations in 'getCheckpoint'.
-    virtual void updateCheckpoint(ColumnCheckpoint & checkpoint) const { checkpoint.size = size(); }
-
-    /// Rollbacks column to the checkpoint.
-    /// Unlike 'popBack' this method should work correctly even if column has invalid state.
-    /// Sizes of columns in checkpoint must be less or equal than current size.
-    virtual void rollback(const ColumnCheckpoint & checkpoint) { popBack(size() - checkpoint.size); }
 
     /// If the column contains subcolumns (such as Array, Nullable, etc), do callback on them.
     /// Shallow: doesn't do recursive calls; don't do call for itself.
