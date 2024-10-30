@@ -121,6 +121,7 @@ S3AuthSettings::S3AuthSettings(
 
 S3AuthSettings::S3AuthSettings(const S3AuthSettings & settings)
     : headers(settings.headers)
+    , access_headers(settings.access_headers)
     , users(settings.users)
     , server_side_encryption_kms_config(settings.server_side_encryption_kms_config)
     , impl(std::make_unique<S3AuthSettingsImpl>(*settings.impl))
@@ -129,6 +130,7 @@ S3AuthSettings::S3AuthSettings(const S3AuthSettings & settings)
 
 S3AuthSettings::S3AuthSettings(S3AuthSettings && settings) noexcept
     : headers(std::move(settings.headers))
+    , access_headers(std::move(settings.access_headers))
     , users(std::move(settings.users))
     , server_side_encryption_kms_config(std::move(settings.server_side_encryption_kms_config))
     , impl(std::make_unique<S3AuthSettingsImpl>(std::move(*settings.impl)))
@@ -147,6 +149,7 @@ S3AUTH_SETTINGS_SUPPORTED_TYPES(S3AuthSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPER
 S3AuthSettings & S3AuthSettings::operator=(S3AuthSettings && settings) noexcept
 {
     headers = std::move(settings.headers);
+    access_headers = std::move(settings.access_headers);
     users = std::move(settings.users);
     server_side_encryption_kms_config = std::move(settings.server_side_encryption_kms_config);
     *impl = std::move(*settings.impl);
@@ -202,7 +205,7 @@ void S3AuthSettings::updateIfChanged(const S3AuthSettings & settings)
         headers = settings.headers;
 
     if (!settings.access_headers.empty())
-         access_headers = settings.access_headers;
+        access_headers = settings.access_headers;
 
     if (!settings.users.empty())
         users.insert(settings.users.begin(), settings.users.end());
