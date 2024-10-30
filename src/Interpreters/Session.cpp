@@ -129,7 +129,7 @@ public:
 
             LOG_TRACE(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
 
-            if (!isSharedPtrUnique(session))
+            if (!session.unique())
                 throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session {} is locked by a concurrent client", session_id);
 
             if (session->close_time_bucket != std::chrono::steady_clock::time_point{})
