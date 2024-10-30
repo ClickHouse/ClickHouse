@@ -3,8 +3,8 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
 #include <Interpreters/PartLog.h>
-#include <Common/Exception.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
+#include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/SipHash.h>
@@ -481,6 +481,17 @@ void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(const ZooKeeperWithF
 
             /// Set a special error code if the block is duplicate
             int error = (deduplicate && deduplicated) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
+            auto * mark_cache = storage.getContext()->getMarkCache().get();
+
+            if (!error && mark_cache)
+            {
+                for (const auto & stream : partition.temp_part.streams)
+                {
+                    auto marks = stream.stream->releaseCachedMarks();
+                    addMarksToCache(*part, marks, mark_cache);
+                }
+            }
+
             auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
             PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot), ExecutionStatus(error));
             StorageReplicatedMergeTree::incrementInsertedPartsProfileEvent(part->getType());
@@ -521,8 +532,18 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
         {
             partition.temp_part.finalize();
             auto conflict_block_ids = commitPart(zookeeper, partition.temp_part.part, partition.block_id, delayed_chunk->replicas_num).first;
+
             if (conflict_block_ids.empty())
             {
+                if (auto * mark_cache = storage.getContext()->getMarkCache().get())
+                {
+                    for (const auto & stream : partition.temp_part.streams)
+                    {
+                        auto marks = stream.stream->releaseCachedMarks();
+                        addMarksToCache(*partition.temp_part.part, marks, mark_cache);
+                    }
+                }
+
                 auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
                 PartLog::addNewPart(
                     storage.getContext(),

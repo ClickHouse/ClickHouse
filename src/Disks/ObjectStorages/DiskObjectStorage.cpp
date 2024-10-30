@@ -19,7 +19,8 @@
 #include <Disks/FakeDiskTransaction.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
-
+#include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
+#include <Parsers/ASTCreateResourceQuery.h>
 
 namespace DB
 {
@@ -72,8 +73,8 @@ DiskObjectStorage::DiskObjectStorage(
     , metadata_storage(std::move(metadata_storage_))
     , object_storage(std::move(object_storage_))
     , send_metadata(config.getBool(config_prefix + ".send_metadata", false))
-    , read_resource_name(config.getString(config_prefix + ".read_resource", ""))
-    , write_resource_name(config.getString(config_prefix + ".write_resource", ""))
+    , read_resource_name_from_config(config.getString(config_prefix + ".read_resource", ""))
+    , write_resource_name_from_config(config.getString(config_prefix + ".write_resource", ""))
     , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}, WriteSettings{}))
     , remove_shared_recursive_file_limit(config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT))
 {
@@ -85,6 +86,98 @@ DiskObjectStorage::DiskObjectStorage(
         .is_encrypted = false,
         .is_cached = object_storage->supportsCache(),
     };
+    resource_changes_subscription = Context::getGlobalContextInstance()->getWorkloadEntityStorage().getAllEntitiesAndSubscribe(
+        [this] (const std::vector<IWorkloadEntityStorage::Event> & events)
+        {
+            std::unique_lock lock{resource_mutex};
+
+            // Sets of matching resource names. Required to resolve possible conflicts in deterministic way
+            std::set<String> new_read_resource_name_from_sql;
+            std::set<String> new_write_resource_name_from_sql;
+            std::set<String> new_read_resource_name_from_sql_any;
+            std::set<String> new_write_resource_name_from_sql_any;
+
+            // Current state
+            if (!read_resource_name_from_sql.empty())
+                new_read_resource_name_from_sql.insert(read_resource_name_from_sql);
+            if (!write_resource_name_from_sql.empty())
+                new_write_resource_name_from_sql.insert(write_resource_name_from_sql);
+            if (!read_resource_name_from_sql_any.empty())
+                new_read_resource_name_from_sql_any.insert(read_resource_name_from_sql_any);
+            if (!write_resource_name_from_sql_any.empty())
+                new_write_resource_name_from_sql_any.insert(write_resource_name_from_sql_any);
+
+            // Process all updates in specified order
+            for (const auto & [entity_type, resource_name, resource] : events)
+            {
+                if (entity_type == WorkloadEntityType::Resource)
+                {
+                    if (resource) // CREATE RESOURCE
+                    {
+                        auto * create = typeid_cast<ASTCreateResourceQuery *>(resource.get());
+                        chassert(create);
+                        for (const auto & [mode, disk] : create->operations)
+                        {
+                            if (!disk)
+                            {
+                                switch (mode)
+                                {
+                                    case ASTCreateResourceQuery::AccessMode::Read: new_read_resource_name_from_sql_any.insert(resource_name); break;
+                                    case ASTCreateResourceQuery::AccessMode::Write: new_write_resource_name_from_sql_any.insert(resource_name); break;
+                                }
+                            }
+                            else if (*disk == name)
+                            {
+                                switch (mode)
+                                {
+                                    case ASTCreateResourceQuery::AccessMode::Read: new_read_resource_name_from_sql.insert(resource_name); break;
+                                    case ASTCreateResourceQuery::AccessMode::Write: new_write_resource_name_from_sql.insert(resource_name); break;
+                                }
+                            }
+                        }
+                    }
+                    else // DROP RESOURCE
+                    {
+                        new_read_resource_name_from_sql.erase(resource_name);
+                        new_write_resource_name_from_sql.erase(resource_name);
+                        new_read_resource_name_from_sql_any.erase(resource_name);
+                        new_write_resource_name_from_sql_any.erase(resource_name);
+                    }
+                }
+            }
+
+            String old_read_resource = getReadResourceNameNoLock();
+            String old_write_resource = getWriteResourceNameNoLock();
+
+            // Apply changes
+            if (!new_read_resource_name_from_sql_any.empty())
+                read_resource_name_from_sql_any = *new_read_resource_name_from_sql_any.begin();
+            else
+                read_resource_name_from_sql_any.clear();
+
+            if (!new_write_resource_name_from_sql_any.empty())
+                write_resource_name_from_sql_any = *new_write_resource_name_from_sql_any.begin();
+            else
+                write_resource_name_from_sql_any.clear();
+
+            if (!new_read_resource_name_from_sql.empty())
+                read_resource_name_from_sql = *new_read_resource_name_from_sql.begin();
+            else
+                read_resource_name_from_sql.clear();
+
+            if (!new_write_resource_name_from_sql.empty())
+                write_resource_name_from_sql = *new_write_resource_name_from_sql.begin();
+            else
+                write_resource_name_from_sql.clear();
+
+            String new_read_resource = getReadResourceNameNoLock();
+            String new_write_resource = getWriteResourceNameNoLock();
+
+            if (old_read_resource != new_read_resource)
+                LOG_INFO(log, "Using resource '{}' instead of '{}' for READ", new_read_resource, old_read_resource);
+            if (old_write_resource != new_write_resource)
+                LOG_INFO(log, "Using resource '{}' instead of '{}' for WRITE", new_write_resource, old_write_resource);
+        });
 }
 
 StoredObjects DiskObjectStorage::getStorageObjects(const String & local_path) const
@@ -541,13 +634,29 @@ static inline Settings updateIOSchedulingSettings(const Settings & settings, con
 String DiskObjectStorage::getReadResourceName() const
 {
     std::unique_lock lock(resource_mutex);
-    return read_resource_name;
+    return getReadResourceNameNoLock();
 }
 
 String DiskObjectStorage::getWriteResourceName() const
 {
     std::unique_lock lock(resource_mutex);
-    return write_resource_name;
+    return getWriteResourceNameNoLock();
+}
+
+String DiskObjectStorage::getReadResourceNameNoLock() const
+{
+    if (read_resource_name_from_config.empty())
+        return read_resource_name_from_sql.empty() ? read_resource_name_from_sql_any : read_resource_name_from_sql;
+    else
+        return read_resource_name_from_config;
+}
+
+String DiskObjectStorage::getWriteResourceNameNoLock() const
+{
+    if (write_resource_name_from_config.empty())
+        return write_resource_name_from_sql.empty() ? write_resource_name_from_sql_any : write_resource_name_from_sql;
+    else
+        return write_resource_name_from_config;
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
@@ -668,10 +777,10 @@ void DiskObjectStorage::applyNewSettings(
 
     {
         std::unique_lock lock(resource_mutex);
-        if (String new_read_resource_name = config.getString(config_prefix + ".read_resource", ""); new_read_resource_name != read_resource_name)
-            read_resource_name = new_read_resource_name;
-        if (String new_write_resource_name = config.getString(config_prefix + ".write_resource", ""); new_write_resource_name != write_resource_name)
-            write_resource_name = new_write_resource_name;
+        if (String new_read_resource_name = config.getString(config_prefix + ".read_resource", ""); new_read_resource_name != read_resource_name_from_config)
+            read_resource_name_from_config = new_read_resource_name;
+        if (String new_write_resource_name = config.getString(config_prefix + ".write_resource", ""); new_write_resource_name != write_resource_name_from_config)
+            write_resource_name_from_config = new_write_resource_name;
     }
 
     remove_shared_recursive_file_limit = config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT);
