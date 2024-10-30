@@ -16,10 +16,14 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static std::shared_ptr<StorageObjectStorage> createStorageObjectStorage(
-    const StorageFactory::Arguments & args,
-    StorageObjectStorage::ConfigurationPtr configuration,
-    ContextPtr context)
+namespace
+{
+
+// LocalObjectStorage is only supported for Iceberg Datalake operations where Avro format is required. For regular file access, use FileStorage instead.
+#if USE_AWS_S3 || USE_AZURE_BLOB_STORAGE || USE_HDFS || USE_AVRO
+
+std::shared_ptr<StorageObjectStorage>
+createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorage::ConfigurationPtr configuration, ContextPtr context)
 {
     auto & engine_args = args.engine_args;
     if (engine_args.empty())
@@ -61,6 +65,9 @@ static std::shared_ptr<StorageObjectStorage> createStorageObjectStorage(
         args.mode,
         /* distributed_processing */ false,
         partition_by);
+}
+
+#endif
 }
 
 #if USE_AZURE_BLOB_STORAGE
