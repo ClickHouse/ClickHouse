@@ -112,7 +112,7 @@ struct HasSystemTablesMatcher
                     if (const auto * expression_list = function_children[0]->as<ASTExpressionList>())
                     {
                         const ASTs & expression_list_children = expression_list->children;
-                        if (!expression_list_children.empty())
+                        if (expression_list_children.size() >= 2)
                         {
                             if (const auto * literal = expression_list_children[1]->as<ASTLiteral>())
                             {
