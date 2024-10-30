@@ -9,17 +9,17 @@
 namespace buzzhouse
 {
 
-const constexpr uint32_t allow_unsigned_int = (1 << 0), allow_int8 = (1 << 1), allow_hugeint = (1 << 2), allow_date32 = (1 << 3), allow_datetime64 = (1 << 4),
-                         allow_uuid = (1 << 5), allow_enum = (1 << 6), allow_dynamic = (1 << 7), allow_json = (1 << 8),
-                         allow_nullable = (1 << 9), allow_low_cardinality = (1 << 10), allow_array = (1 << 11), allow_map = (1 << 12),
-                         allow_tuple = (1 << 13), allow_variant = (1 << 14), allow_nested = (1 << 15);
+const constexpr uint32_t allow_unsigned_int = (1 << 0), allow_int8 = (1 << 1), allow_hugeint = (1 << 2), allow_date32 = (1 << 3),
+                         allow_datetime64 = (1 << 4), allow_uuid = (1 << 5), allow_enum = (1 << 6), allow_dynamic = (1 << 7),
+                         allow_json = (1 << 8), allow_nullable = (1 << 9), allow_low_cardinality = (1 << 10), allow_array = (1 << 11),
+                         allow_map = (1 << 12), allow_tuple = (1 << 13), allow_variant = (1 << 14), allow_nested = (1 << 15);
 
 class SQLType
 {
 public:
-    virtual void TypeName(std::string &ret, const bool escape) const = 0;
-    virtual void MySQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const = 0;
-    virtual void PostgreSQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const = 0;
+    virtual void TypeName(std::string & ret, const bool escape) const = 0;
+    virtual void MySQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const = 0;
+    virtual void PostgreSQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const = 0;
 
     virtual ~SQLType() = default;
 };
@@ -29,20 +29,20 @@ const SQLType * TypeDeepCopy(const SQLType * tp);
 class BoolType : public SQLType
 {
 public:
-    void TypeName(std::string &ret, const bool escape) const override
+    void TypeName(std::string & ret, const bool escape) const override
     {
         (void)escape;
         ret += "Bool";
     }
-    void MySQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void MySQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
-        (void) rg;
+        (void)rg;
         (void)escape;
         ret += "BOOL";
     }
-    void PostgreSQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void PostgreSQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
-        (void) rg;
+        (void)rg;
         (void)escape;
         ret += "BOOLEAN";
     }
@@ -57,18 +57,19 @@ public:
     const bool is_unsigned;
     IntType(const uint32_t s, const bool isu) : size(s), is_unsigned(isu) { }
 
-    void TypeName(std::string &ret, const bool escape) const override
+    void TypeName(std::string & ret, const bool escape) const override
     {
         (void)escape;
         ret += is_unsigned ? "U" : "";
         ret += "Int";
         ret += std::to_string(size);
     }
-    void MySQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void MySQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
-        (void) rg;
+        (void)rg;
         (void)escape;
-        switch (size) {
+        switch (size)
+        {
             case 8:
                 ret += "TINYINT";
                 break;
@@ -86,11 +87,12 @@ public:
         }
         ret += is_unsigned ? " UNSIGNED" : "";
     }
-    void PostgreSQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void PostgreSQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
-        (void) rg;
+        (void)rg;
         (void)escape;
-        switch (size) {
+        switch (size)
+        {
             case 16:
                 ret += "SMALLINT";
                 break;
@@ -115,21 +117,21 @@ public:
     const uint32_t size;
     FloatType(const uint32_t s) : size(s) { }
 
-    void TypeName(std::string &ret, const bool escape) const override
+    void TypeName(std::string & ret, const bool escape) const override
     {
         (void)escape;
         ret += "Float";
         ret += std::to_string(size);
     }
-    void MySQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void MySQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
-        (void) rg;
+        (void)rg;
         (void)escape;
         ret += (size == 32) ? "FLOAT" : "DOUBLE";
     }
-    void PostgreSQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void PostgreSQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
-        (void) rg;
+        (void)rg;
         (void)escape;
         ret += (size == 32) ? "REAL" : "DOUBLE PRECISION";
     }
@@ -143,7 +145,7 @@ public:
     const bool has_time, extended;
     DateType(const bool ht, const bool ex) : has_time(ht), extended(ex) { }
 
-    void TypeName(std::string &ret, const bool escape) const override
+    void TypeName(std::string & ret, const bool escape) const override
     {
         (void)escape;
         ret += "Date";
@@ -153,12 +155,12 @@ public:
             ret += has_time ? "64" : "32";
         }
     }
-    void MySQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void MySQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         (void)escape;
         ret += has_time ? (rg.NextBool() ? "DATETIME" : "TIMESTAMP") : "DATE";
     }
-    void PostgreSQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void PostgreSQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         (void)rg;
         (void)escape;
@@ -174,7 +176,7 @@ public:
     const std::optional<const uint32_t> precision, scale;
     DecimalType(const std::optional<const uint32_t> p, const std::optional<const uint32_t> s) : precision(p), scale(s) { }
 
-    void TypeName(std::string &ret, const bool escape) const override
+    void TypeName(std::string & ret, const bool escape) const override
     {
         (void)escape;
         ret += "Decimal";
@@ -190,7 +192,7 @@ public:
             ret += ")";
         }
     }
-    void MySQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void MySQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         std::string next;
 
@@ -199,10 +201,7 @@ public:
         std::transform(next.begin(), next.end(), next.begin(), [](unsigned char c) { return std::toupper(c); });
         ret += next;
     }
-    void PostgreSQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
-    {
-        MySQLTypeName(rg, ret, escape);
-    }
+    void PostgreSQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override { MySQLTypeName(rg, ret, escape); }
 
     ~DecimalType() override = default;
 };
@@ -213,7 +212,7 @@ public:
     const std::optional<const uint32_t> precision;
     StringType(const std::optional<const uint32_t> p) : precision(p) { }
 
-    void TypeName(std::string &ret, const bool escape) const override
+    void TypeName(std::string & ret, const bool escape) const override
     {
         (void)escape;
         if (precision.has_value())
@@ -227,7 +226,7 @@ public:
             ret += "String";
         }
     }
-    void MySQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void MySQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         (void)escape;
         if (precision.has_value())
@@ -243,7 +242,7 @@ public:
             ret += rg.NextBool() ? "BLOB" : "TEXT";
         }
     }
-    void PostgreSQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void PostgreSQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         (void)escape;
         if (precision.has_value())
@@ -265,17 +264,17 @@ public:
 class UUIDType : public SQLType
 {
 public:
-    void TypeName(std::string &ret, const bool escape) const override
+    void TypeName(std::string & ret, const bool escape) const override
     {
         (void)escape;
         ret += "UUID";
     }
-    void MySQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void MySQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         (void)rg;
         TypeName(ret, escape);
     }
-    void PostgreSQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void PostgreSQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         (void)rg;
         TypeName(ret, escape);
@@ -300,7 +299,7 @@ public:
     const std::vector<const EnumValue> values;
     EnumType(const uint32_t s, const std::vector<const EnumValue> v) : size(s), values(v) { }
 
-    void TypeName(std::string &ret, const bool escape) const override
+    void TypeName(std::string & ret, const bool escape) const override
     {
         ret += "Enum";
         ret += std::to_string(size);
@@ -326,14 +325,14 @@ public:
         }
         ret += ")";
     }
-    void MySQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void MySQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         (void)rg;
         (void)ret;
         (void)escape;
         assert(0);
     }
-    void PostgreSQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void PostgreSQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         (void)rg;
         (void)ret;
@@ -350,7 +349,7 @@ public:
     const std::optional<const uint32_t> ntypes;
     DynamicType(const std::optional<const uint32_t> n) : ntypes(n) { }
 
-    void TypeName(std::string &ret, const bool escape) const override
+    void TypeName(std::string & ret, const bool escape) const override
     {
         (void)escape;
         ret += "Dynamic";
@@ -361,13 +360,13 @@ public:
             ret += ")";
         }
     }
-    void MySQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void MySQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         (void)rg;
         (void)escape;
         ret += "DYNAMIC";
     }
-    void PostgreSQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void PostgreSQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         (void)rg;
         (void)escape;
@@ -383,7 +382,7 @@ public:
     const std::string desc;
     JSONType(const std::string & s) : desc(s) { }
 
-    void TypeName(std::string &ret, const bool escape) const override
+    void TypeName(std::string & ret, const bool escape) const override
     {
         ret += "JSON";
         for (const auto & c : desc)
@@ -395,13 +394,13 @@ public:
             ret += c;
         }
     }
-    void MySQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void MySQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         (void)rg;
         (void)escape;
         ret += "JSON";
     }
-    void PostgreSQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void PostgreSQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         (void)rg;
         (void)escape;
@@ -417,18 +416,18 @@ public:
     const SQLType * subtype;
     Nullable(const SQLType * s) : subtype(s) { }
 
-    void TypeName(std::string &ret, const bool escape) const override
+    void TypeName(std::string & ret, const bool escape) const override
     {
         ret += "Nullable(";
         subtype->TypeName(ret, escape);
         ret += ")";
     }
-    void MySQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void MySQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         subtype->MySQLTypeName(rg, ret, escape);
         ret += " NULL";
     }
-    void PostgreSQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void PostgreSQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         subtype->PostgreSQLTypeName(rg, ret, escape);
         ret += " NULL";
@@ -443,17 +442,17 @@ public:
     const SQLType * subtype;
     LowCardinality(const SQLType * s) : subtype(s) { }
 
-    void TypeName(std::string &ret, const bool escape) const override
+    void TypeName(std::string & ret, const bool escape) const override
     {
         ret += "LowCardinality(";
         subtype->TypeName(ret, escape);
         ret += ")";
     }
-    void MySQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void MySQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         subtype->MySQLTypeName(rg, ret, escape);
     }
-    void PostgreSQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void PostgreSQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         subtype->PostgreSQLTypeName(rg, ret, escape);
     }
@@ -467,18 +466,18 @@ public:
     const SQLType * subtype;
     ArrayType(const SQLType * s) : subtype(s) { }
 
-    void TypeName(std::string &ret, const bool escape) const override
+    void TypeName(std::string & ret, const bool escape) const override
     {
         ret += "Array(";
         subtype->TypeName(ret, escape);
         ret += ")";
     }
-    void MySQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void MySQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         subtype->MySQLTypeName(rg, ret, escape);
         ret += "[]";
     }
-    void PostgreSQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void PostgreSQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         subtype->PostgreSQLTypeName(rg, ret, escape);
         ret += "[]";
@@ -493,7 +492,7 @@ public:
     const SQLType *key, *value;
     MapType(const SQLType * k, const SQLType * v) : key(k), value(v) { }
 
-    void TypeName(std::string &ret, const bool escape) const override
+    void TypeName(std::string & ret, const bool escape) const override
     {
         ret += "Map(";
         key->TypeName(ret, escape);
@@ -501,14 +500,14 @@ public:
         value->TypeName(ret, escape);
         ret += ")";
     }
-    void MySQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void MySQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         (void)rg;
         (void)ret;
         (void)escape;
         assert(0);
     }
-    void PostgreSQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void PostgreSQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         (void)rg;
         (void)ret;
@@ -538,7 +537,7 @@ public:
     const std::vector<const SubType> subtypes;
     TupleType(const std::vector<const SubType> s) : subtypes(s) { }
 
-    void TypeName(std::string &ret, const bool escape) const override
+    void TypeName(std::string & ret, const bool escape) const override
     {
         ret += "Tuple(";
         for (uint32_t i = 0; i < subtypes.size(); i++)
@@ -554,14 +553,14 @@ public:
         }
         ret += ")";
     }
-    void MySQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void MySQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         (void)rg;
         (void)ret;
         (void)escape;
         assert(0);
     }
-    void PostgreSQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void PostgreSQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         (void)rg;
         (void)ret;
@@ -584,7 +583,7 @@ public:
     const std::vector<const SQLType *> subtypes;
     VariantType(const std::vector<const SQLType *> s) : subtypes(s) { }
 
-    void TypeName(std::string &ret, const bool escape) const override
+    void TypeName(std::string & ret, const bool escape) const override
     {
         ret += "Variant(";
         for (uint32_t i = 0; i < subtypes.size(); i++)
@@ -597,14 +596,14 @@ public:
         }
         ret += ")";
     }
-    void MySQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void MySQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         (void)rg;
         (void)ret;
         (void)escape;
         assert(0);
     }
-    void PostgreSQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void PostgreSQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         (void)rg;
         (void)ret;
@@ -637,7 +636,7 @@ public:
     const std::vector<const NestedSubType> subtypes;
     NestedType(const std::vector<const NestedSubType> s) : subtypes(s) { }
 
-    void TypeName(std::string &ret, const bool escape) const override
+    void TypeName(std::string & ret, const bool escape) const override
     {
         ret += "Nested(";
         for (uint32_t i = 0; i < subtypes.size(); i++)
@@ -653,14 +652,14 @@ public:
         }
         ret += ")";
     }
-    void MySQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void MySQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         (void)rg;
         (void)ret;
         (void)escape;
         assert(0);
     }
-    void PostgreSQLTypeName(RandomGenerator & rg, std::string &ret, const bool escape) const override
+    void PostgreSQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         (void)rg;
         (void)ret;

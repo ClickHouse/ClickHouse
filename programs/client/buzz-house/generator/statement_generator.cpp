@@ -450,13 +450,15 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator & rg, SQLBase & b,
                 te->add_params()->set_svalue(rg.NextBool() ? "replace_query" : "on_duplicate_clause");
             }*/
         }
+
+        connections.CreateExternalDatabaseTable(rg, b.IsMySQLEngine() ? DatabaseCall::MySQL : DatabaseCall::PostgreSQL, b.tname, entries);
     }
     else if (b.IsSQLiteEngine())
     {
-        const std::filesystem::path & qfile = fc.db_file_path / "sqlite.db";
-
-        te->add_params()->set_svalue(qfile.generic_string());
+        te->add_params()->set_svalue(connections.sqlite_path.generic_string());
         te->add_params()->set_svalue("t" + std::to_string(b.tname));
+
+        connections.CreateExternalDatabaseTable(rg, DatabaseCall::SQLite, b.tname, entries);
     }
     return 0;
 }
@@ -499,7 +501,22 @@ int StatementGenerator::AddTableColumn(
     }
     else
     {
-        tp = RandomNextType(rg, std::numeric_limits<uint32_t>::max(), t.col_counter, cd->mutable_type()->mutable_type());
+        uint32_t possible_types = std::numeric_limits<uint32_t>::max();
+
+        if (t.IsMySQLEngine())
+        {
+            possible_types
+                = ~(allow_hugeint | allow_date32 | allow_datetime64 | allow_enum | allow_dynamic | allow_json | allow_low_cardinality
+                    | allow_array | allow_map | allow_tuple | allow_variant | allow_nested);
+        }
+        else if (t.IsPostgreSQLEngine())
+        {
+            possible_types
+                = ~(allow_unsigned_int | allow_int8 | allow_hugeint | allow_date32 | allow_datetime64 | allow_enum | allow_dynamic
+                    | allow_json | allow_low_cardinality | allow_map | allow_tuple | allow_variant | allow_nested);
+        }
+
+        tp = RandomNextType(rg, possible_types, t.col_counter, cd->mutable_type()->mutable_type());
     }
     col.tp = tp;
     col.special = special;
@@ -804,11 +821,11 @@ sql_query_grammar::TableEngineValues StatementGenerator::GetNextTableEngine(Rand
     }
     if (table)
     {
-        if (mysql_connection)
+        if (connections.HasMySQLConnection())
         {
             this->ids.push_back(sql_query_grammar::MySQL);
         }
-        if (postgres_connection)
+        if (connections.HasPostgreSQLConnection())
         {
             this->ids.push_back(sql_query_grammar::PostgreSQL);
         }
@@ -2466,9 +2483,11 @@ int StatementGenerator::GenerateNextStatement(RandomGenerator & rg, sql_query_gr
     }
 }
 
-void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery & sq, const bool success)
+void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery & sq, ExternalDatabases & ed, bool success)
 {
     const sql_query_grammar::SQLQueryInner & query = sq.has_inner_query() ? sq.inner_query() : sq.explain().inner_query();
+
+    success &= (!ed.GetRequiresExternalCallCheck() || ed.GetNextExternalCallSucceeded());
 
     if (sq.has_inner_query() && query.has_create_table())
     {
@@ -2746,6 +2765,8 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery & sq,
     {
         this->in_transaction = false;
     }
+
+    ed.ResetExternalStatus();
 }
 
 }

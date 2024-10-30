@@ -1,17 +1,9 @@
 #pragma once
 
-#include "fuzz_config.h"
+#include "external_databases.h"
 #include "random_generator.h"
 #include "random_settings.h"
-#include "sql_catalog.h"
 
-#if __has_include(<mysql.h>)
-#    include <mysql.h>
-#else
-#    include <mysql/mysql.h>
-#endif
-#include <pqxx/pqxx>
-#include <sqlite3.h>
 
 namespace buzzhouse
 {
@@ -71,34 +63,14 @@ const constexpr uint32_t allow_set = (1 << 0), allow_cte = (1 << 1), allow_disti
                          allow_prewhere = (1 << 4), allow_where = (1 << 5), allow_groupby = (1 << 6), allow_groupby_settings = (1 << 7),
                          allow_orderby = (1 << 8), allow_orderby_settings = (1 << 9), allow_limit = (1 << 10);
 
-typedef struct InsertEntry
-{
-    ColumnSpecial special = ColumnSpecial::NONE;
-    uint32_t cname1 = 0;
-    std::optional<uint32_t> cname2 = std::nullopt;
-    const SQLType * tp = nullptr;
-    std::optional<sql_query_grammar::DModifier> dmod = std::nullopt;
-
-    InsertEntry(
-        const ColumnSpecial cs,
-        const uint32_t c1,
-        const std::optional<uint32_t> c2,
-        const SQLType * t,
-        const std::optional<sql_query_grammar::DModifier> dm)
-        : special(cs), cname1(c1), cname2(c2), tp(t), dmod(dm)
-    {
-    }
-} InsertEntry;
-
 class StatementGenerator
 {
 private:
     const FuzzConfig & fc;
+    ExternalDatabases & connections;
     const bool supports_cloud_features;
 
     std::string buf;
-    MYSQL * mysql_connection = nullptr;
-    pqxx::connection * postgres_connection = nullptr;
     bool in_transaction = false, inside_projection = false, allow_not_deterministic = true, enforce_final = false;
     uint32_t depth = 0, width = 0, database_counter = 0, table_counter = 0, zoo_path_counter = 0, function_counter = 0, current_level = 0;
     std::map<uint32_t, std::shared_ptr<SQLDatabase>> staged_databases, databases;
@@ -381,78 +353,17 @@ public:
         = [](const SQLTable & t) { return (t.db && !t.db->attached) || !t.attached; };
     const std::function<bool(const SQLView &)> detached_views = [](const SQLView & v) { return (v.db && !v.db->attached) || !v.attached; };
 
-    StatementGenerator(const FuzzConfig & fuzzc, const bool scf) : fc(fuzzc), supports_cloud_features(scf)
+    StatementGenerator(const FuzzConfig & fuzzc, ExternalDatabases & conn, const bool scf)
+        : fc(fuzzc), connections(conn), supports_cloud_features(scf)
     {
         buf.reserve(2048);
-
-        if (fuzzc.mysql_server.port)
-        {
-            MYSQL * other = nullptr;
-
-            if (!(other = mysql_init(nullptr)))
-            {
-                throw std::runtime_error("Out of memory");
-            }
-            if (!(mysql_connection = mysql_real_connect(
-                      other,
-                      fuzzc.mysql_server.hostname.c_str(),
-                      fuzzc.mysql_server.user.c_str(),
-                      fuzzc.mysql_server.password.c_str(),
-                      nullptr,
-                      fuzzc.mysql_server.port,
-                      fuzzc.mysql_server.unix_socket.c_str(),
-                      0)))
-            {
-                mysql_close(other);
-                throw std::runtime_error("Out of memory");
-            }
-            mysql_query(mysql_connection, "DROP SCHEMA IF EXISTS test;");
-            mysql_query(mysql_connection, "CREATE SCHEMA test;");
-        }
-        if (fuzzc.postgresql_server.port)
-        {
-            std::string connection_str = "";
-
-            connection_str += "host=";
-            connection_str += fuzzc.postgresql_server.hostname;
-            connection_str += " ";
-            connection_str += "port=";
-            connection_str += std::to_string(fuzzc.postgresql_server.port);
-            connection_str += " ";
-            connection_str += "user=";
-            connection_str += fuzzc.postgresql_server.user;
-            if (fuzzc.postgresql_server.password != "")
-            {
-                connection_str += " ";
-                connection_str += "password=";
-                connection_str += fuzzc.postgresql_server.password;
-            }
-            if (!(postgres_connection = new pqxx::connection(std::move(connection_str))))
-            {
-                throw std::runtime_error("Out of memory");
-            }
-            pqxx::work w(*postgres_connection);
-            (void)w.exec("DROP SCHEMA IF EXISTS test;");
-            (void)w.exec("CREATE SCHEMA test;");
-            w.commit();
-        }
-    }
-
-    ~StatementGenerator()
-    {
-        if (mysql_connection)
-        {
-            mysql_close(mysql_connection);
-            mysql_library_end();
-        }
-        delete postgres_connection;
     }
 
     int GenerateNextCreateTable(RandomGenerator & rg, sql_query_grammar::CreateTable * sq);
     int GenerateNextCreateDatabase(RandomGenerator & rg, sql_query_grammar::CreateDatabase * cd);
     int GenerateNextStatement(RandomGenerator & rg, sql_query_grammar::SQLQuery & sq);
 
-    void UpdateGenerator(const sql_query_grammar::SQLQuery & sq, const bool success);
+    void UpdateGenerator(const sql_query_grammar::SQLQuery & sq, ExternalDatabases & ed, bool success);
 
     friend class QueryOracle;
 };
