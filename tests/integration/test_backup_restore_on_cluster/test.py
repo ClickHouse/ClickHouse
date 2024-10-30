@@ -1162,8 +1162,7 @@ def test_get_error_from_other_host():
     )
 
 
-@pytest.mark.parametrize("kill", [False, True])
-def test_stop_other_host_during_backup(kill):
+def test_shutdown_waits_for_backup():
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt8"
@@ -1182,7 +1181,7 @@ def test_stop_other_host_during_backup(kill):
 
     # If kill=False the pending backup must be completed
     # If kill=True the pending backup might be completed or failed
-    node2.stop_clickhouse(kill=kill)
+    node2.stop_clickhouse(kill=False)
 
     assert_eq_with_retry(
         node1,
@@ -1192,22 +1191,11 @@ def test_stop_other_host_during_backup(kill):
     )
 
     status = node1.query(f"SELECT status FROM system.backups WHERE id='{id}'").strip()
-
-    if kill:
-        expected_statuses = ["BACKUP_CREATED", "BACKUP_FAILED"]
-    else:
-        expected_statuses = ["BACKUP_CREATED", "BACKUP_CANCELLED"]
-
-    assert status in expected_statuses
+    assert status == "BACKUP_CREATED"
 
     node2.start_clickhouse()
 
-    if status == "BACKUP_CREATED":
-        node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
-        node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
-        node1.query("SYSTEM SYNC REPLICA tbl")
-        assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([3, 5])
-    elif status == "BACKUP_FAILED":
-        assert not os.path.exists(
-            os.path.join(get_path_to_backup(backup_name), ".backup")
-        )
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
+    node1.query("SYSTEM SYNC REPLICA tbl")
+    assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([3, 5])
