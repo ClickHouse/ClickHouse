@@ -57,7 +57,7 @@ public:
     void shutdown() override;
 
     /// Initializes access storage (user directories).
-    void setupFromMainConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_path_,
+    void setUpFromMainConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_path_,
                              const zkutil::GetZooKeeper & get_zookeeper_function_);
 
     /// Parses access entities from a configuration loaded from users.xml.
@@ -124,7 +124,7 @@ public:
     AuthResult authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const String & forwarded_address) const;
 
     /// Makes a backup of access entities.
-    void restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup) override;
+    void restoreFromBackup(RestorerFromBackup & restorer) override;
 
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
 
@@ -237,9 +237,6 @@ public:
 
     /// Gets manager of notifications.
     AccessChangesNotifier & getChangesNotifier();
-
-    /// Allow all setting names - this can be used in clients to pass-through unknown settings to the server.
-    void allowAllSettings();
 
 private:
     class ContextAccessCache;

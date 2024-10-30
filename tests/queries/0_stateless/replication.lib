@@ -89,7 +89,7 @@ function check_replication_consistency()
     # Touch all data to check that it's readable (and trigger PartCheckThread if needed)
     # it's important to disable prefer warmed unmerged parts because
     # otherwise it can read non-syncrhonized state of replicas
-    while ! $CLICKHOUSE_CLIENT --prefer_warmed_unmerged_parts_seconds=0 --max_result_rows 0 --max_result_bytes 0 --max_rows_to_read 0 --max_bytes_to_read 0 -q "SELECT * FROM merge(currentDatabase(), '$table_name_prefix') FORMAT Null" 2>/dev/null; do
+    while ! $CLICKHOUSE_CLIENT --prefer_warmed_unmerged_parts_seconds=0 -q "SELECT * FROM merge(currentDatabase(), '$table_name_prefix') FORMAT Null" 2>/dev/null; do
         sleep 1;
         num_tries=$((num_tries+1))
         if [ $num_tries -eq 250 ]; then
@@ -114,8 +114,7 @@ function check_replication_consistency()
 
     # it's important to disable prefer warmed unmerged parts because
     # otherwise it can read non-syncrhonized state of replicas
-    # also, disable the limit that is set for tests globally
-    res=$($CLICKHOUSE_CLIENT --prefer_warmed_unmerged_parts_seconds=0 --max_rows_to_read=0 -q \
+    res=$($CLICKHOUSE_CLIENT --prefer_warmed_unmerged_parts_seconds=0 -q \
     "SELECT
         if((countDistinct(data) as c) == 0, 1, c)
     FROM

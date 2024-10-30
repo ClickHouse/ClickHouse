@@ -14,7 +14,7 @@ EOF
 
 # The following SELECT is expected to read 20 rows. In fact it may decide to read more than 20 rows, but not too many anyway.
 # So we'll check that the number of read rows is less than 40.
-query="SELECT * FROM (SELECT * FROM view1) ORDER BY number DESC LIMIT 20 SETTINGS max_streams_for_merge_tree_reading = 1"
+query="SELECT * FROM (SELECT * FROM view1) ORDER BY number DESC LIMIT 20"
 
 query_id=${CLICKHOUSE_DATABASE}_optimize_read_in_order_from_view_$RANDOM$RANDOM
 

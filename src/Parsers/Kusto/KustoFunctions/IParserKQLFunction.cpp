@@ -24,9 +24,9 @@ constexpr DB::TokenType determineClosingPair(const DB::TokenType token_type)
 {
     if (token_type == DB::TokenType::OpeningCurlyBrace)
         return DB::TokenType::ClosingCurlyBrace;
-    if (token_type == DB::TokenType::OpeningRoundBracket)
+    else if (token_type == DB::TokenType::OpeningRoundBracket)
         return DB::TokenType::ClosingRoundBracket;
-    if (token_type == DB::TokenType::OpeningSquareBracket)
+    else if (token_type == DB::TokenType::OpeningSquareBracket)
         return DB::TokenType::ClosingSquareBracket;
 
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unhandled token: {}", magic_enum::enum_name(token_type));

@@ -24,12 +24,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool formatdatetime_parsedatetime_m_is_month_name;
-    extern const SettingsBool parsedatetime_parse_without_leading_zeros;
-}
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -484,12 +478,13 @@ namespace
                 // negative date: start off at 4 and cycle downwards
                 return (7 - ((-days_since_epoch + 3) % 7));
             }
-
-            // positive date: start off at 4 and cycle upwards
-            return ((days_since_epoch + 3) % 7) + 1;
+            else
+            {
+                // positive date: start off at 4 and cycle upwards
+                return ((days_since_epoch + 3) % 7) + 1;
+            }
         }
 
-        /// NOLINTBEGIN(readability-else-after-return)
         [[nodiscard]]
         static Int32OrError daysSinceEpochFromWeekDate(int32_t week_year_, int32_t week_of_year_, int32_t day_of_week_)
         {
@@ -570,8 +565,8 @@ namespace
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionParseDateTimeImpl>(context); }
 
         explicit FunctionParseDateTimeImpl(ContextPtr context)
-            : mysql_M_is_month_name(context->getSettingsRef()[Setting::formatdatetime_parsedatetime_m_is_month_name])
-            , mysql_parse_ckl_without_leading_zeros(context->getSettingsRef()[Setting::parsedatetime_parse_without_leading_zeros])
+            : mysql_M_is_month_name(context->getSettingsRef().formatdatetime_parsedatetime_m_is_month_name)
+            , mysql_parse_ckl_without_leading_zeros(context->getSettingsRef().parsedatetime_parse_without_leading_zeros)
         {
         }
 
@@ -601,7 +596,8 @@ namespace
             DataTypePtr date_type = std::make_shared<DataTypeDateTime>(time_zone_name);
             if (error_handling == ErrorHandling::Null)
                 return std::make_shared<DataTypeNullable>(date_type);
-            return date_type;
+            else
+                return date_type;
         }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
@@ -747,7 +743,8 @@ namespace
             {
                 if (func)
                     return "func:" + func_name + ",fragment:" + fragment;
-                return "literal:" + literal + ",fragment:" + fragment;
+                else
+                    return "literal:" + literal + ",fragment:" + fragment;
             }
 
             [[nodiscard]]
@@ -755,19 +752,21 @@ namespace
             {
                 if (func)
                     return func(cur, end, fragment, date);
-
-                /// literal:
-                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, literal.size(), "insufficient space to parse literal", fragment))
-                if (std::string_view(cur, literal.size()) != literal)
-                    RETURN_ERROR(
-                        ErrorCodes::CANNOT_PARSE_DATETIME,
-                        "Unable to parse fragment {} from {} because literal {} is expected but {} provided",
-                        fragment,
-                        std::string_view(cur, end - cur),
-                        literal,
-                        std::string_view(cur, literal.size()))
-                cur += literal.size();
-                return cur;
+                else
+                {
+                    /// literal:
+                    RETURN_ERROR_IF_FAILED(checkSpace(cur, end, literal.size(), "insufficient space to parse literal", fragment))
+                    if (std::string_view(cur, literal.size()) != literal)
+                        RETURN_ERROR(
+                            ErrorCodes::CANNOT_PARSE_DATETIME,
+                            "Unable to parse fragment {} from {} because literal {} is expected but {} provided",
+                            fragment,
+                            std::string_view(cur, end - cur),
+                            literal,
+                            std::string_view(cur, literal.size()))
+                    cur += literal.size();
+                    return cur;
+                }
             }
 
             template <typename T, NeedCheckSpace need_check_space>
@@ -1626,7 +1625,6 @@ namespace
                 return cur;
             }
         };
-        /// NOLINTEND(readability-else-after-return)
 
         std::vector<Instruction> parseFormat(const String & format) const
         {
@@ -1928,14 +1926,16 @@ namespace
                         Int64 count = numLiteralChars(cur_token + 1, end);
                         if (count == -1)
                             throw Exception(ErrorCodes::BAD_ARGUMENTS, "No closing single quote for literal");
-
-                        for (Int64 i = 1; i <= count; i++)
+                        else
                         {
-                            instructions.emplace_back(String(cur_token + i, 1));
-                            if (*(cur_token + i) == '\'')
-                                i += 1;
+                            for (Int64 i = 1; i <= count; i++)
+                            {
+                                instructions.emplace_back(String(cur_token + i, 1));
+                                if (*(cur_token + i) == '\'')
+                                    i += 1;
+                            }
+                            pos += count + 2;
                         }
-                        pos += count + 2;
                     }
                 }
                 else

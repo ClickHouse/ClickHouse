@@ -1,6 +1,5 @@
 #include <iostream>
 #include <Processors/IProcessor.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
 
 #include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
@@ -9,17 +8,6 @@
 
 namespace DB
 {
-
-void IProcessor::setQueryPlanStep(IQueryPlanStep * step, size_t group)
-{
-    query_plan_step = step;
-    query_plan_step_group = group;
-    if (step)
-    {
-        plan_step_name = step->getName();
-        plan_step_description = step->getStepDescription();
-    }
-}
 
 void IProcessor::cancel() noexcept
 {
@@ -67,12 +55,9 @@ void IProcessor::dump() const
 }
 
 
-std::string IProcessor::statusToName(std::optional<Status> status)
+std::string IProcessor::statusToName(Status status)
 {
-    if (status == std::nullopt)
-        return "NotStarted";
-
-    switch (*status)
+    switch (status)
     {
         case Status::NeedData:
             return "NeedData";
