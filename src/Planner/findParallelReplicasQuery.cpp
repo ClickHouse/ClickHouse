@@ -174,7 +174,7 @@ const QueryNode * findQueryForParallelReplicas(
     struct Frame
     {
         const QueryPlan::Node * node = nullptr;
-        /// Below we will check subqueries from `stack` to find outtermost subquery that could be executed remotely.
+        /// Below we will check subqueries from `stack` to find outermost subquery that could be executed remotely.
         /// Currently traversal algorithm considers only steps with 0 or 1 children and JOIN specifically.
         /// When we found some step that requires finalization on the initiator (e.g. GROUP BY) there are two options:
         /// 1. If plan looks like a single path (e.g. AggregatingStep -> ExpressionStep -> Reading) we can execute
