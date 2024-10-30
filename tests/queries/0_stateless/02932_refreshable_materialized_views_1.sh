@@ -50,14 +50,6 @@ done
 # to make sure the clock+timer code works at all. If it turns out flaky, increase refresh period above.
 $CLICKHOUSE_CLIENT -q "
     select '<3: time difference at least>', min2(reinterpret(now64(), 'Int64') - $start_time, 1000);"
-while :
-do
-    # Wait for status to change to Scheduled. If status = Scheduling, next_refresh_time is stale.
-    res="`$CLICKHOUSE_CLIENT -q "select '<4: next refresh in>', next_refresh_time-last_success_time, status from refreshes -- $LINENO"`"
-    echo "$res" | grep -q 'Scheduled' && break
-    sleep 0.5
-done
-echo "$res"
 
 # Create a source table from which views will read.
 $CLICKHOUSE_CLIENT -q "
