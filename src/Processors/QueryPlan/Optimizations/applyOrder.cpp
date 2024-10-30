@@ -124,7 +124,7 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
             auto common_prefix = commonPrefix(properties->sort_description, sorting_step->getSortDescription());
             if (!common_prefix.empty())
                 /// Buffering is useful for reading from MergeTree, and it is applied in optimizeReadInOrder only.
-                sorting_step->convertToFinishSorting(common_prefix, /*use_buffering*/ false);
+                sorting_step->convertToFinishSorting(common_prefix, /*use_buffering*/ false, false);
         }
 
         auto scope = sorting_step->hasPartitions() ? SortingProperty::SortScope::Stream : SortingProperty::SortScope::Global;

@@ -147,11 +147,12 @@ void SortingStep::updateLimit(size_t limit_)
     }
 }
 
-void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bool use_buffering_)
+void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bool use_buffering_, bool apply_virtual_row_conversions_)
 {
     type = Type::FinishSorting;
     prefix_description = std::move(prefix_description_);
     use_buffering = use_buffering_;
+    apply_virtual_row_conversions = apply_virtual_row_conversions_;
 }
 
 void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
@@ -255,7 +256,10 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
             /*max_block_size_bytes=*/0,
             SortingQueueStrategy::Batch,
             limit_,
-            always_read_till_end);
+            always_read_till_end,
+            nullptr,
+            false,
+            apply_virtual_row_conversions);
 
         pipeline.addTransform(std::move(transform));
     }

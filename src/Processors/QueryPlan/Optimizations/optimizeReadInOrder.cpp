@@ -899,7 +899,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
     return order_info;
 }
 
-InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & node)
+InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtual_row, QueryPlan::Node & node)
 {
     QueryPlan::Node * reading_node = findReadingStep(node, /*allow_existing_order=*/ false);
     if (!reading_node)
@@ -925,6 +925,8 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
 
         if (order_info.input_order)
         {
+            apply_virtual_row = order_info.virtual_row_conversion != std::nullopt;
+
             bool can_read = reading->requestReadingInOrder(
                 order_info.input_order->used_prefix_of_sorting_key_size,
                 order_info.input_order->direction,
@@ -1128,6 +1130,8 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     if (sorting->getType() != SortingStep::Type::Full)
         return;
 
+    bool apply_virtual_row = false;
+
     if (typeid_cast<UnionStep *>(node.children.front()->step.get()))
     {
         auto & union_node = node.children.front();
@@ -1150,7 +1154,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 
         for (auto * child : union_node->children)
         {
-            infos.push_back(buildInputOrderInfo(*sorting, *child));
+            infos.push_back(buildInputOrderInfo(*sorting, apply_virtual_row, *child));
 
             if (infos.back())
             {
@@ -1202,13 +1206,13 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
             }
         }
 
-        sorting->convertToFinishSorting(*max_sort_descr, use_buffering);
+        sorting->convertToFinishSorting(*max_sort_descr, use_buffering, false);
     }
-    else if (auto order_info = buildInputOrderInfo(*sorting, *node.children.front()))
+    else if (auto order_info = buildInputOrderInfo(*sorting, apply_virtual_row, *node.children.front()))
     {
         /// Use buffering only if have filter or don't have limit.
         bool use_buffering = order_info->limit == 0;
-        sorting->convertToFinishSorting(order_info->sort_description_for_merging, use_buffering);
+        sorting->convertToFinishSorting(order_info->sort_description_for_merging, use_buffering, apply_virtual_row);
     }
 }
 
@@ -1350,7 +1354,7 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
         bool can_read = read_from_merge_tree->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit, {});
         if (!can_read)
             return 0;
-        sorting->convertToFinishSorting(order_info->sort_description_for_merging, false);
+        sorting->convertToFinishSorting(order_info->sort_description_for_merging, false, false);
     }
 
     return 0;
