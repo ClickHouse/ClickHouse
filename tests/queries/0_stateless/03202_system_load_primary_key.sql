@@ -26,9 +26,9 @@ ORDER BY table;
 
 -- Load primary keys for all tables in the database
 SYSTEM LOAD PRIMARY KEY;
-SLEEP(1); -- Ensure enough time for the primary keys to load
 
 -- Verify primary key memory after loading for both tables
+-- Ensure .reference file has non-zero values here to reflect expected primary key loading
 SELECT
     table,
     round(primary_key_bytes_in_memory, -7),
@@ -41,7 +41,6 @@ ORDER BY table;
 
 -- Unload primary keys for all tables in the database
 SYSTEM UNLOAD PRIMARY KEY;
-SLEEP(1); -- Ensure enough time for the primary keys to unload
 
 -- Verify primary key memory after unloading for both tables
 SELECT
