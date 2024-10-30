@@ -515,6 +515,12 @@ int StatementGenerator::AddTableColumn(
                 = ~(allow_unsigned_int | allow_int8 | allow_hugeint | allow_date32 | allow_datetime64 | allow_enum | allow_dynamic
                     | allow_json | allow_low_cardinality | allow_map | allow_tuple | allow_variant | allow_nested);
         }
+        else if (t.IsSQLiteEngine())
+        {
+            possible_types
+                = ~(allow_unsigned_int | allow_hugeint | allow_floating_points | allow_dates | allow_enum | allow_dynamic | allow_json
+                    | allow_low_cardinality | allow_array | allow_map | allow_tuple | allow_variant | allow_nested);
+        }
 
         tp = RandomNextType(rg, possible_types, t.col_counter, cd->mutable_type()->mutable_type());
     }
@@ -829,7 +835,10 @@ sql_query_grammar::TableEngineValues StatementGenerator::GetNextTableEngine(Rand
         {
             this->ids.push_back(sql_query_grammar::PostgreSQL);
         }
-        this->ids.push_back(sql_query_grammar::SQLite);
+        if (connections.HasSQLiteConnection())
+        {
+            this->ids.push_back(sql_query_grammar::SQLite);
+        }
     }
 
     const auto res = static_cast<sql_query_grammar::TableEngineValues>(rg.PickRandomlyFromVector(this->ids));

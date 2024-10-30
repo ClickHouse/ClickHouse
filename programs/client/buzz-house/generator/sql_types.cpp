@@ -199,16 +199,25 @@ const SQLType * StatementGenerator::BottomType(
 
     assert(this->ids.empty());
     this->ids.push_back(1); //ints
-    if (this->fc.fuzz_floating_points)
+    if ((allowed_types & allow_floating_points) && this->fc.fuzz_floating_points)
     {
         this->ids.push_back(2); //floating-points
     }
-    this->ids.push_back(3); //dates
+    if (allowed_types & allow_dates)
+    {
+        this->ids.push_back(3); //dates
+    }
     this->ids.push_back(4); //strings
     if (!low_card)
     {
-        this->ids.push_back(5); //decimals
-        this->ids.push_back(6); //bool
+        if (allowed_types & allow_decimals)
+        {
+            this->ids.push_back(5); //decimals
+        }
+        if (allowed_types & allow_bool)
+        {
+            this->ids.push_back(6); //bool
+        }
         if (allowed_types & allow_enum)
         {
             this->ids.push_back(7); //enum
