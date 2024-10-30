@@ -117,13 +117,34 @@ const SQLType * TypeDeepCopy(const SQLType * tp)
     return nullptr;
 }
 
-std::tuple<const SQLType *, sql_query_grammar::Integers> RandomIntType(RandomGenerator & rg, const uint32_t allowed_types)
+std::tuple<const SQLType *, sql_query_grammar::Integers> StatementGenerator::RandomIntType(RandomGenerator & rg, const uint32_t allowed_types)
 {
-    const uint32_t mimv
-        = (allowed_types & allow_unsigned_int) ? ((allowed_types & allow_int8) ? 1 : 2) : ((allowed_types & allow_int8) ? 7 : 8);
-    std::uniform_int_distribution<uint32_t> next_dist(mimv, (allowed_types & allow_hugeint) ? 12 : 10);
-    const uint32_t nopt = next_dist(rg.gen);
+    assert(this->ids.empty());
 
+    if ((allowed_types & allow_unsigned_int)) {
+        if ((allowed_types & allow_int8)) {
+            this->ids.push_back(1);
+        }
+        this->ids.push_back(2);
+        this->ids.push_back(3);
+        this->ids.push_back(4);
+        if ((allowed_types & allow_hugeint)) {
+            this->ids.push_back(5);
+            this->ids.push_back(6);
+        }
+    }
+    if ((allowed_types & allow_int8)) {
+        this->ids.push_back(7);
+    }
+    this->ids.push_back(8);
+    this->ids.push_back(9);
+    this->ids.push_back(10);
+    if ((allowed_types & allow_hugeint)) {
+        this->ids.push_back(11);
+        this->ids.push_back(12);
+    }
+    const uint32_t nopt = rg.PickRandomlyFromVector(this->ids);
+    this->ids.clear();
     switch (nopt)
     {
         case 1:
@@ -155,7 +176,7 @@ std::tuple<const SQLType *, sql_query_grammar::Integers> RandomIntType(RandomGen
     }
 }
 
-std::tuple<const SQLType *, sql_query_grammar::FloatingPoints> RandomFloatType(RandomGenerator & rg)
+std::tuple<const SQLType *, sql_query_grammar::FloatingPoints> StatementGenerator::RandomFloatType(RandomGenerator & rg)
 {
     std::uniform_int_distribution<uint32_t> next_dist(1, 2);
     const uint32_t nopt = next_dist(rg.gen);
@@ -171,20 +192,31 @@ std::tuple<const SQLType *, sql_query_grammar::FloatingPoints> RandomFloatType(R
     }
 }
 
-std::tuple<const SQLType *, sql_query_grammar::Dates> RandomDateType(RandomGenerator & rg, const uint32_t allowed_types)
+std::tuple<const SQLType *, sql_query_grammar::Dates> StatementGenerator::RandomDateType(RandomGenerator & rg, const uint32_t allowed_types)
 {
-    const uint32_t maxv = (allowed_types & allow_date32) ? ((allowed_types & allow_datetime64) ? 4 : 3) : 2;
-    std::uniform_int_distribution<uint32_t> next_dist(1, maxv);
-    const uint32_t nopt = next_dist(rg.gen);
+    assert(this->ids.empty());
+
+    if ((allowed_types & allow_dates)) {
+        this->ids.push_back(1);
+        if ((allowed_types & allow_date32)) {
+            this->ids.push_back(2);
+        }
+    }
+    this->ids.push_back(3);
+    if ((allowed_types & allow_datetime64)) {
+        this->ids.push_back(4);
+    }
+    const uint32_t nopt = rg.PickRandomlyFromVector(this->ids);
+    this->ids.clear();
 
     switch (nopt)
     {
         case 1:
             return std::make_tuple(new DateType(false, false), sql_query_grammar::Dates::Date);
         case 2:
-            return std::make_tuple(new DateType(true, false), sql_query_grammar::Dates::DateTime);
-        case 3:
             return std::make_tuple(new DateType(false, true), sql_query_grammar::Dates::Date32);
+        case 3:
+            return std::make_tuple(new DateType(true, false), sql_query_grammar::Dates::DateTime);
         case 4:
             return std::make_tuple(new DateType(true, true), sql_query_grammar::Dates::DateTime64);
         default:

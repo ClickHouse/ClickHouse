@@ -56,17 +56,15 @@ public:
             {
                 std::cerr << "Could not initialize MySQL handle" << std::endl;
             }
-            else if (
-                !mysql_real_connect(
-                    mysql_connection,
-                    fc.mysql_server.hostname == "" ? nullptr : fc.mysql_server.hostname.c_str(),
-                    fc.mysql_server.user == "" ? nullptr : fc.mysql_server.user.c_str(),
-                    fc.mysql_server.password == "" ? nullptr : fc.mysql_server.password.c_str(),
-                    nullptr,
-                    fc.mysql_server.port,
-                    fc.mysql_server.unix_socket == "" ? nullptr : fc.mysql_server.unix_socket.c_str(),
-                    0)
-                || mysql_query(mysql_connection, "DROP SCHEMA IF EXISTS test;") || mysql_query(mysql_connection, "CREATE SCHEMA test;"))
+            else if (!mysql_real_connect(
+                         mysql_connection,
+                         fc.mysql_server.hostname == "" ? nullptr : fc.mysql_server.hostname.c_str(),
+                         fc.mysql_server.user == "" ? nullptr : fc.mysql_server.user.c_str(),
+                         fc.mysql_server.password == "" ? nullptr : fc.mysql_server.password.c_str(),
+                         nullptr,
+                         fc.mysql_server.port,
+                         fc.mysql_server.unix_socket == "" ? nullptr : fc.mysql_server.unix_socket.c_str(),
+                         0))
             {
                 std::cerr << "MySQL connection error: " << mysql_error(mysql_connection) << std::endl;
                 mysql_close(mysql_connection);
@@ -75,7 +73,17 @@ public:
             else
             {
                 out_mysql = std::ofstream(fc.mysql_server.query_log_file, std::ios::out | std::ios::trunc);
-                std::cout << "Connected to MySQL" << std::endl;
+                if (fc.read_log ||
+                    (PerformQuery(DatabaseCall::MySQL, "DROP SCHEMA IF EXISTS " + fc.mysql_server.database + ";") &&
+                     PerformQuery(DatabaseCall::MySQL, "CREATE SCHEMA " + fc.mysql_server.database + ";")))
+                {
+                    std::cout << "Connected to MySQL" << std::endl;
+                }
+                else
+                {
+                    mysql_close(mysql_connection);
+                    mysql_connection = nullptr;
+                }
             }
         }
         if (fc.postgresql_server.port || fc.postgresql_server.unix_socket != "")
@@ -122,6 +130,16 @@ public:
                 connection_str += fc.postgresql_server.password;
                 connection_str += "'";
             }
+            if (fc.postgresql_server.database != "")
+            {
+                if (has_something)
+                {
+                    connection_str += " ";
+                }
+                connection_str += "dbname='";
+                connection_str += fc.postgresql_server.database;
+                connection_str += "'";
+            }
             try
             {
                 if (!(postgres_connection = new pqxx::connection(std::move(connection_str))))
@@ -130,12 +148,18 @@ public:
                 }
                 else
                 {
-                    pqxx::work w(*postgres_connection);
-                    (void)w.exec("DROP SCHEMA IF EXISTS test CASCADE;");
-                    (void)w.exec("CREATE SCHEMA test;");
-                    w.commit();
                     out_postgresql = std::ofstream(fc.postgresql_server.query_log_file, std::ios::out | std::ios::trunc);
-                    std::cout << "Connected to PostgreSQL" << std::endl;
+                    if (fc.read_log ||
+                        (PerformQuery(DatabaseCall::PostgreSQL, "DROP SCHEMA IF EXISTS test CASCADE;") &&
+                         PerformQuery(DatabaseCall::PostgreSQL, "CREATE SCHEMA test;")))
+                    {
+                        std::cout << "Connected to PostgreSQL" << std::endl;
+                    }
+                    else
+                    {
+                        delete postgres_connection;
+                        postgres_connection = nullptr;
+                    }
                 }
             }
             catch (std::exception const & e)

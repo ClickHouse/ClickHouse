@@ -15,10 +15,10 @@ class ServerCredentials
 public:
     std::string hostname;
     uint32_t port;
-    std::string unix_socket, user, password;
+    std::string unix_socket, user, password, database;
     std::filesystem::path query_log_file;
 
-    ServerCredentials() : hostname("localhost"), port(0), unix_socket(""), user("test"), password(""), query_log_file("") { }
+    ServerCredentials() : hostname("localhost"), port(0), unix_socket(""), user("test"), password(""), database(""), query_log_file("") { }
 
     ServerCredentials(
         const std::string & h,
@@ -26,8 +26,9 @@ public:
         const std::string & us,
         const std::string & u,
         const std::string & pass,
+        const std::string & db,
         const std::filesystem::path & qlf)
-        : hostname(h), port(p), unix_socket(us), user(u), password(pass), query_log_file(qlf)
+        : hostname(h), port(p), unix_socket(us), user(u), password(pass), database(db), query_log_file(qlf)
     {
     }
 
@@ -38,6 +39,7 @@ public:
         this->user = c.user;
         this->unix_socket = c.unix_socket;
         this->password = c.password;
+        this->database = c.database;
         this->query_log_file = c.query_log_file;
     }
     ServerCredentials(ServerCredentials && c)
@@ -47,6 +49,7 @@ public:
         this->user = c.user;
         this->unix_socket = c.unix_socket;
         this->password = c.password;
+        this->database = c.database;
         this->query_log_file = c.query_log_file;
     }
     ServerCredentials & operator=(const ServerCredentials & c)
@@ -56,6 +59,7 @@ public:
         this->user = c.user;
         this->unix_socket = c.unix_socket;
         this->password = c.password;
+        this->database = c.database;
         this->query_log_file = c.query_log_file;
         return *this;
     }
@@ -66,6 +70,7 @@ public:
         this->user = c.user;
         this->unix_socket = c.unix_socket;
         this->password = c.password;
+        this->database = c.database;
         this->query_log_file = c.query_log_file;
         return *this;
     }
@@ -74,7 +79,7 @@ public:
 static const ServerCredentials LoadServerCredentials(const json & val, const std::string & sname, const uint32_t & default_port)
 {
     uint32_t port = default_port;
-    std::string hostname = "localhost", unix_socket = "", user = "test", password = "";
+    std::string hostname = "localhost", unix_socket = "", user = "test", password = "", database = "test";
     std::filesystem::path query_log_file = std::filesystem::temp_directory_path() / (sname + ".sql");
 
     for (const auto & [key, value] : val.items())
@@ -99,6 +104,10 @@ static const ServerCredentials LoadServerCredentials(const json & val, const std
         {
             password = static_cast<std::string>(value);
         }
+        else if (key == "database")
+        {
+            database = static_cast<std::string>(value);
+        }
         else if (key == "query_log_file")
         {
             query_log_file = std::filesystem::path(static_cast<std::string>(value));
@@ -108,7 +117,7 @@ static const ServerCredentials LoadServerCredentials(const json & val, const std
             throw std::runtime_error("Unknown option: " + key);
         }
     }
-    return ServerCredentials(hostname, port, unix_socket, user, password, query_log_file);
+    return ServerCredentials(hostname, port, unix_socket, user, password, database, query_log_file);
 }
 
 class FuzzConfig

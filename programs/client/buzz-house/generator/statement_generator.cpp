@@ -447,11 +447,19 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator & rg, SQLBase & b,
         const ServerCredentials & sc = b.IsMySQLEngine() ? fc.mysql_server : fc.postgresql_server;
 
         te->add_params()->set_svalue(sc.hostname + ":" + std::to_string(sc.port));
-        te->add_params()->set_svalue("test");
+        te->add_params()->set_svalue(sc.database);
         te->add_params()->set_svalue("t" + std::to_string(b.tname));
         te->add_params()->set_svalue(sc.user);
         te->add_params()->set_svalue(sc.password);
-        if (b.IsMySQLEngine() && rg.NextBool())
+        if (b.IsPostgreSQLEngine())
+        {
+            te->add_params()->set_svalue("test"); //PostgreSQL schema
+            if (rg.NextSmallNumber() < 4)
+            {
+                te->add_params()->set_svalue("ON CONFLICT DO NOTHING");
+            }
+        }
+        else if (rg.NextBool())
         {
             const uint32_t first_optional_value = rg.NextBool() ? 1 : 0;
 

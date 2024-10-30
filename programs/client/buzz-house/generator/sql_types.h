@@ -811,9 +811,4 @@ bool HasType(const SQLType * tp)
     }
     return false;
 }
-
-std::tuple<const SQLType *, sql_query_grammar::Integers> RandomIntType(RandomGenerator & rg, const uint32_t allowed_types);
-std::tuple<const SQLType *, sql_query_grammar::FloatingPoints> RandomFloatType(RandomGenerator & rg);
-std::tuple<const SQLType *, sql_query_grammar::Dates> RandomDateType(RandomGenerator & rg, const uint32_t allowed_types);
-
 }
