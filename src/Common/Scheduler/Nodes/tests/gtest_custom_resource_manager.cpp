@@ -2,15 +2,15 @@
 
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 
-#include <Common/Scheduler/Nodes/DynamicResourceManager.h>
+#include <Common/Scheduler/Nodes/CustomResourceManager.h>
 #include <Poco/Util/XMLConfiguration.h>
 
 using namespace DB;
 
-using ResourceTest = ResourceTestManager<DynamicResourceManager>;
+using ResourceTest = ResourceTestManager<CustomResourceManager>;
 using TestGuard = ResourceTest::Guard;
 
-TEST(SchedulerDynamicResourceManager, Smoke)
+TEST(SchedulerCustomResourceManager, Smoke)
 {
     ResourceTest t;
 
@@ -31,25 +31,25 @@ TEST(SchedulerDynamicResourceManager, Smoke)
         </clickhouse>
     )CONFIG");
 
-    ClassifierPtr cA = t.manager->acquire("A");
-    ClassifierPtr cB = t.manager->acquire("B");
+    ClassifierPtr c_a = t.manager->acquire("A");
+    ClassifierPtr c_b = t.manager->acquire("B");
 
     for (int i = 0; i < 10; i++)
     {
-        ResourceGuard gA(ResourceGuard::Metrics::getIOWrite(), cA->get("res1"), 1, ResourceGuard::Lock::Defer);
-        gA.lock();
-        gA.consume(1);
-        gA.unlock();
+        ResourceGuard g_a(ResourceGuard::Metrics::getIOWrite(), c_a->get("res1"), 1, ResourceGuard::Lock::Defer);
+        g_a.lock();
+        g_a.consume(1);
+        g_a.unlock();
 
-        ResourceGuard gB(ResourceGuard::Metrics::getIOWrite(), cB->get("res1"));
-        gB.unlock();
+        ResourceGuard g_b(ResourceGuard::Metrics::getIOWrite(), c_b->get("res1"));
+        g_b.unlock();
 
-        ResourceGuard gC(ResourceGuard::Metrics::getIORead(), cB->get("res1"));
-        gB.consume(2);
+        ResourceGuard g_c(ResourceGuard::Metrics::getIORead(), c_b->get("res1"));
+        g_b.consume(2);
     }
 }
 
-TEST(SchedulerDynamicResourceManager, Fairness)
+TEST(SchedulerCustomResourceManager, Fairness)
 {
     // Total cost for A and B cannot differ for more than 1 (every request has cost equal to 1).
     // Requests from A use `value = 1` and from B `value = -1` is used.
