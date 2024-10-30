@@ -30,10 +30,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+// clang-format off
+
 /** These settings represent fine tunes for internal details of MergeTree storages
   * and should not be changed by the user without a reason.
   */
-
 #define MERGE_TREE_SETTINGS(DECLARE, ALIAS) \
     DECLARE(UInt64, min_compress_block_size, 0, "When granule is written, compress the data in buffer if the size of pending uncompressed data is larger or equal than the specified threshold. If this setting is not set, the corresponding global setting is used.", 0) \
     DECLARE(UInt64, max_compress_block_size, 0, "Compress the pending uncompressed data in buffer if its size is larger or equal than the specified threshold. Block of data will be compressed even if the current granule is not finished. If this setting is not set, the corresponding global setting is used.", 0) \
@@ -98,7 +99,7 @@ namespace ErrorCodes
     DECLARE(String, merge_workload, "", "Name of workload to be used to access resources for merges", 0) \
     DECLARE(String, mutation_workload, "", "Name of workload to be used to access resources for mutations", 0) \
     DECLARE(Milliseconds, background_task_preferred_step_execution_time_ms, 50, "Target time to execution of one step of merge or mutation. Can be exceeded if one step takes longer time", 0) \
-    DECLARE(MergeSelectorAlgorithm, merge_selector_algorithm, MergeSelectorAlgorithm::SIMPLE, "The algorithm to select parts for merges assignment", 0) \
+    DECLARE(MergeSelectorAlgorithm, merge_selector_algorithm, MergeSelectorAlgorithm::SIMPLE, "The algorithm to select parts for merges assignment", EXPERIMENTAL) \
     \
     /** Inserts settings. */ \
     DECLARE(UInt64, parts_to_delay_insert, 1000, "If table contains at least that many active parts in single partition, artificially slow down insert into table. Disabled if set to 0", 0) \
@@ -276,8 +277,9 @@ namespace ErrorCodes
     MERGE_TREE_SETTINGS(M, ALIAS)             \
     OBSOLETE_MERGE_TREE_SETTINGS(M, ALIAS)
 
-DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS)
+// clang-format on
 
+DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS)
 
 /** Settings for the MergeTree family of engines.
   * Could be loaded from config or from a CREATE TABLE query (SETTINGS clause).
