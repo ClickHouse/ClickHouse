@@ -181,7 +181,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::expandPipeline(std::stack<uint6
     return UpdateNodeStatus::Done;
 }
 
-void ExecutingGraph::initializeExecution(Queue & queue)
+void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
 {
     std::stack<uint64_t> stack;
 
@@ -197,18 +197,12 @@ void ExecutingGraph::initializeExecution(Queue & queue)
         }
     }
 
-    Queue async_queue;
-
     while (!stack.empty())
     {
         uint64_t proc = stack.top();
         stack.pop();
 
         updateNode(proc, queue, async_queue);
-
-        if (!async_queue.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Async is only possible after work() call. Processor {}",
-                            async_queue.front()->processor->getName());
     }
 }
 
@@ -279,7 +273,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue 
                 try
                 {
                     auto & processor = *node.processor;
-                    IProcessor::Status last_status = node.last_processor_status;
+                    const auto last_status = node.last_processor_status;
                     IProcessor::Status status = processor.prepare(node.updated_input_ports, node.updated_output_ports);
                     node.last_processor_status = status;
 
@@ -319,7 +313,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue 
                 node.updated_input_ports.clear();
                 node.updated_output_ports.clear();
 
-                switch (node.last_processor_status)
+                switch (*node.last_processor_status)
                 {
                     case IProcessor::Status::NeedData:
                     case IProcessor::Status::PortFull:

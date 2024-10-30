@@ -94,6 +94,7 @@ ln -sf $SRC_PATH/users.d/prefetch_settings.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/allow_introspection_functions.yaml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/replicated_ddl_entry.xml $DEST_SERVER_PATH/users.d/
+ln -sf $SRC_PATH/users.d/limits.yaml $DEST_SERVER_PATH/users.d/
 
 if [[ -n "$USE_OLD_ANALYZER" ]] && [[ "$USE_OLD_ANALYZER" -eq 1 ]]; then
     ln -sf $SRC_PATH/users.d/analyzer.xml $DEST_SERVER_PATH/users.d/
@@ -114,6 +115,7 @@ ln -sf $SRC_PATH/test_function.xml $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/top_level_domains $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/regions_hierarchy.txt $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/regions_names_en.txt $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/regions_names_es.txt $DEST_SERVER_PATH/config.d/
 
 ln -sf $SRC_PATH/ext-en.txt $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/ext-ru.txt $DEST_SERVER_PATH/config.d/

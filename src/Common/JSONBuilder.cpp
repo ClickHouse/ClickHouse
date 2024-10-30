@@ -35,7 +35,7 @@ void JSONArray::format(const FormatSettings & settings, FormatContext & context)
 
     context.offset += settings.indent;
 
-    bool single_row = settings.print_simple_arrays_in_single_row && isSimpleArray(values);
+    bool single_row = settings.solid || (settings.print_simple_arrays_in_single_row && isSimpleArray(values));
     bool first = true;
 
     for (const auto & value : values)
@@ -48,7 +48,7 @@ void JSONArray::format(const FormatSettings & settings, FormatContext & context)
             writeChar('\n', context.out);
             writeChar(' ', context.offset, context.out);
         }
-        else if (!first)
+        else if (!first && !settings.solid)
             writeChar(' ', context.out);
 
         first = false;
@@ -80,20 +80,33 @@ void JSONMap::format(const FormatSettings & settings, FormatContext & context)
             writeChar(',', context.out);
         first = false;
 
-        writeChar('\n', context.out);
-        writeChar(' ', context.offset, context.out);
+        if (!settings.solid)
+        {
+            writeChar('\n', context.out);
+            writeChar(' ', context.offset, context.out);
+        }
         writeJSONString(value.key, context.out, settings.settings);
 
         writeChar(':', context.out);
-        writeChar(' ', context.out);
+        if (!settings.solid)
+            writeChar(' ', context.out);
+
         value.value->format(settings, context);
     }
 
     context.offset -= settings.indent;
 
-    writeChar('\n', context.out);
-    writeChar(' ', context.offset, context.out);
+    if (!settings.solid)
+    {
+        writeChar('\n', context.out);
+        writeChar(' ', context.offset, context.out);
+    }
     writeChar('}', context.out);
+}
+
+void JSONNull::format(const FormatSettings &, FormatContext & context)
+{
+    writeString("null", context.out);
 }
 
 }

@@ -11,6 +11,7 @@
 #include <Core/ServerUUID.h>
 #include <Common/logger_useful.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
+#include <Common/MemoryWorker.h>
 #include <Common/ErrorHandlers.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
@@ -65,6 +66,8 @@
 #include <incbin.h>
 /// A minimal file used when the keeper is run without installation
 INCBIN(keeper_resource_embedded_xml, SOURCE_DIR "/programs/keeper/keeper_embedded.xml");
+
+extern const char * GIT_HASH;
 
 int mainEntryClickHouseKeeper(int argc, char ** argv)
 {
@@ -382,6 +385,9 @@ try
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
 
+    MemoryWorker memory_worker(config().getUInt64("memory_worker_period_ms", 0));
+    memory_worker.start();
+
     static ServerErrorHandler error_handler;
     Poco::ErrorHandler::set(&error_handler);
 
@@ -423,8 +429,9 @@ try
             for (const auto & server : *servers)
                 metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
             return metrics;
-        }
-    );
+        },
+        /*update_jemalloc_epoch_=*/memory_worker.getSource() != MemoryWorker::MemoryUsageSource::Jemalloc,
+        /*update_rss_=*/memory_worker.getSource() == MemoryWorker::MemoryUsageSource::None);
 
     std::vector<std::string> listen_hosts = DB::getMultipleValuesFromConfig(config(), "", "listen_host");
 
@@ -653,7 +660,6 @@ try
     GWPAsan::initFinished();
 #endif
 
-
     LOG_INFO(log, "Ready for connections.");
 
     waitForTerminationRequest();
@@ -675,7 +681,7 @@ void Keeper::logRevision() const
         "Starting ClickHouse Keeper {} (revision: {}, git hash: {}, build id: {}), PID {}",
         VERSION_STRING,
         ClickHouseRevision::getVersionRevision(),
-        git_hash.empty() ? "<unknown>" : git_hash,
+        GIT_HASH,
         build_id.empty() ? "<unknown>" : build_id,
         getpid());
 }

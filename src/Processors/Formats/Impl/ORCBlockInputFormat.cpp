@@ -23,7 +23,10 @@ namespace ErrorCodes
 }
 
 ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
-    : IInputFormat(std::move(header_), &in_), format_settings(format_settings_), skip_stripes(format_settings.orc.skip_stripes)
+    : IInputFormat(std::move(header_), &in_)
+    , block_missing_values(getPort().getHeader().columns())
+    , format_settings(format_settings_)
+    , skip_stripes(format_settings.orc.skip_stripes)
 {
 }
 
@@ -64,7 +67,7 @@ Chunk ORCBlockInputFormat::read()
     /// are not presented in data) the number of rows in record batch will be 0.
     size_t num_rows = file_reader->GetRawORCReader()->getStripe(stripe_current)->getNumberOfRows();
 
-    auto table = table_result.ValueOrDie();
+    const auto & table = table_result.ValueOrDie();
     if (!table || !num_rows)
         return {};
 
@@ -86,9 +89,9 @@ void ORCBlockInputFormat::resetParser()
     block_missing_values.clear();
 }
 
-const BlockMissingValues & ORCBlockInputFormat::getMissingValues() const
+const BlockMissingValues * ORCBlockInputFormat::getMissingValues() const
 {
-    return block_missing_values;
+    return &block_missing_values;
 }
 
 
@@ -160,8 +163,11 @@ NamesAndTypesList ORCSchemaReader::readSchema()
 {
     initializeIfNeeded();
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
-        *schema, "ORC", format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference);
-    if (format_settings.schema_inference_make_columns_nullable)
+        *schema,
+        "ORC",
+        format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference,
+        format_settings.schema_inference_make_columns_nullable != 0);
+    if (format_settings.schema_inference_make_columns_nullable == 1)
         return getNamesAndRecursivelyNullableTypes(header);
     return header.getNamesAndTypesList();
 }

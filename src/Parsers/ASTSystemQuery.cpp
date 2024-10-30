@@ -192,6 +192,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         case Type::SYNC_REPLICA:
         case Type::WAIT_LOADING_PARTS:
         case Type::FLUSH_DISTRIBUTED:
+        case Type::PREWARM_MARK_CACHE:
         {
             if (table)
             {
@@ -377,6 +378,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         case Type::START_VIEW:
         case Type::STOP_VIEW:
         case Type::CANCEL_VIEW:
+        case Type::WAIT_VIEW:
         {
             settings.ostr << ' ';
             print_database_table();

@@ -6,8 +6,7 @@
 #include <unordered_map>
 #include <boost/functional/hash.hpp>
 
-#include <IO/ReadSettings.h>
-
+#include <Common/callOnce.h>
 #include <Common/ThreadPool.h>
 #include <Common/StatusFile.h>
 #include <Interpreters/Cache/LRUFileCachePriority.h>
@@ -24,6 +23,7 @@
 
 namespace DB
 {
+struct ReadSettings;
 
 /// Track acquired space in cache during reservation
 /// to make error messages when no space left more informative.
@@ -82,9 +82,10 @@ public:
 
     bool isInitialized() const;
 
-    const String & getBasePath() const;
+    /// Throws if `!load_metadata_asynchronously` and there is an exception in `init_exception`
+    void throwInitExceptionIfNeeded();
 
-    static Key createKeyForPath(const String & path);
+    const String & getBasePath() const;
 
     static const UserInfo & getCommonUser();
 
@@ -199,6 +200,9 @@ private:
     const size_t bypass_cache_threshold;
     const size_t boundary_alignment;
     size_t load_metadata_threads;
+    const bool load_metadata_asynchronously;
+    std::atomic<bool> stop_loading_metadata = false;
+    ThreadFromGlobalPool load_metadata_main_thread;
     const bool write_cache_per_user_directory;
 
     BackgroundSchedulePool::TaskHolder keep_up_free_space_ratio_task;
@@ -210,6 +214,7 @@ private:
 
     std::exception_ptr init_exception;
     std::atomic<bool> is_initialized = false;
+    OnceFlag initialize_called;
     mutable std::mutex init_mutex;
     std::unique_ptr<StatusFile> status_file;
     std::atomic<bool> shutdown = false;
@@ -246,6 +251,8 @@ private:
      * then allowed loaded cache size is std::min(n - k, max_query_cache_size).
      */
     FileCacheQueryLimitPtr query_limit;
+
+    void initializeImpl(bool load_metadata);
 
     void assertInitialized() const;
     void assertCacheCorrectness();

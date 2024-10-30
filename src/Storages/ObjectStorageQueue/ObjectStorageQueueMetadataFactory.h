@@ -1,7 +1,6 @@
 #pragma once
-#include <boost/noncopyable.hpp>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
+#include <boost/noncopyable.hpp>
 
 namespace DB
 {
@@ -13,7 +12,9 @@ public:
 
     static ObjectStorageQueueMetadataFactory & instance();
 
-    FilesMetadataPtr getOrCreate(const std::string & zookeeper_path, const ObjectStorageQueueSettings & settings);
+    FilesMetadataPtr getOrCreate(
+        const std::string & zookeeper_path,
+        ObjectStorageQueueMetadataPtr metadata);
 
     void remove(const std::string & zookeeper_path);
 

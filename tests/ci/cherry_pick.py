@@ -34,11 +34,11 @@ from typing import List, Optional
 
 import __main__
 
+from ci_config import Labels
 from env_helper import TEMP_PATH
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, git_runner, is_shallow
 from github_helper import GitHub, PullRequest, PullRequests, Repository
-from ci_config import Labels
 from ssh import SSHKey
 
 
@@ -417,15 +417,13 @@ class Backport:
                 f"v{branch}-must-backport" for branch in self.release_branches
             ]
         else:
-            fetch_release_prs = self.gh.get_release_pulls(self._fetch_from)
-            fetch_release_branches = [pr.head.ref for pr in fetch_release_prs]
             self.labels_to_backport = [
                 (
                     f"v{branch}-must-backport"
                     if self._repo_name == "ClickHouse/ClickHouse"
                     else f"v{branch.replace('release/','')}-must-backport"
                 )
-                for branch in fetch_release_branches
+                for branch in self.release_branches
             ]
 
             logging.info("Fetching from %s", self._fetch_from)

@@ -73,13 +73,21 @@ In the above example the `password_sha256_hex` value is the hexadecimal represen
 
 ### Storage for named collections
 
-Named collections can either be stored on local disk or in zookeeper/keeper. By default local storage is used.
+Named collections can either be stored on local disk or in ZooKeeper/Keeper. By default local storage is used.
+They can also be stored using encryption with the same algorithms used for [disk encryption](storing-data#encrypted-virtual-file-system),
+where `aes_128_ctr` is used by default.
 
-To configure named collections storage in keeper and a `type` (equal to either `keeper` or `zookeeper`) and `path` (path in keeper, where named collections will be stored) to `named_collections_storage` section in configuration file:
+To configure named collections storage you need to specify a `type`. This can be either `local` or `keeper`/`zookeeper`. For encrypted storage,
+you can use `local_encrypted` or `keeper_encrypted`/`zookeeper_encrypted`.
+
+To use ZooKeeper/Keeper we also need to set up a `path` (path in ZooKeeper/Keeper, where named collections will be stored) to
+`named_collections_storage` section in configuration file. The following example uses encryption and ZooKeeper/Keeper:
 ```
 <clickhouse>
   <named_collections_storage>
-    <type>zookeeper</type>
+    <type>zookeeper_encrypted</type>
+    <key_hex>bebec0cabebec0cabebec0cabebec0ca</key_hex>
+    <algorithm>aes_128_ctr</algorithm>
     <path>/named_collections_path/</path>
     <update_timeout_ms>1000</update_timeout_ms>
   </named_collections_storage>
@@ -315,7 +323,7 @@ The description of parameters see [postgresql](../sql-reference/table-functions/
 Parameter `addresses_expr` is used in a collection instead of `host:port`. The parameter is optional, because there are other optional ones: `host`, `hostname`, `port`. The following pseudo code explains the priority:
 
 ```sql
-CASE 
+CASE
     WHEN collection['addresses_expr'] != '' THEN collection['addresses_expr']
     WHEN collection['host'] != ''           THEN collection['host'] || ':' || if(collection['port'] != '', collection['port'], '5432')
     WHEN collection['hostname'] != ''       THEN collection['hostname'] || ':' || if(collection['port'] != '', collection['port'], '5432')
@@ -496,7 +504,7 @@ kafka_topic_list = 'kafka_topic',
 kafka_group_name = 'consumer_group',
 kafka_format = 'JSONEachRow',
 kafka_max_block_size = '1048576';
-       
+
 ```
 ### XML example
 
