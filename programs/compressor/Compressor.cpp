@@ -1,6 +1,3 @@
-/// For magic_enum to properly get enum name of DB::CompressionMethodByte
-#define MAGIC_ENUM_RANGE_MAX 256
-
 #include <iostream>
 #include <optional>
 #include <boost/program_options.hpp>
@@ -14,9 +11,12 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
+#include <Compression/getCompressionCodecForFile.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/queryToString.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/TerminalSize.h>
@@ -41,31 +41,19 @@ void checkAndWriteHeader(DB::ReadBuffer & in, DB::WriteBuffer & out)
 {
     while (!in.eof())
     {
-        in.ignore(16); /// checksum
-
-        char header[COMPRESSED_BLOCK_HEADER_SIZE];
-        in.readStrict(header, COMPRESSED_BLOCK_HEADER_SIZE);
-
-        UInt32 size_compressed = unalignedLoad<UInt32>(&header[1]);
+        UInt32 size_compressed;
+        UInt32 size_decompressed;
+        auto codec = DB::getCompressionCodecForFile(in, size_compressed, size_decompressed, true /* skip_to_next_block */);
 
         if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
             throw DB::Exception(DB::ErrorCodes::TOO_LARGE_SIZE_COMPRESSED, "Too large size_compressed. Most likely corrupted data.");
 
-        UInt32 size_decompressed = unalignedLoad<UInt32>(&header[5]);
-
-        auto method_byte = static_cast<uint8_t>(header[0]);
-        auto method = magic_enum::enum_cast<DB::CompressionMethodByte>(method_byte);
-        if (method)
-            DB::writeText(magic_enum::enum_name(*method), out);
-        else
-            DB::writeText(fmt::format("UNKNOWN({})", method_byte), out);
+        DB::writeText(queryToString(codec->getFullCodecDesc()), out);
         DB::writeChar('\t', out);
         DB::writeText(size_decompressed, out);
         DB::writeChar('\t', out);
         DB::writeText(size_compressed, out);
         DB::writeChar('\n', out);
-
-        in.ignore(size_compressed - COMPRESSED_BLOCK_HEADER_SIZE);
     }
 }
 
