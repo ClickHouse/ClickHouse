@@ -1754,21 +1754,12 @@ void TCPHandler::sendHello()
         writeIntBinary(nonce.value(), *out);
     }
 
-    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_HELLO_EXTRAS)
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_SETTINGS)
     {
-        /// Write newly added fields as one length-prefixed blob to allow proxies to skip them
-        /// without parsing. Needed only for Hello message because it can't use chunked protocol.
-        WriteBufferFromOwnString extras;
-
-        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_SETTINGS)
-        {
-            if (is_interserver_mode || !Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::send_settings_to_client])
-                Settings::writeEmpty(extras); // send empty list of setting changes
-            else
-                session->sessionContext()->getSettingsRef().write(extras, SettingsWriteFormat::STRINGS_WITH_FLAGS);
-        }
-
-        writeStringBinary(extras.str(), *out);
+        if (is_interserver_mode || !Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::send_settings_to_client])
+            Settings::writeEmpty(*out); // send empty list of setting changes
+        else
+            session->sessionContext()->getSettingsRef().write(*out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
     }
 
     out->next();

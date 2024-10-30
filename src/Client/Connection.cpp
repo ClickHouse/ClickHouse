@@ -577,21 +577,12 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
             readIntBinary(read_nonce, *in);
             nonce.emplace(read_nonce);
         }
-        if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_HELLO_EXTRAS)
+
+        if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_SETTINGS)
         {
-            UInt64 extras_size;
-            readVarUInt(extras_size, *in);
-            LimitReadBuffer extras(*in, extras_size, /*throw_exception_*/ false, /*exact_limit_*/ extras_size);
-
-            if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_SETTINGS)
-            {
-                Settings settings;
-                settings.read(extras, SettingsWriteFormat::STRINGS_WITH_FLAGS);
-                settings_from_server = settings.changes();
-            }
-
-            if (!extras.eof())
-                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected size of Hello message extras: expected {}, got {}", extras.count(), extras_size);
+            Settings settings;
+            settings.read(*in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+            settings_from_server = settings.changes();
         }
     }
     else if (packet_type == Protocol::Server::Exception)
@@ -866,7 +857,11 @@ void Connection::sendQuery(
             for (const SettingChange & change : settings_from_server)
             {
                 if (settings->get(change.name) == change.value)
-                    modified_settings->setDefaultValue(change.name); // mark as unchanged so it's not sent
+                {
+                    // Mark as unchanged so it's not sent.
+                    modified_settings->setDefaultValue(change.name);
+                    chassert(!modified_settings->isChanged(change.name));
+                }
             }
             settings_to_send = &*modified_settings;
         }

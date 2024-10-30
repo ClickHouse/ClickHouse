@@ -8,11 +8,13 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=[],
-    user_configs=[
-        "configs/users.d/users.xml",
-    ],
+    user_configs=["configs/users.d/users.xml"],
 )
-
+node_no_send = cluster.add_instance(
+    "node_no_send",
+    main_configs=["configs/config.d/no_send.xml"],
+    user_configs=["configs/users.d/users.xml"],
+)
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -62,3 +64,7 @@ def test_settings_from_server(started_cluster):
     res = node.query("select toDateTime64('1970-01-02 00:00:00', 0)", user="u")
     assert res == "86400\n"
     node.query("drop user u")
+
+    # send_settings_to_client = false
+    res = node_no_send.query("select 42::UInt64 as x format JSON")
+    assert '"x": "42"' in res, "should be quoted"
