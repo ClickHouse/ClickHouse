@@ -916,13 +916,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 /// It is just a safety check needed until we have a proper sending plan to replicas.
                 /// If we have a non-trivial storage like View it might create its own Planner inside read(), run findTableForParallelReplicas()
                 /// and find some other table that might be used for reading with parallel replicas. It will lead to errors.
-                const bool other_table_chosen_for_reading_with_parallel_replicas
-                    = planner_context->getGlobalPlannerContext()->parallel_replicas_table
+                const bool no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode
+                    = query_context->canUseParallelReplicasOnFollower()
                     && table_node != planner_context->getGlobalPlannerContext()->parallel_replicas_table;
-                if (other_table_chosen_for_reading_with_parallel_replicas)
+                if (no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode)
                 {
-                    chassert(query_context->canUseParallelReplicasOnFollower());
-
                     auto mutable_context = Context::createCopy(query_context);
                     mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                     storage->read(
@@ -984,7 +982,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             query_plan = std::move(query_plan_parallel_replicas);
                         }
                     }
-                    else if (ClusterProxy::canUseParallelReplicasOnInitiator(query_context))
+                    else if (
+                        ClusterProxy::canUseParallelReplicasOnInitiator(query_context)
+                        && planner_context->getGlobalPlannerContext()->parallel_replicas_node
+                        && planner_context->getGlobalPlannerContext()->parallel_replicas_node == query_node)
                     {
                         // (1) find read step
                         QueryPlan::Node * node = query_plan.getRootNode();
