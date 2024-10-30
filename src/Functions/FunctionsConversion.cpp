@@ -3741,6 +3741,17 @@ private:
             element_wrappers.reserve(to_names.size());
             to_reverse_index.reserve(from_names.size());
 
+            bool strict_named_tuple_conversion = false;
+            if (DB::CurrentThread::isInitialized())
+            {
+                const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
+
+                // Avoid strict checks for background operations like part
+                // merging to achieve better backward compatibility.
+                if (query_context && !query_context->isBackgroundOperationContext())
+                    strict_named_tuple_conversion = query_context->getSettingsRef()[Setting::strict_named_tuple_conversion];
+            }
+
             size_t num_from_fields = 0;
             for (size_t i = 0; i < to_names.size(); ++i)
             {
@@ -3753,21 +3764,17 @@ private:
                 }
                 else
                 {
+                    if (strict_named_tuple_conversion)
+                        throw Exception(
+                            ErrorCodes::CANNOT_CONVERT_TYPE,
+                            "Field {} doesn't exist in source tuple when casting {} to {} (strict_named_tuple_conversion is enabled)",
+                            to_names[i],
+                            from_type->getName(),
+                            to_type->getName());
+
                     element_wrappers.emplace_back();
                     to_reverse_index.emplace_back();
                 }
-            }
-
-            bool strict_named_tuple_conversion = false;
-
-            if (DB::CurrentThread::isInitialized())
-            {
-                const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
-
-                // Avoid strict checks for background operations like part
-                // merging to achieve better backward compatibility.
-                if (query_context && !query_context->isBackgroundOperationContext())
-                    strict_named_tuple_conversion = query_context->getSettingsRef()[Setting::strict_named_tuple_conversion];
             }
 
             if (strict_named_tuple_conversion && num_from_fields < from_names.size())
