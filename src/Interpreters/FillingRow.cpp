@@ -10,7 +10,7 @@
 namespace DB
 {
 
-constexpr static bool debug_logging_enabled = true;
+constexpr static bool debug_logging_enabled = false;
 
 template <class... Args>
 static void logDebug(String fmt_str, Args&&... args)
