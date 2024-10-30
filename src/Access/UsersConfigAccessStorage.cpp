@@ -7,6 +7,8 @@
 #include <Access/SettingsProfile.h>
 #include <Access/AccessControl.h>
 #include <Access/resolveSetting.h>
+#include <Access/Common/AuthenticationType.h>
+#include <Access/Common/OneTimePassword.h>
 #include <Access/AccessChangesNotifier.h>
 #include <Dictionaries/IDictionary.h>
 #include <Common/Config/ConfigReloader.h>
@@ -127,6 +129,7 @@ namespace
         String user_config = "users." + user_name;
         bool has_no_password = config.has(user_config + ".no_password");
         bool has_password_plaintext = config.has(user_config + ".password");
+        bool has_otp_secret = config.has(user_config + ".time_based_one_time_password");
         bool has_password_sha256_hex = config.has(user_config + ".password_sha256_hex");
         bool has_password_double_sha1_hex = config.has(user_config + ".password_double_sha1_hex");
         bool has_ldap = config.has(user_config + ".ldap");
@@ -142,11 +145,11 @@ namespace
         bool has_http_auth = config.has(http_auth_config);
 
         size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex
-            + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth;
+            + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth + has_otp_secret;
 
         if (num_password_fields > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "More than one field of 'password', 'password_sha256_hex', "
-                            "'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', 'ssl_certificates', 'ssh_keys', "
+                            "'password_double_sha1_hex', 'no_password', 'time_based_one_time_password', 'ldap', 'kerberos', 'ssl_certificates', 'ssh_keys', "
                             "'http_authentication' are used to specify authentication info for user {}. "
                             "Must be only one of them.", user_name);
 
@@ -169,6 +172,16 @@ namespace
         {
             user->authentication_methods.emplace_back(AuthenticationType::DOUBLE_SHA1_PASSWORD);
             user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"), validate);
+        }
+        else if (has_otp_secret)
+        {
+            String secret = config.getString(user_config + ".time_based_one_time_password.secret", "");
+            OneTimePasswordConfig otp_config(
+                config.getInt(user_config + ".time_based_one_time_password.digits", {}),
+                config.getInt(user_config + ".time_based_one_time_password.period", {}),
+                config.getString(user_config + ".time_based_one_time_password.algorithm", "")
+            );
+            user->authentication_methods.emplace_back(AuthenticationType::ONE_TIME_PASSWORD).setOneTimePassword(secret, otp_config, validate);
         }
         else if (has_ldap)
         {
@@ -269,7 +282,7 @@ namespace
         }
         else
         {
-            user->authentication_methods.emplace_back();
+            user->authentication_methods.emplace_back(AuthenticationType::NO_PASSWORD);
         }
 
         for (const auto & authentication_method : user->authentication_methods)

@@ -32,6 +32,24 @@
                  If you want to specify double SHA1, place it in 'password_double_sha1_hex' element.
                  Example: <password_double_sha1_hex>e395796d6546b1b65db9d665cd43f0e858dd4303</password_double_sha1_hex>
 
+                 If you want to specify secret for one time passwords, place it in 'time_based_one_time_password' element.
+                 Example:
+                 <time_based_one_time_password>
+                     <secret>ALLT7V6M3NNSQXMEMPEAUSX77OOUTBSO</secret>
+                     <period>30</period>
+                     <digits>6</digits>
+                     <algorithm>SHA1</algorithm>
+                 </time_based_one_time_password>
+
+                 secret - base32 encoded secret key
+                 period - password validity duration in seconds, default is 30
+                 digits - number of digits in password, default is 6
+                 algorithm - hash algorithm: SHA1/SHA256/SHA512, default is SHA1
+
+                 How to generate secret:
+                 Execute: echo `base32 < /dev/urandom | head -c32`
+                 More info: https://datatracker.ietf.org/doc/html/rfc6238
+
                  If you want to specify a previously defined LDAP server (see 'ldap_servers' in the main config) for authentication,
                   place its name in 'server' element inside 'ldap' element.
                  Example: <ldap><server>my_ldap_server</server></ldap>

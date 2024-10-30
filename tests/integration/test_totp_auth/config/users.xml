@@ -1,0 +1,23 @@
+<clickhouse>
+    <profiles>
+        <default>
+        </default>
+    </profiles>
+    <users>
+        <totuser>
+            <time_based_one_time_password>
+                <secret>inwg sy3l jbxx k43f biaa ====</secret>
+                <period>10</period>
+                <digits>9</digits>
+                <algorithm>SHA1</algorithm>
+            </time_based_one_time_password>
+
+            <access_management>1</access_management>
+            <networks replace="replace">
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </totuser>
+    </users>
+</clickhouse>

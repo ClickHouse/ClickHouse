@@ -9,6 +9,7 @@
 #include <Common/SSHWrapper.h>
 #include <Common/typeid_cast.h>
 #include <Access/Common/SSLCertificateSubjects.h>
+#include <Access/Common/OneTimePassword.h>
 
 #include "config.h"
 
@@ -135,6 +136,13 @@ namespace
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
             {
                 return checkPasswordDoubleSHA1(basic_credentials->getPassword(), authentication_method.getPasswordHashBinary());
+            }
+            case AuthenticationType::ONE_TIME_PASSWORD:
+            {
+                return checkOneTimePassword(
+                    /* password */ basic_credentials->getPassword(),
+                    /* secret */ authentication_method.getPassword(),
+                    /* config */ authentication_method.getOneTimePasswordConfig());
             }
             case AuthenticationType::LDAP:
             {

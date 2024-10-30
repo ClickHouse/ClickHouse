@@ -133,6 +133,10 @@ void AuthenticationData::setPassword(const String & password_, bool validate)
             setPasswordHashBinary(Util::encodeDoubleSHA1(password_), validate);
             return;
 
+        case AuthenticationType::ONE_TIME_PASSWORD:
+            setPasswordHashBinary(Util::stringToDigest(normalizeOneTimePasswordSecret(password_)), validate);
+            return;
+
         case AuthenticationType::BCRYPT_PASSWORD:
         case AuthenticationType::NO_PASSWORD:
         case AuthenticationType::LDAP:
@@ -149,6 +153,15 @@ void AuthenticationData::setPassword(const String & password_, bool validate)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setPassword(): authentication type {} not supported", toString(type));
 }
 
+void AuthenticationData::setOneTimePassword(const String & password_, OneTimePasswordConfig config, bool validate)
+{
+    if (type != AuthenticationType::ONE_TIME_PASSWORD)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify one-time password for authentication type {}", toString(type));
+
+    otp_config = config;
+    setPasswordHashBinary(Util::stringToDigest(normalizeOneTimePasswordSecret(password_)), validate);
+}
+
 void AuthenticationData::setPasswordBcrypt(const String & password_, int workfactor_, bool validate)
 {
     if (type != AuthenticationType::BCRYPT_PASSWORD)
@@ -159,8 +172,9 @@ void AuthenticationData::setPasswordBcrypt(const String & password_, int workfac
 
 String AuthenticationData::getPassword() const
 {
-    if (type != AuthenticationType::PLAINTEXT_PASSWORD)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot decode the password");
+    if (type != AuthenticationType::PLAINTEXT_PASSWORD
+     && type != AuthenticationType::ONE_TIME_PASSWORD)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot decode the password for authentication type {}", type);
     return String(password_hash.data(), password_hash.data() + password_hash.size());
 }
 
@@ -200,6 +214,12 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash, bool validat
     switch (type)
     {
         case AuthenticationType::PLAINTEXT_PASSWORD:
+        {
+            password_hash = hash;
+            return;
+        }
+
+        case AuthenticationType::ONE_TIME_PASSWORD:
         {
             password_hash = hash;
             return;
@@ -302,6 +322,12 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
     switch (auth_type)
     {
         case AuthenticationType::PLAINTEXT_PASSWORD:
+        {
+            node->contains_password = true;
+            node->children.push_back(std::make_shared<ASTLiteral>(getPassword()));
+            break;
+        }
+        case AuthenticationType::ONE_TIME_PASSWORD:
         {
             node->contains_password = true;
             node->children.push_back(std::make_shared<ASTLiteral>(getPassword()));

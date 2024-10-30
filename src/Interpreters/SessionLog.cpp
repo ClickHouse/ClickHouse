@@ -85,6 +85,7 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::PLAINTEXT_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SHA256_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::DOUBLE_SHA1_PASSWORD),
+            AUTH_TYPE_NAME_AND_VALUE(AuthType::ONE_TIME_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::LDAP),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::JWT),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::KERBEROS),
@@ -94,7 +95,7 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::HTTP),
         });
 #undef AUTH_TYPE_NAME_AND_VALUE
-    static_assert(static_cast<int>(AuthenticationType::MAX) == 11);
+    static_assert(static_cast<int>(AuthenticationType::MAX) == 12);
 
     auto interface_type_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values

@@ -149,6 +149,16 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
             {
                 auth_params_json.set("realm", auth_data.getKerberosRealm());
             }
+            else if (auth_data.getType() == AuthenticationType::ONE_TIME_PASSWORD)
+            {
+                const auto & config = auth_data.getOneTimePasswordConfig();
+                if (config != OneTimePasswordConfig{})
+                {
+                    auth_params_json.set("algorithm", toString(config.algorithm));
+                    auth_params_json.set("num_digits", toString(config.num_digits));
+                    auth_params_json.set("period", toString(config.period));
+                }
+            }
             else if (auth_data.getType() == AuthenticationType::SSL_CERTIFICATE)
             {
                 Poco::JSON::Array::Ptr common_names = new Poco::JSON::Array();
