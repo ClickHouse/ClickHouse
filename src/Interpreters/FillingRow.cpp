@@ -68,25 +68,6 @@ bool FillingRow::isNull() const
     return true;
 }
 
-std::optional<Field> FillingRow::doJump(const FillColumnDescription& descr, size_t column_ind)
-{
-    Field next_value = row[column_ind];
-    descr.step_func(next_value, 1);
-
-    if (!descr.fill_to.isNull() && less(descr.fill_to, next_value, getDirection(column_ind)))
-        return std::nullopt;
-
-    if (!descr.fill_staleness.isNull())
-    {
-        if (less(next_value, staleness_border[column_ind], getDirection(column_ind)))
-            return next_value;
-        else
-            return std::nullopt;
-    }
-
-    return next_value;
-}
-
 std::optional<Field> FillingRow::doLongJump(const FillColumnDescription & descr, size_t column_ind, const Field & to)
 {
     Field shifted_value = row[column_ind];
@@ -98,16 +79,6 @@ std::optional<Field> FillingRow::doLongJump(const FillColumnDescription & descr,
     {
         Field next_value = shifted_value;
         descr.step_func(next_value, step_len);
-
-        // if (less(next_value, to, getDirection(0)))
-        // {
-        //     shifted_value = std::move(next_value);
-        //     step_len *= 2;
-        // }
-        // else
-        // {
-        //     step_len /= 2;
-        // }
 
         if (less(to, next_value, getDirection(0)))
         {
@@ -233,7 +204,7 @@ std::pair<bool, bool> FillingRow::next(const FillingRow & next_original_row)
             continue;
 
         row[i] = next_value;
-        initWithFrom(i + 1);
+        initUsingFrom(i + 1);
         return {true, true};
     }
 
@@ -271,7 +242,7 @@ std::pair<bool, bool> FillingRow::next(const FillingRow & next_original_row)
         return {is_less, true};
     }
 
-    initWithFrom(pos + 1);
+    initUsingFrom(pos + 1);
     return {true, true};
 }
 
@@ -327,8 +298,7 @@ bool FillingRow::shift(const FillingRow & next_original_row, bool& value_changed
         }
         else
         {
-            // getFillDescription(pos).step_func(row[pos], 1);
-            initWithTo(/*from_pos=*/pos + 1);
+            initUsingTo(/*from_pos=*/pos + 1);
 
             value_changed = false;
             return false;
@@ -360,70 +330,13 @@ bool FillingRow::isConstraintsComplete() const
     return true;
 }
 
-bool FillingRow::isLessStaleness() const
-{
-    auto logger = getLogger("FillingRow::isLessStaleness");
-
-    for (size_t pos = 0; pos < size(); ++pos)
-    {
-        LOG_DEBUG(logger, "staleness border: {}, row: {}", staleness_border[pos].dump(), row[pos].dump());
-
-        if (row[pos].isNull() || staleness_border[pos].isNull())
-            continue;
-
-        if (less(row[pos], staleness_border[pos], getDirection(pos)))
-            return true;
-    }
-
-    return false;
-}
-
-bool FillingRow::isStalenessConfigured() const
-{
-    for (size_t pos = 0; pos < size(); ++pos)
-        if (!getFillDescription(pos).fill_staleness.isNull())
-            return true;
-
-    return false;
-}
-
-bool FillingRow::isLessFillTo() const
-{
-    auto logger = getLogger("FillingRow::isLessFillTo");
-
-    for (size_t pos = 0; pos < size(); ++pos)
-    {
-        const auto & descr = getFillDescription(pos);
-
-        LOG_DEBUG(logger, "fill to: {}, row: {}", descr.fill_to.dump(), row[pos].dump());
-
-        if (row[pos].isNull() || descr.fill_to.isNull())
-            continue;
-
-        if (less(row[pos], descr.fill_to, getDirection(pos)))
-            return true;
-    }
-
-    return false;
-}
-
-bool FillingRow::isFillToConfigured() const
-{
-    for (size_t pos = 0; pos < size(); ++pos)
-        if (!getFillDescription(pos).fill_to.isNull())
-            return true;
-
-    return false;
-}
-
-
-void FillingRow::initWithFrom(size_t from_pos)
+void FillingRow::initUsingFrom(size_t from_pos)
 {
     for (size_t i = from_pos; i < sort_description.size(); ++i)
         row[i] = getFillDescription(i).fill_from;
 }
 
-void FillingRow::initWithTo(size_t from_pos)
+void FillingRow::initUsingTo(size_t from_pos)
 {
     for (size_t i = from_pos; i < sort_description.size(); ++i)
         row[i] = getFillDescription(i).fill_to;

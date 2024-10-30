@@ -21,7 +21,7 @@ namespace DB
 constexpr bool debug_logging_enabled = true;
 
 template <typename T>
-void logDebug(String key, const T & value, const char * separator = " : ")
+static void logDebug(String key, const T & value, const char * separator = " : ")
 {
     if constexpr (debug_logging_enabled)
     {
@@ -512,27 +512,6 @@ bool FillingTransform::generateSuffixIfNeeded(
 
     logDebug("generateSuffixIfNeeded next_row updated", next_row);
 
-    // if (!filling_row.isFillToConfigured() && !filling_row.isStalenessConfigured())
-    // {
-    //     logDebug("generateSuffixIfNeeded", "no other constraints, will not generate suffix");
-    //     return false;
-    // }
-
-    // logDebug("filling_row.isLessFillTo()", filling_row.isLessFillTo());
-    // logDebug("filling_row.isLessStaleness()", filling_row.isLessStaleness());
-
-    // if (filling_row.isFillToConfigured() && !filling_row.isLessFillTo())
-    // {
-    //     logDebug("generateSuffixIfNeeded", "not less than fill to, will not generate suffix");
-    //     return false;
-    // }
-
-    // if (filling_row.isStalenessConfigured() && !filling_row.isLessStaleness())
-    // {
-    //     logDebug("generateSuffixIfNeeded", "not less than staleness border, will not generate suffix");
-    //     return false;
-    // }
-
     if (!filling_row.hasSomeConstraints() || !filling_row.isConstraintsComplete())
     {
         logDebug("generateSuffixIfNeeded", "will not generate suffix");
@@ -637,7 +616,7 @@ void FillingTransform::transformRange(
 
             if (!fill_from.isNull() && !equals(current_value, fill_from))
             {
-                filling_row.initWithFrom(i);
+                filling_row.initUsingFrom(i);
                 filling_row_inserted = false;
                 if (less(fill_from, current_value, filling_row.getDirection(i)))
                 {
@@ -732,9 +711,6 @@ void FillingTransform::transformRange(
         copyRowFromColumns(res_interpolate_columns, input_interpolate_columns, row_ind);
         copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
         copyRowFromColumns(res_other_columns, input_other_columns, row_ind);
-
-        // /// Init next staleness interval with current row, because we have already made the long jump to it
-        // filling_row.initStalenessRow(input_fill_columns, row_ind);
     }
 
     /// save sort prefix of last row in the range, it's used to generate suffix
@@ -780,7 +756,7 @@ void FillingTransform::transform(Chunk & chunk)
         /// if no data was processed, then need to initialize filling_row
         if (last_row.empty())
         {
-            filling_row.initWithFrom();
+            filling_row.initUsingFrom();
             filling_row_inserted = false;
         }
 

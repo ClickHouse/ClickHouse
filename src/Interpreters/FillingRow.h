@@ -15,7 +15,7 @@ bool equals(const Field & lhs, const Field & rhs);
  */
 class FillingRow
 {
-    std::optional<Field> doJump(const FillColumnDescription & descr, size_t column_ind);
+    /// finds last value <= to
     std::optional<Field> doLongJump(const FillColumnDescription & descr, size_t column_ind, const Field & to);
 
     bool hasSomeConstraints(size_t pos) const;
@@ -36,14 +36,8 @@ public:
     bool hasSomeConstraints() const;
     bool isConstraintsComplete() const;
 
-    bool isLessStaleness() const;
-    bool isStalenessConfigured() const;
-
-    bool isLessFillTo() const;
-    bool isFillToConfigured() const;
-
-    void initWithFrom(size_t from_pos = 0);
-    void initWithTo(size_t from_pos = 0);
+    void initUsingFrom(size_t from_pos = 0);
+    void initUsingTo(size_t from_pos = 0);
     void initStalenessRow(const Columns& base_row, size_t row_ind);
 
     Field & operator[](size_t index) { return row[index]; }
