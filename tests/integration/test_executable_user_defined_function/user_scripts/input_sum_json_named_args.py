@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
-import json
 import sys
+import json
 
 if __name__ == "__main__":
     for line in sys.stdin:

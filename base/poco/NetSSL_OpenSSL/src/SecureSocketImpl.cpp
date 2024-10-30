@@ -311,14 +311,6 @@ int SecureSocketImpl::sendBytes(const void* buffer, int length, int flags)
 	while (mustRetry(rc, remaining_time));
 	if (rc <= 0)
 	{
-		// At this stage we still can have last not yet received SSL message containing SSL error
-		// so make a read to force SSL to process possible SSL error
-		if (SSL_get_error(_pSSL, rc) == SSL_ERROR_SYSCALL && SocketImpl::lastError() == POCO_ECONNRESET)
-		{
-			char c = 0;
-			SSL_read(_pSSL, &c, 1);
-		}
-
 		rc = handleError(rc);
 		if (rc == 0) throw SSLConnectionUnexpectedlyClosedException();
 	}

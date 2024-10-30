@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Formats/IRowOutputFormat.h>
+#include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 
 namespace DB

@@ -12,7 +12,7 @@ namespace DB
 
 /// Based on the LRU algorithm implementation, the record with the lowest priority is stored at
 /// the head of the queue, and the record with the highest priority is stored at the tail.
-class LRUFileCachePriority : public IFileCachePriority
+class LRUFileCachePriority final : public IFileCachePriority
 {
 protected:
     struct State
@@ -84,8 +84,6 @@ public:
     void pop(const CachePriorityGuard::Lock & lock) { remove(queue.begin(), lock); } // NOLINT
 
     bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CachePriorityGuard::Lock &) override;
-
-    FileCachePriorityPtr copy() const { return std::make_unique<LRUFileCachePriority>(max_size, max_elements, state); }
 
 private:
     class LRUIterator;

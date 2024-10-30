@@ -8,6 +8,7 @@
 #include <Common/thread_local_rng.h>
 
 #include <atomic>
+#include <random>
 
 namespace GWPAsan
 {
@@ -36,6 +37,14 @@ void setForceSampleProbability(double value);
 inline bool shouldSample()
 {
     return init_finished.load(std::memory_order_relaxed) && GuardedAlloc.shouldSample();
+}
+
+inline bool shouldForceSample()
+{
+    if (!init_finished.load(std::memory_order_relaxed))
+        return false;
+    std::bernoulli_distribution dist(force_sample_probability.load(std::memory_order_relaxed));
+    return dist(thread_local_rng);
 }
 
 }

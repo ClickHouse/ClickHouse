@@ -1,5 +1,4 @@
 #include "HTTPDictionarySource.h"
-#include <Common/HTTPHeaderFilter.h>
 #include <Core/ServerSettings.h>
 #include <Formats/formatBlock.h>
 #include <IO/ConnectionTimeouts.h>
@@ -40,7 +39,7 @@ HTTPDictionarySource::HTTPDictionarySource(
     , configuration(configuration_)
     , sample_block(sample_block_)
     , context(context_)
-    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
+    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings().keep_alive_timeout))
 {
     credentials.setUsername(credentials_.getUsername());
     credentials.setPassword(credentials_.getPassword());
@@ -53,7 +52,7 @@ HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other)
     , configuration(other.configuration)
     , sample_block(other.sample_block)
     , context(Context::createCopy(other.context))
-    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
+    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings().keep_alive_timeout))
 {
     credentials.setUsername(other.credentials.getUsername());
     credentials.setPassword(other.credentials.getPassword());

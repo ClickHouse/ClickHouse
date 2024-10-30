@@ -82,8 +82,10 @@ void * allocNoTrack(size_t size, size_t alignment)
 
             return ptr;
         }
-
-        ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
+        else
+        {
+            ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
+        }
     }
 #endif
     if (alignment <= MALLOC_MIN_ALIGNMENT)
@@ -202,9 +204,11 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
             ProfileEvents::increment(ProfileEvents::GWPAsanAllocateSuccess);
             return ptr;
         }
-
-        [[maybe_unused]] auto trace_free = CurrentMemoryTracker::free(new_size);
-        ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
+        else
+        {
+            [[maybe_unused]] auto trace_free = CurrentMemoryTracker::free(new_size);
+            ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
+        }
     }
 
     if (unlikely(GWPAsan::GuardedAlloc.pointerIsMine(buf)))
