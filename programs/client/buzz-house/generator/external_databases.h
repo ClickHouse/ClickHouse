@@ -25,6 +25,7 @@ private:
 
     MYSQL * mysql_connection = nullptr;
     pqxx::connection * postgres_connection = nullptr;
+    sqlite3 * sqlite_connection = nullptr;
 
 public:
     const std::filesystem::path sqlite_path;
@@ -32,6 +33,8 @@ public:
     bool HasMySQLConnection() const { return mysql_connection != nullptr; }
 
     bool HasPostgreSQLConnection() const { return postgres_connection != nullptr; }
+
+    bool HasSQLiteConnection() const { return sqlite_connection != nullptr; }
 
     bool GetRequiresExternalCallCheck() const { return requires_external_call_check; }
 
@@ -97,6 +100,10 @@ public:
             (void)w.exec("CREATE SCHEMA test;");
             w.commit();
         }
+        if (sqlite3_open(sqlite_path.generic_string().c_str(), &sqlite_connection) != SQLITE_OK)
+        {
+            sqlite_connection = nullptr;
+        }
     }
 
     ~ExternalDatabases()
@@ -106,6 +113,10 @@ public:
             mysql_close(mysql_connection);
         }
         delete postgres_connection;
+        if (sqlite_connection)
+        {
+            sqlite3_close(sqlite_connection);
+        }
     }
 
     void CreateExternalDatabaseTable(RandomGenerator & rg, const DatabaseCall dc, const uint32_t tname, std::vector<InsertEntry> & entries)
@@ -140,6 +151,9 @@ public:
                 case DatabaseCall::PostgreSQL:
                     entry.tp->PostgreSQLTypeName(rg, buf, false);
                     break;
+                case DatabaseCall::SQLite:
+                    entry.tp->SQLiteTypeName(rg, buf, false);
+                    break;
                 default:
                     entry.tp->TypeName(buf, false);
             }
@@ -163,6 +177,9 @@ public:
                 catch (...)
                 {
                 }
+                break;
+            case DatabaseCall::SQLite:
+                next_call_succeeded = sqlite3_exec(sqlite_connection, buf.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK;
                 break;
             default:
                 break;
