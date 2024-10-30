@@ -538,7 +538,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         ? std::max<size_t>(settings.remote_fs_buffer_size, DBMS_DEFAULT_BUFFER_SIZE)
         : settings.remote_fs_buffer_size;
 
-    size_t total_objects_size = getTotalSize(storage_objects);
+    size_t total_objects_size = file_size ? *file_size : getTotalSize(storage_objects);
     if (total_objects_size)
         buffer_size = std::min(buffer_size, total_objects_size);
 
