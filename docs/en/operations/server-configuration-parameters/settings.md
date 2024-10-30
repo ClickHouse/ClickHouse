@@ -1488,6 +1488,8 @@ Keys:
 - `formatting` – Log format for console output. Currently, only `json` is supported).
 - `use_syslog` - Also forward log output to syslog.
 - `syslog_level` - Log level for logging to syslog.
+- `message_regexp` - Only log messages that match this regular expression. Defaults to `""`, indicating no filtering.
+- `message_regexp_negative` - Only log messages that don't match this regular expression. Defaults to `""`, indicating no filtering.
 
 **Log format specifiers**
 
@@ -1574,6 +1576,28 @@ The log level of individual log names can be overridden. For example, to mute al
         </logger>
     </levels>
 </logger>
+```
+
+**Regular Expression Filtering**
+
+The messages logged can be filtered using regular expressions using `message_regexp` and `message_regexp_negative`. This can be done on a per-level basis or globally. If both a global and logger-specific pattern is specified, the global pattern is overridden (ignored) and only the logger-specific pattern applies. The positive and negative patterns are considered independently for this situation. Note: Using this feature may cause a slight slowdown in performance.
+
+
+```xml
+    <logger>
+        <level>trace</level>
+        <!-- Global: Don't log Trace messages -->
+        <message_regexp_negative>.*Trace.*</message_regexp_negative>
+
+        <message_regexps>
+            <logger>
+                <!-- For the executeQuery logger, only log if message has "Read", but not "from" -->
+                <name>executeQuery</name>
+                <message_regexp>.*Read.*</message_regexp>
+                <message_regexp_negative>.*from.*</message_regexp_negative>
+            </logger>
+        </message_regexps>
+    </logger>
 ```
 
 ### syslog
@@ -1951,6 +1975,22 @@ The default is `false`.
 <async_load_databases>true</async_load_databases>
 ```
 
+## async_load_system_database {#async_load_system_database}
+
+Asynchronous loading of system tables. Helpful if there is a high amount of log tables and parts in the `system` database. Independent of the `async_load_databases` setting.
+
+If set to `true`, all system databases with `Ordinary`, `Atomic`, and `Replicated` engines will be loaded asynchronously after the ClickHouse server starts. See `system.asynchronous_loader` table, `tables_loader_background_pool_size` and `tables_loader_foreground_pool_size` server settings. Any query that tries to access a system table, that is not yet loaded, will wait for exactly this table to be started up. The table that is waited for by at least one query will be loaded with higher priority. Also consider setting the `max_waiting_queries` setting to limit the total number of waiting queries.
+
+If `false`, system database loads before server start.
+
+The default is `false`.
+
+**Example**
+
+``` xml
+<async_load_system_database>true</async_load_system_database>
+```
+
 ## tables_loader_foreground_pool_size {#tables_loader_foreground_pool_size}
 
 Sets the number of threads performing load jobs in foreground pool. The foreground pool is used for loading table synchronously before server start listening on a port and for loading tables that are waited for. Foreground pool has higher priority than background pool. It means that no job starts in background pool while there are jobs running in foreground pool.
@@ -2191,6 +2231,39 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
 </query_log>
+```
+
+# query_metric_log {#query_metric_log}
+
+It is disabled by default.
+
+**Enabling**
+
+To manually turn on metrics history collection [`system.query_metric_log`](../../operations/system-tables/query_metric_log.md), create `/etc/clickhouse-server/config.d/query_metric_log.xml` with the following content:
+
+``` xml
+<clickhouse>
+    <query_metric_log>
+        <database>system</database>
+        <table>query_metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </query_metric_log>
+</clickhouse>
+```
+
+**Disabling**
+
+To disable `query_metric_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_query_metric_log.xml` with the following content:
+
+``` xml
+<clickhouse>
+<query_metric_log remove="1" />
+</clickhouse>
 ```
 
 ## query_cache {#server_configuration_parameters_query-cache}
@@ -3085,7 +3158,7 @@ By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests ove
 
 ### no_proxy
 By default, all requests will go through the proxy. In order to disable it for specific hosts, the `no_proxy` variable must be set.
-It can be set inside the `<proxy>` clause for list and remote resolvers and as an environment variable for environment resolver. 
+It can be set inside the `<proxy>` clause for list and remote resolvers and as an environment variable for environment resolver.
 It supports IP addresses, domains, subdomains and `'*'` wildcard for full bypass. Leading dots are stripped just like curl does.
 
 Example:
@@ -3162,3 +3235,11 @@ Type: UInt64
 Default value: 100
 
 Zero means unlimited
+
+## use_legacy_mongodb_integration
+
+Use the legacy MongoDB integration implementation. Deprecated.
+
+Type: Bool
+
+Default value: `true`.

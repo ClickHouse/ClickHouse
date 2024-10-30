@@ -14,6 +14,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+    void formatValidUntil(const IAST & valid_until, const IAST::FormatSettings & settings)
+    {
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " VALID UNTIL " << (settings.hilite ? IAST::hilite_none : "");
+        valid_until.format(settings);
+    }
+}
+
 std::optional<String> ASTAuthenticationData::getPassword() const
 {
     if (contains_password)
@@ -46,6 +55,12 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " no_password"
                       << (settings.hilite ? IAST::hilite_none : "");
+
+        if (valid_until)
+        {
+            formatValidUntil(*valid_until, settings);
+        }
+
         return;
     }
 
@@ -205,6 +220,11 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
         children[1]->format(settings);
     }
 
+    if (valid_until)
+    {
+        formatValidUntil(*valid_until, settings);
+    }
+
 }
 
 bool ASTAuthenticationData::hasSecretParts() const
@@ -216,7 +236,8 @@ bool ASTAuthenticationData::hasSecretParts() const
     auto auth_type = *type;
     if ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD)
         || (auth_type == AuthenticationType::SHA256_PASSWORD)
-        || (auth_type == AuthenticationType::DOUBLE_SHA1_PASSWORD))
+        || (auth_type == AuthenticationType::DOUBLE_SHA1_PASSWORD)
+        || (auth_type == AuthenticationType::BCRYPT_PASSWORD))
         return true;
 
     return childrenHaveSecretParts();

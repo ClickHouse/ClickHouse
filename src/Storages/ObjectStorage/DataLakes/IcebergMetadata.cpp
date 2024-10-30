@@ -26,6 +26,7 @@
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Common.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
@@ -37,6 +38,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool iceberg_engine_ignore_schema_evolution;
+}
 
 namespace ErrorCodes
 {
@@ -365,7 +370,7 @@ IcebergSchemaProcessor::getSchemaTransformationDag(const Poco::JSON::Object::Ptr
         auto name = field->getValue<String>("name");
         bool required = field->getValue<bool>("required");
         auto type = getFieldType(field, "type", "id", required, 0);
-        if (old_schema_entries.count(id))
+        if (old_schema_entries.contains(id))
         {
             auto [old_json, old_node] = old_schema_entries.find(id)->second;
             if (field->isObject("type"))
@@ -451,7 +456,7 @@ std::shared_ptr<const ActionsDAG> IcebergSchemaProcessor::getSchemaTransformatio
         current_new_id = std::nullopt;
     });
     Poco::JSON::Object::Ptr old_schema, new_schema;
-    if (transform_dags_by_ids.count({old_id, new_id}))
+    if (transform_dags_by_ids.contains({old_id, new_id}))
     {
         return transform_dags_by_ids.at({old_id, new_id});
     }
@@ -484,9 +489,9 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
     Int32 schema_id = schema->getValue<Int32>("schema-id");
     current_schema_id = schema_id;
     SCOPE_EXIT({ current_schema_id = std::nullopt; });
-    if (iceberg_table_schemas_by_ids.count(schema_id))
+    if (iceberg_table_schemas_by_ids.contains(schema_id))
     {
-        chassert(clickhouse_table_schemas_by_ids.count(schema_id) > 0);
+        chassert(clickhouse_table_schemas_by_ids.contains(schema_id) > 0);
         chassert(*iceberg_table_schemas_by_ids.at(schema_id) == *schema);
     }
     else
@@ -627,7 +632,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
 
     Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
     Poco::Dynamic::Var json = parser.parse(json_str);
-    Poco::JSON::Object::Ptr object = json.extract<Poco::JSON::Object::Ptr>();
+    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
     IcebergSchemaProcessor schema_processor;
 
@@ -691,8 +696,8 @@ DataFileInfos IcebergMetadata::getDataFileInfos(const ActionsDAG * filter_dag) c
     LOG_TEST(log, "Collect manifest files from manifest list {}", manifest_list_file);
 
     auto context = getContext();
-    auto read_settings = context->getReadSettings();
-    auto manifest_list_buf = object_storage->readObject(StoredObject(manifest_list_file), read_settings);
+    StorageObjectStorageSource::ObjectInfo object_info(manifest_list_file);
+    auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
     auto manifest_list_file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf));
 
     auto data_type = AvroSchemaReader::avroNodeToDataType(manifest_list_file_reader->dataSchema().root()->leafAt(0));
@@ -722,7 +727,8 @@ DataFileInfos IcebergMetadata::getDataFileInfos(const ActionsDAG * filter_dag) c
     {
         LOG_TEST(log, "Process manifest file {}", manifest_file);
 
-        auto buffer = object_storage->readObject(StoredObject(manifest_file), read_settings);
+        StorageObjectStorageSource::ObjectInfo manifest_object_info(manifest_file);
+        auto buffer = StorageObjectStorageSource::createReadBuffer(manifest_object_info, object_storage, context, log);
         auto manifest_file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));
 
         /// Manifest file should always have table schema in avro file metadata. By now we don't support tables with evolved schema,

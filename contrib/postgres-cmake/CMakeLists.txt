@@ -38,12 +38,14 @@ set(SRCS
     "${POSTGRES_SOURCE_DIR}/src/common/fe_memutils.c"
     "${POSTGRES_SOURCE_DIR}/src/common/string.c"
     "${POSTGRES_SOURCE_DIR}/src/common/pg_get_line.c"
+    "${POSTGRES_SOURCE_DIR}/src/common/pg_prng.c"
     "${POSTGRES_SOURCE_DIR}/src/common/stringinfo.c"
     "${POSTGRES_SOURCE_DIR}/src/common/psprintf.c"
     "${POSTGRES_SOURCE_DIR}/src/common/encnames.c"
     "${POSTGRES_SOURCE_DIR}/src/common/logging.c"
 
     "${POSTGRES_SOURCE_DIR}/src/port/snprintf.c"
+    "${POSTGRES_SOURCE_DIR}/src/port/strlcat.c"
     "${POSTGRES_SOURCE_DIR}/src/port/strlcpy.c"
     "${POSTGRES_SOURCE_DIR}/src/port/strerror.c"
     "${POSTGRES_SOURCE_DIR}/src/port/inet_net_ntop.c"
@@ -52,6 +54,7 @@ set(SRCS
     "${POSTGRES_SOURCE_DIR}/src/port/noblock.c"
     "${POSTGRES_SOURCE_DIR}/src/port/pg_strong_random.c"
     "${POSTGRES_SOURCE_DIR}/src/port/pgstrcasecmp.c"
+    "${POSTGRES_SOURCE_DIR}/src/port/pg_bitutils.c"
     "${POSTGRES_SOURCE_DIR}/src/port/thread.c"
     "${POSTGRES_SOURCE_DIR}/src/port/path.c"
 )

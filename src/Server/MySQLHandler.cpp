@@ -39,6 +39,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool prefer_column_name_to_alias;
+    extern const SettingsSeconds receive_timeout;
+    extern const SettingsSeconds send_timeout;
+}
 
 using namespace MySQLProtocol;
 using namespace MySQLProtocol::Generic;
@@ -206,8 +212,8 @@ void MySQLHandler::run()
     session->setClientConnectionId(connection_id);
 
     const Settings & settings = server.context()->getSettingsRef();
-    socket().setReceiveTimeout(settings.receive_timeout);
-    socket().setSendTimeout(settings.send_timeout);
+    socket().setReceiveTimeout(settings[Setting::receive_timeout]);
+    socket().setSendTimeout(settings[Setting::send_timeout]);
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket(), read_event);
     out = std::make_shared<WriteBufferFromPocoSocket>(socket(), write_event);
@@ -479,12 +485,12 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
 
         /// --- Workaround for Bug 56173. Can be removed when the analyzer is on by default.
         auto settings = query_context->getSettingsCopy();
-        settings.prefer_column_name_to_alias = true;
+        settings[Setting::prefer_column_name_to_alias] = true;
         query_context->setSettings(settings);
 
         /// Update timeouts
-        socket().setReceiveTimeout(settings.receive_timeout);
-        socket().setSendTimeout(settings.send_timeout);
+        socket().setReceiveTimeout(settings[Setting::receive_timeout]);
+        socket().setSendTimeout(settings[Setting::send_timeout]);
 
         CurrentThread::QueryScope query_scope{query_context};
 

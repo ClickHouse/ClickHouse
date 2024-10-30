@@ -107,7 +107,7 @@ class IcebergSchemaProcessor
     };
 
 public:
-    void addIcebergTableSchema(Poco::JSON::Object::Ptr ptr);
+    void addIcebergTableSchema(Poco::JSON::Object::Ptr schema);
     std::shared_ptr<NamesAndTypesList> getClickhouseTableSchemaById(Int32 id);
     std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id);
     std::optional<NameAndTypePair> getSimpleNameAndTypeByVersion(Int32 field_id, std::optional<Int32> schema_id = std::nullopt);

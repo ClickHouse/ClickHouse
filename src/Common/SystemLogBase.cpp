@@ -4,6 +4,7 @@
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
@@ -18,6 +19,7 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/BackupLog.h>
+#include <Interpreters/PeriodicLog.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -157,8 +159,7 @@ void SystemLogQueue<LogElement>::waitFlush(SystemLogQueue<LogElement>::Index exp
     {
         if (should_prepare_tables_anyway)
             return (flushed_index >= expected_flushed_index && prepared_tables >= requested_prepare_tables) || is_shutdown;
-        else
-            return (flushed_index >= expected_flushed_index) || is_shutdown;
+        return (flushed_index >= expected_flushed_index) || is_shutdown;
     });
 
     if (!result)
@@ -300,8 +301,10 @@ void SystemLogBase<LogElement>::add(LogElement element)
 
 #define INSTANTIATE_SYSTEM_LOG_BASE(ELEMENT) template class SystemLogBase<ELEMENT>;
 SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_BASE)
+SYSTEM_PERIODIC_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_BASE)
 
 #define INSTANTIATE_SYSTEM_LOG_QUEUE(ELEMENT) template class SystemLogQueue<ELEMENT>;
 SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_QUEUE)
+SYSTEM_PERIODIC_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_QUEUE)
 
 }

@@ -72,6 +72,28 @@ add_subdirectory (Daemon)
 add_subdirectory (Loggers)
 add_subdirectory (Formats)
 
+if (OMIT_HEAVY_DEBUG_SYMBOLS)
+    # Files inherited via extract_into_parent_list that would be marked to remove heavy symbols otherwise
+    set_source_files_properties(
+        Functions/IFunction.cpp
+        Functions/FunctionFactory.cpp
+        Functions/FunctionHelpers.cpp
+        Functions/FunctionsLogical.cpp
+        Functions/if.cpp
+        Functions/multiIf.cpp
+        Functions/multiMatchAny.cpp
+        Functions/checkHyperscanRegexp.cpp
+        Functions/CastOverloadResolver.cpp
+        Functions/FunctionsConversion.cpp
+        Functions/extractTimeZoneFromFunctionArguments.cpp
+        Functions/GatherUtils/createArraySource.cpp
+        Functions/GatherUtils/createValueSource.cpp
+        Functions/GatherUtils/createArraySink.cpp
+        Functions/GatherUtils/resizeConstantSize.cpp
+        Functions/GatherUtils/resizeDynamicSize.cpp
+        PROPERTIES COMPILE_FLAGS -g0)
+endif()
+
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler)
@@ -222,6 +244,7 @@ add_object_library(clickhouse_storages Storages)
 add_object_library(clickhouse_storages_mysql Storages/MySQL)
 add_object_library(clickhouse_storages_distributed Storages/Distributed)
 add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
+add_object_library(clickhouse_storages_mergetree_merge_selectors Storages/MergeTree/MergeSelectors)
 add_object_library(clickhouse_storages_statistics Storages/Statistics)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
 add_object_library(clickhouse_storages_windowview Storages/WindowView)
@@ -336,12 +359,6 @@ set_source_files_properties(
         Columns/ColumnString.cpp
         PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
 
-if (ENABLE_QPL)
-    set_source_files_properties(
-            Compression/CompressionCodecDeflateQpl.cpp
-            PROPERTIES COMPILE_FLAGS "-mwaitpkg")
-endif ()
-
 target_link_libraries(clickhouse_common_io
         PUBLIC
             boost::program_options
@@ -412,9 +429,22 @@ dbms_target_link_libraries (
     PUBLIC
         boost::system
         clickhouse_common_io
-        Poco::MongoDB
         Poco::Redis
 )
+
+if (USE_MONGODB)
+    dbms_target_link_libraries (PUBLIC Poco::MongoDB)
+endif()
+
+if (TARGET ch_contrib::mongocxx)
+    dbms_target_link_libraries(
+        PUBLIC
+            ch_contrib::libbson
+            ch_contrib::libmongoc
+            ch_contrib::bsoncxx
+            ch_contrib::mongocxx
+    )
+endif ()
 
 if (TARGET ch::mysqlxx)
     dbms_target_link_libraries (PUBLIC ch::mysqlxx)
@@ -555,15 +585,8 @@ endif ()
 
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
 
-if (TARGET ch_contrib::qpl)
-    dbms_target_link_libraries(PUBLIC ch_contrib::qpl)
-    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::qpl)
-    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::accel-config)
-endif ()
-
-if (TARGET ch_contrib::accel-config AND TARGET ch_contrib::qatzstd_plugin)
+if (TARGET ch_contrib::qatzstd_plugin)
     dbms_target_link_libraries(PUBLIC ch_contrib::qatzstd_plugin)
-    dbms_target_link_libraries(PUBLIC ch_contrib::accel-config)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::qatzstd_plugin)
 endif ()
 

@@ -1,6 +1,7 @@
-import pytest
 from datetime import datetime, timedelta
 from time import sleep
+
+import pytest
 
 from helpers.cluster import ClickHouseCluster
 
@@ -75,6 +76,18 @@ def test_basic(started_cluster):
 
     node.query("DROP USER IF EXISTS user_basic")
 
+    # NOT IDENTIFIED test to make sure valid until is also parsed on its short-circuit
+    node.query("CREATE USER user_basic NOT IDENTIFIED VALID UNTIL '01/01/2010'")
+
+    assert (
+        node.query("SHOW CREATE USER user_basic")
+        == "CREATE USER user_basic IDENTIFIED WITH no_password VALID UNTIL \\'2010-01-01 00:00:00\\'\n"
+    )
+
+    assert error in node.query_and_get_error("SELECT 1", user="user_basic")
+
+    node.query("DROP USER IF EXISTS user_basic")
+
 
 def test_details(started_cluster):
     node.query("DROP USER IF EXISTS user_details_infinity, user_details_time_only")
@@ -123,3 +136,51 @@ def test_restart(started_cluster):
     assert error in node.query_and_get_error("SELECT 1", user="user_restart")
 
     node.query("DROP USER IF EXISTS user_restart")
+
+
+def test_multiple_authentication_methods(started_cluster):
+    node.query("DROP USER IF EXISTS user_basic")
+
+    node.query(
+        "CREATE USER user_basic IDENTIFIED WITH plaintext_password BY 'no_expiration',"
+        "plaintext_password by 'not_expired' VALID UNTIL '06/11/2040', plaintext_password by 'expired' VALID UNTIL '06/11/2010',"
+        "plaintext_password by 'infinity' VALID UNTIL 'infinity'"
+    )
+
+    assert (
+        node.query("SHOW CREATE USER user_basic")
+        == "CREATE USER user_basic IDENTIFIED WITH plaintext_password, plaintext_password VALID UNTIL \\'2040-11-06 00:00:00\\', "
+        "plaintext_password VALID UNTIL \\'2010-11-06 00:00:00\\', plaintext_password\n"
+    )
+    assert node.query("SELECT 1", user="user_basic", password="no_expiration") == "1\n"
+    assert node.query("SELECT 1", user="user_basic", password="not_expired") == "1\n"
+    assert node.query("SELECT 1", user="user_basic", password="infinity") == "1\n"
+
+    error = "Authentication failed"
+    assert error in node.query_and_get_error(
+        "SELECT 1", user="user_basic", password="expired"
+    )
+
+    # Expire them all
+    node.query("ALTER USER user_basic VALID UNTIL '06/11/2010 08:03:20'")
+
+    assert (
+        node.query("SHOW CREATE USER user_basic")
+        == "CREATE USER user_basic IDENTIFIED WITH plaintext_password VALID UNTIL \\'2010-11-06 08:03:20\\',"
+        " plaintext_password VALID UNTIL \\'2010-11-06 08:03:20\\',"
+        " plaintext_password VALID UNTIL \\'2010-11-06 08:03:20\\',"
+        " plaintext_password VALID UNTIL \\'2010-11-06 08:03:20\\'\n"
+    )
+
+    assert error in node.query_and_get_error(
+        "SELECT 1", user="user_basic", password="no_expiration"
+    )
+    assert error in node.query_and_get_error(
+        "SELECT 1", user="user_basic", password="not_expired"
+    )
+    assert error in node.query_and_get_error(
+        "SELECT 1", user="user_basic", password="infinity"
+    )
+    assert error in node.query_and_get_error(
+        "SELECT 1", user="user_basic", password="expired"
+    )

@@ -8,6 +8,13 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool engine_file_skip_empty_files;
+    extern const SettingsBool engine_file_truncate_on_insert;
+    extern const SettingsSchemaInferenceMode schema_inference_mode;
+    extern const SettingsBool schema_inference_use_cache_for_file;
+}
 
 namespace ErrorCodes
 {
@@ -64,11 +71,11 @@ StorageObjectStorage::QuerySettings StorageLocalConfiguration::getQuerySettings(
 {
     const auto & settings = context->getSettingsRef();
     return StorageObjectStorage::QuerySettings{
-        .truncate_on_insert = settings.engine_file_truncate_on_insert,
+        .truncate_on_insert = settings[Setting::engine_file_truncate_on_insert],
         .create_new_file_on_insert = false,
-        .schema_inference_use_cache = settings.schema_inference_use_cache_for_file,
-        .schema_inference_mode = settings.schema_inference_mode,
-        .skip_empty_files = settings.engine_file_skip_empty_files,
+        .schema_inference_use_cache = settings[Setting::schema_inference_use_cache_for_file],
+        .schema_inference_mode = settings[Setting::schema_inference_mode],
+        .skip_empty_files = settings[Setting::engine_file_skip_empty_files],
         .list_object_keys_size = 0,
         .throw_on_zero_files_match = false,
         .ignore_non_existent_file = false};

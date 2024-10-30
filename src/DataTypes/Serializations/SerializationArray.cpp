@@ -642,12 +642,11 @@ ReturnType SerializationArray::deserializeTextJSONImpl(IColumn & column, ReadBuf
             {
                 return JSONUtils::deserializeEmpyStringAsDefaultOrNested<ReturnType>(nested_column, istr, deserialize_nested);
             }, false);
-    else
-        return deserializeTextImpl<ReturnType>(column, istr,
-            [&deserialize_nested, &istr](IColumn & nested_column) -> ReturnType
-            {
-                return deserialize_nested(nested_column, istr);
-            }, false);
+    return deserializeTextImpl<ReturnType>(
+        column,
+        istr,
+        [&deserialize_nested, &istr](IColumn & nested_column) -> ReturnType { return deserialize_nested(nested_column, istr); },
+        false);
 }
 
 
@@ -740,17 +739,15 @@ bool SerializationArray::tryDeserializeTextCSV(IColumn & column, ReadBuffer & is
 
         return deserializeTextImpl<bool>(column, rb, read_nested, true);
     }
-    else
-    {
-        auto read_nested = [&](IColumn & nested_column)
-        {
-            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
-                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(nested_column, rb, settings, nested);
-            return nested->tryDeserializeTextQuoted(nested_column, rb, settings);
-        };
 
-        return deserializeTextImpl<bool>(column, rb, read_nested, true);
-    }
+    auto read_nested = [&](IColumn & nested_column)
+    {
+        if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
+            return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(nested_column, rb, settings, nested);
+        return nested->tryDeserializeTextQuoted(nested_column, rb, settings);
+    };
+
+    return deserializeTextImpl<bool>(column, rb, read_nested, true);
 }
 
 }

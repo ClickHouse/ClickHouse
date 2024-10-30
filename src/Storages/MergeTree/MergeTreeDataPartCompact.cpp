@@ -10,7 +10,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_READ_ALL_DATA;
     extern const int NOT_IMPLEMENTED;
     extern const int NO_FILE_IN_DATA_PART;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
@@ -100,19 +99,16 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
     size_t columns_count, const IDataPartStorage & data_part_storage_)
 {
     if (!index_granularity_info_.mark_type.adaptive)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeTreeDataPartCompact cannot be created with non-adaptive granulary.");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeTreeDataPartCompact cannot be created with non-adaptive granularity.");
 
     auto marks_file_path = index_granularity_info_.getMarksFilePath("data");
-    if (!data_part_storage_.exists(marks_file_path))
+
+    std::unique_ptr<ReadBufferFromFileBase> buffer = data_part_storage_.readFileIfExists(marks_file_path, {}, {}, {});
+    if (!buffer)
         throw Exception(
             ErrorCodes::NO_FILE_IN_DATA_PART,
             "Marks file '{}' doesn't exist",
             std::string(fs::path(data_part_storage_.getFullPath()) / marks_file_path));
-
-    size_t marks_file_size = data_part_storage_.getFileSize(marks_file_path);
-
-    std::unique_ptr<ReadBufferFromFileBase> buffer = data_part_storage_.readFile(
-        marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size, std::nullopt);
 
     std::unique_ptr<ReadBuffer> marks_reader;
     bool marks_compressed = index_granularity_info_.mark_type.compressed;
@@ -129,9 +125,6 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
         index_granularity_.appendMark(granularity);
     }
 
-    if (!marks_compressed && index_granularity_.getMarksCount() * index_granularity_info_.getMarkSizeInBytes(columns_count) != marks_file_size)
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all marks from file {}", marks_file_path);
-
     index_granularity_.setInitialized();
 }
 
@@ -141,6 +134,32 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
     loadIndexGranularityImpl(index_granularity, index_granularity_info, columns.size(), getDataPartStorage());
+}
+
+void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const
+{
+    if (column_names.empty() || !mark_cache)
+        return;
+
+    auto context = storage.getContext();
+    auto read_settings = context->getReadSettings();
+    auto * load_marks_threadpool = read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
+    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
+
+    LOG_TEST(getLogger("MergeTreeDataPartCompact"), "Loading marks into mark cache for columns {} of part {}", toString(column_names), name);
+
+    MergeTreeMarksLoader loader(
+        info_for_read,
+        mark_cache,
+        index_granularity_info.getMarksFilePath(DATA_FILE_NAME),
+        index_granularity.getMarksCount(),
+        index_granularity_info,
+        /*save_marks_in_cache=*/ true,
+        read_settings,
+        load_marks_threadpool,
+        columns.size());
+
+    loader.loadMarks();
 }
 
 bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) const
@@ -188,7 +207,7 @@ void MergeTreeDataPartCompact::doCheckConsistency(bool require_part_metadata) co
         {
             /// count.txt should be present even in non custom-partitioned parts
             std::string file_path = "count.txt";
-            if (!getDataPartStorage().exists(file_path) || getDataPartStorage().getFileSize(file_path) == 0)
+            if (!getDataPartStorage().existsFile(file_path) || getDataPartStorage().getFileSize(file_path) == 0)
                 throw Exception(
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                     "Part {} is broken: {} is empty",
@@ -198,7 +217,7 @@ void MergeTreeDataPartCompact::doCheckConsistency(bool require_part_metadata) co
 
         /// Check that marks are nonempty and have the consistent size with columns number.
 
-        if (getDataPartStorage().exists(mrk_file_name))
+        if (getDataPartStorage().existsFile(mrk_file_name))
         {
             UInt64 file_size = getDataPartStorage().getFileSize(mrk_file_name);
              if (!file_size)
@@ -223,6 +242,11 @@ void MergeTreeDataPartCompact::doCheckConsistency(bool require_part_metadata) co
 bool MergeTreeDataPartCompact::isStoredOnRemoteDisk() const
 {
     return getDataPartStorage().isStoredOnRemoteDisk();
+}
+
+bool MergeTreeDataPartCompact::isStoredOnReadonlyDisk() const
+{
+    return getDataPartStorage().isReadonly();
 }
 
 bool MergeTreeDataPartCompact::isStoredOnRemoteDiskWithZeroCopySupport() const

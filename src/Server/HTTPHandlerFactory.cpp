@@ -153,6 +153,12 @@ static inline auto createHandlersFactoryFromConfig(
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
+            else if (handler_type == "merges")
+            {
+                auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<MergesWebUIRequestHandler>>(server);
+                handler->addFiltersFromConfig(config, prefix + "." + key);
+                main_handler_factory->addHandler(std::move(handler));
+            }
             else
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Unknown handler type '{}' in config here: {}.{}.handler.type",
                     handler_type, prefix, key);
@@ -172,12 +178,10 @@ createHTTPHandlerFactory(IServer & server, const Poco::Util::AbstractConfigurati
     {
         return createHandlersFactoryFromConfig(server, config, name, "http_handlers", async_metrics);
     }
-    else
-    {
-        auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
-        addDefaultHandlersFactory(*factory, server, config, async_metrics);
-        return factory;
-    }
+
+    auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
+    addDefaultHandlersFactory(*factory, server, config, async_metrics);
+    return factory;
 }
 
 static inline HTTPRequestHandlerFactoryPtr createInterserverHTTPHandlerFactory(IServer & server, const std::string & name)
@@ -197,9 +201,9 @@ HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::
 {
     if (name == "HTTPHandler-factory" || name == "HTTPSHandler-factory")
         return createHTTPHandlerFactory(server, config, name, async_metrics);
-    else if (name == "InterserverIOHTTPHandler-factory" || name == "InterserverIOHTTPSHandler-factory")
+    if (name == "InterserverIOHTTPHandler-factory" || name == "InterserverIOHTTPSHandler-factory")
         return createInterserverHTTPHandlerFactory(server, name);
-    else if (name == "PrometheusHandler-factory")
+    if (name == "PrometheusHandler-factory")
         return createPrometheusHandlerFactory(server, config, async_metrics, name);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown HTTP handler factory name.");
@@ -248,6 +252,12 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     binary_handler->allowGetAndHeadRequest();
     factory.addPathToHints("/binary");
     factory.addHandler(binary_handler);
+
+    auto merges_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<MergesWebUIRequestHandler>>(server);
+    merges_handler->attachNonStrictPath("/merges");
+    merges_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/merges");
+    factory.addHandler(merges_handler);
 
     auto js_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<JavaScriptWebUIRequestHandler>>(server);
     js_handler->attachNonStrictPath("/js/");

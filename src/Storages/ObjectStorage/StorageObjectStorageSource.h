@@ -68,6 +68,11 @@ public:
         const ObjectInfo & object_info,
         bool include_connection_info = true);
 
+    static std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
+        ObjectInfo & object_info,
+        const ObjectStoragePtr & object_storage,
+        const ContextPtr & context_,
+        const LoggerPtr & log);
 protected:
     const String name;
     ObjectStoragePtr object_storage;
@@ -138,11 +143,6 @@ protected:
     ReaderHolder createReader();
 
     std::future<ReaderHolder> createReaderAsync();
-    static std::unique_ptr<ReadBuffer> createReadBuffer(
-        const ObjectInfo & object_info,
-        const ObjectStoragePtr & object_storage,
-        const ContextPtr & context_,
-        const LoggerPtr & log);
 
     void addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows);
     void lazyInitialize();
@@ -223,6 +223,7 @@ private:
     bool is_finished = false;
     bool first_iteration = true;
     std::mutex next_mutex;
+    const ContextPtr local_context;
 
     std::function<void(FileProgress)> file_progress_callback;
 };

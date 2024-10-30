@@ -136,7 +136,7 @@ void InitialAllRangesAnnouncement::serialize(WriteBuffer & out, UInt64 initiator
     writeIntBinary(mode, out);
     description.serialize(out);
     writeIntBinary(replica_num, out);
-    if (initiator_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL)
+    if (initiator_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MARK_SEGMENT_SIZE_FIELD)
         writeIntBinary(mark_segment_size, out);
 }
 
@@ -168,7 +168,7 @@ InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffe
     readIntBinary(replica_num, in);
 
     size_t mark_segment_size = 128;
-    if (replica_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL)
+    if (replica_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MARK_SEGMENT_SIZE_FIELD)
         readIntBinary(mark_segment_size, in);
 
     return InitialAllRangesAnnouncement{mode, description, replica_num, mark_segment_size};

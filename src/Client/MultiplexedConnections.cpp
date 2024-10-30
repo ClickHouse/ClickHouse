@@ -12,6 +12,16 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsDialect dialect;
+    extern const SettingsUInt64 group_by_two_level_threshold;
+    extern const SettingsUInt64 group_by_two_level_threshold_bytes;
+    extern const SettingsUInt64 parallel_replicas_count;
+    extern const SettingsUInt64 parallel_replica_offset;
+    extern const SettingsSeconds receive_timeout;
+}
 
 // NOLINTBEGIN(bugprone-undefined-memory-manipulation)
 
@@ -128,8 +138,8 @@ void MultiplexedConnections::sendQuery(
     Settings modified_settings = settings;
 
     /// Queries in foreign languages are transformed to ClickHouse-SQL. Ensure the setting before sending.
-    modified_settings.dialect = Dialect::clickhouse;
-    modified_settings.dialect.changed = false;
+    modified_settings[Setting::dialect] = Dialect::clickhouse;
+    modified_settings[Setting::dialect].changed = false;
 
     for (auto & replica : replica_states)
     {
@@ -139,8 +149,8 @@ void MultiplexedConnections::sendQuery(
         if (replica.connection->getServerRevision(timeouts) < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD)
         {
             /// Disable two-level aggregation due to version incompatibility.
-            modified_settings.group_by_two_level_threshold = 0;
-            modified_settings.group_by_two_level_threshold_bytes = 0;
+            modified_settings[Setting::group_by_two_level_threshold] = 0;
+            modified_settings[Setting::group_by_two_level_threshold_bytes] = 0;
         }
     }
 
@@ -154,7 +164,7 @@ void MultiplexedConnections::sendQuery(
     /// Make the analyzer being set, so it will be effectively applied on the remote server.
     /// In other words, the initiator always controls whether the analyzer enabled or not for
     /// all servers involved in the distributed query processing.
-    modified_settings.set("allow_experimental_analyzer", static_cast<bool>(modified_settings.allow_experimental_analyzer));
+    modified_settings.set("allow_experimental_analyzer", static_cast<bool>(modified_settings[Setting::allow_experimental_analyzer]));
 
     const bool enable_offset_parallel_processing = context->canUseOffsetParallelReplicas();
 
@@ -163,12 +173,12 @@ void MultiplexedConnections::sendQuery(
     {
         if (enable_offset_parallel_processing)
             /// Use multiple replicas for parallel query processing.
-            modified_settings.parallel_replicas_count = num_replicas;
+            modified_settings[Setting::parallel_replicas_count] = num_replicas;
 
         for (size_t i = 0; i < num_replicas; ++i)
         {
             if (enable_offset_parallel_processing)
-                modified_settings.parallel_replica_offset = i;
+                modified_settings[Setting::parallel_replica_offset] = i;
 
             replica_states[i].connection->sendQuery(
                 timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, {});
@@ -403,7 +413,7 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
         Poco::Net::Socket::SocketList write_list;
         Poco::Net::Socket::SocketList except_list;
 
-        auto timeout = settings.receive_timeout;
+        auto timeout = settings[Setting::receive_timeout];
         int n = 0;
 
         /// EINTR loop
