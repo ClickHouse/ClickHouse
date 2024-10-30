@@ -269,31 +269,31 @@ void registerTableFunctionIceberg(TableFunctionFactory & factory)
 }
 #endif
 
+
+#if USE_AWS_S3
 #if USE_PARQUET
 void registerTableFunctionDeltaLake(TableFunctionFactory & factory)
 {
-#if USE_AWS_S3
     factory.registerFunction<TableFunctionDeltaLake>(
         {.documentation
          = {.description = R"(The table function can be used to read the DeltaLake table stored on object store.)",
             .examples{{"deltaLake", "SELECT * FROM deltaLake(url, access_key_id, secret_access_key)", ""}},
             .categories{"DataLake"}},
          .allow_readonly = false});
-#endif
 }
 #endif
 
 void registerTableFunctionHudi(TableFunctionFactory & factory)
 {
-#if USE_AWS_S3
     factory.registerFunction<TableFunctionHudi>(
         {.documentation
          = {.description = R"(The table function can be used to read the Hudi table stored on object store.)",
             .examples{{"hudi", "SELECT * FROM hudi(url, access_key_id, secret_access_key)", ""}},
             .categories{"DataLake"}},
          .allow_readonly = false});
-#endif
 }
+
+#endif
 
 void registerDataLakeTableFunctions(TableFunctionFactory & factory)
 {
@@ -301,9 +301,11 @@ void registerDataLakeTableFunctions(TableFunctionFactory & factory)
 #if USE_AVRO
     registerTableFunctionIceberg(factory);
 #endif
+#if USE_AWS_S3
 #if USE_PARQUET
     registerTableFunctionDeltaLake(factory);
 #endif
     registerTableFunctionHudi(factory);
+#endif
 }
 }
