@@ -93,7 +93,7 @@ def test_clickhouse_client_max_peak_memory_usage_distributed(started_cluster):
         client1.send(
             "SELECT COUNT(*) FROM distributed_fixed_numbers JOIN fixed_numbers_2 ON distributed_fixed_numbers.number=fixed_numbers_2.number",
         )
-        client1.expect("Query peak memory usage", timeout=60)
+        client1.expect("Peak memory usage", timeout=60)
         client1.expect(prompt)
 
     peak_memory_usage = get_memory_usage_from_client_output_and_close(client_output)
@@ -112,7 +112,7 @@ def test_clickhouse_client_max_peak_memory_single_node(started_cluster):
         client1.send(
             "SELECT COUNT(*) FROM (SELECT number FROM numbers(1,300000) INTERSECT SELECT number FROM numbers(10000,1200000))"
         )
-        client1.expect("Query peak memory usage", timeout=60)
+        client1.expect("Peak memory usage", timeout=60)
         client1.expect(prompt)
 
     peak_memory_usage = get_memory_usage_from_client_output_and_close(client_output)
