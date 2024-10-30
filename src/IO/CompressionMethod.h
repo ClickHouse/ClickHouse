@@ -15,7 +15,7 @@ class WriteBuffer;
   *  (they use non-standard framing, indexes, checksums...)
   */
 
-enum class CompressionMethod : uint8_t
+enum class CompressionMethod
 {
     None,
     /// DEFLATE compression with gzip header and CRC32 checksum.

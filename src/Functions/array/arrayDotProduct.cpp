@@ -66,13 +66,13 @@ struct DotProduct
     };
 
     template <typename Type>
-    static NO_SANITIZE_UNDEFINED void accumulate(State<Type> & state, Type x, Type y)
+    static void accumulate(State<Type> & state, Type x, Type y)
     {
         state.sum += x * y;
     }
 
     template <typename Type>
-    static NO_SANITIZE_UNDEFINED void combine(State<Type> & state, const State<Type> & other_state)
+    static void combine(State<Type> & state, const State<Type> & other_state)
     {
         state.sum += other_state.sum;
     }
@@ -250,7 +250,7 @@ private:
         {
             return executeWithLeftArgConst<ResultType, LeftType, RightType>(col_x, col_y, input_rows_count);
         }
-        if (typeid_cast<const ColumnConst *>(col_y.get()))
+        else if (typeid_cast<const ColumnConst *>(col_y.get()))
         {
             return executeWithLeftArgConst<ResultType, RightType, LeftType>(col_y, col_x, input_rows_count);
         }

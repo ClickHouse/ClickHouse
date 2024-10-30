@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-debug, no-asan, no-tsan, no-msan, no-ubsan, no-random-settings, no-random-merge-tree-settings
-# Test can be very long in case when we have busy background pool + s3 storage
+# Tags: long, no-debug
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

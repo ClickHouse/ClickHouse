@@ -18,7 +18,6 @@ public:
     using ValueSizeMap = std::map<std::string, double>;
     using VirtualFields = std::unordered_map<String, Field>;
     using DeserializeBinaryBulkStateMap = std::map<std::string, ISerialization::DeserializeBinaryBulkStatePtr>;
-    using FileStreams = std::map<std::string, std::unique_ptr<MergeTreeReaderStream>>;
 
     IMergeTreeReader(
         MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
@@ -101,7 +100,7 @@ protected:
     /// Position and level (of nesting).
     using ColumnNameLevel = std::optional<std::pair<String, size_t>>;
 
-    /// In case of part of the nested column does not exist, offsets should be
+    /// In case of part of the nested column does not exists, offsets should be
     /// read, but only the offsets for the current column, that is why it
     /// returns pair of size_t, not just one.
     ColumnNameLevel findColumnForOffsets(const NameAndTypePair & column) const;
@@ -113,9 +112,6 @@ protected:
 
 private:
     /// Columns that are requested to read.
-    NamesAndTypesList original_requested_columns;
-
-    /// The same as above but with converted Arrays to subcolumns of Nested.
     NamesAndTypesList requested_columns;
 
     /// Actual columns description in part.

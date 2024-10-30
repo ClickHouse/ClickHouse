@@ -98,7 +98,7 @@ private:
     String channel_id;
     UInt64 channel_id_counter = 0;
 
-    enum class State : uint8_t
+    enum class State
     {
         NONE,
         INITIALIZING,

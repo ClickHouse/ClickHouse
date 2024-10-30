@@ -1,23 +1,21 @@
 #pragma once
 
-#include <Interpreters/Context.h>
-#include <Parsers/IAST_fwd.h>
-#include <Storages/IStorage_fwd.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Interpreters/Context_fwd.h>
-#include <Poco/Event.h>
+#include <Storages/IStorage_fwd.h>
+#include <Parsers/IAST_fwd.h>
+#include <Interpreters/Context.h>
 
 #include <atomic>
-#include <list>
+#include <chrono>
+#include <condition_variable>
 #include <mutex>
 #include <shared_mutex>
+#include <thread>
 #include <unordered_set>
-
 
 namespace zkutil
 {
@@ -52,16 +50,8 @@ class AccessRightsElements;
 class DDLWorker
 {
 public:
-    DDLWorker(
-        int pool_size_,
-        const std::string & zk_queue_dir,
-        const std::string & zk_replicas_dir,
-        ContextPtr context_,
-        const Poco::Util::AbstractConfiguration * config,
-        const String & prefix,
-        const String & logger_name = "DDLWorker",
-        const CurrentMetrics::Metric * max_entry_metric_ = nullptr,
-        const CurrentMetrics::Metric * max_pushed_entry_metric_ = nullptr);
+    DDLWorker(int pool_size_, const std::string & zk_root_dir, ContextPtr context_, const Poco::Util::AbstractConfiguration * config, const String & prefix,
+              const String & logger_name = "DDLWorker", const CurrentMetrics::Metric * max_entry_metric_ = nullptr, const CurrentMetrics::Metric * max_pushed_entry_metric_ = nullptr);
     virtual ~DDLWorker();
 
     /// Pushes query into DDL queue, returns path to created node
@@ -78,8 +68,6 @@ public:
     {
         return queue_dir;
     }
-
-    std::string getReplicasDir() const { return replicas_dir; }
 
     void startup();
     virtual void shutdown();
@@ -127,8 +115,7 @@ protected:
 
     /// Reads entry and check that the host belongs to host list of the task
     /// Returns non-empty DDLTaskPtr if entry parsed and the check is passed
-    /// If dry_run = false, the task will be processed right after this call.
-    virtual DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper, bool dry_run);
+    virtual DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper);
 
     void processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper);
     void updateMaxDDLEntryID(const String & entry_name);
@@ -159,10 +146,6 @@ protected:
 
     /// Return false if the worker was stopped (stop_flag = true)
     virtual bool initializeMainThread();
-    virtual void initializeReplication();
-
-    virtual void createReplicaDirs(const ZooKeeperPtr & zookeeper, const NameSet & host_ids);
-    virtual void markReplicasActive(bool reinitialized);
 
     void runMainThread();
     void runCleanupThread();
@@ -174,8 +157,7 @@ protected:
 
     std::string host_fqdn;      /// current host domain name
     std::string host_fqdn_id;   /// host_name:port
-    std::string queue_dir; /// dir with queue of queries
-    std::string replicas_dir;
+    std::string queue_dir;      /// dir with queue of queries
 
     mutable std::mutex zookeeper_mutex;
     ZooKeeperPtr current_zookeeper TSA_GUARDED_BY(zookeeper_mutex);
@@ -212,13 +194,8 @@ protected:
 
     ConcurrentSet entries_to_skip;
 
-    std::atomic_uint64_t subsequent_errors_count = 0;
-    String last_unexpected_error;
-
     const CurrentMetrics::Metric * max_entry_metric;
     const CurrentMetrics::Metric * max_pushed_entry_metric;
-
-    std::unordered_map<String, std::pair<ZooKeeperPtr, zkutil::EphemeralNodeHolderPtr>> active_node_holders;
 };
 
 

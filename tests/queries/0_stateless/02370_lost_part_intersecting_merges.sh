@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, zookeeper, no-shared-merge-tree
-# no-shared-merge-tree: depend on local fs (remove parts)
+# Tags: long, zookeeper
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

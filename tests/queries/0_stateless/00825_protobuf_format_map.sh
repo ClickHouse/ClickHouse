@@ -9,7 +9,9 @@ SCHEMADIR=$CURDIR/format_schemas
 set -eo pipefail
 
 # Run the client.
-$CLICKHOUSE_CLIENT <<EOF
+$CLICKHOUSE_CLIENT --multiquery <<EOF
+SET allow_experimental_map_type = 1;
+
 DROP TABLE IF EXISTS map_protobuf_00825;
 
 CREATE TABLE map_protobuf_00825

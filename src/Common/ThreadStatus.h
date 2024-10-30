@@ -7,11 +7,11 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
-#include <Common/Scheduler/ResourceLink.h>
 
 #include <boost/noncopyable.hpp>
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <unordered_set>
@@ -188,10 +188,6 @@ public:
     Progress progress_in;
     Progress progress_out;
 
-    /// IO scheduling
-    ResourceLink read_resource_link;
-    ResourceLink write_resource_link;
-
 private:
     /// Group of threads, to which this thread attached
     ThreadGroupPtr thread_group;
@@ -310,8 +306,6 @@ public:
     void logToQueryViewsLog(const ViewRuntimeData & vinfo);
 
     void flushUntrackedMemory();
-
-    void initGlobalProfiler(UInt64 global_profiler_real_time_period, UInt64 global_profiler_cpu_time_period);
 
 private:
     void applyGlobalSettings();

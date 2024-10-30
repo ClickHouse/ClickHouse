@@ -1,8 +1,9 @@
 #pragma once
 
 #include <Storages/MarkCache.h>
-#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
+#include <IO/ReadSettings.h>
 #include <Common/ThreadPool_fwd.h>
+#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 
 
 namespace DB
@@ -10,7 +11,6 @@ namespace DB
 
 struct MergeTreeIndexGranularityInfo;
 using MarksPtr = MarkCache::MappedPtr;
-struct ReadSettings;
 class Threadpool;
 
 /// Class that helps to get marks by indexes.
@@ -50,7 +50,6 @@ public:
 
     ~MergeTreeMarksLoader();
 
-    void startAsyncLoad();
     MergeTreeMarksGetterPtr loadMarks();
     size_t getNumColumns() const { return num_columns_in_mark; }
 
@@ -76,14 +75,5 @@ private:
 };
 
 using MergeTreeMarksLoaderPtr = std::shared_ptr<MergeTreeMarksLoader>;
-
-class IMergeTreeDataPart;
-struct MergeTreeSettings;
-
-/// Adds computed marks for part to the marks cache.
-void addMarksToCache(const IMergeTreeDataPart & part, const PlainMarksByName & cached_marks, MarkCache * mark_cache);
-
-/// Returns the list of columns suitable for prewarming of mark cache according to settings.
-Names getColumnsToPrewarmMarks(const MergeTreeSettings & settings, const NamesAndTypesList & columns_list);
 
 }
