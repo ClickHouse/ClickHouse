@@ -5,10 +5,11 @@
 
 #include <QueryPipeline/Pipe.h>
 #include <Storages/IStorage.h>
+#include <Storages/KeeperMapSettings.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/PODArray_fwd.h>
-#include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/logger_useful.h>
 
 #include <Backups/IBackup.h>
 #include <Backups/WithRetries.h>
@@ -34,7 +35,10 @@ public:
         bool attach,
         std::string_view primary_key_,
         const std::string & root_path_,
-        UInt64 keys_limit_);
+        UInt64 keys_limit_,
+        const KeeperMapSettings & keeper_map_settings_);
+
+    const KeeperMapSettings & getKeeperMapSettingsRef() const { return *keeper_map_settings; }
 
     Pipe read(
         const Names & column_names,
@@ -69,6 +73,9 @@ public:
 
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
 
     zkutil::ZooKeeperPtr getClient() const;
     const std::string & dataPath() const;
@@ -145,6 +152,8 @@ private:
     mutable std::optional<bool> table_is_valid;
 
     LoggerPtr log;
+
+    std::unique_ptr<KeeperMapSettings> keeper_map_settings;
 };
 
 }

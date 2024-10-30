@@ -28,8 +28,10 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
+#include <Storages/AlterCommands.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/KVStorageUtils.h>
+#include <Storages/KeeperMapSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -63,6 +65,11 @@
 namespace DB
 {
 
+namespace KeeperMapSetting
+{
+    extern const KeeperMapSettingsBool read_only;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -71,6 +78,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int LIMIT_EXCEEDED;
     extern const int CANNOT_RESTORE_TABLE;
+    extern const int TABLE_IS_READ_ONLY;
 }
 
 namespace
@@ -314,7 +322,8 @@ StorageKeeperMap::StorageKeeperMap(
     bool attach,
     std::string_view primary_key_,
     const std::string & zk_root_path_,
-    UInt64 keys_limit_)
+    UInt64 keys_limit_,
+    const KeeperMapSettings & keeper_map_settings_)
     : IStorage(table_id)
     , WithContext(context_->getGlobalContext())
     , zk_root_path(zkutil::extractZooKeeperPath(zk_root_path_, false))
@@ -322,6 +331,7 @@ StorageKeeperMap::StorageKeeperMap(
     , zookeeper_name(zkutil::extractZooKeeperName(zk_root_path_))
     , keys_limit(keys_limit_)
     , log(getLogger(fmt::format("StorageKeeperMap ({})", table_id.getNameForLogs())))
+    , keeper_map_settings(std::make_unique<KeeperMapSettings>(keeper_map_settings_))
 {
     std::string path_prefix = context_->getConfigRef().getString("keeper_map_path_prefix", "");
     if (path_prefix.empty())
@@ -547,12 +557,16 @@ Pipe StorageKeeperMap::read(
 
 SinkToStoragePtr StorageKeeperMap::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
+    if (getKeeperMapSettingsRef()[KeeperMapSetting::read_only])
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is set as read-only via read_only=true table setting");
     checkTable<true>();
     return std::make_shared<StorageKeeperMapSink>(*this, metadata_snapshot->getSampleBlock(), local_context);
 }
 
 void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
+    if (getKeeperMapSettingsRef()[KeeperMapSetting::read_only])
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is set as read-only via read_only=true table setting");
     checkTable<true>();
     auto client = getClient();
     client->tryRemoveChildrenRecursive(zk_data_path, true);
@@ -595,6 +609,8 @@ bool StorageKeeperMap::dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::E
 
 void StorageKeeperMap::drop()
 {
+    if (getKeeperMapSettingsRef()[KeeperMapSetting::read_only])
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is set as read-only via read_only=true table setting");
     checkTable<true>();
     auto client = getClient();
 
@@ -924,6 +940,33 @@ void StorageKeeperMap::restoreDataImpl(
         flush_create_requests();
 }
 
+void StorageKeeperMap::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const
+{
+    for (const auto & command : commands)
+    {
+        if (!command.isCommentAlter() && !command.isSettingsAlter())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}", command.type, getName());
+    }
+}
+
+void StorageKeeperMap::alter(const AlterCommands & params, ContextPtr context_, AlterLockHolder &)
+{
+    auto table_id = getStorageID();
+    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    params.apply(new_metadata, context_);
+
+    if (params.isSettingsAlter())
+    {
+        const auto & settings_changes = new_metadata.settings_changes->as<ASTSetQuery &>();
+        auto changed_settings = *keeper_map_settings;
+        changed_settings.applyChanges(settings_changes.changes);
+        *keeper_map_settings = std::move(changed_settings);
+    }
+
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context_, table_id, new_metadata);
+    setInMemoryMetadata(new_metadata);
+}
+
 zkutil::ZooKeeperPtr StorageKeeperMap::getClient() const
 {
     std::lock_guard lock{zookeeper_mutex};
@@ -1139,10 +1182,14 @@ void StorageKeeperMap::checkMutationIsPossible(const MutationCommands & commands
     const auto command_type = commands.front().type;
     if (command_type != MutationCommand::Type::UPDATE && command_type != MutationCommand::Type::DELETE)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only DELETE and UPDATE mutation supported for KeeperMap");
+    if (getKeeperMapSettingsRef()[KeeperMapSetting::read_only])
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is set as read-only via read_only=true table setting");
 }
 
 void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr local_context)
 {
+    if (getKeeperMapSettingsRef()[KeeperMapSetting::read_only])
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is set as read-only via read_only=true table setting");
     checkTable<true>();
 
     if (commands.empty())
@@ -1285,8 +1332,14 @@ StoragePtr create(const StorageFactory::Arguments & args)
     if (primary_key_names.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageKeeperMap requires one column in primary key");
 
+    bool has_settings = args.storage_def->settings;
+    KeeperMapSettings settings;
+    if (has_settings)
+        settings.loadFromQuery(*args.storage_def);
+    metadata.setSettingsChanges(settings.getSettingsChangesQuery());
+
     return std::make_shared<StorageKeeperMap>(
-        args.getContext(), args.table_id, metadata, args.query.attach, primary_key_names[0], zk_root_path, keys_limit);
+        args.getContext(), args.table_id, metadata, args.query.attach, primary_key_names[0], zk_root_path, keys_limit, settings);
 }
 
 }
@@ -1297,6 +1350,7 @@ void registerStorageKeeperMap(StorageFactory & factory)
         "KeeperMap",
         create,
         {
+            .supports_settings = true,
             .supports_sort_order = true,
             .supports_parallel_insert = true,
         });
