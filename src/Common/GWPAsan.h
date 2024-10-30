@@ -8,7 +8,6 @@
 #include <Common/thread_local_rng.h>
 
 #include <atomic>
-#include <random>
 
 namespace GWPAsan
 {
@@ -23,10 +22,6 @@ extern std::atomic<bool> init_finished;
 
 void initFinished();
 
-extern std::atomic<double> force_sample_probability;
-
-void setForceSampleProbability(double value);
-
 /**
  * We'd like to postpone sampling allocations under the startup is finished. There are mainly
  * two reasons for that:
@@ -37,14 +32,6 @@ void setForceSampleProbability(double value);
 inline bool shouldSample()
 {
     return init_finished.load(std::memory_order_relaxed) && GuardedAlloc.shouldSample();
-}
-
-inline bool shouldForceSample()
-{
-    if (!init_finished.load(std::memory_order_relaxed))
-        return false;
-    std::bernoulli_distribution dist(force_sample_probability.load(std::memory_order_relaxed));
-    return dist(thread_local_rng);
 }
 
 }
