@@ -27,6 +27,7 @@ public:
         ImplPtr impl_,
         IAsynchronousReader & reader_,
         const ReadSettings & settings_,
+        size_t buffer_size_,
         AsyncReadCountersPtr async_read_counters_ = nullptr,
         FilesystemReadPrefetchesLogPtr prefetches_log_ = nullptr);
 
@@ -53,6 +54,7 @@ public:
 private:
     const ImplPtr impl;
     const ReadSettings read_settings;
+    const size_t buffer_size;
     IAsynchronousReader & reader;
 
     size_t file_offset_of_buffer_end = 0;

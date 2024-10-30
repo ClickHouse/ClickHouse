@@ -532,19 +532,33 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         return impl;
     };
 
+    /// Avoid cache fragmentation by choosing bigger buffer size.
+    bool prefer_bigger_buffer_size = object_storage->supportsCache() && read_settings.enable_filesystem_cache;
+    size_t buffer_size = prefer_bigger_buffer_size
+        ? std::max<size_t>(settings.remote_fs_buffer_size, DBMS_DEFAULT_BUFFER_SIZE)
+        : settings.remote_fs_buffer_size;
+
+    size_t total_objects_size = getTotalSize(storage_objects);
+    if (total_objects_size)
+        buffer_size = std::min(buffer_size, total_objects_size);
+
     const bool use_async_buffer = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
     auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
         std::move(read_buffer_creator),
         storage_objects,
         read_settings,
         global_context->getFilesystemCacheLog(),
-        /* use_external_buffer */use_async_buffer);
+        /* use_external_buffer */use_async_buffer,
+        /* buffer_size */use_async_buffer ? 0 : buffer_size);
 
     if (use_async_buffer)
     {
         auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
         return std::make_unique<AsynchronousBoundedReadBuffer>(
-            std::move(impl), reader, read_settings,
+            std::move(impl),
+            reader,
+            read_settings,
+            buffer_size,
             global_context->getAsyncReadCounters(),
             global_context->getFilesystemReadPrefetchesLog());
 

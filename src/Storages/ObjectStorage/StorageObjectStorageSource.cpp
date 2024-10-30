@@ -517,9 +517,17 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
 
     LOG_TRACE(log, "Downloading object of size {} with initial prefetch", object_size);
 
+    bool prefer_bigger_buffer_size = impl->isCached();
+    size_t buffer_size = prefer_bigger_buffer_size
+        ? std::max<size_t>(read_settings.remote_fs_buffer_size, DBMS_DEFAULT_BUFFER_SIZE)
+        : read_settings.remote_fs_buffer_size;
+
     auto & reader = context_->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
     impl = std::make_unique<AsynchronousBoundedReadBuffer>(
-        std::move(impl), reader, modified_read_settings,
+        std::move(impl),
+        reader,
+        modified_read_settings,
+        buffer_size,
         context_->getAsyncReadCounters(),
         context_->getFilesystemReadPrefetchesLog());
 
