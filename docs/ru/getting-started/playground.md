@@ -6,7 +6,7 @@ sidebar_label: Playground
 
 # ClickHouse Playground {#clickhouse-playground}
 
-[ClickHouse Playground](https://sql.clickhouse.com) позволяет пользователям экспериментировать с ClickHouse, выполняя запросы мгновенно, без необходимости настройки сервера или кластера.
+[ClickHouse Playground](https://play.clickhouse.com/play?user=play) позволяет пользователям экспериментировать с ClickHouse, выполняя запросы мгновенно, без необходимости настройки сервера или кластера.
 В Playground доступны несколько примеров наборов данных.
 
 Вы можете выполнять запросы к Playground, используя любой HTTP-клиент, например [curl](https://curl.haxx.se) или [wget](https://www.gnu.org/software/wget/), или настроить соединение, используя драйверы [JDBC](../interfaces/jdbc.md) или [ODBC](../interfaces/odbc.md). Дополнительную информацию о программных продуктах, поддерживающих ClickHouse, можно найти [здесь](../interfaces/index.md).

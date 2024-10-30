@@ -101,10 +101,12 @@ public:
             /// Merely return the embedded null map.
             return nullable->getNullMapColumnPtr();
         }
-
-        /// Since no element is nullable, return a zero-constant column representing
-        /// a zero-filled null map.
-        return DataTypeUInt8().createColumnConst(elem.column->size(), 0u);
+        else
+        {
+            /// Since no element is nullable, return a zero-constant column representing
+            /// a zero-filled null map.
+            return DataTypeUInt8().createColumnConst(elem.column->size(), 0u);
+        }
     }
 
 private:

@@ -14,6 +14,7 @@ SETTINGS disk = disk(type = cache,
                      max_size = '1Gi',
                      max_file_segment_size = '40Mi',
                      boundary_alignment = '20Mi',
+                     background_download_threads = 2,
                      path = '$CLICKHOUSE_TEST_UNIQUE_NAME',
                      disk = 's3_disk');
 

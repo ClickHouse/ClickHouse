@@ -1,9 +1,8 @@
 #include "MetadataStorageFromPlainObjectStorageOperations.h"
-#include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
+#include <Disks/ObjectStorages/InMemoryPathMap.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Poco/Timestamp.h>
 #include <Common/Exception.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
@@ -31,10 +30,7 @@ ObjectStorageKey createMetadataObjectKey(const std::string & object_key_prefix, 
 }
 
 MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
-    std::filesystem::path && path_,
-    InMemoryDirectoryPathMap & path_map_,
-    ObjectStoragePtr object_storage_,
-    const std::string & metadata_key_prefix_)
+    std::filesystem::path && path_, InMemoryPathMap & path_map_, ObjectStoragePtr object_storage_, const std::string & metadata_key_prefix_)
     : path(std::move(path_))
     , path_map(path_map_)
     , object_storage(object_storage_)
@@ -75,8 +71,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
     {
         std::lock_guard lock(path_map.mutex);
         auto & map = path_map.map;
-        [[maybe_unused]] auto result
-            = map.emplace(base_path, InMemoryDirectoryPathMap::RemotePathInfo{object_key_prefix, Poco::Timestamp{}.epochTime()});
+        [[maybe_unused]] auto result = map.emplace(base_path, object_key_prefix);
         chassert(result.second);
     }
     auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
@@ -114,7 +109,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo(std::un
 MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFromPlainObjectStorageMoveDirectoryOperation(
     std::filesystem::path && path_from_,
     std::filesystem::path && path_to_,
-    InMemoryDirectoryPathMap & path_map_,
+    InMemoryPathMap & path_map_,
     ObjectStoragePtr object_storage_,
     const std::string & metadata_key_prefix_)
     : path_from(std::move(path_from_))
@@ -144,7 +139,7 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMo
             throw Exception(
                 ErrorCodes::FILE_ALREADY_EXISTS, "Metadata object for the new (destination) path '{}' already exists", new_path);
 
-        remote_path = expected_it->second.path;
+        remote_path = expected_it->second;
     }
 
     auto metadata_object_key = createMetadataObjectKey(remote_path, metadata_key_prefix);
@@ -155,7 +150,7 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMo
     if (validate_content)
     {
         std::string data;
-        auto read_buf = object_storage->readObject(metadata_object, ReadSettings{});
+        auto read_buf = object_storage->readObject(metadata_object);
         readStringUntilEOF(data, *read_buf);
         if (data != path_from)
             throw Exception(
@@ -195,7 +190,6 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute(std::u
         auto & map = path_map.map;
         [[maybe_unused]] auto result = map.emplace(base_path_to, map.extract(base_path_from).mapped());
         chassert(result.second);
-        result.first->second.last_modified = Poco::Timestamp{}.epochTime();
     }
 
     write_finalized = true;
@@ -219,10 +213,7 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo(std::uniq
 }
 
 MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation(
-    std::filesystem::path && path_,
-    InMemoryDirectoryPathMap & path_map_,
-    ObjectStoragePtr object_storage_,
-    const std::string & metadata_key_prefix_)
+    std::filesystem::path && path_, InMemoryPathMap & path_map_, ObjectStoragePtr object_storage_, const std::string & metadata_key_prefix_)
     : path(std::move(path_)), path_map(path_map_), object_storage(object_storage_), metadata_key_prefix(metadata_key_prefix_)
 {
     chassert(path.string().ends_with('/'));
@@ -238,7 +229,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std:
         auto path_it = map.find(base_path);
         if (path_it == map.end())
             return;
-        key_prefix = path_it->second.path;
+        key_prefix = path_it->second;
     }
 
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation"), "Removing directory '{}'", path);

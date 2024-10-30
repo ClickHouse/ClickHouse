@@ -38,14 +38,6 @@
 
 #include <Coordination/SnapshotableHashTable.h>
 
-namespace DB::CoordinationSetting
-{
-    extern const CoordinationSettingsBool experimental_use_rocksdb;
-    extern const CoordinationSettingsUInt64 rotate_log_storage_interval;
-    extern const CoordinationSettingsUInt64 reserved_log_items;
-    extern const CoordinationSettingsUInt64 snapshot_distance;
-}
-
 namespace fs = std::filesystem;
 struct ChangelogDirTest
 {
@@ -95,7 +87,7 @@ public:
         Poco::Logger::root().setLevel("trace");
 
         auto settings = std::make_shared<DB::CoordinationSettings>();
-        (*settings)[DB::CoordinationSetting::experimental_use_rocksdb] = true;
+        settings->experimental_use_rocksdb = true;
         keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
         keeper_context->setLocalLogsPreprocessed();
         keeper_context->setRocksDBOptions();
@@ -183,54 +175,31 @@ TYPED_TEST(CoordinationTest, BufferSerde)
     request->xid = 3;
     dynamic_cast<Coordination::ZooKeeperGetRequest &>(*request).path = "/path/value";
 
-    const auto test_serde = [&](bool use_xid_64)
-    {
-        size_t xid_size = use_xid_64 ? sizeof(int64_t) : sizeof(int32_t);
-        DB::WriteBufferFromNuraftBuffer wbuf;
-        request->write(wbuf, use_xid_64);
-        auto nuraft_buffer = wbuf.getBuffer();
-        EXPECT_EQ(nuraft_buffer->size(), 24 + xid_size);
+    DB::WriteBufferFromNuraftBuffer wbuf;
+    request->write(wbuf);
+    auto nuraft_buffer = wbuf.getBuffer();
+    EXPECT_EQ(nuraft_buffer->size(), 28);
 
-        DB::ReadBufferFromNuraftBuffer rbuf(nuraft_buffer);
+    DB::ReadBufferFromNuraftBuffer rbuf(nuraft_buffer);
 
-        int32_t length;
-        Coordination::read(length, rbuf);
-        EXPECT_EQ(length + sizeof(length), nuraft_buffer->size());
+    int32_t length;
+    Coordination::read(length, rbuf);
+    EXPECT_EQ(length + sizeof(length), nuraft_buffer->size());
 
-        int64_t xid = 0;
-        if (use_xid_64)
-        {
-            Coordination::read(xid, rbuf);
-        }
-        else
-        {
-            int32_t xid_32 = 0;
-            Coordination::read(xid_32, rbuf);
-            xid = xid_32;
-        }
+    int32_t xid;
+    Coordination::read(xid, rbuf);
+    EXPECT_EQ(xid, request->xid);
 
-        EXPECT_EQ(xid, request->xid);
+    Coordination::OpNum opnum;
+    Coordination::read(opnum, rbuf);
 
-        Coordination::OpNum opnum;
-        Coordination::read(opnum, rbuf);
+    Coordination::ZooKeeperRequestPtr request_read = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
+    request_read->xid = xid;
+    request_read->readImpl(rbuf);
 
-        Coordination::ZooKeeperRequestPtr request_read = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
-        request_read->xid = xid;
-        request_read->readImpl(rbuf);
-
-        EXPECT_EQ(request_read->getOpNum(), Coordination::OpNum::Get);
-        EXPECT_EQ(request_read->xid, 3);
-        EXPECT_EQ(dynamic_cast<Coordination::ZooKeeperGetRequest &>(*request_read).path, "/path/value");
-    };
-
-    {
-        SCOPED_TRACE("32bit XID");
-        test_serde(/*use_xid_64=*/false);
-    }
-    {
-        SCOPED_TRACE("64bit XID");
-        test_serde(/*use_xid_64=*/true);
-    }
+    EXPECT_EQ(request_read->getOpNum(), Coordination::OpNum::Get);
+    EXPECT_EQ(request_read->xid, 3);
+    EXPECT_EQ(dynamic_cast<Coordination::ZooKeeperGetRequest &>(*request_read).path, "/path/value");
 }
 
 template <typename StateMachine>
@@ -1829,14 +1798,23 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotBroken)
     EXPECT_THROW(manager.restoreFromLatestSnapshot(), DB::Exception);
 }
 
+nuraft::ptr<nuraft::buffer> getBufferFromZKRequest(int64_t session_id, int64_t zxid, const Coordination::ZooKeeperRequestPtr & request)
+{
+    DB::WriteBufferFromNuraftBuffer buf;
+    DB::writeIntBinary(session_id, buf);
+    request->write(buf);
+    using namespace std::chrono;
+    auto time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    DB::writeIntBinary(time, buf);
+    DB::writeIntBinary(zxid, buf);
+    DB::writeIntBinary(DB::KeeperMemoryStorage::DigestVersion::NO_DIGEST, buf);
+    return buf.getBuffer();
+}
+
 nuraft::ptr<nuraft::log_entry>
 getLogEntryFromZKRequest(size_t term, int64_t session_id, int64_t zxid, const Coordination::ZooKeeperRequestPtr & request)
 {
-    DB::KeeperStorageBase::RequestForSession request_for_session;
-    request_for_session.session_id = session_id;
-    request_for_session.zxid = zxid;
-    request_for_session.request = request;
-    auto buffer = DB::IKeeperStateMachine::getZooKeeperLogEntry(request_for_session);
+    auto buffer = getBufferFromZKRequest(session_id, zxid, request);
     return nuraft::cs_new<nuraft::log_entry>(term, buffer);
 }
 
@@ -1872,10 +1850,10 @@ void testLogAndStateMachine(
     state_machine->init();
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{
-            .force_sync = true, .compress_logs = enable_compression, .rotate_interval = (*settings)[DB::CoordinationSetting::rotate_log_storage_interval]},
+            .force_sync = true, .compress_logs = enable_compression, .rotate_interval = settings->rotate_log_storage_interval},
         DB::FlushSettings(),
         keeper_context);
-    changelog.init(state_machine->last_commit_index() + 1, (*settings)[DB::CoordinationSetting::reserved_log_items]);
+    changelog.init(state_machine->last_commit_index() + 1, settings->reserved_log_items);
 
     for (size_t i = 1; i < total_logs + 1; ++i)
     {
@@ -1890,7 +1868,7 @@ void testLogAndStateMachine(
         state_machine->pre_commit(i, changelog.entry_at(i)->get_buf());
         state_machine->commit(i, changelog.entry_at(i)->get_buf());
         bool snapshot_created = false;
-        if (i % (*settings)[DB::CoordinationSetting::snapshot_distance] == 0)
+        if (i % settings->snapshot_distance == 0)
         {
             nuraft::snapshot s(i, 0, std::make_shared<nuraft::cluster_config>());
             nuraft::async_result<bool>::handler_type when_done
@@ -1908,28 +1886,28 @@ void testLogAndStateMachine(
             snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/false);
         }
 
-        if (snapshot_created && changelog.size() > (*settings)[DB::CoordinationSetting::reserved_log_items])
-            changelog.compact(i - (*settings)[DB::CoordinationSetting::reserved_log_items]);
+        if (snapshot_created && changelog.size() > settings->reserved_log_items)
+            changelog.compact(i - settings->reserved_log_items);
     }
 
     SnapshotsQueue snapshots_queue1{1};
     keeper_context = get_keeper_context();
     auto restore_machine = std::make_shared<KeeperStateMachine<Storage>>(queue, snapshots_queue1, keeper_context, nullptr);
     restore_machine->init();
-    EXPECT_EQ(restore_machine->last_commit_index(), total_logs - total_logs % (*settings)[DB::CoordinationSetting::snapshot_distance]);
+    EXPECT_EQ(restore_machine->last_commit_index(), total_logs - total_logs % settings->snapshot_distance);
 
     DB::KeeperLogStore restore_changelog(
         DB::LogFileSettings{
-            .force_sync = true, .compress_logs = enable_compression, .rotate_interval = (*settings)[DB::CoordinationSetting::rotate_log_storage_interval]},
+            .force_sync = true, .compress_logs = enable_compression, .rotate_interval = settings->rotate_log_storage_interval},
         DB::FlushSettings(),
         keeper_context);
-    restore_changelog.init(restore_machine->last_commit_index() + 1, (*settings)[DB::CoordinationSetting::reserved_log_items]);
+    restore_changelog.init(restore_machine->last_commit_index() + 1, settings->reserved_log_items);
 
-    EXPECT_EQ(restore_changelog.size(), std::min((*settings)[DB::CoordinationSetting::reserved_log_items] + total_logs % (*settings)[DB::CoordinationSetting::snapshot_distance], total_logs));
+    EXPECT_EQ(restore_changelog.size(), std::min(settings->reserved_log_items + total_logs % settings->snapshot_distance, total_logs));
     EXPECT_EQ(restore_changelog.next_slot(), total_logs + 1);
-    if (total_logs > (*settings)[DB::CoordinationSetting::reserved_log_items] + 1)
+    if (total_logs > settings->reserved_log_items + 1)
         EXPECT_EQ(
-            restore_changelog.start_index(), total_logs - total_logs % (*settings)[DB::CoordinationSetting::snapshot_distance] - (*settings)[DB::CoordinationSetting::reserved_log_items] + 1);
+            restore_changelog.start_index(), total_logs - total_logs % settings->snapshot_distance - settings->reserved_log_items + 1);
     else
         EXPECT_EQ(restore_changelog.start_index(), 1);
 
@@ -1959,66 +1937,66 @@ TYPED_TEST(CoordinationTest, TestStateMachineAndLogStore)
 
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-        (*settings)[DB::CoordinationSetting::snapshot_distance] = 10;
-        (*settings)[DB::CoordinationSetting::reserved_log_items] = 10;
-        (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 10;
+        settings->snapshot_distance = 10;
+        settings->reserved_log_items = 10;
+        settings->rotate_log_storage_interval = 10;
 
         testLogAndStateMachine<Storage>(settings, 37, this->enable_compression);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-        (*settings)[DB::CoordinationSetting::snapshot_distance] = 10;
-        (*settings)[DB::CoordinationSetting::reserved_log_items] = 10;
-        (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 10;
+        settings->snapshot_distance = 10;
+        settings->reserved_log_items = 10;
+        settings->rotate_log_storage_interval = 10;
         testLogAndStateMachine<Storage>(settings, 11, this->enable_compression);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-        (*settings)[DB::CoordinationSetting::snapshot_distance] = 10;
-        (*settings)[DB::CoordinationSetting::reserved_log_items] = 10;
-        (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 10;
+        settings->snapshot_distance = 10;
+        settings->reserved_log_items = 10;
+        settings->rotate_log_storage_interval = 10;
         testLogAndStateMachine<Storage>(settings, 40, this->enable_compression);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-        (*settings)[DB::CoordinationSetting::snapshot_distance] = 10;
-        (*settings)[DB::CoordinationSetting::reserved_log_items] = 20;
-        (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 30;
+        settings->snapshot_distance = 10;
+        settings->reserved_log_items = 20;
+        settings->rotate_log_storage_interval = 30;
         testLogAndStateMachine<Storage>(settings, 40, this->enable_compression);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-        (*settings)[DB::CoordinationSetting::snapshot_distance] = 10;
-        (*settings)[DB::CoordinationSetting::reserved_log_items] = 0;
-        (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 10;
+        settings->snapshot_distance = 10;
+        settings->reserved_log_items = 0;
+        settings->rotate_log_storage_interval = 10;
         testLogAndStateMachine<Storage>(settings, 40, this->enable_compression);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-        (*settings)[DB::CoordinationSetting::snapshot_distance] = 1;
-        (*settings)[DB::CoordinationSetting::reserved_log_items] = 1;
-        (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 32;
+        settings->snapshot_distance = 1;
+        settings->reserved_log_items = 1;
+        settings->rotate_log_storage_interval = 32;
         testLogAndStateMachine<Storage>(settings, 32, this->enable_compression);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-        (*settings)[DB::CoordinationSetting::snapshot_distance] = 10;
-        (*settings)[DB::CoordinationSetting::reserved_log_items] = 7;
-        (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 1;
+        settings->snapshot_distance = 10;
+        settings->reserved_log_items = 7;
+        settings->rotate_log_storage_interval = 1;
         testLogAndStateMachine<Storage>(settings, 33, this->enable_compression);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-        (*settings)[DB::CoordinationSetting::snapshot_distance] = 37;
-        (*settings)[DB::CoordinationSetting::reserved_log_items] = 1000;
-        (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 5000;
+        settings->snapshot_distance = 37;
+        settings->reserved_log_items = 1000;
+        settings->rotate_log_storage_interval = 5000;
         testLogAndStateMachine<Storage>(settings, 33, this->enable_compression);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-        (*settings)[DB::CoordinationSetting::snapshot_distance] = 37;
-        (*settings)[DB::CoordinationSetting::reserved_log_items] = 1000;
-        (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 5000;
+        settings->snapshot_distance = 37;
+        settings->reserved_log_items = 1000;
+        settings->rotate_log_storage_interval = 5000;
         testLogAndStateMachine<Storage>(settings, 45, this->enable_compression);
     }
 }

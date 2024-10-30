@@ -68,7 +68,8 @@ public:
     {
         if (child->basename == child_name)
             return child.get();
-        return nullptr;
+        else
+            return nullptr;
     }
 
     std::pair<ResourceRequest *, bool> dequeueRequest() override

@@ -557,7 +557,7 @@ public:
 
     std::unique_ptr<WriteBufferFromS3> getWriteBuffer(String file_name = "file")
     {
-        S3::S3RequestSettings request_settings;
+        S3::RequestSettings request_settings;
         request_settings.updateFromSettings(settings, /* if_changed */true, /* validate_settings */false);
 
         client->resetCounters();

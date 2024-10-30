@@ -34,7 +34,6 @@ public:
         const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
         const PoolSettings & settings_,
-        const MergeTreeReadTask::BlockSizeParams & params_,
         const ContextPtr & context_);
 
     ~MergeTreeReadPool() override = default;

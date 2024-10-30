@@ -54,14 +54,12 @@ void calculateMaxAndSum(Max & max, Sum & sum, T x)
 ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     ContextPtr global_context_,
     unsigned update_period_seconds,
-    bool update_heavy_metrics_,
     unsigned heavy_metrics_update_period_seconds,
     const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
     bool update_jemalloc_epoch_,
     bool update_rss_)
     : WithContext(global_context_)
     , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_, update_jemalloc_epoch_, update_rss_)
-    , update_heavy_metrics(update_heavy_metrics_)
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
 {
     /// sanity check
@@ -414,8 +412,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     }
 #endif
 
-    if (update_heavy_metrics)
-        updateHeavyMetricsIfNeeded(current_time, update_time, force_update, first_run, new_values);
+    updateHeavyMetricsIfNeeded(current_time, update_time, force_update, first_run, new_values);
 }
 
 void ServerAsynchronousMetrics::logImpl(AsynchronousMetricValues & new_values)
@@ -462,10 +459,10 @@ void ServerAsynchronousMetrics::updateDetachedPartsStats()
 void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values)
 {
     const auto time_since_previous_update = current_time - heavy_metric_previous_update_time;
-    const bool need_update_heavy_metrics = (time_since_previous_update >= heavy_metric_update_period) || force_update || first_run;
+    const bool update_heavy_metrics = (time_since_previous_update >= heavy_metric_update_period) || force_update || first_run;
 
     Stopwatch watch;
-    if (need_update_heavy_metrics)
+    if (update_heavy_metrics)
     {
         heavy_metric_previous_update_time = update_time;
         if (first_run)

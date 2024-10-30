@@ -1,9 +1,8 @@
-import re
-from random import randint
-
 import pytest
+import re
 
 from helpers.cluster import ClickHouseCluster
+from random import randint
 
 cluster = ClickHouseCluster(__file__)
 

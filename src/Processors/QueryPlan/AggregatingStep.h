@@ -17,7 +17,7 @@ class AggregatingStep : public ITransformingStep
 {
 public:
     AggregatingStep(
-        const Header & input_header_,
+        const DataStream & input_stream_,
         Aggregator::Params params_,
         GroupingSetsParamsList grouping_sets_params_,
         bool final_,
@@ -56,16 +56,14 @@ public:
     bool memoryBoundMergingWillBeUsed() const;
     void skipMerging() { skip_merging = true; }
 
-    const SortDescription & getSortDescription() const override;
-
     bool canUseProjection() const;
     /// When we apply aggregate projection (which is full), this step will only merge data.
     /// Argument input_stream replaces current single input.
     /// Probably we should replace this step to MergingAggregated later? (now, aggregation-in-order will not work)
-    void requestOnlyMergeForAggregateProjection(const Header & input_header);
+    void requestOnlyMergeForAggregateProjection(const DataStream & input_stream);
     /// When we apply aggregate projection (which is partial), this step should be replaced to AggregatingProjection.
     /// Argument input_stream would be the second input (from projection).
-    std::unique_ptr<AggregatingProjectionStep> convertToAggregatingProjection(const Header & input_header) const;
+    std::unique_ptr<AggregatingProjectionStep> convertToAggregatingProjection(const DataStream & input_stream) const;
 
     static ActionsDAG makeCreatingMissingKeysForGroupingSetDAG(
         const Block & in_header,
@@ -75,7 +73,7 @@ public:
         bool group_by_use_nulls);
 
 private:
-    void updateOutputHeader() override;
+    void updateOutputStream() override;
 
     Aggregator::Params params;
     GroupingSetsParamsList grouping_sets_params;
@@ -98,7 +96,7 @@ private:
 
     /// These settings are used to determine if we should resize pipeline to 1 at the end.
     const bool should_produce_results_in_order_of_bucket_number;
-    const bool memory_bound_merging_of_aggregation_results_enabled;
+    bool memory_bound_merging_of_aggregation_results_enabled;
     bool explicit_sorting_required_for_aggregation_in_order;
 
     Processors aggregating_in_order;
@@ -112,7 +110,7 @@ class AggregatingProjectionStep : public IQueryPlanStep
 {
 public:
     AggregatingProjectionStep(
-        Blocks input_headers_,
+        DataStreams input_streams_,
         Aggregator::Params params_,
         bool final_,
         size_t merge_threads_,
@@ -123,8 +121,6 @@ public:
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
 private:
-    void updateOutputHeader() override;
-
     Aggregator::Params params;
     bool final;
     size_t merge_threads;

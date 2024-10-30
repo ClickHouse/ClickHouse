@@ -4,7 +4,6 @@
 
 #    include <Core/Settings.h>
 #    include <Databases/MySQL/DatabaseMaterializedMySQL.h>
-#    include <Databases/MySQL/MaterializedMySQLSettings.h>
 #    include <Common/parseAddress.h>
 #    include <Common/parseRemoteDescription.h>
 
@@ -19,7 +18,6 @@
 #    include <Storages/StorageMySQL.h>
 #    include <Storages/StorageMaterializedMySQL.h>
 #    include <Storages/NamedCollectionsHelpers.h>
-#    include <Storages/MySQL/MySQLSettings.h>
 #    include <Common/setThreadName.h>
 #    include <Common/PoolId.h>
 #    include <filesystem>
@@ -31,15 +29,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 glob_expansion_max_elements;
-}
-
-namespace MaterializedMySQLSetting
-{
-    extern const MaterializedMySQLSettingsBool allows_query_when_mysql_lost;
-    extern const MaterializedMySQLSettingsBool allow_startup_database_without_connection_to_mysql;
-    extern const MaterializedMySQLSettingsUInt64 max_bytes_in_binlog_dispatcher_buffer;
-    extern const MaterializedMySQLSettingsUInt64 max_flush_milliseconds_in_binlog_dispatcher;
-    extern const MaterializedMySQLSettingsBool use_binlog_client;
 }
 
 namespace ErrorCodes
@@ -64,13 +53,11 @@ DatabaseMaterializedMySQL::DatabaseMaterializedMySQL(
 {
 }
 
-DatabaseMaterializedMySQL::~DatabaseMaterializedMySQL() = default;
-
 void DatabaseMaterializedMySQL::rethrowExceptionIfNeeded() const
 {
     std::lock_guard lock(mutex);
 
-    if (!(*settings)[MaterializedMySQLSetting::allows_query_when_mysql_lost] && exception)
+    if (!settings->allows_query_when_mysql_lost && exception)
     {
         try
         {
@@ -102,7 +89,7 @@ LoadTaskPtr DatabaseMaterializedMySQL::startupDatabaseAsync(AsyncLoader & async_
         [this, mode] (AsyncLoader &, const LoadJobPtr &)
         {
             LOG_TRACE(log, "Starting MaterializeMySQL database");
-            if (!(*settings)[MaterializedMySQLSetting::allow_startup_database_without_connection_to_mysql]
+            if (!settings->allow_startup_database_without_connection_to_mysql
                 && mode < LoadingStrictnessLevel::FORCE_ATTACH)
                 materialize_thread.assertMySQLAvailable();
 
@@ -279,11 +266,11 @@ void registerDatabaseMaterializedMySQL(DatabaseFactory & factory)
         if (engine_define->settings)
             materialize_mode_settings->loadFromQuery(*engine_define);
 
-        if ((*materialize_mode_settings)[MaterializedMySQLSetting::use_binlog_client])
+        if (materialize_mode_settings->use_binlog_client)
             binlog_client = DB::MySQLReplication::BinlogClientFactory::instance().getClient(
                 configuration.host, configuration.port, configuration.username, configuration.password,
-                (*materialize_mode_settings)[MaterializedMySQLSetting::max_bytes_in_binlog_dispatcher_buffer],
-                (*materialize_mode_settings)[MaterializedMySQLSetting::max_flush_milliseconds_in_binlog_dispatcher]);
+                materialize_mode_settings->max_bytes_in_binlog_dispatcher_buffer,
+                materialize_mode_settings->max_flush_milliseconds_in_binlog_dispatcher);
 
         if (args.uuid == UUIDHelpers::Nil)
         {
