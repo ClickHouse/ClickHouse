@@ -225,47 +225,95 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
 void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /*not_processed*/)
 {
     Blocks res;
-    std::shared_ptr<ExtraBlock> not_processed;
-    joinBlock(block, res, not_processed);
+    ScatteredBlocks remaining_blocks;
+    [[maybe_unused]] bool some_data_buffered = joinBlock(block, remaining_blocks, res);
+    chassert(!some_data_buffered);
     block = concatenateBlocks(res);
 }
 
-void ConcurrentHashJoin::joinBlock(Block & block, std::vector<Block> & res, std::shared_ptr<ExtraBlock> & /*not_processed*/)
+bool ConcurrentHashJoin::joinBlock(Block & block, ScatteredBlocks & remaining_blocks, std::vector<Block> & res)
 {
-    hash_joins[0]->data->materializeColumnsFromLeftBlock(block);
+    LOG_DEBUG(&Poco::Logger::get("debug"), "(this)={}", static_cast<const void *>(this));
+    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
+    ScatteredBlocks dispatched_blocks;
+    if (std::ranges::any_of(remaining_blocks, [](const auto & bl) { return bl.rows(); }))
+    {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
+        dispatched_blocks = std::move(remaining_blocks);
+        // for (size_t i = 0; i < slots; ++i)
+        //     if (!dispatched_blocks[i])
+        //         dispatched_blocks[i] = ScatteredBlock{block.cloneEmpty()};
+        LOG_DEBUG(&Poco::Logger::get("debug"), "block.dumpStructure()={}", block.dumpStructure());
+    }
+    else
+    {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
+        hash_joins[0]->data->materializeColumnsFromLeftBlock(block);
+        dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, block);
+    }
 
-    auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, block);
-    block = {};
+    /// Just in case, should be no-op always
+    remaining_blocks.resize(slots);
+
+    // block = {};
+
+    for (const auto & bl : dispatched_blocks)
+        LOG_DEBUG(
+            &Poco::Logger::get("debug"),
+            "block.rows()={}, block.getSourceBlock().dumpStructure());={}",
+            bl.rows(),
+            bl.getSourceBlock().dumpStructure());
+
+    for (const auto & bl : remaining_blocks)
+        LOG_DEBUG(
+            &Poco::Logger::get("debug"),
+            "block.rows()={}, block.getSourceBlock().dumpStructure());={}",
+            bl.rows(),
+            bl.getSourceBlock().dumpStructure());
 
     chassert(res.empty());
     res.clear();
     res.reserve(dispatched_blocks.size());
 
+    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
     for (size_t i = 0; i < dispatched_blocks.size(); ++i)
     {
         std::shared_ptr<ExtraBlock> none_extra_block;
         auto & hash_join = hash_joins[i];
         auto & dispatched_block = dispatched_blocks[i];
-        if (i == 0 || dispatched_block.rows())
-            hash_join->data->joinBlock(dispatched_block, res);
+        if (!dispatched_block)
+            continue;
+        // if (i == 0 || dispatched_block.rows())
+        hash_join->data->joinBlock(dispatched_block, remaining_blocks[i]);
         if (none_extra_block && !none_extra_block->empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "not_processed should be empty");
     }
+    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
 
-    if (res.size() > 1)
+    // if (res.size() > 1)
+    // {
+    //     const auto it = std::remove_if(res.begin() + 1, res.end(), [](const Block & bl) { return !bl.rows(); });
+    //     res.erase(it, res.end());
+    // }
+
+    for (size_t i = 0; i < dispatched_blocks.size(); ++i)
     {
-        auto it = std::remove_if(res.begin() + 1, res.end(), [](const Block & bl) { return !bl.rows(); });
-        res.erase(it, res.end());
+        // if (i == 0 || dispatched_blocks[i].rows())
+        if (!dispatched_blocks[i])
+            continue;
+        res.emplace_back(std::move(dispatched_blocks[i]).getSourceBlock());
+        dispatched_blocks[i] = {};
     }
+
+    if (res.empty())
+        res.emplace_back(block.cloneEmpty());
+
+    block = {};
+
+    return std::ranges::any_of(remaining_blocks, [](const auto & bl) { return bl.rows(); });
 
     // for (const auto & bl : res)
     //     LOG_DEBUG(&Poco::Logger::get("debug"), "block.rows()={}", bl.rows());
-
-    // for (size_t i = 0; i < dispatched_blocks.size(); ++i)
-    // {
-    //     if (i == 0 || dispatched_blocks[i].rows())
-    //         res.emplace_back(std::move(dispatched_blocks[i]).getSourceBlock());
-    // }
 }
 
 void ConcurrentHashJoin::checkTypesOfKeys(const Block & block) const

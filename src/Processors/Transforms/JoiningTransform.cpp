@@ -3,6 +3,7 @@
 #include <Interpreters/JoinUtils.h>
 
 #include <Common/logger_useful.h>
+#include "Core/Block.h"
 
 namespace DB
 {
@@ -202,7 +203,12 @@ Blocks JoiningTransform::readExecute(Chunk & chunk)
     auto join_block = [&]()
     {
         if (join->supportsJoinWithManyResultBlocks())
-            join->joinBlock(block, res, not_processed);
+        {
+            if (join->joinBlock(block, remaining_blocks, res))
+                not_processed = std::make_shared<ExtraBlock>();
+            else
+                not_processed.reset();
+        }
         else
         {
             join->joinBlock(block, not_processed);

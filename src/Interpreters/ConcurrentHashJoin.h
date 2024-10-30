@@ -6,13 +6,14 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 #include <base/defines.h>
 #include <base/types.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
+#include "Interpreters/HashJoin/ScatteredBlock.h"
 
 namespace DB
 {
@@ -58,7 +59,7 @@ public:
     bool supportParallelJoin() const override { return true; }
 
     bool supportsJoinWithManyResultBlocks() const override { return true; }
-    void joinBlock(Block & block, std::vector<Block> & res, std::shared_ptr<ExtraBlock> & not_processed) override;
+    bool joinBlock(Block & block, ScatteredBlocks & remaining_blocks, std::vector<Block> & res) override;
 
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;

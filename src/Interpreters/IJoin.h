@@ -3,10 +3,11 @@
 #include <memory>
 #include <vector>
 
-#include <Core/Names.h>
-#include <Core/Block.h>
 #include <Columns/IColumn.h>
+#include <Core/Block.h>
+#include <Core/Names.h>
 #include <Common/Exception.h>
+#include "Interpreters/HashJoin/ScatteredBlock.h"
 
 namespace DB
 {
@@ -47,6 +48,8 @@ enum class JoinPipelineType : uint8_t
      */
     YShaped,
 };
+
+struct ScatteredBlock;
 
 class IJoin
 {
@@ -91,12 +94,10 @@ public:
     virtual void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) = 0;
 
     virtual bool supportsJoinWithManyResultBlocks() const { return false; }
-    virtual void joinBlock(
-        [[maybe_unused]] Block & block,
-        [[maybe_unused]] std::vector<Block> & res,
-        [[maybe_unused]] std::shared_ptr<ExtraBlock> & not_processed)
+    virtual bool joinBlock(
+        [[maybe_unused]] Block & block, [[maybe_unused]] ScatteredBlocks & remaining_blocks, [[maybe_unused]] std::vector<Block> & res)
     {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Clone method is not supported for {}", getName());
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "joinBlock is not supported for {}", getName());
     }
 
     /** Set/Get totals for right table
