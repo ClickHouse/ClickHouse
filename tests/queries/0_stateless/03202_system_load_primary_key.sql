@@ -26,6 +26,7 @@ ORDER BY table;
 
 -- Load primary keys for all tables in the database
 SYSTEM LOAD PRIMARY KEY;
+SLEEP(1); -- Ensure enough time for the primary keys to load
 
 -- Verify primary key memory after loading for both tables
 SELECT
@@ -40,6 +41,7 @@ ORDER BY table;
 
 -- Unload primary keys for all tables in the database
 SYSTEM UNLOAD PRIMARY KEY;
+SLEEP(1); -- Ensure enough time for the primary keys to unload
 
 -- Verify primary key memory after unloading for both tables
 SELECT
