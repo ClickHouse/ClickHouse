@@ -1058,7 +1058,7 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     }
 }
 
-void HashJoin::joinBlock(ScatteredBlock & block, ExtraBlockPtr & not_processed)
+void HashJoin::joinBlock(ScatteredBlock & block, std::vector<Block> & res)
 {
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
@@ -1090,29 +1090,37 @@ void HashJoin::joinBlock(ScatteredBlock & block, ExtraBlockPtr & not_processed)
         [&](auto kind_, auto strictness_, auto & maps_vector_)
         {
             ScatteredBlock remaining_block;
-            if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsAll *>>)
+            bool first_iteration = true;
+            while (block.rows() || first_iteration)
             {
-                remaining_block = HashJoinMethods<kind_, strictness_, MapsAll>::joinBlockImpl(
-                    *this, block, sample_block_with_columns_to_add, maps_vector_);
+                first_iteration = false;
+                if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsAll *>>)
+                {
+                    remaining_block = HashJoinMethods<kind_, strictness_, MapsAll>::joinBlockImpl(
+                        *this, block, sample_block_with_columns_to_add, maps_vector_);
+                }
+                else if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsOne *>>)
+                {
+                    remaining_block = HashJoinMethods<kind_, strictness_, MapsOne>::joinBlockImpl(
+                        *this, block, sample_block_with_columns_to_add, maps_vector_);
+                }
+                else if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsAsof *>>)
+                {
+                    remaining_block = HashJoinMethods<kind_, strictness_, MapsAsof>::joinBlockImpl(
+                        *this, block, sample_block_with_columns_to_add, maps_vector_);
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown maps type");
+                }
+                // LOG_DEBUG(&Poco::Logger::get("debug"), "block.rows()={}", block.rows());
+                res.emplace_back(std::move(block).getSourceBlock());
+                block = std::move(remaining_block);
             }
-            else if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsOne *>>)
-            {
-                remaining_block = HashJoinMethods<kind_, strictness_, MapsOne>::joinBlockImpl(
-                    *this, block, sample_block_with_columns_to_add, maps_vector_);
-            }
-            else if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsAsof *>>)
-            {
-                remaining_block = HashJoinMethods<kind_, strictness_, MapsAsof>::joinBlockImpl(
-                    *this, block, sample_block_with_columns_to_add, maps_vector_);
-            }
-            else
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown maps type");
-            }
-            if (remaining_block.rows())
-                not_processed = std::make_shared<ExtraBlock>(std::move(remaining_block).getSourceBlock());
-            else
-                not_processed.reset();
+            // if (remaining_block.rows())
+            //     not_processed = std::make_shared<ExtraBlock>(std::move(remaining_block).getSourceBlock());
+            // else
+            //     not_processed.reset();
         });
 
     chassert(joined);

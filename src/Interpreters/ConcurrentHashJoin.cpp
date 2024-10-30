@@ -26,8 +26,11 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
+#include "Core/Defines.h"
 
+#include <algorithm>
 #include <numeric>
+#include <vector>
 
 using namespace DB;
 
@@ -125,7 +128,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                         table_join_, right_sample_block, any_take_last_row_, reserve_size, fmt::format("concurrent{}", idx));
                     /// Non zero `max_joined_block_rows` allows to process block partially and return not processed part.
                     /// TODO: It's not handled properly in ConcurrentHashJoin case, so we set it to 0 to disable this feature.
-                    inner_hash_join->data->setMaxJoinedBlockRows(0);
+                    inner_hash_join->data->setMaxJoinedBlockRows(DEFAULT_BLOCK_SIZE);
                     hash_joins[idx] = std::move(inner_hash_join);
                 });
         }
@@ -233,25 +236,36 @@ void ConcurrentHashJoin::joinBlock(Block & block, std::vector<Block> & res, std:
 
     auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, block);
     block = {};
+
+    chassert(res.empty());
+    res.clear();
+    res.reserve(dispatched_blocks.size());
+
     for (size_t i = 0; i < dispatched_blocks.size(); ++i)
     {
         std::shared_ptr<ExtraBlock> none_extra_block;
         auto & hash_join = hash_joins[i];
         auto & dispatched_block = dispatched_blocks[i];
         if (i == 0 || dispatched_block.rows())
-            hash_join->data->joinBlock(dispatched_block, none_extra_block);
+            hash_join->data->joinBlock(dispatched_block, res);
         if (none_extra_block && !none_extra_block->empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "not_processed should be empty");
     }
 
-    chassert(res.empty());
-    res.clear();
-    res.reserve(dispatched_blocks.size());
-    for (size_t i = 0; i < dispatched_blocks.size(); ++i)
+    if (res.size() > 1)
     {
-        if (i == 0 || dispatched_blocks[i].rows())
-            res.emplace_back(std::move(dispatched_blocks[i]).getSourceBlock());
+        auto it = std::remove_if(res.begin() + 1, res.end(), [](const Block & bl) { return !bl.rows(); });
+        res.erase(it, res.end());
     }
+
+    // for (const auto & bl : res)
+    //     LOG_DEBUG(&Poco::Logger::get("debug"), "block.rows()={}", bl.rows());
+
+    // for (size_t i = 0; i < dispatched_blocks.size(); ++i)
+    // {
+    //     if (i == 0 || dispatched_blocks[i].rows())
+    //         res.emplace_back(std::move(dispatched_blocks[i]).getSourceBlock());
+    // }
 }
 
 void ConcurrentHashJoin::checkTypesOfKeys(const Block & block) const

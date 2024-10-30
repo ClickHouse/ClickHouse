@@ -72,6 +72,13 @@ void AddedColumns<true>::buildOutput()
             }
         }
     }
+    // LOG_DEBUG(
+    //     &Poco::Logger::get("debug"),
+    //     "left_block.rows()={}, src_block.rows()={}, rows_to_add={}, columns[0]->size()={}",
+    //     left_block.rows(),
+    //     src_block.rows(),
+    //     rows_to_add,
+    //     columns.empty() ? 0 : columns[0]->size());
 }
 
 template<>
