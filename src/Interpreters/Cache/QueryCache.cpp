@@ -89,11 +89,40 @@ struct HasSystemTablesMatcher
         {
             database_table = identifier->name();
         }
-        /// Handle SELECT [...] FROM clusterAllReplicas(<cluster>, '<table>')
-        else if (const auto * literal = node->as<ASTLiteral>())
+        /// SELECT [...] FROM clusterAllReplicas(<cluster>, '<table>')
+        /// This SQL syntax is quite common but we need to be careful. A naive attempt to cast 'node' to an ASTLiteral will be too general
+        /// and introduce false positives in queries like
+        ///     'SELECT * FROM users WHERE name = 'system.metrics' SETTINGS use_query_cache = true;'
+        /// Therefore, make sure we are really in `clusterAllReplicas`. EXPLAIN AST for
+        ///     'SELECT * FROM clusterAllReplicas('default', system.one) SETTINGS use_query_cache = 1'
+        /// returns:
+        ///     [...]
+        ///     Function clusterAllReplicas (children 1)
+        ///       ExpressionList (children 2)
+        ///         Literal 'test_shard_localhost'
+        ///         Literal 'system.one'
+        ///     [...]
+        else if (const auto * function = node->as<ASTFunction>())
         {
-            const auto & value = literal->value;
-            database_table = toString(value);
+            if (function->name == "clusterAllReplicas")
+            {
+                const ASTs & function_children = function->children;
+                if (!function_children.empty())
+                {
+                    if (const auto * expression_list = function_children[0]->as<ASTExpressionList>())
+                    {
+                        const ASTs & expression_list_children = expression_list->children;
+                        if (!expression_list_children.empty())
+                        {
+                            if (const auto * literal = expression_list_children[1]->as<ASTLiteral>())
+                            {
+                                const auto & value = literal->value;
+                                database_table = toString(value);
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         Tokens tokens(database_table.c_str(), database_table.c_str() + database_table.size(), /*max_query_size*/ 2048, /*skip_insignificant*/ true);
