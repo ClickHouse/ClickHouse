@@ -99,7 +99,8 @@ namespace DB
 
     void ParallelFormattingOutputFormat::finishAndWait(bool emergency_stop_) noexcept
     {
-        emergency_stop = emergency_stop_;
+        if (emergency_stop_)
+            emergency_stop = true;
 
         {
             std::unique_lock<std::mutex> lock(mutex);
