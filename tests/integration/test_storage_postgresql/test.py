@@ -767,6 +767,7 @@ def test_filter_pushdown(started_cluster):
         "INSERT INTO test_filter_pushdown.test_table VALUES (1, 10), (1, 110), (2, 0), (3, 33), (4, 0)"
     )
 
+    node1.query("DROP TABLE IF EXISTS test_filter_pushdown_pg_table")
     node1.query(
         """
         CREATE TABLE test_filter_pushdown_pg_table (id UInt32, value UInt32)
@@ -774,12 +775,14 @@ def test_filter_pushdown(started_cluster):
     """
     )
 
+    node1.query("DROP TABLE IF EXISTS test_filter_pushdown_local_table")
     node1.query(
         """
         CREATE TABLE test_filter_pushdown_local_table (id UInt32, value UInt32) ENGINE Memory AS SELECT * FROM test_filter_pushdown_pg_table
     """
     )
 
+    node1.query("DROP TABLE IF EXISTS ch_table")
     node1.query(
         "CREATE TABLE ch_table (id UInt32, pg_id UInt32) ENGINE MergeTree ORDER BY id"
     )
