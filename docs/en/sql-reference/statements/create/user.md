@@ -186,7 +186,8 @@ Examples:
 - `CREATE USER name1 VALID UNTIL '2025-01-01'`
 - `CREATE USER name1 VALID UNTIL '2025-01-01 12:00:00 UTC'`
 - `CREATE USER name1 VALID UNTIL 'infinity'`
-- `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL'2025-01-01''`
+- ```CREATE USER name1 VALID UNTIL '2025-01-01 12:00:00 `Asia/Tokyo`'```
+- `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL '2025-01-01''`
 
 ## GRANTEES Clause
 
