@@ -5,7 +5,7 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-node = cluster.add_instance("node", main_configs=["config/config.xml"])
+node = cluster.add_instance("node", main_configs=["config/config.xml"], stay_alive=True)
 
 
 @pytest.fixture(scope="module")
