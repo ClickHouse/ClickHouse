@@ -4,7 +4,6 @@
 
 #if USE_AVRO
 
-#include <Formats/FormatFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -100,14 +99,11 @@ public:
         {
             return ColumnsDescription(std::move(schema_from_metadata));
         }
-        else
-        {
-            ConfigurationPtr configuration = base_configuration->clone();
-            configuration->setPaths(metadata->getDataFileInfos());
-            std::string sample_path;
-            return Storage::resolveSchemaFromData(
-                object_storage_, configuration, format_settings_, sample_path, local_context);
-        }
+
+        ConfigurationPtr configuration = base_configuration->clone();
+        configuration->setPaths(metadata->getDataFiles());
+        std::string sample_path;
+        return Storage::resolveSchemaFromData(object_storage_, configuration, format_settings_, sample_path, local_context);
     }
 
     void updateConfiguration(ContextPtr local_context) override
@@ -191,7 +187,7 @@ private:
         bool supports_subset_of_columns,
         ContextPtr local_context) override
     {
-        auto info = DB::prepareReadingFromFormat(requested_columns, storage_snapshot, supports_subset_of_columns);
+        auto info = DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns);
         if (!current_metadata)
         {
             Storage::updateConfiguration(local_context);

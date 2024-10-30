@@ -1,25 +1,27 @@
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/FunctionDynamicAdaptor.h>
 
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
-#include <Common/SipHash.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNothing.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnTuple.h>
 #include <Core/Block.h>
 #include <Core/TypeId.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnSparse.h>
-#include <Columns/ColumnNothing.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Native.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/FunctionHelpers.h>
-#include <cstdlib>
-#include <memory>
+#include <Common/SipHash.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 #include "config.h"
+
+#include <cstdlib>
+#include <memory>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -379,14 +381,13 @@ ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments,
         convertSparseColumnsToFull(columns_without_sparse);
         return executeWithoutSparseColumns(columns_without_sparse, result_type, input_rows_count, dry_run);
     }
-    else if (use_default_implementation_for_sparse_columns)
+    if (use_default_implementation_for_sparse_columns)
     {
         auto columns_without_sparse = arguments;
         convertSparseColumnsToFull(columns_without_sparse);
         return executeWithoutSparseColumns(columns_without_sparse, result_type, input_rows_count, dry_run);
     }
-    else
-        return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
+    return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
 }
 
 void IFunctionOverloadResolver::checkNumberOfArguments(size_t number_of_arguments) const
@@ -440,8 +441,7 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
             && num_full_low_cardinality_columns <= 1 && num_full_ordinary_columns == 0
             && type_without_low_cardinality->canBeInsideLowCardinality())
             return std::make_shared<DataTypeLowCardinality>(type_without_low_cardinality);
-        else
-            return type_without_low_cardinality;
+        return type_without_low_cardinality;
     }
 
     return getReturnTypeWithoutLowCardinality(arguments);
@@ -449,6 +449,22 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
 
 FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & arguments) const
 {
+    /// Use FunctionBaseDynamicAdaptor if default implementation for Dynamic is enabled and we have Dynamic type in arguments.
+    if (useDefaultImplementationForDynamic())
+    {
+        checkNumberOfArguments(arguments.size());
+        for (const auto & arg : arguments)
+        {
+            if (isDynamic(arg.type))
+            {
+                DataTypes data_types(arguments.size());
+                for (size_t i = 0; i < arguments.size(); ++i)
+                    data_types[i] = arguments[i].type;
+                return std::make_shared<FunctionBaseDynamicAdaptor>(shared_from_this(), std::move(data_types));
+            }
+        }
+    }
+
     auto return_type = getReturnType(arguments);
     return buildImpl(arguments, return_type);
 }

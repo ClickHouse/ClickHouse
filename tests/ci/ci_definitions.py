@@ -1,7 +1,7 @@
 import copy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Union, Iterable, Optional, Literal, Any
+from typing import Any, Iterable, List, Literal, Optional, Union
 
 from ci_utils import WithIter
 from integration_test_images import IMAGES
@@ -22,6 +22,7 @@ class Labels:
     PR_CHERRYPICK = "pr-cherrypick"
     PR_CI = "pr-ci"
     PR_FEATURE = "pr-feature"
+    PR_PERFORMANCE = "pr-performance"
     PR_SYNCED_TO_CLOUD = "pr-synced-to-cloud"
     PR_SYNC_UPSTREAM = "pr-sync-upstream"
     RELEASE = "release"
@@ -99,12 +100,13 @@ class BuildNames(metaclass=WithIter):
     """
 
     PACKAGE_RELEASE = "package_release"
-    PACKAGE_AARCH64 = "package_aarch64"
     PACKAGE_ASAN = "package_asan"
     PACKAGE_UBSAN = "package_ubsan"
     PACKAGE_TSAN = "package_tsan"
     PACKAGE_MSAN = "package_msan"
     PACKAGE_DEBUG = "package_debug"
+    PACKAGE_AARCH64 = "package_aarch64"
+    PACKAGE_AARCH64_ASAN = "package_aarch64_asan"
     PACKAGE_RELEASE_COVERAGE = "package_release_coverage"
     BINARY_RELEASE = "binary_release"
     BINARY_TIDY = "binary_tidy"
@@ -239,7 +241,7 @@ class StatusNames(metaclass=WithIter):
     # mergeable status
     MERGEABLE = "Mergeable Check"
     # status of a sync pr
-    SYNC = "Cloud fork sync (only for ClickHouse Inc. employees)"
+    SYNC = "CH Inc sync"
     # PR formatting check status
     PR_CHECK = "PR Check"
 
@@ -335,7 +337,7 @@ class JobConfig:
     # sets number of batches for a multi-batch job
     num_batches: int = 1
     # label that enables job in CI, if set digest isn't used
-    run_by_label: str = ""
+    run_by_labels: List[str] = field(default_factory=list)
     # to run always regardless of the job digest or/and label
     run_always: bool = False
     # disables CI await for a given job

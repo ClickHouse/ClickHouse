@@ -21,6 +21,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool optimize_syntax_fuse_functions;
+}
 
 namespace ErrorCodes
 {
@@ -44,7 +48,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_syntax_fuse_functions)
+        if (!getSettings()[Setting::optimize_syntax_fuse_functions])
             return;
 
         auto * function_node = node->as<FunctionNode>();
