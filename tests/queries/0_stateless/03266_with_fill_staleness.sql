@@ -1,4 +1,5 @@
 SET session_timezone='Europe/Amsterdam';
+SET enable_analyzer=1;
 
 DROP TABLE IF EXISTS with_fill_staleness;
 CREATE TABLE with_fill_staleness (a DateTime, b DateTime, c UInt64) ENGINE = MergeTree ORDER BY a;
