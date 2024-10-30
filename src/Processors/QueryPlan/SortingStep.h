@@ -127,6 +127,8 @@ private:
     const SortDescription result_description;
 
     SortDescription partition_by_description;
+
+    /// See `findQueryForParallelReplicas`
     bool is_sorting_for_merge_join = false;
 
     UInt64 limit;
