@@ -200,7 +200,8 @@ const SQLType * StatementGenerator::BottomType(
     const uint32_t int_type
         = 40,
         floating_point_type = 10 * static_cast<uint32_t>((allowed_types & allow_floating_points) != 0 && this->fc.fuzz_floating_points),
-        date_type = 30 * static_cast<uint32_t>((allowed_types & allow_dates) != 0), string_type = 30,
+        date_type = 30 * static_cast<uint32_t>((allowed_types & allow_dates) != 0),
+        string_type = 30 * static_cast<uint32_t>((allowed_types & allow_strings) != 0),
         decimal_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_decimals) != 0),
         bool_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_bool) != 0),
         enum_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_enum) != 0),
