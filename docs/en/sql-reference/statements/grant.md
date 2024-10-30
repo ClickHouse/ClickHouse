@@ -238,10 +238,13 @@ Hierarchy of privileges:
     - `HDFS`
     - `HIVE`
     - `JDBC`
+    - `KAFKA`
     - `MONGO`
     - `MYSQL`
+    - `NATS`
     - `ODBC`
     - `POSTGRES`
+    - `RABBITMQ`
     - `REDIS`
     - `REMOTE`
     - `S3`
@@ -520,10 +523,13 @@ Allows using external data sources. Applies to [table engines](../../engines/tab
     - `HDFS`. Level: `GLOBAL`
     - `HIVE`. Level: `GLOBAL`
     - `JDBC`. Level: `GLOBAL`
+    - `KAFKA`. Level: `GLOBAL`
     - `MONGO`. Level: `GLOBAL`
     - `MYSQL`. Level: `GLOBAL`
+    - `NATS`. Level: `GLOBAL`
     - `ODBC`. Level: `GLOBAL`
     - `POSTGRES`. Level: `GLOBAL`
+    - `RABBITMQ`. Level: `GLOBAL`
     - `REDIS`. Level: `GLOBAL`
     - `REMOTE`. Level: `GLOBAL`
     - `S3`. Level: `GLOBAL`
