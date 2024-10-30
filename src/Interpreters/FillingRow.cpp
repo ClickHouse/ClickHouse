@@ -32,7 +32,10 @@ FillingRow::FillingRow(const SortDescription & sort_description_)
     : sort_description(sort_description_)
 {
     row.resize(sort_description.size());
-    staleness_border.resize(sort_description.size());
+
+    constraints.reserve(sort_description.size());
+    for (size_t i = 0; i < size(); ++i)
+        constraints.push_back(getFillDescription(i).fill_to);
 }
 
 bool FillingRow::operator<(const FillingRow & other) const
@@ -96,53 +99,33 @@ std::optional<Field> FillingRow::doLongJump(const FillColumnDescription & descr,
 
 bool FillingRow::hasSomeConstraints(size_t pos) const
 {
-    const auto & descr = getFillDescription(pos);
-
-    if (!descr.fill_to.isNull())
-        return true;
-
-    if (!descr.fill_staleness.isNull())
-        return true;
-
-    return false;
+    return !constraints[pos].isNull();
 }
 
 bool FillingRow::isConstraintsComplete(size_t pos) const
 {
-    auto logger = getLogger("FillingRow::isConstraintComplete");
+    auto logger = getLogger("FillingRow::isConstraintsComplete");
     chassert(!row[pos].isNull());
     chassert(hasSomeConstraints(pos));
 
-    const auto & descr = getFillDescription(pos);
     int direction = getDirection(pos);
+    LOG_DEBUG(logger, "constraint: {}, row: {}, direction: {}", constraints[pos].dump(), row[pos].dump(), direction);
 
-    if (!descr.fill_to.isNull() && !less(row[pos], descr.fill_to, direction))
-    {
-        LOG_DEBUG(logger, "fill to: {}, row: {}, direction: {}", descr.fill_to.dump(), row[pos].dump(), direction);
-        return false;
-    }
-
-    if (!descr.fill_staleness.isNull() && !less(row[pos], staleness_border[pos], direction))
-    {
-        LOG_DEBUG(logger, "staleness border: {}, row: {}, direction: {}", staleness_border[pos].dump(), row[pos].dump(), direction);
-        return false;
-    }
-
-    return true;
+    return less(row[pos], constraints[pos], direction);
 }
 
-Field findMin(Field a, Field b, Field c, int dir)
+static const Field & findBorder(const Field & constraint, const Field & next_original, int direction)
 {
-    auto logger = getLogger("FillingRow");
-    LOG_DEBUG(logger, "a: {} b: {} c: {}", a.dump(), b.dump(), c.dump());
+    if (constraint.isNull())
+        return next_original;
 
-    if (a.isNull() || (!b.isNull() && less(b, a, dir)))
-        a = b;
+    if (next_original.isNull())
+        return constraint;
 
-    if (a.isNull() || (!c.isNull() && less(c, a, dir)))
-        a = c;
+    if (less(constraint, next_original, direction))
+        return constraint;
 
-    return a;
+    return next_original;
 }
 
 bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
@@ -158,11 +141,10 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
         if (row[pos].isNull())
             continue;
 
-        const auto & descr = getFillDescription(pos);
-        auto min_constr = findMin(next_original_row[pos], staleness_border[pos], descr.fill_to, getDirection(pos));
-        LOG_DEBUG(logger, "min_constr: {}", min_constr);
+        const Field & border = findBorder(constraints[pos], next_original_row[pos], getDirection(pos));
+        LOG_DEBUG(logger, "border: {}", border);
 
-        if (!min_constr.isNull() && !equals(row[pos], min_constr))
+        if (!border.isNull() && !equals(row[pos], border))
             break;
     }
 
@@ -171,15 +153,10 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
     if (pos == row_size)
         return false;
 
-    const auto & pos_descr = getFillDescription(pos);
-
     if (!next_original_row[pos].isNull() && less(next_original_row[pos], row[pos], getDirection(pos)))
         return false;
 
-    if (!staleness_border[pos].isNull() && !less(row[pos], staleness_border[pos], getDirection(pos)))
-        return false;
-
-    if (!pos_descr.fill_to.isNull() && !less(row[pos], pos_descr.fill_to, getDirection(pos)))
+    if (!constraints[pos].isNull() && !less(row[pos], constraints[pos], getDirection(pos)))
         return false;
 
     /// If we have any 'fill_to' value at position greater than 'pos' or configured staleness,
@@ -191,16 +168,13 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
         if (row[i].isNull())
             continue;
 
-        if (fill_column_desc.fill_to.isNull() && staleness_border[i].isNull())
+        if (constraints[i].isNull())
             continue;
 
         Field next_value = row[i];
         fill_column_desc.step_func(next_value, 1);
 
-        if (!staleness_border[i].isNull() && !less(next_value, staleness_border[i], getDirection(i)))
-            continue;
-
-        if (!fill_column_desc.fill_to.isNull() && !less(next_value, fill_column_desc.fill_to, getDirection(i)))
+        if (!less(next_value, constraints[i], getDirection(i)))
             continue;
 
         row[i] = next_value;
@@ -216,10 +190,7 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
     if (!next_original_row[pos].isNull() && less(next_original_row[pos], next_value, getDirection(pos)))
         return false;
 
-    if (!staleness_border[pos].isNull() && !less(next_value, staleness_border[pos], getDirection(pos)))
-        return false;
-
-    if (!pos_descr.fill_to.isNull() && !less(next_value, pos_descr.fill_to, getDirection(pos)))
+    if (!constraints[pos].isNull() && !less(next_value, constraints[pos], getDirection(pos)))
         return false;
 
     row[pos] = next_value;
@@ -236,8 +207,7 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
 
             is_less |= (
                 (next_original_row[i].isNull() || less(row[i], next_original_row[i], getDirection(i))) &&
-                (staleness_border[i].isNull() || less(row[i], staleness_border[i], getDirection(i))) &&
-                (descr.fill_to.isNull() || less(row[i], descr.fill_to, getDirection(i)))
+                (constraints[i].isNull() || less(row[i], constraints[i], getDirection(i)))
             );
         }
 
@@ -291,8 +261,7 @@ bool FillingRow::shift(const FillingRow & next_original_row, bool& value_changed
 
                 is_less |= (
                     (next_original_row[i].isNull() || less(row[i], next_original_row[i], getDirection(i))) &&
-                    (staleness_border[i].isNull() || less(row[i], staleness_border[i], getDirection(i))) &&
-                    (descr.fill_to.isNull() || less(row[i], descr.fill_to, getDirection(i)))
+                    (constraints[i].isNull() || less(row[i], constraints[i], getDirection(i)))
                 );
             }
 
@@ -347,15 +316,20 @@ void FillingRow::initUsingTo(size_t from_pos)
         row[i] = getFillDescription(i).fill_to;
 }
 
-void FillingRow::initStalenessRow(const Columns& base_row, size_t row_ind)
+void FillingRow::updateConstraintsWithStalenessRow(const Columns& base_row, size_t row_ind)
 {
     for (size_t i = 0; i < size(); ++i)
     {
         const auto& descr = getFillDescription(i);
+        constraints[i] = descr.fill_to;
+
         if (!descr.fill_staleness.isNull())
         {
-            staleness_border[i] = (*base_row[i])[row_ind];
-            descr.staleness_step_func(staleness_border[i], 1);
+            Field staleness_border = (*base_row[i])[row_ind];
+            descr.staleness_step_func(staleness_border, 1);
+
+            if (constraints[i].isNull() || less(staleness_border, constraints[i], getDirection(i)))
+                constraints[i] = std::move(staleness_border);
         }
     }
 }

@@ -628,7 +628,7 @@ void FillingTransform::transformRange(
     }
 
     /// Init staleness first interval
-    filling_row.initStalenessRow(input_fill_columns, range_begin);
+    filling_row.updateConstraintsWithStalenessRow(input_fill_columns, range_begin);
 
     for (size_t row_ind = range_begin; row_ind < range_end; ++row_ind)
     {
@@ -666,7 +666,7 @@ void FillingTransform::transformRange(
         }
 
         /// Initialize staleness border for current row to generate it's prefix
-        filling_row.initStalenessRow(input_fill_columns, row_ind);
+        filling_row.updateConstraintsWithStalenessRow(input_fill_columns, row_ind);
 
         while (filling_row.shift(next_row, filling_row_changed))
         {

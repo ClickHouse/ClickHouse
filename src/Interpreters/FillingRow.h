@@ -36,7 +36,7 @@ public:
 
     void initUsingFrom(size_t from_pos = 0);
     void initUsingTo(size_t from_pos = 0);
-    void initStalenessRow(const Columns& base_row, size_t row_ind);
+    void updateConstraintsWithStalenessRow(const Columns& base_row, size_t row_ind);
 
     Field & operator[](size_t index) { return row[index]; }
     const Field & operator[](size_t index) const { return row[index]; }
@@ -54,7 +54,7 @@ public:
 
 private:
     Row row;
-    Row staleness_border;
+    Row constraints;
     SortDescription sort_description;
 };
 
