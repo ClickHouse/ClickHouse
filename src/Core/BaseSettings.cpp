@@ -41,7 +41,7 @@ UInt64 BaseSettingsHelpers::readFlags(ReadBuffer & in)
 
 SettingsTierType BaseSettingsHelpers::getTier(UInt64 flags)
 {
-    int8_t tier = (flags & Flags::TIER);
+    int8_t tier = static_cast<int8_t>(flags & Flags::TIER);
     if (tier > SettingsTierType::BETA)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown tier value: '{}'", tier);
     return SettingsTierType{tier};

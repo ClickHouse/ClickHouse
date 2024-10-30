@@ -38,7 +38,9 @@ namespace ErrorCodes
   * Note: as an alternative, we could implement settings to be completely dynamic in the form of the map: String -> Field,
   *  but we are not going to do it, because settings are used everywhere as static struct fields.
   *
-  * `flags` can be either 0 or IMPORTANT + a Tier (PRODUCTION | BETA | EXPERIMENTAL)
+  * `flags` can include a Tier (BETA | EXPERIMENTAL) and an optional bitwise AND with IMPORTANT.
+  * The default (0) means a PRODUCTION ready setting
+  *
   * A setting is "IMPORTANT" if it affects the results of queries and can't be ignored by older versions.
   * Tiers:
   * EXPERIMENTAL: The feature is in active development stage. Mostly for developers or for ClickHouse enthusiasts.
@@ -5824,8 +5826,6 @@ Experimental data deduplication for SELECT queries based on part UUIDs
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
-    /* ## ADD PRODUCTION / BETA FEATURES BEFORE THIS BLOCK  ## */ \
-    /* ####################################################### */ \
     /* ####################################################### */ \
 
 // End of COMMON_SETTINGS
