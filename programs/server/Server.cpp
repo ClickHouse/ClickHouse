@@ -480,7 +480,7 @@ static void sanityChecks(Server & server)
 #if defined(OS_LINUX)
     try
     {
-        const std::unordered_set<std::string> fastClockSources = {
+        const std::unordered_set<std::string> fast_clock_sources = {
             // ARM clock
             "arch_sys_counter",
             // KVM guest clock
@@ -489,7 +489,7 @@ static void sanityChecks(Server & server)
             "tsc",
         };
         const char * filename = "/sys/devices/system/clocksource/clocksource0/current_clocksource";
-        if (!fastClockSources.contains(readLine(filename)))
+        if (!fast_clock_sources.contains(readLine(filename)))
             server.context()->addWarningMessage("Linux is not using a fast clock source. Performance can be degraded. Check " + String(filename));
     }
     catch (...) // NOLINT(bugprone-empty-catch)
@@ -1776,10 +1776,6 @@ try
             if (global_context->isServerCompletelyStarted())
                 CannotAllocateThreadFaultInjector::setFaultProbability(new_server_settings.cannot_allocate_thread_fault_injection_probability);
 
-#if USE_GWP_ASAN
-            GWPAsan::setForceSampleProbability(new_server_settings.gwp_asan_force_sample_probability);
-#endif
-
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
             /// Must be the last.
@@ -2234,7 +2230,6 @@ try
 
 #if USE_GWP_ASAN
         GWPAsan::initFinished();
-        GWPAsan::setForceSampleProbability(server_settings.gwp_asan_force_sample_probability);
 #endif
 
         try
