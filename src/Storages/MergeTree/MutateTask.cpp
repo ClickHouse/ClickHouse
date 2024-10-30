@@ -1623,6 +1623,7 @@ private:
             ctx->compression_codec,
             ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID,
             /*reset_columns=*/ true,
+            /*save_marks_in_cache=*/ false,
             /*blocks_are_granules_size=*/ false,
             ctx->context->getWriteSettings(),
             computed_granularity);
@@ -1851,6 +1852,7 @@ private:
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
                 ColumnsStatistics(ctx->stats_to_recalc.begin(), ctx->stats_to_recalc.end()),
                 nullptr,
+                /*save_marks_in_cache=*/ false,
                 ctx->source_part->index_granularity,
                 &ctx->source_part->index_granularity_info
             );
