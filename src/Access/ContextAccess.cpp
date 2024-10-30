@@ -52,7 +52,10 @@ namespace
         {AccessType::HDFS, "HDFS"},
         {AccessType::S3, "S3"},
         {AccessType::HIVE, "Hive"},
-        {AccessType::AZURE, "AzureBlobStorage"}
+        {AccessType::AZURE, "AzureBlobStorage"},
+        {AccessType::KAFKA, "Kafka"},
+        {AccessType::NATS, "NATS"},
+        {AccessType::RABBITMQ, "RabbitMQ"}
     };
 
 
