@@ -59,6 +59,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/CompressionMethod.h>
@@ -469,8 +470,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     {
         if (!need_render_progress && select_into_file && !select_into_file_and_stdout)
             error_stream << "\r";
-        bool toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle", true);
-        progress_table.writeTable(*tty_buf, progress_table_toggle_on.load(), toggle_enabled);
+        progress_table.writeTable(*tty_buf, progress_table_toggle_on.load(), progress_table_toggle_enabled);
     }
 }
 
@@ -824,6 +824,9 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
     if (!need_render_progress && !need_render_progress_table)
         return;
 
+    progress_table_toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle");
+    progress_table_toggle_on = !progress_table_toggle_enabled;
+
     /// If need_render_progress and need_render_progress_table are enabled,
     /// use ProgressOption that was set for the progress bar for progress table as well.
     ProgressOption progress = progress_option ? progress_option : progress_table_option;
@@ -880,7 +883,7 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
 
 void ClientBase::initKeystrokeInterceptor()
 {
-    if (is_interactive && need_render_progress_table && getClientConfiguration().getBool("enable-progress-table-toggle", true))
+    if (is_interactive && need_render_progress_table && progress_table_toggle_enabled)
     {
         keystroke_interceptor = std::make_unique<TerminalKeystrokeInterceptor>(in_fd, error_stream);
         keystroke_interceptor->registerCallback(' ', [this]() { progress_table_toggle_on = !progress_table_toggle_on; });
@@ -1150,6 +1153,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
 
     if (keystroke_interceptor)
     {
+        progress_table_toggle_on = false;
         try
         {
             keystroke_interceptor->startIntercept();
@@ -1445,6 +1449,9 @@ void ClientBase::onProfileEvents(Block & block)
 /// Flush all buffers.
 void ClientBase::resetOutput()
 {
+    if (need_render_progress_table && tty_buf)
+        progress_table.clearTableOutput(*tty_buf);
+
     /// Order is important: format, compression, file
 
     if (output_format)
@@ -1995,7 +2002,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
     {
         /// Temporarily apply query settings to context.
-        std::optional<Settings> old_settings;
+        Settings old_settings = client_context->getSettingsRef();
         SCOPE_EXIT_SAFE({
             try
             {
@@ -2012,45 +2019,15 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
                     have_error = true;
                 }
             }
-            if (old_settings)
-                client_context->setSettings(*old_settings);
+            client_context->setSettings(old_settings);
         });
-
-        auto apply_query_settings = [&](const IAST & settings_ast)
-        {
-            if (!old_settings)
-                old_settings.emplace(client_context->getSettingsRef());
-            client_context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
-            client_context->resetSettingsToDefaultValue(settings_ast.as<ASTSetQuery>()->default_settings);
-        };
-
-        const auto * insert = parsed_query->as<ASTInsertQuery>();
-        if (const auto * select = parsed_query->as<ASTSelectQuery>(); select && select->settings())
-            apply_query_settings(*select->settings());
-        else if (const auto * select_with_union = parsed_query->as<ASTSelectWithUnionQuery>())
-        {
-            const ASTs & children = select_with_union->list_of_selects->children;
-            if (!children.empty())
-            {
-                // On the client it is enough to apply settings only for the
-                // last SELECT, since the only thing that is important to apply
-                // on the client is format settings.
-                const auto * last_select = children.back()->as<ASTSelectQuery>();
-                if (last_select && last_select->settings())
-                {
-                    apply_query_settings(*last_select->settings());
-                }
-            }
-        }
-        else if (const auto * query_with_output = parsed_query->as<ASTQueryWithOutput>(); query_with_output && query_with_output->settings_ast)
-            apply_query_settings(*query_with_output->settings_ast);
-        else if (insert && insert->settings_ast)
-            apply_query_settings(*insert->settings_ast);
+        InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
 
         if (!connection->checkConnected(connection_parameters.timeouts))
             connect();
 
         ASTPtr input_function;
+        const auto * insert = parsed_query->as<ASTInsertQuery>();
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
 
