@@ -1,8 +1,6 @@
 #include <Functions/FunctionDynamicAdaptor.h>
 #include <Functions/IFunctionAdaptors.h>
 
-#include <cstdlib>
-#include <memory>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNothing.h>
@@ -26,6 +24,9 @@
 #include <Common/typeid_cast.h>
 
 #include "config.h"
+
+#include <cstdlib>
+#include <memory>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -560,6 +561,7 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
     /// Use FunctionBaseDynamicAdaptor if default implementation for Dynamic is enabled and we have Dynamic type in arguments.
     if (useDefaultImplementationForDynamic())
     {
+        checkNumberOfArguments(arguments.size());
         for (const auto & arg : arguments)
         {
             if (isDynamic(arg.type))
