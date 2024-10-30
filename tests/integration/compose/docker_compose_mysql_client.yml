@@ -1,3 +1,4 @@
+version: '2.3'
 services:
   mysql_client:
     image: mysql:8.0

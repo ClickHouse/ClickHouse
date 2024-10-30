@@ -191,7 +191,6 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         case Type::SYNC_REPLICA:
         case Type::WAIT_LOADING_PARTS:
         case Type::FLUSH_DISTRIBUTED:
-        case Type::PREWARM_MARK_CACHE:
         {
             if (table)
             {

@@ -398,20 +398,21 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should have limit argument", name);
     }
-    if (parameters.size() == 1)
+    else if (parameters.size() == 1)
     {
         auto type = parameters[0].getType();
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
+               throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
-        if ((type == Field::Types::Int64 && parameters[0].safeGet<Int64>() < 0)
-            || (type == Field::Types::UInt64 && parameters[0].safeGet<UInt64>() == 0))
+        if ((type == Field::Types::Int64 && parameters[0].safeGet<Int64>() < 0) ||
+            (type == Field::Types::UInt64 && parameters[0].safeGet<UInt64>() == 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
         max_elems = parameters[0].safeGet<UInt64>();
     }
     else
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} does not support this number of arguments", name);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Function {} does not support this number of arguments", name);
 
     if (max_elems > group_array_sorted_sort_strategy_max_elements_threshold)
         return createAggregateFunctionGroupArraySortedImpl<GroupArraySortedSort>(argument_types[0], parameters, max_elems);

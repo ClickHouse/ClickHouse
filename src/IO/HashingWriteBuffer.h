@@ -26,7 +26,8 @@ public:
     {
         if (block_pos)
             return CityHash_v1_0_2::CityHash128WithSeed(BufferWithOwnMemory<Buffer>::memory.data(), block_pos, state);
-        return state;
+        else
+            return state;
     }
 
     void append(DB::BufferBase::Position data)

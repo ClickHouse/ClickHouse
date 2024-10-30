@@ -3,9 +3,8 @@
 # pylint: disable=redefined-outer-name
 
 import pytest
-
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV, assert_eq_with_retry, assert_logs_contain_with_retry
+from helpers.test_tools import assert_eq_with_retry, assert_logs_contain_with_retry, TSV
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -27,7 +26,6 @@ def test_system_logs_exists():
     system_logs = [
         ("system.text_log", 1),
         ("system.query_log", 1),
-        ("system.query_metric_log", 1),
         ("system.query_thread_log", 1),
         ("system.part_log", 1),
         ("system.trace_log", 1),

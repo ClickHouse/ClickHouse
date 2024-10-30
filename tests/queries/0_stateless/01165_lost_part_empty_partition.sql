@@ -1,5 +1,4 @@
--- Tags: zookeeper, no-shared-merge-tree
--- no-shared-merge-tree: shared merge tree doesn't loose data parts
+-- Tags: zookeeper
 
 SET max_rows_to_read = 0; -- system.text_log can be really big
 

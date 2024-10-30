@@ -148,7 +148,7 @@ public:
 
             return col_res;
         }
-        if (col_str_const)
+        else if (col_str_const)
         {
             String src = col_str_const->getValue<String>();
             Array dst;
@@ -162,12 +162,9 @@ public:
 
             return result_type->createColumnConst(col_str_const->size(), dst);
         }
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "Illegal columns {}, {} of arguments of function {}",
-            array_argument.column->getName(),
-            array_argument.column->getName(),
-            getName());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {}, {} of arguments of function {}",
+                    array_argument.column->getName(), array_argument.column->getName(), getName());
     }
 };
 

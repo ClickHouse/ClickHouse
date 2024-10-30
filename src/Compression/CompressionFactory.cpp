@@ -39,9 +39,11 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std
         auto level_literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
         return get(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), level_literal)), {});
     }
-
-    auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
-    return get(makeASTFunction("CODEC", identifier), {});
+    else
+    {
+        auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
+        return get(makeASTFunction("CODEC", identifier), {});
+    }
 }
 
 CompressionCodecPtr CompressionCodecFactory::get(const String & compression_codec) const
@@ -94,9 +96,10 @@ CompressionCodecPtr CompressionCodecFactory::get(
 
         if (codecs.size() == 1)
             return codecs.back();
-        if (codecs.size() > 1)
+        else if (codecs.size() > 1)
             return std::make_shared<CompressionCodecMultiple>(codecs);
-        return std::make_shared<CompressionCodecNone>();
+        else
+            return std::make_shared<CompressionCodecNone>();
     }
 
     throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST structure for compression codec: {}", queryToString(ast));
@@ -176,6 +179,9 @@ void registerCodecZSTD(CompressionCodecFactory & factory);
 void registerCodecZSTDQAT(CompressionCodecFactory & factory);
 #endif
 void registerCodecMultiple(CompressionCodecFactory & factory);
+#if USE_QPL
+void registerCodecDeflateQpl(CompressionCodecFactory & factory);
+#endif
 
 /// Keeper use only general-purpose codecs, so we don't need these special codecs
 /// in standalone build
@@ -203,6 +209,9 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecGorilla(*this);
     registerCodecEncrypted(*this);
     registerCodecFPC(*this);
+#if USE_QPL
+    registerCodecDeflateQpl(*this);
+#endif
     registerCodecGCD(*this);
 
     default_codec = get("LZ4", {});

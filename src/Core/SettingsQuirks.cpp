@@ -4,7 +4,7 @@
 #include <Poco/Environment.h>
 #include <Poco/Platform.h>
 #include <Common/VersionNumber.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/logger_useful.h>
 
 
@@ -110,7 +110,7 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
     };
 
     UInt64 max_threads = get_current_value("max_threads").safeGet<UInt64>();
-    UInt64 max_threads_max_value = 256 * getNumberOfCPUCoresToUse();
+    UInt64 max_threads_max_value = 256 * getNumberOfPhysicalCPUCores();
     if (max_threads > max_threads_max_value)
     {
         if (log)

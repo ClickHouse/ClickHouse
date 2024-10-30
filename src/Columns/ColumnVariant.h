@@ -248,9 +248,6 @@ public:
     size_t byteSizeAt(size_t n) const override;
     size_t allocatedBytes() const override;
     void protect() override;
-    ColumnCheckpointPtr getCheckpoint() const override;
-    void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
-    void rollback(const ColumnCheckpoint & checkpoint) override;
     void forEachSubcolumn(MutableColumnCallback callback) override;
     void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
     bool structureEquals(const IColumn & rhs) const override;
@@ -317,12 +314,6 @@ public:
     /// Check if we have only 1 non-empty variant and no NULL values,
     /// and if so, return the discriminator of this non-empty column.
     std::optional<Discriminator> getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls() const;
-    std::optional<Discriminator> getGlobalDiscriminatorOfOneNoneEmptyVariantNoNulls() const;
-
-    /// Check if we have only 1 non-empty variant,
-    /// and if so, return the discriminator of this non-empty column.
-    std::optional<Discriminator> getGlobalDiscriminatorOfOneNoneEmptyVariant() const;
-
 
     /// Apply null map to a Variant column.
     /// Replace corresponding discriminators with NULL_DISCRIMINATOR

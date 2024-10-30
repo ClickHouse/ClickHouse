@@ -171,7 +171,7 @@ ColumnsDescription ITableFunctionXDBC::getActualTableStructure(ContextPtr contex
                    .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
                    .withTimeouts(ConnectionTimeouts::getHTTPTimeouts(
                         context->getSettingsRef(),
-                        context->getServerSettings()))
+                        context->getServerSettings().keep_alive_timeout))
                    .create(credentials);
 
     std::string columns_info;
