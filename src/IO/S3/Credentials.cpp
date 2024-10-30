@@ -1,7 +1,7 @@
-#include <IO/S3/Credentials.h>
-#include <Common/Exception.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
+#include <IO/S3/Credentials.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
