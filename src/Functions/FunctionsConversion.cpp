@@ -3722,9 +3722,13 @@ private:
         std::vector<WrapperType> element_wrappers;
         std::vector<std::optional<size_t>> to_reverse_index;
 
-        /// For named tuples allow conversions for tuples with
-        /// different sets of elements. If element exists in @to_type
-        /// and doesn't exist in @to_type it will be filled by default values.
+        /// When `strict_named_tuple_conversion` is enabled, named tuple
+        /// conversions will throw an exception if any fields are lost, helping
+        /// prevent silent data loss. Otherwise, named tuple conversions allow
+        /// different sets of elements, filling missing elements with default
+        /// values.
+        ///
+        /// NOTE: Background operations are not subject to this setting.
         if (from_type->haveExplicitNames() && to_type->haveExplicitNames())
         {
             const auto & from_names = from_type->getElementNames();
@@ -3769,7 +3773,7 @@ private:
             if (strict_named_tuple_conversion && num_from_fields < from_names.size())
                 throw Exception(
                     ErrorCodes::CANNOT_CONVERT_TYPE,
-                    "Some fields are lost when casting {} to {} (strict_named_tuple_conversion is enabled)",
+                    "Some fields from source tuple are lost when casting {} to {} (strict_named_tuple_conversion is enabled)",
                     from_type->getName(),
                     to_type->getName());
         }
