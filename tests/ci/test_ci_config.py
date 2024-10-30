@@ -37,6 +37,7 @@ class TestCIConfig(unittest.TestCase):
                 if job.lower() in (
                     CI.BuildNames.PACKAGE_AARCH64,
                     CI.BuildNames.PACKAGE_AARCH64_ASAN,
+                    CI.BuildNames.PACKAGE_AARCH64_TSAN,
                 ):
                     self.assertTrue(
                         CI.JOB_CONFIGS[job].runner_type
@@ -98,6 +99,8 @@ class TestCIConfig(unittest.TestCase):
                 self.assertTrue(CI.JOB_CONFIGS[job].build_config is None)
                 if "asan" in job and "aarch" in job:
                     expected_builds = [CI.BuildNames.PACKAGE_AARCH64_ASAN]
+                elif "tsan" in job and "aarch" in job:
+                    expected_builds = [CI.BuildNames.PACKAGE_AARCH64_TSAN]
                 elif "asan" in job:
                     expected_builds = [CI.BuildNames.PACKAGE_ASAN]
                 elif "msan" in job:
