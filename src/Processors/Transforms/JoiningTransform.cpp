@@ -201,8 +201,14 @@ Blocks JoiningTransform::readExecute(Chunk & chunk)
 
     auto join_block = [&]()
     {
-        if (join->supportsJoinWithManyResultBlocks())
-            join->joinBlock(block, res, not_processed);
+        if (join->isScatteredJoin())
+        {
+            join->joinBlock(block, remaining_blocks, res);
+            if (remaining_blocks.rows())
+                not_processed = std::make_shared<ExtraBlock>();
+            else
+                not_processed.reset();
+        }
         else
         {
             join->joinBlock(block, not_processed);

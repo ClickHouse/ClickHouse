@@ -1,13 +1,11 @@
 #pragma once
 
-#include <condition_variable>
 #include <memory>
-#include <optional>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 #include <base/defines.h>
 #include <base/types.h>
@@ -57,8 +55,8 @@ public:
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
 
-    bool supportsJoinWithManyResultBlocks() const override { return true; }
-    void joinBlock(Block & block, std::vector<Block> & res, std::shared_ptr<ExtraBlock> & not_processed) override;
+    bool isScatteredJoin() const override { return true; }
+    void joinBlock(Block & block, ExtraScatteredBlocks & extra_blocks, std::vector<Block> & res) override;
 
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 
@@ -82,6 +83,9 @@ private:
     /// We need to join default values with subquery totals if we have them, or return empty chunk is haven't.
     bool default_totals;
     bool initialized = false;
+
+    /// Only used with ConcurrentHashJoin
+    ExtraScatteredBlocks remaining_blocks;
 
     ExtraBlockPtr not_processed;
 

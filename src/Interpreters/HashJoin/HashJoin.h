@@ -154,7 +154,7 @@ public:
     void joinBlock(Block & block, ExtraBlockPtr & not_processed) override;
 
     /// Called directly from ConcurrentJoin::joinBlock
-    void joinBlock(ScatteredBlock & block, ExtraBlockPtr & not_processed);
+    void joinBlock(ScatteredBlock & block, ScatteredBlock & remaining_block);
 
     /// Check joinGet arguments and infer the return type.
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;

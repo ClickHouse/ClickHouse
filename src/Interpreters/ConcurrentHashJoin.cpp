@@ -27,7 +27,9 @@
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 
+#include <algorithm>
 #include <numeric>
+#include <vector>
 
 using namespace DB;
 
@@ -123,9 +125,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                     auto inner_hash_join = std::make_shared<InternalHashJoin>();
                     inner_hash_join->data = std::make_unique<HashJoin>(
                         table_join_, right_sample_block, any_take_last_row_, reserve_size, fmt::format("concurrent{}", idx));
-                    /// Non zero `max_joined_block_rows` allows to process block partially and return not processed part.
-                    /// TODO: It's not handled properly in ConcurrentHashJoin case, so we set it to 0 to disable this feature.
-                    inner_hash_join->data->setMaxJoinedBlockRows(0);
+                    inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
                     hash_joins[idx] = std::move(inner_hash_join);
                 });
         }
@@ -222,35 +222,50 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
 void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /*not_processed*/)
 {
     Blocks res;
-    std::shared_ptr<ExtraBlock> not_processed;
-    joinBlock(block, res, not_processed);
+    ExtraScatteredBlocks extra_blocks;
+    joinBlock(block, extra_blocks, res);
+    chassert(!extra_blocks.rows());
     block = concatenateBlocks(res);
 }
 
-void ConcurrentHashJoin::joinBlock(Block & block, std::vector<Block> & res, std::shared_ptr<ExtraBlock> & /*not_processed*/)
+void ConcurrentHashJoin::joinBlock(Block & block, ExtraScatteredBlocks & extra_blocks, std::vector<Block> & res)
 {
-    hash_joins[0]->data->materializeColumnsFromLeftBlock(block);
+    ScatteredBlocks dispatched_blocks;
+    auto & remaining_blocks = extra_blocks.remaining_blocks;
+    if (extra_blocks.rows())
+    {
+        dispatched_blocks = std::move(remaining_blocks);
+    }
+    else
+    {
+        hash_joins[0]->data->materializeColumnsFromLeftBlock(block);
+        dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, block);
+    }
 
-    auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, block);
     block = {};
+
+    /// Just in case, should be no-op always
+    remaining_blocks.resize(slots);
+
+    chassert(res.empty());
+    res.clear();
+    res.reserve(dispatched_blocks.size());
+
     for (size_t i = 0; i < dispatched_blocks.size(); ++i)
     {
         std::shared_ptr<ExtraBlock> none_extra_block;
         auto & hash_join = hash_joins[i];
         auto & dispatched_block = dispatched_blocks[i];
-        if (i == 0 || dispatched_block.rows())
-            hash_join->data->joinBlock(dispatched_block, none_extra_block);
+        if (dispatched_block && (i == 0 || dispatched_block.rows()))
+            hash_join->data->joinBlock(dispatched_block, remaining_blocks[i]);
         if (none_extra_block && !none_extra_block->empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "not_processed should be empty");
     }
-
-    chassert(res.empty());
-    res.clear();
-    res.reserve(dispatched_blocks.size());
     for (size_t i = 0; i < dispatched_blocks.size(); ++i)
     {
-        if (i == 0 || dispatched_blocks[i].rows())
-            res.emplace_back(std::move(dispatched_blocks[i]).getSourceBlock());
+        auto & dispatched_block = dispatched_blocks[i];
+        if (dispatched_block && (i == 0 || dispatched_block.rows()))
+            res.emplace_back(std::move(dispatched_block).getSourceBlock());
     }
 }
 

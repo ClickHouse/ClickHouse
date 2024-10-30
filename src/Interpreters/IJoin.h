@@ -3,9 +3,10 @@
 #include <memory>
 #include <vector>
 
-#include <Core/Names.h>
-#include <Core/Block.h>
 #include <Columns/IColumn.h>
+#include <Core/Block.h>
+#include <Core/Names.h>
+#include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -90,13 +91,11 @@ public:
     /// Could be called from different threads in parallel.
     virtual void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) = 0;
 
-    virtual bool supportsJoinWithManyResultBlocks() const { return false; }
+    virtual bool isScatteredJoin() const { return false; }
     virtual void joinBlock(
-        [[maybe_unused]] Block & block,
-        [[maybe_unused]] std::vector<Block> & res,
-        [[maybe_unused]] std::shared_ptr<ExtraBlock> & not_processed)
+        [[maybe_unused]] Block & block, [[maybe_unused]] ExtraScatteredBlocks & extra_blocks, [[maybe_unused]] std::vector<Block> & res)
     {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Clone method is not supported for {}", getName());
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "joinBlock is not supported for {}", getName());
     }
 
     /** Set/Get totals for right table

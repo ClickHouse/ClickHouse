@@ -325,4 +325,13 @@ private:
 
 using ScatteredBlocks = std::vector<ScatteredBlock>;
 
+struct ExtraScatteredBlocks
+{
+    ScatteredBlocks remaining_blocks;
+
+    bool rows() const
+    {
+        return std::ranges::any_of(remaining_blocks, [](const auto & bl) { return bl.rows(); });
+    }
+};
 }

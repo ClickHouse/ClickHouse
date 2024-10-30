@@ -1058,7 +1058,7 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     }
 }
 
-void HashJoin::joinBlock(ScatteredBlock & block, ExtraBlockPtr & not_processed)
+void HashJoin::joinBlock(ScatteredBlock & block, ScatteredBlock & remaining_block)
 {
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
@@ -1089,7 +1089,6 @@ void HashJoin::joinBlock(ScatteredBlock & block, ExtraBlockPtr & not_processed)
         prefer_use_maps_all,
         [&](auto kind_, auto strictness_, auto & maps_vector_)
         {
-            ScatteredBlock remaining_block;
             if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsAll *>>)
             {
                 remaining_block = HashJoinMethods<kind_, strictness_, MapsAll>::joinBlockImpl(
@@ -1109,10 +1108,6 @@ void HashJoin::joinBlock(ScatteredBlock & block, ExtraBlockPtr & not_processed)
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown maps type");
             }
-            if (remaining_block.rows())
-                not_processed = std::make_shared<ExtraBlock>(std::move(remaining_block).getSourceBlock());
-            else
-                not_processed.reset();
         });
 
     chassert(joined);
