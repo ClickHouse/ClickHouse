@@ -849,7 +849,7 @@ DataFileInfos IcebergMetadata::getDataFileInfos(const ActionsDAG * filter_dag) c
                 LOG_DEBUG(&Poco::Logger::get("Partition Spec"), "Type: {}", name_and_type.value().type);
 
                 //NEED TO REMOVE THIS
-                auto if_nullable = dynamic_cast<const DataTypeNullable *>(name_and_type->getTypeInStorage().get());
+                const auto * if_nullable = dynamic_cast<const DataTypeNullable *>(name_and_type->getTypeInStorage().get());
                 if (!WhichDataType(if_nullable->getNestedType()).isDate())
                 {
                     continue;
