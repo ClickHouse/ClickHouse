@@ -10,6 +10,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -29,6 +30,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 max_build_vector_similarity_index_thread_pool_size;
+}
+
 namespace ErrorCodes
 {
     extern const int FORMAT_VERSION_TOO_OLD;
@@ -36,8 +42,14 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INCORRECT_QUERY;
+    extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace Setting
+{
+    extern const SettingsUInt64 hnsw_candidate_list_size_for_search;
 }
 
 namespace
@@ -99,7 +111,7 @@ USearchIndexWithSerialization::USearchIndexWithSerialization(
 {
     USearchIndex::metric_t metric(dimensions, metric_kind, scalar_kind);
 
-    unum::usearch::index_dense_config_t config(usearch_hnsw_params.m, usearch_hnsw_params.ef_construction, usearch_hnsw_params.ef_search);
+    unum::usearch::index_dense_config_t config(usearch_hnsw_params.connectivity, usearch_hnsw_params.expansion_add, default_expansion_search);
     config.enable_key_lookups = false; /// we don't do row-to-vector lookups
 
     auto result = USearchIndex::make(metric, config);
@@ -270,7 +282,7 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
             throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column with vector similarity index must have equal length");
 
     /// Reserving space is mandatory
-    size_t max_thread_pool_size = Context::getGlobalContextInstance()->getServerSettings().max_build_vector_similarity_index_thread_pool_size;
+    size_t max_thread_pool_size = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::max_build_vector_similarity_index_thread_pool_size];
     if (max_thread_pool_size == 0)
         max_thread_pool_size = getNumberOfCPUCoresToUse();
     unum::usearch::index_limits_t limits(roundUpToPowerOfTwoOrZero(index->size() + rows), max_thread_pool_size);
@@ -394,7 +406,11 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
     ContextPtr context)
     : vector_similarity_condition(query, context)
     , metric_kind(metric_kind_)
+    , expansion_search(context->getSettingsRef()[Setting::hnsw_candidate_list_size_for_search])
 {
+    if (expansion_search == 0)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'hnsw_candidate_list_size_for_search' must not be 0");
+
 }
 
 bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexGranulePtr) const
@@ -425,13 +441,17 @@ std::vector<UInt64> MergeTreeIndexConditionVectorSimilarity::calculateApproximat
     const USearchIndexWithSerializationPtr index = granule->index;
 
     if (vector_similarity_condition.getDimensions() != index->dimensions())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "The dimension of the space in the request ({}) "
-            "does not match the dimension in the index ({})",
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The dimension of the space in the request ({}) does not match the dimension in the index ({})",
             vector_similarity_condition.getDimensions(), index->dimensions());
 
     const std::vector<Float64> reference_vector = vector_similarity_condition.getReferenceVector();
 
-    auto search_result = index->search(reference_vector.data(), limit);
+    /// We want to run the search with the user-provided value for setting hnsw_candidate_list_size_for_search (aka. expansion_search).
+    /// The way to do this in USearch is to call index_dense_gt::change_expansion_search. Unfortunately, this introduces a need to
+    /// synchronize index access, see https://github.com/unum-cloud/usearch/issues/500. As a workaround, we extended USearch' search method
+    /// to accept a custom expansion_add setting. The config value is only used on the fly, i.e. not persisted in the index.
+
+    auto search_result = index->search(reference_vector.data(), limit, USearchIndex::any_thread(), false, expansion_search);
     if (!search_result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not search in vector similarity index. Error: {}", String(search_result.error.release()));
 
@@ -496,13 +516,12 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
     UsearchHnswParams usearch_hnsw_params;
 
     /// Optional parameters:
-    const bool has_six_args = (index.arguments.size() == 6);
-    if (has_six_args)
+    const bool has_five_args = (index.arguments.size() == 5);
+    if (has_five_args)
     {
         scalar_kind = quantizationToScalarKind.at(index.arguments[2].safeGet<String>());
-        usearch_hnsw_params = {.m               = index.arguments[3].safeGet<UInt64>(),
-                               .ef_construction = index.arguments[4].safeGet<UInt64>(),
-                               .ef_search       = index.arguments[5].safeGet<UInt64>()};
+        usearch_hnsw_params = {.connectivity  = index.arguments[3].safeGet<UInt64>(),
+                               .expansion_add = index.arguments[4].safeGet<UInt64>()};
     }
 
     return std::make_shared<MergeTreeIndexVectorSimilarity>(index, metric_kind, scalar_kind, usearch_hnsw_params);
@@ -511,25 +530,23 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
 void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* attach */)
 {
     const bool has_two_args = (index.arguments.size() == 2);
-    const bool has_six_args = (index.arguments.size() == 6);
+    const bool has_five_args = (index.arguments.size() == 5);
 
     /// Check number and type of arguments
-    if (!has_two_args && !has_six_args)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Vector similarity index must have two or six arguments");
+    if (!has_two_args && !has_five_args)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Vector similarity index must have two or five arguments");
     if (index.arguments[0].getType() != Field::Types::String)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "First argument of vector similarity index (method) must be of type String");
     if (index.arguments[1].getType() != Field::Types::String)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Second argument of vector similarity index (metric) must be of type String");
-    if (has_six_args)
+    if (has_five_args)
     {
         if (index.arguments[2].getType() != Field::Types::String)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Third argument of vector similarity index (quantization) must be of type String");
         if (index.arguments[3].getType() != Field::Types::UInt64)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Fourth argument of vector similarity index (M) must be of type UInt64");
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Fourth argument of vector similarity index (hnsw_max_connections_per_layer) must be of type UInt64");
         if (index.arguments[4].getType() != Field::Types::UInt64)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Fifth argument of vector similarity index (ef_construction) must be of type UInt64");
-        if (index.arguments[5].getType() != Field::Types::UInt64)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Sixth argument of vector similarity index (ef_search) must be of type UInt64");
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Fifth argument of vector similarity index (hnsw_candidate_list_size_for_construction) must be of type UInt64");
     }
 
     /// Check that passed arguments are supported
@@ -537,18 +554,17 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
         throw Exception(ErrorCodes::INCORRECT_DATA, "First argument (method) of vector similarity index is not supported. Supported methods are: {}", joinByComma(methods));
     if (!distanceFunctionToMetricKind.contains(index.arguments[1].safeGet<String>()))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Second argument (distance function) of vector similarity index is not supported. Supported distance function are: {}", joinByComma(distanceFunctionToMetricKind));
-    if (has_six_args)
+    if (has_five_args)
     {
         if (!quantizationToScalarKind.contains(index.arguments[2].safeGet<String>()))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Third argument (quantization) of vector similarity index is not supported. Supported quantizations are: {}", joinByComma(quantizationToScalarKind));
 
         /// Call Usearch's own parameter validation method for HNSW-specific parameters
-        UInt64 m = index.arguments[3].safeGet<UInt64>();
-        UInt64 ef_construction = index.arguments[4].safeGet<UInt64>();
-        UInt64 ef_search = index.arguments[5].safeGet<UInt64>();
+        UInt64 connectivity = index.arguments[3].safeGet<UInt64>();
+        UInt64 expansion_add = index.arguments[4].safeGet<UInt64>();
+        UInt64 expansion_search = default_expansion_search;
 
-        unum::usearch::index_dense_config_t config(m, ef_construction, ef_search);
-
+        unum::usearch::index_dense_config_t config(connectivity, expansion_add, expansion_search);
         if (auto error = config.validate(); error)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid parameters passed to vector similarity index. Error: {}", String(error.release()));
     }

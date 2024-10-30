@@ -4390,3 +4390,37 @@ Result:
 1. │ ['{ArraySizes}','{ArrayElements, TupleElement(keys), Regular}','{ArrayElements, TupleElement(values), Regular}'] │
    └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+## globalVariable
+
+Takes a constant string argument and returns the value of the global variable with that name. This function is intended for compatibility with MySQL and not needed or useful for normal operation of ClickHouse. Only few dummy global variables are defined.
+
+**Syntax**
+
+```sql
+globalVariable(name)
+```
+
+**Arguments**
+
+- `name` — Global variable name. [String](../data-types/string.md).
+
+**Returned value**
+
+- Returns the value of variable `name`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT globalVariable('max_allowed_packet');
+```
+
+Result:
+
+```response
+┌─globalVariable('max_allowed_packet')─┐
+│                             67108864 │
+└──────────────────────────────────────┘
+```

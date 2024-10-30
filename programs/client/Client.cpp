@@ -512,6 +512,7 @@ void Client::connect()
     {
         std::cout << "Connected to " << server_name << " server version " << server_version << "." << std::endl << std::endl;
 
+#ifndef CLICKHOUSE_CLOUD
         auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
         auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
 
@@ -527,6 +528,7 @@ void Client::connect()
                         << "It may indicate that the server is out of date and can be upgraded." << std::endl
                         << std::endl;
         }
+#endif
     }
 
     if (!client_context->getSettingsRef()[Setting::use_client_time_zone])
@@ -1158,6 +1160,9 @@ void Client::processOptions(const OptionsDescription & options_description,
     /// (There is no need to copy the context because clickhouse-client has no background tasks so it won't use that context in parallel.)
     client_context = global_context;
     initClientContext();
+
+    /// Allow to pass-through unknown settings to the server.
+    client_context->getAccessControl().allowAllSettings();
 }
 
 

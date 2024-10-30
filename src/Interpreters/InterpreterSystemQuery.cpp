@@ -52,6 +52,7 @@
 #include <Storages/Freeze.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageFile.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageURL.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
@@ -88,6 +89,9 @@ namespace CurrentMetrics
     extern const Metric RestartReplicaThreads;
     extern const Metric RestartReplicaThreadsActive;
     extern const Metric RestartReplicaThreadsScheduled;
+    extern const Metric MergeTreePartsLoaderThreads;
+    extern const Metric MergeTreePartsLoaderThreadsActive;
+    extern const Metric MergeTreePartsLoaderThreadsScheduled;
 }
 
 namespace DB
@@ -96,6 +100,12 @@ namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSeconds receive_timeout;
+    extern const SettingsMaxThreads max_threads;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsDouble cannot_allocate_thread_fault_injection_probability;
 }
 
 namespace ErrorCodes
@@ -108,6 +118,7 @@ namespace ErrorCodes
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int ABORTED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 namespace ActionLocks
@@ -350,6 +361,11 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_CONNECTIONS_CACHE);
             HTTPConnectionPools::instance().dropCache();
+            break;
+        }
+        case Type::PREWARM_MARK_CACHE:
+        {
+            prewarmMarkCache();
             break;
         }
         case Type::DROP_MARK_CACHE:
@@ -755,7 +771,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::START_THREAD_FUZZER:
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::start();
-            CannotAllocateThreadFaultInjector::setFaultProbability(getContext()->getServerSettings().cannot_allocate_thread_fault_injection_probability);
+            CannotAllocateThreadFaultInjector::setFaultProbability(getContext()->getServerSettings()[ServerSetting::cannot_allocate_thread_fault_injection_probability]);
             break;
         case Type::UNFREEZE:
         {
@@ -1134,10 +1150,23 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid query");
 }
 
-bool InterpreterSystemQuery::trySyncReplica(IStorage * table, SyncReplicaMode sync_replica_mode, const std::unordered_set<String> & src_replicas, ContextPtr context_)
+bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sync_replica_mode, const std::unordered_set<String> & src_replicas, ContextPtr context_)
  {
     auto table_id_ = table->getStorageID();
-    if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table))
+
+    /// If materialized view, sync its target table.
+    for (int i = 0;; ++i)
+    {
+        if (i >= 100)
+            throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "Materialized view targets form a cycle or a very long chain");
+
+        if (auto * storage_mv = dynamic_cast<StorageMaterializedView *>(table.get()))
+            table = storage_mv->getTargetTable();
+        else
+            break;
+    }
+
+    if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
     {
         auto log = getLogger("InterpreterSystemQuery");
         LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for current last entry to be processed");
@@ -1161,7 +1190,7 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
     getContext()->checkAccess(AccessType::SYSTEM_SYNC_REPLICA, table_id);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     std::unordered_set<std::string> replicas(query.src_replicas.begin(), query.src_replicas.end());
-    if (!trySyncReplica(table.get(), query.sync_replica_mode, replicas, getContext()))
+    if (!trySyncReplica(table, query.sync_replica_mode, replicas, getContext()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
 }
 
@@ -1276,6 +1305,28 @@ RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Refreshable view {} doesn't exist", table_id.getNameForLogs());
     return tasks;
+}
+
+void InterpreterSystemQuery::prewarmMarkCache()
+{
+    if (table_id.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table is not specified for prewarming marks cache");
+
+    getContext()->checkAccess(AccessType::SYSTEM_PREWARM_MARK_CACHE, table_id);
+
+    auto table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
+    auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
+
+    if (!merge_tree)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM MARK CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
+
+    ThreadPool pool(
+        CurrentMetrics::MergeTreePartsLoaderThreads,
+        CurrentMetrics::MergeTreePartsLoaderThreadsActive,
+        CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
+        getContext()->getSettingsRef()[Setting::max_threads]);
+
+    merge_tree->prewarmMarkCache(pool);
 }
 
 
@@ -1477,6 +1528,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::WAIT_LOADING_PARTS:
         {
             required_access.emplace_back(AccessType::SYSTEM_WAIT_LOADING_PARTS, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::PREWARM_MARK_CACHE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_PREWARM_MARK_CACHE, query.getDatabase(), query.getTable());
             break;
         }
         case Type::SYNC_DATABASE_REPLICA:
