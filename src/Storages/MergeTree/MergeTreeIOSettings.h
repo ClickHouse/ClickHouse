@@ -61,7 +61,8 @@ struct MergeTreeWriterSettings
         const MergeTreeSettingsPtr & storage_settings,
         bool can_use_adaptive_granularity_,
         bool rewrite_primary_key_,
-        bool blocks_are_granules_size_ = false);
+        bool save_marks_in_cache_,
+        bool blocks_are_granules_size_);
 
     size_t min_compress_block_size;
     size_t max_compress_block_size;
@@ -75,6 +76,7 @@ struct MergeTreeWriterSettings
 
     bool can_use_adaptive_granularity;
     bool rewrite_primary_key;
+    bool save_marks_in_cache;
     bool blocks_are_granules_size;
     WriteSettings query_write_settings;
 
