@@ -10,9 +10,7 @@ namespace DB
 {
 
 /*
- * Implementation of `IResourceManager` supporting arbitrary hierarchy of scheduler nodes.
- * Scheduling hierarchies for every resource is described through server xml or yaml configuration.
- * Configuration could be changed dynamically without server restart.
+ * Implementation of `IResourceManager` supporting arbitrary dynamic hierarchy of scheduler nodes.
  * All resources are controlled by single root `SchedulerRoot`.
  *
  * State of manager is set of resources attached to the scheduler. States are referenced by classifiers.
@@ -26,12 +24,11 @@ namespace DB
  * violation will apply to fairness. Old version exists as long as there is at least one classifier
  * instance referencing it. Classifiers are typically attached to queries and will be destructed with them.
  */
-class CustomResourceManager : public IResourceManager
+class DynamicResourceManager : public IResourceManager
 {
 public:
-    CustomResourceManager();
+    DynamicResourceManager();
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config) override;
-    bool hasResource(const String & resource_name) const override;
     ClassifierPtr acquire(const String & classifier_name) override;
     void forEachNode(VisitorFunc visitor) override;
 
@@ -82,7 +79,6 @@ private:
     {
     public:
         Classifier(const StatePtr & state_, const String & classifier_name);
-        bool has(const String & resource_name) override;
         ResourceLink get(const String & resource_name) override;
     private:
         std::unordered_map<String, ResourceLink> resources; // accessible resources by names
@@ -90,7 +86,7 @@ private:
     };
 
     SchedulerRoot scheduler;
-    mutable std::mutex mutex;
+    std::mutex mutex;
     StatePtr state;
 };
 

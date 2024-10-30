@@ -3224,34 +3224,6 @@ Default value: "default"
 **See Also**
 - [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
 
-## workload_path {#workload_path}
-
-The directory used as a storage for all `CREATE WORKLOAD` and `CREATE RESOURCE` queries. By default `/workload/` folder under server working directory is used.
-
-**Example**
-
-``` xml
-<workload_path>/var/lib/clickhouse/workload/</workload_path>
-```
-
-**See Also**
-- [Workload Hierarchy](/docs/en/operations/workload-scheduling.md#workloads)
-- [workload_zookeeper_path](#workload_zookeeper_path)
-
-## workload_zookeeper_path {#workload_zookeeper_path}
-
-The path to a ZooKeeper node, which is used as a storage for all `CREATE WORKLOAD` and `CREATE RESOURCE` queries. For consistency all SQL definitions are stored as a value of this single znode. By default ZooKeeper is not used and definitions are stored on [disk](#workload_path).
-
-**Example**
-
-``` xml
-<workload_zookeeper_path>/clickhouse/workload/definitions.sql</workload_zookeeper_path>
-```
-
-**See Also**
-- [Workload Hierarchy](/docs/en/operations/workload-scheduling.md#workloads)
-- [workload_path](#workload_path)
-
 ## max_authentication_methods_per_user {#max_authentication_methods_per_user}
 
 The maximum number of authentication methods a user can be created with or altered to.
