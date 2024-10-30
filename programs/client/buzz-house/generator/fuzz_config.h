@@ -16,11 +16,18 @@ public:
     std::string hostname;
     uint32_t port;
     std::string unix_socket, user, password;
+    std::filesystem::path query_log_file;
 
-    ServerCredentials() : hostname("localhost"), port(0), unix_socket(""), user("test"), password("") { }
+    ServerCredentials() : hostname("localhost"), port(0), unix_socket(""), user("test"), password(""), query_log_file("") { }
 
-    ServerCredentials(const std::string & h, const uint32_t p, const std::string & us, const std::string & u, const std::string & pass)
-        : hostname(h), port(p), unix_socket(us), user(u), password(pass)
+    ServerCredentials(
+        const std::string & h,
+        const uint32_t p,
+        const std::string & us,
+        const std::string & u,
+        const std::string & pass,
+        const std::filesystem::path & qlf)
+        : hostname(h), port(p), unix_socket(us), user(u), password(pass), query_log_file(qlf)
     {
     }
 
@@ -31,6 +38,7 @@ public:
         this->user = c.user;
         this->unix_socket = c.unix_socket;
         this->password = c.password;
+        this->query_log_file = c.query_log_file;
     }
     ServerCredentials(ServerCredentials && c)
     {
@@ -39,6 +47,7 @@ public:
         this->user = c.user;
         this->unix_socket = c.unix_socket;
         this->password = c.password;
+        this->query_log_file = c.query_log_file;
     }
     ServerCredentials & operator=(const ServerCredentials & c)
     {
@@ -47,6 +56,7 @@ public:
         this->user = c.user;
         this->unix_socket = c.unix_socket;
         this->password = c.password;
+        this->query_log_file = c.query_log_file;
         return *this;
     }
     ServerCredentials & operator=(ServerCredentials && c)
@@ -56,14 +66,16 @@ public:
         this->user = c.user;
         this->unix_socket = c.unix_socket;
         this->password = c.password;
+        this->query_log_file = c.query_log_file;
         return *this;
     }
 };
 
-static const ServerCredentials LoadServerCredentials(const json & val, const uint32_t & default_port)
+static const ServerCredentials LoadServerCredentials(const json & val, const std::string & sname, const uint32_t & default_port)
 {
     uint32_t port = default_port;
     std::string hostname = "localhost", unix_socket = "", user = "test", password = "";
+    std::filesystem::path query_log_file = std::filesystem::temp_directory_path() / (sname + ".sql");
 
     for (const auto & [key, value] : val.items())
     {
@@ -87,19 +99,23 @@ static const ServerCredentials LoadServerCredentials(const json & val, const uin
         {
             password = static_cast<std::string>(value);
         }
+        else if (key == "query_log_file")
+        {
+            query_log_file = std::filesystem::path(static_cast<std::string>(value));
+        }
         else
         {
             throw std::runtime_error("Unknown option: " + key);
         }
     }
-    return ServerCredentials(hostname, port, unix_socket, user, password);
+    return ServerCredentials(hostname, port, unix_socket, user, password, query_log_file);
 }
 
 class FuzzConfig
 {
 public:
     std::vector<const std::string> collations;
-    ServerCredentials mysql_server, postgresql_server;
+    ServerCredentials mysql_server, postgresql_server, sqlite_server;
     bool read_log = false, fuzz_floating_points = true;
     uint32_t seed = 0, max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5;
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
@@ -160,11 +176,15 @@ public:
             }
             else if (key == "mysql")
             {
-                mysql_server = LoadServerCredentials(value, 33060);
+                mysql_server = LoadServerCredentials(value, key, 33060);
             }
             else if (key == "postgresql")
             {
-                postgresql_server = LoadServerCredentials(value, 5432);
+                postgresql_server = LoadServerCredentials(value, key, 5432);
+            }
+            else if (key == "sqlite")
+            {
+                sqlite_server = LoadServerCredentials(value, key, 0);
             }
             else
             {
@@ -179,7 +199,7 @@ public:
 
         res += "SELECT \"name\" FROM system.collations INTO OUTFILE '";
         res += collfile.generic_string();
-        res += "' FORMAT TabSeparated;";
+        res += "' TRUNCATE FORMAT TabSeparated;";
     }
 
     void LoadCollations()

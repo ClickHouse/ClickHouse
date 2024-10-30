@@ -2385,6 +2385,9 @@ CONV_FN(TableEngineParam, tep)
         case TableEngineParamType::kJoinOp:
             ret += JoinType_Name(tep.join_op()).substr(2);
             break;
+        case TableEngineParamType::kJoinConst:
+            ret += JoinConst_Name(tep.join_const()).substr(2);
+            break;
         case TableEngineParamType::kDatabase:
             DatabaseToString(ret, tep.database());
             break;

@@ -575,6 +575,12 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
      [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
 };
 
+const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> MySQLTableSettings
+    = {{"connection_pool_size",
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 7)); }},
+       {"connection_max_tries", [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(1, 16)); }},
+       {"connection_auto_close", TrueOrFalse}};
+
 const std::map<sql_query_grammar::TableEngineValues, std::map<std::string, std::function<void(RandomGenerator &, std::string &)>>>
     AllTableSettings
     = {{sql_query_grammar::MergeTree, MergeTreeTableSettings},
@@ -592,7 +598,10 @@ const std::map<sql_query_grammar::TableEngineValues, std::map<std::string, std::
        {sql_query_grammar::Log, {}},
        {sql_query_grammar::TinyLog, {}},
        {sql_query_grammar::EmbeddedRocksDB, EmbeddedRocksDBTableSettings},
-       {sql_query_grammar::Buffer, {}}};
+       {sql_query_grammar::Buffer, {}},
+       {sql_query_grammar::MySQL, MySQLTableSettings},
+       {sql_query_grammar::PostgreSQL, {}},
+       {sql_query_grammar::SQLite, {}}};
 
 const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> MergeTreeColumnSettings
     = {{"min_compress_block_size",
@@ -617,7 +626,10 @@ const std::map<sql_query_grammar::TableEngineValues, std::map<std::string, std::
        {sql_query_grammar::Log, {}},
        {sql_query_grammar::TinyLog, {}},
        {sql_query_grammar::EmbeddedRocksDB, {}},
-       {sql_query_grammar::Buffer, {}}};
+       {sql_query_grammar::Buffer, {}},
+       {sql_query_grammar::MySQL, {}},
+       {sql_query_grammar::PostgreSQL, {}},
+       {sql_query_grammar::SQLite, {}}};
 
 void SetRandomSetting(
     RandomGenerator & rg,

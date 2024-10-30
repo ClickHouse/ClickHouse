@@ -245,12 +245,12 @@ private:
     int AddTableIndex(RandomGenerator & rg, SQLTable & t, const bool staged, sql_query_grammar::IndexDef * idef);
     int AddTableProjection(RandomGenerator & rg, SQLTable & t, const bool staged, sql_query_grammar::ProjectionDef * pdef);
     int AddTableConstraint(RandomGenerator & rg, SQLTable & t, const bool staged, sql_query_grammar::ConstraintDef * cdef);
-    int GenerateTableKey(RandomGenerator & rg, const bool add_pkey, sql_query_grammar::TableKey * tkey);
+    int GenerateTableKey(RandomGenerator & rg, sql_query_grammar::TableKey * tkey);
     int GenerateMergeTreeEngineDetails(
         RandomGenerator & rg, const sql_query_grammar::TableEngineValues teng, const bool add_pkey, sql_query_grammar::TableEngine * te);
     int GenerateEngineDetails(RandomGenerator & rg, SQLBase & b, const bool add_pkey, sql_query_grammar::TableEngine * te);
 
-    sql_query_grammar::TableEngineValues GetNextTableEngine(RandomGenerator & rg, const bool table);
+    sql_query_grammar::TableEngineValues GetNextTableEngine(RandomGenerator & rg, const bool use_external_database);
     int GenerateNextRefreshableView(RandomGenerator & rg, sql_query_grammar::RefreshableView * cv);
     int GenerateNextCreateView(RandomGenerator & rg, sql_query_grammar::CreateView * cv);
     int GenerateNextDrop(RandomGenerator & rg, sql_query_grammar::Drop * sq);

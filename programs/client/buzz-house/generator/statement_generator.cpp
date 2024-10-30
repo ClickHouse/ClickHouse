@@ -192,9 +192,9 @@ int StatementGenerator::PickUpNextCols(RandomGenerator & rg, const SQLTable & t,
     return 0;
 }
 
-int StatementGenerator::GenerateTableKey(RandomGenerator & rg, const bool force, sql_query_grammar::TableKey * tkey)
+int StatementGenerator::GenerateTableKey(RandomGenerator & rg, sql_query_grammar::TableKey * tkey)
 {
-    if (!entries.empty() && (force || rg.NextSmallNumber() < 7))
+    if (!entries.empty() && rg.NextSmallNumber() < 7)
     {
         const size_t ocols = (rg.NextMediumNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1;
 
@@ -219,7 +219,7 @@ int StatementGenerator::GenerateMergeTreeEngineDetails(
 {
     if (rg.NextSmallNumber() < 6)
     {
-        GenerateTableKey(rg, false, te->mutable_order());
+        GenerateTableKey(rg, te->mutable_order());
     }
     if (te->order().exprs_size() && add_pkey && rg.NextSmallNumber() < 5)
     {
@@ -242,11 +242,11 @@ int StatementGenerator::GenerateMergeTreeEngineDetails(
     }
     else if (!te->order().exprs_size() && add_pkey)
     {
-        GenerateTableKey(rg, false, te->mutable_primary_key());
+        GenerateTableKey(rg, te->mutable_primary_key());
     }
     if (rg.NextSmallNumber() < 5)
     {
-        GenerateTableKey(rg, false, te->mutable_partition_by());
+        GenerateTableKey(rg, te->mutable_partition_by());
     }
 
     const size_t npkey = te->primary_key().exprs_size();
@@ -328,7 +328,7 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator & rg, SQLBase & b,
 
         if (rg.NextSmallNumber() < 5)
         {
-            GenerateTableKey(rg, false, te->mutable_partition_by());
+            GenerateTableKey(rg, te->mutable_partition_by());
         }
         if (noption < 9)
         {
@@ -430,17 +430,27 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator & rg, SQLBase & b,
             te->add_params()->set_num(static_cast<int32_t>(rg.NextRandomUInt32() % 1001));
         }
     }
-    else if (b.IsRocksEngine())
+    else if (b.IsRocksEngine() && add_pkey && !entries.empty())
     {
-        GenerateTableKey(rg, add_pkey, te->mutable_primary_key());
+        const InsertEntry & entry = rg.PickRandomlyFromVector(entries);
+        sql_query_grammar::ExprColumn * ecol
+            = te->mutable_primary_key()->add_exprs()->mutable_comp_expr()->mutable_expr_stc()->mutable_col();
+
+        ecol->mutable_col()->set_column("c" + std::to_string(entry.cname1));
+        if (entry.cname2.has_value())
+        {
+            ecol->mutable_subcol()->set_column("c" + std::to_string(entry.cname2.value()));
+        }
     }
     else if (b.IsMySQLEngine() || b.IsPostgreSQLEngine())
     {
-        te->add_params()->set_svalue(fc.mysql_server.hostname + ":" + std::to_string(fc.mysql_server.port));
+        const ServerCredentials & sc = b.IsMySQLEngine() ? fc.mysql_server : fc.postgresql_server;
+
+        te->add_params()->set_svalue(sc.hostname + ":" + std::to_string(sc.port));
         te->add_params()->set_svalue("test");
         te->add_params()->set_svalue("t" + std::to_string(b.tname));
-        te->add_params()->set_svalue(fc.mysql_server.user);
-        te->add_params()->set_svalue(fc.mysql_server.password);
+        te->add_params()->set_svalue(sc.user);
+        te->add_params()->set_svalue(sc.password);
         if (b.IsMySQLEngine() && rg.NextBool())
         {
             const uint32_t first_optional_value = rg.NextBool() ? 1 : 0;
@@ -646,6 +656,7 @@ int StatementGenerator::AddTableIndex(RandomGenerator & rg, SQLTable & t, const 
                     if (itpe < sql_query_grammar::IndexType::IDX_ngrambf_v1 || HasType<StringType>(entry2.subtype))
                     {
                         entries.push_back(InsertEntry(
+                            entry.second.nullable,
                             ColumnSpecial::NONE,
                             entry.second.cname,
                             std::optional<uint32_t>(entry2.cname),
@@ -656,7 +667,8 @@ int StatementGenerator::AddTableIndex(RandomGenerator & rg, SQLTable & t, const 
             }
             else if (itpe < sql_query_grammar::IndexType::IDX_ngrambf_v1 || HasType<StringType>(entry.second.tp))
             {
-                entries.push_back(InsertEntry(entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
+                entries.push_back(InsertEntry(
+                    entry.second.nullable, entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
             }
         }
     }
@@ -797,7 +809,7 @@ int StatementGenerator::AddTableConstraint(RandomGenerator & rg, SQLTable & t, c
     return 0;
 }
 
-sql_query_grammar::TableEngineValues StatementGenerator::GetNextTableEngine(RandomGenerator & rg, const bool table)
+sql_query_grammar::TableEngineValues StatementGenerator::GetNextTableEngine(RandomGenerator & rg, const bool use_external_database)
 {
     if (rg.NextSmallNumber() < 5)
     {
@@ -825,7 +837,7 @@ sql_query_grammar::TableEngineValues StatementGenerator::GetNextTableEngine(Rand
     {
         this->ids.push_back(sql_query_grammar::Buffer);
     }
-    if (table)
+    if (use_external_database)
     {
         if (connections.HasMySQLConnection())
         {
@@ -1010,7 +1022,7 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator & rg, sql_query_
 
         next.teng = val;
         te->set_engine(val);
-        cta->set_clone(rg.NextBool());
+        cta->set_clone(next.IsMergeTreeFamily() && rg.NextBool());
         if (t.db)
         {
             aest->mutable_database()->set_database("d" + std::to_string(t.db->dname));
@@ -1041,6 +1053,7 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator & rg, sql_query_
             for (const auto & entry2 : ntp->subtypes)
             {
                 entries.push_back(InsertEntry(
+                    std::nullopt,
                     ColumnSpecial::NONE,
                     entry.second.cname,
                     std::optional<uint32_t>(entry2.cname),
@@ -1050,7 +1063,8 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator & rg, sql_query_
         }
         else
         {
-            entries.push_back(InsertEntry(entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
+            entries.push_back(InsertEntry(
+                entry.second.nullable, entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
         }
     }
     GenerateEngineDetails(rg, next, !added_pkey, te);
@@ -1149,7 +1163,7 @@ int StatementGenerator::GenerateNextCreateView(RandomGenerator & rg, sql_query_g
         assert(this->entries.empty());
         for (uint32_t i = 0; i < next.ncols; i++)
         {
-            entries.push_back(InsertEntry(ColumnSpecial::NONE, i, std::nullopt, nullptr, std::nullopt));
+            entries.push_back(InsertEntry(true, ColumnSpecial::NONE, i, std::nullopt, nullptr, std::nullopt));
         }
         GenerateEngineDetails(rg, next, true, te);
         this->entries.clear();
@@ -1280,6 +1294,7 @@ int StatementGenerator::GenerateNextOptimizeTable(RandomGenerator & rg, sql_quer
                     for (const auto & entry2 : ntp->subtypes)
                     {
                         entries.push_back(InsertEntry(
+                            std::nullopt,
                             ColumnSpecial::NONE,
                             entry.second.cname,
                             std::optional<uint32_t>(entry2.cname),
@@ -1289,8 +1304,8 @@ int StatementGenerator::GenerateNextOptimizeTable(RandomGenerator & rg, sql_quer
                 }
                 else
                 {
-                    entries.push_back(
-                        InsertEntry(entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
+                    entries.push_back(InsertEntry(
+                        entry.second.nullable, entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
                 }
             }
             std::shuffle(entries.begin(), entries.end(), rg.gen);
@@ -1390,6 +1405,7 @@ int StatementGenerator::GenerateNextInsert(RandomGenerator & rg, sql_query_gramm
                 for (const auto & entry2 : ntp->subtypes)
                 {
                     this->entries.push_back(InsertEntry(
+                        std::nullopt,
                         ColumnSpecial::NONE,
                         entry.second.cname,
                         std::optional<uint32_t>(entry2.cname),
@@ -1399,8 +1415,8 @@ int StatementGenerator::GenerateNextInsert(RandomGenerator & rg, sql_query_gramm
             }
             else
             {
-                this->entries.push_back(
-                    InsertEntry(entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
+                this->entries.push_back(InsertEntry(
+                    entry.second.nullable, entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
             }
         }
     }
@@ -1687,6 +1703,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                                 if (!dynamic_cast<const JSONType *>(entry2.subtype))
                                 {
                                     entries.push_back(InsertEntry(
+                                        std::nullopt,
                                         ColumnSpecial::NONE,
                                         entry.second.cname,
                                         std::optional<uint32_t>(entry2.cname),
@@ -1697,11 +1714,16 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                         }
                         else if (!dynamic_cast<const JSONType *>(entry.second.tp))
                         {
-                            entries.push_back(
-                                InsertEntry(entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
+                            entries.push_back(InsertEntry(
+                                entry.second.nullable,
+                                entry.second.special,
+                                entry.second.cname,
+                                std::nullopt,
+                                entry.second.tp,
+                                entry.second.dmod));
                         }
                     }
-                    GenerateTableKey(rg, false, tkey);
+                    GenerateTableKey(rg, tkey);
                     this->entries.clear();
                 }
             }
@@ -1824,8 +1846,13 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                 {
                     if (!dynamic_cast<const NestedType *>(entry.second.tp))
                     {
-                        this->entries.push_back(
-                            InsertEntry(entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
+                        this->entries.push_back(InsertEntry(
+                            entry.second.nullable,
+                            entry.second.special,
+                            entry.second.cname,
+                            std::nullopt,
+                            entry.second.tp,
+                            entry.second.dmod));
                     }
                 }
                 if (this->entries.empty())

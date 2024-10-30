@@ -13,7 +13,8 @@ const constexpr uint32_t allow_bool = (1 << 0), allow_unsigned_int = (1 << 1), a
                          allow_floating_points = (1 << 4), allow_dates = (1 << 5), allow_date32 = (1 << 6), allow_datetime64 = (1 << 7),
                          allow_decimals = (1 << 8), allow_uuid = (1 << 9), allow_enum = (1 << 10), allow_dynamic = (1 << 11),
                          allow_json = (1 << 12), allow_nullable = (1 << 13), allow_low_cardinality = (1 << 14), allow_array = (1 << 15),
-                         allow_map = (1 << 16), allow_tuple = (1 << 17), allow_variant = (1 << 18), allow_nested = (1 << 19);
+                         allow_map = (1 << 16), allow_tuple = (1 << 17), allow_variant = (1 << 18), allow_nested = (1 << 19),
+                         allow_nullable_inside_array = (1 << 20);
 
 class SQLType
 {

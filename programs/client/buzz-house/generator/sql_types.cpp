@@ -197,293 +197,264 @@ const SQLType * StatementGenerator::BottomType(
 {
     const SQLType * res = nullptr;
 
-    assert(this->ids.empty());
-    this->ids.push_back(1); //ints
-    if ((allowed_types & allow_floating_points) && this->fc.fuzz_floating_points)
+    const uint32_t int_type
+        = 40,
+        floating_point_type = 10 * static_cast<uint32_t>((allowed_types & allow_floating_points) != 0 && this->fc.fuzz_floating_points),
+        date_type = 30 * static_cast<uint32_t>((allowed_types & allow_dates) != 0), string_type = 30,
+        decimal_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_decimals) != 0),
+        bool_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_bool) != 0),
+        enum_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_enum) != 0),
+        uuid_type = 10 * static_cast<uint32_t>(!low_card && (allowed_types & allow_uuid) != 0),
+        json_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_json) != 0),
+        dynamic_type = 30 * static_cast<uint32_t>(!low_card && (allowed_types & allow_dynamic) != 0),
+        prob_space = int_type + floating_point_type + date_type + string_type + decimal_type + bool_type + enum_type + uuid_type + json_type
+        + dynamic_type;
+    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+    const uint32_t nopt = next_dist(rg.gen);
+
+    if (int_type && nopt < (int_type + 1))
     {
-        this->ids.push_back(2); //floating-points
-    }
-    if (allowed_types & allow_dates)
-    {
-        this->ids.push_back(3); //dates
-    }
-    this->ids.push_back(4); //strings
-    if (!low_card)
-    {
-        if (allowed_types & allow_decimals)
+        sql_query_grammar::Integers nint;
+
+        std::tie(res, nint) = RandomIntType(rg, allowed_types);
+        if (tp)
         {
-            this->ids.push_back(5); //decimals
-        }
-        if (allowed_types & allow_bool)
-        {
-            this->ids.push_back(6); //bool
-        }
-        if (allowed_types & allow_enum)
-        {
-            this->ids.push_back(7); //enum
-        }
-        if (allowed_types & allow_uuid)
-        {
-            this->ids.push_back(8); //uuid
-        }
-        if (allowed_types & allow_json)
-        {
-            this->ids.push_back(9); //json
-            this->ids.push_back(10); //json
-        }
-        if (allowed_types & allow_dynamic)
-        {
-            this->ids.push_back(11); //dynamic
-            this->ids.push_back(12); //dynamic
+            tp->set_integers(nint);
         }
     }
-    const uint32_t nopt = rg.PickRandomlyFromVector(this->ids);
-    this->ids.clear();
-    switch (nopt)
+    else if (floating_point_type && nopt < (int_type + floating_point_type + 1))
     {
-        case 1: {
-            //int
-            sql_query_grammar::Integers nint;
+        sql_query_grammar::FloatingPoints nflo;
 
-            std::tie(res, nint) = RandomIntType(rg, allowed_types);
+        std::tie(res, nflo) = RandomFloatType(rg);
+        if (tp)
+        {
+            tp->set_floats(nflo);
+        }
+    }
+    else if (date_type && nopt < (int_type + floating_point_type + date_type + 1))
+    {
+        sql_query_grammar::Dates dd;
+
+        std::tie(res, dd) = RandomDateType(rg, low_card ? (allowed_types & ~(allow_datetime64)) : allowed_types);
+        if (tp)
+        {
+            tp->set_dates(dd);
+        }
+    }
+    else if (string_type && nopt < (int_type + floating_point_type + date_type + string_type + 1))
+    {
+        std::optional<uint32_t> swidth = std::nullopt;
+
+        if (rg.NextBool())
+        {
             if (tp)
             {
-                tp->set_integers(nint);
+                tp->set_sql_string(true);
             }
         }
-        break;
-        case 2: {
-            //float
-            sql_query_grammar::FloatingPoints nflo;
-
-            std::tie(res, nflo) = RandomFloatType(rg);
+        else
+        {
+            swidth = std::optional<uint32_t>(rg.NextBool() ? rg.NextSmallNumber() : (rg.NextRandomUInt32() % 100));
             if (tp)
             {
-                tp->set_floats(nflo);
+                tp->set_fixed_string(swidth.value());
             }
         }
-        break;
-        case 3: {
-            //dates
-            sql_query_grammar::Dates dd;
+        res = new StringType(swidth);
+    }
+    else if (decimal_type && nopt < (int_type + floating_point_type + date_type + string_type + decimal_type + 1))
+    {
+        sql_query_grammar::Decimal * dec = tp ? tp->mutable_decimal() : nullptr;
+        std::optional<uint32_t> precision = std::nullopt, scale = std::nullopt;
 
-            std::tie(res, dd) = RandomDateType(rg, low_card ? (allowed_types & ~(allow_datetime64)) : allowed_types);
-            if (tp)
+        if (rg.NextBool())
+        {
+            precision = std::optional<uint32_t>((rg.NextRandomUInt32() % 10) + 1);
+
+            if (dec)
             {
-                tp->set_dates(dd);
+                dec->set_precision(precision.value());
             }
-        }
-        break;
-        case 4: {
-            //string
-            std::optional<uint32_t> swidth = std::nullopt;
-
             if (rg.NextBool())
             {
-                if (tp)
-                {
-                    tp->set_sql_string(true);
-                }
-            }
-            else
-            {
-                swidth = std::optional<uint32_t>(rg.NextBool() ? rg.NextSmallNumber() : (rg.NextRandomUInt32() % 100));
-                if (tp)
-                {
-                    tp->set_fixed_string(swidth.value());
-                }
-            }
-            res = new StringType(swidth);
-        }
-        break;
-        case 5: {
-            //decimal
-            sql_query_grammar::Decimal * dec = tp ? tp->mutable_decimal() : nullptr;
-            std::optional<uint32_t> precision = std::nullopt, scale = std::nullopt;
-
-            if (rg.NextBool())
-            {
-                precision = std::optional<uint32_t>((rg.NextRandomUInt32() % 10) + 1);
-
+                scale = std::optional<uint32_t>(rg.NextRandomUInt32() % (precision.value() + 1));
                 if (dec)
                 {
-                    dec->set_precision(precision.value());
+                    dec->set_scale(scale.value());
                 }
-                if (rg.NextBool())
+            }
+        }
+        res = new DecimalType(precision, scale);
+    }
+    else if (bool_type && nopt < (int_type + floating_point_type + date_type + string_type + decimal_type + bool_type + 1))
+    {
+        if (tp)
+        {
+            tp->set_boolean(true);
+        }
+        res = new BoolType();
+    }
+    else if (enum_type && nopt < (int_type + floating_point_type + date_type + string_type + decimal_type + bool_type + enum_type + 1))
+    {
+        const bool bits = rg.NextBool();
+        std::vector<const EnumValue> evs;
+        const uint32_t nvalues = (rg.NextLargeNumber() % enum_values.size()) + 1;
+        sql_query_grammar::EnumDef * edef = tp ? tp->mutable_enum_def() : nullptr;
+
+        edef->set_bits(bits);
+        std::shuffle(enum_values.begin(), enum_values.end(), rg.gen);
+        for (uint32_t i = 0; i < nvalues; i++)
+        {
+            const std::string & nval = enum_values[i];
+            const int32_t num = static_cast<const int32_t>(bits ? rg.NextRandomInt16() : rg.NextRandomInt8());
+
+            if (edef)
+            {
+                sql_query_grammar::EnumDefValue * edf = i == 0 ? edef->mutable_first_value() : edef->add_other_values();
+
+                edf->set_number(num);
+                edf->set_enumv(nval);
+            }
+            evs.push_back(EnumValue(nval, num));
+        }
+        res = new EnumType(bits ? 16 : 8, evs);
+    }
+    else if (
+        uuid_type
+        && nopt < (int_type + floating_point_type + date_type + string_type + decimal_type + bool_type + enum_type + uuid_type + 1))
+    {
+        if (tp)
+        {
+            tp->set_uuid(true);
+        }
+        res = new UUIDType();
+    }
+    else if (
+        json_type
+        && nopt
+            < (int_type + floating_point_type + date_type + string_type + decimal_type + bool_type + enum_type + uuid_type + json_type + 1))
+    {
+        std::string desc = "";
+        sql_query_grammar::JsonDef * jdef = tp ? tp->mutable_json() : nullptr;
+        const uint32_t nclauses = rg.NextMediumNumber() % 7;
+
+        if (nclauses)
+        {
+            desc += "(";
+        }
+        for (uint32_t i = 0; i < nclauses; i++)
+        {
+            const uint32_t noption = rg.NextSmallNumber();
+            sql_query_grammar::JsonDefItem * jdi = tp ? jdef->add_spec() : nullptr;
+
+            if (i != 0)
+            {
+                desc += ", ";
+            }
+            if (noption < 4)
+            {
+                const uint32_t max_dpaths = rg.NextBool() ? (rg.NextSmallNumber() % 5) : (rg.NextRandomUInt32() % 1025);
+
+                if (tp)
                 {
-                    scale = std::optional<uint32_t>(rg.NextRandomUInt32() % (precision.value() + 1));
-                    if (dec)
-                    {
-                        dec->set_scale(scale.value());
+                    jdi->set_max_dynamic_paths(max_dpaths);
+                }
+                desc += "max_dynamic_paths=";
+                desc += std::to_string(max_dpaths);
+            }
+            else if (this->depth >= this->fc.max_depth || noption < 8)
+            {
+                const uint32_t max_dtypes = rg.NextBool() ? (rg.NextSmallNumber() % 5) : (rg.NextRandomUInt32() % 33);
+
+                if (tp)
+                {
+                    jdi->set_max_dynamic_types(max_dtypes);
+                }
+                desc += "max_dynamic_types=";
+                desc += std::to_string(max_dtypes);
+            } /*else if (this->depth >= this->fc.max_depth || noption < 9) {
+                const uint32_t nskips = (rg.NextMediumNumber() % 4) + 1;
+                sql_query_grammar::ColumnPath *cp = tp ? jdi->mutable_skip_path() : nullptr;
+
+                desc += "SKIP ";
+                for (uint32_t j = 0 ; j < nskips; j++) {
+                    std::string nbuf;
+                    sql_query_grammar::Column *col = tp ? (j == 0 ? cp->mutable_col() : cp->add_sub_cols()) : nullptr;
+
+                    if (j != 0) {
+                        desc += ".";
+                    }
+                    desc += '`';
+                    rg.NextJsonCol(nbuf);
+                    desc += nbuf;
+                    desc += '`';
+                    if (tp) {
+                        col->set_column(std::move(nbuf));
                     }
                 }
-            }
-            res = new DecimalType(precision, scale);
-        }
-        break;
-        case 6:
-            //boolean
-            if (tp)
+            }*/
+            else
             {
-                tp->set_boolean(true);
-            }
-            res = new BoolType();
-            break;
-        case 7: {
-            //Enum
-            const bool bits = rg.NextBool();
-            std::vector<const EnumValue> evs;
-            const uint32_t nvalues = (rg.NextLargeNumber() % enum_values.size()) + 1;
-            sql_query_grammar::EnumDef * edef = tp ? tp->mutable_enum_def() : nullptr;
+                uint32_t col_counter = 0;
+                const uint32_t ncols = (rg.NextMediumNumber() % 4) + 1;
+                sql_query_grammar::JsonPathType * jpt = tp ? jdi->mutable_path_type() : nullptr;
+                sql_query_grammar::ColumnPath * cp = tp ? jpt->mutable_col() : nullptr;
 
-            edef->set_bits(bits);
-            std::shuffle(enum_values.begin(), enum_values.end(), rg.gen);
-            for (uint32_t i = 0; i < nvalues; i++)
-            {
-                const std::string & nval = enum_values[i];
-                const int32_t num = static_cast<const int32_t>(bits ? rg.NextRandomInt16() : rg.NextRandomInt8());
-
-                if (edef)
+                for (uint32_t j = 0; j < ncols; j++)
                 {
-                    sql_query_grammar::EnumDefValue * edf = i == 0 ? edef->mutable_first_value() : edef->add_other_values();
+                    std::string nbuf;
+                    sql_query_grammar::Column * col = tp ? (j == 0 ? cp->mutable_col() : cp->add_sub_cols()) : nullptr;
 
-                    edf->set_number(num);
-                    edf->set_enumv(nval);
-                }
-                evs.push_back(EnumValue(nval, num));
-            }
-            res = new EnumType(bits ? 16 : 8, evs);
-        }
-        break;
-        case 8:
-            //uuid
-            if (tp)
-            {
-                tp->set_uuid(true);
-            }
-            res = new UUIDType();
-            break;
-        case 9:
-        case 10: {
-            //json
-            std::string desc = "";
-            sql_query_grammar::JsonDef * jdef = tp ? tp->mutable_json() : nullptr;
-            const uint32_t nclauses = rg.NextMediumNumber() % 7;
-
-            if (nclauses)
-            {
-                desc += "(";
-            }
-            for (uint32_t i = 0; i < nclauses; i++)
-            {
-                const uint32_t noption = rg.NextSmallNumber();
-                sql_query_grammar::JsonDefItem * jdi = tp ? jdef->add_spec() : nullptr;
-
-                if (i != 0)
-                {
-                    desc += ", ";
-                }
-                if (noption < 4)
-                {
-                    const uint32_t max_dpaths = rg.NextBool() ? (rg.NextSmallNumber() % 5) : (rg.NextRandomUInt32() % 1025);
-
+                    if (j != 0)
+                    {
+                        desc += ".";
+                    }
+                    desc += '`';
+                    rg.NextJsonCol(nbuf);
+                    desc += nbuf;
+                    desc += '`';
                     if (tp)
                     {
-                        jdi->set_max_dynamic_paths(max_dpaths);
+                        col->set_column(std::move(nbuf));
                     }
-                    desc += "max_dynamic_paths=";
-                    desc += std::to_string(max_dpaths);
                 }
-                else if (this->depth >= this->fc.max_depth || noption < 8)
-                {
-                    const uint32_t max_dtypes = rg.NextBool() ? (rg.NextSmallNumber() % 5) : (rg.NextRandomUInt32() % 33);
-
-                    if (tp)
-                    {
-                        jdi->set_max_dynamic_types(max_dtypes);
-                    }
-                    desc += "max_dynamic_types=";
-                    desc += std::to_string(max_dtypes);
-                } /*else if (this->depth >= this->fc.max_depth || noption < 9) {
-                    const uint32_t nskips = (rg.NextMediumNumber() % 4) + 1;
-                    sql_query_grammar::ColumnPath *cp = tp ? jdi->mutable_skip_path() : nullptr;
-
-                    desc += "SKIP ";
-                    for (uint32_t j = 0 ; j < nskips; j++) {
-                        std::string nbuf;
-                        sql_query_grammar::Column *col = tp ? (j == 0 ? cp->mutable_col() : cp->add_sub_cols()) : nullptr;
-
-                        if (j != 0) {
-                            desc += ".";
-                        }
-                        desc += '`';
-                        rg.NextJsonCol(nbuf);
-                        desc += nbuf;
-                        desc += '`';
-                        if (tp) {
-                            col->set_column(std::move(nbuf));
-                        }
-                    }
-                }*/
-                else
-                {
-                    uint32_t col_counter = 0;
-                    const uint32_t ncols = (rg.NextMediumNumber() % 4) + 1;
-                    sql_query_grammar::JsonPathType * jpt = tp ? jdi->mutable_path_type() : nullptr;
-                    sql_query_grammar::ColumnPath * cp = tp ? jpt->mutable_col() : nullptr;
-
-                    for (uint32_t j = 0; j < ncols; j++)
-                    {
-                        std::string nbuf;
-                        sql_query_grammar::Column * col = tp ? (j == 0 ? cp->mutable_col() : cp->add_sub_cols()) : nullptr;
-
-                        if (j != 0)
-                        {
-                            desc += ".";
-                        }
-                        desc += '`';
-                        rg.NextJsonCol(nbuf);
-                        desc += nbuf;
-                        desc += '`';
-                        if (tp)
-                        {
-                            col->set_column(std::move(nbuf));
-                        }
-                    }
-                    this->depth++;
-                    desc += " ";
-                    const SQLType * jtp = RandomNextType(rg, ~(allow_nested | allow_enum), col_counter, tp ? jpt->mutable_type() : nullptr);
-                    jtp->TypeName(desc, false);
-                    delete jtp;
-                    this->depth--;
-                }
+                this->depth++;
+                desc += " ";
+                const SQLType * jtp = RandomNextType(rg, ~(allow_nested | allow_enum), col_counter, tp ? jpt->mutable_type() : nullptr);
+                jtp->TypeName(desc, false);
+                delete jtp;
+                this->depth--;
             }
-            if (nclauses)
-            {
-                desc += ")";
-            }
-            res = new JSONType(std::move(desc));
         }
-        break;
-        case 11:
-        case 12: {
-            //dynamic
-            sql_query_grammar::Dynamic * dyn = tp ? tp->mutable_dynamic() : nullptr;
-            std::optional<uint32_t> ntypes = std::nullopt;
-
-            if (rg.NextBool())
-            {
-                ntypes = std::optional<uint32_t>(rg.NextBool() ? rg.NextSmallNumber() : ((rg.NextRandomUInt32() % 100) + 1));
-                if (dyn)
-                {
-                    dyn->set_ntypes(ntypes.value());
-                }
-            }
-            res = new DynamicType(ntypes);
+        if (nclauses)
+        {
+            desc += ")";
         }
-        break;
-        default:
-            assert(0);
+        res = new JSONType(std::move(desc));
+    }
+    else if (
+        dynamic_type
+        && nopt
+            < (int_type + floating_point_type + date_type + string_type + decimal_type + bool_type + enum_type + uuid_type + json_type
+               + dynamic_type + 1))
+    {
+        sql_query_grammar::Dynamic * dyn = tp ? tp->mutable_dynamic() : nullptr;
+        std::optional<uint32_t> ntypes = std::nullopt;
+
+        if (rg.NextBool())
+        {
+            ntypes = std::optional<uint32_t>(rg.NextBool() ? rg.NextSmallNumber() : ((rg.NextRandomUInt32() % 100) + 1));
+            if (dyn)
+            {
+                dyn->set_ntypes(ntypes.value());
+            }
+        }
+        res = new DynamicType(ntypes);
+    }
+    else
+    {
+        assert(0);
     }
     return res;
 }
@@ -507,16 +478,18 @@ const SQLType * StatementGenerator::GenerateArraytype(RandomGenerator & rg, cons
 const SQLType * StatementGenerator::RandomNextType(
     RandomGenerator & rg, const uint32_t allowed_types, uint32_t & col_counter, sql_query_grammar::TopTypeName * tp)
 {
-    const uint32_t non_nullable_type = 30, nullable_type = 20 * static_cast<uint32_t>(allowed_types & allow_nullable),
-                   array_type = 10 * static_cast<uint32_t>((allowed_types & allow_array) && this->depth < this->fc.max_depth),
-                   map_type
-        = 10 * static_cast<uint32_t>((allowed_types & allow_map) && this->depth < this->fc.max_depth && this->width < this->fc.max_width),
-                   tuple_type
-        = 10 * static_cast<uint32_t>((allowed_types & allow_tuple) && this->depth < this->fc.max_depth && this->width < this->fc.max_width),
+    const uint32_t non_nullable_type = 40, nullable_type = 20 * static_cast<uint32_t>((allowed_types & allow_nullable) != 0),
+                   array_type = 10 * static_cast<uint32_t>((allowed_types & allow_array) != 0 && this->depth < this->fc.max_depth),
+                   map_type = 10
+        * static_cast<uint32_t>((allowed_types & allow_map) != 0 && this->depth < this->fc.max_depth && this->width < this->fc.max_width),
+                   tuple_type = 10
+        * static_cast<uint32_t>((allowed_types & allow_tuple) != 0 && this->depth < this->fc.max_depth && this->width < this->fc.max_width),
                    variant_type = 10
-        * static_cast<uint32_t>((allowed_types & allow_variant) && this->depth < this->fc.max_depth && this->width < this->fc.max_width),
+        * static_cast<uint32_t>((allowed_types & allow_variant) != 0 && this->depth < this->fc.max_depth
+                                && this->width < this->fc.max_width),
                    nested_type = 10
-        * static_cast<uint32_t>((allowed_types & allow_nested) && this->depth < this->fc.max_depth && this->width < this->fc.max_width),
+        * static_cast<uint32_t>((allowed_types & allow_nested) != 0 && this->depth < this->fc.max_depth
+                                && this->width < this->fc.max_width),
                    prob_space = nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + nested_type;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.gen);
@@ -543,7 +516,8 @@ const SQLType * StatementGenerator::RandomNextType(
     else if (array_type && nopt < (nullable_type + non_nullable_type + array_type + 1))
     {
         //array
-        return GenerateArraytype(rg, allowed_types & ~(allow_nested), col_counter, tp ? tp->mutable_array() : nullptr);
+        const uint32_t nallowed = allowed_types & ~(allow_nested | ((allowed_types & allow_nullable_inside_array) ? 0 : allow_nullable));
+        return GenerateArraytype(rg, nallowed, col_counter, tp ? tp->mutable_array() : nullptr);
     }
     else if (map_type && nopt < (nullable_type + non_nullable_type + array_type + map_type + 1))
     {
