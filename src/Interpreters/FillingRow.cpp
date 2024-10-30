@@ -10,6 +10,15 @@
 namespace DB
 {
 
+constexpr static bool debug_logging_enabled = true;
+
+template <class... Args>
+static void logDebug(String fmt_str, Args&&... args)
+{
+    if constexpr (debug_logging_enabled)
+        LOG_DEBUG(getLogger("FillingRow"), "{}", fmt::format(fmt::runtime(fmt_str), std::forward<Args>(args)...));
+}
+
 bool less(const Field & lhs, const Field & rhs, int direction)
 {
     if (direction == -1)
@@ -104,12 +113,11 @@ bool FillingRow::hasSomeConstraints(size_t pos) const
 
 bool FillingRow::isConstraintsComplete(size_t pos) const
 {
-    auto logger = getLogger("FillingRow::isConstraintsComplete");
     chassert(!row[pos].isNull());
     chassert(hasSomeConstraints(pos));
 
     int direction = getDirection(pos);
-    LOG_DEBUG(logger, "constraint: {}, row: {}, direction: {}", constraints[pos].dump(), row[pos].dump(), direction);
+    logDebug("constraint: {}, row: {}, direction: {}", constraints[pos].dump(), row[pos].dump(), direction);
 
     return less(row[pos], constraints[pos], direction);
 }
@@ -130,7 +138,6 @@ static const Field & findBorder(const Field & constraint, const Field & next_ori
 
 bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
 {
-    auto logger = getLogger("FillingRow");
 
     const size_t row_size = size();
     size_t pos = 0;
@@ -142,13 +149,13 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
             continue;
 
         const Field & border = findBorder(constraints[pos], next_original_row[pos], getDirection(pos));
-        LOG_DEBUG(logger, "border: {}", border);
+        logDebug("border: {}", border);
 
         if (!border.isNull() && !equals(row[pos], border))
             break;
     }
 
-    LOG_DEBUG(logger, "pos: {}", pos);
+    logDebug("pos: {}", pos);
 
     if (pos == row_size)
         return false;
@@ -223,8 +230,7 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
 
 bool FillingRow::shift(const FillingRow & next_original_row, bool& value_changed)
 {
-    auto logger = getLogger("FillingRow::shift");
-    LOG_DEBUG(logger, "next_original_row: {}, current: {}", next_original_row.dump(), dump());
+    logDebug("next_original_row: {}, current: {}", next_original_row.dump(), dump());
 
     for (size_t pos = 0; pos < size(); ++pos)
     {
@@ -235,16 +241,7 @@ bool FillingRow::shift(const FillingRow & next_original_row, bool& value_changed
             return false;
 
         std::optional<Field> next_value = doLongJump(getFillDescription(pos), pos, next_original_row[pos]);
-
-        if (!next_value.has_value())
-        {
-            LOG_DEBUG(logger, "next value: {}", "None");
-            continue;
-        }
-        else
-        {
-            LOG_DEBUG(logger, "next value: {}", next_value->dump());
-        }
+        logDebug("jumped to next value: {}", next_value.value_or("Did not complete"));
 
         row[pos] = std::move(next_value.value());
 
@@ -265,7 +262,7 @@ bool FillingRow::shift(const FillingRow & next_original_row, bool& value_changed
                 );
             }
 
-            LOG_DEBUG(logger, "is less: {}", is_less);
+            logDebug("is less: {}", is_less);
 
             value_changed = true;
             return is_less;
