@@ -37,7 +37,8 @@ String deriveTempName(const String & name, JoinTableSide block_side)
 {
     if (block_side == JoinTableSide::Left)
         return "--pmj_cond_left_" + name;
-    return "--pmj_cond_right_" + name;
+    else
+        return "--pmj_cond_right_" + name;
 }
 
 /*
@@ -262,9 +263,9 @@ public:
     {
         if (has_left_nullable && has_right_nullable)
             return getNextEqualRangeImpl<true, true>(rhs);
-        if (has_left_nullable)
+        else if (has_left_nullable)
             return getNextEqualRangeImpl<true, false>(rhs);
-        if (has_right_nullable)
+        else if (has_right_nullable)
             return getNextEqualRangeImpl<false, true>(rhs);
         return getNextEqualRangeImpl<false, false>(rhs);
     }

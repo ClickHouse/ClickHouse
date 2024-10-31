@@ -2,10 +2,9 @@
 # pylint: disable=redefined-outer-name
 # pylint: disable=line-too-long
 
-import pytest
-
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.client import QueryRuntimeException
+import pytest
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", user_configs=["configs/users_overrides.xml"])

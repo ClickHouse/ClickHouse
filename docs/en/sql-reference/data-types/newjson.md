@@ -5,7 +5,7 @@ sidebar_label: JSON
 keywords: [json, data type]
 ---
 
-# JSON Data Type
+# JSON
 
 Stores JavaScript Object Notation (JSON) documents in a single column.
 

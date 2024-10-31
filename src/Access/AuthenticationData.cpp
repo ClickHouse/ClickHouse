@@ -533,9 +533,10 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
             auth_data.setPasswordHashBinary(AuthenticationData::Util::stringToDigest(value), validate);
             return auth_data;
         }
-
-        auth_data.setPasswordHashHex(value, validate);
-
+        else
+        {
+            auth_data.setPasswordHashHex(value, validate);
+        }
 
         if (query.type == AuthenticationType::SHA256_PASSWORD && args_size == 2)
         {

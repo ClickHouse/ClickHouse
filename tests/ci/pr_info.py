@@ -407,11 +407,8 @@ class PRInfo:
             _, ext = os.path.splitext(f)
             path_in_docs = f.startswith("docs/")
             if (
-                (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs)
-                or "docker/docs" in f
-                or "Settings.cpp" in f
-                or "FormatFactorySettings.h" in f
-            ):
+                ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs
+            ) or "docker/docs" in f:
                 return True
         return False
 

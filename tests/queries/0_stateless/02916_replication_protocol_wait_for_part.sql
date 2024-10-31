@@ -1,4 +1,4 @@
--- Tags: no-replicated-database, no-fasttest, no-shared-merge-tree
+-- Tags: no-replicated-database, no-fasttest
 -- Tag no-replicated-database: different number of replicas
 
 create table tableIn (n int)

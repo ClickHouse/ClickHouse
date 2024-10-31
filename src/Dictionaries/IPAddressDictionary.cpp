@@ -412,7 +412,6 @@ void IPAddressDictionary::loadData()
     bool has_ipv6 = false;
 
     DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-    pipeline.setConcurrencyControl(false);
     Block block;
     while (executor.pull(block))
     {

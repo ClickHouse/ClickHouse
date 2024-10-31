@@ -1,10 +1,9 @@
 import re
-from dataclasses import asdict, dataclass
-from typing import Any, Dict, Iterable, List, Optional
+from dataclasses import dataclass, asdict
+from typing import Optional, List, Dict, Any, Iterable
 
 from ci_config import CI
-from git_helper import GIT_PREFIX
-from git_helper import Runner as GitRunner
+from git_helper import Runner as GitRunner, GIT_PREFIX
 from pr_info import PRInfo
 
 # pylint: disable=too-many-return-statements
@@ -151,13 +150,14 @@ class CiSettings:
                 return True
             return False
 
-        if job_config.run_by_labels:
-            if set(job_config.run_by_labels).intersection(labels) and is_pr:
+        if job_config.run_by_label:
+            if job_config.run_by_label in labels and is_pr:
                 print(
-                    f"Job [{job}] selected by GH label [{job_config.run_by_labels}] - pass"
+                    f"Job [{job}] selected by GH label [{job_config.run_by_label}] - pass"
                 )
                 return True
-            return False
+            else:
+                return False
 
         # do not exclude builds
         if self.exclude_keywords and not CI.is_build_job(job):
@@ -168,12 +168,9 @@ class CiSettings:
 
         to_deny = False
         if self.include_keywords:
-            # never exclude builds, build report, style check
-            if (
-                job == CI.JobNames.STYLE_CHECK
-                or CI.is_build_job(job)
-                or job == CI.JobNames.BUILD_CHECK
-            ):
+            # do not exclude builds
+            if job == CI.JobNames.STYLE_CHECK or CI.is_build_job(job):
+                # never exclude Style Check by include keywords
                 return True
             for keyword in self.include_keywords:
                 if keyword in CI.Utils.normalize_string(job):
@@ -198,8 +195,7 @@ class CiSettings:
 
         if job_config.release_only and not is_release:
             return False
-
-        if job_config.pr_only and not is_pr and not is_mq:
+        elif job_config.pr_only and not is_pr and not is_mq:
             return False
 
         return not to_deny
