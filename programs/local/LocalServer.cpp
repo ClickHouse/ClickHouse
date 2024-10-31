@@ -77,6 +77,42 @@ namespace Setting
     extern const SettingsLocalFSReadMethod storage_file_read_method;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsDouble cache_size_to_ram_max_ratio;
+    extern const ServerSettingsUInt64 compiled_expression_cache_elements_size;
+    extern const ServerSettingsUInt64 compiled_expression_cache_size;
+    extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
+    extern const ServerSettingsString default_database;
+    extern const ServerSettingsString index_mark_cache_policy;
+    extern const ServerSettingsUInt64 index_mark_cache_size;
+    extern const ServerSettingsDouble index_mark_cache_size_ratio;
+    extern const ServerSettingsString index_uncompressed_cache_policy;
+    extern const ServerSettingsUInt64 index_uncompressed_cache_size;
+    extern const ServerSettingsDouble index_uncompressed_cache_size_ratio;
+    extern const ServerSettingsUInt64 io_thread_pool_queue_size;
+    extern const ServerSettingsString mark_cache_policy;
+    extern const ServerSettingsUInt64 mark_cache_size;
+    extern const ServerSettingsDouble mark_cache_size_ratio;
+    extern const ServerSettingsUInt64 max_active_parts_loading_thread_pool_size;
+    extern const ServerSettingsUInt64 max_io_thread_pool_free_size;
+    extern const ServerSettingsUInt64 max_io_thread_pool_size;
+    extern const ServerSettingsUInt64 max_outdated_parts_loading_thread_pool_size;
+    extern const ServerSettingsUInt64 max_parts_cleaning_thread_pool_size;
+    extern const ServerSettingsUInt64 max_server_memory_usage;
+    extern const ServerSettingsDouble max_server_memory_usage_to_ram_ratio;
+    extern const ServerSettingsUInt64 max_thread_pool_free_size;
+    extern const ServerSettingsUInt64 max_thread_pool_size;
+    extern const ServerSettingsUInt64 max_unexpected_parts_loading_thread_pool_size;
+    extern const ServerSettingsUInt64 mmap_cache_size;
+    extern const ServerSettingsBool show_addresses_in_stack_traces;
+    extern const ServerSettingsUInt64 thread_pool_queue_size;
+    extern const ServerSettingsString uncompressed_cache_policy;
+    extern const ServerSettingsUInt64 uncompressed_cache_size;
+    extern const ServerSettingsDouble uncompressed_cache_size_ratio;
+    extern const ServerSettingsBool use_legacy_mongodb_integration;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -157,9 +193,9 @@ void LocalServer::initialize(Poco::Util::Application & self)
     server_settings.loadSettingsFromConfig(config());
 
     GlobalThreadPool::initialize(
-        server_settings.max_thread_pool_size,
-        server_settings.max_thread_pool_free_size,
-        server_settings.thread_pool_queue_size);
+        server_settings[ServerSetting::max_thread_pool_size],
+        server_settings[ServerSetting::max_thread_pool_free_size],
+        server_settings[ServerSetting::thread_pool_queue_size]);
 
 #if USE_AZURE_BLOB_STORAGE
     /// See the explanation near the same line in Server.cpp
@@ -170,17 +206,17 @@ void LocalServer::initialize(Poco::Util::Application & self)
 #endif
 
     getIOThreadPool().initialize(
-        server_settings.max_io_thread_pool_size,
-        server_settings.max_io_thread_pool_free_size,
-        server_settings.io_thread_pool_queue_size);
+        server_settings[ServerSetting::max_io_thread_pool_size],
+        server_settings[ServerSetting::max_io_thread_pool_free_size],
+        server_settings[ServerSetting::io_thread_pool_queue_size]);
 
-    const size_t active_parts_loading_threads = server_settings.max_active_parts_loading_thread_pool_size;
+    const size_t active_parts_loading_threads = server_settings[ServerSetting::max_active_parts_loading_thread_pool_size];
     getActivePartsLoadingThreadPool().initialize(
         active_parts_loading_threads,
         0, // We don't need any threads one all the parts will be loaded
         active_parts_loading_threads);
 
-    const size_t outdated_parts_loading_threads = server_settings.max_outdated_parts_loading_thread_pool_size;
+    const size_t outdated_parts_loading_threads = server_settings[ServerSetting::max_outdated_parts_loading_thread_pool_size];
     getOutdatedPartsLoadingThreadPool().initialize(
         outdated_parts_loading_threads,
         0, // We don't need any threads one all the parts will be loaded
@@ -188,7 +224,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
 
     getOutdatedPartsLoadingThreadPool().setMaxTurboThreads(active_parts_loading_threads);
 
-    const size_t unexpected_parts_loading_threads = server_settings.max_unexpected_parts_loading_thread_pool_size;
+    const size_t unexpected_parts_loading_threads = server_settings[ServerSetting::max_unexpected_parts_loading_thread_pool_size];
     getUnexpectedPartsLoadingThreadPool().initialize(
         unexpected_parts_loading_threads,
         0, // We don't need any threads one all the parts will be loaded
@@ -196,16 +232,16 @@ void LocalServer::initialize(Poco::Util::Application & self)
 
     getUnexpectedPartsLoadingThreadPool().setMaxTurboThreads(active_parts_loading_threads);
 
-    const size_t cleanup_threads = server_settings.max_parts_cleaning_thread_pool_size;
+    const size_t cleanup_threads = server_settings[ServerSetting::max_parts_cleaning_thread_pool_size];
     getPartsCleaningThreadPool().initialize(
         cleanup_threads,
         0, // We don't need any threads one all the parts will be deleted
         cleanup_threads);
 
     getDatabaseCatalogDropTablesThreadPool().initialize(
-        server_settings.database_catalog_drop_table_concurrency,
+        server_settings[ServerSetting::database_catalog_drop_table_concurrency],
         0, // We don't need any threads if there are no DROP queries.
-        server_settings.database_catalog_drop_table_concurrency);
+        server_settings[ServerSetting::database_catalog_drop_table_concurrency]);
 }
 
 
@@ -475,7 +511,7 @@ try
     UseSSL use_ssl;
     thread_status.emplace();
 
-    StackTrace::setShowAddresses(server_settings.show_addresses_in_stack_traces);
+    StackTrace::setShowAddresses(server_settings[ServerSetting::show_addresses_in_stack_traces]);
 
     setupSignalHandler();
 
@@ -512,10 +548,10 @@ try
     /// Don't initialize DateLUT
     registerFunctions();
     registerAggregateFunctions();
-    registerTableFunctions(server_settings.use_legacy_mongodb_integration);
+    registerTableFunctions(server_settings[ServerSetting::use_legacy_mongodb_integration]);
     registerDatabases();
-    registerStorages(server_settings.use_legacy_mongodb_integration);
-    registerDictionaries(server_settings.use_legacy_mongodb_integration);
+    registerStorages(server_settings[ServerSetting::use_legacy_mongodb_integration]);
+    registerDictionaries(server_settings[ServerSetting::use_legacy_mongodb_integration]);
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
 
@@ -664,8 +700,8 @@ void LocalServer::processConfig()
 
     const size_t physical_server_memory = getMemoryAmount();
 
-    size_t max_server_memory_usage = server_settings.max_server_memory_usage;
-    double max_server_memory_usage_to_ram_ratio = server_settings.max_server_memory_usage_to_ram_ratio;
+    size_t max_server_memory_usage = server_settings[ServerSetting::max_server_memory_usage];
+    double max_server_memory_usage_to_ram_ratio = server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
 
     size_t default_max_server_memory_usage = static_cast<size_t>(physical_server_memory * max_server_memory_usage_to_ram_ratio);
 
@@ -694,12 +730,12 @@ void LocalServer::processConfig()
     total_memory_tracker.setDescription("(total)");
     total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
-    const double cache_size_to_ram_max_ratio = server_settings.cache_size_to_ram_max_ratio;
+    const double cache_size_to_ram_max_ratio = server_settings[ServerSetting::cache_size_to_ram_max_ratio];
     const size_t max_cache_size = static_cast<size_t>(physical_server_memory * cache_size_to_ram_max_ratio);
 
-    String uncompressed_cache_policy = server_settings.uncompressed_cache_policy;
-    size_t uncompressed_cache_size = server_settings.uncompressed_cache_size;
-    double uncompressed_cache_size_ratio = server_settings.uncompressed_cache_size_ratio;
+    String uncompressed_cache_policy = server_settings[ServerSetting::uncompressed_cache_policy];
+    size_t uncompressed_cache_size = server_settings[ServerSetting::uncompressed_cache_size];
+    double uncompressed_cache_size_ratio = server_settings[ServerSetting::uncompressed_cache_size_ratio];
     if (uncompressed_cache_size > max_cache_size)
     {
         uncompressed_cache_size = max_cache_size;
@@ -707,9 +743,9 @@ void LocalServer::processConfig()
     }
     global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size, uncompressed_cache_size_ratio);
 
-    String mark_cache_policy = server_settings.mark_cache_policy;
-    size_t mark_cache_size = server_settings.mark_cache_size;
-    double mark_cache_size_ratio = server_settings.mark_cache_size_ratio;
+    String mark_cache_policy = server_settings[ServerSetting::mark_cache_policy];
+    size_t mark_cache_size = server_settings[ServerSetting::mark_cache_size];
+    double mark_cache_size_ratio = server_settings[ServerSetting::mark_cache_size_ratio];
     if (!mark_cache_size)
         LOG_ERROR(log, "Too low mark cache size will lead to severe performance degradation.");
     if (mark_cache_size > max_cache_size)
@@ -719,9 +755,9 @@ void LocalServer::processConfig()
     }
     global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
 
-    String index_uncompressed_cache_policy = server_settings.index_uncompressed_cache_policy;
-    size_t index_uncompressed_cache_size = server_settings.index_uncompressed_cache_size;
-    double index_uncompressed_cache_size_ratio = server_settings.index_uncompressed_cache_size_ratio;
+    String index_uncompressed_cache_policy = server_settings[ServerSetting::index_uncompressed_cache_policy];
+    size_t index_uncompressed_cache_size = server_settings[ServerSetting::index_uncompressed_cache_size];
+    double index_uncompressed_cache_size_ratio = server_settings[ServerSetting::index_uncompressed_cache_size_ratio];
     if (index_uncompressed_cache_size > max_cache_size)
     {
         index_uncompressed_cache_size = max_cache_size;
@@ -729,9 +765,9 @@ void LocalServer::processConfig()
     }
     global_context->setIndexUncompressedCache(index_uncompressed_cache_policy, index_uncompressed_cache_size, index_uncompressed_cache_size_ratio);
 
-    String index_mark_cache_policy = server_settings.index_mark_cache_policy;
-    size_t index_mark_cache_size = server_settings.index_mark_cache_size;
-    double index_mark_cache_size_ratio = server_settings.index_mark_cache_size_ratio;
+    String index_mark_cache_policy = server_settings[ServerSetting::index_mark_cache_policy];
+    size_t index_mark_cache_size = server_settings[ServerSetting::index_mark_cache_size];
+    double index_mark_cache_size_ratio = server_settings[ServerSetting::index_mark_cache_size_ratio];
     if (index_mark_cache_size > max_cache_size)
     {
         index_mark_cache_size = max_cache_size;
@@ -739,7 +775,7 @@ void LocalServer::processConfig()
     }
     global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
 
-    size_t mmap_cache_size = server_settings.mmap_cache_size;
+    size_t mmap_cache_size = server_settings[ServerSetting::mmap_cache_size];
     if (mmap_cache_size > max_cache_size)
     {
         mmap_cache_size = max_cache_size;
@@ -751,8 +787,8 @@ void LocalServer::processConfig()
     global_context->setQueryCache(0, 0, 0, 0);
 
 #if USE_EMBEDDED_COMPILER
-    size_t compiled_expression_cache_max_size_in_bytes = server_settings.compiled_expression_cache_size;
-    size_t compiled_expression_cache_max_elements = server_settings.compiled_expression_cache_elements_size;
+    size_t compiled_expression_cache_max_size_in_bytes = server_settings[ServerSetting::compiled_expression_cache_size];
+    size_t compiled_expression_cache_max_elements = server_settings[ServerSetting::compiled_expression_cache_elements_size];
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
 
@@ -772,7 +808,7 @@ void LocalServer::processConfig()
     /// We load temporary database first, because projections need it.
     DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
 
-    std::string default_database = server_settings.default_database;
+    std::string default_database = server_settings[ServerSetting::default_database];
     DatabaseCatalog::instance().attachDatabase(default_database, createClickHouseLocalDatabaseOverlay(default_database, global_context));
     global_context->setCurrentDatabase(default_database);
 
@@ -785,11 +821,11 @@ void LocalServer::processConfig()
         status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
-        auto startup_system_tasks = loadMetadataSystem(global_context);
+        auto load_system_metadata_tasks = loadMetadataSystem(global_context);
         attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
-        waitLoad(TablesLoaderForegroundPoolId, startup_system_tasks);
+        waitLoad(TablesLoaderForegroundPoolId, load_system_metadata_tasks);
 
         if (!getClientConfiguration().has("only-system-tables"))
         {

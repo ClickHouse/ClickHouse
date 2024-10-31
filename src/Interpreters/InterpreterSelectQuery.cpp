@@ -188,6 +188,10 @@ namespace Setting
     extern const SettingsBool use_with_fill_by_sorting_prefix;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 max_entries_for_hash_table_stats;
+}
 
 static UInt64 getLimitUIntValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr);
 
@@ -1704,7 +1708,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     executeLimitBy(query_plan);
                 }
 
-                if (query.limitLength() && !query.limitBy())
+                /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.
+                if (query.limitLength() && !query.limitBy() && !query.limit_with_ties)
                     executePreLimit(query_plan, true);
             }
         };
@@ -2079,7 +2084,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
             /// If we have 'WITH TIES', we need execute limit before projection,
             /// because in that case columns from 'ORDER BY' are used.
-            if (query.limit_with_ties && apply_offset)
+            if (query.limit_with_ties && apply_limit && apply_offset)
             {
                 executeLimit(query_plan);
             }
@@ -2208,10 +2213,13 @@ RowPolicyFilterPtr InterpreterSelectQuery::getRowPolicyFilter() const
 
 void InterpreterSelectQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
 {
-    for (const auto & row_policy : row_policy_filter->policies)
+    if (row_policy_filter)
     {
-        auto name = row_policy->getFullName().toString();
-        elem.used_row_policies.emplace(std::move(name));
+        for (const auto & row_policy : row_policy_filter->policies)
+        {
+            auto name = row_policy->getFullName().toString();
+            elem.used_row_policies.emplace(std::move(name));
+        }
     }
 }
 
@@ -2743,7 +2751,7 @@ static Aggregator::Params getAggregatorParams(
     const auto stats_collecting_params = StatsCollectingParams(
         calculateCacheKey(query_ptr),
         settings[Setting::collect_hash_table_stats_during_aggregation],
-        context.getServerSettings().max_entries_for_hash_table_stats,
+        context.getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
         settings[Setting::max_size_to_preallocate_for_aggregation]);
 
     return Aggregator::Params

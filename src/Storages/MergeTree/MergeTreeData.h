@@ -506,6 +506,9 @@ public:
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
 
+    /// Prewarm mark cache for the most recent data parts.
+    void prewarmMarkCache(ThreadPool & pool);
+
     String getLogName() const { return log.loadName(); }
 
     Int64 getMaxBlockNumber() const;
