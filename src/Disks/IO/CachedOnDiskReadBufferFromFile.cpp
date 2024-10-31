@@ -556,6 +556,12 @@ CachedOnDiskReadBufferFromFile::~CachedOnDiskReadBufferFromFile()
     {
         appendFilesystemCacheLog(file_segments->front(), read_type);
     }
+
+    if (file_segments && !file_segments->empty() && !file_segments->front().isCompleted())
+    {
+        file_segments->completeAndPopFront(settings.filesystem_cache_allow_background_download);
+        file_segments = {};
+    }
 }
 
 void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)

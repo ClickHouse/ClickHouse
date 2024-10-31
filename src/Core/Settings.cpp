@@ -4843,6 +4843,12 @@ Limit on size of a single batch of file segments that a read buffer can request 
     M(UInt64, filesystem_cache_reserve_space_wait_lock_timeout_milliseconds, 1000, R"(
 Wait time to lock cache for space reservation in filesystem cache
 )", 0) \
+    M(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
+Wait time to lock cache for space reservation in filesystem cache
+)", 0) \
+    M(Bool, filesystem_cache_enable_background_download_during_fetch, true, R"(
+Wait time to lock cache for space reservation in filesystem cache
+)", 0) \
     M(UInt64, temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds, (10 * 60 * 1000), R"(
 Wait time to lock cache for space reservation for temporary data in filesystem cache
 )", 0) \
