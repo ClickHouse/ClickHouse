@@ -1386,6 +1386,9 @@ void MutationsInterpreter::validate()
         }
     }
 
+    // Make sure the mutations query is valid
+    prepareQueryAffectedQueryTree(commands, source.getStorage(), context);
+
     QueryPlan plan;
 
     initQueryPlan(stages.front(), plan);
