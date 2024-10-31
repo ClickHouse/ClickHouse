@@ -282,11 +282,25 @@ int StatementGenerator::GenerateLiteralValue(RandomGenerator & rg, sql_query_gra
     }
     else if (noption < 601)
     {
+        const uint32_t nopt = rg.NextMediumNumber();
+
         buf.resize(0);
-        if (rg.NextMediumNumber() < 6)
+        if (nopt < 3)
         {
             buf += "'";
             rg.NextUUID(buf);
+            buf += "'";
+        }
+        else if (nopt < 5)
+        {
+            buf += "'";
+            rg.NextIPv4(buf);
+            buf += "'";
+        }
+        else if (nopt < 7)
+        {
+            buf += "'";
+            rg.NextIPv6(buf);
             buf += "'";
         }
         else

@@ -436,7 +436,10 @@ static const std::vector<TestSetting> test_settings{
     TestSetting("update_insert_deduplication_token_in_dependent_materialized_views", {"0", "1"}),
     TestSetting("use_index_for_in_with_subqueries", {"0", "1"}),
     TestSetting("use_page_cache_for_disks_without_file_cache", {"0", "1"}),
-    TestSetting("use_query_cache", {"0", "1"}),
+    TestSetting(
+        "use_query_cache",
+        {"0, set_overflow_mode = 'break', group_by_overflow_mode = 'break', join_overflow_mode = 'break'",
+         "1, set_overflow_mode = 'throw', group_by_overflow_mode = 'throw', join_overflow_mode = 'throw'"}),
     TestSetting("use_skip_indexes", {"0", "1"}),
     TestSetting("use_uncompressed_cache", {"0", "1"}),
     TestSetting("use_variant_as_common_type", {"0", "1"})};

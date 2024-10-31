@@ -2549,6 +2549,8 @@ message BottomTypeName {
         JsonDef json = 9;
         Dynamic dynamic = 10;
         EnumDef enum_def = 11;
+        bool IPv4 = 12;
+        bool IPv6 = 13;
     }
 }
 

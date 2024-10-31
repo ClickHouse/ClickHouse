@@ -52,6 +52,14 @@ const SQLType * TypeDeepCopy(const SQLType * tp)
     {
         return new UUIDType();
     }
+    else if (dynamic_cast<const IPv4Type *>(tp))
+    {
+        return new IPv4Type();
+    }
+    else if (dynamic_cast<const IPv6Type *>(tp))
+    {
+        return new IPv6Type();
+    }
     else if ((et = dynamic_cast<const EnumType *>(tp)))
     {
         return new EnumType(et->size, et->values);
@@ -247,10 +255,12 @@ const SQLType * StatementGenerator::BottomType(
         bool_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_bool) != 0),
         enum_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_enum) != 0),
         uuid_type = 10 * static_cast<uint32_t>(!low_card && (allowed_types & allow_uuid) != 0),
+        ipv4_type = 5 * static_cast<uint32_t>(!low_card && (allowed_types & allow_ipv4) != 0),
+        ipv6_type = 5 * static_cast<uint32_t>(!low_card && (allowed_types & allow_ipv6) != 0),
         json_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_json) != 0),
         dynamic_type = 30 * static_cast<uint32_t>(!low_card && (allowed_types & allow_dynamic) != 0),
-        prob_space = int_type + floating_point_type + date_type + string_type + decimal_type + bool_type + enum_type + uuid_type + json_type
-        + dynamic_type;
+        prob_space = int_type + floating_point_type + date_type + string_type + decimal_type + bool_type + enum_type + uuid_type + ipv4_type
+        + ipv6_type + json_type + dynamic_type;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.gen);
 
@@ -373,9 +383,33 @@ const SQLType * StatementGenerator::BottomType(
         res = new UUIDType();
     }
     else if (
+        ipv4_type
+        && nopt
+            < (int_type + floating_point_type + date_type + string_type + decimal_type + bool_type + enum_type + uuid_type + ipv4_type + 1))
+    {
+        if (tp)
+        {
+            tp->set_ipv4(true);
+        }
+        res = new IPv4Type();
+    }
+    else if (
+        ipv6_type
+        && nopt
+            < (int_type + floating_point_type + date_type + string_type + decimal_type + bool_type + enum_type + uuid_type + ipv4_type
+               + ipv6_type + 1))
+    {
+        if (tp)
+        {
+            tp->set_ipv6(true);
+        }
+        res = new IPv6Type();
+    }
+    else if (
         json_type
         && nopt
-            < (int_type + floating_point_type + date_type + string_type + decimal_type + bool_type + enum_type + uuid_type + json_type + 1))
+            < (int_type + floating_point_type + date_type + string_type + decimal_type + bool_type + enum_type + uuid_type + ipv4_type
+               + ipv6_type + json_type + 1))
     {
         std::string desc = "";
         sql_query_grammar::JsonDef * jdef = tp ? tp->mutable_json() : nullptr;
@@ -478,8 +512,8 @@ const SQLType * StatementGenerator::BottomType(
     else if (
         dynamic_type
         && nopt
-            < (int_type + floating_point_type + date_type + string_type + decimal_type + bool_type + enum_type + uuid_type + json_type
-               + dynamic_type + 1))
+            < (int_type + floating_point_type + date_type + string_type + decimal_type + bool_type + enum_type + uuid_type + ipv4_type
+               + ipv6_type + json_type + dynamic_type + 1))
     {
         sql_query_grammar::Dynamic * dyn = tp ? tp->mutable_dynamic() : nullptr;
         std::optional<uint32_t> ntypes = std::nullopt;
@@ -836,6 +870,18 @@ void StatementGenerator::StrAppendBottomValue(RandomGenerator & rg, std::string 
         rg.NextUUID(ret);
         ret += "'";
     }
+    else if (dynamic_cast<const IPv4Type *>(tp))
+    {
+        ret += "'";
+        rg.NextIPv4(ret);
+        ret += "'";
+    }
+    else if (dynamic_cast<const IPv6Type *>(tp))
+    {
+        ret += "'";
+        rg.NextIPv6(ret);
+        ret += "'";
+    }
     else
     {
         assert(0);
@@ -943,7 +989,7 @@ void StatementGenerator::StrBuildJSONArray(RandomGenerator & rg, const int jdept
 
 void StatementGenerator::StrBuildJSONElement(RandomGenerator & rg, std::string & ret)
 {
-    std::uniform_int_distribution<int> opts(1, 16);
+    std::uniform_int_distribution<int> opts(1, 18);
     const int noption = opts(rg.gen);
 
     switch (noption)
@@ -1016,7 +1062,17 @@ void StatementGenerator::StrBuildJSONElement(RandomGenerator & rg, std::string &
             rg.NextUUID(ret);
             ret += '"';
             break;
-        case 16: //double
+        case 16: //ipv4
+            ret += '"';
+            rg.NextIPv4(ret);
+            ret += '"';
+            break;
+        case 17: //ipv6
+            ret += '"';
+            rg.NextIPv6(ret);
+            ret += '"';
+            break;
+        case 18: //double
             ret += std::to_string(rg.NextRandomDouble());
             break;
         default:
@@ -1084,7 +1140,8 @@ void StatementGenerator::StrAppendAnyValueInternal(RandomGenerator & rg, std::st
     else if (
         dynamic_cast<const IntType *>(tp) || dynamic_cast<const FloatType *>(tp) || dynamic_cast<const DateType *>(tp)
         || dynamic_cast<const DecimalType *>(tp) || dynamic_cast<const StringType *>(tp) || dynamic_cast<const BoolType *>(tp)
-        || dynamic_cast<const EnumType *>(tp) || dynamic_cast<const UUIDType *>(tp))
+        || dynamic_cast<const EnumType *>(tp) || dynamic_cast<const UUIDType *>(tp) || dynamic_cast<const IPv4Type *>(tp)
+        || dynamic_cast<const IPv6Type *>(tp))
     {
         StrAppendBottomValue(rg, ret, tp);
     }

@@ -947,6 +947,12 @@ void BottomTypeNameToString(std::string & ret, const bool quote, const bool lcar
                         ret += ")";
                     }
                     break;
+                    case BottomTypeNameType::kIPv4:
+                        ret += "IPv4";
+                        break;
+                    case BottomTypeNameType::kIPv6:
+                        ret += "IPv6";
+                        break;
                     default:
                         ret += "Int";
                 }

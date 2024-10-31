@@ -91,6 +91,10 @@ public:
 
     bool IsJoinEngine() const { return teng == sql_query_grammar::TableEngineValues::Join; }
 
+    bool IsNullEngine() const { return teng == sql_query_grammar::TableEngineValues::Null; }
+
+    bool IsSetEngine() const { return teng == sql_query_grammar::TableEngineValues::Set; }
+
     bool IsBufferEngine() const { return teng == sql_query_grammar::TableEngineValues::Buffer; }
 
     bool IsRocksEngine() const { return teng == sql_query_grammar::TableEngineValues::EmbeddedRocksDB; }
@@ -100,6 +104,11 @@ public:
     bool IsPostgreSQLEngine() const { return teng == sql_query_grammar::TableEngineValues::PostgreSQL; }
 
     bool IsSQLiteEngine() const { return teng == sql_query_grammar::TableEngineValues::SQLite; }
+
+    bool IsNotTruncableEngine() const
+    {
+        return IsNullEngine() || IsSetEngine() || IsMySQLEngine() || IsPostgreSQLEngine() || IsSQLiteEngine();
+    }
 };
 
 struct SQLTable : SQLBase

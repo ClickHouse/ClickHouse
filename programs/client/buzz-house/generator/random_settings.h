@@ -125,14 +125,14 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
     {"flatten_nested", TrueOrFalse},
     {"force_optimize_projection", TrueOrFalse},
     {"fsync_metadata", TrueOrFalse},
-    {"group_by_overflow_mode",
+    /*{"group_by_overflow_mode",
      [](RandomGenerator & rg, std::string & ret)
      {
          const std::vector<std::string> & choices = {"throw", "break", "any"};
          ret += "'";
          ret += rg.PickRandomlyFromVector(choices);
          ret += "'";
-     }},
+     }},*/
     {"group_by_two_level_threshold",
      [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.2, 1, 100000)); }},
     {"group_by_two_level_threshold_bytes",
@@ -171,13 +171,13 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
          ret += rg.PickRandomlyFromVector(choices);
          ret += "'";
      }},
-    {"join_overflow_mode",
+    /*{"join_overflow_mode",
      [](RandomGenerator & rg, std::string & ret)
      {
          ret += "'";
          ret += rg.NextBool() ? "throw" : "break";
          ret += "'";
-     }},
+     }},*/
     {"join_use_nulls", TrueOrFalse},
     {"lightweight_deletes_sync", ZeroOneTwo},
     {"local_filesystem_read_method",
@@ -373,6 +373,7 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
      }},
     {"remote_filesystem_read_prefetch", TrueOrFalse},
     {"rows_before_aggregation", TrueOrFalse},
+    {"select_sequential_consistency", TrueOrFalse},
     {"session_timezone",
      [](RandomGenerator & rg, std::string & ret)
      {
@@ -382,6 +383,13 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
          ret += rg.PickRandomlyFromVector(choices);
          ret += "'";
      }},
+    /*{"set_overflow_mode",
+     [](RandomGenerator & rg, std::string & ret)
+     {
+         ret += "'";
+         ret += rg.NextBool() ? "break" : "throw";
+         ret += "'";
+     }},*/
     {"throw_on_error_from_cache_on_write_operations", TrueOrFalse},
     {"totals_mode",
      [](RandomGenerator & rg, std::string & ret)
@@ -398,7 +406,14 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
     {"use_concurrency_control", TrueOrFalse},
     {"use_json_alias_for_old_object_type", TrueOrFalse},
     {"use_page_cache_for_disks_without_file_cache", TrueOrFalse},
-    {"use_query_cache", TrueOrFalse},
+    {"use_query_cache",
+     [](RandomGenerator & rg, std::string & ret)
+     {
+         const std::vector<std::string> & choices
+             = {"1, set_overflow_mode = 'throw', group_by_overflow_mode = 'throw', join_overflow_mode = 'throw'",
+                "0, set_overflow_mode = 'break', group_by_overflow_mode = 'break', join_overflow_mode = 'break'"};
+         ret += rg.PickRandomlyFromVector(choices);
+     }},
     {"use_skip_indexes", TrueOrFalse},
     {"use_structure_from_insertion_table_in_table_functions", ZeroOneTwo},
     {"use_uncompressed_cache", TrueOrFalse},
@@ -414,6 +429,7 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
        {"allow_suspicious_indices", TrueOrFalse},
        {"allow_vertical_merges_from_compact_to_wide_parts", TrueOrFalse},
        {"always_use_copy_instead_of_hardlinks", TrueOrFalse},
+       {"always_fetch_merged_part", TrueOrFalse},
        {"assign_part_uuids", TrueOrFalse},
        {"cache_populated_by_fetch", TrueOrFalse},
        {"check_sample_column_is_correct", TrueOrFalse},
@@ -504,6 +520,8 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
        {"min_compressed_bytes_to_fsync_after_merge",
         [](RandomGenerator & rg, std::string & ret)
         { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.3, 0.3, 0, 128 * 1024 * 1024)); }},
+       {"min_index_granularity_bytes",
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(1024, 30 * 1024 * 1024)); }},
        {"min_merge_bytes_to_use_direct_io",
         [](RandomGenerator & rg, std::string & ret)
         {
@@ -544,6 +562,7 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
        {"remove_empty_parts", TrueOrFalse},
        {"remove_rolled_back_parts_immediately", TrueOrFalse},
        {"replace_long_file_name_to_hash", TrueOrFalse},
+       {"replicated_can_become_leader", TrueOrFalse},
        {"replicated_max_mutations_in_one_entry",
         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.3, 0, 10000)); }},
        {"ttl_only_drop_parts", TrueOrFalse},
@@ -551,6 +570,7 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
        {"use_async_block_ids_cache", TrueOrFalse},
        {"use_compact_variant_discriminators_serialization", TrueOrFalse},
        {"use_index_for_in_with_subqueries", TrueOrFalse},
+       {"use_minimalistic_part_header_in_zookeeper", TrueOrFalse},
        {"vertical_merge_algorithm_min_bytes_to_activate",
         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.4, 0.4, 1, 10000)); }},
        {"vertical_merge_algorithm_min_columns_to_activate",

@@ -547,7 +547,7 @@ int StatementGenerator::AddTableColumn(
     if (!modify && col.special == ColumnSpecial::NONE
         && (dynamic_cast<const IntType *>(tp) || dynamic_cast<const FloatType *>(tp) || dynamic_cast<const DateType *>(tp)
             || dynamic_cast<const DecimalType *>(tp) || dynamic_cast<const StringType *>(tp) || dynamic_cast<const BoolType *>(tp)
-            || dynamic_cast<const UUIDType *>(tp))
+            || dynamic_cast<const UUIDType *>(tp) || dynamic_cast<const IPv4Type *>(tp) || dynamic_cast<const IPv6Type *>(tp))
         && rg.NextSmallNumber() < 3)
     {
         cd->set_nullable(rg.NextBool());

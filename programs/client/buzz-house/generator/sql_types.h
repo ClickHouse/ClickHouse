@@ -14,7 +14,7 @@ const constexpr uint32_t allow_bool = (1 << 0), allow_unsigned_int = (1 << 1), a
                          allow_strings = (1 << 8), allow_decimals = (1 << 9), allow_uuid = (1 << 10), allow_enum = (1 << 11),
                          allow_dynamic = (1 << 12), allow_json = (1 << 13), allow_nullable = (1 << 14), allow_low_cardinality = (1 << 15),
                          allow_array = (1 << 16), allow_map = (1 << 17), allow_tuple = (1 << 18), allow_variant = (1 << 19),
-                         allow_nested = (1 << 20), allow_nullable_inside_array = (1 << 21);
+                         allow_nested = (1 << 20), allow_nullable_inside_array = (1 << 21), allow_ipv4 = (1 << 22), allow_ipv6 = (1 << 23);
 
 class SQLType
 {
@@ -388,6 +388,72 @@ public:
     }
 
     ~EnumType() override = default;
+};
+
+class IPv4Type : public SQLType
+{
+public:
+    void TypeName(std::string & ret, const bool escape) const override
+    {
+        (void)escape;
+        ret += "IPv4";
+    }
+    void MySQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
+    {
+        (void)rg;
+        (void)ret;
+        (void)escape;
+        assert(0);
+    }
+    void PostgreSQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
+    {
+        (void)rg;
+        (void)ret;
+        (void)escape;
+        assert(0);
+    }
+    void SQLiteTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
+    {
+        (void)rg;
+        (void)ret;
+        (void)escape;
+        assert(0);
+    }
+
+    ~IPv4Type() override = default;
+};
+
+class IPv6Type : public SQLType
+{
+public:
+    void TypeName(std::string & ret, const bool escape) const override
+    {
+        (void)escape;
+        ret += "IPv6";
+    }
+    void MySQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
+    {
+        (void)rg;
+        (void)ret;
+        (void)escape;
+        assert(0);
+    }
+    void PostgreSQLTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
+    {
+        (void)rg;
+        (void)ret;
+        (void)escape;
+        assert(0);
+    }
+    void SQLiteTypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
+    {
+        (void)rg;
+        (void)ret;
+        (void)escape;
+        assert(0);
+    }
+
+    ~IPv6Type() override = default;
 };
 
 class DynamicType : public SQLType

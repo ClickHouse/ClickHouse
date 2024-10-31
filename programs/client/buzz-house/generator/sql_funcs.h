@@ -1039,7 +1039,7 @@ const std::vector<const CHFunction> CHFuncs = {
     CHFunction(sql_query_grammar::SQLFunc::FUNCbyteSize, 0, 0, 1, ulimited_params),
     materialize,
     CHFunction(sql_query_grammar::SQLFunc::FUNCignore, 0, 0, 0, ulimited_params),
-    CHFunction(sql_query_grammar::SQLFunc::FUNCcurrentDatabase, 0, 0, 1, 1),
+    CHFunction(sql_query_grammar::SQLFunc::FUNCcurrentDatabase, 0, 0, 0, 0),
     CHFunction(sql_query_grammar::SQLFunc::FUNCcurrentUser, 0, 0, 0, 0),
     CHFunction(sql_query_grammar::SQLFunc::FUNCcurrentSchemas, 0, 0, 1, 1),
     CHFunction(sql_query_grammar::SQLFunc::FUNCisConstant, 0, 0, 1, 1),

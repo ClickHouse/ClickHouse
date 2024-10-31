@@ -350,6 +350,10 @@ public:
         = [](const SQLTable & t) { return (!t.db || t.db->attached) && t.attached; };
     const std::function<bool(const SQLView &)> attached_views = [](const SQLView & v) { return (!v.db || v.db->attached) && v.attached; };
 
+    const std::function<bool(const SQLTable &)> attached_tables_for_oracle
+        = [](const SQLTable & t) { return (!t.db || t.db->attached) && t.attached && !t.IsNotTruncableEngine(); };
+
+
     const std::function<bool(const std::shared_ptr<SQLDatabase> &)> detached_databases
         = [](const std::shared_ptr<SQLDatabase> & d) { return !d->attached; };
     const std::function<bool(const SQLTable &)> detached_tables

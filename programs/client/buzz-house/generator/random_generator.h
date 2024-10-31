@@ -456,6 +456,29 @@ public:
             ret += hex_digits[hex_digits_dist(gen)];
         }
     }
+
+    void NextIPv4(std::string & ret)
+    {
+        ret += this->NextRandomUInt8();
+        ret += ".";
+        ret += this->NextRandomUInt8();
+        ret += ".";
+        ret += this->NextRandomUInt8();
+        ret += ".";
+        ret += this->NextRandomUInt8();
+    }
+
+    void NextIPv6(std::string & ret)
+    {
+        for (uint32_t i = 0; i < 8; i++)
+        {
+            ret += hex_digits[hex_digits_dist(gen)];
+            if (i < 7)
+            {
+                ret += ":";
+            }
+        }
+    }
 };
 
 }
