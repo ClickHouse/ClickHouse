@@ -240,9 +240,9 @@ private:
     std::optional<UInt64> nonce;
     String cluster;
 
-    /// `out_mutex` protects `out` (WriteBuffer).
-    /// So it is used for method sendData(), sendProgress(), sendLogs(), etc.
-    std::mutex out_mutex;
+    /// `callback_mutex` protects using `out` (WriteBuffer) and `in` (ReadBuffer) inside callback.
+    /// So it is used for method sendData(), sendProgress(), sendLogs() along with all callbacks which interact with that buffers
+    std::mutex callback_mutex;
 
     /// Last block input parameters are saved to be able to receive unexpected data packet sent after exception.
     LastBlockInputParameters last_block_in;
@@ -264,6 +264,7 @@ private:
     void receiveAddendum();
     bool receivePacketsExpectQuery(std::optional<QueryState> & state);
     bool receivePacketsExpectData(QueryState & state);
+    bool receivePacketsExpectDataConcurrentWithExecutor(QueryState & state);
     void receivePacketsExpectCancel(QueryState & state);
     String receiveReadTaskResponseAssumeLocked(QueryState & state);
     std::optional<ParallelReadResponse> receivePartitionMergeTreeReadTaskResponseAssumeLocked(QueryState & state);
@@ -294,31 +295,31 @@ private:
 
     void processTablesStatusRequest();
 
-    void sendHello() TSA_REQUIRES(out_mutex);
-    void sendData(QueryState & state, const Block & block) TSA_REQUIRES(out_mutex);    /// Write a block to the network.
-    void sendLogData(QueryState & state, const Block & block) TSA_REQUIRES(out_mutex);
-    void sendTableColumns(QueryState & state, const ColumnsDescription & columns)TSA_REQUIRES(out_mutex) ;
-    void sendException(const Exception & e, bool with_stack_trace) TSA_REQUIRES(out_mutex);
-    void sendProgress(QueryState & state) TSA_REQUIRES(out_mutex);
-    void sendLogs(QueryState & state) TSA_REQUIRES(out_mutex);
-    void sendEndOfStream(QueryState & state) TSA_REQUIRES(out_mutex);
-    void sendPartUUIDs(QueryState & state) TSA_REQUIRES(out_mutex);
-    void sendReadTaskRequestAssumeLocked() TSA_REQUIRES(out_mutex);
-    void sendMergeTreeAllRangesAnnouncementAssumeLocked(QueryState & state, InitialAllRangesAnnouncement announcement) TSA_REQUIRES(out_mutex);
-    void sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest request) TSA_REQUIRES(out_mutex);
-    void sendProfileInfo(QueryState & state, const ProfileInfo & info) TSA_REQUIRES(out_mutex);
-    void sendTotals(QueryState & state, const Block & totals) TSA_REQUIRES(out_mutex);
-    void sendExtremes(QueryState & state, const Block & extremes) TSA_REQUIRES(out_mutex);
-    void sendProfileEvents(QueryState & state) TSA_REQUIRES(out_mutex);
-    void sendSelectProfileEvents(QueryState & state) TSA_REQUIRES(out_mutex);
-    void sendInsertProfileEvents(QueryState & state) TSA_REQUIRES(out_mutex);
-    void sendTimezone(QueryState & state) TSA_REQUIRES(out_mutex);
+    void sendHello();
+    void sendData(QueryState & state, const Block & block);    /// Write a block to the network.
+    void sendLogData(QueryState & state, const Block & block);
+    void sendTableColumns(QueryState & state, const ColumnsDescription & columns);
+    void sendException(const Exception & e, bool with_stack_trace);
+    void sendProgress(QueryState & state);
+    void sendLogs(QueryState & state);
+    void sendEndOfStream(QueryState & state);
+    void sendPartUUIDs(QueryState & state);
+    void sendReadTaskRequestAssumeLocked();
+    void sendMergeTreeAllRangesAnnouncementAssumeLocked(QueryState & state, InitialAllRangesAnnouncement announcement);
+    void sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest request);
+    void sendProfileInfo(QueryState & state, const ProfileInfo & info);
+    void sendTotals(QueryState & state, const Block & totals);
+    void sendExtremes(QueryState & state, const Block & extremes);
+    void sendProfileEvents(QueryState & state);
+    void sendSelectProfileEvents(QueryState & state);
+    void sendInsertProfileEvents(QueryState & state);
+    void sendTimezone(QueryState & state);
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput(QueryState & state);
-    void initBlockOutput(QueryState & state, const Block & block) TSA_REQUIRES(out_mutex);
-    void initLogsBlockOutput(QueryState & state, const Block & block) TSA_REQUIRES(out_mutex);
-    void initProfileEventsBlockOutput(QueryState & state, const Block & block) TSA_REQUIRES(out_mutex);
+    void initBlockOutput(QueryState & state, const Block & block);
+    void initLogsBlockOutput(QueryState & state, const Block & block);
+    void initProfileEventsBlockOutput(QueryState & state, const Block & block);
 
     /// This function is called from different threads.
     void updateProgress(QueryState & state, const Progress & value);

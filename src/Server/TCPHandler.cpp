@@ -334,10 +334,7 @@ void TCPHandler::runImpl()
         if (!is_interserver_mode)
             session->makeSessionContext();
 
-        {
-            std::lock_guard lock(out_mutex);
-            sendHello();
-        }
+        sendHello();
 
         if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             receiveAddendum();
@@ -432,6 +429,7 @@ void TCPHandler::runImpl()
         {
             Stopwatch idle_time;
             UInt64 timeout_ms = std::min(poll_interval, idle_connection_timeout) * 1000000;
+
             while (tcp_server.isOpen() && !server.isCancelled() && !in->poll(timeout_ms))
             {
                 if (idle_time.elapsedSeconds() > idle_connection_timeout)
@@ -440,13 +438,13 @@ void TCPHandler::runImpl()
                     return;
                 }
             }
-        }
 
-        /// If we need to shut down, or client disconnects.
-        if (!tcp_server.isOpen() || server.isCancelled() || in->eof())
-        {
-            LOG_TEST(log, "Closing connection (open: {}, cancelled: {}, eof: {})", tcp_server.isOpen(), server.isCancelled(), in->eof());
-            return;
+            /// If we need to shut down, or client disconnects.
+            if (!tcp_server.isOpen() || server.isCancelled() || in->eof())
+            {
+                LOG_TEST(log, "Closing connection (open: {}, cancelled: {}, eof: {})", tcp_server.isOpen(), server.isCancelled(), in->eof());
+                return;
+            }
         }
 
         OpenTelemetry::TracingContextHolderPtr thread_trace_context;
@@ -466,14 +464,14 @@ void TCPHandler::runImpl()
         try
         {
             /** If Query - process it. If Ping or Cancel - go back to the beginning.
-             *  There may come settings for a separate query that modify `query_context`.
-             *  It's possible to receive part uuids packet before the query, so then receivePacket has to be called twice.
-             */
+            *  There may come settings for a separate query that modify `query_context`.
+            *  It's possible to receive part uuids packet before the query, so then receivePacket has to be called twice.
+            */
             if (!receivePacketsExpectQuery(query_state))
                 continue;
 
             /** If part_uuids got received in previous packet, trying to read again.
-              */
+            */
             if (part_uuids_to_ignore.has_value() && !receivePacketsExpectQuery(query_state))
                 continue;
 
@@ -488,7 +486,7 @@ void TCPHandler::runImpl()
 
             query_scope.emplace(query_state->query_context, /* fatal_error_callback */ [this, &query_state]
             {
-                std::lock_guard lock(out_mutex);
+                std::lock_guard lock(callback_mutex);
                 sendLogs(query_state.value());
             });
 
@@ -526,6 +524,8 @@ void TCPHandler::runImpl()
                 if (context != query_state->query_context)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in external tables initializer");
 
+                std::lock_guard lock(callback_mutex);
+
                 /// Get blocks of temporary tables
                 readData(query_state.value());
 
@@ -543,9 +543,10 @@ void TCPHandler::runImpl()
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
 
                 auto metadata_snapshot = input_storage->getInMemoryMetadataPtr();
-                query_state->need_receive_data_for_input = true;
 
-                std::lock_guard lock(out_mutex);
+                std::lock_guard lock(callback_mutex);
+
+                query_state->need_receive_data_for_input = true;
 
                 /// Send ColumnsDescription for input storage.
                 if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA
@@ -565,6 +566,8 @@ void TCPHandler::runImpl()
                 if (context != query_state->query_context)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in InputBlocksReader");
 
+                std::lock_guard lock(callback_mutex);
+
                 if (receivePacketsExpectData(query_state.value()))
                     return query_state->block_for_input;
 
@@ -582,10 +585,10 @@ void TCPHandler::runImpl()
                 Stopwatch watch;
                 CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::ReadTaskRequestsSent);
 
-                {
-                    std::lock_guard lock(out_mutex);
-                    sendReadTaskRequestAssumeLocked();
-                }
+                std::lock_guard lock(callback_mutex);
+
+                sendReadTaskRequestAssumeLocked();
+
                 ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSent);
                 auto res = receiveReadTaskResponseAssumeLocked(query_state.value());
                 ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
@@ -597,7 +600,8 @@ void TCPHandler::runImpl()
                 Stopwatch watch;
                 CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeAllRangesAnnouncementsSent);
 
-                std::lock_guard lock(out_mutex);
+                std::lock_guard lock(callback_mutex);
+
                 sendMergeTreeAllRangesAnnouncementAssumeLocked(query_state.value(), announcement);
                 ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSent);
                 ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, watch.elapsedMicroseconds());
@@ -608,10 +612,9 @@ void TCPHandler::runImpl()
                 Stopwatch watch;
                 CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeReadTaskRequestsSent);
 
-                {
-                    std::lock_guard lock(out_mutex);
-                    sendMergeTreeReadTaskRequestAssumeLocked(std::move(request));
-                }
+                std::lock_guard lock(callback_mutex);
+
+                sendMergeTreeReadTaskRequestAssumeLocked(std::move(request));
 
                 ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSent);
                 auto res = receivePartitionMergeTreeReadTaskResponseAssumeLocked(query_state.value());
@@ -619,8 +622,12 @@ void TCPHandler::runImpl()
                 return res;
             });
 
+            LOG_DEBUG(log, "executeQuery before");
+
             /// Processing Query
             std::tie(query_state->parsed_query, query_state->io) = executeQuery(query_state->query, query_state->query_context, QueryFlags{}, query_state->stage);
+
+            LOG_DEBUG(log, "executeQuery started");
 
             after_check_cancelled.restart();
             after_send_progress.restart();
@@ -639,6 +646,7 @@ void TCPHandler::runImpl()
             }
             else if (query_state->io.pipeline.completed())
             {
+                LOG_DEBUG(log, " pipeline completed started");
                 {
                     CompletedPipelineExecutor executor(query_state->io.pipeline);
 
@@ -647,12 +655,13 @@ void TCPHandler::runImpl()
                     {
                         auto callback = [this, &query_state]()
                         {
+                            std::lock_guard lock(callback_mutex);
+
                             receivePacketsExpectCancel(query_state.value());
 
                             if (query_state->stop_read_return_partial_result)
                                 return true;
 
-                            std::lock_guard lock1(out_mutex);
                             sendProgress(query_state.value());
                             sendSelectProfileEvents(query_state.value());
                             sendLogs(query_state.value());
@@ -665,33 +674,31 @@ void TCPHandler::runImpl()
                     executor.execute();
                 }
 
+                LOG_DEBUG(log, " pipeline completed finish");
+
                 query_state->io.onFinish();
 
-                {
-                    std::lock_guard lock(out_mutex);
-
-                    /// Send final progress after calling onFinish(), since it will update the progress.
-                    ///
-                    /// NOTE: we cannot send Progress for regular INSERT (with VALUES)
-                    /// without breaking protocol compatibility, but it can be done
-                    /// by increasing revision.
-                    sendProgress(query_state.value());
-                    sendSelectProfileEvents(query_state.value());
-                }
+                /// Send final progress after calling onFinish(), since it will update the progress.
+                ///
+                /// NOTE: we cannot send Progress for regular INSERT (with VALUES)
+                /// without breaking protocol compatibility, but it can be done
+                /// by increasing revision.
+                sendProgress(query_state.value());
+                sendSelectProfileEvents(query_state.value());
             }
             else
             {
+                LOG_DEBUG(log, "other");
                 query_state->io.onFinish();
             }
 
             /// Do it before sending end of stream, to have a chance to show log message in client.
             query_scope->logPeakMemoryUsage();
 
-            {
-                std::lock_guard lock(out_mutex);
-                sendLogs(query_state.value());
-                sendEndOfStream(query_state.value());
-            }
+            LOG_DEBUG(log, "send logs at final");
+
+            sendLogs(query_state.value());
+            sendEndOfStream(query_state.value());
 
             query_state->finalizeOut();
         }
@@ -793,7 +800,6 @@ void TCPHandler::runImpl()
                 LOG_DEBUG(log, "try send logs");
                 /// Try to send logs to client, but it could be risky too
                 /// Assume that we can't break output here
-                std::lock_guard lock(out_mutex);
                 sendLogs(query_state.value());
 
                 LOG_DEBUG(log, "try skip data");
@@ -913,6 +919,12 @@ bool TCPHandler::receivePacketsExpectQuery(std::optional<QueryState> & state)
 }
 
 
+bool TCPHandler::receivePacketsExpectDataConcurrentWithExecutor(QueryState & state)
+{
+    std::lock_guard lock(callback_mutex);
+    return receivePacketsExpectData(state);
+}
+
 bool TCPHandler::receivePacketsExpectData(QueryState & state)
 {
     /// Poll interval should not be greater than receive_timeout
@@ -924,6 +936,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
                 static_cast<UInt64>(receive_timeout.totalMicroseconds())));
 
     Stopwatch watch;
+
     while (!server.isCancelled() && tcp_server.isOpen())
     {
         if (!in->poll(timeout_us))
@@ -984,17 +997,13 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
 
 void TCPHandler::readData(QueryState & state)
 {
-    {
-        std::lock_guard lock(out_mutex);
-        sendLogs(state);
-    }
+    sendLogs(state);
 
     /// no sense in partial_result_on_first_cancel setting when temporary data is read.
     auto off_setting_guard = TurnOffBoolSettingTemporary(state.allow_partial_result_on_first_cancel);
 
     while (receivePacketsExpectData(state))
     {
-        std::lock_guard lock(out_mutex);
         sendLogs(state);
         sendInsertProfileEvents(state);
     }
@@ -1019,6 +1028,9 @@ void TCPHandler::skipData(QueryState & state)
 
 void TCPHandler::startInsertQuery(QueryState & state)
 {
+
+    std::lock_guard lock(callback_mutex);
+
     /// Send ColumnsDescription for insertion table
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
     {
@@ -1028,18 +1040,14 @@ void TCPHandler::startInsertQuery(QueryState & state)
             if (!table_id.empty())
             {
                 auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, state.query_context);
-                std::lock_guard lock(out_mutex);
                 sendTableColumns(state, storage_ptr->getInMemoryMetadataPtr()->getColumns());
             }
         }
     }
 
-    {
-        std::lock_guard lock(out_mutex);
-        /// Send block to the client - table structure.
-        sendData(state, state.io.pipeline.getHeader());
-        sendLogs(state);
-    }
+    /// Send block to the client - table structure.
+    sendData(state, state.io.pipeline.getHeader());
+    sendLogs(state);
 }
 
 
@@ -1096,7 +1104,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
             else
                 startInsertQuery(state);
 
-            while (receivePacketsExpectData(state))
+            while (receivePacketsExpectDataConcurrentWithExecutor(state))
                 executor.push(std::move(state.block_for_insert));
 
             state.read_all_data = true;
@@ -1157,7 +1165,6 @@ void TCPHandler::processInsertQuery(QueryState & state)
                 result.future.get();
             }
 
-            std::lock_guard lock(out_mutex);
             sendInsertProfileEvents(state);
             return;
         }
@@ -1179,7 +1186,6 @@ void TCPHandler::processInsertQuery(QueryState & state)
         run_executor(executor, std::move(processed_block));
     }
 
-    std::lock_guard lock(out_mutex);
     sendInsertProfileEvents(state);
 }
 
@@ -1190,7 +1196,6 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 
     if (state.query_context->getSettingsRef()[Setting::allow_experimental_query_deduplication])
     {
-        std::lock_guard lock(out_mutex);
         sendPartUUIDs(state);
     }
 
@@ -1200,7 +1205,6 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 
         if (header)
         {
-            std::lock_guard lock(out_mutex);
             sendData(state, header);
         }
     }
@@ -1215,6 +1219,7 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
             Block block;
             while (executor.pull(block, interactive_delay / 1000))
             {
+
                 receivePacketsExpectCancel(state);
 
                 if (state.stop_read_return_partial_result)
@@ -1223,7 +1228,7 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
                 }
 
                 {
-                    std::lock_guard lock(out_mutex);
+                    std::lock_guard lock(callback_mutex);
 
                     if (after_send_progress.elapsed() / 1000 >= interactive_delay)
                     {
@@ -1257,21 +1262,19 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
           *  and there could be ongoing calculations in other threads at the same time.
           */
 
+
         receivePacketsExpectCancel(state);
 
-        {
-            std::lock_guard lock(out_mutex);
-            sendTotals(state, executor.getTotalsBlock());
-            sendExtremes(state, executor.getExtremesBlock());
-            sendProfileInfo(state, executor.getProfileInfo());
-            sendProgress(state);
-            sendLogs(state);
-            sendSelectProfileEvents(state);
+        sendTotals(state, executor.getTotalsBlock());
+        sendExtremes(state, executor.getExtremesBlock());
+        sendProfileInfo(state, executor.getProfileInfo());
+        sendProgress(state);
+        sendLogs(state);
+        sendSelectProfileEvents(state);
 
-            sendData(state, {});
+        sendData(state, {});
 
-            sendProgress(state);
-        }
+        sendProgress(state);
     }
 }
 
@@ -1318,10 +1321,6 @@ void TCPHandler::processTablesStatusRequest()
 
         response.table_states_by_id.emplace(table_name, std::move(status));
     }
-
-
-    // if (out->isCanceled())
-    //     return;
 
     writeVarUInt(Protocol::Server::TablesStatusResponse, *out);
 
@@ -2344,6 +2343,8 @@ void TCPHandler::processCancel(QueryState & state)
 
 void TCPHandler::receivePacketsExpectCancel(QueryState & state)
 {
+    std::lock_guard lock(callback_mutex);
+
     if (after_check_cancelled.elapsed() / 1000 < interactive_delay)
         return;
 
