@@ -690,7 +690,7 @@ int StatementGenerator::GenerateFuncCall(
         else
         {
             //use a default catalog function
-            const CHFunction & func = CHFuncs[nopt];
+            const CHFunction & func = rg.NextLargeNumber() < 5 ? materialize : CHFuncs[nopt];
 
             n_lambda = std::max(func.min_lambda_param, func.max_lambda_param > 0 ? (rg.NextSmallNumber() % func.max_lambda_param) : 0);
             min_args = func.min_args;

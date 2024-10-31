@@ -39,7 +39,7 @@ public:
 
 const constexpr uint32_t ulimited_params = 10000;
 
-const std::vector<CHAggregate> CHAggrs = {
+const std::vector<const CHAggregate> CHAggrs = {
     //standard aggregates
     CHAggregate(sql_query_grammar::SQLFunc::FUNCcount, 0, 0, 0, 1, true, false),
     CHAggregate(sql_query_grammar::SQLFunc::FUNCmin, 0, 0, 1, 1, false, false),
@@ -165,7 +165,9 @@ const std::vector<CHAggregate> CHAggrs = {
     CHAggregate(sql_query_grammar::SQLFunc::FUNCuniqUpTo, 1, 1, 1, 1, false, false),
     CHAggregate(sql_query_grammar::SQLFunc::FUNCsequenceNextNode, 2, 2, 4, ulimited_params, false, false)};
 
-const std::vector<CHFunction> CHFuncs = {
+const CHFunction materialize = CHFunction(sql_query_grammar::SQLFunc::FUNCmaterialize, 0, 0, 1, 1);
+
+const std::vector<const CHFunction> CHFuncs = {
     //arithmetic Functions
     CHFunction(sql_query_grammar::SQLFunc::FUNCplus, 0, 0, 2, 2),
     CHFunction(sql_query_grammar::SQLFunc::FUNCminus, 0, 0, 2, 2),
@@ -1035,10 +1037,10 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(sql_query_grammar::SQLFunc::FUNCvisibleWidth, 0, 0, 1, 1),
     CHFunction(sql_query_grammar::SQLFunc::FUNCtoTypeName, 0, 0, 1, 1),
     CHFunction(sql_query_grammar::SQLFunc::FUNCbyteSize, 0, 0, 1, ulimited_params),
-    CHFunction(sql_query_grammar::SQLFunc::FUNCmaterialize, 0, 0, 1, 1),
+    materialize,
     CHFunction(sql_query_grammar::SQLFunc::FUNCignore, 0, 0, 0, ulimited_params),
     CHFunction(sql_query_grammar::SQLFunc::FUNCcurrentDatabase, 0, 0, 1, 1),
-    CHFunction(sql_query_grammar::SQLFunc::FUNCcurrentUser, 0, 0, 1, 1),
+    CHFunction(sql_query_grammar::SQLFunc::FUNCcurrentUser, 0, 0, 0, 0),
     CHFunction(sql_query_grammar::SQLFunc::FUNCcurrentSchemas, 0, 0, 1, 1),
     CHFunction(sql_query_grammar::SQLFunc::FUNCisConstant, 0, 0, 1, 1),
     CHFunction(sql_query_grammar::SQLFunc::FUNCbar, 0, 0, 4, 4),

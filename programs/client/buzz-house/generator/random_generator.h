@@ -84,8 +84,10 @@ private:
     const std::vector<std::string> common_chinese{
         "认识你很高兴", "美国", "叫", "名字", "你们", "日本", "哪国人", "爸爸", "兄弟姐妹", "漂亮", "照片", "😉"};
 
-    const std::vector<std::string> nasty_strings{"a\"a", "b\\tb", "c\\nc", "d\\'d", "e e", "",  "😉", "\"", "\\'",  "\\t", "\\n", " ", "--",
-                                                 "{",    "}",     "[",     "]",     ",",   ".", ";",  ":",  "\\\\", "/",   "_",   "%", "*"};
+    const std::vector<std::string> nasty_strings{"a\"a", "b\\tb", "c\\nc", "d\\'d", "e e", "",     "😉",   "\"",   "\\'",  "\\t",
+                                                 "\\n",  " ",     "--",    "0",     "1",   "-1",   "{",    "}",    "(",    ")",
+                                                 "[",    "]",     ",",     ".",     ";",   ":",    "\\\\", "/",    "_",    "%",
+                                                 "*",    "\\0",   "{}",    "[]",    "()",  "null", "NULL", "TRUE", "FALSE"};
 
     /* use bad_utf8 on x' strings! */
     const std::vector<std::string> bad_utf8{
