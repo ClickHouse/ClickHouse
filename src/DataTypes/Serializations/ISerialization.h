@@ -463,7 +463,7 @@ public:
     /// Returns true if stream with specified path corresponds to dynamic subcolumn.
     static bool isDynamicSubcolumn(const SubstreamPath & path, size_t prefix_len);
 
-    static bool isLowCardinalityDictionarySubcolumn(const SubstreamPath & path, size_t prefix_len);
+    static bool isLowCardinalityDictionarySubcolumn(const SubstreamPath & path);
 
 protected:
     template <typename State, typename StatePtr>
