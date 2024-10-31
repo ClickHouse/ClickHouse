@@ -1721,6 +1721,7 @@ def test_upgrade(started_cluster):
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
+            "after_processing": "keep",
         },
     )
     total_values = generate_random_files(
@@ -2099,3 +2100,166 @@ def test_processing_threads(started_cluster):
     assert node.contains_in_log(
         f"StorageS3Queue (default.{table_name}): Using 16 processing threads"
     )
+
+
+def test_alter_settings(started_cluster):
+    node1 = started_cluster.instances["node1"]
+    node2 = started_cluster.instances["node2"]
+
+    table_name = f"test_alter_settings_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 1000
+
+    node1.query("DROP DATABASE IF EXISTS r")
+    node2.query("DROP DATABASE IF EXISTS r")
+
+    node1.query(
+        f"CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/{table_name}', 'shard1', 'node1')"
+    )
+    node2.query(
+        f"CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/{table_name}', 'shard1', 'node2')"
+    )
+
+    create_table(
+        started_cluster,
+        node1,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "processing_threads_num": 10,
+            "loading_retries": 20,
+        },
+        database_name="r",
+    )
+
+    assert '"processing_threads_num":10' in node1.query(
+        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    )
+
+    assert '"loading_retries":20' in node1.query(
+        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    )
+
+    assert '"after_processing":"keep"' in node1.query(
+        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    )
+
+    total_values = generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+
+    create_mv(node1, f"r.{table_name}", dst_table_name)
+    create_mv(node2, f"r.{table_name}", dst_table_name)
+
+    def get_count():
+        return int(
+            node1.query(
+                f"SELECT count() FROM clusterAllReplicas(cluster, default.{dst_table_name})"
+            )
+        )
+
+    expected_rows = files_to_generate
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+    assert expected_rows == get_count()
+
+    node1.query(
+        f"""
+        ALTER TABLE r.{table_name}
+        MODIFY SETTING processing_threads_num=5,
+        loading_retries=10,
+        after_processing='delete',
+        tracked_files_limit=50,
+        tracked_file_ttl_sec=10000,
+        polling_min_timeout_ms=222,
+        polling_max_timeout_ms=333,
+        polling_backoff_ms=111
+    """
+    )
+
+    int_settings = {
+        "processing_threads_num": 5,
+        "loading_retries": 10,
+        "tracked_files_ttl_sec": 10000,
+        "tracked_files_limit": 50,
+        "polling_min_timeout_ms": 222,
+        "polling_max_timeout_ms": 333,
+        "polling_backoff_ms": 111,
+    }
+    string_settings = {"after_processing": "delete"}
+
+    def with_keeper(setting):
+        return setting in {
+            "after_processing",
+            "loading_retries",
+            "processing_threads_num",
+            "tracked_files_limit",
+            "tracked_files_ttl_sec",
+        }
+
+    def check_int_settings(node, settings):
+        for setting, value in settings.items():
+            if with_keeper(setting):
+                assert f'"{setting}":{value}' in node.query(
+                    f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+                )
+            if setting == "tracked_files_ttl_sec":
+                setting = "tracked_file_ttl_sec"
+            assert (
+                str(value)
+                == node.query(
+                    f"SELECT value FROM system.s3_queue_settings WHERE name = '{setting}' and table = '{table_name}'"
+                ).strip()
+            )
+
+    def check_string_settings(node, settings):
+        for setting, value in settings.items():
+            if with_keeper(setting):
+                assert f'"{setting}":"{value}"' in node.query(
+                    f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+                )
+            assert (
+                str(value)
+                == node.query(
+                    f"SELECT value FROM system.s3_queue_settings WHERE name = '{setting}' and table = '{table_name}'"
+                ).strip()
+            )
+
+    for node in [node1, node2]:
+        check_int_settings(node, int_settings)
+        check_string_settings(node, string_settings)
+
+        node.restart_clickhouse()
+
+        check_int_settings(node, int_settings)
+        check_string_settings(node, string_settings)
+
+    node1.query(
+        f"""
+        ALTER TABLE r.{table_name} RESET SETTING after_processing, tracked_file_ttl_sec
+    """
+    )
+
+    int_settings = {
+        "processing_threads_num": 5,
+        "loading_retries": 10,
+        "tracked_files_ttl_sec": 0,
+        "tracked_files_limit": 50,
+    }
+    string_settings = {"after_processing": "keep"}
+
+    for node in [node1, node2]:
+        check_int_settings(node, int_settings)
+        check_string_settings(node, string_settings)
+
+        node.restart_clickhouse()
+        assert expected_rows == get_count()
+
+        check_int_settings(node, int_settings)
+        check_string_settings(node, string_settings)

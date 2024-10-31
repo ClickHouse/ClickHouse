@@ -81,6 +81,7 @@
 #include <base/EnumReflection.h>
 #include <base/demangle.h>
 
+#include <chrono>
 #include <memory>
 #include <random>
 
@@ -460,7 +461,7 @@ QueryLogElement logQueryStart(
     return elem;
 }
 
-void logQueryMetricLogFinish(ContextPtr context, bool internal, String query_id, QueryStatusInfoPtr info)
+void logQueryMetricLogFinish(ContextPtr context, bool internal, String query_id, std::chrono::system_clock::time_point finish_time, QueryStatusInfoPtr info)
 {
     if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log && !internal)
     {
@@ -475,11 +476,11 @@ void logQueryMetricLogFinish(ContextPtr context, bool internal, String query_id,
             /// to query the final state in query_log.
             auto collect_on_finish = info->elapsed_microseconds > interval_milliseconds * 1000;
             auto query_info = collect_on_finish ? info : nullptr;
-            query_metric_log->finishQuery(query_id, query_info);
+            query_metric_log->finishQuery(query_id, finish_time, query_info);
         }
         else
         {
-            query_metric_log->finishQuery(query_id, nullptr);
+            query_metric_log->finishQuery(query_id, finish_time, nullptr);
         }
     }
 }
@@ -503,6 +504,7 @@ void logQueryFinish(
         /// Update performance counters before logging to query_log
         CurrentThread::finalizePerformanceCounters();
 
+        auto time_now = std::chrono::system_clock::now();
         QueryStatusInfo info = process_list_elem->getInfo(true, settings[Setting::log_profile_events]);
         elem.type = QueryLogElementType::QUERY_FINISH;
 
@@ -597,7 +599,7 @@ void logQueryFinish(
             }
         }
 
-        logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, std::make_shared<QueryStatusInfo>(info));
+        logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, std::make_shared<QueryStatusInfo>(info));
     }
 
     if (query_span)
@@ -697,7 +699,7 @@ void logQueryException(
         query_span->finish();
     }
 
-    logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, info);
+    logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, info);
 }
 
 void logExceptionBeforeStart(
@@ -796,7 +798,7 @@ void logExceptionBeforeStart(
         }
     }
 
-    logQueryMetricLogFinish(context, false, elem.client_info.current_query_id, nullptr);
+    logQueryMetricLogFinish(context, false, elem.client_info.current_query_id, std::chrono::system_clock::now(), nullptr);
 }
 
 void validateAnalyzerSettings(ASTPtr ast, bool context_value)

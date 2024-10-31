@@ -438,6 +438,9 @@ Enables or disables creating a new file on each insert in azure engine tables
     DECLARE(Bool, s3_check_objects_after_upload, false, R"(
 Check each uploaded object to s3 with head request to be sure that upload was successful
 )", 0) \
+    DECLARE(Bool, azure_check_objects_after_upload, false, R"(
+Check each uploaded object in azure blob storage to be sure that upload was successful
+)", 0) \
     DECLARE(Bool, s3_allow_parallel_part_upload, true, R"(
 Use multiple threads for s3 multipart upload. It may lead to slightly higher memory usage
 )", 0) \
@@ -4451,9 +4454,8 @@ Optimize GROUP BY when all keys in block are constant
     DECLARE(Bool, legacy_column_name_of_tuple_literal, false, R"(
 List all names of element of large tuple literals in their column names instead of hash. This settings exists only for compatibility reasons. It makes sense to set to 'true', while doing rolling update of cluster from version lower than 21.7 to higher.
 )", 0) \
-    DECLARE(Bool, enable_named_columns_in_function_tuple, true, R"(
+    DECLARE(Bool, enable_named_columns_in_function_tuple, false, R"(
 Generate named tuples in function tuple() when all names are unique and can be treated as unquoted identifiers.
-Beware that this setting might currently result in broken queries. It's not recommended to use in production
 )", 0) \
     \
     DECLARE(Bool, query_plan_enable_optimizations, true, R"(
