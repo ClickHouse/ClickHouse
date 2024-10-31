@@ -553,6 +553,9 @@ endif ()
 add_definitions(-DPARQUET_THRIFT_VERSION_MAJOR=0)
 add_definitions(-DPARQUET_THRIFT_VERSION_MINOR=16)
 
+# As per https://github.com/apache/arrow/pull/35672 you need to enable it explicitly.
+add_definitions(-DARROW_ENABLE_THREADING)
+
 # === tools
 
 set(TOOLS_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/tools/parquet")
