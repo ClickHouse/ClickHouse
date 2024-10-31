@@ -86,7 +86,7 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Common/Scheduler/Nodes/registerSchedulerNodes.h>
-#include <Common/Scheduler/Nodes/registerResourceManagers.h>
+#include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
 #include "MetricsTransmitter.h"
@@ -920,7 +920,6 @@ try
     registerFormats();
     registerRemoteFileMetadatas();
     registerSchedulerNodes();
-    registerResourceManagers();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
@@ -2253,6 +2252,8 @@ try
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
         global_context->getUserDefinedSQLObjectsStorage().loadObjects();
+        /// Load WORKLOADs and RESOURCEs.
+        global_context->getWorkloadEntityStorage().loadEntities();
 
         global_context->getRefreshSet().setRefreshesStopped(false);
     }
@@ -2340,6 +2341,7 @@ try
 
 #if USE_SSL
         CertificateReloader::instance().tryLoad(config());
+        CertificateReloader::instance().tryLoadClient(config());
 #endif
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.

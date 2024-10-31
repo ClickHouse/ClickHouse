@@ -752,7 +752,8 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
         Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::move(block_with_count)));
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
 
-        selected_projection_name = "Optimized trivial count";
+        /// Use @minmax_count_projection name as it goes through the same optimization.
+        selected_projection_name = metadata->minmax_count_projection->name;
         has_ordinary_parts = reading->getAnalyzedResult() != nullptr;
     }
     else
