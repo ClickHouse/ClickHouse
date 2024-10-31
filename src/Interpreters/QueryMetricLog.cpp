@@ -100,7 +100,7 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint start_time, U
         const auto query_info = process_list.getQueryInfo(query_id, false, true, false);
         if (!query_info)
         {
-            LOG_TRACE(logger, "Query {} is not running anymore, so we couldn't get its QueryInfo", query_id);
+            LOG_TRACE(logger, "Query {} is not running anymore, so we couldn't get its QueryStatusInfo", query_id);
             return;
         }
 
@@ -156,8 +156,8 @@ std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(cons
 {
     /// fmtlib supports subsecond formatting in 10.0.0. We're in 9.1.0, so we need to add the milliseconds ourselves.
     auto seconds = std::chrono::time_point_cast<std::chrono::seconds>(query_info_time);
-    auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(query_info_time - seconds).count();
-    LOG_DEBUG(logger, "Collecting query_metric_log for query {} with QueryStatusInfo from {:%Y.%m.%d %H:%M:%S}.{:05}. Schedule next: {}", query_id, seconds, milliseconds, schedule_next);
+    auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(query_info_time - seconds).count();
+    LOG_DEBUG(logger, "Collecting query_metric_log for query {} with QueryStatusInfo from {:%Y.%m.%d %H:%M:%S}.{:06}. Schedule next: {}", query_id, seconds, microseconds, schedule_next);
 
     std::unique_lock lock(queries_mutex);
     auto query_status_it = queries.find(query_id);
