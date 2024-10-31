@@ -578,15 +578,15 @@ void WorkloadEntityStorageBase::setAllEntities(const std::vector<std::pair<Strin
             if (!entityEquals(entity, it->second))
             {
                 changes.emplace_back(entity_name, entity, it->second); // Update entities that are present in both `new_entities` and `entities`
-                LOG_TRACE(log, "Entity {} was updated", entity_name);
+                LOG_TRACE(log, "Workload entity {} was updated", entity_name);
             }
             else
-                LOG_TRACE(log, "Entity {} is the same", entity_name);
+                LOG_TRACE(log, "Workload entity {} is the same", entity_name);
         }
         else
         {
             changes.emplace_back(entity_name, entity, ASTPtr{}); // Remove entities that are not present in `new_entities`
-            LOG_TRACE(log, "Entity {} was dropped", entity_name);
+            LOG_TRACE(log, "Workload entity {} was dropped", entity_name);
         }
     }
     for (const auto & [entity_name, entity] : new_entities)
@@ -594,7 +594,7 @@ void WorkloadEntityStorageBase::setAllEntities(const std::vector<std::pair<Strin
         if (!entities.contains(entity_name))
         {
             changes.emplace_back(entity_name, ASTPtr{}, entity); // Create entities that are only present in `new_entities`
-            LOG_TRACE(log, "Entity {} was created", entity_name);
+            LOG_TRACE(log, "Workload entity {} was created", entity_name);
         }
     }
 
