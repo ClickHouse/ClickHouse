@@ -35,10 +35,7 @@ public:
         return writer->getIndexGranularity();
     }
 
-    PlainMarksByName releaseCachedMarks()
-    {
-        return writer->releaseCachedMarks();
-    }
+    PlainMarksByName releaseCachedMarks();
 
     size_t getNumberOfOpenStreams() const
     {

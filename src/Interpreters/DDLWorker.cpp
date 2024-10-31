@@ -18,10 +18,7 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ParserQuery.h>
-#include <IO/WriteHelpers.h>
 #include <IO/NullWriteBuffer.h>
-#include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromString.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
