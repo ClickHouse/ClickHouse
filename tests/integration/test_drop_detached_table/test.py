@@ -3,6 +3,7 @@
 import logging
 
 import pytest
+import time
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
@@ -39,6 +40,28 @@ def list_objects(cluster, path="data/", hint="list_objects"):
 def check_exists(zk, path):
     zk.sync(path)
     return zk.exists(path)
+
+
+def assert_zk_node_not_exists(
+    zk,
+    node_path,
+    retry_count=20,
+    sleep_time=0.5,
+):
+    for i in range(retry_count):
+        try:
+            exists_replica = check_exists(
+                zk,
+                node_path,
+            )
+            if exists_replica != None:
+                return
+            time.sleep(sleep_time)
+        except Exception as ex:
+            logging.exception(f"assert_zk_node_not_exists retry {i+1} exception {ex}")
+            time.sleep(sleep_time)
+
+    assert exists_replica == None
 
 
 @pytest.fixture(scope="module")
@@ -116,9 +139,12 @@ def test_drop_replicated_table(start_cluster):
 
     zk = cluster.get_kazoo_client("zoo1")
 
+    zk_path_replica1_node = f"/clickhouse/tables/shard1/{table_name}/replicas/{replica1.name}"
+    zk_path_replica2_node = f"/clickhouse/tables/shard1/{table_name}/replicas/{replica2.name}"
+
     exists_replica = check_exists(
         zk,
-        f"/clickhouse/tables/shard1/{table_name}/replicas/{replica1.name}",
+        zk_path_replica1_node,
     )
     assert exists_replica != None
 
@@ -127,16 +153,11 @@ def test_drop_replicated_table(start_cluster):
     )
 
     check_no_table_in_detached_table(node=replica1, table_name=table_name)
+    assert_zk_node_not_exists(zk, zk_path_replica1_node)
 
     exists_replica = check_exists(
         zk,
-        f"/clickhouse/tables/shard1/{table_name}/replicas/{replica1.name}",
-    )
-    assert exists_replica == None
-
-    exists_replica = check_exists(
-        zk,
-        f"/clickhouse/tables/shard1/{table_name}/replicas/{replica2.name}",
+        zk_path_replica2_node,
     )
     assert exists_replica != None
 
@@ -145,21 +166,10 @@ def test_drop_replicated_table(start_cluster):
     )
 
     check_no_table_in_detached_table(node=replica2, table_name=table_name)
+    assert_zk_node_not_exists(zk, zk_path_replica2_node)
 
     objects_after = list_objects(cluster, "data/")
     assert len(objects_before) == len(objects_after)
-
-    exists_replica = check_exists(
-        zk,
-        f"/clickhouse/tables/shard1/{table_name}/replicas/{replica1.name}",
-    )
-    assert exists_replica == None
-
-    exists_replica = check_exists(
-        zk,
-        f"/clickhouse/tables/shard1/{table_name}/replicas/{replica2.name}",
-    )
-    assert exists_replica == None
 
 
 def test_drop_s3_table(start_cluster):
