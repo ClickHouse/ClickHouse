@@ -1,4 +1,6 @@
 #pragma once
+
+#include <Core/Defines.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/TableJoin.h>
 
@@ -167,7 +169,7 @@ public:
             return;
 
         /// Do not allow big allocations when user set max_joined_block_rows to huge value
-        size_t reserve_size = std::min<size_t>(max_joined_block_rows, rows_to_add * 2); /// rows_to_add
+        size_t reserve_size = std::min<size_t>(max_joined_block_rows, DEFAULT_BLOCK_SIZE * 2); /// rows_to_add
 
         if (need_replicate)
             /// Reserve 10% more space for columns, because some rows can be repeated
