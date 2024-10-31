@@ -1442,15 +1442,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     }
     else
     {
-        if (!identifier_resolve_settings.scope_to_resolve_alias_expression)
-        {
-            auto jt = scope.identifier_lookup_to_resolve_result.find(identifier_lookup);
-            if (jt != scope.identifier_lookup_to_resolve_result.end() &&
-                scope.use_identifier_lookup_to_result_cache &&
-                !scope.non_cached_identifier_lookups_during_expression_resolve.contains(identifier_lookup))
-                return jt->second;
-        }
-
         auto [insert_it, _] = scope.identifier_in_lookup_process.insert({identifier_lookup, IdentifierResolveState()});
         it = insert_it;
     }
@@ -1563,11 +1554,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     if (it->second.count == 0)
     {
         scope.identifier_in_lookup_process.erase(it);
-
-        if (!identifier_resolve_settings.scope_to_resolve_alias_expression &&
-            !scope.non_cached_identifier_lookups_during_expression_resolve.contains(identifier_lookup)
-            && resolve_result.isResolved())
-            scope.identifier_lookup_to_resolve_result[identifier_lookup] = resolve_result;
     }
 
     return resolve_result;
@@ -4198,9 +4184,6 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
                 scope.nullable_group_by_keys.insert(group_by_elem);
         }
     }
-
-    if (scope.group_by_use_nulls)
-        scope.identifier_lookup_to_resolve_result.clear();
 }
 
 /** Resolve interpolate columns nodes list.
