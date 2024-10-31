@@ -101,17 +101,11 @@ std::stack<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTre
                 auto join_strictness = join_node.getStrictness();
 
                 if (join_kind == JoinKind::Left || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All))
-                {
                     query_tree_node = join_node.getLeftTableExpression().get();
-                }
                 else if (join_kind == JoinKind::Right)
-                {
                     query_tree_node = join_node.getRightTableExpression().get();
-                }
                 else
-                {
                     return {};
-                }
 
                 break;
             }
@@ -275,7 +269,7 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
 
     /// We don't have any subquery and storage can process parallel replicas by itself.
     if (stack.top() == query_tree_node.get())
-        return nullptr;
+        return query_node;
 
     /// This is needed to avoid infinite recursion.
     auto mutable_context = Context::createCopy(context);

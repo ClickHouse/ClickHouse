@@ -1263,6 +1263,7 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
             findQueryForParallelReplicas(query_tree, select_query_options),
             findTableForParallelReplicas(query_tree, select_query_options),
             collectFiltersForAnalysis(query_tree, select_query_options))))
+    , root_planner(true)
 {
 }
 
@@ -1537,7 +1538,7 @@ void Planner::buildPlanForQueryNode()
 
     JoinTreeQueryPlan join_tree_query_plan;
     if (planner_context->getMutableQueryContext()->canUseTaskBasedParallelReplicas()
-        && planner_context->getGlobalPlannerContext()->parallel_replicas_node == &query_node)
+        && planner_context->getGlobalPlannerContext()->parallel_replicas_node == &query_node && !root_planner)
     {
         join_tree_query_plan = buildQueryPlanForParallelReplicas(query_node, planner_context, select_query_info.storage_limits);
     }

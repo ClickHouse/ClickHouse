@@ -659,6 +659,7 @@ std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
 }
 
 JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
+    const QueryNode & parent_query_node,
     const SelectQueryInfo & select_query_info,
     const SelectQueryOptions & select_query_options,
     PlannerContextPtr & planner_context,
@@ -982,7 +983,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             query_plan = std::move(query_plan_parallel_replicas);
                         }
                     }
-                    else if (ClusterProxy::canUseParallelReplicasOnInitiator(query_context))
+                    else if (
+                        ClusterProxy::canUseParallelReplicasOnInitiator(query_context)
+                        && planner_context->getGlobalPlannerContext()->parallel_replicas_node
+                        && planner_context->getGlobalPlannerContext()->parallel_replicas_node == &parent_query_node)
                     {
                         // (1) find read step
                         QueryPlan::Node * node = query_plan.getRootNode();
@@ -1815,6 +1819,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     const ColumnIdentifierSet & outer_scope_columns,
     PlannerContextPtr & planner_context)
 {
+    const QueryNode & parent_query_node = query_node->as<QueryNode &>();
     auto table_expressions_stack = buildTableExpressionsStack(query_node->as<QueryNode &>().getJoinTree());
     size_t table_expressions_stack_size = table_expressions_stack.size();
     bool is_single_table_expression = table_expressions_stack_size == 1;
@@ -1850,7 +1855,9 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
       * Examples: Distributed, LiveView, Merge storages.
       */
     auto left_table_expression = table_expressions_stack.front();
-    auto left_table_expression_query_plan = buildQueryPlanForTableExpression(left_table_expression,
+    auto left_table_expression_query_plan = buildQueryPlanForTableExpression(
+        left_table_expression,
+        parent_query_node,
         select_query_info,
         select_query_options,
         planner_context,
@@ -1923,7 +1930,9 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
               * table expression in subquery.
               */
             bool is_remote = planner_context->getTableExpressionDataOrThrow(table_expression).isRemote();
-            query_plans_stack.push_back(buildQueryPlanForTableExpression(table_expression,
+            query_plans_stack.push_back(buildQueryPlanForTableExpression(
+                table_expression,
+                parent_query_node,
                 select_query_info,
                 select_query_options,
                 planner_context,

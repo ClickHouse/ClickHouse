@@ -82,6 +82,7 @@ private:
     StorageLimitsList storage_limits;
     std::set<std::string> used_row_policies;
     QueryNodeToPlanStepMapping query_node_to_plan_step_mapping;
+    bool root_planner = false;
 };
 
 }
