@@ -525,19 +525,19 @@ int StatementGenerator::AddTableColumn(
         {
             possible_types
                 = ~(allow_hugeint | allow_date32 | allow_datetime64 | allow_enum | allow_dynamic | allow_json | allow_low_cardinality
-                    | allow_array | allow_map | allow_tuple | allow_variant | allow_nested);
+                    | allow_array | allow_map | allow_tuple | allow_variant | allow_nested | allow_ipv4 | allow_ipv6);
         }
         else if (t.IsPostgreSQLEngine())
         {
-            possible_types
-                = ~(allow_unsigned_int | allow_int8 | allow_hugeint | allow_date32 | allow_datetime64 | allow_enum | allow_dynamic
-                    | allow_json | allow_low_cardinality | allow_map | allow_tuple | allow_variant | allow_nested);
+            possible_types = ~(
+                allow_unsigned_int | allow_int8 | allow_hugeint | allow_date32 | allow_datetime64 | allow_enum | allow_dynamic | allow_json
+                | allow_low_cardinality | allow_map | allow_tuple | allow_variant | allow_nested | allow_ipv4 | allow_ipv6);
         }
         else if (t.IsSQLiteEngine())
         {
-            possible_types
-                = ~(allow_unsigned_int | allow_hugeint | allow_floating_points | allow_dates | allow_enum | allow_dynamic | allow_json
-                    | allow_low_cardinality | allow_array | allow_map | allow_tuple | allow_variant | allow_nested);
+            possible_types = ~(
+                allow_unsigned_int | allow_hugeint | allow_floating_points | allow_dates | allow_enum | allow_dynamic | allow_json
+                | allow_low_cardinality | allow_array | allow_map | allow_tuple | allow_variant | allow_nested | allow_ipv4 | allow_ipv6);
         }
 
         tp = RandomNextType(rg, possible_types, t.col_counter, cd->mutable_type()->mutable_type());

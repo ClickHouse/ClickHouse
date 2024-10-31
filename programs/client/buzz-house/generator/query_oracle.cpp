@@ -432,7 +432,6 @@ static const std::vector<TestSetting> test_settings{
     TestSetting("rows_before_aggregation", {"0", "1"}),
     TestSetting("throw_on_error_from_cache_on_write_operations", {"0", "1"}),
     TestSetting("transform_null_in", {"0", "1"}),
-    TestSetting("ttl_only_drop_parts", {"0", "1"}),
     TestSetting("update_insert_deduplication_token_in_dependent_materialized_views", {"0", "1"}),
     TestSetting("use_index_for_in_with_subqueries", {"0", "1"}),
     TestSetting("use_page_cache_for_disks_without_file_cache", {"0", "1"}),
