@@ -70,6 +70,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsUInt64 parts_to_throw_insert;
     extern const MergeTreeSettingsMergeSelectorAlgorithm merge_selector_algorithm;
+    extern const MergeTreeSettingsBool merge_selector_enable_heuristic_to_remove_small_parts_at_right;
 }
 
 namespace ErrorCodes
@@ -540,6 +541,8 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
             /// Override value from table settings
             simple_merge_settings.window_size = (*data_settings)[MergeTreeSetting::merge_selector_window_size];
             simple_merge_settings.max_parts_to_merge_at_once = (*data_settings)[MergeTreeSetting::max_parts_to_merge_at_once];
+            simple_merge_settings.enable_heuristic_to_remove_small_parts_at_right = (*data_settings)[MergeTreeSettings::merge_selector_enable_heuristic_to_remove_small_parts_at_right];
+
             if (!(*data_settings)[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
                 simple_merge_settings.min_age_to_force_merge = (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds];
 
