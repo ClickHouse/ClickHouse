@@ -44,9 +44,9 @@ class ProcessListEntry;
 
 enum CancelReason
 {
-    NOT_CANCELLED,
+    UNDEFINED,
     TIMEOUT,
-    MANUAL_CANCEL,
+    CANCELLED_BY_USER,
 };
 
 /** Information of process list element.
@@ -113,7 +113,7 @@ protected:
     bool is_cancelling { false };
     /// KILL was send to the query
     std::atomic<bool> is_killed { false };
-    std::atomic<CancelReason> cancel_reason { CancelReason::NOT_CANCELLED };
+    std::atomic<CancelReason> cancel_reason { CancelReason::UNDEFINED };
 
     /// All data to the client already had been sent.
     /// Including EndOfStream or Exception.
@@ -233,6 +233,8 @@ public:
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
     CancellationCode cancelQuery(CancelReason reason);
+
+    void throwProperExceptionIfNeeded(UInt64 max_execution_time);
 
     bool isKilled() const { return is_killed; }
 

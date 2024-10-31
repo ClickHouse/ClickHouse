@@ -490,17 +490,26 @@ CancellationCode QueryStatus::cancelQuery(CancelReason reason)
     return CancellationCode::CancelSent;
 }
 
-void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
+void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time, const UInt64 & elapsed_ns)
+{
+    if (is_killed.load())
+    {
+        String additional_error_part;
+        if (!elapsed_ns)
+            additional_error_part = fmt::format("elapsed {} ms,", static_cast<double>(elapsed_ns) / 1000000000ULL);
+
+        if (cancel_reason == CancelReason::TIMEOUT)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: {} maximum: {} ms", additional_error_part, max_execution_time / 1000.0);
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+    }
+}
+
+void QueryStatus::addPipelineExecutor(PipelineExecutor * e, UInt64 max_exec_time)
 {
     /// In case of asynchronous distributed queries it is possible to call
     /// addPipelineExecutor() from the cancelQuery() context, and this will
     /// lead to deadlock.
-    if (is_killed.load())
-    {
-        if (cancel_reason == CancelReason::TIMEOUT)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Query was timed out");
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
-    }
+    throwProperExceptionIfNeeded(max_exec_time);
 
     std::lock_guard lock(executors_mutex);
     assert(!executors.contains(e));
@@ -525,14 +534,10 @@ void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
 
 bool QueryStatus::checkTimeLimit()
 {
-    if (is_killed.load())
-    {
-        if (cancel_reason == CancelReason::TIMEOUT)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Query was timed out");
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
-    }
+    auto elapsed_ns = watch.elapsed();
+    throwProperExceptionIfNeeded(limits.max_execution_time.totalMilliseconds(), elapsed_ns);
 
-    return limits.checkTimeLimit(watch, overflow_mode);
+    return limits.checkTimeLimit(elapsed_ns, overflow_mode);
 }
 
 bool QueryStatus::checkTimeLimitSoft()
@@ -540,9 +545,8 @@ bool QueryStatus::checkTimeLimitSoft()
     if (is_killed.load())
         return false;
 
-    return limits.checkTimeLimit(watch, OverflowMode::BREAK);
+    return limits.checkTimeLimit(watch.elapsedNanoseconds(), OverflowMode::BREAK);
 }
-
 
 void QueryStatus::setUserProcessList(ProcessListForUser * user_process_list_)
 {
@@ -622,7 +626,7 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
         cancelled_cv.notify_all();
     });
 
-    return elem->cancelQuery(CancelReason::MANUAL_CANCEL);
+    return elem->cancelQuery(CancelReason::CANCELLED_BY_USER);
 }
 
 
@@ -644,7 +648,7 @@ CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem)
         cancelled_cv.notify_all();
     });
 
-    return elem->cancelQuery(CancelReason::MANUAL_CANCEL);
+    return elem->cancelQuery(CancelReason::CANCELLED_BY_USER);
 }
 
 
@@ -670,7 +674,7 @@ void ProcessList::killAllQueries()
     }
 
     for (auto & cancelled_process : cancelled_processes)
-        cancelled_process->cancelQuery(CancelReason::MANUAL_CANCEL);
+        cancelled_process->cancelQuery(CancelReason::CANCELLED_BY_USER);
 
 }
 

@@ -1,5 +1,6 @@
 #include <Common/logger_useful.h>
 #include "Interpreters/ProcessList.h"
+#include "QueryPipeline/SizeLimits.h"
 #include <Interpreters/CancellationChecker.h>
 
 #include <__chrono/duration.h>

@@ -32,6 +32,7 @@ namespace Setting
 {
     extern const SettingsBool log_processors_profiles;
     extern const SettingsBool opentelemetry_trace_processors;
+    extern const SettingsSeconds max_execution_time;
 }
 
 namespace ErrorCodes
@@ -67,7 +68,8 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, Que
     {
         // Add the pipeline to the QueryStatus at the end to avoid issues if other things throw
         // as that would leave the executor "linked"
-        process_list_element->addPipelineExecutor(this);
+        UInt64 max_exec_time = process_list_element->getContext()->getSettingsRef()[Setting::max_execution_time].totalMilliseconds();
+        process_list_element->addPipelineExecutor(this, max_exec_time);
     }
 }
 
