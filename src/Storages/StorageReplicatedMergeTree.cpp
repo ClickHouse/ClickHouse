@@ -9897,7 +9897,14 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         }
         else if (error_code == Coordination::Error::ZNOTEMPTY)
         {
-            LOG_TRACE(logger, "Cannot remove last parent zookeeper lock {} for part {} with id {}, another replica locked part concurrently", zookeeper_part_uniq_node, part_name, part_id);
+            LOG_TRACE(
+                logger,
+                "Cannot remove last parent zookeeper lock {} for part {} with id {}, another replica locked part concurrently",
+                zookeeper_part_uniq_node,
+                part_name,
+                part_id);
+            part_has_no_more_locks = false;
+            continue;
         }
         else if (error_code == Coordination::Error::ZNONODE)
         {
