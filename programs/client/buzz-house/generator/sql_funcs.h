@@ -1028,6 +1028,13 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(sql_query_grammar::SQLFunc::FUNCuniqThetaUnion, 0, 0, 2, 2),
     CHFunction(sql_query_grammar::SQLFunc::FUNCuniqThetaIntersect, 0, 0, 2, 2),
     CHFunction(sql_query_grammar::SQLFunc::FUNCuniqThetaNot, 0, 0, 2, 2),
+    //Other
+    CHFunction(sql_query_grammar::SQLFunc::FUNChostname, 0, 0, 0, 0),
+    CHFunction(sql_query_grammar::SQLFunc::FUNCfqdn, 0, 0, 0, 0),
+    CHFunction(sql_query_grammar::SQLFunc::FUNCbasename, 0, 0, 1, 1),
+    CHFunction(sql_query_grammar::SQLFunc::FUNCvisibleWidth, 0, 0, 1, 1),
+    CHFunction(sql_query_grammar::SQLFunc::FUNCtoTypeName, 0, 0, 1, 1),
+    CHFunction(sql_query_grammar::SQLFunc::FUNCblockSize, 0, 0, 0, 0),
     /* Not Deterministic */
     //UUID
     CHFunction(sql_query_grammar::SQLFunc::FUNCgenerateUUIDv4, 0, 0, 1, 2),
