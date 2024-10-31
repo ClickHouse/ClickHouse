@@ -74,7 +74,6 @@ public:
 
     static void readArraySafe(IColumn & column, std::function<void()> && read_func);
 
-private:
     struct SubcolumnCreator : public ISubcolumnCreator
     {
         const ColumnPtr offsets;

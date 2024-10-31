@@ -103,7 +103,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.avro.schema_registry_url = settings[Setting::format_avro_schema_registry_url].toString();
     format_settings.avro.string_column_pattern = settings[Setting::output_format_avro_string_column_pattern].toString();
     format_settings.avro.output_rows_in_file = settings[Setting::output_format_avro_rows_in_file];
-    format_settings.avro.skip_columns_with_unsupported_types_in_schema_inference = settings[input_format_avro_skip_columns_with_unsupported_types_in_schema_inference];
+    format_settings.avro.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_avro_skip_columns_with_unsupported_types_in_schema_inference];
     format_settings.csv.allow_double_quotes = settings[Setting::format_csv_allow_double_quotes];
     format_settings.csv.allow_single_quotes = settings[Setting::format_csv_allow_single_quotes];
     format_settings.csv.serialize_tuple_into_separate_columns = settings[Setting::output_format_csv_serialize_tuple_into_separate_columns];

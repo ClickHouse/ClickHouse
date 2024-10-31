@@ -459,7 +459,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                         union_index_to_global_discriminator.insert_or_assign(i, ColumnVariant::NULL_DISCRIMINATOR);
                         continue;
                     }
-                    const auto variant = AvroSchemaReader::avroNodeToDataType(avro_node);
+                    const auto variant = AvroSchemaReader::avroNodeToDataType(avro_node, false);
                     nested_deserializers.emplace_back(createDeserializeFn(avro_node, variant));
 
                     auto corresponding_discriminator = variant_type.tryGetVariantDiscriminator(variant->getName());
@@ -1396,7 +1396,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node, bool skip_u
                 if (node->leafAt(i)->type() == avro::Type::AVRO_NULL) continue;
 
                 const auto & avro_node = node->leafAt(i);
-                nested_types.push_back(avroNodeToDataType(avro_node));
+                nested_types.push_back(avroNodeToDataType(avro_node, skip_unsupported_types));
             }
             return std::make_shared<DataTypeVariant>(nested_types);
         }
