@@ -739,17 +739,15 @@ void TCPHandler::runImpl()
         {
             auto exception_code = exception->code();
 
+            LOG_DEBUG(log, "we do not have an query state");
+
+            if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
+                LOG_INFO(log, getExceptionMessageAndPattern(*exception, send_exception_with_stack_trace));
+            else
+                LOG_ERROR(log, getExceptionMessageAndPattern(*exception, send_exception_with_stack_trace));
+
             if (!query_state.has_value())
-            {
-                LOG_DEBUG(log, "we do not have an query state");
-
-                if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
-                    LOG_INFO(log, getExceptionMessageAndPattern(*exception, send_exception_with_stack_trace));
-                else
-                    LOG_ERROR(log, getExceptionMessageAndPattern(*exception, send_exception_with_stack_trace));
-
                 return;
-            }
 
             try
             {
