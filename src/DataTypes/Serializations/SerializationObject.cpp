@@ -365,7 +365,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
         auto structure_state = std::make_shared<DeserializeBinaryBulkStateObjectStructure>(serialization_version);
         if (structure_state->serialization_version.value == ObjectSerializationVersion::Value::V1 || structure_state->serialization_version.value == ObjectSerializationVersion::Value::V2)
         {
-            if (structure_state->structure_version.value == ObjectSerializationVersion::Value::V1)
+            if (structure_state->serialization_version.value == ObjectSerializationVersion::Value::V1)
             {
                 /// Skip max_dynamic_paths parameter in V1 serialization version.
                 size_t max_dynamic_paths;
