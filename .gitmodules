@@ -371,4 +371,4 @@
 	url = https://github.com/ClickHouse/postgres.git
 [submodule "contrib/libcotp"]
 	path = contrib/libcotp
-	url = git@github.com:paolostivanin/libcotp.git
+	url = https://github.com/paolostivanin/libcotp.git
