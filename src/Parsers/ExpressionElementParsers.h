@@ -436,7 +436,12 @@ protected:
   */
 class ParserStorageOrderByElement : public IParserBase
 {
+public:
+    explicit ParserStorageOrderByElement(bool allow_order_) : allow_order(allow_order_) {}
+
 protected:
+    bool allow_order;
+
     const char * getName() const override { return "element of storage ORDER BY expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };

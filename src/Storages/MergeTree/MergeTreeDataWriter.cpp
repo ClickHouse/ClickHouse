@@ -524,7 +524,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
     for (size_t i = 0; i < sort_columns_size; ++i)
     {
-        if (reverse_flags[i])
+        if (!reverse_flags.empty() && reverse_flags[i])
             sort_description.emplace_back(sort_columns[i], -1, 1);
         else
             sort_description.emplace_back(sort_columns[i], 1, 1);
@@ -798,7 +798,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
 
     for (size_t i = 0; i < sort_columns_size; ++i)
     {
-        if (reverse_flags[i])
+        if (!reverse_flags.empty() && reverse_flags[i])
             sort_description.emplace_back(sort_columns[i], -1, 1);
         else
             sort_description.emplace_back(sort_columns[i], 1, 1);

@@ -665,7 +665,7 @@ void MergeTreeData::checkProperties(
         size_t num_sorting_keys = new_metadata.sorting_key.column_names.size();
         for (size_t i = 0; i < num_sorting_keys; ++i)
         {
-            if (new_metadata.sorting_key.reverse_flags[i])
+            if (!new_metadata.sorting_key.reverse_flags.empty() && new_metadata.sorting_key.reverse_flags[i])
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,

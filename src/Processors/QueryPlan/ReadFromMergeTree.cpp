@@ -1403,7 +1403,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
         for (size_t i = 0; i < sort_columns_size; ++i)
         {
-            if (reverse_flags[i])
+            if (!reverse_flags.empty() && reverse_flags[i])
                 sort_description.emplace_back(sort_columns[i], -1, 1);
             else
                 sort_description.emplace_back(sort_columns[i], 1, 1);

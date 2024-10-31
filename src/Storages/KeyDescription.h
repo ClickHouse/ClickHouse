@@ -14,10 +14,7 @@ struct KeyDescription
     /// primary key in merge tree can be part of sorting key)
     ASTPtr definition_ast;
 
-    /// Original user defined ASTExpressionList with key fields, example: (x DESC, toStartOfMonth(date))).
-    ASTPtr original_expression_list_ast;
-
-    /// Same as above but without special function __descendingKey, a.k.a, ASC|DESC suffix.
+    /// ASTExpressionList with key fields, example: (x DESC, toStartOfMonth(date))).
     ASTPtr expression_list_ast;
 
     /// Expression from expression_list_ast created by ExpressionAnalyzer. Useful,
@@ -73,6 +70,8 @@ struct KeyDescription
         const ColumnsDescription & columns,
         ContextPtr context);
 
+    ASTPtr getOriginalExpressionList() const;
+
     KeyDescription() = default;
 
     /// We need custom copy constructors because we don't want
@@ -84,7 +83,7 @@ struct KeyDescription
     static bool moduloToModuloLegacyRecursive(ASTPtr node_expr);
 
     /// Parse description from string
-    static KeyDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context);
+    static KeyDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context, bool allow_order);
 };
 
 }

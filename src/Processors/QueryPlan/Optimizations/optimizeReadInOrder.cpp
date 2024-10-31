@@ -372,7 +372,7 @@ InputOrderInfoPtr buildInputOrderFromSortDescription(
     while (next_description_column < description.size() && next_sort_key < sorting_key.column_names.size())
     {
         const auto & sorting_key_column = sorting_key.column_names[next_sort_key];
-        int reverse_indicator = sorting_key.reverse_flags[next_sort_key] ? -1 : 1;
+        int reverse_indicator = (!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[next_sort_key]) ? -1 : 1;
         const auto & sort_column_description = description[next_description_column];
 
         /// If required order depend on collation, it cannot be matched with primary key order.

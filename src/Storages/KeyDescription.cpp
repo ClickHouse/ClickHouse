@@ -9,6 +9,7 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Common/quoteString.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
@@ -24,7 +25,6 @@ namespace ErrorCodes
 
 KeyDescription::KeyDescription(const KeyDescription & other)
     : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)
-    , original_expression_list_ast(other.original_expression_list_ast ? other.original_expression_list_ast->clone() : nullptr)
     , expression_list_ast(other.expression_list_ast ? other.expression_list_ast->clone() : nullptr)
     , sample_block(other.sample_block)
     , column_names(other.column_names)
@@ -45,11 +45,6 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
         definition_ast = other.definition_ast->clone();
     else
         definition_ast.reset();
-
-    if (other.original_expression_list_ast)
-        original_expression_list_ast = other.original_expression_list_ast->clone();
-    else
-        original_expression_list_ast.reset();
 
     if (other.expression_list_ast)
         expression_list_ast = other.expression_list_ast->clone();
@@ -129,34 +124,38 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
 {
     KeyDescription result;
     result.definition_ast = definition_ast;
-    result.original_expression_list_ast = extractKeyExpressionList(definition_ast);
+    auto key_expression_list = extractKeyExpressionList(definition_ast);
+
+    result.expression_list_ast = std::make_shared<ASTExpressionList>();
+    for (const auto & child : key_expression_list->children)
+    {
+        auto real_key = child;
+        if (auto * elem = child->as<ASTStorageOrderByElement>())
+        {
+            real_key = elem->children.front();
+            result.reverse_flags.emplace_back(elem->direction < 0);
+        }
+
+        result.expression_list_ast->children.push_back(real_key);
+        result.column_names.emplace_back(real_key->getColumnName());
+    }
 
     if (additional_column)
     {
         result.additional_column = additional_column;
         ASTPtr column_identifier = std::make_shared<ASTIdentifier>(*additional_column);
-        result.original_expression_list_ast->children.push_back(column_identifier);
+        result.column_names.emplace_back(column_identifier->getColumnName());
+        result.expression_list_ast->children.push_back(column_identifier);
+
+        if (!result.reverse_flags.empty())
+            result.reverse_flags.emplace_back(false);
     }
 
-    result.expression_list_ast = std::make_shared<ASTExpressionList>();
-    const auto & children = result.original_expression_list_ast->children;
-    for (const auto & child : children)
-    {
-        if (auto * func = child->as<ASTFunction>())
-        {
-            if (func->name == "__descendingKey")
-            {
-                auto & real_key = func->arguments->children.front();
-                result.column_names.emplace_back(real_key->getColumnName());
-                result.reverse_flags.emplace_back(true);
-                result.expression_list_ast->children.push_back(real_key->clone());
-                continue;
-            }
-        }
-        result.column_names.emplace_back(child->getColumnName());
-        result.reverse_flags.emplace_back(false);
-        result.expression_list_ast->children.push_back(child->clone());
-    }
+    if (!result.reverse_flags.empty() && result.reverse_flags.size() != result.expression_list_ast->children.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "The size of reverse_flags ({}) does not match the size of KeyDescription {}",
+            result.reverse_flags.size(), result.expression_list_ast->children.size());
 
     {
         auto expr = result.expression_list_ast->clone();
@@ -179,22 +178,39 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
     return result;
 }
 
+ASTPtr KeyDescription::getOriginalExpressionList() const
+{
+    if (!expression_list_ast || reverse_flags.empty())
+        return expression_list_ast;
+
+    auto expr_list = std::make_shared<ASTExpressionList>();
+    size_t size = expression_list_ast->children.size();
+    for (size_t i = 0; i < size; ++i)
+    {
+        auto column_ast = std::make_shared<ASTStorageOrderByElement>();
+        column_ast->children.push_back(expression_list_ast->children[i]);
+        column_ast->direction = (!reverse_flags.empty() && reverse_flags[i]) ? -1 : 1;
+        expr_list->children.push_back(std::move(column_ast));
+    }
+
+    return expr_list;
+}
+
 KeyDescription KeyDescription::buildEmptyKey()
 {
     KeyDescription result;
-    result.original_expression_list_ast = std::make_shared<ASTExpressionList>();
     result.expression_list_ast = std::make_shared<ASTExpressionList>();
     result.expression = std::make_shared<ExpressionActions>(ActionsDAG(), ExpressionActionsSettings{});
     return result;
 }
 
-KeyDescription KeyDescription::parse(const String & str, const ColumnsDescription & columns, ContextPtr context)
+KeyDescription KeyDescription::parse(const String & str, const ColumnsDescription & columns, ContextPtr context, bool allow_order)
 {
     KeyDescription result;
     if (str.empty())
         return result;
 
-    ParserStorageOrderByClause parser;
+    ParserStorageOrderByClause parser(allow_order);
     ASTPtr ast = parseQuery(parser, "(" + str + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     FunctionNameNormalizer::visit(ast.get());
 

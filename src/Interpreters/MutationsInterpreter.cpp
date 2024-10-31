@@ -1445,7 +1445,7 @@ std::optional<SortDescription> MutationsInterpreter::getStorageSortDescriptionIf
     {
         if (header.has(sort_columns[i]))
         {
-            if (reverse_flags[i])
+            if (!reverse_flags.empty() && reverse_flags[i])
                 sort_description.emplace_back(sort_columns[i], -1, 1);
             else
                 sort_description.emplace_back(sort_columns[i], 1, 1);

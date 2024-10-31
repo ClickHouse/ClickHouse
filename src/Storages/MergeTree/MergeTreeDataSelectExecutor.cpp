@@ -1091,7 +1091,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         if (i < index->size())
         {
             index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
-            reverse_flags.push_back(primary_key.reverse_flags[i]);
+            reverse_flags.push_back(!primary_key.reverse_flags.empty() && primary_key.reverse_flags[i]);
         }
         else
         {

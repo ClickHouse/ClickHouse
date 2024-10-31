@@ -2174,6 +2174,12 @@ bool ParserStorageOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected &
     if (!elem_p.parse(pos, expr_elem, expected))
         return false;
 
+    if (!allow_order)
+    {
+        node = std::move(expr_elem);
+        return true;
+    }
+
     int direction = 1;
 
     if (descending.ignore(pos, expected) || desc.ignore(pos, expected))
@@ -2181,7 +2187,11 @@ bool ParserStorageOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected &
     else
         ascending.ignore(pos, expected) || asc.ignore(pos, expected);
 
-    node = direction == 1 ? std::move(expr_elem) : makeASTFunction("__descendingKey", std::move(expr_elem));
+    auto storage_elem = std::make_shared<ASTStorageOrderByElement>();
+    storage_elem->children.push_back(std::move(expr_elem));
+    storage_elem->direction = direction;
+
+    node = std::move(storage_elem);
     return true;
 }
 

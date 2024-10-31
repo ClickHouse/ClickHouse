@@ -411,7 +411,7 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
         context_)
     , column_names{column_names_}
     , storage{std::move(storage_)}
-    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, context).expression}
+    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, context, false).expression}
     , max_block_size{max_block_size_}
     , num_streams{num_streams_}
     , limit_length_and_offset(InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context))
