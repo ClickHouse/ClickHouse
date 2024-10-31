@@ -30,10 +30,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+// clang-format off
+
 /** These settings represent fine tunes for internal details of MergeTree storages
   * and should not be changed by the user without a reason.
   */
-
 #define MERGE_TREE_SETTINGS(DECLARE, ALIAS) \
     DECLARE(UInt64, min_compress_block_size, 0, "When granule is written, compress the data in buffer if the size of pending uncompressed data is larger or equal than the specified threshold. If this setting is not set, the corresponding global setting is used.", 0) \
     DECLARE(UInt64, max_compress_block_size, 0, "Compress the pending uncompressed data in buffer if its size is larger or equal than the specified threshold. Block of data will be compressed even if the current granule is not finished. If this setting is not set, the corresponding global setting is used.", 0) \
@@ -88,7 +89,7 @@ namespace ErrorCodes
     DECLARE(UInt64, min_age_to_force_merge_seconds, 0, "If all parts in a certain range are older than this value, range will be always eligible for merging. Set to 0 to disable.", 0) \
     DECLARE(Bool, min_age_to_force_merge_on_partition_only, false, "Whether min_age_to_force_merge_seconds should be applied only on the entire partition and not on subset.", false) \
     DECLARE(UInt64, number_of_free_entries_in_pool_to_execute_optimize_entire_partition, 25, "When there is less than specified number of free entries in pool, do not try to execute optimize entire partition with a merge (this merge is created when set min_age_to_force_merge_seconds > 0 and min_age_to_force_merge_on_partition_only = true). This is to leave free threads for regular merges and avoid \"Too many parts\"", 0) \
-    DECLARE(Bool, remove_rolled_back_parts_immediately, 1, "Setting for an incomplete experimental feature.", 0) \
+    DECLARE(Bool, remove_rolled_back_parts_immediately, 1, "Setting for an incomplete experimental feature.", EXPERIMENTAL) \
     DECLARE(UInt64, replicated_max_mutations_in_one_entry, 10000, "Max number of mutation commands that can be merged together and executed in one MUTATE_PART entry (0 means unlimited)", 0) \
     DECLARE(UInt64, number_of_mutations_to_delay, 500, "If table has at least that many unfinished mutations, artificially slow down mutations of table. Disabled if set to 0", 0) \
     DECLARE(UInt64, number_of_mutations_to_throw, 1000, "If table has at least that many unfinished mutations, throw 'Too many mutations' exception. Disabled if set to 0", 0) \
@@ -98,7 +99,7 @@ namespace ErrorCodes
     DECLARE(String, merge_workload, "", "Name of workload to be used to access resources for merges", 0) \
     DECLARE(String, mutation_workload, "", "Name of workload to be used to access resources for mutations", 0) \
     DECLARE(Milliseconds, background_task_preferred_step_execution_time_ms, 50, "Target time to execution of one step of merge or mutation. Can be exceeded if one step takes longer time", 0) \
-    DECLARE(MergeSelectorAlgorithm, merge_selector_algorithm, MergeSelectorAlgorithm::SIMPLE, "The algorithm to select parts for merges assignment", 0) \
+    DECLARE(MergeSelectorAlgorithm, merge_selector_algorithm, MergeSelectorAlgorithm::SIMPLE, "The algorithm to select parts for merges assignment", EXPERIMENTAL) \
     DECLARE(Bool, merge_selector_enable_heuristic_to_remove_small_parts_at_right, true, "Enable heuristic for selecting parts for merge which removes parts from right side of range, if their size is less than specified ratio (0.01) of sum_size. Works for Simple and StochasticSimple merge selectors", 0) \
     \
     /** Inserts settings. */ \
@@ -215,14 +216,14 @@ namespace ErrorCodes
     DECLARE(Bool, enable_block_offset_column, false, "Enable persisting column _block_offset for each row.", 0) \
     \
     /** Experimental/work in progress feature. Unsafe for production. */ \
-    DECLARE(UInt64, part_moves_between_shards_enable, 0, "Experimental/Incomplete feature to move parts between shards. Does not take into account sharding expressions.", 0) \
-    DECLARE(UInt64, part_moves_between_shards_delay_seconds, 30, "Time to wait before/after moving parts between shards.", 0) \
-    DECLARE(Bool, allow_remote_fs_zero_copy_replication, false, "Don't use this setting in production, because it is not ready.", 0) \
-    DECLARE(String, remote_fs_zero_copy_zookeeper_path, "/clickhouse/zero_copy", "ZooKeeper path for zero-copy table-independent info.", 0) \
-    DECLARE(Bool, remote_fs_zero_copy_path_compatible_mode, false, "Run zero-copy in compatible mode during conversion process.", 0) \
-    DECLARE(Bool, cache_populated_by_fetch, false, "Only available in ClickHouse Cloud", 0) \
-    DECLARE(Bool, force_read_through_cache_for_merges, false, "Force read-through filesystem cache for merges", 0) \
-    DECLARE(Bool, allow_experimental_replacing_merge_with_cleanup, false, "Allow experimental CLEANUP merges for ReplacingMergeTree with is_deleted column.", 0) \
+    DECLARE(UInt64, part_moves_between_shards_enable, 0, "Experimental/Incomplete feature to move parts between shards. Does not take into account sharding expressions.", EXPERIMENTAL) \
+    DECLARE(UInt64, part_moves_between_shards_delay_seconds, 30, "Time to wait before/after moving parts between shards.", EXPERIMENTAL) \
+    DECLARE(Bool, allow_remote_fs_zero_copy_replication, false, "Don't use this setting in production, because it is not ready.", BETA) \
+    DECLARE(String, remote_fs_zero_copy_zookeeper_path, "/clickhouse/zero_copy", "ZooKeeper path for zero-copy table-independent info.", EXPERIMENTAL) \
+    DECLARE(Bool, remote_fs_zero_copy_path_compatible_mode, false, "Run zero-copy in compatible mode during conversion process.", EXPERIMENTAL) \
+    DECLARE(Bool, cache_populated_by_fetch, false, "Only available in ClickHouse Cloud", EXPERIMENTAL) \
+    DECLARE(Bool, force_read_through_cache_for_merges, false, "Force read-through filesystem cache for merges", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_replacing_merge_with_cleanup, false, "Allow experimental CLEANUP merges for ReplacingMergeTree with is_deleted column.", EXPERIMENTAL) \
     \
     /** Compress marks and primary key. */ \
     DECLARE(Bool, compress_marks, true, "Marks support compression, reduce mark file size and speed up network transmission.", 0) \
@@ -241,7 +242,7 @@ namespace ErrorCodes
     DECLARE(DeduplicateMergeProjectionMode, deduplicate_merge_projection_mode, DeduplicateMergeProjectionMode::THROW, "Whether to allow create projection for the table with non-classic MergeTree. Ignore option is purely for compatibility which might result in incorrect answer. Otherwise, if allowed, what is the action when merge, drop or rebuild.", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
-    M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", BaseSettingsHelpers::Flags::OBSOLETE)
+    M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE)
 
 #define OBSOLETE_MERGE_TREE_SETTINGS(M, ALIAS) \
     /** Obsolete settings that do nothing but left for compatibility reasons. */ \
@@ -279,8 +280,9 @@ namespace ErrorCodes
     MERGE_TREE_SETTINGS(M, ALIAS)             \
     OBSOLETE_MERGE_TREE_SETTINGS(M, ALIAS)
 
-DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS)
+// clang-format on
 
+DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS)
 
 /** Settings for the MergeTree family of engines.
   * Could be loaded from config or from a CREATE TABLE query (SETTINGS clause).
@@ -651,7 +653,8 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
         res_columns[5]->insert(max);
         res_columns[6]->insert(writability == SettingConstraintWritability::CONST);
         res_columns[7]->insert(setting.getTypeName());
-        res_columns[8]->insert(setting.isObsolete());
+        res_columns[8]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
+        res_columns[9]->insert(setting.getTier());
     }
 }
 
