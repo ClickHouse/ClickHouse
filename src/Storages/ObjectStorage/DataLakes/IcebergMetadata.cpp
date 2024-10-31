@@ -951,7 +951,8 @@ DataFileInfos IcebergMetadata::getDataFileInfos(const ActionsDAG * filter_dag) c
                 // Field next_year_beginning_field(next_year_beginning);
                 // // ColumnVector<UInt16>(1, year_beginning)->get(0, year_beginning_field);
                 // // ColumnVector<UInt16>(1, next_year_beginning)->get(0, next_year_beginning_field);
-                ranges.push_back(getPartitionRange(partition_transforms[j], i, partition_columns[j], partition_types[j]));
+                ranges.push_back(
+                    getPartitionRange(partition_transforms[j], static_cast<UInt32>(i), partition_columns[j], partition_types[j]));
                 // ranges.emplace_back(year_beginning_field, true, next_year_beginning_field, false);
                 // LOG_DEBUG(
                 //     &Poco::Logger::get("Partition years"),

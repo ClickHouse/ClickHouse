@@ -1,4 +1,7 @@
 #pragma once
+#include "Common/logger_useful.h"
+#include "DataTypes/DataTypeNullable.h"
+#include "DataTypes/IDataType.h"
 #include "base/DayNum.h"
 #include "base/types.h"
 #include "config.h"
@@ -300,9 +303,19 @@ private:
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported partition transform for get day function: {}", transform);
     }
 
-    static Int64 getTime(Int32 value, PartitionTransform transform) { return getValues(value, transform).date; }
+    static Int64 getTime(Int32 value, PartitionTransform transform)
+    {
+        DateLUTImpl::Values values = getValues(value, transform);
+        // LOG_DEBUG(&Poco::Logger::get("Get field"), "Values: {}", values);
+        return values.date;
+    }
 
-    static Int16 getDay(Int32 value, PartitionTransform transform) { return DateLUT::instance().toDayNum(getTime(value, transform)); }
+    static Int16 getDay(Int32 value, PartitionTransform transform)
+    {
+        DateLUTImpl::Time got_time = getTime(value, transform);
+        LOG_DEBUG(&Poco::Logger::get("Get field"), "Time: {}", got_time);
+        return DateLUT::instance().toDayNum(got_time);
+    }
 
     static Range
     getPartitionRange(PartitionTransform partition_transform, UInt32 index, ColumnPtr partition_column, DataTypePtr column_data_type)
@@ -311,15 +324,17 @@ private:
             || partition_transform == PartitionTransform::Day)
         {
             auto column = dynamic_cast<const ColumnNullable *>(partition_column.get())->getNestedColumnPtr();
-            const auto * year_int_column = assert_cast<const ColumnInt32 *>(column.get());
-            Int32 value = static_cast<Int32>(year_int_column->getInt(index));
-            if (WhichDataType(column_data_type).isDate())
+            const auto * casted_innner_column = assert_cast<const ColumnInt32 *>(column.get());
+            Int32 value = static_cast<Int32>(casted_innner_column->getInt(index));
+            LOG_DEBUG(&Poco::Logger::get("Partition"), "Partition value: {}, transform: {}", value, partition_transform);
+            auto nested_data_type = dynamic_cast<const DataTypeNullable *>(column_data_type.get())->getNestedType();
+            if (WhichDataType(nested_data_type).isDate())
             {
                 const UInt16 begin_range_value = getDay(value, partition_transform);
                 const UInt16 end_range_value = getDay(value + 1, partition_transform);
                 return Range{begin_range_value, true, end_range_value, false};
             }
-            else if (WhichDataType(column_data_type).isDateTime64())
+            else if (WhichDataType(nested_data_type).isDateTime64())
             {
                 const UInt64 begin_range_value = getTime(value, partition_transform);
                 const UInt64 end_range_value = getTime(value + 1, partition_transform);
@@ -331,7 +346,7 @@ private:
                     ErrorCodes::BAD_ARGUMENTS,
                     "Partition transform {} is not supported for the type: {}",
                     partition_transform,
-                    column_data_type);
+                    nested_data_type);
             }
         }
         else
