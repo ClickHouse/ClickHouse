@@ -262,7 +262,7 @@ MergeTreeReaderWide::FileStreams::iterator MergeTreeReaderWide::addStream(const 
         /*num_columns_in_mark=*/ 1);
 
     auto stream_settings = settings;
-    stream_settings.is_low_cardinality_dictionary = substream_path.size() > 1 && substream_path[substream_path.size() - 2].type == ISerialization::Substream::Type::DictionaryKeys;
+    stream_settings.is_low_cardinality_dictionary = ISerialization::isLowCardinalityDictionarySubcolumn(substream_path, substream_path.size());
 
     auto create_stream = [&]<typename Stream>()
     {

@@ -54,7 +54,7 @@ void SerializationLowCardinality::enumerateStreams(
         .withSerializationInfo(data.serialization_info);
 
     settings.path.back().data = dict_data;
-    dict_inner_serialization->enumerateStreams(settings, callback, dict_data);
+    callback(settings.path);
 
     settings.path.back() = Substream::DictionaryIndexes;
     settings.path.back().data = data;
