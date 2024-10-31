@@ -234,7 +234,7 @@ void ConcurrentHashJoin::joinBlock(Block & block, ExtraScatteredBlocks & extra_b
     auto & remaining_blocks = extra_blocks.remaining_blocks;
     if (extra_blocks.rows())
     {
-        dispatched_blocks = std::move(remaining_blocks);
+        dispatched_blocks.swap(remaining_blocks);
     }
     else
     {
