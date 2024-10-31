@@ -50,7 +50,7 @@ namespace DB
             formatter->finalizeImpl();
 
         formatter->finalizeBuffers();
-        finishAndWait(/* emergency_stop_ */ false);
+        finishAndWait();
     }
 
     void ParallelFormattingOutputFormat::addChunk(Chunk chunk, ProcessingUnitType type, bool can_throw_exception)
@@ -67,10 +67,10 @@ namespace DB
         {
             std::unique_lock<std::mutex> lock(mutex);
             writer_condvar.wait(lock,
-                [&]{ return unit.status == READY_TO_INSERT || emergency_stop; });
+                [&]{ return unit.status == READY_TO_INSERT || stop_flag; });
         }
 
-        if (emergency_stop)
+        if (stop_flag)
             return;
 
         assert(unit.status == READY_TO_INSERT);
@@ -97,11 +97,8 @@ namespace DB
     }
 
 
-    void ParallelFormattingOutputFormat::finishAndWait(bool emergency_stop_) noexcept
+    void ParallelFormattingOutputFormat::finishAndWait() noexcept
     {
-        if (emergency_stop_)
-            emergency_stop = true;
-
         {
             std::unique_lock<std::mutex> lock(mutex);
             collector_condvar.notify_all();
@@ -137,7 +134,7 @@ namespace DB
 
         try
         {
-            while (!emergency_stop)
+            while (!stop_flag)
             {
                 const auto current_unit_number = collector_unit_number % processing_units.size();
                 auto & unit = processing_units[current_unit_number];
@@ -145,10 +142,10 @@ namespace DB
                 {
                     std::unique_lock<std::mutex> lock(mutex);
                     collector_condvar.wait(lock,
-                        [&]{ return unit.status == READY_TO_READ || emergency_stop; });
+                        [&]{ return unit.status == READY_TO_READ || stop_flag; });
                 }
 
-                if (emergency_stop)
+                if (stop_flag)
                     break;
 
                 assert(unit.status == READY_TO_READ);

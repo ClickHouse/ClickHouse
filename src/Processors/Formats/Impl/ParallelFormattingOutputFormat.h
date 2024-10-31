@@ -109,7 +109,7 @@ public:
 
     ~ParallelFormattingOutputFormat() override
     {
-        finishAndWait(/* emergency_stop_ */ true);
+        finishAndWait();
     }
 
     String getName() const override { return "ParallelFormattingOutputFormat"; }
@@ -127,7 +127,7 @@ public:
 
     void onCancel() noexcept override
     {
-        finishAndWait(/* emergency_stop_ */ true);
+        finishAndWait();
     }
 
     void onProgress(const Progress & value) override
@@ -247,7 +247,7 @@ private:
     std::deque<ProcessingUnit> processing_units;
 
     std::mutex mutex;
-    std::atomic_bool emergency_stop{false};
+    std::atomic_bool stop_flag{false};
 
     std::atomic_size_t collector_unit_number{0};
     std::atomic_size_t writer_unit_number{0};
@@ -271,7 +271,7 @@ private:
     bool collected_suffix = false;
     bool collected_finalize = false;
 
-    void finishAndWait(bool emergency_stop_) noexcept;
+    void finishAndWait() noexcept;
 
     void onBackgroundException()
     {
