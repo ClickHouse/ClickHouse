@@ -273,6 +273,13 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_replicated_sends_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 tables_loader_background_pool_size;
     extern const ServerSettingsUInt64 tables_loader_foreground_pool_size;
+    extern const ServerSettingsUInt64 prefetch_threadpool_pool_size;
+    extern const ServerSettingsUInt64 prefetch_threadpool_queue_size;
+    extern const ServerSettingsUInt64 load_marks_threadpool_pool_size;
+    extern const ServerSettingsUInt64 load_marks_threadpool_queue_size;
+    extern const ServerSettingsUInt64 threadpool_writer_pool_size;
+    extern const ServerSettingsUInt64 threadpool_writer_queue_size;
+
 }
 
 namespace ErrorCodes
@@ -3215,9 +3222,8 @@ void Context::clearMarkCache() const
 ThreadPool & Context::getLoadMarksThreadpool() const
 {
     callOnce(shared->load_marks_threadpool_initialized, [&] {
-        const auto & config = getConfigRef();
-        auto pool_size = config.getUInt(".load_marks_threadpool_pool_size", 50);
-        auto queue_size = config.getUInt(".load_marks_threadpool_queue_size", 1000000);
+        auto pool_size = shared->server_settings[ServerSetting::load_marks_threadpool_pool_size];
+        auto queue_size = shared->server_settings[ServerSetting::load_marks_threadpool_queue_size];
         shared->load_marks_threadpool = std::make_unique<ThreadPool>(
             CurrentMetrics::MarksLoaderThreads, CurrentMetrics::MarksLoaderThreadsActive, CurrentMetrics::MarksLoaderThreadsScheduled, pool_size, pool_size, queue_size);
     });
@@ -3410,9 +3416,9 @@ AsynchronousMetrics * Context::getAsynchronousMetrics() const
 ThreadPool & Context::getPrefetchThreadpool() const
 {
     callOnce(shared->prefetch_threadpool_initialized, [&] {
-        const auto & config = getConfigRef();
-        auto pool_size = config.getUInt(".prefetch_threadpool_pool_size", 100);
-        auto queue_size = config.getUInt(".prefetch_threadpool_queue_size", 1000000);
+        auto pool_size = shared->server_settings[ServerSetting::prefetch_threadpool_pool_size];
+        auto queue_size = shared->server_settings[ServerSetting::prefetch_threadpool_queue_size];
+
         shared->prefetch_threadpool = std::make_unique<ThreadPool>(
             CurrentMetrics::IOPrefetchThreads, CurrentMetrics::IOPrefetchThreadsActive, CurrentMetrics::IOPrefetchThreadsScheduled, pool_size, pool_size, queue_size);
     });
@@ -3422,8 +3428,7 @@ ThreadPool & Context::getPrefetchThreadpool() const
 
 size_t Context::getPrefetchThreadpoolSize() const
 {
-    const auto & config = getConfigRef();
-    return config.getUInt(".prefetch_threadpool_pool_size", 100);
+    return shared->server_settings[ServerSetting::prefetch_threadpool_pool_size];
 }
 
 ThreadPool & Context::getBuildVectorSimilarityIndexThreadPool() const
@@ -5696,9 +5701,8 @@ IOUringReader & Context::getIOUringReader() const
 ThreadPool & Context::getThreadPoolWriter() const
 {
     callOnce(shared->threadpool_writer_initialized, [&] {
-        const auto & config = getConfigRef();
-        auto pool_size = config.getUInt(".threadpool_writer_pool_size", 100);
-        auto queue_size = config.getUInt(".threadpool_writer_queue_size", 1000000);
+        auto pool_size = shared->server_settings[ServerSetting::threadpool_writer_pool_size];
+        auto queue_size = shared->server_settings[ServerSetting::threadpool_writer_queue_size];
 
         shared->threadpool_writer = std::make_unique<ThreadPool>(
             CurrentMetrics::IOWriterThreads, CurrentMetrics::IOWriterThreadsActive, CurrentMetrics::IOWriterThreadsScheduled, pool_size, pool_size, queue_size);
