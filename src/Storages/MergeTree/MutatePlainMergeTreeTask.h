@@ -42,7 +42,7 @@ public:
     bool executeStep() override;
     void onCompleted() override;
     StorageID getStorageID() const override;
-    Priority getPriority() const override { return priority; }
+    Priority getPriority(SchedulingGoal) const override { return priority; } // TODO(serxa): make adjustments depending on goal
     String getQueryId() const override { return getStorageID().getShortName() + "::" + merge_mutate_entry->future_part->name; }
 
 private:
