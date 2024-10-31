@@ -58,10 +58,10 @@ SELECT json FROM test;
 └───────────────────────────────────┘
 ```
 
-Using CAST from 'String':
+Using CAST from `String`:
 
 ```sql
-SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON as json;
+SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON AS json;
 ```
 
 ```text
@@ -70,7 +70,47 @@ SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON as json
 └────────────────────────────────────────────────┘
 ```
 
-CAST from `JSON`, named `Tuple`, `Map` and `Object('json')` to `JSON` type will be supported later.
+Using CAST from `Tuple`:
+
+```sql
+SELECT (tuple(42 AS b) AS a, [1, 2, 3] AS c, 'Hello, World!' AS d)::JSON AS json;
+```
+
+```text
+┌─json───────────────────────────────────────────┐
+│ {"a":{"b":42},"c":[1,2,3],"d":"Hello, World!"} │
+└────────────────────────────────────────────────┘
+```
+
+Using CAST from `Map`:
+
+```sql
+SELECT map('a', map('b', 42), 'c', [1,2,3], 'd', 'Hello, World!')::JSON AS json;
+```
+
+```text
+┌─json───────────────────────────────────────────┐
+│ {"a":{"b":42},"c":[1,2,3],"d":"Hello, World!"} │
+└────────────────────────────────────────────────┘
+```
+
+Using CAST from deprecated `Object('json')`:
+
+```sql
+ SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::Object('json')::JSON AS json;
+ ```
+
+```text
+┌─json───────────────────────────────────────────┐
+│ {"a":{"b":42},"c":[1,2,3],"d":"Hello, World!"} │
+└────────────────────────────────────────────────┘
+```
+
+:::note
+CAST from `Tuple`/`Map`/`Object('json')` to `JSON` is implemented via serializing the column into `String` column containing JSON objects and deserializing it back to `JSON` type column. 
+:::
+
+CAST between `JSON` types with different arguments will be supported later.
 
 ## Reading JSON paths as subcolumns
 
