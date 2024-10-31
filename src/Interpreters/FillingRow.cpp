@@ -13,7 +13,7 @@ namespace DB
 constexpr static bool debug_logging_enabled = false;
 
 template <class... Args>
-inline static void logDebug(String fmt_str, Args&&... args)
+inline static void logDebug(const char * fmt_str, Args&&... args)
 {
     if constexpr (debug_logging_enabled)
         LOG_DEBUG(getLogger("FillingRow"), "{}", fmt::format(fmt::runtime(fmt_str), std::forward<Args>(args)...));
@@ -117,7 +117,7 @@ bool FillingRow::isConstraintsSatisfied(size_t pos) const
     chassert(hasSomeConstraints(pos));
 
     int direction = getDirection(pos);
-    logDebug("constraint: {}, row: {}, direction: {}", constraints[pos].dump(), row[pos].dump(), direction);
+    logDebug("constraint: {}, row: {}, direction: {}", constraints[pos], row[pos], direction);
 
     return less(row[pos], constraints[pos], direction);
 }
@@ -230,7 +230,7 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
 
 bool FillingRow::shift(const FillingRow & next_original_row, bool& value_changed)
 {
-    logDebug("next_original_row: {}, current: {}", next_original_row.dump(), dump());
+    logDebug("next_original_row: {}, current: {}", next_original_row, *this);
 
     for (size_t pos = 0; pos < size(); ++pos)
     {
@@ -318,15 +318,12 @@ void FillingRow::updateConstraintsWithStalenessRow(const Columns& base_row, size
     for (size_t i = 0; i < size(); ++i)
     {
         const auto& descr = getFillDescription(i);
-        constraints[i] = descr.fill_to;
 
         if (!descr.fill_staleness.isNull())
         {
             Field staleness_border = (*base_row[i])[row_ind];
             descr.staleness_step_func(staleness_border, 1);
-
-            if (constraints[i].isNull() || less(staleness_border, constraints[i], getDirection(i)))
-                constraints[i] = std::move(staleness_border);
+            constraints[i] = findBorder(descr.fill_to, staleness_border, getDirection(i));
         }
     }
 }
@@ -350,3 +347,12 @@ WriteBuffer & operator<<(WriteBuffer & out, const FillingRow & row)
 }
 
 }
+
+template <>
+struct fmt::formatter<DB::FillingRow> : fmt::formatter<string_view>
+{
+    constexpr auto format(const DB::FillingRow & row, format_context & ctx) const
+    {
+        return fmt::format_to(ctx.out(), "{}", row.dump());
+    }
+};

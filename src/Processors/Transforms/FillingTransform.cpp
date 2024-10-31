@@ -20,7 +20,7 @@ namespace DB
 constexpr static bool debug_logging_enabled = false;
 
 template <typename T>
-inline static void logDebug(String key, const T & value, const char * separator = " : ")
+inline static void logDebug(const char * key, const T & value, const char * separator = " : ")
 {
     if constexpr (debug_logging_enabled)
     {
@@ -235,6 +235,7 @@ FillingTransform::FillingTransform(
         fill_column_positions.push_back(block_position);
 
         auto & descr = filling_row.getFillDescription(i);
+        running_with_staleness |= !descr.fill_staleness.isNull();
 
         const Block & output_header = getOutputPort().getHeader();
         const DataTypePtr & type = removeNullable(output_header.getByPosition(block_position).type);
@@ -663,23 +664,26 @@ void FillingTransform::transformRange(
             filling_row_changed = false;
         }
 
-        /// Initialize staleness border for current row to generate it's prefix
-        filling_row.updateConstraintsWithStalenessRow(input_fill_columns, row_ind);
-
-        while (filling_row.shift(next_row, filling_row_changed))
+        if (running_with_staleness)
         {
-            logDebug("filling_row after shift", filling_row);
+            /// Initialize staleness border for current row to generate it's prefix
+            filling_row.updateConstraintsWithStalenessRow(input_fill_columns, row_ind);
 
-            do
+            while (filling_row.shift(next_row, filling_row_changed))
             {
-                logDebug("inserting prefix filling_row", filling_row);
+                logDebug("filling_row after shift", filling_row);
 
-                interpolate(result_columns, interpolate_block);
-                insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
-                copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
-                filling_row_changed = false;
+                do
+                {
+                    logDebug("inserting prefix filling_row", filling_row);
 
-            } while (filling_row.next(next_row, filling_row_changed));
+                    interpolate(result_columns, interpolate_block);
+                    insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
+                    copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
+                    filling_row_changed = false;
+
+                } while (filling_row.next(next_row, filling_row_changed));
+            }
         }
 
         /// new valid filling row was generated but not inserted, will use it during suffix generation
