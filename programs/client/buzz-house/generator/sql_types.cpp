@@ -117,29 +117,35 @@ const SQLType * TypeDeepCopy(const SQLType * tp)
     return nullptr;
 }
 
-std::tuple<const SQLType *, sql_query_grammar::Integers> StatementGenerator::RandomIntType(RandomGenerator & rg, const uint32_t allowed_types)
+std::tuple<const SQLType *, sql_query_grammar::Integers>
+StatementGenerator::RandomIntType(RandomGenerator & rg, const uint32_t allowed_types)
 {
     assert(this->ids.empty());
 
-    if ((allowed_types & allow_unsigned_int)) {
-        if ((allowed_types & allow_int8)) {
+    if ((allowed_types & allow_unsigned_int))
+    {
+        if ((allowed_types & allow_int8))
+        {
             this->ids.push_back(1);
         }
         this->ids.push_back(2);
         this->ids.push_back(3);
         this->ids.push_back(4);
-        if ((allowed_types & allow_hugeint)) {
+        if ((allowed_types & allow_hugeint))
+        {
             this->ids.push_back(5);
             this->ids.push_back(6);
         }
     }
-    if ((allowed_types & allow_int8)) {
+    if ((allowed_types & allow_int8))
+    {
         this->ids.push_back(7);
     }
     this->ids.push_back(8);
     this->ids.push_back(9);
     this->ids.push_back(10);
-    if ((allowed_types & allow_hugeint)) {
+    if ((allowed_types & allow_hugeint))
+    {
         this->ids.push_back(11);
         this->ids.push_back(12);
     }
@@ -196,14 +202,17 @@ std::tuple<const SQLType *, sql_query_grammar::Dates> StatementGenerator::Random
 {
     assert(this->ids.empty());
 
-    if ((allowed_types & allow_dates)) {
+    if ((allowed_types & allow_dates))
+    {
         this->ids.push_back(1);
-        if ((allowed_types & allow_date32)) {
+        if ((allowed_types & allow_date32))
+        {
             this->ids.push_back(2);
         }
     }
     this->ids.push_back(3);
-    if ((allowed_types & allow_datetime64)) {
+    if ((allowed_types & allow_datetime64))
+    {
         this->ids.push_back(4);
     }
     const uint32_t nopt = rg.PickRandomlyFromVector(this->ids);

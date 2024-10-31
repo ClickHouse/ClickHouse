@@ -422,7 +422,7 @@ enum SQLFunc {
     FUNCformatReadableTimeDelta = 417;
     FUNCformatRow = 418;
     FUNCformatRowNoNewline = 419;
-    FUNCFQDN = 420;
+    FUNCfqdn = 420;
     FUNCfragment = 421;
     FUNCFROM_BASE64 = 422;
     FUNCFROM_DAYS = 423;

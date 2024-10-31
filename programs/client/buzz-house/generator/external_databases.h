@@ -73,9 +73,9 @@ public:
             else
             {
                 out_mysql = std::ofstream(fc.mysql_server.query_log_file, std::ios::out | std::ios::trunc);
-                if (fc.read_log ||
-                    (PerformQuery(DatabaseCall::MySQL, "DROP SCHEMA IF EXISTS " + fc.mysql_server.database + ";") &&
-                     PerformQuery(DatabaseCall::MySQL, "CREATE SCHEMA " + fc.mysql_server.database + ";")))
+                if (fc.read_log
+                    || (PerformQuery(DatabaseCall::MySQL, "DROP SCHEMA IF EXISTS " + fc.mysql_server.database + ";")
+                        && PerformQuery(DatabaseCall::MySQL, "CREATE SCHEMA " + fc.mysql_server.database + ";")))
                 {
                     std::cout << "Connected to MySQL" << std::endl;
                 }
@@ -149,9 +149,9 @@ public:
                 else
                 {
                     out_postgresql = std::ofstream(fc.postgresql_server.query_log_file, std::ios::out | std::ios::trunc);
-                    if (fc.read_log ||
-                        (PerformQuery(DatabaseCall::PostgreSQL, "DROP SCHEMA IF EXISTS test CASCADE;") &&
-                         PerformQuery(DatabaseCall::PostgreSQL, "CREATE SCHEMA test;")))
+                    if (fc.read_log
+                        || (PerformQuery(DatabaseCall::PostgreSQL, "DROP SCHEMA IF EXISTS test CASCADE;")
+                            && PerformQuery(DatabaseCall::PostgreSQL, "CREATE SCHEMA test;")))
                     {
                         std::cout << "Connected to PostgreSQL" << std::endl;
                     }
