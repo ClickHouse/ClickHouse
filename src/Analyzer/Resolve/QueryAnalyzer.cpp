@@ -103,6 +103,7 @@ namespace Setting
     extern const SettingsBool single_join_prefer_left_table;
     extern const SettingsBool transform_null_in;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
+    extern const SettingsBool use_concurrency_control;
 }
 
 
@@ -226,8 +227,13 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
         scope.context = context;
 
     auto node_type = node->getNodeType();
+    if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+    {
+        evaluateScalarSubqueryIfNeeded(node, scope);
+        return;
+    }
 
-    if (table_expression && node_type != QueryTreeNodeType::QUERY && node_type != QueryTreeNodeType::UNION)
+    if (table_expression)
     {
         scope.expression_join_tree_node = table_expression;
         validateTableExpressionModifiers(scope.expression_join_tree_node, scope);
@@ -588,6 +594,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             PullingAsyncPipelineExecutor executor(io.pipeline);
             io.pipeline.setProgressCallback(context->getProgressCallback());
             io.pipeline.setProcessListElement(context->getProcessListElement());
+            io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
             Block block;
 
