@@ -395,10 +395,10 @@ void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to
 
     const auto escaped_name_length = escapeForFileName(to_table_name).length();
 
-    if (escaped_length > allowed_max_length)
+    if (escaped_name_length > allowed_max_length)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                         "The max length of table name for database {} is {}, current length is {}",
-                        database_name, allowed_max_length, escaped_length);
+                        database_name, allowed_max_length, escaped_name_length);
 
     if (fs::exists(table_metadata_path))
     {
