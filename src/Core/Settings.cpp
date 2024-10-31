@@ -438,6 +438,9 @@ Enables or disables creating a new file on each insert in azure engine tables
     DECLARE(Bool, s3_check_objects_after_upload, false, R"(
 Check each uploaded object to s3 with head request to be sure that upload was successful
 )", 0) \
+    DECLARE(Bool, azure_check_objects_after_upload, false, R"(
+Check each uploaded object in azure blob storage to be sure that upload was successful
+)", 0) \
     DECLARE(Bool, s3_allow_parallel_part_upload, true, R"(
 Use multiple threads for s3 multipart upload. It may lead to slightly higher memory usage
 )", 0) \
