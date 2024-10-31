@@ -24,7 +24,7 @@ public:
         StorageReplicatedMergeTree & storage_,
         IExecutableTask::TaskResultCallback & task_result_callback_);
 
-    Priority getPriority() const override { return priority; }
+    Priority getPriority(SchedulingGoal goal) const override { return scheduling.getPriority(goal); }
 
 protected:
     /// Both return false if we can't execute merge.
@@ -46,8 +46,7 @@ private:
     StopwatchUniquePtr stopwatch_ptr{nullptr};
     MergeTreeData::MutableDataPartPtr part;
 
-    Priority priority;
-
+    MergeTask::SchedulingParameters scheduling;
     MergeTaskPtr merge_task;
     pcg64 rng;
 };

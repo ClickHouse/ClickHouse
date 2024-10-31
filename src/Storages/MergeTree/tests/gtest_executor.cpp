@@ -51,7 +51,7 @@ public:
             throw TestException();
     }
 
-    Priority getPriority() const override { return {}; }
+    Priority getPriority(SchedulingGoal) const override { return {}; }
     String getQueryId() const override { return {}; }
 
 private:
@@ -87,7 +87,7 @@ public:
 
     void onCompleted() override {}
 
-    Priority getPriority() const override { return priority; }
+    Priority getPriority(SchedulingGoal) const override { return priority; }
     String getQueryId() const override { return "test::lambda"; }
 
 private:

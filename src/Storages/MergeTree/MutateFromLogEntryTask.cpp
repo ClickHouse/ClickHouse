@@ -234,9 +234,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
             future_mutated_part, metadata_snapshot, commands, merge_mutate_entry.get(),
             entry.create_time, task_context, NO_TRANSACTION_PTR, reserved_space, table_lock_holder);
 
-    /// Adjust priority
-    for (auto & item : future_mutated_part->parts)
-        priority.value += item->getBytesOnDisk();
+    scheduling = MergeTask::SchedulingParameters(future_mutated_part->parts);
 
     return PrepareResult{
         .prepared_successfully = true,

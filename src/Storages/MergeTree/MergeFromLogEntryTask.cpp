@@ -356,9 +356,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             storage.merging_params,
             NO_TRANSACTION_PTR);
 
-    /// Adjust priority
-    for (auto & item : future_merged_part->parts)
-        priority.value += item->getBytesOnDisk();
+    scheduling = MergeTask::SchedulingParameters(future_merged_part->parts);
 
     return PrepareResult{
         .prepared_successfully = true,
