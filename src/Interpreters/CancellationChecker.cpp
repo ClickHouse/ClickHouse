@@ -103,7 +103,7 @@ void CancellationChecker::workerFunction()
         UInt64 end_time_ms = 0;
         UInt64 duration = 0;
         auto now = std::chrono::steady_clock::now();
-        UInt64 now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+        UInt64 now_ms;
         std::chrono::steady_clock::duration duration_milliseconds = std::chrono::milliseconds(0);
 
         if (!querySet.empty())
