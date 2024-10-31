@@ -68,8 +68,7 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, Que
     {
         // Add the pipeline to the QueryStatus at the end to avoid issues if other things throw
         // as that would leave the executor "linked"
-        UInt64 max_exec_time = process_list_element->getContext()->getSettingsRef()[Setting::max_execution_time].totalMilliseconds();
-        process_list_element->addPipelineExecutor(this, max_exec_time);
+        process_list_element->addPipelineExecutor(this);
     }
 }
 

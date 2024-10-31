@@ -504,11 +504,12 @@ void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time
     }
 }
 
-void QueryStatus::addPipelineExecutor(PipelineExecutor * e, UInt64 max_exec_time)
+void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
 {
     /// In case of asynchronous distributed queries it is possible to call
     /// addPipelineExecutor() from the cancelQuery() context, and this will
     /// lead to deadlock.
+    UInt64 max_exec_time = getContext()->getSettingsRef()[Setting::max_execution_time].totalMilliseconds();
     throwProperExceptionIfNeeded(max_exec_time);
 
     std::lock_guard lock(executors_mutex);
