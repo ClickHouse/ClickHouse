@@ -1537,12 +1537,6 @@ Max rows in a file (if permitted by storage).
 
 Default value: `1`.
 
-### input_format_avro_skip_columns_with_unsupported_types_in_schema_inference {#input_format_avro_skip_columns_with_unsupported_types_in_schema_inference}
-
-Allow skipping columns with unsupported types while schema inference for formats Avro/AvroConfluent.
-
-Disabled by default.
-
 ## Pretty formats settings {#pretty-formats-settings}
 
 ### output_format_pretty_max_rows {#output_format_pretty_max_rows}
