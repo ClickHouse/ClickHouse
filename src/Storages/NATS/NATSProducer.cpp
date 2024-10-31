@@ -91,7 +91,7 @@ void NATSProducer::publish()
     String payload;
 
     natsStatus status;
-    while (!payloads.empty() && !shutdown_called)
+    while (!payloads.empty())
     {
         if (!connection->isConnected() || natsConnection_Buffered(connection->getConnection()) > MAX_BUFFERED)
             break;
@@ -126,9 +126,7 @@ void NATSProducer::startProducingTaskLoop()
     {
         while (!payloads.isFinishedAndEmpty())
         {
-            if (shutdown_called)
-                throw Exception(ErrorCodes::UNFINISHED, "Operation aborted");
-            else if (!connection->isConnected())
+            if (!connection->isConnected())
                 std::this_thread::sleep_for(std::chrono::milliseconds(configuration.reconnect_wait));
             else
                 publish();
