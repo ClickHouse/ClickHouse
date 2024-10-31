@@ -41,15 +41,13 @@
     "docker/test/stateless": {
         "name": "clickhouse/stateless-test",
         "dependent": [
-            "docker/test/stateful",
-            "docker/test/unit"
+            "docker/test/stateful"
         ]
     },
     "docker/test/stateful": {
         "name": "clickhouse/stateful-test",
         "dependent": [
-            "docker/test/stress",
-            "docker/test/upgrade"
+            "docker/test/stress"
         ]
     },
     "docker/test/unit": {
@@ -58,10 +56,6 @@
     },
     "docker/test/stress": {
         "name": "clickhouse/stress-test",
-        "dependent": []
-    },
-    "docker/test/upgrade": {
-        "name": "clickhouse/upgrade-check",
         "dependent": []
     },
     "docker/test/integration/runner": {
@@ -122,15 +116,16 @@
     "docker/test/base": {
          "name": "clickhouse/test-base",
          "dependent": [
+            "docker/test/clickbench",
             "docker/test/fuzzer",
-            "docker/test/libfuzzer",
             "docker/test/integration/base",
             "docker/test/keeper-jepsen",
+            "docker/test/libfuzzer",
             "docker/test/server-jepsen",
             "docker/test/sqllogic",
             "docker/test/sqltest",
-            "docker/test/clickbench",
-            "docker/test/stateless"
+            "docker/test/stateless",
+            "docker/test/unit"
          ]
     },
     "docker/test/integration/kerberized_hadoop": {

@@ -36,7 +36,7 @@ EXISTS TABLE db_01048.t_01048; -- Dictionaries are tables as well. But not all t
 EXISTS DICTIONARY db_01048.t_01048;
 
 -- But dictionary-tables cannot be dropped as usual tables.
-DROP TABLE db_01048.t_01048; -- { serverError 520 }
+DROP TABLE db_01048.t_01048; -- { serverError CANNOT_DETACH_DICTIONARY_AS_TABLE }
 DROP DICTIONARY db_01048.t_01048;
 EXISTS db_01048.t_01048;
 EXISTS TABLE db_01048.t_01048;

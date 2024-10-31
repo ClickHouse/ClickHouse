@@ -68,9 +68,9 @@ void SerializationInterval::deserializeBinaryBulk(IColumn & column, ReadBuffer &
 }
 
 void SerializationInterval::deserializeBinaryBulkStatePrefix(
-    DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const
 {
-    dispatch(&ISerialization::deserializeBinaryBulkStatePrefix, FormatSettings::IntervalOutputFormat::Numeric, settings, state);
+    dispatch(&ISerialization::deserializeBinaryBulkStatePrefix, FormatSettings::IntervalOutputFormat::Numeric, settings, state, cache);
 }
 
 

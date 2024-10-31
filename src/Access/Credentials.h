@@ -1,7 +1,8 @@
 #pragma once
 
-#include <base/types.h>
 #include <memory>
+#include <Access/Common/SSLCertificateSubjects.h>
+#include <base/types.h>
 
 #include "config.h"
 
@@ -42,11 +43,11 @@ class SSLCertificateCredentials
     : public Credentials
 {
 public:
-    explicit SSLCertificateCredentials(const String & user_name_, const String & common_name_);
-    const String & getCommonName() const;
+    explicit SSLCertificateCredentials(const String & user_name_, SSLCertificateSubjects && subjects_);
+    const SSLCertificateSubjects & getSSLCertificateSubjects() const;
 
 private:
-    String common_name;
+    SSLCertificateSubjects certificate_subjects;
 };
 
 class BasicCredentials

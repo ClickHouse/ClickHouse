@@ -15,8 +15,8 @@ void registerDataTypeDomainBool(DataTypeFactory & factory)
                 std::make_unique<DataTypeCustomFixedName>("Bool"), std::make_unique<SerializationBool>(type->getDefaultSerialization())));
     });
 
-    factory.registerAlias("bool", "Bool", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("boolean", "Bool", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("bool", "Bool", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("boolean", "Bool", DataTypeFactory::Case::Insensitive);
 }
 
 }

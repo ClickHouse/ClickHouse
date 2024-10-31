@@ -1,0 +1,12 @@
+1
+Array(UInt8)	true
+None	false
+UInt64	false
+2
+Array(UInt8)	true
+None	false
+UInt64	false
+3
+Array(UInt8)	true
+String	false
+UInt64	true

@@ -24,7 +24,7 @@
 #include <Access/SettingsProfile.h>
 #include <Access/User.h>
 #include <Columns/ColumnString.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
@@ -64,14 +64,9 @@ namespace
                 query->default_roles = user.default_roles.toASTWithNames(*access_control);
         }
 
-        if (user.auth_data.getType() != AuthenticationType::NO_PASSWORD)
-            query->auth_data = user.auth_data.toAST();
-
-        if (user.valid_until)
+        for (const auto & authentication_method : user.authentication_methods)
         {
-            WriteBufferFromOwnString out;
-            writeDateTimeText(user.valid_until, out);
-            query->valid_until = std::make_shared<ASTLiteral>(out.str());
+            query->authentication_methods.push_back(authentication_method.toAST());
         }
 
         if (!user.settings.empty())

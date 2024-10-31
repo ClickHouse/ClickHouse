@@ -22,10 +22,13 @@ Checks: [
   '-bugprone-exception-escape',
   '-bugprone-forward-declaration-namespace',
   '-bugprone-implicit-widening-of-multiplication-result',
+  '-bugprone-multi-level-implicit-pointer-conversion',
   '-bugprone-narrowing-conversions',
   '-bugprone-not-null-terminated-result',
   '-bugprone-reserved-identifier', # useful but too slow, TODO retry when https://reviews.llvm.org/rG1c282052624f9d0bd273bde0b47b30c96699c6c7 is merged
   '-bugprone-unchecked-optional-access',
+  '-bugprone-crtp-constructor-accessibility',
+  '-bugprone-suspicious-stringview-data-usage',
 
   '-cert-dcl16-c',
   '-cert-dcl37-c',
@@ -35,6 +38,7 @@ Checks: [
   '-cert-msc51-cpp',
   '-cert-oop54-cpp',
   '-cert-oop57-cpp',
+  '-cert-err33-c', # Misreports on clang-19: it warns about all functions containing 'remove' in the name, not only about the standard library.
 
   '-clang-analyzer-optin.performance.Padding',
 
@@ -93,11 +97,14 @@ Checks: [
   '-modernize-pass-by-value',
   '-modernize-return-braced-init-list',
   '-modernize-use-auto',
+  '-modernize-use-constraints', # This is a good check, but clang-tidy crashes, see https://github.com/llvm/llvm-project/issues/91872
   '-modernize-use-default-member-init',
   '-modernize-use-emplace',
   '-modernize-use-nodiscard',
   '-modernize-use-trailing-return-type',
+  '-modernize-use-designated-initializers',
 
+  '-performance-enum-size',
   '-performance-inefficient-string-concatenation',
   '-performance-no-int-to-ptr',
   '-performance-avoid-endl',
@@ -105,6 +112,7 @@ Checks: [
 
   '-portability-simd-intrinsics',
 
+  '-readability-avoid-nested-conditional-operator',
   '-readability-avoid-unconditional-preprocessor-if',
   '-readability-braces-around-statements',
   '-readability-convert-member-functions-to-static',
@@ -118,6 +126,13 @@ Checks: [
   '-readability-magic-numbers',
   '-readability-named-parameter',
   '-readability-redundant-declaration',
+  '-readability-redundant-inline-specifier', # useful but incompatible with __attribute((always_inline))__ (aka. ALWAYS_INLINE, base/base/defines.h).
+        # ALWAYS_INLINE only has an effect if combined with `inline`: https://godbolt.org/z/Eefd74qdM
+  '-readability-redundant-member-init', # Useful but triggers another problem. Imagine a struct S with multiple String members. Structs are often instantiated via designated
+        # initializer S s{.s1 = [...], .s2 = [...], [...]}. In this case, compiler warning `missing-field-initializers` requires to specify all members which are not in-struct
+        # initialized (example: s1 in struct S { String s1; String s2{};}; is not in-struct initialized, therefore it must be specified at instantiation time). As explicitly
+        # specifying all members is tedious for large structs, `missing-field-initializers` makes programmers initialize as many members as possible in-struct. Clang-tidy
+        # warning `readability-redundant-member-init` does the opposite thing, both are not compatible with each other.
   '-readability-simplify-boolean-expr',
   '-readability-suspicious-call-argument',
   '-readability-uppercase-literal-suffix',

@@ -39,7 +39,7 @@ struct TraceLogElement
 
     static std::string name() { return "TraceLog"; }
     static ColumnsDescription getColumnsDescription();
-    static NamesAndAliases getNamesAndAliases() { return {}; }
+    static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
 };
 

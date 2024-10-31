@@ -1,7 +1,12 @@
 #pragma once
 
+#include <atomic>
+#include <mutex>
 #include <boost/noncopyable.hpp>
 
+#include <IO/ReadBufferFromFile.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Formats/NativeReader.h>
 #include <Core/Block.h>
 #include <Disks/IVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -132,12 +137,29 @@ private:
 
 /*
  * Data can be written into this stream and then read.
- * After finish writing, call `finishWriting` and then `read` to read the data.
+ * After finish writing, call `finishWriting` and then either call `read` or 'getReadStream'(only one of the two) to read the data.
  * Account amount of data written to disk in parent scope.
  */
 class TemporaryFileStream : boost::noncopyable
 {
 public:
+    struct Reader
+    {
+        Reader(const String & path, const Block & header_, size_t size = 0);
+
+        explicit Reader(const String & path, size_t size = 0);
+
+        Block read();
+
+        const std::string path;
+        const size_t size;
+        const std::optional<Block> header;
+
+        std::unique_ptr<ReadBufferFromFileBase> in_file_buf;
+        std::unique_ptr<CompressedReadBuffer> in_compressed_buf;
+        std::unique_ptr<NativeReader> in_reader;
+    };
+
     struct Stat
     {
         /// Statistics for file
@@ -154,7 +176,10 @@ public:
     void flush();
 
     Stat finishWriting();
+    Stat finishWritingAsyncSafe();
     bool isWriteFinished() const;
+
+    std::unique_ptr<Reader> getReadStream();
 
     Block read();
 
@@ -184,11 +209,12 @@ private:
 
     Stat stat;
 
+    std::once_flag finish_writing;
+
     struct OutputWriter;
     std::unique_ptr<OutputWriter> out_writer;
 
-    struct InputReader;
-    std::unique_ptr<InputReader> in_reader;
+    std::unique_ptr<Reader> in_reader;
 };
 
 }

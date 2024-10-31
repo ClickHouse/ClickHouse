@@ -14,7 +14,7 @@ To revoke privileges, use the [REVOKE](../../sql-reference/statements/revoke.md)
 ## Granting Privilege Syntax
 
 ``` sql
-GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
+GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table[*]|db[*].*|*.*|table[*]|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
 ```
 
 - `privilege` — Type of privilege.
@@ -33,7 +33,7 @@ GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_US
 - `role` — ClickHouse user role.
 - `user` — ClickHouse user account.
 
-The `WITH ADMIN OPTION` clause grants [ADMIN OPTION](#admin-option-privilege) privilege to `user` or `role`.
+The `WITH ADMIN OPTION` clause grants [ADMIN OPTION](#admin-option) privilege to `user` or `role`.
 The `WITH REPLACE OPTION` clause replace old roles by new role for the `user` or `role`, if is not specified it appends roles.
 
 ## Grant Current Grants Syntax
@@ -68,11 +68,56 @@ It means that `john` has the permission to execute:
 
 Also `john` has the `GRANT OPTION` privilege, so it can grant other users with privileges of the same or smaller scope.
 
-Specifying privileges you can use asterisk (`*`) instead of a table or a database name. For example, the `GRANT SELECT ON db.* TO john` query allows `john` to execute the `SELECT` query over all the tables in `db` database. Also, you can omit database name. In this case privileges are granted for current database. For example, `GRANT SELECT ON * TO john` grants the privilege on all the tables in the current database, `GRANT SELECT ON mytable TO john` grants the privilege on the `mytable` table in the current database.
-
 Access to the `system` database is always allowed (since this database is used for processing queries).
 
 You can grant multiple privileges to multiple accounts in one query. The query `GRANT SELECT, INSERT ON *.* TO john, robin` allows accounts `john` and `robin` to execute the `INSERT` and `SELECT` queries over all the tables in all the databases on the server.
+
+## Wildcard grants
+
+Specifying privileges you can use asterisk (`*`) instead of a table or a database name. For example, the `GRANT SELECT ON db.* TO john` query allows `john` to execute the `SELECT` query over all the tables in `db` database.
+Also, you can omit database name. In this case privileges are granted for current database.
+For example, `GRANT SELECT ON * TO john` grants the privilege on all the tables in the current database, `GRANT SELECT ON mytable TO john` grants the privilege on the `mytable` table in the current database.
+
+:::note
+The feature described below is available starting with the 24.10 ClickHouse version.
+:::
+
+You can also put asterisks at the end of a table or a database name. This feature allows you to grant privileges on an abstract prefix of the table's path.
+Example: `GRANT SELECT ON db.my_tables* TO john`. This query allows `john` to execute the `SELECT` query over all the `db` database tables with the prefix `my_tables*`.
+
+More examples:
+
+`GRANT SELECT ON db.my_tables* TO john`
+```sql
+SELECT * FROM db.my_tables -- granted
+SELECT * FROM db.my_tables_0 -- granted
+SELECT * FROM db.my_tables_1 -- granted
+
+SELECT * FROM db.other_table -- not_granted
+SELECT * FROM db2.my_tables -- not_granted
+```
+
+`GRANT SELECT ON db*.* TO john`
+```sql
+SELECT * FROM db.my_tables -- granted
+SELECT * FROM db.my_tables_0 -- granted
+SELECT * FROM db.my_tables_1 -- granted
+SELECT * FROM db.other_table -- granted
+SELECT * FROM db2.my_tables -- granted
+```
+
+All newly created tables within granted paths will automatically inherit all grants from their parents.
+For example, if you run the `GRANT SELECT ON db.* TO john` query and then create a new table `db.new_table`, the user `john` will be able to run the `SELECT * FROM db.new_table` query.
+
+You can specify asterisk **only** for the prefixes:
+```sql
+GRANT SELECT ON db.* TO john -- correct
+GRANT SELECT ON db*.* TO john -- correct
+
+GRANT SELECT ON *.my_table TO john -- wrong
+GRANT SELECT ON foo*bar TO john -- wrong
+GRANT SELECT ON *suffix TO john -- wrong
+```
 
 ## Privileges
 
@@ -192,16 +237,22 @@ Hierarchy of privileges:
     - `addressToSymbol`
     - `demangle`
 - [SOURCES](#sources)
+    - `AZURE`
     - `FILE`
-    - `URL`
-    - `REMOTE`
-    - `YSQL`
-    - `ODBC`
-    - `JDBC`
     - `HDFS`
+    - `HIVE`
+    - `JDBC`
+    - `MONGO`
+    - `MYSQL`
+    - `ODBC`
+    - `POSTGRES`
+    - `REDIS`
+    - `REMOTE`
     - `S3`
+    - `SQLITE`
+    - `URL`
 - [dictGet](#dictget)
-- [displaySecretsInShowAndSelect](#display-secrets)
+- [displaySecretsInShowAndSelect](#displaysecretsinshowandselect)
 - [NAMED COLLECTION ADMIN](#named-collection-admin)
     - `CREATE NAMED COLLECTION`
     - `DROP NAMED COLLECTION`
@@ -468,14 +519,20 @@ Allows using [introspection](../../operations/optimizing-performance/sampling-qu
 Allows using external data sources. Applies to [table engines](../../engines/table-engines/index.md) and [table functions](../../sql-reference/table-functions/index.md#table-functions).
 
 - `SOURCES`. Level: `GROUP`
+    - `AZURE`. Level: `GLOBAL`
     - `FILE`. Level: `GLOBAL`
-    - `URL`. Level: `GLOBAL`
-    - `REMOTE`. Level: `GLOBAL`
-    - `YSQL`. Level: `GLOBAL`
-    - `ODBC`. Level: `GLOBAL`
-    - `JDBC`. Level: `GLOBAL`
     - `HDFS`. Level: `GLOBAL`
+    - `HIVE`. Level: `GLOBAL`
+    - `JDBC`. Level: `GLOBAL`
+    - `MONGO`. Level: `GLOBAL`
+    - `MYSQL`. Level: `GLOBAL`
+    - `ODBC`. Level: `GLOBAL`
+    - `POSTGRES`. Level: `GLOBAL`
+    - `REDIS`. Level: `GLOBAL`
+    - `REMOTE`. Level: `GLOBAL`
     - `S3`. Level: `GLOBAL`
+    - `SQLITE`. Level: `GLOBAL`
+    - `URL`. Level: `GLOBAL`
 
 The `SOURCES` privilege enables use of all the sources. Also you can grant a privilege for each source individually. To use sources, you need additional privileges.
 
@@ -498,7 +555,7 @@ Privilege level: `DICTIONARY`.
 - `GRANT dictGet ON mydictionary TO john`
 
 
-### displaySecretsInShowAndSelect {#display-secrets}
+### displaySecretsInShowAndSelect
 
 Allows a user to view secrets in `SHOW` and `SELECT` queries if both
 [`display_secrets_in_show_and_select` server setting](../../operations/server-configuration-parameters/settings#display_secrets_in_show_and_select)

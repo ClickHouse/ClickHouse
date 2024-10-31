@@ -166,7 +166,7 @@ void getBlockSortPermutationImpl(const Block & block, const SortDescription & de
 
         for (const auto & column_with_sort_description : columns_with_sort_descriptions)
         {
-            while (!ranges.empty() && limit && limit <= ranges.back().first)
+            while (!ranges.empty() && limit && limit <= ranges.back().from)
                 ranges.pop_back();
 
             if (ranges.empty())

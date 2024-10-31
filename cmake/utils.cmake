@@ -90,7 +90,10 @@ endfunction()
 
 # Function get_cmake_properties returns list of all propreties that cmake supports
 function(get_cmake_properties outvar)
-    execute_process(COMMAND cmake --help-property-list OUTPUT_VARIABLE cmake_properties)
+    execute_process(COMMAND cmake --help-property-list
+        OUTPUT_VARIABLE cmake_properties
+        COMMAND_ERROR_IS_FATAL ANY
+    )
     # Convert command output into a CMake list
     string(REGEX REPLACE ";" "\\\\;" cmake_properties "${cmake_properties}")
     string(REGEX REPLACE "\n" ";" cmake_properties "${cmake_properties}")

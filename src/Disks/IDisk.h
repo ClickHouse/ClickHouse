@@ -12,10 +12,8 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/WriteMode.h>
 #include <Disks/DirectoryIterator.h>
-#include <Disks/IDiskTransaction.h>
 
 #include <memory>
-#include <mutex>
 #include <utility>
 #include <boost/noncopyable.hpp>
 #include <Poco/Timestamp.h>
@@ -55,7 +53,6 @@ using DisksMap = std::map<String, DiskPtr>;
 
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
-using Reservations = std::vector<ReservationPtr>;
 
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
@@ -118,13 +115,18 @@ public:
     /// Default constructor.
     IDisk(const String & name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
         : name(name_)
-        , copying_thread_pool(CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, CurrentMetrics::IDiskCopierThreadsScheduled, config.getUInt(config_prefix + ".thread_pool_size", 16))
+        , copying_thread_pool(
+              CurrentMetrics::IDiskCopierThreads,
+              CurrentMetrics::IDiskCopierThreadsActive,
+              CurrentMetrics::IDiskCopierThreadsScheduled,
+              config.getUInt(config_prefix + ".thread_pool_size", 16))
     {
     }
 
     explicit IDisk(const String & name_)
         : name(name_)
-        , copying_thread_pool(CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, CurrentMetrics::IDiskCopierThreadsScheduled, 16)
+        , copying_thread_pool(
+              CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, CurrentMetrics::IDiskCopierThreadsScheduled, 16)
     {
     }
 
@@ -152,14 +154,12 @@ public:
     /// Amount of bytes which should be kept free on the disk.
     virtual UInt64 getKeepingFreeSpace() const { return 0; }
 
-    /// Return `true` if the specified file exists.
-    virtual bool exists(const String & path) const = 0;
+    /// Return `true` if the specified file/directory exists.
+    virtual bool existsFile(const String & path) const = 0;
+    virtual bool existsDirectory(const String & path) const = 0;
 
-    /// Return `true` if the specified file exists and it's a regular file (not a directory or special file type).
-    virtual bool isFile(const String & path) const = 0;
-
-    /// Return `true` if the specified file exists and it's a directory.
-    virtual bool isDirectory(const String & path) const = 0;
+    /// This method can be less efficient than the above.
+    virtual bool existsFileOrDirectory(const String & path) const = 0;
 
     /// Return size of the specified file.
     virtual size_t getFileSize(const String & path) const = 0;
@@ -207,7 +207,7 @@ public:
         const String & from_file_path,
         IDisk & to_disk,
         const String & to_file_path,
-        const ReadSettings & read_settings = {},
+        const ReadSettings & read_settings,
         const WriteSettings & write_settings = {},
         const std::function<void()> & cancellation_hook = {});
 
@@ -217,9 +217,17 @@ public:
     /// Open the file for read and return ReadBufferFromFileBase object.
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile( /// NOLINT
         const String & path,
-        const ReadSettings & settings = ReadSettings{},
+        const ReadSettings & settings,
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const = 0;
+
+    /// Returns nullptr if the file does not exist, otherwise opens it for reading.
+    /// This method can save a request. The default implementation will do a separate `exists` call.
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFileIfExists( /// NOLINT
+        const String & path,
+        const ReadSettings & settings = ReadSettings{},
+        std::optional<size_t> read_hint = {},
+        std::optional<size_t> file_size = {}) const;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
@@ -306,6 +314,13 @@ public:
             getDataSourceDescription().toString());
     }
 
+    virtual std::optional<StoredObjects> getStorageObjectsIfExist(const String & path) const
+    {
+        if (existsFile(path))
+            return getStorageObjects(path);
+        return std::nullopt;
+    }
+
     /// For one local path there might be multiple remote paths in case of Log family engines.
     struct LocalPathWithObjectStoragePaths
     {
@@ -383,8 +398,8 @@ public:
 
     /// Check file exists and ClickHouse has an access to it
     /// Overrode in remote FS disks (s3/hdfs)
-    /// Required for remote disk to ensure that replica has access to data written by other node
-    virtual bool checkUniqueId(const String & id) const { return exists(id); }
+    /// Required for remote disk to ensure that the replica has access to data written by other node
+    virtual bool checkUniqueId(const String & id) const { return existsFile(id); }
 
     /// Invoked on partitions freeze query.
     virtual void onFreeze(const String &) { }
@@ -425,7 +440,7 @@ public:
     ///  Device: 10301h/66305d   Inode: 3109907     Links: 1
     /// Why we have always zero by default? Because normal filesystem
     /// manages hardlinks by itself. So you can always remove hardlink and all
-    /// other alive harlinks will not be removed.
+    /// other alive hardlinks will not be removed.
     virtual UInt32 getRefCount(const String &) const { return 0; }
 
     /// Revision is an incremental counter of disk operation.
@@ -462,14 +477,27 @@ public:
     virtual void chmod(const String & /*path*/, mode_t /*mode*/) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support chmod"); }
 
     /// Was disk created to be used without storage configuration?
-    bool isCustomDisk() const { return is_custom_disk; }
-
-    void markDiskAsCustom() { is_custom_disk = true; }
+    bool isCustomDisk() const { return custom_disk_settings_hash != 0; }
+    UInt128 getCustomDiskSettings() const { return custom_disk_settings_hash; }
+    void markDiskAsCustom(UInt128 settings_hash) { custom_disk_settings_hash = settings_hash; }
 
     virtual DiskPtr getDelegateDiskIfExists() const { return nullptr; }
 
+#if USE_AWS_S3
+    virtual std::shared_ptr<const S3::Client> getS3StorageClient() const
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method getS3StorageClient() is not implemented for disk type: {}",
+            getDataSourceDescription().toString());
+    }
+
+    virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() const { return nullptr; }
+#endif
+
+
 protected:
-    friend class DiskDecorator;
+    friend class DiskReadOnlyWrapper;
 
     const String name;
 
@@ -489,7 +517,8 @@ protected:
 
 private:
     ThreadPool copying_thread_pool;
-    bool is_custom_disk = false;
+    // 0 means the disk is not custom, the disk is predefined in the config
+    UInt128 custom_disk_settings_hash = 0;
 
     /// Check access to the disk.
     void checkAccess();
@@ -550,6 +579,7 @@ inline String directoryPath(const String & path)
 {
     return fs::path(path).parent_path() / "";
 }
+
 
 }
 

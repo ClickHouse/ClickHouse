@@ -37,7 +37,7 @@ using DictionaryHierarchicalParentToChildIndexPtr = std::shared_ptr<DictionaryHi
   *
   * Complex is for dictionaries that support any combination of key columns.
   */
-enum class DictionaryKeyType
+enum class DictionaryKeyType : uint8_t
 {
     Simple,
     Complex
@@ -46,7 +46,7 @@ enum class DictionaryKeyType
 /** DictionarySpecialKeyType provides IDictionary client information about
   * which special key type is supported by dictionary.
   */
-enum class DictionarySpecialKeyType
+enum class DictionarySpecialKeyType : uint8_t
 {
     None,
     Range
@@ -67,6 +67,15 @@ public:
     {
         std::lock_guard lock{mutex};
         return dictionary_id.getNameForLogs();
+    }
+
+    /// Returns fully qualified unquoted dictionary name
+    std::string getQualifiedName() const
+    {
+        std::lock_guard lock{mutex};
+        if (dictionary_id.database_name.empty())
+            return dictionary_id.table_name;
+        return dictionary_id.database_name + "." + dictionary_id.table_name;
     }
 
     StorageID getDictionaryID() const

@@ -5,6 +5,8 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include <DataTypes/DataTypesNumber.h>
 
@@ -24,6 +26,8 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
 
+#include <Core/Settings.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryLog.h>
 
@@ -35,25 +39,55 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
+namespace Setting
+{
+    extern const SettingsBool use_concurrency_control;
+}
+
 namespace
 {
 
-ASTPtr normalizeAndValidateQuery(const ASTPtr & query)
+ASTPtr normalizeAndValidateQuery(const ASTPtr & query, const Names & column_names)
 {
+    ASTPtr result_query;
+
     if (query->as<ASTSelectWithUnionQuery>() || query->as<ASTSelectQuery>())
-    {
-        return query;
-    }
+        result_query = query;
     else if (auto * subquery = query->as<ASTSubquery>())
-    {
-        return subquery->children[0];
-    }
+        result_query = subquery->children[0];
     else
-    {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Expected ASTSelectWithUnionQuery or ASTSelectQuery. Actual {}",
             query->formatForErrorMessage());
-    }
+
+    if (column_names.empty())
+        return result_query;
+
+    /// The initial query the VIEW references to is wrapped here with another SELECT query to allow reading only necessary columns.
+    auto select_query = std::make_shared<ASTSelectQuery>();
+
+    auto result_table_expression_ast = std::make_shared<ASTTableExpression>();
+    result_table_expression_ast->children.push_back(std::make_shared<ASTSubquery>(std::move(result_query)));
+    result_table_expression_ast->subquery = result_table_expression_ast->children.back();
+
+    auto tables_in_select_query_element_ast = std::make_shared<ASTTablesInSelectQueryElement>();
+    tables_in_select_query_element_ast->children.push_back(std::move(result_table_expression_ast));
+    tables_in_select_query_element_ast->table_expression = tables_in_select_query_element_ast->children.back();
+
+    ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
+    tables_in_select_query_ast->children.push_back(std::move(tables_in_select_query_element_ast));
+
+    select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables_in_select_query_ast));
+
+    auto projection_expression_list_ast = std::make_shared<ASTExpressionList>();
+    projection_expression_list_ast->children.reserve(column_names.size());
+
+    for (const auto & column_name : column_names)
+        projection_expression_list_ast->children.push_back(std::make_shared<ASTIdentifier>(column_name));
+
+    select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(projection_expression_list_ast));
+
+    return select_query;
 }
 
 ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOptions & select_query_options)
@@ -125,8 +159,9 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const ASTPtr & query_,
     const ContextPtr & context_,
-    const SelectQueryOptions & select_query_options_)
-    : query(normalizeAndValidateQuery(query_))
+    const SelectQueryOptions & select_query_options_,
+    const Names & column_names)
+    : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
@@ -138,8 +173,9 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const ASTPtr & query_,
     const ContextPtr & context_,
     const StoragePtr & storage_,
-    const SelectQueryOptions & select_query_options_)
-    : query(normalizeAndValidateQuery(query_))
+    const SelectQueryOptions & select_query_options_,
+    const Names & column_names)
+    : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_))
@@ -184,7 +220,7 @@ Block InterpreterSelectQueryAnalyzer::getSampleBlock(const QueryTreeNodePtr & qu
 Block InterpreterSelectQueryAnalyzer::getSampleBlock()
 {
     planner.buildQueryPlanIfNeeded();
-    return planner.getQueryPlan().getCurrentDataStream().header;
+    return planner.getQueryPlan().getCurrentHeader();
 }
 
 BlockIO InterpreterSelectQueryAnalyzer::execute()
@@ -219,6 +255,8 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 
     auto optimization_settings = QueryPlanOptimizationSettings::fromContext(context);
     auto build_pipeline_settings = BuildQueryPipelineSettings::fromContext(context);
+
+    query_plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
     return std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings));
 }

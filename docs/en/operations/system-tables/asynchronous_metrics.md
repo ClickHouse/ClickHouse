@@ -639,6 +639,10 @@ An internal metric of the low-level memory allocator (jemalloc). See https://jem
 
 An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
 
+### jemalloc.prof.active
+
+An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
+
 **See Also**
 
 - [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.

@@ -132,12 +132,11 @@ protected:
     void nextImpl() override
     {
         if (chunked)
-            return nextImplChunked();
-
-        if (fixed_length)
-            return nextImplFixedLength();
-
-        WriteBufferFromPocoSocket::nextImpl();
+            nextImplChunked();
+        else if (fixed_length)
+            nextImplFixedLength();
+        else
+            WriteBufferFromPocoSocket::nextImpl();
     }
 
     void nextImplFixedLength()
@@ -248,6 +247,8 @@ public:
     Poco::Net::StreamSocket & getSocket() { return session.socket(); }
 
     void attachRequest(HTTPServerRequest * request_) { request = request_; }
+
+    const Poco::Net::HTTPServerSession & getSession() const { return session; }
 
 private:
     Poco::Net::HTTPServerSession & session;

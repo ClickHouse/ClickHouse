@@ -4,9 +4,9 @@ sidebar_position: 50
 sidebar_label: VIEW
 ---
 
-# Выражение ALTER TABLE … MODIFY QUERY {#alter-modify-query}
+# Выражение ALTER TABLE ... MODIFY QUERY {#alter-modify-query}
 
-Вы можете изменить запрос `SELECT`, который был задан при создании [материализованного представления](../create/view.md#materialized), с помощью запроса 'ALTER TABLE … MODIFY QUERY'. Используйте его если при создании материализованного представления не использовалась секция `TO [db.]name`. Настройка `allow_experimental_alter_materialized_view_structure` должна быть включена. 
+Вы можете изменить запрос `SELECT`, который был задан при создании [материализованного представления](../create/view.md#materialized), с помощью запроса 'ALTER TABLE ... MODIFY QUERY'. Используйте его если при создании материализованного представления не использовалась секция `TO [db.]name`. Настройка `allow_experimental_alter_materialized_view_structure` должна быть включена. 
 
 Если при создании материализованного представления использовалась конструкция `TO [db.]name`, то для изменения отсоедините представление с помощью [DETACH](../detach.md), измените таблицу с помощью [ALTER TABLE](index.md), а затем снова присоедините запрос с помощью [ATTACH](../attach.md).
 

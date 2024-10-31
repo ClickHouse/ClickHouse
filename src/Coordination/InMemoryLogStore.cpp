@@ -136,7 +136,7 @@ nuraft::ptr<nuraft::buffer> InMemoryLogStore::pack(uint64_t index, Int32 cnt)
 
     nuraft::ptr<buffer> buf_out = nuraft::buffer::alloc(sizeof(int32) + cnt * sizeof(int32) + uint64_total);
     buf_out->pos(0);
-    buf_out->put(static_cast<Int32>(cnt));
+    buf_out->put(cnt);
 
     for (auto & entry : returned_logs)
     {

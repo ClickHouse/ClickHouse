@@ -24,9 +24,9 @@ constexpr DB::TokenType determineClosingPair(const DB::TokenType token_type)
 {
     if (token_type == DB::TokenType::OpeningCurlyBrace)
         return DB::TokenType::ClosingCurlyBrace;
-    else if (token_type == DB::TokenType::OpeningRoundBracket)
+    if (token_type == DB::TokenType::OpeningRoundBracket)
         return DB::TokenType::ClosingRoundBracket;
-    else if (token_type == DB::TokenType::OpeningSquareBracket)
+    if (token_type == DB::TokenType::OpeningSquareBracket)
         return DB::TokenType::ClosingSquareBracket;
 
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unhandled token: {}", magic_enum::enum_name(token_type));
@@ -301,8 +301,8 @@ String IParserKQLFunction::kqlCallToExpression(
         });
 
     const auto kql_call = std::format("{}({})", function_name, params_str);
-    DB::Tokens call_tokens(kql_call.c_str(), kql_call.c_str() + kql_call.length());
-    DB::IParser::Pos tokens_pos(call_tokens, max_depth, max_backtracks);
+    Tokens call_tokens(kql_call.data(), kql_call.data() + kql_call.length(), 0, true);
+    IParser::Pos tokens_pos(call_tokens, max_depth, max_backtracks);
     return DB::IParserKQLFunction::getExpression(tokens_pos);
 }
 

@@ -4,15 +4,23 @@
 #include <Common/getRandomASCIIString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <optional>
 #include <ranges>
 #include <filesystem>
+#include <utility>
 
 namespace fs = std::filesystem;
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 static std::string getTempFileName(const std::string & dir)
 {
@@ -101,7 +109,7 @@ void CreateDirectoryRecursiveOperation::execute(std::unique_lock<SharedMutex> &)
 {
     namespace fs = std::filesystem;
     fs::path p(path);
-    while (!disk.exists(p))
+    while (!disk.existsFileOrDirectory(p))
     {
         paths_created.push_back(p);
         if (!p.has_parent_path())
@@ -143,26 +151,26 @@ RemoveRecursiveOperation::RemoveRecursiveOperation(const std::string & path_, ID
 
 void RemoveRecursiveOperation::execute(std::unique_lock<SharedMutex> &)
 {
-    if (disk.isFile(path))
+    if (disk.existsFile(path))
         disk.moveFile(path, temp_path);
-    else if (disk.isDirectory(path))
+    else if (disk.existsDirectory(path))
         disk.moveDirectory(path, temp_path);
 }
 
 void RemoveRecursiveOperation::undo(std::unique_lock<SharedMutex> &)
 {
-    if (disk.isFile(temp_path))
+    if (disk.existsFile(temp_path))
         disk.moveFile(temp_path, path);
-    else if (disk.isDirectory(temp_path))
+    else if (disk.existsDirectory(temp_path))
         disk.moveDirectory(temp_path, path);
 }
 
 void RemoveRecursiveOperation::finalize()
 {
-    if (disk.exists(temp_path))
+    if (disk.existsFileOrDirectory(temp_path))
         disk.removeRecursive(temp_path);
 
-    if (disk.exists(path))
+    if (disk.existsFileOrDirectory(path))
         disk.removeRecursive(path);
 }
 
@@ -238,7 +246,7 @@ ReplaceFileOperation::ReplaceFileOperation(const std::string & path_from_, const
 
 void ReplaceFileOperation::execute(std::unique_lock<SharedMutex> &)
 {
-    if (disk.exists(path_to))
+    if (disk.existsFile(path_to))
         disk.moveFile(path_to, temp_path_to);
 
     disk.replaceFile(path_from, path_to);
@@ -264,10 +272,9 @@ WriteFileOperation::WriteFileOperation(const std::string & path_, IDisk & disk_,
 
 void WriteFileOperation::execute(std::unique_lock<SharedMutex> &)
 {
-    if (disk.exists(path))
+    if (auto buf = disk.readFileIfExists(path, ReadSettings{}))
     {
         existed = true;
-        auto buf = disk.readFile(path);
         readStringUntilEOF(prev_data, *buf);
     }
     auto buf = disk.writeFile(path);
@@ -291,7 +298,7 @@ void WriteFileOperation::undo(std::unique_lock<SharedMutex> &)
 void AddBlobOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
 {
     DiskObjectStorageMetadataPtr metadata;
-    if (metadata_storage.exists(path))
+    if (metadata_storage.existsFile(path))
         metadata = metadata_storage.readMetadataUnlocked(path, metadata_lock);
     else
         metadata = std::make_unique<DiskObjectStorageMetadata>(disk.getPath(), path);
@@ -340,6 +347,35 @@ void UnlinkMetadataFileOperation::undo(std::unique_lock<SharedMutex> & lock)
     /// Update outcome to reflect the fact that we have restored the file.
     outcome->num_hardlinks++;
 }
+
+void TruncateMetadataFileOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
+{
+    if (metadata_storage.existsFile(path))
+    {
+        auto metadata = metadata_storage.readMetadataUnlocked(path, metadata_lock);
+        while (metadata->getTotalSizeBytes() > target_size)
+        {
+            auto object_key_with_metadata = metadata->popLastObject();
+            outcome->objects_to_remove.emplace_back(object_key_with_metadata.key.serialize(), path, object_key_with_metadata.metadata.size_bytes);
+        }
+        if (metadata->getTotalSizeBytes() != target_size)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} can't be truncated to size {}", path, target_size);
+        }
+        LOG_TEST(getLogger("TruncateMetadataFileOperation"), "Going to remove {} blobs.", outcome->objects_to_remove.size());
+
+        write_operation = std::make_unique<WriteFileOperation>(path, disk, metadata->serializeToString());
+
+        write_operation->execute(metadata_lock);
+    }
+}
+
+void TruncateMetadataFileOperation::undo(std::unique_lock<SharedMutex> & lock)
+{
+    if (write_operation)
+        write_operation->undo(lock);
+}
+
 
 void SetReadonlyFileOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
 {

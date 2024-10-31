@@ -1,18 +1,14 @@
-#include "ICommand.h"
 #include <Interpreters/Context.h>
+#include "ICommand.h"
 
-#include <Common/TerminalSize.h>
+#include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
+#include <Common/TerminalSize.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 class CommandWrite final : public ICommand
 {
@@ -20,60 +16,43 @@ public:
     CommandWrite()
     {
         command_name = "write";
-        command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
-        description = "Write a file from `FROM_PATH` to `TO_PATH`";
-        usage = "write [OPTION]... [<FROM_PATH>] <TO_PATH>";
-        command_option_description->add_options()
-            ("input", po::value<String>(), "file from which we are reading, defaults to `stdin`");
+        description = "Write a file from `path-from` to `path-to`";
+        options_description.add_options()("path-from", po::value<String>(), "file from which we are reading, defaults to `stdin` (input from `stdin` is finished by Ctrl+D)")(
+            "path-to", po::value<String>(), "file to which we are writing (mandatory, positional)");
+        positional_options_description.add("path-to", 1);
     }
 
-    void processOptions(
-        Poco::Util::LayeredConfiguration & config,
-        po::variables_map & options) const override
+
+    void executeImpl(const CommandLineOptions & options, DisksClient & client) override
     {
-        if (options.count("input"))
-            config.setString("input", options["input"].as<String>());
-    }
+        auto disk = client.getCurrentDiskWithPath();
 
-    void execute(
-        const std::vector<String> & command_arguments,
-        std::shared_ptr<DiskSelector> & disk_selector,
-        Poco::Util::LayeredConfiguration & config) override
-    {
-        if (command_arguments.size() != 1)
+        std::optional<String> path_from = getValueFromCommandLineOptionsWithOptional<String>(options, "path-from");
+
+        String path_to = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-to"));
+
+        auto in = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
         {
-            printHelpMessage();
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
-        }
+            if (!path_from.has_value())
+                return std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
 
-        String disk_name = config.getString("disk", "default");
+            String relative_path_from = disk.getRelativeFromRoot(path_from.value());
+            auto res = disk.getDisk()->readFileIfExists(relative_path_from, getReadSettings());
+            if (res)
+                return res;
+            /// For backward compatibility.
+            return std::make_unique<ReadBufferFromEmptyFile>();
+        }();
 
-        const String & path = command_arguments[0];
-
-        DiskPtr disk = disk_selector->get(disk_name);
-
-        String relative_path = validatePathAndGetAsRelative(path);
-
-        String path_input = config.getString("input", "");
-        std::unique_ptr<ReadBufferFromFileBase> in;
-        if (path_input.empty())
-        {
-            in = std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
-        }
-        else
-        {
-            String relative_path_input = validatePathAndGetAsRelative(path_input);
-            in = disk->readFile(relative_path_input);
-        }
-
-        auto out = disk->writeFile(relative_path);
+        auto out = disk.getDisk()->writeFile(path_to);
         copyData(*in, *out);
         out->finalize();
     }
 };
+
+CommandPtr makeCommandWrite()
+{
+    return std::make_shared<DB::CommandWrite>();
 }
 
-std::unique_ptr <DB::ICommand> makeCommandWrite()
-{
-    return std::make_unique<DB::CommandWrite>();
 }

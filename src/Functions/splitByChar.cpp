@@ -2,7 +2,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionTokens.h>
 #include <Functions/FunctionFactory.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 
 

@@ -130,7 +130,7 @@ FROM gcs('https://storage.googleapis.com/my-test-bucket-768/{some,another}_prefi
 If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 :::
 
-Count the total amount of rows in files named `file-000.csv`, `file-001.csv`, … , `file-999.csv`:
+Count the total amount of rows in files named `file-000.csv`, `file-001.csv`, ... , `file-999.csv`:
 
 ``` sql
 SELECT count(*)

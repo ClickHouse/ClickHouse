@@ -1,4 +1,4 @@
-set allow_experimental_analyzer = 1;
+set enable_analyzer = 1;
 set optimize_syntax_fuse_functions = 0;
 
 EXPLAIN QUERY TREE run_passes=1

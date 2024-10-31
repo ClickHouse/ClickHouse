@@ -40,6 +40,6 @@ SELECT toDecimal128(pi(), 14) AS x, round(sin(x), 8), round(cos(x), 8), round(ta
 SELECT toDecimal128('1.0', 2) AS x, asin(x), acos(x), atan(x);
 
 
-SELECT toDecimal32('4.2', 1) AS x, pow(x, 2), pow(x, 0.5); -- { serverError 43 }
-SELECT toDecimal64('4.2', 1) AS x, pow(x, 2), pow(x, 0.5); -- { serverError 43 }
-SELECT toDecimal128('4.2', 1) AS x, pow(x, 2), pow(x, 0.5); -- { serverError 43 }
+SELECT toDecimal32('4.2', 1) AS x, pow(x, 2), pow(x, 0.5);
+SELECT toDecimal64('4.2', 1) AS x, pow(x, 2), pow(x, 0.5);
+SELECT toDecimal128('4.2', 1) AS x, pow(x, 2), pow(x, 0.5);

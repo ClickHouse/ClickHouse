@@ -23,12 +23,10 @@ Aliases: `SVG`, `svg`
 
 **Returned value**
 
-- The SVG representation of the geometry:
+- The SVG representation of the geometry. [String](../../data-types/string).
   - SVG circle
   - SVG polygon
   - SVG path
-
-Type: [String](../../data-types/string)
 
 **Examples**
 

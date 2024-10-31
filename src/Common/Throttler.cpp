@@ -41,21 +41,9 @@ Throttler::Throttler(size_t max_speed_, size_t limit_, const char * limit_exceed
 UInt64 Throttler::add(size_t amount)
 {
     // Values obtained under lock to be checked after release
-    size_t count_value;
-    double tokens_value;
-    {
-        std::lock_guard lock(mutex);
-        auto now = clock_gettime_ns_adjusted(prev_ns);
-        if (max_speed)
-        {
-            double delta_seconds = prev_ns ? static_cast<double>(now - prev_ns) / NS : 0;
-            tokens = std::min<double>(tokens + max_speed * delta_seconds - amount, max_burst);
-        }
-        count += amount;
-        count_value = count;
-        tokens_value = tokens;
-        prev_ns = now;
-    }
+    size_t count_value = 0;
+    double tokens_value = 0.0;
+    addImpl(amount, count_value, tokens_value);
 
     if (limit && count_value > limit)
         throw Exception::createDeprecated(limit_exceeded_exception_message + std::string(" Maximum: ") + toString(limit), ErrorCodes::LIMIT_EXCEEDED);
@@ -77,6 +65,21 @@ UInt64 Throttler::add(size_t amount)
     return static_cast<UInt64>(sleep_time_ns);
 }
 
+void Throttler::addImpl(size_t amount, size_t & count_value, double & tokens_value)
+{
+    std::lock_guard lock(mutex);
+    auto now = clock_gettime_ns_adjusted(prev_ns);
+    if (max_speed)
+    {
+        double delta_seconds = prev_ns ? static_cast<double>(now - prev_ns) / NS : 0;
+        tokens = std::min<double>(tokens + max_speed * delta_seconds - amount, max_burst);
+    }
+    count += amount;
+    count_value = count;
+    tokens_value = tokens;
+    prev_ns = now;
+}
+
 void Throttler::reset()
 {
     std::lock_guard lock(mutex);
@@ -96,6 +99,16 @@ bool Throttler::isThrottling() const
         return parent->isThrottling();
 
     return false;
+}
+
+Int64 Throttler::getAvailable()
+{
+    // To update bucket state and receive current number of token in a thread-safe way
+    size_t count_value = 0;
+    double tokens_value = 0.0;
+    addImpl(0, count_value, tokens_value);
+
+    return static_cast<Int64>(tokens_value);
 }
 
 }

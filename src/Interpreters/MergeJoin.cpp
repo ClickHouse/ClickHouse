@@ -37,8 +37,7 @@ String deriveTempName(const String & name, JoinTableSide block_side)
 {
     if (block_side == JoinTableSide::Left)
         return "--pmj_cond_left_" + name;
-    else
-        return "--pmj_cond_right_" + name;
+    return "--pmj_cond_right_" + name;
 }
 
 /*
@@ -263,9 +262,9 @@ public:
     {
         if (has_left_nullable && has_right_nullable)
             return getNextEqualRangeImpl<true, true>(rhs);
-        else if (has_left_nullable)
+        if (has_left_nullable)
             return getNextEqualRangeImpl<true, false>(rhs);
-        else if (has_right_nullable)
+        if (has_right_nullable)
             return getNextEqualRangeImpl<false, true>(rhs);
         return getNextEqualRangeImpl<false, false>(rhs);
     }
@@ -700,8 +699,10 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
         /// We need to check type of masks before `addConditionJoinColumn`, because it assumes that types is correct
         JoinCommon::checkTypesOfMasks(block, mask_column_name_left, right_sample_block, mask_column_name_right);
 
-        /// Add auxiliary column, will be removed after joining
-        addConditionJoinColumn(block, JoinTableSide::Left);
+        if (!not_processed)
+            /// Add an auxiliary column, which will be removed after joining
+            /// We do not need to add it twice when we are continuing to process the block from the previous iteration
+            addConditionJoinColumn(block, JoinTableSide::Left);
 
         /// Types of keys can be checked only after `checkTypesOfKeys`
         JoinCommon::checkTypesOfKeys(block, key_names_left, right_table_keys, key_names_right);

@@ -41,8 +41,6 @@ size_t SetVariantsTemplate<Variant>::getTotalRowCount() const
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
     }
-
-    UNREACHABLE();
 }
 
 template <typename Variant>
@@ -57,8 +55,6 @@ size_t SetVariantsTemplate<Variant>::getTotalByteCount() const
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
     }
-
-    UNREACHABLE();
 }
 
 template <typename Variant>

@@ -126,7 +126,7 @@ public:
         std::string_view name;
     };
 
-    enum class LocationInfoMode
+    enum class LocationInfoMode : uint8_t
     {
         // Don't resolve location info.
         DISABLED,
@@ -283,7 +283,8 @@ private:
         LocationInfoMode mode,
         CompilationUnit & cu,
         LocationInfo & info,
-        std::vector<SymbolizedFrame> & inline_frames) const;
+        std::vector<SymbolizedFrame> & inline_frames,
+        bool assume_in_cu_range) const;
 
     /**
      * Finds a subprogram debugging info entry that contains a given address among

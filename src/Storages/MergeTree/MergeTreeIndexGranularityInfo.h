@@ -49,6 +49,7 @@ public:
     MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MarkType mark_type_);
 
     MergeTreeIndexGranularityInfo(MergeTreeDataPartType type_, bool is_adaptive_, size_t index_granularity_, size_t index_granularity_bytes_);
+    MergeTreeIndexGranularityInfo(MarkType mark_type_, size_t index_granularity_, size_t index_granularity_bytes_);
 
     void changeGranularityIfRequired(const IDataPartStorage & data_part_storage);
 
@@ -64,8 +65,8 @@ public:
     std::string describe() const;
 };
 
-constexpr inline auto getNonAdaptiveMrkSizeWide() { return sizeof(UInt64) * 2; }
-constexpr inline auto getAdaptiveMrkSizeWide() { return sizeof(UInt64) * 3; }
+constexpr auto getNonAdaptiveMrkSizeWide() { return sizeof(UInt64) * 2; }
+constexpr auto getAdaptiveMrkSizeWide() { return sizeof(UInt64) * 3; }
 inline size_t getAdaptiveMrkSizeCompact(size_t columns_num);
 
 }

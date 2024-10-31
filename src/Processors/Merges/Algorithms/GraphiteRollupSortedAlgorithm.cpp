@@ -46,8 +46,8 @@ GraphiteRollupSortedAlgorithm::GraphiteRollupSortedAlgorithm(
     size_t max_block_size_bytes_,
     Graphite::Params params_,
     time_t time_of_merge_)
-    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), nullptr, max_row_refs)
-    , merged_data(header_.cloneEmptyColumns(), false, max_block_size_rows_, max_block_size_bytes_)
+    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), nullptr, max_row_refs, std::make_unique<GraphiteRollupMergedData>(false, max_block_size_rows_, max_block_size_bytes_))
+    , graphite_rollup_merged_data(assert_cast<GraphiteRollupMergedData &>(*merged_data))
     , params(std::move(params_))
     , time_of_merge(time_of_merge_)
 {
@@ -63,7 +63,7 @@ GraphiteRollupSortedAlgorithm::GraphiteRollupSortedAlgorithm(
         }
     }
 
-    merged_data.allocMemForAggregates(max_size_of_aggregate_state, max_alignment_of_aggregate_state);
+    graphite_rollup_merged_data.allocMemForAggregates(max_size_of_aggregate_state, max_alignment_of_aggregate_state);
     columns_definition = defineColumns(header_, params);
 }
 
@@ -98,12 +98,10 @@ static time_t roundTimeToPrecision(const DateLUTImpl & date_lut, time_t time, UI
     {
         return time / precision * precision;
     }
-    else
-    {
-        time_t date = date_lut.toDate(time);
-        time_t remainder = time - date;
-        return date + remainder / precision * precision;
-    }
+
+    time_t date = date_lut.toDate(time);
+    time_t remainder = time - date;
+    return date + remainder / precision * precision;
 }
 
 IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
@@ -113,7 +111,7 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
 
     const DateLUTImpl & date_lut = timezone ? timezone->getTimeZone() : DateLUT::instance();
 
-    /// Take rows in needed order and put them into `merged_data` until we get `max_block_size` rows.
+    /// Take rows in needed order and put them into `graphite_rollup_merged_data` until we get `max_block_size` rows.
     ///
     /// Variables starting with current_* refer to the rows previously popped from the queue that will
     /// contribute towards current output row.
@@ -142,10 +140,10 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
         if (is_new_key)
         {
             /// Accumulate the row that has maximum version in the previous group of rows with the same key:
-            if (merged_data.wasGroupStarted())
+            if (graphite_rollup_merged_data.wasGroupStarted())
                 accumulateRow(current_subgroup_newest_row);
 
-            Graphite::RollupRule next_rule = merged_data.currentRule();
+            Graphite::RollupRule next_rule = graphite_rollup_merged_data.currentRule();
             if (new_path)
                 next_rule = selectPatternForPath(this->params, next_path);
 
@@ -167,15 +165,15 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
 
             if (will_be_new_key)
             {
-                if (merged_data.wasGroupStarted())
+                if (graphite_rollup_merged_data.wasGroupStarted())
                 {
                     finishCurrentGroup();
 
                     /// We have enough rows - return, but don't advance the loop. At the beginning of the
                     /// next call to merge() the same next_cursor will be processed once more and
                     /// the next output row will be created from it.
-                    if (merged_data.hasEnoughRows())
-                        return Status(merged_data.pull());
+                    if (graphite_rollup_merged_data.hasEnoughRows())
+                        return Status(graphite_rollup_merged_data.pull());
                 }
 
                 /// At this point previous row has been fully processed, so we can advance the loop
@@ -218,28 +216,28 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
     }
 
     /// Write result row for the last group.
-    if (merged_data.wasGroupStarted())
+    if (graphite_rollup_merged_data.wasGroupStarted())
     {
         accumulateRow(current_subgroup_newest_row);
         finishCurrentGroup();
     }
 
-    return Status(merged_data.pull(), true);
+    return Status(graphite_rollup_merged_data.pull(), true);
 }
 
 void GraphiteRollupSortedAlgorithm::startNextGroup(SortCursor & cursor, Graphite::RollupRule next_rule)
 {
-    merged_data.startNextGroup(cursor->all_columns, cursor->getRow(), next_rule, columns_definition);
+    graphite_rollup_merged_data.startNextGroup(cursor->all_columns, cursor->getRow(), next_rule, columns_definition);
 }
 
 void GraphiteRollupSortedAlgorithm::finishCurrentGroup()
 {
-    merged_data.insertRow(current_time_rounded, current_subgroup_newest_row, columns_definition);
+    graphite_rollup_merged_data.insertRow(current_time_rounded, current_subgroup_newest_row, columns_definition);
 }
 
 void GraphiteRollupSortedAlgorithm::accumulateRow(RowRef & row)
 {
-    merged_data.accumulateRow(row, columns_definition);
+    graphite_rollup_merged_data.accumulateRow(row, columns_definition);
 }
 
 void GraphiteRollupSortedAlgorithm::GraphiteRollupMergedData::startNextGroup(

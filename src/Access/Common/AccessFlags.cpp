@@ -115,15 +115,15 @@ namespace
         {
             UNKNOWN = -2,
             GROUP = -1,
-            GLOBAL,
-            DATABASE,
-            TABLE,
+            GLOBAL = 0,
+            DATABASE = 1,
+            TABLE = 2,
             VIEW = TABLE,
-            COLUMN,
-            DICTIONARY,
-            NAMED_COLLECTION,
-            USER_NAME,
-            TABLE_ENGINE,
+            COLUMN = 3,
+            DICTIONARY = 4,
+            NAMED_COLLECTION = 5,
+            USER_NAME = 6,
+            TABLE_ENGINE = 7,
         };
 
         struct Node;
@@ -247,8 +247,7 @@ namespace
                 const auto & unused_node = *(owned_nodes.begin()->second);
                 if (unused_node.node_type == UNKNOWN)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Parent group '{}' not found", unused_node.keyword);
-                else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Access type '{}' should have parent group", unused_node.keyword);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Access type '{}' should have parent group", unused_node.keyword);
             }
         }
 

@@ -29,6 +29,12 @@ namespace ErrorCodes
 }
 
 template <typename Point>
+using LineString = boost::geometry::model::linestring<Point>;
+
+template <typename Point>
+using MultiLineString = boost::geometry::model::multi_linestring<LineString<Point>>;
+
+template <typename Point>
 using Ring = boost::geometry::model::ring<Point>;
 
 template <typename Point>
@@ -38,11 +44,15 @@ template <typename Point>
 using MultiPolygon = boost::geometry::model::multi_polygon<Polygon<Point>>;
 
 using CartesianPoint = boost::geometry::model::d2::point_xy<Float64>;
+using CartesianLineString = LineString<CartesianPoint>;
+using CartesianMultiLineString = MultiLineString<CartesianPoint>;
 using CartesianRing = Ring<CartesianPoint>;
 using CartesianPolygon = Polygon<CartesianPoint>;
 using CartesianMultiPolygon = MultiPolygon<CartesianPoint>;
 
 using SphericalPoint = boost::geometry::model::point<Float64, 2, boost::geometry::cs::spherical_equatorial<boost::geometry::degree>>;
+using SphericalLineString = LineString<SphericalPoint>;
+using SphericalMultiLineString = MultiLineString<SphericalPoint>;
 using SphericalRing = Ring<SphericalPoint>;
 using SphericalPolygon = Polygon<SphericalPoint>;
 using SphericalMultiPolygon = MultiPolygon<SphericalPoint>;
@@ -81,6 +91,51 @@ struct ColumnToPointsConverter
             answer[i] = Point(first, second);
         }
 
+        return answer;
+    }
+};
+
+
+/**
+ * Class which converts Column with type Array(Tuple(Float64, Float64)) to a vector of boost linestring type.
+*/
+template <typename Point>
+struct ColumnToLineStringsConverter
+{
+    static std::vector<LineString<Point>> convert(ColumnPtr col)
+    {
+        const IColumn::Offsets & offsets = typeid_cast<const ColumnArray &>(*col).getOffsets();
+        size_t prev_offset = 0;
+        std::vector<LineString<Point>> answer;
+        answer.reserve(offsets.size());
+        auto tmp = ColumnToPointsConverter<Point>::convert(typeid_cast<const ColumnArray &>(*col).getDataPtr());
+        for (size_t offset : offsets)
+        {
+            answer.emplace_back(tmp.begin() + prev_offset, tmp.begin() + offset);
+            prev_offset = offset;
+        }
+        return answer;
+    }
+};
+
+/**
+ * Class which converts Column with type Array(Array(Tuple(Float64, Float64))) to a vector of boost multi_linestring type.
+*/
+template <typename Point>
+struct ColumnToMultiLineStringsConverter
+{
+    static std::vector<MultiLineString<Point>> convert(ColumnPtr col)
+    {
+        const IColumn::Offsets & offsets = typeid_cast<const ColumnArray &>(*col).getOffsets();
+        size_t prev_offset = 0;
+        std::vector<MultiLineString<Point>> answer(offsets.size());
+        auto all_linestrings = ColumnToLineStringsConverter<Point>::convert(typeid_cast<const ColumnArray &>(*col).getDataPtr());
+        for (size_t iter = 0; iter < offsets.size() && iter < all_linestrings.size(); ++iter)
+        {
+            for (size_t linestring_iter = prev_offset; linestring_iter < offsets[iter]; ++linestring_iter)
+                answer[iter].emplace_back(std::move(all_linestrings[linestring_iter]));
+            prev_offset = offsets[iter];
+        }
         return answer;
     }
 };
@@ -208,6 +263,71 @@ private:
     ColumnFloat64::Container & second_container;
 };
 
+/// Serialize Point, LineString as LineString
+template <typename Point>
+class LineStringSerializer
+{
+public:
+    LineStringSerializer()
+        : offsets(ColumnUInt64::create())
+    {}
+
+    explicit LineStringSerializer(size_t n)
+        : offsets(ColumnUInt64::create(n))
+    {}
+
+    void add(const LineString<Point> & ring)
+    {
+        size += ring.size();
+        offsets->insertValue(size);
+        for (const auto & point : ring)
+            point_serializer.add(point);
+    }
+
+    ColumnPtr finalize()
+    {
+        return ColumnArray::create(point_serializer.finalize(), std::move(offsets));
+    }
+
+private:
+    size_t size = 0;
+    PointSerializer<Point> point_serializer;
+    ColumnUInt64::MutablePtr offsets;
+};
+
+/// Serialize Point, MultiLineString as MultiLineString
+template <typename Point>
+class MultiLineStringSerializer
+{
+public:
+    MultiLineStringSerializer()
+        : offsets(ColumnUInt64::create())
+    {}
+
+    explicit MultiLineStringSerializer(size_t n)
+        : offsets(ColumnUInt64::create(n))
+    {}
+
+    void add(const MultiLineString<Point> & multilinestring)
+    {
+        size += multilinestring.size();
+        offsets->insertValue(size);
+        for (const auto & linestring : multilinestring)
+            linestring_serializer.add(linestring);
+    }
+
+    ColumnPtr finalize()
+    {
+        return ColumnArray::create(linestring_serializer.finalize(), std::move(offsets));
+    }
+
+private:
+    size_t size = 0;
+    LineStringSerializer<Point> linestring_serializer;
+    ColumnUInt64::MutablePtr offsets;
+};
+
+/// Almost the same as LineStringSerializer
 /// Serialize Point, Ring as Ring
 template <typename Point>
 class RingSerializer
@@ -344,11 +464,24 @@ static void callOnGeometryDataType(DataTypePtr type, F && f)
     /// There is no Point type, because for most of geometry functions it is useless.
     if (factory.get("Point")->equals(*type))
         return f(ConverterType<ColumnToPointsConverter<Point>>());
-    else if (factory.get("Ring")->equals(*type))
+
+    /// We should take the name into consideration to avoid ambiguity.
+    /// Because for example both Ring and LineString are resolved to Array(Tuple(Point)).
+    if (factory.get("LineString")->equals(*type) && type->getCustomName() && type->getCustomName()->getName() == "LineString")
+        return f(ConverterType<ColumnToLineStringsConverter<Point>>());
+
+    /// We should take the name into consideration to avoid ambiguity.
+    /// Because for example both MultiLineString and Polygon are resolved to Array(Array(Point)).
+    if (factory.get("MultiLineString")->equals(*type) && type->getCustomName() && type->getCustomName()->getName() == "MultiLineString")
+        return f(ConverterType<ColumnToMultiLineStringsConverter<Point>>());
+
+    /// For backward compatibility if we call this function not on a custom type, we will consider Array(Tuple(Point)) as type Ring.
+    if (factory.get("Ring")->equals(*type))
         return f(ConverterType<ColumnToRingsConverter<Point>>());
-    else if (factory.get("Polygon")->equals(*type))
+
+    if (factory.get("Polygon")->equals(*type))
         return f(ConverterType<ColumnToPolygonsConverter<Point>>());
-    else if (factory.get("MultiPolygon")->equals(*type))
+    if (factory.get("MultiPolygon")->equals(*type))
         return f(ConverterType<ColumnToMultiPolygonsConverter<Point>>());
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown geometry type {}", type->getName());
 }

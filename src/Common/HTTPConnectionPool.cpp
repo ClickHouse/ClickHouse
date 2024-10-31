@@ -2,6 +2,7 @@
 #include <Common/HostResolvePool.h>
 
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
@@ -9,6 +10,8 @@
 #include <Common/ProxyConfiguration.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SipHash.h>
+#include <Common/Scheduler/ResourceGuard.h>
+#include <Common/proxyConfigurationToPocoProxyConfig.h>
 
 #include <Poco/Net/HTTPChunkedStream.h>
 #include <Poco/Net/HTTPClientSession.h>
@@ -70,20 +73,6 @@ namespace CurrentMetrics
 
 namespace
 {
-    Poco::Net::HTTPClientSession::ProxyConfig proxyConfigurationToPocoProxyConfig(const DB::ProxyConfiguration & proxy_configuration)
-    {
-        Poco::Net::HTTPClientSession::ProxyConfig poco_proxy_config;
-
-        poco_proxy_config.host = proxy_configuration.host;
-        poco_proxy_config.port = proxy_configuration.port;
-        poco_proxy_config.protocol = DB::ProxyConfiguration::protocolToString(proxy_configuration.protocol);
-        poco_proxy_config.tunnel = proxy_configuration.tunneling;
-        poco_proxy_config.originalRequestProtocol = DB::ProxyConfiguration::protocolToString(proxy_configuration.original_request_protocol);
-
-        return poco_proxy_config;
-    }
-
-
     constexpr size_t roundUp(size_t x, size_t rounding)
     {
         chassert(rounding > 0);
@@ -249,6 +238,59 @@ public:
 };
 
 
+// Session data hooks implementation for integration with resource scheduler.
+// Hooks are created per every request-response pair and are registered/unregistered in HTTP session.
+// * `atStart()` send resource request to the scheduler every time HTTP session is going to send or receive
+//   data to/from socket. `start()` waits for the scheduler confirmation. This way scheduler might
+//   throttle and/or schedule socket data streams.
+// * `atFinish()` hook is called on successful socket read/write operation.
+//   It informs the scheduler that operation is complete, which allows the scheduler to control the total
+//   amount of in-flight bytes and/or operations.
+// * `atFail()` hook is called on failure of socket operation. The purpose is to correct the amount of bytes
+//   passed through the scheduler queue to ensure fair bandwidth allocation even in presence of errors.
+struct ResourceGuardSessionDataHooks : public Poco::Net::IHTTPSessionDataHooks
+{
+    ResourceGuardSessionDataHooks(ResourceLink link_, const ResourceGuard::Metrics * metrics, LoggerPtr log_, const String & method, const String & uri)
+        : link(link_)
+        , log(log_)
+        , http_request(method + " " + uri)
+    {
+        request.metrics = metrics;
+        chassert(link);
+    }
+
+    ~ResourceGuardSessionDataHooks() override
+    {
+        request.assertFinished(); // Never destruct with an active request
+    }
+
+    void atStart(int bytes) override
+    {
+        Stopwatch timer;
+        request.enqueue(bytes, link);
+        request.wait();
+        timer.stop();
+        if (timer.elapsedMilliseconds() >= 5000)
+            LOG_INFO(log, "Resource request took too long to finish: {} ms for {}", timer.elapsedMilliseconds(), http_request);
+    }
+
+    void atFinish(int bytes) override
+    {
+        request.finish(bytes, link);
+    }
+
+    void atFail() override
+    {
+        request.finish(0, link);
+    }
+
+    ResourceLink link;
+    ResourceGuard::Request request;
+    LoggerPtr log;
+    String http_request;
+};
+
+
 // EndpointConnectionPool manage connections to the endpoint
 // Features:
 // - it uses HostResolver for address selecting. See Common/HostResolver.h for more info.
@@ -259,8 +301,6 @@ public:
 // - `Session::reconnect()` uses the pool as well
 // - comprehensive sensors
 // - session is reused according its inner state, automatically
-
-
 template <class Session>
 class EndpointConnectionPool : public std::enable_shared_from_this<EndpointConnectionPool<Session>>, public IExtendedPool
 {
@@ -350,6 +390,13 @@ private:
         std::ostream & sendRequest(Poco::Net::HTTPRequest & request) override
         {
             auto idle = idleTime();
+
+            // Set data hooks for IO scheduling
+            if (ResourceLink link = CurrentThread::getReadResourceLink())
+                Session::setReceiveDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(link, ResourceGuard::Metrics::getIORead(), log, request.getMethod(), request.getURI()));
+            if (ResourceLink link = CurrentThread::getWriteResourceLink())
+                Session::setSendDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(link, ResourceGuard::Metrics::getIOWrite(), log, request.getMethod(), request.getURI()));
+
             std::ostream & result = Session::sendRequest(request);
             result.exceptions(std::ios::badbit);
 
@@ -406,6 +453,8 @@ private:
                 }
             }
             response_stream = nullptr;
+            Session::setSendDataHooks();
+            Session::setReceiveDataHooks();
 
             group->atConnectionDestroy();
 
@@ -696,7 +745,8 @@ struct EndpointPoolKey
                    proxy_config.port,
                    proxy_config.protocol,
                    proxy_config.tunneling,
-                   proxy_config.original_request_protocol)
+                   proxy_config.original_request_protocol,
+                   proxy_config.no_proxy_hosts)
             == std::tie(
                    rhs.connection_group,
                    rhs.target_host,
@@ -706,7 +756,8 @@ struct EndpointPoolKey
                    rhs.proxy_config.port,
                    rhs.proxy_config.protocol,
                    rhs.proxy_config.tunneling,
-                   rhs.proxy_config.original_request_protocol);
+                   rhs.proxy_config.original_request_protocol,
+                   rhs.proxy_config.no_proxy_hosts);
     }
 };
 

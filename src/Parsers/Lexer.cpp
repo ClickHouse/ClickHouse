@@ -1,7 +1,7 @@
 #include <cassert>
 #include <base/defines.h>
 #include <Parsers/Lexer.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <base/find_symbols.h>
 
 namespace DB
@@ -42,7 +42,7 @@ Token quotedString(const char *& pos, const char * const token_begin, const char
             continue;
         }
 
-        UNREACHABLE();
+        chassert(false);
     }
 }
 
@@ -58,9 +58,6 @@ Token quotedStringWithUnicodeQuotes(const char *& pos, const char * const token_
     {
         pos = find_first_symbols<'\xE2'>(pos, end);
         if (pos + 2 >= end)
-            return Token(error_token, token_begin, end);
-        /// Empty identifiers are not allowed, while empty strings are.
-        if (success_token == TokenType::QuotedIdentifier && pos + 3 >= end)
             return Token(error_token, token_begin, end);
 
         if (pos[0] == '\xE2' && pos[1] == '\x80' && pos[2] == expected_end_byte)
@@ -344,34 +341,32 @@ Token Lexer::nextTokenImpl()
                     ++pos;
                     return comment_until_end_of_line();
                 }
-                else
+
+                ++pos;
+
+                /// Nested multiline comments are supported according to the SQL standard.
+                size_t nesting_level = 1;
+
+                while (pos + 2 <= end)
                 {
-                    ++pos;
-
-                    /// Nested multiline comments are supported according to the SQL standard.
-                    size_t nesting_level = 1;
-
-                    while (pos + 2 <= end)
+                    if (pos[0] == '/' && pos[1] == '*')
                     {
-                        if (pos[0] == '/' && pos[1] == '*')
-                        {
-                            pos += 2;
-                            ++nesting_level;
-                        }
-                        else if (pos[0] == '*' && pos[1] == '/')
-                        {
-                            pos += 2;
-                            --nesting_level;
-
-                            if (nesting_level == 0)
-                                return Token(TokenType::Comment, token_begin, pos);
-                        }
-                        else
-                            ++pos;
+                        pos += 2;
+                        ++nesting_level;
                     }
-                    pos = end;
-                    return Token(TokenType::ErrorMultilineCommentIsNotClosed, token_begin, pos);
+                    else if (pos[0] == '*' && pos[1] == '/')
+                    {
+                        pos += 2;
+                        --nesting_level;
+
+                        if (nesting_level == 0)
+                            return Token(TokenType::Comment, token_begin, pos);
+                    }
+                    else
+                        ++pos;
                 }
+                pos = end;
+                return Token(TokenType::ErrorMultilineCommentIsNotClosed, token_begin, pos);
             }
             return Token(TokenType::Slash, token_begin, pos);
         }
@@ -426,6 +421,8 @@ Token Lexer::nextTokenImpl()
         }
         case '?':
             return Token(TokenType::QuestionMark, token_begin, ++pos);
+        case '^':
+            return Token(TokenType::Caret, token_begin, ++pos);
         case ':':
         {
             ++pos;
@@ -484,7 +481,7 @@ Token Lexer::nextTokenImpl()
                 if (heredoc_name_end_position != std::string::npos)
                 {
                     size_t heredoc_size = heredoc_name_end_position + 1;
-                    std::string_view heredoc = {token_stream.data(), heredoc_size};
+                    std::string_view heredoc = {token_stream.data(), heredoc_size}; // NOLINT
 
                     size_t heredoc_end_position = token_stream.find(heredoc, heredoc_size);
                     if (heredoc_end_position != std::string::npos)
@@ -516,15 +513,12 @@ Token Lexer::nextTokenImpl()
                     ++pos;
                 return Token(TokenType::BareWord, token_begin, pos);
             }
-            else
-            {
-                /// We will also skip unicode whitespaces in UTF-8 to support for queries copy-pasted from MS Word and similar.
-                pos = skipWhitespacesUTF8(pos, end);
-                if (pos > token_begin)
-                    return Token(TokenType::Whitespace, token_begin, pos);
-                else
-                    return Token(TokenType::Error, token_begin, ++pos);
-            }
+
+            /// We will also skip unicode whitespaces in UTF-8 to support for queries copy-pasted from MS Word and similar.
+            pos = skipWhitespacesUTF8(pos, end);
+            if (pos > token_begin)
+                return Token(TokenType::Whitespace, token_begin, pos);
+            return Token(TokenType::Error, token_begin, ++pos);
     }
 }
 
@@ -538,8 +532,6 @@ const char * getTokenName(TokenType type)
 APPLY_FOR_TOKENS(M)
 #undef M
     }
-
-    UNREACHABLE();
 }
 
 

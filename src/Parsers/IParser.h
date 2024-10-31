@@ -22,7 +22,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-enum class Highlight
+enum class Highlight : uint8_t
 {
     none = 0,
     keyword,
@@ -178,8 +178,7 @@ public:
             pos = begin;
             return false;
         }
-        else
-            return true;
+        return true;
     }
 
     /** The same, but doesn't move the position even if parsing was successful.

@@ -4,5 +4,4 @@ if (NOT TARGET ch_contrib::rapidjson)
 endif ()
 
 clickhouse_add_executable(keeper-bench Generator.cpp Runner.cpp Stats.cpp main.cpp)
-target_link_libraries(keeper-bench PRIVATE dbms)
-target_link_libraries(keeper-bench PRIVATE ch_contrib::rapidjson)
+target_link_libraries(keeper-bench PRIVATE dbms clickhouse_functions ch_contrib::rapidjson)

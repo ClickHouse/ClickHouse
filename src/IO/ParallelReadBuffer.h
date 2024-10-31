@@ -33,7 +33,7 @@ public:
     ~ParallelReadBuffer() override { finishAndWait(); }
 
     off_t seek(off_t off, int whence) override;
-    size_t getFileSize() override;
+    std::optional<size_t> tryGetFileSize() override;
     off_t getPosition() override;
 
     const SeekableReadBuffer & getReadBuffer() const { return input; }

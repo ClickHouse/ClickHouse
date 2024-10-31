@@ -1,4 +1,3 @@
-#include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
@@ -9,8 +8,6 @@
 
 #include <string>
 #include <vector>
-
-#include <Core/iostream_debug_helpers.h>
 
 
 template <typename T>
@@ -63,7 +60,7 @@ TEST_P(ParseDataTypeTest, parseStringValue)
         data_type->getDefaultSerialization()->deserializeWholeText(*col, buffer, FormatSettings{});
     }
 
-    ASSERT_EQ(p.expected_values.size(), col->size()) << "Actual items: " << *col;
+    ASSERT_EQ(p.expected_values.size(), col->size());
     for (size_t i = 0; i < col->size(); ++i)
     {
         ASSERT_EQ(p.expected_values[i], (*col)[i]);

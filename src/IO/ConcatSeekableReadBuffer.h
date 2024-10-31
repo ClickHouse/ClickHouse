@@ -21,7 +21,7 @@ public:
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;
 
-    size_t getFileSize() override { return total_size; }
+    std::optional<size_t> tryGetFileSize() override { return total_size; }
 
 private:
     bool nextImpl() override;

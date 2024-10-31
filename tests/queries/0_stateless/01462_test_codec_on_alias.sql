@@ -5,7 +5,7 @@ select 'create table compression_codec_on_alias with CODEC on ALIAS type';
 CREATE TABLE compression_codec_on_alias (
     `c0` ALIAS c1 CODEC(ZSTD),
     c1 UInt64
-) ENGINE = MergeTree() PARTITION BY c0 ORDER BY c1; -- { serverError 36 }
+) ENGINE = MergeTree() PARTITION BY c0 ORDER BY c1; -- { serverError BAD_ARGUMENTS }
 
 select 'create table compression_codec_on_alias with proper CODEC';
 
@@ -16,7 +16,7 @@ CREATE TABLE compression_codec_on_alias (
 
 select 'alter table compression_codec_on_alias add column (ALIAS type) with CODEC';
 
-ALTER TABLE compression_codec_on_alias ADD COLUMN `c3` ALIAS c2 CODEC(ZSTD) AFTER c2; -- { serverError 36 }
+ALTER TABLE compression_codec_on_alias ADD COLUMN `c3` ALIAS c2 CODEC(ZSTD) AFTER c2; -- { serverError BAD_ARGUMENTS }
 
 select 'alter table compression_codec_on_alias add column (NOT ALIAS type) with CODEC';
 

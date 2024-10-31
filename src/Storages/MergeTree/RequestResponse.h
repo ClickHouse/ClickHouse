@@ -1,6 +1,5 @@
 #pragma once
 
-#include <condition_variable>
 #include <functional>
 #include <optional>
 
@@ -64,7 +63,7 @@ struct ParallelReadRequest
     /// Contains only data part names without mark ranges.
     RangesInDataPartsDescription description;
 
-    void serialize(WriteBuffer & out) const;
+    void serialize(WriteBuffer & out, UInt64 initiator_protocol_version) const;
     String describe() const;
     static ParallelReadRequest deserialize(ReadBuffer & in);
     void merge(ParallelReadRequest & other);
@@ -79,7 +78,7 @@ struct ParallelReadResponse
     bool finish{false};
     RangesInDataPartsDescription description;
 
-    void serialize(WriteBuffer & out) const;
+    void serialize(WriteBuffer & out, UInt64 replica_protocol_version) const;
     String describe() const;
     void deserialize(ReadBuffer & in);
 };
@@ -94,21 +93,18 @@ struct InitialAllRangesAnnouncement
     /// No default constructor, you must initialize all fields at once.
 
     InitialAllRangesAnnouncement(
-        CoordinationMode mode_,
-        RangesInDataPartsDescription description_,
-        size_t replica_num_)
-        : mode(mode_)
-        , description(description_)
-        , replica_num(replica_num_)
+        CoordinationMode mode_, RangesInDataPartsDescription description_, size_t replica_num_, size_t mark_segment_size_)
+        : mode(mode_), description(std::move(description_)), replica_num(replica_num_), mark_segment_size(mark_segment_size_)
     {}
 
     CoordinationMode mode;
     RangesInDataPartsDescription description;
     size_t replica_num;
+    size_t mark_segment_size;
 
-    void serialize(WriteBuffer & out) const;
+    void serialize(WriteBuffer & out, UInt64 initiator_protocol_version) const;
     String describe();
-    static InitialAllRangesAnnouncement deserialize(ReadBuffer & in);
+    static InitialAllRangesAnnouncement deserialize(ReadBuffer & i, UInt64 replica_protocol_version);
 };
 
 

@@ -6,28 +6,37 @@ sidebar_label: Iceberg
 
 # Iceberg Table Engine
 
-This engine provides a read-only integration with existing Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3.
+This engine provides a read-only integration with existing Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS and locally stored tables.
 
 ## Create Table
 
-Note that the Iceberg table must already exist in S3, this command does not take DDL parameters to create a new table.
+Note that the Iceberg table must already exist in the storage, this command does not take DDL parameters to create a new table.
 
 ``` sql
-CREATE TABLE iceberg_table
-    ENGINE = Iceberg(url, [aws_access_key_id, aws_secret_access_key,])
+CREATE TABLE iceberg_table_s3
+    ENGINE = IcebergS3(url,  [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])
+
+CREATE TABLE iceberg_table_azure
+    ENGINE = IcebergAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+
+CREATE TABLE iceberg_table_hdfs
+    ENGINE = IcebergHDFS(path_to_table, [,format] [,compression_method])
+
+CREATE TABLE iceberg_table_local
+    ENGINE = IcebergLocal(path_to_table, [,format] [,compression_method])
 ```
 
-**Engine parameters**
+**Engine arguments**
 
-- `url` — url with the path to an existing Iceberg table.
-- `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file.
+Description of the arguments coincides with description of arguments in engines `S3`, `AzureBlobStorage`, `HDFS` and `File` correspondingly.
+`format` stands for the format of data files in the Iceberg table.
 
 Engine parameters can be specified using [Named Collections](../../../operations/named-collections.md)
 
 **Example**
 
 ```sql
-CREATE TABLE iceberg_table ENGINE=Iceberg('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
+CREATE TABLE iceberg_table ENGINE=IcebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
 ```
 
 Using named collections:
@@ -37,7 +46,7 @@ Using named collections:
     <named_collections>
         <iceberg_conf>
             <url>http://test.s3.amazonaws.com/clickhouse-bucket/</url>
-            <access_key_id>test<access_key_id>
+            <access_key_id>test</access_key_id>
             <secret_access_key>test</secret_access_key>
         </iceberg_conf>
     </named_collections>
@@ -45,8 +54,18 @@ Using named collections:
 ```
 
 ```sql
-CREATE TABLE iceberg_table ENGINE=Iceberg(iceberg_conf, filename = 'test_table')
+CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table')
+
 ```
+
+**Aliases**
+
+
+Table engine `Iceberg` is an alias to `IcebergS3` now.
+
+### Data cache {#data-cache}
+
+`Iceberg` table engine and table function support data caching same as `S3`, `AzureBlobStorage`, `HDFS` storages. See [here](../../../engines/table-engines/integrations/s3.md#data-cache).
 
 ## See also
 

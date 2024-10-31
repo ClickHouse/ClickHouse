@@ -17,7 +17,7 @@ namespace DB
 
 namespace
 {
-    enum class Kind
+    enum class Kind : uint8_t
     {
         CURRENT_ROLES,
         ENABLED_ROLES,

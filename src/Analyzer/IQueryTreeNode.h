@@ -25,7 +25,7 @@ namespace ErrorCodes
 class WriteBuffer;
 
 /// Query tree node type
-enum class QueryTreeNodeType
+enum class QueryTreeNodeType : uint8_t
 {
     IDENTIFIER,
     MATCHER,
@@ -49,7 +49,7 @@ enum class QueryTreeNodeType
 /// Convert query tree node type to string
 const char * toString(QueryTreeNodeType type);
 
-/** Query tree is semantical representation of query.
+/** Query tree is a semantic representation of query.
   * Query tree node represent node in query tree.
   * IQueryTreeNode is base class for all query tree nodes.
   *

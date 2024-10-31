@@ -1,4 +1,4 @@
 -- Tags: no-fasttest
 
-SELECT h3ToChildren(599405990164561919, 100); -- { serverError 69 }
-SELECT h3ToParent(599405990164561919, 100); -- { serverError 69 }
+SELECT h3ToChildren(599405990164561919, 100); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT h3ToParent(599405990164561919, 100); -- { serverError ARGUMENT_OUT_OF_BOUND }

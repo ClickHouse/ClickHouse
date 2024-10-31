@@ -82,7 +82,7 @@ FROM
 
 В этом случае необходимо помнить, что границы корзин гистограммы не известны.
 
-## sequenceMatch(pattern)(timestamp, cond1, cond2, …) {#function-sequencematch}
+## sequenceMatch(pattern)(timestamp, cond1, cond2, ...) {#function-sequencematch}
 
 Проверяет, содержит ли последовательность событий цепочку, которая соответствует указанному шаблону.
 
@@ -172,7 +172,7 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 
 -   [sequenceCount](#function-sequencecount)
 
-## sequenceCount(pattern)(time, cond1, cond2, …) {#function-sequencecount}
+## sequenceCount(pattern)(time, cond1, cond2, ...) {#function-sequencecount}
 
 Вычисляет количество цепочек событий, соответствующих шаблону. Функция обнаруживает только непересекающиеся цепочки событий. Она начинает искать следующую цепочку только после того, как полностью совпала текущая цепочка событий.
 

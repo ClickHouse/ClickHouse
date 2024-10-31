@@ -17,7 +17,7 @@ DROP TABLE t_subcolumns_local;
 -- StripeLog doesn't support subcolumns.
 CREATE TABLE t_subcolumns_local (arr Array(UInt32), n Nullable(String), t Tuple(s1 String, s2 String)) ENGINE = StripeLog;
 
-SELECT arr.size0, n.null, t.s1, t.s2 FROM t_subcolumns_dist; -- { serverError 47 }
+SELECT arr.size0, n.null, t.s1, t.s2 FROM t_subcolumns_dist; -- { serverError UNKNOWN_IDENTIFIER }
 
 DROP TABLE t_subcolumns_local;
 DROP TABLE t_subcolumns_dist;

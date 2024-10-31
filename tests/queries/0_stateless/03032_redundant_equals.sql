@@ -5,11 +5,11 @@ CREATE TABLE test_table
     k UInt64,
 )
 ENGINE = MergeTree
-ORDER BY k;
+ORDER BY k SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
-INSERT INTO test_table SELECT number FROM numbers(10000000);
+INSERT INTO test_table SELECT number FROM numbers(100000);
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 SELECT * FROM test_table WHERE k in (100) = 1;
 SELECT * FROM test_table WHERE k = (100) = 1;
@@ -25,7 +25,7 @@ SELECT * FROM test_table WHERE (NOT ((k not in (100) = 0) OR (k in (100) = 1))) 
 SELECT * FROM test_table WHERE (NOT ((k in (101) = 0) OR (k in (100) = 1))) = 1;
 SELECT * FROM test_table WHERE ((k not in (101) = 0) OR (k in (100) = 1)) = 1;
 SELECT * FROM test_table WHERE ((k not in (99) = 1) AND (k in (100) = 1)) = 1;
--- we skip optimizing queries with toNullable(0 or 1) but lets make sure they still work 
+-- we skip optimizing queries with toNullable(0 or 1) but lets make sure they still work
 SELECT * FROM test_table WHERE (k = 101) = toLowCardinality(toNullable(1));
 SELECT * FROM test_table WHERE (k = 101) = toNullable(1);
 SELECT * FROM test_table WHERE (k = 101) = toLowCardinality(1);

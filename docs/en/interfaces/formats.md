@@ -32,6 +32,7 @@ The supported formats are:
 | [Vertical](#vertical)                                                                     | ✗    | ✔     |
 | [JSON](#json)                                                                             | ✔    | ✔     |
 | [JSONAsString](#jsonasstring)                                                             | ✔    | ✗     |
+| [JSONAsObject](#jsonasobject)                                                             | ✔    | ✗     |
 | [JSONStrings](#jsonstrings)                                                               | ✔    | ✔     |
 | [JSONColumns](#jsoncolumns)                                                               | ✔    | ✔     |
 | [JSONColumnsWithMetadata](#jsoncolumnsmonoblock)                                          | ✔    | ✔     |
@@ -67,6 +68,7 @@ The supported formats are:
 | [Prometheus](#prometheus)                                                                 | ✗    | ✔     |
 | [Protobuf](#protobuf)                                                                     | ✔    | ✔     |
 | [ProtobufSingle](#protobufsingle)                                                         | ✔    | ✔     |
+| [ProtobufList](#protobuflist)								    | ✔    | ✔     |
 | [Avro](#data-format-avro)                                                                 | ✔    | ✔     |
 | [AvroConfluent](#data-format-avro-confluent)                                              | ✔    | ✗     |
 | [Parquet](#data-format-parquet)                                                           | ✔    | ✔     |
@@ -75,7 +77,7 @@ The supported formats are:
 | [ArrowStream](#data-format-arrow-stream)                                                  | ✔    | ✔     |
 | [ORC](#data-format-orc)                                                                   | ✔    | ✔     |
 | [One](#data-format-one)                                                                   | ✔    | ✗     |
-| [Npy](#data-format-npy)                                                                   | ✔    | ✗     |
+| [Npy](#data-format-npy)                                                                   | ✔    | ✔     |
 | [RowBinary](#rowbinary)                                                                   | ✔    | ✔     |
 | [RowBinaryWithNames](#rowbinarywithnamesandtypes)                                         | ✔    | ✔     |
 | [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                                 | ✔    | ✔     |
@@ -197,6 +199,7 @@ SELECT * FROM nestedt FORMAT TSV
 - [input_format_tsv_enum_as_number](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_enum_as_number) - treat inserted enum values in TSV formats as enum indices. Default value - `false`.
 - [input_format_tsv_use_best_effort_in_schema_inference](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_use_best_effort_in_schema_inference) - use some tweaks and heuristics to infer schema in TSV format. If disabled, all fields will be inferred as Strings. Default value - `true`.
 - [output_format_tsv_crlf_end_of_line](/docs/en/operations/settings/settings-formats.md/#output_format_tsv_crlf_end_of_line) - if it is set true, end of line in TSV output format will be `\r\n` instead of `\n`. Default value - `false`.
+- [input_format_tsv_crlf_end_of_line](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_crlf_end_of_line) - if it is set true, end of line in TSV input format will be `\r\n` instead of `\n`. Default value - `false`.
 - [input_format_tsv_skip_first_lines](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_skip_first_lines) - skip specified number of lines at the beginning of data. Default value - `0`.
 - [input_format_tsv_detect_header](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_detect_header) - automatically detect header with names and types in TSV format. Default value - `true`.
 - [input_format_tsv_skip_trailing_empty_lines](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_skip_trailing_empty_lines) - skip trailing empty lines at the end of data. Default value - `false`.
@@ -479,7 +482,7 @@ The CSV format supports the output of totals and extremes the same way as `TabSe
 - [input_format_csv_detect_header](/docs/en/operations/settings/settings-formats.md/#input_format_csv_detect_header) - automatically detect header with names and types in CSV format. Default value - `true`.
 - [input_format_csv_skip_trailing_empty_lines](/docs/en/operations/settings/settings-formats.md/#input_format_csv_skip_trailing_empty_lines) - skip trailing empty lines at the end of data. Default value - `false`.
 - [input_format_csv_trim_whitespaces](/docs/en/operations/settings/settings-formats.md/#input_format_csv_trim_whitespaces) - trim spaces and tabs in non-quoted CSV strings. Default value - `true`.
-- [input_format_csv_allow_whitespace_or_tab_as_delimiter](/docs/en/operations/settings/settings-formats.md/# input_format_csv_allow_whitespace_or_tab_as_delimiter) - Allow to use whitespace or tab as field delimiter in CSV strings. Default value - `false`.
+- [input_format_csv_allow_whitespace_or_tab_as_delimiter](/docs/en/operations/settings/settings-formats.md/#input_format_csv_allow_whitespace_or_tab_as_delimiter) - Allow to use whitespace or tab as field delimiter in CSV strings. Default value - `false`.
 - [input_format_csv_allow_variable_number_of_columns](/docs/en/operations/settings/settings-formats.md/#input_format_csv_allow_variable_number_of_columns) - allow variable number of columns in CSV format, ignore extra columns and use default values on missing columns. Default value - `false`.
 - [input_format_csv_use_default_on_bad_values](/docs/en/operations/settings/settings-formats.md/#input_format_csv_use_default_on_bad_values) - Allow to set default value to column when CSV field deserialization failed on bad value. Default value - `false`.
 - [input_format_csv_try_infer_numbers_from_strings](/docs/en/operations/settings/settings-formats.md/#input_format_csv_try_infer_numbers_from_strings) - Try to infer numbers from string fields while schema inference. Default value - `false`.
@@ -818,6 +821,66 @@ Result:
 │ {"id": 1, "name": "name1"} │
 │ {"id": 2, "name": "name2"} │
 └────────────────────────────┘
+```
+
+## JSONAsObject {#jsonasobject}
+
+In this format, a single JSON object is interpreted as a single [JSON](/docs/en/sql-reference/data-types/newjson.md) value. If the input has several JSON objects (comma separated), they are interpreted as separate rows. If the input data is enclosed in square brackets, it is interpreted as an array of JSONs.
+
+This format can only be parsed for a table with a single field of type [JSON](/docs/en/sql-reference/data-types/newjson.md). The remaining columns must be set to [DEFAULT](/docs/en/sql-reference/statements/create/table.md/#default) or [MATERIALIZED](/docs/en/sql-reference/statements/create/table.md/#materialized).
+
+**Examples**
+
+Query:
+
+``` sql
+SET allow_experimental_json_type = 1;
+CREATE TABLE json_as_object (json JSON) ENGINE = Memory;
+INSERT INTO json_as_object (json) FORMAT JSONAsObject {"foo":{"bar":{"x":"y"},"baz":1}},{},{"any json stucture":1}
+SELECT * FROM json_as_object FORMAT JSONEachRow;
+```
+
+Result:
+
+``` response
+{"json":{"foo":{"bar":{"x":"y"},"baz":"1"}}}
+{"json":{}}
+{"json":{"any json stucture":"1"}}
+```
+
+**An array of JSON objects**
+
+Query:
+
+``` sql
+SET allow_experimental_json_type = 1;
+CREATE TABLE json_square_brackets (field JSON) ENGINE = Memory;
+INSERT INTO json_square_brackets FORMAT JSONAsObject [{"id": 1, "name": "name1"}, {"id": 2, "name": "name2"}];
+SELECT * FROM json_square_brackets FORMAT JSONEachRow;
+```
+
+Result:
+
+```response
+{"field":{"id":"1","name":"name1"}}
+{"field":{"id":"2","name":"name2"}}
+```
+
+**Columns with default values**
+
+```sql
+SET allow_experimental_json_type = 1;
+CREATE TABLE json_as_object (json JSON, time DateTime MATERIALIZED now()) ENGINE = Memory;
+INSERT INTO json_as_object (json) FORMAT JSONAsObject {"foo":{"bar":{"x":"y"},"baz":1}};
+INSERT INTO json_as_object (json) FORMAT JSONAsObject {};
+INSERT INTO json_as_object (json) FORMAT JSONAsObject {"any json stucture":1}
+SELECT time, json FROM json_as_object FORMAT JSONEachRow
+```
+
+```response
+{"time":"2024-09-16 12:18:10","json":{}}
+{"time":"2024-09-16 12:18:13","json":{"any json stucture":"1"}}
+{"time":"2024-09-16 12:18:08","json":{"foo":{"bar":{"x":"y"},"baz":"1"}}}
 ```
 
 ## JSONCompact {#jsoncompact}
@@ -1278,6 +1341,7 @@ SELECT * FROM json_each_row_nested
 - [input_format_json_ignore_unknown_keys_in_named_tuple](/docs/en/operations/settings/settings-formats.md/#input_format_json_ignore_unknown_keys_in_named_tuple) - ignore unknown keys in json object for named tuples. Default value - `false`.
 - [input_format_json_compact_allow_variable_number_of_columns](/docs/en/operations/settings/settings-formats.md/#input_format_json_compact_allow_variable_number_of_columns) - allow variable number of columns in JSONCompact/JSONCompactEachRow format, ignore extra columns and use default values on missing columns. Default value - `false`.
 - [input_format_json_throw_on_bad_escape_sequence](/docs/en/operations/settings/settings-formats.md/#input_format_json_throw_on_bad_escape_sequence) - throw an exception if JSON string contains bad escape sequence. If disabled, bad escape sequences will remain as is in the data. Default value - `true`.
+- [input_format_json_empty_as_default](/docs/en/operations/settings/settings-formats.md/#input_format_json_empty_as_default) - treat empty fields in JSON input as default values. Default value - `false`. For complex default expressions [input_format_defaults_for_omitted_fields](/docs/en/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) must be enabled too.
 - [output_format_json_quote_64bit_integers](/docs/en/operations/settings/settings-formats.md/#output_format_json_quote_64bit_integers) - controls quoting of 64-bit integers in JSON output format. Default value - `true`.
 - [output_format_json_quote_64bit_floats](/docs/en/operations/settings/settings-formats.md/#output_format_json_quote_64bit_floats) - controls quoting of 64-bit floats in JSON output format. Default value - `false`.
 - [output_format_json_quote_denormals](/docs/en/operations/settings/settings-formats.md/#output_format_json_quote_denormals) - enables '+nan', '-nan', '+inf', '-inf' outputs in JSON output format. Default value - `false`.
@@ -1489,6 +1553,8 @@ Differs from [PrettySpaceNoEscapes](#prettyspacenoescapes) in that up to 10,000 
 - [output_format_pretty_color](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_color) - use ANSI escape sequences to paint colors in Pretty formats. Default value - `true`.
 - [output_format_pretty_grid_charset](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_grid_charset) - Charset for printing grid borders. Available charsets: ASCII, UTF-8. Default value - `UTF-8`.
 - [output_format_pretty_row_numbers](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_row_numbers) - Add row numbers before each row for pretty output format. Default value - `true`.
+- [output_format_pretty_display_footer_column_names](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names) - Display column names in the footer if table contains many rows. Default value - `true`.
+- [output_format_pretty_display_footer_column_names_min_rows](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names_min_rows) - Sets the minimum number of rows for which a footer will be displayed if [output_format_pretty_display_footer_column_names](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names) is enabled. Default value - 50.
 
 ## RowBinary {#rowbinary}
 
@@ -1554,6 +1620,10 @@ For column `y` data starts with byte `00` that indicates that column has actual 
 ## RowBinary format settings {#row-binary-format-settings}
 
 - [format_binary_max_string_size](/docs/en/operations/settings/settings-formats.md/#format_binary_max_string_size) - The maximum allowed size for String in RowBinary format. Default value - `1GiB`.
+- [output_format_binary_encode_types_in_binary_format](/docs/en/operations/settings/settings-formats.md/#output_format_binary_encode_types_in_binary_format) - Allows to write types in header using [binary encoding](/docs/en/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in RowBinaryWithNamesAndTypes output format. Default value - `false`.
+- [input_format_binary_encode_types_in_binary_format](/docs/en/operations/settings/settings-formats.md/#input_format_binary_encode_types_in_binary_format) - Allows to read types in header using [binary encoding](/docs/en/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in RowBinaryWithNamesAndTypes input format. Default value - `false`.
+- [output_format_binary_write_json_as_string](/docs/en/operations/settings/settings-formats.md/#output_format_binary_write_json_as_string) - Allows to write values of [JSON](/docs/en/sql-reference/data-types/newjson.md) data type as JSON [String](/docs/en/sql-reference/data-types/string.md) values in RowBinary output format. Default value - `false`.
+- [input_format_binary_read_json_as_string](/docs/en/operations/settings/settings-formats.md/#input_format_binary_read_json_as_string) - Allows to read values of [JSON](/docs/en/sql-reference/data-types/newjson.md) data type as JSON [String](/docs/en/sql-reference/data-types/string.md) values in RowBinary input format. Default value - `false`.
 
 ## Values {#data-format-values}
 
@@ -1935,7 +2005,7 @@ In this case autogenerated Protobuf schema will be saved in file `path/to/schema
 
 ### Drop Protobuf cache
 
-To reload Protobuf schema loaded from [format_schema_path](../operations/server-configuration-parameters/settings.md/#server_configuration_parameters-format_schema_path) use [SYSTEM DROP ... FORMAT CACHE](../sql-reference/statements/system.md/#system-drop-schema-format) statement.
+To reload Protobuf schema loaded from [format_schema_path](../operations/server-configuration-parameters/settings.md/#format_schema_path) use [SYSTEM DROP ... FORMAT CACHE](../sql-reference/statements/system.md/#system-drop-schema-format) statement.
 
 ```sql
 SYSTEM DROP FORMAT SCHEMA CACHE FOR Protobuf
@@ -1944,6 +2014,35 @@ SYSTEM DROP FORMAT SCHEMA CACHE FOR Protobuf
 ## ProtobufSingle {#protobufsingle}
 
 Same as [Protobuf](#protobuf) but for storing/parsing single Protobuf message without length delimiters.
+
+## ProtobufList {#protobuflist}
+
+Similar to Protobuf but rows are represented as a sequence of sub-messages contained in a message with fixed name "Envelope".
+
+Usage example:
+
+``` sql
+SELECT * FROM test.table FORMAT ProtobufList SETTINGS format_schema = 'schemafile:MessageType'
+```
+
+``` bash
+cat protobuflist_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT ProtobufList SETTINGS format_schema='schemafile:MessageType'"
+```
+
+where the file `schemafile.proto` looks like this:
+
+``` capnp
+syntax = "proto3";
+message Envelope {
+  message MessageType {
+    string name = 1;
+    string surname = 2;
+    uint32 birthDate = 3;
+    repeated string phoneNumbers = 4;
+  };
+  MessageType row = 1;
+};
+```
 
 ## Avro {#data-format-avro}
 
@@ -1955,35 +2054,40 @@ ClickHouse Avro format supports reading and writing [Avro data files](https://av
 
 The table below shows supported data types and how they match ClickHouse [data types](/docs/en/sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
 
-| Avro data type `INSERT`                     | ClickHouse data type                                                                                                          | Avro data type `SELECT`       |
-|---------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|-------------------------------|
-| `boolean`, `int`, `long`, `float`, `double` | [Int(8\16\32)](/docs/en/sql-reference/data-types/int-uint.md), [UInt(8\16\32)](/docs/en/sql-reference/data-types/int-uint.md) | `int`                         |
-| `boolean`, `int`, `long`, `float`, `double` | [Int64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)               | `long`                        |
-| `boolean`, `int`, `long`, `float`, `double` | [Float32](/docs/en/sql-reference/data-types/float.md)                                                                         | `float`                       |
-| `boolean`, `int`, `long`, `float`, `double` | [Float64](/docs/en/sql-reference/data-types/float.md)                                                                         | `double`                      |
-| `bytes`, `string`, `fixed`, `enum`          | [String](/docs/en/sql-reference/data-types/string.md)                                                                         | `bytes` or `string` \*        |
-| `bytes`, `string`, `fixed`                  | [FixedString(N)](/docs/en/sql-reference/data-types/fixedstring.md)                                                            | `fixed(N)`                    |
-| `enum`                                      | [Enum(8\16)](/docs/en/sql-reference/data-types/enum.md)                                                                       | `enum`                        |
-| `array(T)`                                  | [Array(T)](/docs/en/sql-reference/data-types/array.md)                                                                        | `array(T)`                    |
-| `map(V, K)`                                 | [Map(V, K)](/docs/en/sql-reference/data-types/map.md)                                                                         | `map(string, K)`              |
-| `union(null, T)`, `union(T, null)`          | [Nullable(T)](/docs/en/sql-reference/data-types/date.md)                                                                      | `union(null, T)`              |
-| `null`                                      | [Nullable(Nothing)](/docs/en/sql-reference/data-types/special-data-types/nothing.md)                                          | `null`                        |
-| `int (date)` \**                            | [Date](/docs/en/sql-reference/data-types/date.md), [Date32](docs/en/sql-reference/data-types/date32.md)                       | `int (date)` \**              |
-| `long (timestamp-millis)` \**               | [DateTime64(3)](/docs/en/sql-reference/data-types/datetime.md)                                                                | `long (timestamp-millis)` \** |
-| `long (timestamp-micros)` \**               | [DateTime64(6)](/docs/en/sql-reference/data-types/datetime.md)                                                                | `long (timestamp-micros)` \** |
-| `bytes (decimal)`  \**                      | [DateTime64(N)](/docs/en/sql-reference/data-types/datetime.md)                                                                | `bytes (decimal)`  \**        |
-| `int`                                       | [IPv4](/docs/en/sql-reference/data-types/ipv4.md)                                                                             | `int`                         |
-| `fixed(16)`                                 | [IPv6](/docs/en/sql-reference/data-types/ipv6.md)                                                                             | `fixed(16)`                   |
-| `bytes (decimal)` \**                       | [Decimal(P, S)](/docs/en/sql-reference/data-types/decimal.md)                                                                 | `bytes (decimal)` \**         |
-| `string (uuid)` \**                         | [UUID](/docs/en/sql-reference/data-types/uuid.md)                                                                             | `string (uuid)` \**           |
-| `fixed(16)`                                 | [Int128/UInt128](/docs/en/sql-reference/data-types/int-uint.md)                                                               | `fixed(16)`                   |
-| `fixed(32)`                                 | [Int256/UInt256](/docs/en/sql-reference/data-types/int-uint.md)                                                               | `fixed(32)`                   |
-| `record`                                    | [Tuple](/docs/en/sql-reference/data-types/tuple.md)                                                                           | `record`                      |
+| Avro data type `INSERT`                     | ClickHouse data type                                                                                                          | Avro data type `SELECT`         |
+|---------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|---------------------------------|
+| `boolean`, `int`, `long`, `float`, `double` | [Int(8\16\32)](/docs/en/sql-reference/data-types/int-uint.md), [UInt(8\16\32)](/docs/en/sql-reference/data-types/int-uint.md) | `int`                           |
+| `boolean`, `int`, `long`, `float`, `double` | [Int64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)               | `long`                          |
+| `boolean`, `int`, `long`, `float`, `double` | [Float32](/docs/en/sql-reference/data-types/float.md)                                                                         | `float`                         |
+| `boolean`, `int`, `long`, `float`, `double` | [Float64](/docs/en/sql-reference/data-types/float.md)                                                                         | `double`                        |
+| `bytes`, `string`, `fixed`, `enum`          | [String](/docs/en/sql-reference/data-types/string.md)                                                                         | `bytes` or `string` \*          |
+| `bytes`, `string`, `fixed`                  | [FixedString(N)](/docs/en/sql-reference/data-types/fixedstring.md)                                                            | `fixed(N)`                      |
+| `enum`                                      | [Enum(8\16)](/docs/en/sql-reference/data-types/enum.md)                                                                       | `enum`                          |
+| `array(T)`                                  | [Array(T)](/docs/en/sql-reference/data-types/array.md)                                                                        | `array(T)`                      |
+| `map(V, K)`                                 | [Map(V, K)](/docs/en/sql-reference/data-types/map.md)                                                                         | `map(string, K)`                |
+| `union(null, T)`, `union(T, null)`          | [Nullable(T)](/docs/en/sql-reference/data-types/date.md)                                                                      | `union(null, T)`                |
+| `union(T1, T2, …)` \**                      | [Variant(T1, T2, …)](/docs/en/sql-reference/data-types/variant.md)                                                            | `union(T1, T2, …)` \**          |
+| `null`                                      | [Nullable(Nothing)](/docs/en/sql-reference/data-types/special-data-types/nothing.md)                                          | `null`                          |
+| `int (date)` \**\*                          | [Date](/docs/en/sql-reference/data-types/date.md), [Date32](docs/en/sql-reference/data-types/date32.md)                       | `int (date)` \**\*              |
+| `long (timestamp-millis)` \**\*             | [DateTime64(3)](/docs/en/sql-reference/data-types/datetime.md)                                                                | `long (timestamp-millis)` \**\* |
+| `long (timestamp-micros)` \**\*             | [DateTime64(6)](/docs/en/sql-reference/data-types/datetime.md)                                                                | `long (timestamp-micros)` \**\* |
+| `bytes (decimal)`  \**\*                    | [DateTime64(N)](/docs/en/sql-reference/data-types/datetime.md)                                                                | `bytes (decimal)`  \**\*        |
+| `int`                                       | [IPv4](/docs/en/sql-reference/data-types/ipv4.md)                                                                             | `int`                           |
+| `fixed(16)`                                 | [IPv6](/docs/en/sql-reference/data-types/ipv6.md)                                                                             | `fixed(16)`                     |
+| `bytes (decimal)` \**\*                     | [Decimal(P, S)](/docs/en/sql-reference/data-types/decimal.md)                                                                 | `bytes (decimal)` \**\*         |
+| `string (uuid)` \**\*                       | [UUID](/docs/en/sql-reference/data-types/uuid.md)                                                                             | `string (uuid)` \**\*           |
+| `fixed(16)`                                 | [Int128/UInt128](/docs/en/sql-reference/data-types/int-uint.md)                                                               | `fixed(16)`                     |
+| `fixed(32)`                                 | [Int256/UInt256](/docs/en/sql-reference/data-types/int-uint.md)                                                               | `fixed(32)`                     |
+| `record`                                    | [Tuple](/docs/en/sql-reference/data-types/tuple.md)                                                                           | `record`                        |
 
 
 
 \* `bytes` is default, controlled by [output_format_avro_string_column_pattern](/docs/en/operations/settings/settings-formats.md/#output_format_avro_string_column_pattern)
-\** [Avro logical types](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+
+\**  [Variant type](/docs/en/sql-reference/data-types/variant) implicitly accepts `null` as a field value, so for example the Avro `union(T1, T2, null)` will be converted to `Variant(T1, T2)`.
+As a result, when producing Avro from ClickHouse, we have to always include the `null` type to the Avro `union` type set as we don't know if any value is actually `null` during the schema inference.
+
+\**\* [Avro logical types](https://avro.apache.org/docs/current/spec.html#Logical+Types)
 
 Unsupported Avro logical data types: `time-millis`, `time-micros`, `duration`
 
@@ -2164,6 +2268,9 @@ To exchange data with Hadoop, you can use [HDFS table engine](/docs/en/engines/t
 - [output_format_parquet_fixed_string_as_fixed_byte_array](/docs/en/operations/settings/settings-formats.md/#output_format_parquet_fixed_string_as_fixed_byte_array) - use Parquet FIXED_LENGTH_BYTE_ARRAY type instead of Binary/String for FixedString columns. Default value - `true`.
 - [output_format_parquet_version](/docs/en/operations/settings/settings-formats.md/#output_format_parquet_version) - The version of Parquet format used in output format. Default value - `2.latest`.
 - [output_format_parquet_compression_method](/docs/en/operations/settings/settings-formats.md/#output_format_parquet_compression_method) - compression method used in output Parquet format. Default value - `lz4`.
+- [input_format_parquet_max_block_size](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_max_block_size) - Max block row size for parquet reader. Default value - `65409`.
+- [input_format_parquet_prefer_block_bytes](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_prefer_block_bytes) - Average block bytes output by parquet reader. Default value - `16744704`.
+- [output_format_parquet_write_page_index](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_max_block_size) - Add a possibility to write page index into parquet files. Need to disable `output_format_parquet_use_custom_encoder` at present. Default value - `true`.
 
 ## ParquetMetadata {data-format-parquet-metadata}
 
@@ -2467,22 +2574,21 @@ Result:
 ## Npy {#data-format-npy}
 
 This function is designed to load a NumPy array from a .npy file into ClickHouse. The NumPy file format is a binary format used for efficiently storing arrays of numerical data. During import, ClickHouse treats top level dimension as an array of rows with single column. Supported Npy data types and their corresponding type in ClickHouse:
-| Npy type | ClickHouse type |
-|:--------:|:---------------:|
-| b1       |    UInt8        |
-| i1       |    Int8         |
-| i2       |    Int16        |
-| i4       |    Int32        |
-| i8       |    Int64        |
-| u1       |    UInt8        |
-| u2       |    UInt16       |
-| u4       |    UInt32       |
-| u8       |    UInt64       |
-| f2       |    Float32      |
-| f4       |    Float32      |
-| f8       |    Float64      |
-| S        |    String       |
-| U        |    String       |
+
+| Npy data type (`INSERT`) | ClickHouse data type                                            | Npy data type (`SELECT`) |
+|--------------------------|-----------------------------------------------------------------|--------------------------|
+| `i1`                     | [Int8](/docs/en/sql-reference/data-types/int-uint.md)           | `i1`                     |
+| `i2`                     | [Int16](/docs/en/sql-reference/data-types/int-uint.md)          | `i2`                     |
+| `i4`                     | [Int32](/docs/en/sql-reference/data-types/int-uint.md)          | `i4`                     |
+| `i8`                     | [Int64](/docs/en/sql-reference/data-types/int-uint.md)          | `i8`                     |
+| `u1`, `b1`               | [UInt8](/docs/en/sql-reference/data-types/int-uint.md)          | `u1`                     |
+| `u2`                     | [UInt16](/docs/en/sql-reference/data-types/int-uint.md)         | `u2`                     |
+| `u4`                     | [UInt32](/docs/en/sql-reference/data-types/int-uint.md)         | `u4`                     |
+| `u8`                     | [UInt64](/docs/en/sql-reference/data-types/int-uint.md)         | `u8`                     |
+| `f2`, `f4`               | [Float32](/docs/en/sql-reference/data-types/float.md)           | `f4`                     |
+| `f8`                     | [Float64](/docs/en/sql-reference/data-types/float.md)           | `f8`                     |
+| `S`, `U`                 | [String](/docs/en/sql-reference/data-types/string.md)           | `S`                      |
+|                          | [FixedString](/docs/en/sql-reference/data-types/fixedstring.md) | `S`                      |
 
 **Example of saving an array in .npy format using Python**
 
@@ -2507,6 +2613,14 @@ Result:
 │ [[1],[2],[3]] │
 │ [[4],[5],[6]] │
 └───────────────┘
+```
+
+**Selecting Data**
+
+You can select data from a ClickHouse table and save them into some file in the Npy format by the following command:
+
+```bash
+$ clickhouse-client --query="SELECT {column} FROM {some_table} FORMAT Npy" > {filename.npy}
 ```
 
 ## LineAsString {#lineasstring}
@@ -2611,7 +2725,7 @@ can contain an absolute path or a path relative to the current directory on the 
 If you use the client in the [batch mode](/docs/en/interfaces/cli.md/#cli_usage), the path to the schema must be relative due to security reasons.
 
 If you input or output data via the [HTTP interface](/docs/en/interfaces/http.md) the file name specified in the format schema
-should be located in the directory specified in [format_schema_path](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-format_schema_path)
+should be located in the directory specified in [format_schema_path](/docs/en/operations/server-configuration-parameters/settings.md/#format_schema_path)
 in the server configuration.
 
 ## Skipping Errors {#skippingerrors}

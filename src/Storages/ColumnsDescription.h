@@ -89,11 +89,14 @@ struct ColumnDescription
     ASTPtr codec;
     SettingsChanges settings;
     ASTPtr ttl;
-    std::optional<StatisticDescription> stat;
+    ColumnStatisticsDescription statistics;
 
     ColumnDescription() = default;
-    ColumnDescription(ColumnDescription &&) = default;
-    ColumnDescription(const ColumnDescription &) = default;
+    ColumnDescription(const ColumnDescription & other) { *this = other; }
+    ColumnDescription & operator=(const ColumnDescription & other);
+    ColumnDescription(ColumnDescription && other) noexcept { *this = std::move(other); }
+    ColumnDescription & operator=(ColumnDescription && other) noexcept;
+
     ColumnDescription(String name_, DataTypePtr type_);
     ColumnDescription(String name_, DataTypePtr type_, String comment_);
     ColumnDescription(String name_, DataTypePtr type_, ASTPtr codec_, String comment_);
@@ -101,7 +104,7 @@ struct ColumnDescription
     bool operator==(const ColumnDescription & other) const;
     bool operator!=(const ColumnDescription & other) const { return !(*this == other); }
 
-    void writeText(WriteBuffer & buf) const;
+    void writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment) const;
     void readText(ReadBuffer & buf);
 };
 
@@ -134,7 +137,7 @@ public:
     /// NOTE Must correspond with Nested::flatten function.
     void flattenNested(); /// TODO: remove, insert already flattened Nested columns.
 
-    bool operator==(const ColumnsDescription & other) const { return columns == other.columns; }
+    bool operator==(const ColumnsDescription & other) const { return toString(false) == other.toString(false); }
     bool operator!=(const ColumnsDescription & other) const { return !(*this == other); }
 
     auto begin() const { return columns.begin(); }
@@ -218,7 +221,7 @@ public:
     /// Does column has non default specified compression codec
     bool hasCompressionCodec(const String & column_name) const;
 
-    String toString() const;
+    String toString(bool include_comments = true) const;
     static ColumnsDescription parse(const String & str);
 
     size_t size() const
@@ -265,10 +268,21 @@ private:
     void removeSubcolumns(const String & name_in_storage);
 };
 
+class ASTColumnDeclaration;
+
+struct DefaultExpressionsInfo
+{
+    ASTPtr expr_list = nullptr;
+    bool has_columns_with_default_without_type = false;
+};
+
+void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const DataTypePtr & data_type, DefaultExpressionsInfo & info);
+
 /// Validate default expressions and corresponding types compatibility, i.e.
 /// default expression result can be casted to column_type. Also checks, that we
 /// don't have strange constructions in default expression like SELECT query or
 /// arrayJoin function.
+void validateColumnsDefaults(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context);
 Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context);
 
 }

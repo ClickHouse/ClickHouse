@@ -42,7 +42,7 @@ bool traverseASTFilter(
                 return true;
         return false;
     }
-    else if (function->name == "or")
+    if (function->name == "or")
     {
         // make sure every child has the key filter condition
         for (const auto & child : function->arguments->children)
@@ -50,7 +50,7 @@ bool traverseASTFilter(
                 return false;
         return true;
     }
-    else if (function->name == "equals" || function->name == "in")
+    if (function->name == "equals" || function->name == "in")
     {
         const auto & args = function->arguments->as<ASTExpressionList &>();
         const ASTIdentifier * ident;
@@ -72,7 +72,7 @@ bool traverseASTFilter(
                 return false;
             value = args.children.at(1);
 
-            PreparedSets::Hash set_key = value->getTreeHash(/*ignore_aliases=*/ true);
+            PreparedSets::Hash set_key = value->getTreeHash(/*ignore_aliases=*/true);
             FutureSetPtr future_set;
 
             if ((value->as<ASTSubquery>() || value->as<ASTIdentifier>()))
@@ -102,27 +102,25 @@ bool traverseASTFilter(
                 res->push_back(set_column[row]);
             return true;
         }
+
+        if ((ident = args.children.at(0)->as<ASTIdentifier>()))
+            value = args.children.at(1);
+        else if ((ident = args.children.at(1)->as<ASTIdentifier>()))
+            value = args.children.at(0);
         else
+            return false;
+
+        if (ident->name() != primary_key)
+            return false;
+
+        const auto node = evaluateConstantExpressionAsLiteral(value, context);
+        /// function->name == "equals"
+        if (const auto * literal = node->as<ASTLiteral>())
         {
-            if ((ident = args.children.at(0)->as<ASTIdentifier>()))
-                value = args.children.at(1);
-            else if ((ident = args.children.at(1)->as<ASTIdentifier>()))
-                value = args.children.at(0);
-            else
-                return false;
-
-            if (ident->name() != primary_key)
-                return false;
-
-            const auto node = evaluateConstantExpressionAsLiteral(value, context);
-            /// function->name == "equals"
-            if (const auto * literal = node->as<ASTLiteral>())
-            {
-                auto converted_field = convertFieldToType(literal->value, *primary_key_type);
-                if (!converted_field.isNull())
-                    res->push_back(converted_field);
-                return true;
-            }
+            auto converted_field = convertFieldToType(literal->value, *primary_key_type);
+            if (!converted_field.isNull())
+                res->push_back(converted_field);
+            return true;
         }
     }
     return false;
@@ -147,7 +145,7 @@ bool traverseDAGFilter(
                 return true;
         return false;
     }
-    else if (func_name == "or")
+    if (func_name == "or")
     {
         // make sure every child has the key filter condition
         for (const auto * child : elem->children)
@@ -155,7 +153,7 @@ bool traverseDAGFilter(
                 return false;
         return true;
     }
-    else if (func_name == "equals" || func_name == "in")
+    if (func_name == "equals" || func_name == "in")
     {
         if (elem->children.size() != 2)
             return false;
@@ -204,34 +202,32 @@ bool traverseDAGFilter(
                 res->push_back(set_column[row]);
             return true;
         }
-        else
-        {
-            const auto * key = elem->children.at(0);
-            while (key->type == ActionsDAG::ActionType::ALIAS)
-                key = key->children.at(0);
 
-            if (key->type != ActionsDAG::ActionType::INPUT)
-                return false;
+        const auto * key = elem->children.at(0);
+        while (key->type == ActionsDAG::ActionType::ALIAS)
+            key = key->children.at(0);
 
-            if (key->result_name != primary_key)
-                return false;
+        if (key->type != ActionsDAG::ActionType::INPUT)
+            return false;
 
-            const auto * value = elem->children.at(1);
-            if (value->type != ActionsDAG::ActionType::COLUMN)
-                return false;
+        if (key->result_name != primary_key)
+            return false;
 
-            auto converted_field = convertFieldToType((*value->column)[0], *primary_key_type);
-            if (!converted_field.isNull())
-                res->push_back(converted_field);
-            return true;
-        }
+        const auto * value = elem->children.at(1);
+        if (value->type != ActionsDAG::ActionType::COLUMN)
+            return false;
+
+        auto converted_field = convertFieldToType((*value->column)[0], *primary_key_type);
+        if (!converted_field.isNull())
+            res->push_back(converted_field);
+        return true;
     }
     return false;
 }
 }
 
 std::pair<FieldVectorPtr, bool> getFilterKeys(
-    const String & primary_key, const DataTypePtr & primary_key_type, const ActionsDAGPtr & filter_actions_dag, const ContextPtr & context)
+    const String & primary_key, const DataTypePtr & primary_key_type, const std::optional<ActionsDAG> & filter_actions_dag, const ContextPtr & context)
 {
     if (!filter_actions_dag)
         return {{}, true};

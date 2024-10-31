@@ -107,7 +107,7 @@ private:
     void setNumFilesAndSize(const BackupOperationID & id, size_t num_files, UInt64 total_size, size_t num_entries,
                             UInt64 uncompressed_size, UInt64 compressed_size, size_t num_read_files, UInt64 num_read_bytes);
 
-    enum class ThreadPoolId;
+    enum class ThreadPoolId : uint8_t;
     ThreadPool & getThreadPool(ThreadPoolId thread_pool_id);
 
     /// Waits for some time if `test_inject_sleep` is true.
@@ -119,6 +119,7 @@ private:
     const bool allow_concurrent_backups;
     const bool allow_concurrent_restores;
     const bool remove_backup_files_after_failure;
+    const bool test_randomize_order;
     const bool test_inject_sleep;
 
     LoggerPtr log;

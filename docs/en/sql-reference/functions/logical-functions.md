@@ -6,7 +6,7 @@ sidebar_label: Logical
 
 # Logical Functions
 
-Below functions perform logical operations on arguments of arbitrary numeric types. They return either 0 or 1 as [UInt8](../../sql-reference/data-types/int-uint.md) or in some cases `NULL`.
+Below functions perform logical operations on arguments of arbitrary numeric types. They return either 0 or 1 as [UInt8](../data-types/int-uint.md) or in some cases `NULL`.
 
 Zero as an argument is considered `false`, non-zero values are considered `true`.
 
@@ -26,7 +26,7 @@ Alias: The [AND operator](../../sql-reference/operators/index.md#logical-and-ope
 
 **Arguments**
 
-- `val1, val2, ...` — List of at least two values. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
+- `val1, val2, ...` — List of at least two values. [Int](../data-types/int-uint.md), [UInt](../data-types/int-uint.md), [Float](../data-types/float.md) or [Nullable](../data-types/nullable.md).
 
 **Returned value**
 
@@ -80,7 +80,7 @@ Alias: The [OR operator](../../sql-reference/operators/index.md#logical-or-opera
 
 **Arguments**
 
-- `val1, val2, ...` — List of at least two values. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
+- `val1, val2, ...` — List of at least two values. [Int](../data-types/int-uint.md), [UInt](../data-types/int-uint.md), [Float](../data-types/float.md) or [Nullable](../data-types/nullable.md).
 
 **Returned value**
 
@@ -132,7 +132,7 @@ Alias: The [Negation operator](../../sql-reference/operators/index.md#logical-ne
 
 **Arguments**
 
-- `val` — The value. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
+- `val` — The value. [Int](../data-types/int-uint.md), [UInt](../data-types/int-uint.md), [Float](../data-types/float.md) or [Nullable](../data-types/nullable.md).
 
 **Returned value**
 
@@ -168,7 +168,7 @@ xor(val1, val2...)
 
 **Arguments**
 
-- `val1, val2, ...` — List of at least two values. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
+- `val1, val2, ...` — List of at least two values. [Int](../data-types/int-uint.md), [UInt](../data-types/int-uint.md), [Float](../data-types/float.md) or [Nullable](../data-types/nullable.md).
 
 **Returned value**
 

@@ -10,7 +10,6 @@
 #include <IO/Operators.h>
 #include <Functions/FunctionFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Storages/StorageFactory.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
@@ -28,7 +27,7 @@ namespace ErrorCodes
     extern const int USER_SESSION_LIMIT_EXCEEDED;
 }
 
-static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggestion)
+static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggestion, UInt64 server_revision)
 {
     /// NOTE: Once you will update the completion list,
     /// do not forget to update 01676_clickhouse_client_autocomplete.sh
@@ -60,7 +59,9 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
     add_column("name", "data_type_families", false, {});
     add_column("name", "merge_tree_settings", false, {});
     add_column("name", "settings", false, {});
-    add_column("keyword", "keywords", false, {});
+
+    if (server_revision >= DBMS_MIN_REVISION_WITH_SYSTEM_KEYWORDS_TABLE)
+        add_column("keyword", "keywords", false, {});
 
     if (!basic_suggestion)
     {
@@ -83,7 +84,6 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
         add_column("name", "columns", true, suggestion_limit);
     }
 
-    /// FIXME: This query does not work with the new analyzer because of bug https://github.com/ClickHouse/ClickHouse/issues/50669
     query = "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM (" + query + ") WHERE notEmpty(res)";
     return query;
 }
@@ -101,7 +101,11 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
                 auto connection = ConnectionType::createConnection(connection_parameters, my_context);
                 fetch(*connection,
                     connection_parameters.timeouts,
-                    getLoadSuggestionQuery(suggestion_limit, std::is_same_v<ConnectionType, LocalConnection>),
+                    getLoadSuggestionQuery(
+                        suggestion_limit,
+                        std::is_same_v<ConnectionType, LocalConnection>,
+                        connection->getServerRevision(connection_parameters.timeouts)
+                    ),
                     my_context->getClientInfo());
             }
             catch (const Exception & e)
@@ -109,7 +113,7 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
                 last_error = e.code();
                 if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
                     continue;
-                else if (e.code() != ErrorCodes::USER_SESSION_LIMIT_EXCEEDED)
+                if (e.code() != ErrorCodes::USER_SESSION_LIMIT_EXCEEDED)
                 {
                     /// We should not use std::cerr here, because this method works concurrently with the main thread.
                     /// WriteBufferFromFileDescriptor will write directly to the file descriptor, avoiding data race on std::cerr.
@@ -146,7 +150,7 @@ void Suggest::load(IServerConnection & connection,
 {
     try
     {
-        fetch(connection, timeouts, getLoadSuggestionQuery(suggestion_limit, true), client_info);
+        fetch(connection, timeouts, getLoadSuggestionQuery(suggestion_limit, true, connection.getServerRevision(timeouts)), client_info);
     }
     catch (...)
     {
@@ -208,7 +212,7 @@ void Suggest::fillWordsFromBlock(const Block & block)
     Words new_words;
     new_words.reserve(rows);
     for (size_t i = 0; i < rows; ++i)
-        new_words.emplace_back(column[i].get<String>());
+        new_words.emplace_back(column[i].safeGet<String>());
 
     addWords(std::move(new_words));
 }

@@ -1,7 +1,7 @@
 ---
 slug: /zh/sql-reference/data-types/aggregatefunction
 ---
-# AggregateFunction(name, types_of_arguments…) {#data-type-aggregatefunction}
+# AggregateFunction(name, types_of_arguments...) {#data-type-aggregatefunction}
 
 聚合函数的中间状态，可以通过聚合函数名称加`-State`后缀的形式得到它。与此同时，当您需要访问该类型的最终状态数据时，您需要以相同的聚合函数名加`-Merge`后缀的形式来得到最终状态数据。
 

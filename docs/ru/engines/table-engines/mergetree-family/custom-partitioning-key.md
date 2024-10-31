@@ -66,7 +66,7 @@ WHERE table = 'visits'
 └───────────┴───────────────────┴────────┘
 ```
 
-Столбец `partition` содержит имена всех партиций таблицы. Таблица `visits` из нашего примера содержит две партиции: `201901` и `201902`. Используйте значения из этого столбца в запросах [ALTER … PARTITION](../../../sql-reference/statements/alter/partition.md).
+Столбец `partition` содержит имена всех партиций таблицы. Таблица `visits` из нашего примера содержит две партиции: `201901` и `201902`. Используйте значения из этого столбца в запросах [ALTER ... PARTITION](../../../sql-reference/statements/alter/partition.md).
 
 Столбец `name` содержит названия кусков партиций. Значения из этого столбца можно использовать в запросах [ALTER ATTACH PART](../../../sql-reference/statements/alter/partition.md#alter_attach-partition).
 

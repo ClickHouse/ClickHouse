@@ -22,7 +22,7 @@ using Strings = std::vector<String>;
 class ActiveDataPartSet
 {
 public:
-    enum class AddPartOutcome
+    enum class AddPartOutcome : uint8_t
     {
         Added,
         HasCovering,

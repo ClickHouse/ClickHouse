@@ -17,7 +17,7 @@
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Core/Defines.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/re2.h>
 
 namespace DB

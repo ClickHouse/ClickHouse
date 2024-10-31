@@ -54,8 +54,9 @@ SELECT '-- Original issue with deduplicate_blocks_in_dependent_materialized_view
 
     - 1st insert works for landing and mv tables
     - 2nd insert gets first block 20220901 deduplicated and second one inserted in landing table
-    - 2nd insert is not inserting anything in mv table due to a bug computing blocks to be discarded
+    - 2nd insert is not inserting anything in mv table due to a bug computing blocks to be discarded, now that block is inserted because deduplicate_blocks_in_dependent_materialized_views=0
 
+    Now it is fixed.
 */
 SET deduplicate_blocks_in_dependent_materialized_views = 0, max_insert_delayed_streams_for_parallel_write = 1000;
 
@@ -97,7 +98,7 @@ SELECT '-- Original issue with deduplicate_blocks_in_dependent_materialized_view
     This is what happens now:
 
     - 1st insert works for landing and mv tables
-    - 2nd insert gets first block 20220901 deduplicated and second one inserted for landing and mv tables
+    - 2nd insert gets first block 20220901 deduplicated for landing and both rows are inserted for mv tables
 
 */
 SET deduplicate_blocks_in_dependent_materialized_views = 1, max_insert_delayed_streams_for_parallel_write = 1000;

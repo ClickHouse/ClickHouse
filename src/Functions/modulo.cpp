@@ -105,7 +105,7 @@ struct ModuloByConstantImpl
 
 private:
     template <OpCase op_case>
-    static inline void apply(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t i)
+    static void apply(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t i)
     {
         if constexpr (op_case == OpCase::Vector)
             c[i] = Op::template apply<ResultType>(a[i], b[i]);
@@ -155,7 +155,7 @@ using FunctionModulo = BinaryArithmeticOverloadResolver<ModuloImpl, NameModulo, 
 REGISTER_FUNCTION(Modulo)
 {
     factory.registerFunction<FunctionModulo>();
-    factory.registerAlias("mod", "modulo", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("mod", "modulo", FunctionFactory::Case::Insensitive);
 }
 
 struct NameModuloLegacy { static constexpr auto name = "moduloLegacy"; };
@@ -183,11 +183,11 @@ In other words, the function returning the modulus (modulo) in the terms of Modu
         )",
             .examples{{"positiveModulo", "SELECT positiveModulo(-1, 10);", ""}},
             .categories{"Arithmetic"}},
-        FunctionFactory::CaseInsensitive);
+        FunctionFactory::Case::Insensitive);
 
-    factory.registerAlias("positive_modulo", "positiveModulo", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("positive_modulo", "positiveModulo", FunctionFactory::Case::Insensitive);
     /// Compatibility with Spark:
-    factory.registerAlias("pmod", "positiveModulo", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("pmod", "positiveModulo", FunctionFactory::Case::Insensitive);
 }
 
 }
