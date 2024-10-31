@@ -30,6 +30,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int AZURE_BLOB_STORAGE_ERROR;
     extern const int LOGICAL_ERROR;
 }
 
@@ -71,7 +72,8 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
           std::make_unique<TaskTracker>(
               std::move(schedule_),
               settings_->max_inflight_parts_for_one_file,
-              limitedLog))
+              limited_log))
+    , check_objects_after_upload(settings_->check_objects_after_upload)
 {
     allocateBuffer();
 }
@@ -79,7 +81,7 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
 
 WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
 {
-    LOG_TRACE(limitedLog, "Close WriteBufferFromAzureBlobStorage. {}.", blob_path);
+    LOG_TRACE(limited_log, "Close WriteBufferFromAzureBlobStorage. {}.", blob_path);
 
     /// That destructor could be call with finalized=false in case of exceptions
     if (!finalized)
@@ -177,6 +179,24 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
 
         execWithRetry([&](){ block_blob_client.CommitBlockList(block_ids); }, max_unexpected_write_error_retries);
         LOG_TRACE(log, "Committed {} blocks for blob `{}`", block_ids.size(), blob_path);
+    }
+
+    if (check_objects_after_upload)
+    {
+        try
+        {
+            auto blob_client = blob_container_client->GetBlobClient(blob_path);
+            blob_client.GetProperties();
+        }
+        catch (const Azure::Storage::StorageException & e)
+        {
+            if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+                throw Exception(
+                        ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+                        "Object {} not uploaded to azure blob storage, it's a bug in Azure Blob Storage or its API.",
+                        blob_path);
+            throw;
+        }
     }
 }
 

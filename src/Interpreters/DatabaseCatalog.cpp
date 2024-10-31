@@ -13,6 +13,7 @@
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Disks/IDisk.h>
+#include <Storages/MemorySettings.h>
 #include <Storages/StorageMemory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/formatAST.h>
@@ -54,6 +55,15 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 database_atomic_delay_before_drop_table_sec;
+    extern const ServerSettingsUInt64 database_catalog_drop_error_cooldown_sec;
+    extern const ServerSettingsUInt64 database_catalog_unused_dir_cleanup_period_sec;
+    extern const ServerSettingsUInt64 database_catalog_unused_dir_hide_timeout_sec;
+    extern const ServerSettingsUInt64 database_catalog_unused_dir_rm_timeout_sec;
+}
 
 namespace ErrorCodes
 {
@@ -132,7 +142,7 @@ TemporaryTableHolder::TemporaryTableHolder(
         context_,
         [&](const StorageID & table_id)
         {
-            auto storage = std::make_shared<StorageMemory>(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{});
+            auto storage = std::make_shared<StorageMemory>(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{}, MemorySettings{});
 
             if (create_for_global_subquery)
                 storage->delayReadForGlobalSubqueries();
@@ -195,7 +205,7 @@ void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 void DatabaseCatalog::createBackgroundTasks()
 {
     /// It has to be done before databases are loaded (to avoid a race condition on initialization)
-    if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER && getContext()->getServerSettings().database_catalog_unused_dir_cleanup_period_sec)
+    if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER && getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_cleanup_period_sec])
     {
         auto cleanup_task_holder
             = getContext()->getSchedulePool().createTask("DatabaseCatalogCleanupStoreDirectoryTask", [this]() { this->cleanupStoreDirectoryTask(); });
@@ -216,7 +226,7 @@ void DatabaseCatalog::startupBackgroundTasks()
     {
         (*cleanup_task)->activate();
         /// Do not start task immediately on server startup, it's not urgent.
-        (*cleanup_task)->scheduleAfter(static_cast<time_t>(getContext()->getServerSettings().database_catalog_unused_dir_hide_timeout_sec) * 1000);
+        (*cleanup_task)->scheduleAfter(static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_hide_timeout_sec]) * 1000);
     }
 
     (*drop_task)->activate();
@@ -1135,7 +1145,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
             table_id,
             table,
             dropped_metadata_path,
-            drop_time + static_cast<time_t>(getContext()->getServerSettings().database_atomic_delay_before_drop_table_sec)
+            drop_time + static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_atomic_delay_before_drop_table_sec])
         });
         if (first_async_drop_in_queue == tables_marked_dropped.end())
             --first_async_drop_in_queue;
@@ -1327,7 +1337,7 @@ void DatabaseCatalog::dropTablesParallel(std::vector<DatabaseCatalog::TablesMark
                         ++first_async_drop_in_queue;
 
                     tables_marked_dropped.splice(tables_marked_dropped.end(), tables_marked_dropped, table_iterator);
-                    table_iterator->drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + getContext()->getServerSettings().database_catalog_drop_error_cooldown_sec;
+                    table_iterator->drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + getContext()->getServerSettings()[ServerSetting::database_catalog_drop_error_cooldown_sec];
 
                     if (first_async_drop_in_queue == tables_marked_dropped.end())
                         --first_async_drop_in_queue;
@@ -1709,7 +1719,7 @@ void DatabaseCatalog::cleanupStoreDirectoryTask()
             LOG_TEST(log, "Nothing to clean up from store/ on disk {}", disk_name);
     }
 
-    (*cleanup_task)->scheduleAfter(static_cast<time_t>(getContext()->getServerSettings().database_catalog_unused_dir_cleanup_period_sec) * 1000);
+    (*cleanup_task)->scheduleAfter(static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_cleanup_period_sec]) * 1000);
 }
 
 bool DatabaseCatalog::maybeRemoveDirectory(const String & disk_name, const DiskPtr & disk, const String & unused_dir)
@@ -1733,7 +1743,7 @@ bool DatabaseCatalog::maybeRemoveDirectory(const String & disk_name, const DiskP
         time_t current_time = time(nullptr);
         if (st.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO))
         {
-            if (current_time <= max_modification_time + static_cast<time_t>(getContext()->getServerSettings().database_catalog_unused_dir_hide_timeout_sec))
+            if (current_time <= max_modification_time + static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_hide_timeout_sec]))
                 return false;
 
             LOG_INFO(log, "Removing access rights for unused directory {} from disk {} (will remove it when timeout exceed)", unused_dir, disk_name);
@@ -1748,7 +1758,7 @@ bool DatabaseCatalog::maybeRemoveDirectory(const String & disk_name, const DiskP
             return true;
         }
 
-        auto unused_dir_rm_timeout_sec = static_cast<time_t>(getContext()->getServerSettings().database_catalog_unused_dir_rm_timeout_sec);
+        auto unused_dir_rm_timeout_sec = static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_rm_timeout_sec]);
 
         if (!unused_dir_rm_timeout_sec)
             return false;
@@ -1805,6 +1815,21 @@ void DatabaseCatalog::triggerReloadDisksTask(const Strings & new_added_disks)
     std::lock_guard lock{reload_disks_mutex};
     disks_to_reload.insert(new_added_disks.begin(), new_added_disks.end());
     (*reload_disks_task)->schedule();
+}
+
+void DatabaseCatalog::stopReplicatedDDLQueries()
+{
+    replicated_ddl_queries_enabled = false;
+}
+
+void DatabaseCatalog::startReplicatedDDLQueries()
+{
+    replicated_ddl_queries_enabled = true;
+}
+
+bool DatabaseCatalog::canPerformReplicatedDDLQueries() const
+{
+    return replicated_ddl_queries_enabled;
 }
 
 static void maybeUnlockUUID(UUID uuid)

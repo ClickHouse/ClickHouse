@@ -67,7 +67,6 @@
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/GSSAcceptor.h>
-#include <Common/Scheduler/ResourceManagerFactory.h>
 #include <Backups/BackupsWorker.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
@@ -92,6 +91,8 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Common/Scheduler/createResourceManager.h>
+#include <Common/Scheduler/Workload/createWorkloadEntityStorage.h>
 #include <Common/StackTrace.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -249,6 +250,33 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString mutation_workload;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 background_buffer_flush_schedule_pool_size;
+    extern const ServerSettingsUInt64 background_common_pool_size;
+    extern const ServerSettingsUInt64 background_distributed_schedule_pool_size;
+    extern const ServerSettingsUInt64 background_fetches_pool_size;
+    extern const ServerSettingsFloat background_merges_mutations_concurrency_ratio;
+    extern const ServerSettingsString background_merges_mutations_scheduling_policy;
+    extern const ServerSettingsUInt64 background_message_broker_schedule_pool_size;
+    extern const ServerSettingsUInt64 background_move_pool_size;
+    extern const ServerSettingsUInt64 background_pool_size;
+    extern const ServerSettingsUInt64 background_schedule_pool_size;
+    extern const ServerSettingsBool display_secrets_in_show_and_select;
+    extern const ServerSettingsUInt64 max_backup_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_build_vector_similarity_index_thread_pool_size;
+    extern const ServerSettingsUInt64 max_local_read_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_local_write_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_merges_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_mutations_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_remote_read_network_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_replicated_fetches_network_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_replicated_sends_network_bandwidth_for_server;
+    extern const ServerSettingsUInt64 tables_loader_background_pool_size;
+    extern const ServerSettingsUInt64 tables_loader_foreground_pool_size;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -344,6 +372,9 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable OnceFlag user_defined_sql_objects_storage_initialized;
     mutable std::unique_ptr<IUserDefinedSQLObjectsStorage> user_defined_sql_objects_storage;
+
+    mutable OnceFlag workload_entity_storage_initialized;
+    mutable std::unique_ptr<IWorkloadEntityStorage> workload_entity_storage;
 
 #if USE_NLP
     mutable OnceFlag synonyms_extensions_initialized;
@@ -686,6 +717,7 @@ struct ContextSharedPart : boost::noncopyable
         SHUTDOWN(log, "dictionaries loader", external_dictionaries_loader, enablePeriodicUpdates(false));
         SHUTDOWN(log, "UDFs loader", external_user_defined_executable_functions_loader, enablePeriodicUpdates(false));
         SHUTDOWN(log, "another UDFs storage", user_defined_sql_objects_storage, stopWatching());
+        SHUTDOWN(log, "workload entity storage", workload_entity_storage, stopWatching());
 
         LOG_TRACE(log, "Shutting down named sessions");
         Session::shutdownNamedSessions();
@@ -717,6 +749,7 @@ struct ContextSharedPart : boost::noncopyable
         std::unique_ptr<ExternalDictionariesLoader> delete_external_dictionaries_loader;
         std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> delete_external_user_defined_executable_functions_loader;
         std::unique_ptr<IUserDefinedSQLObjectsStorage> delete_user_defined_sql_objects_storage;
+        std::unique_ptr<IWorkloadEntityStorage> delete_workload_entity_storage;
         std::unique_ptr<BackgroundSchedulePool> delete_buffer_flush_schedule_pool;
         std::unique_ptr<BackgroundSchedulePool> delete_schedule_pool;
         std::unique_ptr<BackgroundSchedulePool> delete_distributed_schedule_pool;
@@ -801,6 +834,7 @@ struct ContextSharedPart : boost::noncopyable
             delete_external_dictionaries_loader = std::move(external_dictionaries_loader);
             delete_external_user_defined_executable_functions_loader = std::move(external_user_defined_executable_functions_loader);
             delete_user_defined_sql_objects_storage = std::move(user_defined_sql_objects_storage);
+            delete_workload_entity_storage = std::move(workload_entity_storage);
             delete_buffer_flush_schedule_pool = std::move(buffer_flush_schedule_pool);
             delete_schedule_pool = std::move(schedule_pool);
             delete_distributed_schedule_pool = std::move(distributed_schedule_pool);
@@ -819,6 +853,7 @@ struct ContextSharedPart : boost::noncopyable
         delete_external_dictionaries_loader.reset();
         delete_external_user_defined_executable_functions_loader.reset();
         delete_user_defined_sql_objects_storage.reset();
+        delete_workload_entity_storage.reset();
         delete_ddl_worker.reset();
         delete_buffer_flush_schedule_pool.reset();
         delete_schedule_pool.reset();
@@ -859,31 +894,31 @@ struct ContextSharedPart : boost::noncopyable
 
     void configureServerWideThrottling()
     {
-        if (auto bandwidth = server_settings.max_replicated_fetches_network_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_replicated_fetches_network_bandwidth_for_server])
             replicated_fetches_throttler = std::make_shared<Throttler>(bandwidth);
 
-        if (auto bandwidth = server_settings.max_replicated_sends_network_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_replicated_sends_network_bandwidth_for_server])
             replicated_sends_throttler = std::make_shared<Throttler>(bandwidth);
 
-        if (auto bandwidth = server_settings.max_remote_read_network_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server])
             remote_read_throttler = std::make_shared<Throttler>(bandwidth);
 
-        if (auto bandwidth = server_settings.max_remote_write_network_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_remote_write_network_bandwidth_for_server])
             remote_write_throttler = std::make_shared<Throttler>(bandwidth);
 
-        if (auto bandwidth = server_settings.max_local_read_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_local_read_bandwidth_for_server])
             local_read_throttler = std::make_shared<Throttler>(bandwidth);
 
-        if (auto bandwidth = server_settings.max_local_write_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_local_write_bandwidth_for_server])
             local_write_throttler = std::make_shared<Throttler>(bandwidth);
 
-        if (auto bandwidth = server_settings.max_backup_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_backup_bandwidth_for_server])
             backups_server_throttler = std::make_shared<Throttler>(bandwidth);
 
-        if (auto bandwidth = server_settings.max_mutations_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_mutations_bandwidth_for_server])
             mutations_throttler = std::make_shared<Throttler>(bandwidth);
 
-        if (auto bandwidth = server_settings.max_merges_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_merges_bandwidth_for_server])
             merges_throttler = std::make_shared<Throttler>(bandwidth);
     }
 };
@@ -1099,15 +1134,15 @@ Strings Context::getWarnings() const
         SharedLockGuard lock(shared->mutex);
         common_warnings = shared->warnings;
         if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<Int64>(shared->max_table_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached tables is more than {}", shared->max_table_num_to_warn));
+            common_warnings.emplace_back(fmt::format("The number of attached tables is more than {}.", shared->max_table_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::AttachedView) > static_cast<Int64>(shared->max_view_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached views is more than {}", shared->max_view_num_to_warn));
+            common_warnings.emplace_back(fmt::format("The number of attached views is more than {}.", shared->max_view_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::AttachedDictionary) > static_cast<Int64>(shared->max_dictionary_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached dictionaries is more than {}", shared->max_dictionary_num_to_warn));
+            common_warnings.emplace_back(fmt::format("The number of attached dictionaries is more than {}.", shared->max_dictionary_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<Int64>(shared->max_database_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached databases is more than {}", shared->max_database_num_to_warn));
+            common_warnings.emplace_back(fmt::format("The number of attached databases is more than {}.", shared->max_database_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<Int64>(shared->max_part_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of active parts is more than {}", shared->max_part_num_to_warn));
+            common_warnings.emplace_back(fmt::format("The number of active parts is more than {}.", shared->max_part_num_to_warn));
     }
     /// Make setting's name ordered
     auto obsolete_settings = settings->getChangedAndObsoleteNames();
@@ -1743,7 +1778,7 @@ std::vector<UUID> Context::getEnabledProfiles() const
 ResourceManagerPtr Context::getResourceManager() const
 {
     callOnce(shared->resource_manager_initialized, [&] {
-        shared->resource_manager = ResourceManagerFactory::instance().get(getConfigRef().getString("resource_manager", "dynamic"));
+        shared->resource_manager = createResourceManager(getGlobalContext());
     });
 
     return shared->resource_manager;
@@ -2352,7 +2387,7 @@ StoragePtr Context::getViewSource() const
 
 bool Context::displaySecretsInShowAndSelect() const
 {
-    return shared->server_settings.display_secrets_in_show_and_select;
+    return shared->server_settings[ServerSetting::display_secrets_in_show_and_select];
 }
 
 Settings Context::getSettingsCopy() const
@@ -2805,7 +2840,7 @@ AsyncLoader & Context::getAsyncLoader() const
                     CurrentMetrics::TablesLoaderForegroundThreads,
                     CurrentMetrics::TablesLoaderForegroundThreadsActive,
                     CurrentMetrics::TablesLoaderForegroundThreadsScheduled,
-                    shared->server_settings.tables_loader_foreground_pool_size,
+                    shared->server_settings[ServerSetting::tables_loader_foreground_pool_size],
                     TablesLoaderForegroundPriority
                 },
                 { // TablesLoaderBackgroundLoadPoolId
@@ -2813,7 +2848,7 @@ AsyncLoader & Context::getAsyncLoader() const
                     CurrentMetrics::TablesLoaderBackgroundThreads,
                     CurrentMetrics::TablesLoaderBackgroundThreadsActive,
                     CurrentMetrics::TablesLoaderBackgroundThreadsScheduled,
-                    shared->server_settings.tables_loader_background_pool_size,
+                    shared->server_settings[ServerSetting::tables_loader_background_pool_size],
                     TablesLoaderBackgroundLoadPriority
                 },
                 { // TablesLoaderBackgroundStartupPoolId
@@ -2821,7 +2856,7 @@ AsyncLoader & Context::getAsyncLoader() const
                     CurrentMetrics::TablesLoaderBackgroundThreads,
                     CurrentMetrics::TablesLoaderBackgroundThreadsActive,
                     CurrentMetrics::TablesLoaderBackgroundThreadsScheduled,
-                    shared->server_settings.tables_loader_background_pool_size,
+                    shared->server_settings[ServerSetting::tables_loader_background_pool_size],
                     TablesLoaderBackgroundStartupPriority
                 }
             },
@@ -2988,6 +3023,16 @@ void Context::setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObj
 {
     std::lock_guard lock(shared->mutex);
     shared->user_defined_sql_objects_storage = std::move(storage);
+}
+
+IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const
+{
+    callOnce(shared->workload_entity_storage_initialized, [&] {
+        shared->workload_entity_storage = createWorkloadEntityStorage(getGlobalContext());
+    });
+
+    std::lock_guard lock(shared->mutex);
+    return *shared->workload_entity_storage;
 }
 
 #if USE_NLP
@@ -3389,8 +3434,8 @@ ThreadPool & Context::getBuildVectorSimilarityIndexThreadPool() const
         shared->build_vector_similarity_index_threadpool_initialized,
         [&]
         {
-            size_t pool_size = shared->server_settings.max_build_vector_similarity_index_thread_pool_size > 0
-                ? shared->server_settings.max_build_vector_similarity_index_thread_pool_size
+            size_t pool_size = shared->server_settings[ServerSetting::max_build_vector_similarity_index_thread_pool_size] > 0
+                ? shared->server_settings[ServerSetting::max_build_vector_similarity_index_thread_pool_size]
                 : getNumberOfCPUCoresToUse();
             shared->build_vector_similarity_index_threadpool = std::make_unique<ThreadPool>(
                 CurrentMetrics::BuildVectorSimilarityIndexThreads,
@@ -3405,7 +3450,7 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
 {
     callOnce(shared->buffer_flush_schedule_pool_initialized, [&] {
         shared->buffer_flush_schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            shared->server_settings.background_buffer_flush_schedule_pool_size,
+            shared->server_settings[ServerSetting::background_buffer_flush_schedule_pool_size],
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolSize,
             "BgBufSchPool");
@@ -3449,7 +3494,7 @@ BackgroundSchedulePool & Context::getSchedulePool() const
 {
     callOnce(shared->schedule_pool_initialized, [&] {
         shared->schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            shared->server_settings.background_schedule_pool_size,
+            shared->server_settings[ServerSetting::background_schedule_pool_size],
             CurrentMetrics::BackgroundSchedulePoolTask,
             CurrentMetrics::BackgroundSchedulePoolSize,
             "BgSchPool");
@@ -3462,7 +3507,7 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool() const
 {
     callOnce(shared->distributed_schedule_pool_initialized, [&] {
         shared->distributed_schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            shared->server_settings.background_distributed_schedule_pool_size,
+            shared->server_settings[ServerSetting::background_distributed_schedule_pool_size],
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
             CurrentMetrics::BackgroundDistributedSchedulePoolSize,
             "BgDistSchPool");
@@ -3475,7 +3520,7 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
 {
     callOnce(shared->message_broker_schedule_pool_initialized, [&] {
         shared->message_broker_schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            shared->server_settings.background_message_broker_schedule_pool_size,
+            shared->server_settings[ServerSetting::background_message_broker_schedule_pool_size],
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize,
             "BgMBSchPool");
@@ -4222,6 +4267,16 @@ std::shared_ptr<QueryLog> Context::getQueryLog() const
         return {};
 
     return shared->system_logs->query_log;
+}
+
+std::shared_ptr<QueryMetricLog> Context::getQueryMetricLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->query_metric_log;
 }
 
 std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog() const
@@ -5525,13 +5580,13 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         return;
 
     const ServerSettings & server_settings = shared->server_settings;
-    size_t background_pool_size = server_settings.background_pool_size;
-    auto background_merges_mutations_concurrency_ratio = server_settings.background_merges_mutations_concurrency_ratio;
+    size_t background_pool_size = server_settings[ServerSetting::background_pool_size];
+    auto background_merges_mutations_concurrency_ratio = server_settings[ServerSetting::background_merges_mutations_concurrency_ratio];
     size_t background_pool_max_tasks_count = static_cast<size_t>(background_pool_size * background_merges_mutations_concurrency_ratio);
-    String background_merges_mutations_scheduling_policy = server_settings.background_merges_mutations_scheduling_policy;
-    size_t background_move_pool_size = server_settings.background_move_pool_size;
-    size_t background_fetches_pool_size = server_settings.background_fetches_pool_size;
-    size_t background_common_pool_size = server_settings.background_common_pool_size;
+    String background_merges_mutations_scheduling_policy = server_settings[ServerSetting::background_merges_mutations_scheduling_policy];
+    size_t background_move_pool_size = server_settings[ServerSetting::background_move_pool_size];
+    size_t background_fetches_pool_size = server_settings[ServerSetting::background_fetches_pool_size];
+    size_t background_common_pool_size = server_settings[ServerSetting::background_common_pool_size];
 
     /// With this executor we can execute more tasks than threads we have
     shared->merge_mutate_executor = std::make_shared<MergeMutateBackgroundExecutor>

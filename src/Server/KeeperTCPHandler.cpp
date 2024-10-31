@@ -39,6 +39,13 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace CoordinationSetting
+{
+    extern const CoordinationSettingsUInt64 log_slow_connection_operation_threshold_ms;
+    extern const CoordinationSettingsUInt64 log_slow_total_threshold_ms;
+    extern const CoordinationSettingsBool use_xid_64;
+}
+
 struct LastOp
 {
 public:
@@ -306,6 +313,10 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
     }
     else if (protocol_version >= Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64)
     {
+        if (!keeper_dispatcher->getKeeperContext()->getCoordinationSettings()[CoordinationSetting::use_xid_64])
+            throw Exception(
+                ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                "keeper_server.coordination_settings.use_xid_64 is set to 'false' while client has it enabled");
         close_xid = Coordination::CLOSE_XID_64;
         use_xid_64 = true;
         Coordination::read(use_compression, *in);
@@ -429,7 +440,7 @@ void KeeperTCPHandler::runImpl()
     keeper_dispatcher->registerSession(session_id, response_callback);
 
     Stopwatch logging_stopwatch;
-    auto operation_max_ms = keeper_dispatcher->getKeeperContext()->getCoordinationSettings()->log_slow_connection_operation_threshold_ms;
+    auto operation_max_ms = keeper_dispatcher->getKeeperContext()->getCoordinationSettings()[CoordinationSetting::log_slow_connection_operation_threshold_ms];
     auto log_long_operation = [&](const String & operation)
     {
         auto elapsed_ms = logging_stopwatch.elapsedMilliseconds();
@@ -612,7 +623,7 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
     request->xid = xid;
     request->readImpl(read_buffer);
 
-    if (!keeper_dispatcher->putRequest(request, session_id))
+    if (!keeper_dispatcher->putRequest(request, session_id, use_xid_64))
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session {} already disconnected", session_id);
     return std::make_pair(opnum, xid);
 }
@@ -638,7 +649,7 @@ void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response
         ProfileEvents::increment(ProfileEvents::KeeperTotalElapsedMicroseconds, elapsed);
         Int64 elapsed_ms = elapsed / 1000;
 
-        if (request && elapsed_ms > static_cast<Int64>(keeper_dispatcher->getKeeperContext()->getCoordinationSettings()->log_slow_total_threshold_ms))
+        if (request && elapsed_ms > static_cast<Int64>(keeper_dispatcher->getKeeperContext()->getCoordinationSettings()[CoordinationSetting::log_slow_total_threshold_ms]))
         {
             LOG_INFO(
                 log,

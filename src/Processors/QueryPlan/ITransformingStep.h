@@ -66,8 +66,6 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
 
-    bool canUpdateInputHeader() const override { return true; }
-
 protected:
     TransformTraits transform_traits;
 
