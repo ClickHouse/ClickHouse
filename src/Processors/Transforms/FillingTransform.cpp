@@ -608,9 +608,6 @@ void FillingTransform::transformRange(
             const auto current_value = (*input_fill_columns[i])[range_begin];
             const auto & fill_from = filling_row.getFillDescription(i).fill_from;
 
-            logDebug("current value", current_value.dump());
-            logDebug("fill from", fill_from.dump());
-
             if (!fill_from.isNull() && !equals(current_value, fill_from))
             {
                 filling_row.initUsingFrom(i);
@@ -663,6 +660,7 @@ void FillingTransform::transformRange(
             interpolate(result_columns, interpolate_block);
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
             copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
+            filling_row_changed = false;
         }
 
         /// Initialize staleness border for current row to generate it's prefix
@@ -679,6 +677,7 @@ void FillingTransform::transformRange(
                 interpolate(result_columns, interpolate_block);
                 insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
                 copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
+                filling_row_changed = false;
 
             } while (filling_row.next(next_row, filling_row_changed));
         }
