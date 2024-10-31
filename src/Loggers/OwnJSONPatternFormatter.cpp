@@ -7,11 +7,17 @@
 #include <base/terminalColors.h>
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
+
 
 OwnJSONPatternFormatter::OwnJSONPatternFormatter(Poco::Util::AbstractConfiguration & config)
 {
     if (config.has("logger.formatting.names.date_time"))
         date_time = config.getString("logger.formatting.names.date_time", "");
+
+    if (config.has("logger.formatting.names.date_time_utc"))
+        date_time_utc= config.getString("logger.formatting.names.date_time_utc", "");
 
     if (config.has("logger.formatting.names.thread_name"))
         thread_name = config.getString("logger.formatting.names.thread_name", "");
@@ -41,6 +47,7 @@ OwnJSONPatternFormatter::OwnJSONPatternFormatter(Poco::Util::AbstractConfigurati
         && logger_name.empty() && message.empty() && source_file.empty() && source_line.empty())
     {
         date_time = "date_time";
+        date_time_utc = "date_time_utc";
         thread_name = "thread_name";
         thread_id = "thread_id";
         level = "level";
@@ -62,6 +69,26 @@ void OwnJSONPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_
     const Poco::Message & msg = msg_ext.base;
     DB::writeChar('{', wb);
 
+    if (!date_time_utc.empty())
+    {
+        writeJSONString(date_time_utc, wb, settings);
+        DB::writeChar(':', wb);
+
+        DB::writeChar('\"', wb);
+        static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
+        /// Change delimiters in date for compatibility with old logs.
+        writeDateTimeTextISO(msg_ext.time_seconds, 0, wb, utc_time_zone);
+        DB::writeChar('.', wb);
+        DB::writeChar('0' + ((msg_ext.time_microseconds / 100000) % 10), wb);
+        DB::writeChar('0' + ((msg_ext.time_microseconds / 10000) % 10), wb);
+        DB::writeChar('0' + ((msg_ext.time_microseconds / 1000) % 10), wb);
+        DB::writeChar('0' + ((msg_ext.time_microseconds / 100) % 10), wb);
+        DB::writeChar('0' + ((msg_ext.time_microseconds / 10) % 10), wb);
+        DB::writeChar('0' + ((msg_ext.time_microseconds / 1) % 10), wb);
+        DB::writeChar('\"', wb);
+        print_comma = true;
+    }
+
     if (!date_time.empty())
     {
         writeJSONString(date_time, wb, settings);
@@ -80,6 +107,8 @@ void OwnJSONPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_
         DB::writeChar('\"', wb);
         print_comma = true;
     }
+
+
 
     if (!thread_name.empty())
     {

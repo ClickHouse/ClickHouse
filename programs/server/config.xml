@@ -70,12 +70,15 @@
         You can specify log format(for now, JSON only). In that case, the console log will be printed
         in specified format like JSON.
         For example, as below:
+
         {"date_time":"1650918987.180175","thread_name":"#1","thread_id":"254545","level":"Trace","query_id":"","logger_name":"BaseDaemon","message":"Received signal 2","source_file":"../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()","source_line":"192"}
+        {"date_time_utc":"2022-04-26T20:36:27+00:00","thread_name":"#1","thread_id":"254545","level":"Trace","query_id":"","logger_name":"BaseDaemon","message":"Received signal 2","source_file":"../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()","source_line":"192"}
         To enable JSON logging support, please uncomment the entire <formatting> tag below.
 
         a) You can modify key names by changing values under tag values inside <names> tag.
         For example, to change DATE_TIME to MY_DATE_TIME, you can do like:
             <date_time>MY_DATE_TIME</date_time>
+            <date_time_utc>date_time_utc</date_time_utc>
         b) You can stop unwanted log properties to appear in logs. To do so, you can simply comment out (recommended)
         that property from this file.
         For example, if you do not want your log to print query_id, you can comment out only <query_id> tag.
@@ -86,6 +89,7 @@
             <type>json</type>
             <names>
                 <date_time>date_time</date_time>
+                <date_time_utc>date_time_utc</date_time_utc>
                 <thread_name>thread_name</thread_name>
                 <thread_id>thread_id</thread_id>
                 <level>level</level>
