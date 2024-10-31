@@ -364,7 +364,7 @@ def test_logs():
     )
     assert query in logs
     assert "Read 1000000 rows" in logs
-    assert "Peak memory usage" in logs
+    assert "Query peak memory usage" in logs
 
 
 def test_progress():

@@ -229,8 +229,13 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
         scope.context = context;
 
     auto node_type = node->getNodeType();
+    if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+    {
+        evaluateScalarSubqueryIfNeeded(node, scope);
+        return;
+    }
 
-    if (table_expression && node_type != QueryTreeNodeType::QUERY && node_type != QueryTreeNodeType::UNION)
+    if (table_expression)
     {
         scope.expression_join_tree_node = table_expression;
         validateTableExpressionModifiers(scope.expression_join_tree_node, scope);

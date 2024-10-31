@@ -425,16 +425,29 @@ void ParquetLeafColReader<TColumn>::initDataReader(
                 degradeDictionary();
             }
 
-            ParquetDataBuffer parquet_buffer = [&]()
+            if (col_descriptor.physical_type() == parquet::Type::BOOLEAN)
             {
-                if constexpr (!std::is_same_v<ColumnDecimal<DateTime64>, TColumn>)
-                    return ParquetDataBuffer(buffer, max_size);
+                if constexpr (std::is_same_v<TColumn, ColumnUInt8>)
+                {
+                    auto bit_reader = std::make_unique<arrow::bit_util::BitReader>(buffer, max_size);
+                    data_values_reader = std::make_unique<ParquetBitPlainReader<ColumnUInt8>>(col_descriptor.max_definition_level(),
+                                                                                              std::move(def_level_reader),
+                                                                                              std::move(bit_reader));
+                }
+            }
+            else
+            {
+                ParquetDataBuffer parquet_buffer = [&]()
+                {
+                    if constexpr (!std::is_same_v<ColumnDecimal<DateTime64>, TColumn>)
+                        return ParquetDataBuffer(buffer, max_size);
 
-                auto scale = assert_cast<const DataTypeDateTime64 &>(*base_data_type).getScale();
-                return ParquetDataBuffer(buffer, max_size, scale);
-            }();
-            data_values_reader = createPlainReader<TColumn>(
-                col_descriptor, std::move(def_level_reader), std::move(parquet_buffer));
+                    auto scale = assert_cast<const DataTypeDateTime64 &>(*base_data_type).getScale();
+                    return ParquetDataBuffer(buffer, max_size, scale);
+                }();
+                data_values_reader = createPlainReader<TColumn>(
+                    col_descriptor, std::move(def_level_reader), std::move(parquet_buffer));
+            }
             break;
         }
         case parquet::Encoding::RLE_DICTIONARY:
@@ -612,6 +625,12 @@ std::unique_ptr<ParquetDataValuesReader> ParquetLeafColReader<TColumn>::createDi
         });
         return res;
     }
+
+    if (col_descriptor.physical_type() == parquet::Type::type::BOOLEAN)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Dictionary encoding for booleans is not supported");
+    }
+
     return std::make_unique<ParquetRleDictReader<TColumn>>(
         col_descriptor.max_definition_level(),
         std::move(def_level_reader),
@@ -620,6 +639,7 @@ std::unique_ptr<ParquetDataValuesReader> ParquetLeafColReader<TColumn>::createDi
 }
 
 
+template class ParquetLeafColReader<ColumnUInt8>;
 template class ParquetLeafColReader<ColumnInt32>;
 template class ParquetLeafColReader<ColumnUInt32>;
 template class ParquetLeafColReader<ColumnInt64>;
