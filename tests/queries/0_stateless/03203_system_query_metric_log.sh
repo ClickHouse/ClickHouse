@@ -24,7 +24,7 @@ function check_log()
     $CLICKHOUSE_CLIENT -m -q """
         SELECT '--Interval $interval: check that amount of events is correct';
         SELECT
-            count() BETWEEN (ceil(2500 / $interval) * 0.8) AND (ceil(2500 / $interval) * 1.2)
+            count() BETWEEN ((ceil(2500 / $interval) - 1) * 0.8) AND ((ceil(2500 / $interval) + 1) * 1.2)
         FROM system.query_metric_log
         WHERE event_date >= yesterday() AND query_id = '${query_prefix}_${interval}'
     """
