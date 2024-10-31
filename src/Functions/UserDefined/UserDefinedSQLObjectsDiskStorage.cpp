@@ -204,7 +204,7 @@ bool UserDefinedSQLObjectsDiskStorage::storeObjectImpl(
     {
         if (throw_if_exists)
             throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User-defined function '{}' already exists", object_name);
-        if (!replace_if_exists)
+        else if (!replace_if_exists)
             return false;
     }
 
@@ -255,7 +255,8 @@ bool UserDefinedSQLObjectsDiskStorage::removeObjectImpl(
     {
         if (throw_if_not_exists)
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "User-defined function '{}' doesn't exist", object_name);
-        return false;
+        else
+            return false;
     }
 
     LOG_TRACE(log, "Object {} removed", backQuote(object_name));

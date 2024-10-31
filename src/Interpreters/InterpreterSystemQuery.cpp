@@ -3,7 +3,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/ActionLock.h>
 #include <Common/typeid_cast.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/SymbolIndex.h>
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
@@ -52,7 +52,6 @@
 #include <Storages/Freeze.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageFile.h>
-#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageURL.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
@@ -99,11 +98,6 @@ namespace Setting
     extern const SettingsSeconds receive_timeout;
 }
 
-namespace ServerSetting
-{
-    extern const ServerSettingsDouble cannot_allocate_thread_fault_injection_probability;
-}
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -114,7 +108,6 @@ namespace ErrorCodes
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int ABORTED;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int TOO_DEEP_RECURSION;
 }
 
 namespace ActionLocks
@@ -170,25 +163,26 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
 {
     if (action_type == ActionLocks::PartsMerge)
         return AccessType::SYSTEM_MERGES;
-    if (action_type == ActionLocks::PartsFetch)
+    else if (action_type == ActionLocks::PartsFetch)
         return AccessType::SYSTEM_FETCHES;
-    if (action_type == ActionLocks::PartsSend)
+    else if (action_type == ActionLocks::PartsSend)
         return AccessType::SYSTEM_REPLICATED_SENDS;
-    if (action_type == ActionLocks::ReplicationQueue)
+    else if (action_type == ActionLocks::ReplicationQueue)
         return AccessType::SYSTEM_REPLICATION_QUEUES;
-    if (action_type == ActionLocks::DistributedSend)
+    else if (action_type == ActionLocks::DistributedSend)
         return AccessType::SYSTEM_DISTRIBUTED_SENDS;
-    if (action_type == ActionLocks::PartsTTLMerge)
+    else if (action_type == ActionLocks::PartsTTLMerge)
         return AccessType::SYSTEM_TTL_MERGES;
-    if (action_type == ActionLocks::PartsMove)
+    else if (action_type == ActionLocks::PartsMove)
         return AccessType::SYSTEM_MOVES;
-    if (action_type == ActionLocks::PullReplicationLog)
+    else if (action_type == ActionLocks::PullReplicationLog)
         return AccessType::SYSTEM_PULLING_REPLICATION_LOG;
-    if (action_type == ActionLocks::Cleanup)
+    else if (action_type == ActionLocks::Cleanup)
         return AccessType::SYSTEM_CLEANUP;
-    if (action_type == ActionLocks::ViewRefresh)
+    else if (action_type == ActionLocks::ViewRefresh)
         return AccessType::SYSTEM_VIEWS;
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type: {}", std::to_string(action_type));
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type: {}", std::to_string(action_type));
 }
 
 constexpr std::string_view table_is_not_replicated = "Table {} is not replicated";
@@ -762,7 +756,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::START_THREAD_FUZZER:
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::start();
-            CannotAllocateThreadFaultInjector::setFaultProbability(getContext()->getServerSettings()[ServerSetting::cannot_allocate_thread_fault_injection_probability]);
+            CannotAllocateThreadFaultInjector::setFaultProbability(getContext()->getServerSettings().cannot_allocate_thread_fault_injection_probability);
             break;
         case Type::UNFREEZE:
         {
@@ -896,7 +890,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     create.attach = true;
 
     auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, LoadingStrictnessLevel::ATTACH);
-    auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
+    auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
     auto data_path = database->getTableDataPath(create);
 
     table = StorageFactory::instance().get(create,
@@ -948,7 +942,7 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
     if (replica_names.empty())
         return;
 
-    size_t threads = std::min(static_cast<size_t>(getNumberOfCPUCoresToUse()), replica_names.size());
+    size_t threads = std::min(static_cast<size_t>(getNumberOfPhysicalCPUCores()), replica_names.size());
     LOG_DEBUG(log, "Will restart {} replicas using {} threads", replica_names.size(), threads);
     ThreadPool pool(CurrentMetrics::RestartReplicaThreads, CurrentMetrics::RestartReplicaThreadsActive, CurrentMetrics::RestartReplicaThreadsScheduled, threads);
 
@@ -1141,47 +1135,26 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid query");
 }
 
-bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sync_replica_mode, const std::unordered_set<String> & src_replicas, ContextPtr context_)
- {
-    auto table_id_ = table->getStorageID();
-
-    /// If materialized view, sync its target table.
-    for (int i = 0;; ++i)
-    {
-        if (i >= 100)
-            throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "Materialized view targets form a cycle or a very long chain");
-
-        if (auto * storage_mv = dynamic_cast<StorageMaterializedView *>(table.get()))
-            table = storage_mv->getTargetTable();
-        else
-            break;
-    }
-
-    if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
-    {
-        auto log = getLogger("InterpreterSystemQuery");
-        LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for current last entry to be processed");
-        auto sync_timeout = context_->getSettingsRef()[Setting::receive_timeout].totalMilliseconds();
-        if (!storage_replicated->waitForProcessingQueue(sync_timeout, sync_replica_mode, src_replicas))
-        {
-            LOG_ERROR(log, "SYNC REPLICA {}: Timed out.", table_id_.getNameForLogs());
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC REPLICA {}: command timed out. " \
-                    "See the 'receive_timeout' setting", table_id_.getNameForLogs());
-        }
-        LOG_TRACE(log, "SYNC REPLICA {}: OK", table_id_.getNameForLogs());
-    }
-    else
-        return false;
-
-    return true;
-}
-
 void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
 {
     getContext()->checkAccess(AccessType::SYSTEM_SYNC_REPLICA, table_id);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
-    std::unordered_set<std::string> replicas(query.src_replicas.begin(), query.src_replicas.end());
-    if (!trySyncReplica(table, query.sync_replica_mode, replicas, getContext()))
+
+    if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
+    {
+        LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for current last entry to be processed");
+        auto sync_timeout = getContext()->getSettingsRef()[Setting::receive_timeout].totalMilliseconds();
+
+        std::unordered_set<std::string> replicas(query.src_replicas.begin(), query.src_replicas.end());
+        if (!storage_replicated->waitForProcessingQueue(sync_timeout, query.sync_replica_mode, replicas))
+        {
+            LOG_ERROR(log, "SYNC REPLICA {}: Timed out.", table_id.getNameForLogs());
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC REPLICA {}: command timed out. " \
+                    "See the 'receive_timeout' setting", table_id.getNameForLogs());
+        }
+        LOG_TRACE(log, "SYNC REPLICA {}: OK", table_id.getNameForLogs());
+    }
+    else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
 }
 

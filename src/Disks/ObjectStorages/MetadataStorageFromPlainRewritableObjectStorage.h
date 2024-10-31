@@ -20,13 +20,11 @@ public:
         ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t object_metadata_cache_size);
     ~MetadataStorageFromPlainRewritableObjectStorage() override;
 
-    MetadataStorageType getType() const override { return MetadataStorageType::PlainRewritable; }
+    bool exists(const std::string & path) const override;
 
-    bool existsFile(const std::string & path) const override;
+    bool isFile(const std::string & path) const override;
 
-    bool existsDirectory(const std::string & path) const override;
-
-    bool existsFileOrDirectory(const std::string & path) const override;
+    bool isDirectory(const std::string & path) const override;
 
     std::vector<std::string> listDirectory(const std::string & path) const override;
 

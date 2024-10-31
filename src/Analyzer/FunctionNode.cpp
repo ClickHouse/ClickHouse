@@ -173,9 +173,9 @@ bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compar
 
     if (lhs_result_type && rhs_result_type && !lhs_result_type->equals(*rhs_result_type))
         return false;
-    if (lhs_result_type && !rhs_result_type)
+    else if (lhs_result_type && !rhs_result_type)
         return false;
-    if (!lhs_result_type && rhs_result_type)
+    else if (!lhs_result_type && rhs_result_type)
         return false;
 
     return true;

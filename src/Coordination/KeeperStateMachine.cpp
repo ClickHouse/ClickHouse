@@ -4,7 +4,6 @@
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Coordination/KeeperReconfiguration.h>
-#include <Common/thread_local_rng.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStorage.h>
@@ -45,14 +44,6 @@ namespace CurrentMetrics
 namespace DB
 {
 
-namespace CoordinationSetting
-{
-    extern const CoordinationSettingsBool compress_snapshots_with_zstd_format;
-    extern const CoordinationSettingsMilliseconds dead_session_check_period_ms;
-    extern const CoordinationSettingsUInt64 min_request_size_for_cache;
-    extern const CoordinationSettingsUInt64 snapshots_to_keep;
-}
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -68,7 +59,7 @@ IKeeperStateMachine::IKeeperStateMachine(
     : commit_callback(commit_callback_)
     , responses_queue(responses_queue_)
     , snapshots_queue(snapshots_queue_)
-    , min_request_size_to_cache(keeper_context_->getCoordinationSettings()[CoordinationSetting::min_request_size_for_cache])
+    , min_request_size_to_cache(keeper_context_->getCoordinationSettings()->min_request_size_for_cache)
     , log(getLogger("KeeperStateMachine"))
     , read_pool(CurrentMetrics::KeeperAliveConnections, CurrentMetrics::KeeperAliveConnections, CurrentMetrics::KeeperAliveConnections, 100, 10000, 10000)
     , superdigest(superdigest_)
@@ -95,11 +86,11 @@ KeeperStateMachine<Storage>::KeeperStateMachine(
         commit_callback_,
         superdigest_),
         snapshot_manager(
-          keeper_context_->getCoordinationSettings()[CoordinationSetting::snapshots_to_keep],
+          keeper_context_->getCoordinationSettings()->snapshots_to_keep,
           keeper_context_,
-          keeper_context_->getCoordinationSettings()[CoordinationSetting::compress_snapshots_with_zstd_format],
+          keeper_context_->getCoordinationSettings()->compress_snapshots_with_zstd_format,
           superdigest_,
-          keeper_context_->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds())
+          keeper_context_->getCoordinationSettings()->dead_session_check_period_ms.totalMilliseconds())
 {
 }
 
@@ -160,7 +151,7 @@ void KeeperStateMachine<Storage>::init()
 
     if (!storage)
         storage = std::make_unique<Storage>(
-            keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds(), superdigest, keeper_context);
+            keeper_context->getCoordinationSettings()->dead_session_check_period_ms.totalMilliseconds(), superdigest, keeper_context);
 }
 
 namespace
@@ -211,18 +202,6 @@ struct LockGuardWithStats final
 template<typename Storage>
 nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log_idx, nuraft::buffer & data)
 {
-    double sleep_probability = keeper_context->getPrecommitSleepProbabilityForTesting();
-    int64_t sleep_ms = keeper_context->getPrecommitSleepMillisecondsForTesting();
-    if (sleep_ms != 0 && sleep_probability != 0)
-    {
-        std::uniform_real_distribution<double> distribution{0., 1.};
-        if (distribution(thread_local_rng) > (1 - sleep_probability))
-        {
-            LOG_WARNING(log, "Precommit sleep enabled, will pause for {} ms", sleep_ms);
-            std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
-        }
-    }
-
     auto result = nuraft::buffer::alloc(sizeof(log_idx));
     nuraft::buffer_serializer ss(result);
     ss.put_u64(log_idx);
@@ -242,47 +221,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log
     return result;
 }
 
-namespace
-{
-
-union XidHelper
-{
-    struct
-    {
-        uint32_t lower;
-        uint32_t upper;
-    } parts;
-    int64_t xid;
-};
-
-};
-
-// Serialize the request for the log entry
-nuraft::ptr<nuraft::buffer> IKeeperStateMachine::getZooKeeperLogEntry(const KeeperStorageBase::RequestForSession & request_for_session)
-{
-    DB::WriteBufferFromNuraftBuffer write_buf;
-    DB::writeIntBinary(request_for_session.session_id, write_buf);
-
-    const auto & request = request_for_session.request;
-    size_t request_size = sizeof(uint32_t) + Coordination::size(request->getOpNum()) + request->sizeImpl();
-    Coordination::write(static_cast<int32_t>(request_size), write_buf);
-    XidHelper xid_helper{.xid = request->xid};
-    Coordination::write(xid_helper.parts.lower, write_buf);
-    Coordination::write(request->getOpNum(), write_buf);
-    request->writeImpl(write_buf);
-
-    DB::writeIntBinary(request_for_session.time, write_buf);
-    /// we fill with dummy values to eliminate unnecessary copy later on when we will write correct values
-    DB::writeIntBinary(static_cast<int64_t>(0), write_buf); /// zxid
-    DB::writeIntBinary(KeeperStorageBase::DigestVersion::NO_DIGEST, write_buf); /// digest version or NO_DIGEST flag
-    DB::writeIntBinary(static_cast<uint64_t>(0), write_buf); /// digest value
-    Coordination::write(xid_helper.parts.upper, write_buf); /// for 64bit XID MSB
-    /// if new fields are added, update KeeperStateMachine::ZooKeeperLogSerializationVersion along with parseRequest function and PreAppendLog callback handler
-    return write_buf.getBuffer();
-}
-
-std::shared_ptr<KeeperStorageBase::RequestForSession>
-IKeeperStateMachine::parseRequest(nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version)
+std::shared_ptr<KeeperStorageBase::RequestForSession> IKeeperStateMachine::parseRequest(nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version)
 {
     ReadBufferFromNuraftBuffer buffer(data);
     auto request_for_session = std::make_shared<KeeperStorageBase::RequestForSession>();
@@ -291,16 +230,50 @@ IKeeperStateMachine::parseRequest(nuraft::buffer & data, bool final, ZooKeeperLo
     int32_t length;
     Coordination::read(length, buffer);
 
-    /// because of backwards compatibility, only 32bit xid could be written
-    /// for that reason we serialize XID in 2 parts:
-    /// - lower: 32 least significant bits of 64bit XID OR 32bit XID
-    /// - upper: 32 most significant bits of 64bit XID
-    XidHelper xid_helper;
-    Coordination::read(xid_helper.parts.lower, buffer);
+    int32_t xid;
+    Coordination::read(xid, buffer);
 
-    /// go to end of the buffer and read extra information including second part of XID
-    auto buffer_position = buffer.getPosition();
-    buffer.seek(length - sizeof(uint32_t), SEEK_CUR);
+    static constexpr std::array non_cacheable_xids{
+        Coordination::WATCH_XID,
+        Coordination::PING_XID,
+        Coordination::AUTH_XID,
+        Coordination::CLOSE_XID,
+    };
+
+    const bool should_cache
+        = min_request_size_to_cache != 0 && request_for_session->session_id != -1 && data.size() >= min_request_size_to_cache
+        && std::all_of(
+              non_cacheable_xids.begin(), non_cacheable_xids.end(), [&](const auto non_cacheable_xid) { return xid != non_cacheable_xid; });
+
+    if (should_cache)
+    {
+        std::lock_guard lock(request_cache_mutex);
+        if (auto xid_to_request_it = parsed_request_cache.find(request_for_session->session_id);
+            xid_to_request_it != parsed_request_cache.end())
+        {
+            auto & xid_to_request = xid_to_request_it->second;
+            if (auto request_it = xid_to_request.find(xid); request_it != xid_to_request.end())
+            {
+                if (final)
+                {
+                    auto request = std::move(request_it->second);
+                    xid_to_request.erase(request_it);
+                    return request;
+                }
+                else
+                    return request_it->second;
+            }
+        }
+    }
+
+
+    Coordination::OpNum opnum;
+
+    Coordination::read(opnum, buffer);
+
+    request_for_session->request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
+    request_for_session->request->xid = xid;
+    request_for_session->request->readImpl(buffer);
 
     using enum ZooKeeperLogSerializationVersion;
     ZooKeeperLogSerializationVersion version = INITIAL;
@@ -328,58 +301,8 @@ IKeeperStateMachine::parseRequest(nuraft::buffer & data, bool final, ZooKeeperLo
             readIntBinary(request_for_session->digest->value, buffer);
     }
 
-    if (!buffer.eof())
-    {
-        version = WITH_XID_64;
-        Coordination::read(xid_helper.parts.upper, buffer);
-    }
-
     if (serialization_version)
         *serialization_version = version;
-
-    int64_t xid = xid_helper.xid;
-
-    buffer.seek(buffer_position, SEEK_SET);
-
-    static constexpr std::array non_cacheable_xids{
-        Coordination::WATCH_XID,
-        Coordination::PING_XID,
-        Coordination::AUTH_XID,
-        Coordination::CLOSE_XID,
-        Coordination::CLOSE_XID_64,
-    };
-
-    const bool should_cache
-        = min_request_size_to_cache != 0 && request_for_session->session_id != -1 && data.size() >= min_request_size_to_cache
-        && std::all_of(
-              non_cacheable_xids.begin(), non_cacheable_xids.end(), [&](const auto non_cacheable_xid) { return xid != non_cacheable_xid; });
-
-    if (should_cache)
-    {
-        std::lock_guard lock(request_cache_mutex);
-        if (auto xid_to_request_it = parsed_request_cache.find(request_for_session->session_id);
-            xid_to_request_it != parsed_request_cache.end())
-        {
-            auto & xid_to_request = xid_to_request_it->second;
-            if (auto request_it = xid_to_request.find(xid); request_it != xid_to_request.end())
-            {
-                if (final)
-                {
-                    auto request = std::move(request_it->second);
-                    xid_to_request.erase(request_it);
-                    return request;
-                }
-                return request_it->second;
-            }
-        }
-    }
-
-    Coordination::OpNum opnum;
-    Coordination::read(opnum, buffer);
-
-    request_for_session->request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
-    request_for_session->request->xid = xid;
-    request_for_session->request->readImpl(buffer);
 
     if (should_cache && !final)
     {
@@ -620,12 +543,9 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
                 s.get_last_log_idx(),
                 latest_snapshot_meta->get_last_log_idx());
         }
-        if (s.get_last_log_idx() < latest_snapshot_meta->get_last_log_idx())
+        else if (s.get_last_log_idx() < latest_snapshot_meta->get_last_log_idx())
         {
-            LOG_INFO(
-                log,
-                "A snapshot with a larger last log index ({}) was created, skipping applying this snapshot",
-                latest_snapshot_meta->get_last_log_idx());
+            LOG_INFO(log, "A snapshot with a larger last log index ({}) was created, skipping applying this snapshot", latest_snapshot_meta->get_last_log_idx());
             return true;
         }
 
@@ -857,14 +777,14 @@ static int bufferFromFile(LoggerPtr log, const std::string & path, nuraft::ptr<n
     if (chunk == MAP_FAILED)
     {
         LOG_WARNING(log, "Error mmapping {}, error: {}, errno: {}", path, errnoToString(), errno);
-        [[maybe_unused]] int err = ::close(fd);
+        int err = ::close(fd);
         chassert(!err || errno == EINTR);
         return errno;
     }
     data_out = nuraft::buffer::alloc(file_size);
     data_out->put_raw(chunk, file_size);
     ::munmap(chunk, file_size);
-    [[maybe_unused]] int err = ::close(fd);
+    int err = ::close(fd);
     chassert(!err || errno == EINTR);
     return 0;
 }

@@ -289,9 +289,11 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
                 size,
                 formatReadableSizeWithBinarySuffix(current_hard_limit));
         }
-
-        memory_limit_exceeded_ignored = true;
-        debugLogBigAllocationWithoutCheck(size);
+        else
+        {
+            memory_limit_exceeded_ignored = true;
+            debugLogBigAllocationWithoutCheck(size);
+        }
     }
 
     if (unlikely(
@@ -327,11 +329,13 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
                                     overcommit_result == OvercommitResult::NONE ? "" : " OvercommitTracker decision: ",
                                     toDescription(overcommit_result));
             }
-
-            // If OvercommitTracker::needToStopQuery returned false, it guarantees that enough memory is freed.
-            // This memory is already counted in variable `amount` in the moment of `will_be` initialization.
-            // Now we just need to update value stored in `will_be`, because it should have changed.
-            will_be = amount.load(std::memory_order_relaxed);
+            else
+            {
+                // If OvercommitTracker::needToStopQuery returned false, it guarantees that enough memory is freed.
+                // This memory is already counted in variable `amount` in the moment of `will_be` initialization.
+                // Now we just need to update value stored in `will_be`, because it should have changed.
+                will_be = amount.load(std::memory_order_relaxed);
+            }
         }
         else
         {

@@ -25,6 +25,7 @@
 #include <Storages/StorageMemory.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
+
 namespace ProfileEvents
 {
     extern const Event SuspendSendingQueryToShard;
@@ -570,7 +571,8 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::restartQueryWithoutDuplicat
     /// Consecutive read will implicitly send query first.
     if (!read_context)
         return read();
-    return readAsync();
+    else
+        return readAsync();
 }
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet)

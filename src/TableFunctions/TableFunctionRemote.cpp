@@ -4,7 +4,6 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/Distributed/DistributedSettings.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -20,6 +19,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
+#include <base/range.h>
 #include "registerTableFunctions.h"
 
 
@@ -183,11 +183,13 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
                     {
                         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table name was not found in function arguments. {}", static_cast<const std::string>(help_message));
                     }
-
-                    std::swap(qualified_name.database, qualified_name.table);
-                    args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-                    qualified_name.table = checkAndGetLiteralArgument<String>(args[arg_num], "table");
-                    ++arg_num;
+                    else
+                    {
+                        std::swap(qualified_name.database, qualified_name.table);
+                        args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
+                        qualified_name.table = checkAndGetLiteralArgument<String>(args[arg_num], "table");
+                        ++arg_num;
+                    }
                 }
 
                 database = std::move(qualified_name.database);

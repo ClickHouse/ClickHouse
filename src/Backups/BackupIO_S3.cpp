@@ -10,7 +10,6 @@
 #include <IO/WriteBufferFromS3.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/S3/copyS3File.h>
-#include <IO/S3/deleteFileFromS3.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/Credentials.h>
 #include <Disks/IDisk.h>
@@ -117,6 +116,12 @@ namespace
         if (!outcome.IsSuccess())
             throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
         return outcome.GetResult().GetContents();
+    }
+
+    bool isNotFoundError(Aws::S3::S3Errors error)
+    {
+        return error == Aws::S3::S3Errors::RESOURCE_NOT_FOUND
+            || error == Aws::S3::S3Errors::NO_SUCH_KEY;
     }
 }
 
@@ -231,7 +236,6 @@ BackupWriterS3::BackupWriterS3(
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterS3"))
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false}
-    , s3_capabilities(getCapabilitiesFromConfig(context_->getConfigRef(), "s3"))
 {
     s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
 
@@ -354,22 +358,92 @@ std::unique_ptr<WriteBuffer> BackupWriterS3::writeFile(const String & file_name)
 
 void BackupWriterS3::removeFile(const String & file_name)
 {
-    deleteFileFromS3(client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, /* if_exists = */ false,
-                     blob_storage_log);
+    S3::DeleteObjectRequest request;
+    request.SetBucket(s3_uri.bucket);
+    auto key = fs::path(s3_uri.key) / file_name;
+    request.SetKey(key);
+
+    auto outcome = client->DeleteObject(request);
+
+    if (blob_storage_log)
+    {
+        blob_storage_log->addEvent(
+            BlobStorageLogElement::EventType::Delete,
+            s3_uri.bucket, key, /* local_path */ "", /* data_size */ 0,
+            outcome.IsSuccess() ? nullptr : &outcome.GetError());
+    }
+
+    if (!outcome.IsSuccess() && !isNotFoundError(outcome.GetError().GetErrorType()))
+        throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
 }
 
 void BackupWriterS3::removeFiles(const Strings & file_names)
 {
-    Strings keys;
-    keys.reserve(file_names.size());
-    for (const String & file_name : file_names)
-        keys.push_back(fs::path(s3_uri.key) / file_name);
+    try
+    {
+        if (!supports_batch_delete.has_value() || supports_batch_delete.value() == true)
+        {
+            removeFilesBatch(file_names);
+            supports_batch_delete = true;
+        }
+        else
+        {
+            for (const auto & file_name : file_names)
+                removeFile(file_name);
+        }
+    }
+    catch (const Exception &)
+    {
+        if (!supports_batch_delete.has_value())
+        {
+            supports_batch_delete = false;
+            LOG_TRACE(log, "DeleteObjects is not supported. Retrying with plain DeleteObject.");
 
+            for (const auto & file_name : file_names)
+                removeFile(file_name);
+        }
+        else
+            throw;
+    }
+
+}
+
+void BackupWriterS3::removeFilesBatch(const Strings & file_names)
+{
     /// One call of DeleteObjects() cannot remove more than 1000 keys.
-    size_t batch_size = 1000;
+    size_t chunk_size_limit = 1000;
 
-    deleteFilesFromS3(client, s3_uri.bucket, keys, /* if_exists = */ false,
-                      s3_capabilities, batch_size, blob_storage_log);
+    size_t current_position = 0;
+    while (current_position < file_names.size())
+    {
+        std::vector<Aws::S3::Model::ObjectIdentifier> current_chunk;
+        for (; current_position < file_names.size() && current_chunk.size() < chunk_size_limit; ++current_position)
+        {
+            Aws::S3::Model::ObjectIdentifier obj;
+            obj.SetKey(fs::path(s3_uri.key) / file_names[current_position]);
+            current_chunk.push_back(obj);
+        }
+
+        Aws::S3::Model::Delete delkeys;
+        delkeys.SetObjects(current_chunk);
+        S3::DeleteObjectsRequest request;
+        request.SetBucket(s3_uri.bucket);
+        request.SetDelete(delkeys);
+
+        auto outcome = client->DeleteObjects(request);
+
+        if (blob_storage_log)
+        {
+            const auto * outcome_error = outcome.IsSuccess() ? nullptr : &outcome.GetError();
+            auto time_now = std::chrono::system_clock::now();
+            for (const auto & obj : current_chunk)
+                blob_storage_log->addEvent(BlobStorageLogElement::EventType::Delete, s3_uri.bucket, obj.GetKey(),
+                                          /* local_path */ "", /* data_size */ 0, outcome_error, time_now);
+        }
+
+        if (!outcome.IsSuccess() && !isNotFoundError(outcome.GetError().GetErrorType()))
+            throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
+    }
 }
 
 }

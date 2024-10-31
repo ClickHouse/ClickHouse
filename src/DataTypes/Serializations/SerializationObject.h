@@ -19,21 +19,7 @@ public:
     {
         enum Value
         {
-            /// V1 serialization:
-            /// - ObjectStructure stream:
-            ///     <max_dynamic_paths parameter>
-            ///     <actual number of dynamic paths>
-            ///     <sorted list of dynamic paths>
-            ///     <statistics with number of non-null values for dynamic paths> (only in MergeTree serialization)
-            ///     <statistics with number of non-null values for some paths in shared data> (only in MergeTree serialization)
-            /// - ObjectData stream:
-            ///   - ObjectTypedPath stream for each column in typed paths
-            ///   - ObjectDynamicPath stream for each column in dynamic paths
-            ///   - ObjectSharedData stream shared data column.
-            V1 = 0,
-            /// String serialization:
-            ///  - ObjectData stream with single String column containing serialized JSON.
-            STRING = 1,
+            BASIC = 0,
         };
 
         Value value;
@@ -86,8 +72,6 @@ public:
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
-    virtual void deserializeObject(IColumn & column, std::string_view object, const FormatSettings & settings) const = 0;
-
     static void restoreColumnObject(ColumnObject & column_object, size_t prev_size);
 
 private:
@@ -97,14 +81,14 @@ private:
     /// State of an Object structure. Can be also used during deserializing of Object subcolumns.
     struct DeserializeBinaryBulkStateObjectStructure : public ISerialization::DeserializeBinaryBulkState
     {
-        ObjectSerializationVersion serialization_version;
+        ObjectSerializationVersion structure_version;
         size_t max_dynamic_paths;
         std::vector<String> sorted_dynamic_paths;
         std::unordered_set<String> dynamic_paths;
         /// Paths statistics. Map (dynamic path) -> (number of non-null values in this path).
         ColumnObject::StatisticsPtr statistics;
 
-        explicit DeserializeBinaryBulkStateObjectStructure(UInt64 serialization_version_) : serialization_version(serialization_version_) {}
+        explicit DeserializeBinaryBulkStateObjectStructure(UInt64 structure_version_) : structure_version(structure_version_) {}
     };
 
     static DeserializeBinaryBulkStatePtr deserializeObjectStructureStatePrefix(
