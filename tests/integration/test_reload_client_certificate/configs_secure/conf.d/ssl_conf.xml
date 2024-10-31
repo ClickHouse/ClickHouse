@@ -1,0 +1,16 @@
+<clickhouse>
+    <openSSL>
+        <client>
+            <certificateFile>/etc/clickhouse-server/config.d/first_client.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/first_client.key</privateKeyFile>
+            <loadDefaultCAFile>true</loadDefaultCAFile>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <verificationMode>none</verificationMode>
+            <invalidCertificateHandler>
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</clickhouse>
