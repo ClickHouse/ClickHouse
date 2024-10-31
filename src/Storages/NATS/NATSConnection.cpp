@@ -60,11 +60,7 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
 }
 NATSConnection::~NATSConnection()
 {
-    std::lock_guard lock(mutex);
-    if (!isDisconnectedImpl(lock))
-    {
-        natsConnection_Close(connection.get());
-    }
+    disconnect();
 }
 
 
