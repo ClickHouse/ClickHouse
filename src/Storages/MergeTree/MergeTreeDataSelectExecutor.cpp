@@ -71,10 +71,7 @@ namespace Setting
     extern const SettingsString force_data_skipping_indices;
     extern const SettingsBool force_index_by_date;
     extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
     extern const SettingsInt64 max_partitions_to_read;
-    extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
@@ -640,20 +637,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     if (use_skip_indexes && settings[Setting::force_data_skipping_indices].changed)
     {
-        const auto & indices = settings[Setting::force_data_skipping_indices].toString();
-
-        Strings forced_indices;
-        {
-            Tokens tokens(indices.data(), indices.data() + indices.size(), settings[Setting::max_query_size]);
-            IParser::Pos pos(
-                tokens, static_cast<unsigned>(settings[Setting::max_parser_depth]), static_cast<unsigned>(settings[Setting::max_parser_backtracks]));
-            Expected expected;
-            if (!parseIdentifiersOrStringLiterals(pos, expected, forced_indices))
-                throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse force_data_skipping_indices ('{}')", indices);
-        }
+        const auto & indices_str = settings[Setting::force_data_skipping_indices].toString();
+        auto forced_indices = parseIdentifiersOrStringLiterals(indices_str, settings);
 
         if (forced_indices.empty())
-            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "No indices parsed from force_data_skipping_indices ('{}')", indices);
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "No indices parsed from force_data_skipping_indices ('{}')", indices_str);
 
         std::unordered_set<std::string> useful_indices_names;
         for (const auto & useful_index : skip_indexes.useful_indices)
