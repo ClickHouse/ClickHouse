@@ -1454,8 +1454,22 @@ void ClientBase::resetOutput()
 
     /// Order is important: format, compression, file
 
-    if (output_format)
-        output_format->finalize();
+    try
+    {
+        if (output_format)
+            output_format->finalize();
+    }
+    catch (...)
+    {
+        /// We need to make sure we continue resetting output_format (will stop threads on parallel output)
+        /// as well as cleaning other output related setup
+        if (!have_error)
+        {
+            client_exception
+                = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
+            have_error = true;
+        }
+    }
     output_format.reset();
 
     logs_out_stream.reset();
