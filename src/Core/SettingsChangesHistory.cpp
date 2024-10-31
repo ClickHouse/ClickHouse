@@ -1,8 +1,9 @@
-#include <Core/SettingsChangesHistory.h>
 #include <Core/Defines.h>
+#include <Core/SettingsChangesHistory.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <boost/algorithm/string.hpp>
+
 
 namespace DB
 {
@@ -67,21 +68,76 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.10",
         {
+            {"query_metric_log_interval", 0, -1, "New setting."},
+            {"enforce_strict_identifier_format", false, false, "New setting."},
+            {"enable_parsing_to_custom_serialization", false, true, "New setting"},
+            {"mongodb_throw_on_unsupported_query", false, true, "New setting."},
+            {"enable_parallel_replicas", false, false, "Parallel replicas with read tasks became the Beta tier feature."},
+            {"parallel_replicas_mode", "read_tasks", "read_tasks", "This setting was introduced as a part of making parallel replicas feature Beta"},
+            {"filesystem_cache_name", "", "", "Filesystem cache name to use for stateless table engines or data lakes"},
+            {"restore_replace_external_dictionary_source_to_null", false, false, "New setting."},
+            {"show_create_query_identifier_quoting_rule", "when_necessary", "when_necessary", "New setting."},
+            {"show_create_query_identifier_quoting_style", "Backticks", "Backticks", "New setting."},
+            {"merge_tree_min_read_task_size", 8, 8, "New setting"},
+            {"merge_tree_min_rows_for_concurrent_read_for_remote_filesystem", (20 * 8192), 0, "Setting is deprecated"},
+            {"merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem", (24 * 10 * 1024 * 1024), 0, "Setting is deprecated"},
+            {"implicit_select", false, false, "A new setting."},
+            {"output_format_native_write_json_as_string", false, false, "Add new setting to allow write JSON column as single String column in Native format"},
+            {"output_format_binary_write_json_as_string", false, false, "Add new setting to write values of JSON type as JSON string in RowBinary output format"},
+            {"input_format_binary_read_json_as_string", false, false, "Add new setting to read values of JSON type as JSON string in RowBinary input format"},
+            {"min_free_disk_bytes_to_perform_insert", 0, 0, "New setting."},
+            {"min_free_disk_ratio_to_perform_insert", 0.0, 0.0, "New setting."},
+            {"enable_named_columns_in_function_tuple", false, false, "Disabled pending usability improvements"},
+            {"cloud_mode_database_engine", 1, 1, "A setting for ClickHouse Cloud"},
+            {"allow_experimental_shared_set_join", 1, 1, "A setting for ClickHouse Cloud"},
+            {"read_through_distributed_cache", 0, 0, "A setting for ClickHouse Cloud"},
+            {"write_through_distributed_cache", 0, 0, "A setting for ClickHouse Cloud"},
+            {"distributed_cache_throw_on_error", 0, 0, "A setting for ClickHouse Cloud"},
+            {"distributed_cache_log_mode", "on_error", "on_error", "A setting for ClickHouse Cloud"},
+            {"distributed_cache_fetch_metrics_only_from_current_az", 1, 1, "A setting for ClickHouse Cloud"},
+            {"distributed_cache_connect_max_tries", 100, 100, "A setting for ClickHouse Cloud"},
+            {"distributed_cache_receive_response_wait_milliseconds", 60000, 60000, "A setting for ClickHouse Cloud"},
+            {"distributed_cache_receive_timeout_milliseconds", 10000, 10000, "A setting for ClickHouse Cloud"},
+            {"distributed_cache_wait_connection_from_pool_milliseconds", 100, 100, "A setting for ClickHouse Cloud"},
+            {"distributed_cache_bypass_connection_pool", 0, 0, "A setting for ClickHouse Cloud"},
+            {"distributed_cache_pool_behaviour_on_limit", "allocate_bypassing_pool", "allocate_bypassing_pool", "A setting for ClickHouse Cloud"},
+            {"distributed_cache_read_alignment", 0, 0, "A setting for ClickHouse Cloud"},
+            {"distributed_cache_max_unacked_inflight_packets", 10, 10, "A setting for ClickHouse Cloud"},
+            {"distributed_cache_data_packet_ack_window", 5, 5, "A setting for ClickHouse Cloud"},
+            {"input_format_parquet_enable_row_group_prefetch", false, true, "Enable row group prefetching during parquet parsing. Currently, only single-threaded parsing can prefetch."},
+            {"input_format_orc_dictionary_as_low_cardinality", false, true, "Treat ORC dictionary encoded columns as LowCardinality columns while reading ORC files"},
+            {"allow_experimental_refreshable_materialized_view", false, true, "Not experimental anymore"},
+            {"max_parts_to_move", 0, 1000, "New setting"},
+            {"hnsw_candidate_list_size_for_search", 64, 256, "New setting. Previously, the value was optionally specified in CREATE INDEX and 64 by default."},
+            {"allow_reorder_prewhere_conditions", false, true, "New setting"},
+            {"input_format_parquet_bloom_filter_push_down", false, true, "When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and bloom filter in the Parquet metadata."},
+            {"date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands", false, false, "Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to (0, 3, 6), corresponding to 'seconds', 'milliseconds', and 'microseconds'."},
+            {"azure_check_objects_after_upload", false, false, "Check each uploaded object in azure blob storage to be sure that upload was successful"},
         }
     },
     {"24.9",
         {
+            {"output_format_orc_dictionary_key_size_threshold", 0.0, 0.0, "For a string column in ORC output format, if the number of distinct values is greater than this fraction of the total number of non-null rows, turn off dictionary encoding. Otherwise dictionary encoding is enabled"},
+            {"input_format_json_empty_as_default", false, false, "Added new setting to allow to treat empty fields in JSON input as default values."},
             {"input_format_try_infer_variants", false, false, "Try to infer Variant type in text formats when there is more than one possible type for column/array elements"},
             {"join_output_by_rowlist_perkey_rows_threshold", 0, 5, "The lower limit of per-key average rows in the right table to determine whether to output by row list in hash join."},
             {"create_if_not_exists", false, false, "New setting."},
             {"allow_materialized_view_with_bad_select", true, true, "Support (but not enable yet) stricter validation in CREATE MATERIALIZED VIEW"},
-            {"output_format_always_quote_identifiers", false, false, "New setting."},
-            {"output_format_identifier_quoting_style", "Backticks", "Backticks", "New setting."}
+            {"parallel_replicas_mark_segment_size", 128, 0, "Value for this setting now determined automatically"},
+            {"database_replicated_allow_replicated_engine_arguments", 1, 0, "Don't allow explicit arguments by default"},
+            {"database_replicated_allow_explicit_uuid", 1, 0, "Added a new setting to disallow explicitly specifying table UUID"},
+            {"parallel_replicas_local_plan", false, false, "Use local plan for local replica in a query with parallel replicas"},
+            {"join_to_sort_minimum_perkey_rows", 0, 40, "The lower limit of per-key average rows in the right table to determine whether to rerange the right table by key in left or inner join. This setting ensures that the optimization is not applied for sparse table keys"},
+            {"join_to_sort_maximum_table_rows", 0, 10000, "The maximum number of rows in the right table to determine whether to rerange the right table by key in left or inner join"},
+            {"allow_experimental_join_right_table_sorting", false, false, "If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join"},
+            {"mongodb_throw_on_unsupported_query", false, true, "New setting."},
+            {"min_free_disk_bytes_to_perform_insert", 0, 0, "Maintain some free disk space bytes from inserts while still allowing for temporary writing."},
+            {"min_free_disk_ratio_to_perform_insert", 0.0, 0.0, "Maintain some free disk space bytes expressed as ratio to total disk space from inserts while still allowing for temporary writing."},
         }
     },
     {"24.8",
         {
-            {"rows_before_aggregation", true, true, "Provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregation"},
+            {"rows_before_aggregation", false, false, "Provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregation"},
             {"restore_replace_external_table_functions_to_null", false, false, "New setting."},
             {"restore_replace_external_engines_to_null", false, false, "New setting."},
             {"input_format_json_max_depth", 1000000, 1000, "It was unlimited in previous versions, but that was unsafe."},
@@ -97,7 +153,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"use_json_alias_for_old_object_type", true, false, "Use JSON type alias to create new JSON type"},
             {"type_json_skip_duplicated_paths", false, false, "Allow to skip duplicated paths during JSON parsing"},
             {"allow_experimental_vector_similarity_index", false, false, "Added new setting to allow experimental vector similarity indexes"},
-            {"input_format_try_infer_datetimes_only_datetime64", true, false, "Allow to infer DateTime instead of DateTime64 in data formats"}
+            {"input_format_try_infer_datetimes_only_datetime64", true, false, "Allow to infer DateTime instead of DateTime64 in data formats"},
         }
     },
     {"24.7",
@@ -108,7 +164,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"output_format_native_encode_types_in_binary_format", false, false, "Added new setting to allow to write type names in binary format in Native output format"},
             {"input_format_native_decode_types_in_binary_format", false, false, "Added new setting to allow to read type names in binary format in Native output format"},
             {"read_in_order_use_buffering", false, true, "Use buffering before merging while reading in order of primary key"},
-            {"enable_named_columns_in_function_tuple", false, true, "Generate named tuples in function tuple() when all names are unique and can be treated as unquoted identifiers."},
+            {"enable_named_columns_in_function_tuple", false, false, "Generate named tuples in function tuple() when all names are unique and can be treated as unquoted identifiers."},
             {"optimize_trivial_insert_select", true, false, "The optimization does not make sense in many cases."},
             {"dictionary_validate_primary_key_type", false, false, "Validate primary key type for dictionaries. By default id type for simple layouts will be implicitly converted to UInt64."},
             {"collect_hash_table_stats_during_joins", false, true, "New setting."},
@@ -521,15 +577,40 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
 };
 
-
-const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> & getSettingsChangesHistory()
+static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory::SettingsChanges>> merge_tree_settings_changes_history_initializer =
 {
-    static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history;
+    {"24.12",
+        {
+        }
+    },
+    {"24.11",
+        {
+        }
+    },
+    {"24.10",
+        {
+        }
+    },
+    {"24.9",
+        {
+        }
+    },
+    {"24.8",
+        {
+            {"deduplicate_merge_projection_mode", "ignore", "throw", "Do not allow to create inconsistent projection"}
+        }
+    },
+};
 
-    static std::once_flag initialized_flag;
-    std::call_once(initialized_flag, []()
+static void initSettingsChangesHistory(
+    std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> & settings_changes_history,
+    std::once_flag & initialized_flag,
+    std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory::SettingsChanges>> & initializer
+)
+{
+    std::call_once(initialized_flag, [&]()
     {
-        for (const auto & setting_change : settings_changes_history_initializer)
+        for (const auto & setting_change : initializer)
         {
             /// Disallow duplicate keys in the settings changes history. Example:
             ///     {"21.2", {{"some_setting_1", false, true, "[...]"}}},
@@ -542,7 +623,24 @@ const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> & get
             settings_changes_history[setting_change.first] = setting_change.second;
         }
     });
+}
+
+const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> & getSettingsChangesHistory()
+{
+    static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history;
+    static std::once_flag initialized_flag;
+    initSettingsChangesHistory(settings_changes_history, initialized_flag, settings_changes_history_initializer);
 
     return settings_changes_history;
 }
+
+const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> & getMergeTreeSettingsChangesHistory()
+{
+    static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> merge_tree_settings_changes_history;
+    static std::once_flag initialized_flag;
+    initSettingsChangesHistory(merge_tree_settings_changes_history, initialized_flag, merge_tree_settings_changes_history_initializer);
+
+    return merge_tree_settings_changes_history;
+}
+
 }

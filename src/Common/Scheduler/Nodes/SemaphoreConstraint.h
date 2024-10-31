@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Common/Scheduler/ISchedulerNode.h"
 #include <Common/Scheduler/ISchedulerConstraint.h>
 
 #include <mutex>
@@ -13,7 +14,7 @@ namespace DB
  * Limited concurrency constraint.
  * Blocks if either number of concurrent in-flight requests exceeds `max_requests`, or their total cost exceeds `max_cost`
  */
-class SemaphoreConstraint : public ISchedulerConstraint
+class SemaphoreConstraint final : public ISchedulerConstraint
 {
     static constexpr Int64 default_max_requests = std::numeric_limits<Int64>::max();
     static constexpr Int64 default_max_cost = std::numeric_limits<Int64>::max();
@@ -23,6 +24,25 @@ public:
         , max_requests(config.getInt64(config_prefix + ".max_requests", default_max_requests))
         , max_cost(config.getInt64(config_prefix + ".max_cost", config.getInt64(config_prefix + ".max_bytes", default_max_cost)))
     {}
+
+    SemaphoreConstraint(EventQueue * event_queue_, const SchedulerNodeInfo & info_, Int64 max_requests_, Int64 max_cost_)
+        : ISchedulerConstraint(event_queue_, info_)
+        , max_requests(max_requests_)
+        , max_cost(max_cost_)
+    {}
+
+    ~SemaphoreConstraint() override
+    {
+        // We need to clear `parent` in child to avoid dangling references
+        if (child)
+            removeChild(child.get());
+    }
+
+    const String & getTypeName() const override
+    {
+        static String type_name("inflight_limit");
+        return type_name;
+    }
 
     bool equals(ISchedulerNode * other) override
     {
@@ -58,8 +78,7 @@ public:
     {
         if (child->basename == child_name)
             return child.get();
-        else
-            return nullptr;
+        return nullptr;
     }
 
     std::pair<ResourceRequest *, bool> dequeueRequest() override
@@ -69,15 +88,14 @@ public:
         if (!request)
             return {nullptr, false};
 
-        // Request has reference to the first (closest to leaf) `constraint`, which can have `parent_constraint`.
-        // The former is initialized here dynamically and the latter is initialized once during hierarchy construction.
-        if (!request->constraint)
-            request->constraint = this;
-
-        // Update state on request arrival
         std::unique_lock lock(mutex);
-        requests++;
-        cost += request->cost;
+        if (request->addConstraint(this))
+        {
+            // Update state on request arrival
+            requests++;
+            cost += request->cost;
+        }
+
         child_active = child_now_active;
         if (!active())
             busy_periods++;
@@ -87,10 +105,6 @@ public:
 
     void finishRequest(ResourceRequest * request) override
     {
-        // Recursive traverse of parent flow controls in reverse order
-        if (parent_constraint)
-            parent_constraint->finishRequest(request);
-
         // Update state on request departure
         std::unique_lock lock(mutex);
         bool was_active = active();
@@ -108,6 +122,32 @@ public:
         if (child_ == child.get())
             if (!std::exchange(child_active, true) && satisfied() && parent)
                 parent->activateChild(this);
+    }
+
+    /// Update limits.
+    /// Should be called from the scheduler thread because it could lead to activation or deactivation
+    void updateConstraints(const SchedulerNodePtr & self, Int64 new_max_requests, UInt64 new_max_cost)
+    {
+        std::unique_lock lock(mutex);
+        bool was_active = active();
+        max_requests = new_max_requests;
+        max_cost = new_max_cost;
+
+        if (parent)
+        {
+            // Activate on transition from inactive state
+            if (!was_active && active())
+                parent->activateChild(this);
+            // Deactivate on transition into inactive state
+            else if (was_active && !active())
+            {
+                // Node deactivation is usually done in dequeueRequest(), but we do not want to
+                // do extra call to active() on every request just to make sure there was no update().
+                // There is no interface method to do deactivation, so we do the following trick.
+                parent->removeChild(this);
+                parent->attachChild(self); // This call is the only reason we have `recursive_mutex`
+            }
+        }
     }
 
     bool isActive() override
@@ -151,10 +191,10 @@ private:
         return satisfied() && child_active;
     }
 
-    const Int64 max_requests = default_max_requests;
-    const Int64 max_cost = default_max_cost;
+    Int64 max_requests = default_max_requests;
+    Int64 max_cost = default_max_cost;
 
-    std::mutex mutex;
+    std::recursive_mutex mutex;
     Int64 requests = 0;
     Int64 cost = 0;
     bool child_active = false;

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 

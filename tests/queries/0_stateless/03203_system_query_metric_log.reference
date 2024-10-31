@@ -1,0 +1,30 @@
+--Interval 1000: check that amount of events is correct
+1
+--Interval 1000: check that the delta/diff between the events is correct
+1
+--Interval 1000: check that the Query, SelectQuery and InitialQuery values are correct for the first event
+1
+--Interval 1000: check that the SleepFunctionCalls, SleepFunctionMilliseconds and ProfileEvent_SleepFunctionElapsedMicroseconds are correct
+1
+--Interval 400: check that amount of events is correct
+1
+--Interval 400: check that the delta/diff between the events is correct
+1
+--Interval 400: check that the Query, SelectQuery and InitialQuery values are correct for the first event
+1
+--Interval 400: check that the SleepFunctionCalls, SleepFunctionMilliseconds and ProfileEvent_SleepFunctionElapsedMicroseconds are correct
+1
+--Interval 123: check that amount of events is correct
+1
+--Interval 123: check that the delta/diff between the events is correct
+1
+--Interval 123: check that the Query, SelectQuery and InitialQuery values are correct for the first event
+1
+--Interval 123: check that the SleepFunctionCalls, SleepFunctionMilliseconds and ProfileEvent_SleepFunctionElapsedMicroseconds are correct
+1
+--Check that a query_metric_log_interval=0 disables the collection
+0
+-Check that a query which execution time is less than query_metric_log_interval is never collected
+0
+--Check that there is a final event when queries finish
+3

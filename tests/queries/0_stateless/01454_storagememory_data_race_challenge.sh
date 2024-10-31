@@ -23,7 +23,7 @@ function f {
 function g {
   local TIMELIMIT=$((SECONDS+$1))
   for _ in $(seq 1 100); do
-    $CLICKHOUSE_CLIENT -n -q "
+    $CLICKHOUSE_CLIENT -q "
         INSERT INTO mem SELECT number FROM numbers(1000000);
         INSERT INTO mem SELECT number FROM numbers(1000000);
         INSERT INTO mem SELECT number FROM numbers(1000000);
