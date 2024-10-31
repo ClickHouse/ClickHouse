@@ -107,6 +107,8 @@ struct ReadSettings
     size_t filesystem_cache_segments_batch_size = 20;
     size_t filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
     bool filesystem_cache_allow_background_download = true;
+    bool filesystem_cache_allow_background_download_for_metadata_files_in_packed_storage = true;
+    bool filesystem_cache_allow_background_download_during_fetch = true;
 
     bool use_page_cache_for_disks_without_file_cache = false;
     bool read_from_page_cache_if_exists_otherwise_bypass_cache = false;

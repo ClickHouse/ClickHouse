@@ -1003,7 +1003,14 @@ void FileSegmentsHolder::reset()
 
     ProfileEvents::increment(ProfileEvents::FilesystemCacheUnusedHoldFileSegments, file_segments.size());
     for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end();)
-        file_segment_it = completeAndPopFrontImpl(false);
+    {
+        /// One might think it would have been more correct to do `false` here,
+        /// not to allow background download for file segments that we actually did not start reading.
+        /// But actually we would only do that, if those file segments were already read partially by some other thread/query
+        /// but they were not put to the download queue, because current thread was holding them in Holder.
+        /// So as a culprit, we need to allow to happen what would have happened if we did not exist.
+        file_segment_it = completeAndPopFrontImpl(true);
+    }
     file_segments.clear();
 }
 
