@@ -1592,7 +1592,7 @@ def test_parallel_reading_with_memory_limit(started_cluster):
         f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_memory_limit.native') settings max_memory_usage=1000"
     )
 
-    assert "Memory limit (for query) exceeded" in result
+    assert "Query memory limit exceeded" in result
 
     time.sleep(5)
 
