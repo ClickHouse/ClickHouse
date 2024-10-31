@@ -156,7 +156,6 @@ read_in_order_two_level_merge_threshold = 5;  --avoid preliminary merge
 DROP TABLE fixed_prefix;
 
 SELECT '========';
--- currently don't support virtual row in this case
 DROP TABLE IF EXISTS function_pk;
 
 CREATE TABLE function_pk
@@ -179,7 +178,7 @@ ORDER BY (A,-B) ASC
 limit 3
 SETTINGS max_threads = 1,
 optimize_read_in_order = 1,
-read_in_order_two_level_merge_threshold = 0;  --force preliminary merge
+read_in_order_two_level_merge_threshold = 5;  --avoid preliminary merge
 
 DROP TABLE function_pk;
 
