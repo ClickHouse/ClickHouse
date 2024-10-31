@@ -18,7 +18,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INVALID_STATE;
-    extern const int UNFINISHED;
 }
 
 NATSProducer::NATSProducer(NATSConnectionPtr connection_, const String & subject_, std::atomic<bool> & shutdown_called_, LoggerPtr log_)
