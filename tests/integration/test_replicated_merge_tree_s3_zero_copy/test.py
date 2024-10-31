@@ -1,7 +1,7 @@
 import logging
+import os
 import random
 import string
-import os
 import time
 
 import pytest
