@@ -568,7 +568,7 @@ std::vector<std::string> NamedCollectionsMetadataStorage::listCollections() cons
     std::vector<std::string> collections;
     collections.reserve(paths.size());
     for (const auto & path : paths)
-        collections.push_back(std::filesystem::path(path).stem());
+        collections.push_back(unescapeForFileName(std::filesystem::path(path).stem()));
     return collections;
 }
 
