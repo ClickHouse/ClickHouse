@@ -78,7 +78,6 @@ namespace Setting
     extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsBool calculate_text_stack_trace;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
-    extern const SettingsBool enable_deflate_qpl_codec;
     extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsUInt64 idle_connection_timeout;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
@@ -100,6 +99,7 @@ namespace Setting
     extern const SettingsUInt64 unknown_packet_in_send_data;
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
+    extern const SettingsBool use_concurrency_control;
 }
 
 namespace ServerSetting
@@ -300,6 +300,9 @@ void TCPHandler::runImpl()
     try
     {
         receiveHello();
+
+        if (!default_database.empty())
+            DatabaseCatalog::instance().assertDatabaseExists(default_database);
 
         /// In interserver mode queries are executed without a session context.
         if (!is_interserver_mode)
@@ -1115,6 +1118,7 @@ void TCPHandler::processOrdinaryQuery()
 
     {
         PullingAsyncPipelineExecutor executor(pipeline);
+        pipeline.setConcurrencyControl(query_context->getSettingsRef()[Setting::use_concurrency_control]);
         CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
 
         /// The following may happen:
@@ -2236,7 +2240,6 @@ void TCPHandler::initBlockOutput(const Block & block)
                     level,
                     !query_settings[Setting::allow_suspicious_codecs],
                     query_settings[Setting::allow_experimental_codecs],
-                    query_settings[Setting::enable_deflate_qpl_codec],
                     query_settings[Setting::enable_zstd_qat_codec]);
 
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(

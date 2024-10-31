@@ -9,6 +9,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
+
 #include <algorithm>
 
 namespace DB
@@ -177,7 +178,6 @@ String IAST::formatWithPossiblyHidingSensitiveData(
     IdentifierQuotingRule identifier_quoting_rule,
     IdentifierQuotingStyle identifier_quoting_style) const
 {
-
     WriteBufferFromOwnString buf;
     FormatSettings settings(buf, one_line);
     settings.show_secrets = show_secrets;
@@ -287,7 +287,8 @@ void IAST::dumpTree(WriteBuffer & ostr, size_t indent) const
     writeChar('\n', ostr);
     for (const auto & child : children)
     {
-        if (!child) throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_AST, "Can't dump nullptr child");
+        if (!child)
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_AST, "Can't dump a nullptr child");
         child->dumpTree(ostr, indent + 1);
     }
 }

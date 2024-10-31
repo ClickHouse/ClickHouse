@@ -1195,6 +1195,19 @@
         <flush_on_crash>false</flush_on_crash>
     </error_log>
 
+    <!-- Query metric log contains rows Contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk
+    every "collect_interval_milliseconds" interval-->
+    <query_metric_log>
+        <database>system</database>
+        <table>query_metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <flush_on_crash>false</flush_on_crash>
+    </query_metric_log>
+
     <!--
         Asynchronous metric log contains values of metrics from
         system.asynchronous_metrics.
@@ -1386,6 +1399,10 @@
      If not specified they will be stored locally. -->
     <!-- <user_defined_zookeeper_path>/clickhouse/user_defined</user_defined_zookeeper_path> -->
 
+    <!-- Path in ZooKeeper to store workload and resource created by the command CREATE WORKLOAD and CREATE REESOURCE.
+     If not specified they will be stored locally. -->
+    <!-- <workload_zookeeper_path>/clickhouse/workload/definitions.sql</workload_zookeeper_path> -->
+
     <!-- Uncomment if you want data to be compressed 30-100% better.
          Don't do that if you just started using ClickHouse.
       -->
@@ -1437,6 +1454,8 @@
     <distributed_ddl>
         <!-- Path in ZooKeeper to queue with DDL queries -->
         <path>/clickhouse/task_queue/ddl</path>
+        <!-- Path in ZooKeeper to store running DDL hosts -->
+        <replicas_path>/clickhouse/task_queue/replicas</replicas_path>
 
         <!-- Settings from this profile will be used to execute DDL queries -->
         <!-- <profile>default</profile> -->

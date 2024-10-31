@@ -1,4 +1,5 @@
 #include <IO/WriteBufferFromString.h>
+#include "Common/ISlotControl.h"
 #include <Common/ThreadPool.h>
 #include <Common/CurrentThread.h>
 #include <Common/CurrentMetrics.h>
@@ -348,12 +349,22 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     is_execution_initialized = true;
     tryUpdateExecutionStatus(ExecutionStatus::NotStarted, ExecutionStatus::Executing);
 
-    size_t use_threads = num_threads;
-
-    /// Allocate CPU slots from concurrency control
-    size_t min_threads = concurrency_control ? 1uz : num_threads;
-    cpu_slots = ConcurrencyControl::instance().allocate(min_threads, num_threads);
-    use_threads = cpu_slots->grantedCount();
+    if (concurrency_control)
+    {
+        /// Allocate CPU slots from concurrency control
+        constexpr size_t min_threads = 1uz; // Number of threads that should be granted to every query no matter how many threads are already running in other queries
+        cpu_slots = ConcurrencyControl::instance().allocate(min_threads, num_threads);
+#ifndef NDEBUG
+        LOG_TEST(log, "Allocate CPU slots. min: {}, max: {}, granted: {}", min_threads, num_threads, cpu_slots->grantedCount());
+#endif
+    }
+    else
+    {
+        /// If concurrency control is not used we should not even count threads as competing.
+        /// To avoid counting them in ConcurrencyControl, we create dummy slot allocation.
+        cpu_slots = grantSlots(num_threads);
+    }
+    size_t use_threads = cpu_slots->grantedCount();
 
     Queue queue;
     Queue async_queue;

@@ -34,6 +34,8 @@ public:
 
     ssize_t socketReceiveBytesImpl(char * ptr, size_t size);
 
+    void setReceiveTimeout(size_t receive_timeout_microseconds);
+
 private:
     AsyncCallback async_callback;
     std::string socket_description;

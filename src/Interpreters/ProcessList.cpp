@@ -109,7 +109,8 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
     std::shared_ptr<QueryStatus> query;
 
     {
-        auto [lock, overcommit_blocker] = safeLock(); // To avoid deadlock in case of OOM
+        LockAndOverCommitTrackerBlocker<std::unique_lock, Mutex> locker(mutex); // To avoid deadlock in case of OOM
+        auto & lock = locker.getUnderlyingLock();
         IAST::QueryKind query_kind = ast->getQueryKind();
 
         const auto queue_max_wait_ms = settings[Setting::queue_max_wait_ms].totalMilliseconds();
@@ -278,7 +279,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
                 thread_group->performance_counters.setTraceProfileEvents(settings[Setting::trace_profile_events]);
             }
 
-            thread_group->memory_tracker.setDescription("(for query)");
+            thread_group->memory_tracker.setDescription("Query");
             if (settings[Setting::memory_tracker_fault_probability] > 0.0)
                 thread_group->memory_tracker.setFaultProbability(settings[Setting::memory_tracker_fault_probability]);
 
@@ -317,7 +318,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         /// Track memory usage for all simultaneously running queries from single user.
         user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage_for_user]);
         user_process_list.user_memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator_for_user]);
-        user_process_list.user_memory_tracker.setDescription("(for user)");
+        user_process_list.user_memory_tracker.setDescription("User");
 
         if (!total_network_throttler && settings[Setting::max_network_bandwidth_for_all_users])
         {
@@ -340,7 +341,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
 
 ProcessListEntry::~ProcessListEntry()
 {
-    auto lock = parent.safeLock();
+    LockAndOverCommitTrackerBlocker<std::unique_lock, ProcessList::Mutex> lock(parent.getMutex());
 
     String user = (*it)->getClientInfo().current_user;
     String query_id = (*it)->getClientInfo().current_query_id;
@@ -369,7 +370,7 @@ ProcessListEntry::~ProcessListEntry()
     }
 
     /// Wait for the query if it is in the cancellation right now.
-    parent.cancelled_cv.wait(lock.lock, [&]() { return process_list_element_ptr->is_cancelling == false; });
+    parent.cancelled_cv.wait(lock.getUnderlyingLock(), [&]() { return process_list_element_ptr->is_cancelling == false; });
 
     if (auto query_user = parent.queries_to_user.find(query_id); query_user != parent.queries_to_user.end())
         parent.queries_to_user.erase(query_user);
@@ -612,7 +613,7 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
     /// So here we first set is_cancelling, and later reset it.
     /// The ProcessListEntry cannot be destroy if is_cancelling is true.
     {
-        auto lock = safeLock();
+        LockAndBlocker lock(mutex);
         elem = tryGetProcessListElement(current_query_id, current_user);
         if (!elem)
             return CancellationCode::NotFound;
@@ -622,7 +623,7 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
     SCOPE_EXIT({
         DENY_ALLOCATIONS_IN_SCOPE;
 
-        auto lock = unsafeLock();
+        Lock lock(mutex);
         elem->is_cancelling = false;
         cancelled_cv.notify_all();
     });
@@ -637,14 +638,14 @@ CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem)
     /// So here we first set is_cancelling, and later reset it.
     /// The ProcessListEntry cannot be destroy if is_cancelling is true.
     {
-        auto lock = safeLock();
+        LockAndBlocker lock(mutex);
         elem->is_cancelling = true;
     }
 
     SCOPE_EXIT({
         DENY_ALLOCATIONS_IN_SCOPE;
 
-        auto lock = unsafeLock();
+        Lock lock(mutex);
         elem->is_cancelling = false;
         cancelled_cv.notify_all();
     });
@@ -658,14 +659,14 @@ void ProcessList::killAllQueries()
     std::vector<QueryStatusPtr> cancelled_processes;
 
     SCOPE_EXIT({
-        auto lock = safeLock();
+        LockAndBlocker lock(mutex);
         for (auto & cancelled_process : cancelled_processes)
             cancelled_process->is_cancelling = false;
         cancelled_cv.notify_all();
     });
 
     {
-        auto lock = safeLock();
+        LockAndBlocker lock(mutex);
         cancelled_processes.reserve(processes.size());
         for (auto & process : processes)
         {
@@ -731,7 +732,7 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
     std::vector<QueryStatusPtr> processes_copy;
 
     {
-        auto lock = safeLock();
+        LockAndBlocker lock(mutex);
         processes_copy.assign(processes.begin(), processes.end());
     }
 
@@ -743,6 +744,26 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
     return per_query_infos;
 }
 
+QueryStatusPtr ProcessList::getProcessListElement(const String & query_id) const
+{
+    LockAndBlocker lock(mutex);
+    for (const auto & process : processes)
+    {
+        if (process->client_info.current_query_id == query_id)
+            return process;
+    }
+
+    return nullptr;
+}
+
+QueryStatusInfoPtr ProcessList::getQueryInfo(const String & query_id, bool get_thread_list, bool get_profile_events, bool get_settings) const
+{
+    auto process = getProcessListElement(query_id);
+    if (process)
+        return std::make_shared<QueryStatusInfo>(process->getInfo(get_thread_list, get_profile_events, get_settings));
+
+    return nullptr;
+}
 
 ProcessListForUser::ProcessListForUser(ProcessList * global_process_list)
     : ProcessListForUser(nullptr, global_process_list)
@@ -786,7 +807,7 @@ ProcessList::UserInfo ProcessList::getUserInfo(bool get_profile_events) const
 {
     UserInfo per_user_infos;
 
-    auto lock = safeLock();
+    LockAndBlocker lock(mutex);
 
     per_user_infos.reserve(user_to_queries.size());
 
