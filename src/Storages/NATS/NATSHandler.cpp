@@ -1,9 +1,9 @@
 #include <Storages/NATS/NATSHandler.h>
 
-#include <Storages/NATS/NATSLibUVAdapter.h>
 #include <Core/Defines.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <adapters/libuv.h>
 
 namespace DB
 {
@@ -35,8 +35,8 @@ void NATSHandler::runLoop()
         return;
     }
 
-    natsLibuvInit();
-    natsLibuvSetThreadLocalLoop(loop.getLoop());
+    natsLibuv_Init();
+    natsLibuv_SetThreadLocalLoop(loop.getLoop());
 
     SCOPE_EXIT(nats_ReleaseThreadMemory());
 
@@ -68,6 +68,7 @@ void NATSHandler::runLoop()
             task();
         }
 
+        //std::this_thread::sleep_for(std::chrono::milliseconds(50));
         num_pending_callbacks = uv_run(loop.getLoop(), UV_RUN_NOWAIT);
     }
     loop_state.store(Loop::CLOSED);
@@ -158,10 +159,10 @@ NATSOptionsPtr NATSHandler::createOptions()
 
     NATSOptionsPtr result(options, &natsOptions_Destroy);
     er = natsOptions_SetEventLoop(result.get(), static_cast<void *>(loop.getLoop()),
-                                  natsLibuvAttach,
-                                  natsLibuvRead,
-                                  natsLibuvWrite,
-                                  natsLibuvDetach);
+                                  natsLibuv_Attach,
+                                  natsLibuv_Read,
+                                  natsLibuv_Write,
+                                  natsLibuv_Detach);
     if (er)
     {
         throw Exception(
