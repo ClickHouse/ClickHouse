@@ -657,9 +657,9 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     else if (alter)
         names->concatParts();
 
-    bool alter_command_with_no_changes = alter && pos_after_parsing_names == pos;
+    bool alter_query_with_no_changes = alter && pos_after_parsing_names == pos;
 
-    if (alter_command_with_no_changes)
+    if (alter_query_with_no_changes)
     {
         return false;
     }
