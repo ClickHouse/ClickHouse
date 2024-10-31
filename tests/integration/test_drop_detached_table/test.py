@@ -1,9 +1,9 @@
 # Tag no-fasttest: requires S3
 
 import logging
+import time
 
 import pytest
-import time
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
@@ -139,8 +139,12 @@ def test_drop_replicated_table(start_cluster):
 
     zk = cluster.get_kazoo_client("zoo1")
 
-    zk_path_replica1_node = f"/clickhouse/tables/shard1/{table_name}/replicas/{replica1.name}"
-    zk_path_replica2_node = f"/clickhouse/tables/shard1/{table_name}/replicas/{replica2.name}"
+    zk_path_replica1_node = (
+        f"/clickhouse/tables/shard1/{table_name}/replicas/{replica1.name}"
+    )
+    zk_path_replica2_node = (
+        f"/clickhouse/tables/shard1/{table_name}/replicas/{replica2.name}"
+    )
 
     exists_replica = check_exists(
         zk,
