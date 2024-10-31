@@ -177,6 +177,7 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_if_final;
     extern const SettingsBool use_uncompressed_cache;
     extern const SettingsUInt64 merge_tree_min_read_task_size;
+    extern const SettingsBool read_in_order_use_virtual_row;
 }
 
 namespace MergeTreeSetting
@@ -1852,7 +1853,7 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     enable_vertical_final = false;
 
     /// Disable virtual row for FINAL.
-    if (virtual_row_conversion_ && !isQueryWithFinal())
+    if (virtual_row_conversion_ && !isQueryWithFinal() && context->getSettingsRef()[Setting::read_in_order_use_virtual_row])
         virtual_row_conversion = std::make_shared<ExpressionActions>(std::move(*virtual_row_conversion_));
 
     updateSortDescription();

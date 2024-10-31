@@ -2864,6 +2864,9 @@ Possible values:
 
 - [ORDER BY Clause](../../sql-reference/statements/select/order-by.md/#optimize_read_in_order)
 )", 0) \
+    DECLARE(Bool, read_in_order_use_virtual_row, false, R"(
+Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched.
+)", 0) \
     DECLARE(Bool, optimize_read_in_window_order, true, R"(
 Enable ORDER BY optimization in window clause for reading data in corresponding order in MergeTree tables.
 )", 0) \

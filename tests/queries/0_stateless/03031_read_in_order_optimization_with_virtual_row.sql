@@ -1,4 +1,6 @@
 
+SET read_in_order_use_virtual_row = 1;
+
 DROP TABLE IF EXISTS t;
 
 CREATE TABLE t
