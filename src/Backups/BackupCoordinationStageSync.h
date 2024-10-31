@@ -109,6 +109,9 @@ private:
     bool tryFinishImpl(bool & other_hosts_also_finished, bool throw_if_error, WithRetries::Kind retries_kind);
     void createFinishNodeAndRemoveAliveNode(Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper);
 
+    /// Returns the version used by the initiator.
+    int getInitiatorVersion() const;
+
     /// Waits until all the other hosts finish their work.
     bool tryWaitForOtherHostsToFinishImpl(const String & reason, bool throw_if_error, std::optional<std::chrono::seconds> timeout) const;
     bool checkIfOtherHostsFinish(const String & reason, bool throw_if_error, bool time_is_out, std::optional<std::chrono::milliseconds> timeout) const TSA_REQUIRES(mutex);
@@ -157,7 +160,7 @@ private:
         bool started = false;
         bool connected = false;
         bool finished = false;
-        int version = 0;
+        int version = 1;
         std::map<String /* stage */, String /* result */> stages = {}; /// std::map because we need to compare states
         std::exception_ptr exception = nullptr;
 

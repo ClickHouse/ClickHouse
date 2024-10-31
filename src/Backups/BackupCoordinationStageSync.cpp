@@ -27,9 +27,24 @@ namespace
 {
     /// The coordination version is stored in the 'start' node for each host
     /// by each host when it starts working on this backup or restore.
-    /// The initial version didn't use nodes 'finish*' and 'num_hosts'.
-    constexpr const int kInitialVersion = 1;
-    constexpr const int kCurrentVersion = 2;
+    enum Version
+    {
+        kInitialVersion = 1,
+
+        /// This old version didn't create the 'finish' node, it uses stage "completed" to tell other hosts that the work is done.
+        /// If an error happened this old version didn't change any nodes to tell other hosts that the error handling is done.
+        /// So while using this old version hosts couldn't know when other hosts are done with the error handling,
+        /// and that situation caused weird errors in the logs somehow.
+        /// Also this old version didn't create the 'start' node for the initiator.
+        kVersionWithoutFinishNode = 1,
+
+        /// Now we create the 'finish' node both if the work is done or if the error handling is done.
+
+        kCurrentVersion = 2,
+    };
+
+    /// Empty string as the current host is used to mark the initiator of a BACKUP ON CLUSTER or RESTORE ON CLUSTER query.
+    const constexpr std::string_view kInitiator;
 }
 
 bool BackupCoordinationStageSync::HostInfo::operator ==(const HostInfo & other) const
@@ -547,11 +562,9 @@ void BackupCoordinationStageSync::readCurrentState(Coordination::ZooKeeperWithFa
                     String result = zookeeper->get(fs::path{zookeeper_path} / zk_node);
                     host_info->stages[stage] = std::move(result);
 
-                    /// The initial version didn't create the 'finish' ZooKeeper nodes so
-                    /// we consider that if the "completed" stage is reached by a host then the host has finished its work.
-                    /// This assumption is not correct if an error happens, but the initial version can't handle errors quite
-                    /// correctly anyway.
-                    if ((host_info->version == kInitialVersion) && (stage == BackupCoordinationStage::COMPLETED))
+                    /// That old version didn't create the 'finish' node so we consider that a host finished its work
+                    /// if it reached the "completed" stage.
+                    if ((host_info->version == kVersionWithoutFinishNode) && (stage == BackupCoordinationStage::COMPLETED))
                         host_info->finished = true;
                 }
             }
@@ -933,6 +946,15 @@ void BackupCoordinationStageSync::createFinishNodeAndRemoveAliveNode(Coordinatio
     if (zookeeper->exists(finish_node_path))
         return;
 
+    /// If the initiator of the query has that old version then it doesn't expect us to create the 'finish' node and moreover
+    /// the initiator can start removing all the nodes immediately after all hosts report about reaching the "completed" status.
+    /// So to avoid weird errors in the logs we won't create the 'finish' node if the initiator of the query has that old version.
+    if ((getInitiatorVersion() == kVersionWithoutFinishNode) && (current_host != kInitiator))
+    {
+        LOG_INFO(log, "Skipped creating the 'finish' node because the initiator uses outdated version {}", getInitiatorVersion());
+        return;
+    }
+
     std::optional<size_t> num_hosts;
     int num_hosts_version = -1;
 
@@ -998,6 +1020,17 @@ void BackupCoordinationStageSync::createFinishNodeAndRemoveAliveNode(Coordinatio
     throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
                     "Couldn't create the 'finish' node for {} after {} attempts",
                     current_host_desc, max_attempts_after_bad_version);
+}
+
+
+int BackupCoordinationStageSync::getInitiatorVersion() const
+{
+    std::lock_guard lock{mutex};
+    auto it = state.hosts.find(String{kInitiator});
+    if (it == state.hosts.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no initiator of this {} query, it's a bug", operation_name);
+    const HostInfo & host_info = it->second;
+    return host_info.version;
 }
 
 
