@@ -1159,7 +1159,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     QueryTreeNodePtr alias_node = *it;
 
     auto node_type = alias_node->getNodeType();
-    if (node_type != QueryTreeNodeType::QUERY && node_type != QueryTreeNodeType::UNION)
+    if (!IdentifierResolver::isTableExpressionNodeType(node_type))
         alias_node = alias_node->clone();
 
     if (!alias_node)
