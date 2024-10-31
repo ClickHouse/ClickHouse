@@ -298,7 +298,11 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
                 read_settings,
                 blob_storage_log,
                 threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"),
-                [&]{ return src_disk->readFile(src_path, read_settings);});
+                [&]
+                {
+                    LOG_TRACE(log, "Falling back to copy file {} from disk {} to S3 through buffers", src_path, src_disk->getName());
+                    return src_disk->readFile(src_path, read_settings);
+                });
             return; /// copied!
         }
     }
@@ -327,6 +331,7 @@ void BackupWriterS3::copyFile(const String & destination, const String & source,
         threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"),
         [&, this]
         {
+            LOG_TRACE(log, "Falling back to copy file inside backup from {} to {} through direct buffers", source, destination);
             return std::make_unique<ReadBufferFromS3>(
                 client, s3_uri.bucket, source_key, s3_uri.version_id, s3_settings.request_settings, read_settings);
         });
