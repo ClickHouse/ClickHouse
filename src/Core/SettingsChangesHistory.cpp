@@ -64,6 +64,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.11",
         {
+            {"distributed_cache_discard_connection_if_unread_data", true, true, "New setting"},
         }
     },
     {"24.10",
