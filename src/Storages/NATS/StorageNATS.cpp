@@ -100,15 +100,17 @@ StorageNATS::StorageNATS(
     nats_context = addSettings(getContext());
     nats_context->makeQueryContext();
 
-    /// One looping task for all consumers as they share the same connection == the same handler == the same event loop
-    looping_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSConsumersLoopingTask", [this] { event_handler.runLoop(); });
-    looping_task->deactivate();
+    event_loop_thread = std::make_unique<ThreadFromGlobalPool>([this] { event_handler.runLoop(); });
 
     streaming_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSStreamingTask", [this] { streamingToViewsFunc(); });
     streaming_task->deactivate();
 
     subscribe_consumers_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSSubscribeConsumersTask", [this] { subscribeConsumersFunc(); });
     subscribe_consumers_task->deactivate();
+}
+StorageNATS::~StorageNATS()
+{
+    stopEventLoop();
 }
 
 VirtualColumnsDescription StorageNATS::createVirtuals(StreamingHandleErrorMode handle_error_mode)
@@ -175,23 +177,19 @@ ContextMutablePtr StorageNATS::addSettings(ContextPtr local_context) const
 }
 
 
-void StorageNATS::stopLoop()
+void StorageNATS::stopEventLoop()
 {
     event_handler.stopLoop();
-}
 
-void StorageNATS::stopLoopIfNoReaders()
-{
-    /// Stop the loop if no select was started.
-    /// There can be a case that selects are finished
-    /// but not all sources decremented the counter, then
-    /// it is ok that the loop is not stopped, because
-    /// there is a background task (streaming_task), which
-    /// also checks whether there is an idle loop.
-    std::lock_guard lock(loop_mutex);
-    if (readers_count)
-        return;
-    event_handler.stopLoop();
+    LOG_TRACE(log, "Waiting for event loop thread");
+    Stopwatch watch;
+    if (event_loop_thread)
+    {
+        if (event_loop_thread->joinable())
+            event_loop_thread->join();
+        event_loop_thread.reset();
+    }
+    LOG_TRACE(log, "Event loop thread finished in {} ms.", watch.elapsedMilliseconds());
 }
 
 void StorageNATS::incrementReader()
@@ -275,11 +273,8 @@ bool StorageNATS::subscribeConsumers()
 /* Need to deactivate this way because otherwise might get a deadlock when first deactivate streaming task in shutdown and then
  * inside streaming task try to deactivate any other task
  */
-void StorageNATS::deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool stop_loop)
+void StorageNATS::deactivateTask(BackgroundSchedulePool::TaskHolder & task)
 {
-    if (stop_loop)
-        stopLoop();
-
     std::unique_lock<std::mutex> lock(task_mutex, std::defer_lock);
     lock.lock();
     task->deactivate();
@@ -315,8 +310,6 @@ void StorageNATS::read(
 
     if (mv_attached)
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageNATS with attached materialized views");
-
-    std::lock_guard lock(loop_mutex);
 
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
     auto modified_context = addSettings(local_context);
@@ -399,8 +392,6 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
 
 void StorageNATS::startup()
 {
-    looping_task->activateAndSchedule();
-
     try
     {
         createConsumers();
@@ -409,7 +400,7 @@ void StorageNATS::startup()
     {
         if (throw_on_startup_failure)
         {
-            deactivateTask(looping_task, true);
+            stopEventLoop();
             throw;
         }
 
@@ -427,10 +418,10 @@ void StorageNATS::shutdown(bool /* is_drop */)
 
     /// The order of deactivating tasks is important: wait for streamingToViews() func to finish and
     /// then wait for background event loop to finish.
-    deactivateTask(streaming_task, false);
+    deactivateTask(streaming_task);
 
     /// In case it has not yet been able to setup connection;
-    deactivateTask(subscribe_consumers_task, false);
+    deactivateTask(subscribe_consumers_task);
 
     /// Just a paranoid try catch, it is not actually needed.
     try
@@ -458,7 +449,7 @@ void StorageNATS::shutdown(bool /* is_drop */)
         tryLogCurrentException(log);
     }
 
-    deactivateTask(looping_task, true);
+    stopEventLoop();
 }
 
 void StorageNATS::pushConsumer(NATSConsumerPtr consumer)

@@ -27,6 +27,7 @@ public:
         const String & comment,
         std::unique_ptr<NATSSettings> nats_settings_,
         LoadingStrictnessLevel mode);
+    ~StorageNATS() override;
 
     std::string getName() const override { return "NATS"; }
 
@@ -82,6 +83,7 @@ private:
     LoggerPtr log;
 
     NATSHandler event_handler;
+    std::unique_ptr<ThreadFromGlobalPool> event_loop_thread;
 
     NATSConnectionPtr consumers_connection; /// Connection for all consumers
     NATSConfiguration configuration;
@@ -98,7 +100,6 @@ private:
     std::once_flag flag; /// remove exchange only once
     std::mutex task_mutex;
     BackgroundSchedulePool::TaskHolder streaming_task;
-    BackgroundSchedulePool::TaskHolder looping_task;
     BackgroundSchedulePool::TaskHolder subscribe_consumers_task;
 
     /// True if consumers have subscribed to all subjects
@@ -111,21 +112,12 @@ private:
     std::atomic<size_t> readers_count = 0;
     std::atomic<bool> mv_attached = false;
 
-    /// In select query we start event loop, but do not stop it
-    /// after that select is finished. Then in a thread, which
-    /// checks for MV we also check if we have select readers.
-    /// If not - we turn off the loop. The checks are done under
-    /// mutex to avoid having a turned off loop when select was
-    /// started.
-    std::mutex loop_mutex;
-
     mutable bool drop_table = false;
     bool throw_on_startup_failure;
 
     NATSConsumerPtr createConsumer();
 
     bool isSubjectInSubscriptions(const std::string & subject);
-
 
     /// Functions working in the background
     void streamingToViewsFunc();
@@ -134,8 +126,7 @@ private:
     void createConsumers();
     bool subscribeConsumers();
 
-    void stopLoop();
-    void stopLoopIfNoReaders();
+    void stopEventLoop();
 
     static Names parseList(const String & list, char delim);
     static String getTableBasedName(String name, const StorageID & table_id);
@@ -143,7 +134,7 @@ private:
 
     ContextMutablePtr addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;
-    void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool stop_loop);
+    void deactivateTask(BackgroundSchedulePool::TaskHolder & task);
 
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
