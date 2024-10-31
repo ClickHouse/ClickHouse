@@ -177,6 +177,7 @@ def started_cluster():
         cluster.add_instance(
             "node_cloud_mode",
             with_zookeeper=True,
+            keeper_required_feature_flags=["create_if_not_exists"],
             stay_alive=True,
             main_configs=[
                 "configs/zookeeper.xml",
