@@ -23,7 +23,7 @@ size_t computeMaxTableNameLength(const String & database_name, ContextPtr contex
 
     size_t escaped_db_name_length = escapeForFileName(database_name).length();
     const size_t uuid_length = 36; // Standard UUID length
-    const size_t extension_length = 6; // Length of ".sql" including three dots
+    const size_t extension_length = strlen(".sql"); // Length of ".sql"
 
     // Adjust for database name and UUID in dropped table filenames
     size_t max_to_drop = max_dropped_length - escaped_db_name_length - uuid_length - extension_length;

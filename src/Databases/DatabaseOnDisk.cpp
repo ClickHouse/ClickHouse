@@ -393,10 +393,12 @@ void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to
     size_t allowed_max_length = computeMaxTableNameLength(database_name, getContext());
     String table_metadata_path = getObjectMetadataPath(to_table_name);
 
-    if (escapeForFileName(to_table_name).length() > allowed_max_length)
+    const auto escaped_name_length = escapeForFileName(to_table_name).length();
+
+    if (escaped_length > allowed_max_length)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                         "The max length of table name for database {} is {}, current length is {}",
-                        database_name, allowed_max_length, to_table_name.length());
+                        database_name, allowed_max_length, escaped_length);
 
     if (fs::exists(table_metadata_path))
     {
