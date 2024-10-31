@@ -234,7 +234,7 @@ public:
 
     CancellationCode cancelQuery(CancelReason reason);
 
-    void throwProperExceptionIfNeeded(UInt64 max_execution_time);
+    void throwProperExceptionIfNeeded(const UInt64 & max_execution_time, const UInt64 & elapsed_ns = 0);
 
     bool isKilled() const { return is_killed; }
 
