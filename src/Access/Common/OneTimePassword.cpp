@@ -7,6 +7,18 @@
 
 #include "config.h"
 
+#if USE_SSL
+
+#include <cotp.h>
+
+constexpr int TOTP_SHA512 = SHA512;
+constexpr int TOTP_SHA256 = SHA256;
+constexpr int TOTP_SHA1 = SHA1;
+#undef SHA512
+#undef SHA256
+#undef SHA1
+
+#endif
 
 namespace DB
 {
@@ -15,6 +27,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static const UInt8 b32_alphabet[] = u8"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -109,7 +122,7 @@ OneTimePasswordConfig::OneTimePasswordConfig(Int32 num_digits_, Int32 period_, c
 
 std::string_view OneTimePasswordConfig::getAlgorithmName() const { return toString(algorithm); }
 
-String getOneTimePasswordLink(const String & secret, const OneTimePasswordConfig & config)
+String getOneTimePasswordSecretLink(const String & secret, const OneTimePasswordConfig & config)
 {
     validateBase32Secret(secret);
 
@@ -120,60 +133,41 @@ String getOneTimePasswordLink(const String & secret, const OneTimePasswordConfig
         secret, config.num_digits, config.period, toString(config.algorithm));
 }
 
-bool checkOneTimePassword(const String & password, const String & secret, const OneTimePasswordConfig & config)
+String getOneTimePassword(const String & secret [[ maybe_unused ]], const OneTimePasswordConfig & config [[ maybe_unused ]], UInt64 current_time [[ maybe_unused ]])
 {
-    return password == getOneTimePassword(secret, config);
-}
-
-}
-
 #if USE_SSL
-
-#include <cotp.h>
-
-constexpr int TOTP_SHA512 = SHA512;
-constexpr int TOTP_SHA256 = SHA256;
-constexpr int TOTP_SHA1 = SHA1;
-#undef SHA512
-#undef SHA256
-#undef SHA1
-
-namespace DB
-{
-
-String getOneTimePassword(const String & secret, const OneTimePasswordConfig & config)
-{
-    validateBase32Secret(secret);
-
-    cotp_error_t error;
     int sha_algo = config.algorithm == OneTimePasswordConfig::Algorithm::SHA512 ? TOTP_SHA512
                  : config.algorithm == OneTimePasswordConfig::Algorithm::SHA256 ? TOTP_SHA256
                  : TOTP_SHA1;
 
-    auto result = std::unique_ptr<char>(get_totp(secret.c_str(), config.num_digits, config.period, sha_algo, &error));
+    cotp_error_t error;
+    auto result = std::unique_ptr<char>(get_totp_at(secret.c_str(), current_time, config.num_digits, config.period, sha_algo, &error));
+
     if (result == nullptr || (error != NO_ERROR && error != VALID))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while retrieving one-time password, code: {}",
             static_cast<std::underlying_type_t<cotp_error_t>>(error));
     return String(result.get(), strlen(result.get()));
-}
-
-}
-
 #else
-
-namespace DB
-{
-
-namespace ErrorCodes
-{
-    extern const int SUPPORT_IS_DISABLED;
-}
-
-String getOneTimePassword(const String & secret)
-{
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "One-time password support is disabled, because ClickHouse was built without openssl library");
-}
-
-}
-
 #endif
+}
+
+
+bool checkOneTimePassword(const String & password, const String & secret, const OneTimePasswordConfig & config)
+{
+    if (password.size() != static_cast<size_t>(config.num_digits)
+     || !std::all_of(password.begin(), password.end(), isdigit))
+        return false;
+
+    validateBase32Secret(secret);
+
+    auto current_time = static_cast<UInt64>(std::time(nullptr));
+    for (int delta : {0, -1, 1})
+    {
+        if (password == getOneTimePassword(secret, config, current_time + delta * config.period))
+            return true;
+    }
+    return false;
+}
+
+}

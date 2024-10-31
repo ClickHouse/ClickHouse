@@ -27,9 +27,9 @@ def started_cluster():
         cluster.shutdown()
 
 
-def generate_totp(secret, interval=30, digits=6):
+def generate_totp(secret, interval=30, digits=6, timepoint=None):
     key = base64.b32decode(secret, casefold=True)
-    time_step = int(time.time() / interval)
+    time_step = int(timepoint or time.time() / interval)
     msg = struct.pack(">Q", time_step)
     hmac_hash = hmac.new(key, msg, hashlib.sha1).digest()
     offset = hmac_hash[-1] & 0x0F
@@ -40,12 +40,17 @@ def generate_totp(secret, interval=30, digits=6):
 
 def test_one_time_password(started_cluster):
     query_text = "SELECT currentUser() || toString(42)"
-
     totuser_secret = {"secret": "INWGSY3LJBXXK43FBIAA====", "interval": 10, "digits": 9}
-    old_password = generate_totp(**totuser_secret)
-    old_password_created = time.time()
-    assert "totuser42\n" == node.query(
+
+    old_password = generate_totp(
+        **totuser_secret, timepoint=time.time() - 3 * totuser_secret["interval"]
+    )
+    assert "AUTHENTICATION_FAILED" in node.query_and_get_error(
         query_text, user="totuser", password=old_password
+    )
+
+    assert "totuser42\n" == node.query(
+        query_text, user="totuser", password=generate_totp(**totuser_secret)
     )
 
     assert "totuser42\n" == node.query(
@@ -60,6 +65,7 @@ def test_one_time_password(started_cluster):
 
     for bad_secret, error_message in [
         ("i11egalbase32", "Invalid character in*secret"),
+        ("abc$d", "Invalid character in*secret"),
         ("   ", "Empty secret"),
         ("   =", "Empty secret"),
         ("", "Empty secret"),
@@ -99,14 +105,3 @@ def test_one_time_password(started_cluster):
     ).splitlines()
     assert resp[0].startswith("totuser\tone_time_password\tSHA1\t9\t10"), resp
     assert resp[1].startswith("user2\tone_time_password"), resp
-
-    # check that old password invalidated
-    elapsed = int(time.time() - old_password_created)
-    for _ in range(20 - elapsed):
-        time.sleep(1)
-        print(".", end="", flush=True)
-    print()
-
-    assert "AUTHENTICATION_FAILED" in node.query_and_get_error(
-        query_text, user="totuser", password=old_password
-    )

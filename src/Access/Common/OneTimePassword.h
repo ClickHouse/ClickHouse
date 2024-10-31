@@ -24,10 +24,7 @@ struct OneTimePasswordConfig
     std::string_view getAlgorithmName() const;
 };
 
-
-String getOneTimePasswordLink(const String & secret, const OneTimePasswordConfig & config);
-
-String getOneTimePassword(const String & secret, const OneTimePasswordConfig & config);
+String getOneTimePasswordSecretLink(const String & secret, const OneTimePasswordConfig & config);
 bool checkOneTimePassword(const String & password, const String & secret, const OneTimePasswordConfig & config);
 
 /// Checks if the secret contains only valid base32 characters.
