@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel
+# Tags: long
 
 set -e
 

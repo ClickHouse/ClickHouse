@@ -81,6 +81,8 @@ void JSONColumnsWithMetadataBlockOutputFormat::finalizeImpl()
         rows,
         statistics.rows_before_limit,
         statistics.applied_limit,
+        statistics.rows_before_aggregation,
+        statistics.applied_aggregation,
         statistics.watch,
         statistics.progress,
         format_settings.write_statistics,

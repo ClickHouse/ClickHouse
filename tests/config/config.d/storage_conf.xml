@@ -19,13 +19,15 @@
                 <type>cache</type>
                 <disk>s3_disk</disk>
                 <path>s3_cache/</path>
-                <max_size>104857600</max_size>
+                <max_size>209715200</max_size>
+                <max_file_segment_size>5Mi</max_file_segment_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
                 <cache_policy>LRU</cache_policy>
                 <slru_size_ratio>0.3</slru_size_ratio>
                 <keep_free_space_size_ratio>0.15</keep_free_space_size_ratio>
                 <keep_free_space_elements_ratio>0.15</keep_free_space_elements_ratio>
+                <load_metadata_asynchronously>0</load_metadata_asynchronously>
             </s3_cache>
             <s3_cache_02933>
                 <type>cache</type>
@@ -36,6 +38,7 @@
                 <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
                 <background_download_threads>0</background_download_threads>
                 <background_download_queue_size_limit>0</background_download_queue_size_limit>
+                <load_metadata_asynchronously>0</load_metadata_asynchronously>
             </s3_cache_02933>
             <!-- local disks -->
             <local_disk>

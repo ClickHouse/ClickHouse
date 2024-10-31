@@ -15,7 +15,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/ResizeProcessor.h>
-#include <Processors/RowsBeforeLimitCounter.h>
+#include <Processors/RowsBeforeStepCounter.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
@@ -300,7 +300,8 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
         /// It may happen if max_distributed_connections > max_threads
         max_threads_limit = std::max(pipeline.max_threads, max_threads_limit);
 
-        concurrency_control = pipeline.getConcurrencyControl();
+        // Use concurrency control if at least one of pipelines is using it
+        concurrency_control = concurrency_control || pipeline.getConcurrencyControl();
     }
 
     QueryPipelineBuilder pipeline;
@@ -311,8 +312,8 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
     {
         pipeline.setMaxThreads(max_threads);
         pipeline.limitMaxThreads(max_threads_limit);
-        pipeline.setConcurrencyControl(concurrency_control);
     }
+    pipeline.setConcurrencyControl(concurrency_control);
 
     pipeline.setCollectedProcessors(nullptr);
     return pipeline;
@@ -373,11 +374,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
         auto joining = std::make_shared<PasteJoinTransform>(join, inputs, out_header, max_block_size);
         return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
     }
-    else
-    {
-        auto joining = std::make_shared<MergeJoinTransform>(join, inputs, out_header, max_block_size);
-        return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
-    }
+
+    auto joining = std::make_shared<MergeJoinTransform>(join, inputs, out_header, max_block_size);
+    return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
 }
 
 std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLeft(

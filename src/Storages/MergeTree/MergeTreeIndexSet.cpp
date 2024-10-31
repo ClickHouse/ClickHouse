@@ -44,10 +44,12 @@ MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
     const String & index_name_,
     const Block & index_sample_block_,
     size_t max_rows_,
-    MutableColumns && mutable_columns_)
+    MutableColumns && mutable_columns_,
+    std::vector<Range> && set_hyperrectangle_)
     : index_name(index_name_)
     , max_rows(max_rows_)
     , block(index_sample_block_.cloneWithColumns(std::move(mutable_columns_)))
+    , set_hyperrectangle(std::move(set_hyperrectangle_))
 {
 }
 
@@ -95,16 +97,23 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     Field field_rows;
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
     size_type->getDefaultSerialization()->deserializeBinary(field_rows, istr, {});
-    size_t rows_to_read = field_rows.get<size_t>();
+    size_t rows_to_read = field_rows.safeGet<size_t>();
 
     if (rows_to_read == 0)
+    {
+        block.clear();
         return;
+    }
 
     size_t num_columns = block.columns();
 
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
     settings.position_independent_encoding = false;
+
+    set_hyperrectangle.clear();
+    Field min_val;
+    Field max_val;
 
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -116,6 +125,13 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
 
         serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
         serialization->deserializeBinaryBulkWithMultipleStreams(elem.column, rows_to_read, settings, state, nullptr);
+
+        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(elem.column.get()))
+            column_nullable->getExtremesNullLast(min_val, max_val);
+        else
+            elem.column->getExtremes(min_val, max_val);
+
+        set_hyperrectangle.emplace_back(min_val, true, max_val, true);
     }
 }
 
@@ -182,10 +198,29 @@ void MergeTreeIndexAggregatorSet::update(const Block & block, size_t * pos, size
 
     if (has_new_data)
     {
+        FieldRef field_min;
+        FieldRef field_max;
         for (size_t i = 0; i < columns.size(); ++i)
         {
             auto filtered_column = block.getByName(index_columns[i]).column->filter(filter, block.rows());
             columns[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
+
+            if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(filtered_column.get()))
+                column_nullable->getExtremesNullLast(field_min, field_max);
+            else
+                filtered_column->getExtremes(field_min, field_max);
+
+            if (set_hyperrectangle.size() <= i)
+            {
+                set_hyperrectangle.emplace_back(field_min, true, field_max, true);
+            }
+            else
+            {
+                set_hyperrectangle[i].left
+                    = applyVisitor(FieldVisitorAccurateLess(), set_hyperrectangle[i].left, field_min) ? set_hyperrectangle[i].left : field_min;
+                set_hyperrectangle[i].right
+                    = applyVisitor(FieldVisitorAccurateLess(), set_hyperrectangle[i].right, field_max) ? field_max : set_hyperrectangle[i].right;
+            }
         }
     }
 
@@ -221,7 +256,7 @@ bool MergeTreeIndexAggregatorSet::buildFilter(
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSet::getGranuleAndReset()
 {
-    auto granule = std::make_shared<MergeTreeIndexGranuleSet>(index_name, index_sample_block, max_rows, std::move(columns));
+    auto granule = std::make_shared<MergeTreeIndexGranuleSet>(index_name, index_sample_block, max_rows, std::move(columns), std::move(set_hyperrectangle));
 
     switch (data.type)
     {
@@ -240,17 +275,22 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSet::getGranuleAndReset()
     return granule;
 }
 
+KeyCondition buildCondition(const IndexDescription & index, const ActionsDAG * filter_actions_dag, ContextPtr context)
+{
+    return KeyCondition{filter_actions_dag, context, index.column_names, index.expression};
+}
 
 MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
-    const String & index_name_,
-    const Block & index_sample_block,
     size_t max_rows_,
-    const ActionsDAGPtr & filter_dag,
-    ContextPtr context)
-    : index_name(index_name_)
+    const ActionsDAG * filter_dag,
+    ContextPtr context,
+    const IndexDescription & index_description)
+    : index_name(index_description.name)
     , max_rows(max_rows_)
+    , index_data_types(index_description.data_types)
+    , condition(buildCondition(index_description, filter_dag, context))
 {
-    for (const auto & name : index_sample_block.getNames())
+    for (const auto & name : index_description.sample_block.getNames())
         if (!key_columns.contains(name))
             key_columns.insert(name);
 
@@ -266,15 +306,15 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
             return;
 
     auto filter_actions_dag = filter_dag->clone();
-    const auto * filter_actions_dag_node = filter_actions_dag->getOutputs().at(0);
+    const auto * filter_actions_dag_node = filter_actions_dag.getOutputs().at(0);
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
-    filter_actions_dag->getOutputs()[0] = &traverseDAG(*filter_actions_dag_node, filter_actions_dag, context, node_to_result_node);
+    filter_actions_dag.getOutputs()[0] = &traverseDAG(*filter_actions_dag_node, filter_actions_dag, context, node_to_result_node);
 
-    filter_actions_dag->removeUnusedActions();
-    actions = std::make_shared<ExpressionActions>(filter_actions_dag);
+    filter_actions_dag.removeUnusedActions();
 
-    actions_output_column_name = filter_actions_dag->getOutputs().at(0)->result_name;
+    actions_output_column_name = filter_actions_dag.getOutputs().at(0)->result_name;
+    actions = std::make_shared<ExpressionActions>(std::move(filter_actions_dag));
 }
 
 bool MergeTreeIndexConditionSet::alwaysUnknownOrTrue() const
@@ -293,6 +333,9 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
     if (size == 0 || (max_rows != 0 && size > max_rows))
         return true;
 
+    if (!condition.checkInHyperrectangle(granule.set_hyperrectangle, index_data_types).can_be_true)
+        return false;
+
     Block result = granule.block;
     actions->execute(result);
 
@@ -306,7 +349,7 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
 }
 
 
-static const ActionsDAG::NodeRawConstPtrs & getArguments(const ActionsDAG::Node & node, const ActionsDAGPtr & result_dag_or_null, ActionsDAG::NodeRawConstPtrs * storage)
+static const ActionsDAG::NodeRawConstPtrs & getArguments(const ActionsDAG::Node & node, ActionsDAG * result_dag_or_null, ActionsDAG::NodeRawConstPtrs * storage)
 {
     chassert(node.type == ActionsDAG::ActionType::FUNCTION);
     if (node.function_base->getName() != "indexHint")
@@ -316,17 +359,17 @@ static const ActionsDAG::NodeRawConstPtrs & getArguments(const ActionsDAG::Node 
     const auto & adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor &>(*node.function_base);
     const auto & index_hint = typeid_cast<const FunctionIndexHint &>(*adaptor.getFunction());
     if (!result_dag_or_null)
-        return index_hint.getActions()->getOutputs();
+        return index_hint.getActions().getOutputs();
 
     /// Import the DAG and map argument pointers.
-    ActionsDAGPtr actions_clone = index_hint.getActions()->clone();
+    auto actions_clone = index_hint.getActions().clone();
     chassert(storage);
-    result_dag_or_null->mergeNodes(std::move(*actions_clone), storage);
+    result_dag_or_null->mergeNodes(std::move(actions_clone), storage);
     return *storage;
 }
 
 const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDAG::Node & node,
-    ActionsDAGPtr & result_dag,
+    ActionsDAG & result_dag,
     const ContextPtr & context,
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node) const
 {
@@ -348,7 +391,7 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
             atom_node_ptr->type == ActionsDAG::ActionType::FUNCTION)
         {
             auto bit_wrapper_function = FunctionFactory::instance().get("__bitWrapperFunc", context);
-            result_node = &result_dag->addFunction(bit_wrapper_function, {atom_node_ptr}, {});
+            result_node = &result_dag.addFunction(bit_wrapper_function, {atom_node_ptr}, {});
         }
     }
     else
@@ -359,14 +402,14 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
         unknown_field_column_with_type.type = std::make_shared<DataTypeUInt8>();
         unknown_field_column_with_type.column = unknown_field_column_with_type.type->createColumnConst(1, UNKNOWN_FIELD);
 
-        result_node = &result_dag->addColumn(unknown_field_column_with_type);
+        result_node = &result_dag.addColumn(unknown_field_column_with_type);
     }
 
     node_to_result_node.emplace(&node, result_node);
     return *result_node;
 }
 
-const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDAG::Node & node, ActionsDAGPtr & result_dag, const ContextPtr & context) const
+const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDAG::Node & node, ActionsDAG & result_dag, const ContextPtr & context) const
 {
     /// Function, literal or column
 
@@ -386,7 +429,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
         const auto * result_node = node_to_check;
 
         if (node.type != ActionsDAG::ActionType::INPUT)
-            result_node = &result_dag->addInput(column_name, node.result_type);
+            result_node = &result_dag.addInput(column_name, node.result_type);
 
         return result_node;
     }
@@ -407,11 +450,11 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
             return nullptr;
     }
 
-    return &result_dag->addFunction(node.function_base, children, {});
+    return &result_dag.addFunction(node.function_base, children, {});
 }
 
 const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const ActionsDAG::Node & node,
-    ActionsDAGPtr & result_dag,
+    ActionsDAG & result_dag,
     const ContextPtr & context,
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node) const
 {
@@ -429,7 +472,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
 
     auto function_name = node_to_check->function->getName();
     ActionsDAG::NodeRawConstPtrs temp_ptrs_to_argument;
-    const auto & arguments = getArguments(*node_to_check, result_dag, &temp_ptrs_to_argument);
+    const auto & arguments = getArguments(*node_to_check, &result_dag, &temp_ptrs_to_argument);
     size_t arguments_size = arguments.size();
 
     if (function_name == "not")
@@ -440,9 +483,9 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
         const ActionsDAG::Node * argument = &traverseDAG(*arguments[0], result_dag, context, node_to_result_node);
 
         auto bit_swap_last_two_function = FunctionFactory::instance().get("__bitSwapLastTwo", context);
-        return &result_dag->addFunction(bit_swap_last_two_function, {argument}, {});
+        return &result_dag.addFunction(bit_swap_last_two_function, {argument}, {});
     }
-    else if (function_name == "and" || function_name == "indexHint" || function_name == "or")
+    if (function_name == "and" || function_name == "indexHint" || function_name == "or")
     {
         if (arguments_size < 1)
             return nullptr;
@@ -468,7 +511,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
             const auto * before_last_argument = children.back();
             children.pop_back();
 
-            last_argument = &result_dag->addFunction(function, {before_last_argument, last_argument}, {});
+            last_argument = &result_dag.addFunction(function, {before_last_argument, last_argument}, {});
         }
 
         return last_argument;
@@ -492,13 +535,13 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
             sets_to_prepare.push_back(set);
         return false;
     }
-    else if (node.column && isColumnConst(*node.column))
+    if (node.column && isColumnConst(*node.column))
     {
         Field literal;
         node.column->get(0, literal);
         return !atomic && literal.safeGet<bool>();
     }
-    else if (node.type == ActionsDAG::ActionType::FUNCTION)
+    if (node.type == ActionsDAG::ActionType::FUNCTION)
     {
         auto column_name = tree_node.getColumnName();
         if (key_columns.contains(column_name))
@@ -519,13 +562,17 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
             }
             return all_useless;
         }
-        else if (function_name == "or")
-            return std::any_of(arguments.begin(), arguments.end(), [&, atomic](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, atomic); });
-        else if (function_name == "not")
+        if (function_name == "or")
+            return std::any_of(
+                arguments.begin(),
+                arguments.end(),
+                [&, atomic](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, atomic); });
+        if (function_name == "not")
             return checkDAGUseless(*arguments.at(0), context, sets_to_prepare, atomic);
-        else
-            return std::any_of(arguments.begin(), arguments.end(),
-                [&](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, true /*atomic*/); });
+        return std::any_of(
+            arguments.begin(),
+            arguments.end(),
+            [&](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, true /*atomic*/); });
     }
 
     auto column_name = tree_node.getColumnName();
@@ -544,14 +591,14 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator(const Merge
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
-    const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const
+    const ActionsDAG * filter_actions_dag, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionSet>(index.name, index.sample_block, max_rows, filter_actions_dag, context);
+    return std::make_shared<MergeTreeIndexConditionSet>(max_rows, filter_actions_dag, context, index);
 }
 
 MergeTreeIndexPtr setIndexCreator(const IndexDescription & index)
 {
-    size_t max_rows = index.arguments[0].get<size_t>();
+    size_t max_rows = index.arguments[0].safeGet<size_t>();
     return std::make_shared<MergeTreeIndexSet>(index, max_rows);
 }
 
@@ -559,7 +606,7 @@ void setIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
     if (index.arguments.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index must have exactly one argument.");
-    else if (index.arguments[0].getType() != Field::Types::UInt64)
+    if (index.arguments[0].getType() != Field::Types::UInt64)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index argument must be positive integer.");
 }
 

@@ -9,17 +9,21 @@ import random
 import re
 import shlex
 import shutil
+import signal
 import string
 import subprocess
 import sys
 import time
-import zlib  # for crc32
 from collections import defaultdict
 from itertools import chain
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
+from ci_utils import kill_ci_runner
 from env_helper import IS_CI
 from integration_test_images import IMAGES
+from report import JOB_TIMEOUT_TEST_NAME
+from stopwatch import Stopwatch
+from tee_popen import TeePopen
 
 MAX_RETRY = 1
 NUM_WORKERS = 5
@@ -29,17 +33,14 @@ CLICKHOUSE_BINARY_PATH = "usr/bin/clickhouse"
 CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-odbc-bridge"
 CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-library-bridge"
 
-FLAKY_TRIES_COUNT = 10
+FLAKY_TRIES_COUNT = 3  # run whole pytest several times
+FLAKY_REPEAT_COUNT = 5  # runs test case in single module several times
 MAX_TIME_SECONDS = 3600
 
 MAX_TIME_IN_SANDBOX = 20 * 60  # 20 minutes
 TASK_TIMEOUT = 8 * 60 * 60  # 8 hours
 
 NO_CHANGES_MSG = "Nothing to run"
-
-
-def stringhash(s):
-    return zlib.crc32(s.encode("utf-8"))
 
 
 # Search test by the common prefix.
@@ -67,9 +68,9 @@ def get_changed_tests_to_run(pr_info, repo_path):
         return []
 
     for fpath in changed_files:
-        if "tests/integration/test_" in fpath:
+        if re.search(r"tests/integration/test_.*/test.*\.py", fpath) is not None:
             logging.info("File %s changed and seems like integration test", fpath)
-            result.add(fpath.split("/")[2])
+            result.add("/".join(fpath.split("/")[2:]))
     return filter_existing_tests(result, repo_path)
 
 
@@ -249,7 +250,8 @@ def clear_ip_tables_and_restart_daemons():
 
 
 class ClickhouseIntegrationTestsRunner:
-    def __init__(self, result_path, params):
+    def __init__(self, repo_path: str, result_path: str, params: dict):
+        self.repo_path = repo_path
         self.result_path = result_path
         self.params = params
 
@@ -307,11 +309,11 @@ class ClickhouseIntegrationTestsRunner:
     def shuffle_test_groups(self):
         return self.shuffle_groups != 0
 
-    def _pre_pull_images(self, repo_path):
-        image_cmd = self._get_runner_image_cmd(repo_path)
+    def _pre_pull_images(self):
+        image_cmd = self._get_runner_image_cmd()
 
         cmd = (
-            f"cd {repo_path}/tests/integration && "
+            f"cd {self.repo_path}/tests/integration && "
             f"timeout --signal=KILL 1h ./runner {self._get_runner_opts()} {image_cmd} "
             "--pre-pull --command ' echo Pre Pull finished ' "
         )
@@ -327,7 +329,9 @@ class ClickhouseIntegrationTestsRunner:
             except subprocess.CalledProcessError as err:
                 logging.info("docker-compose pull failed: %s", str(err))
                 continue
-        logging.error("Pulling images failed for 5 attempts. Will fail the worker.")
+        message = "Pulling images failed for 5 attempts. Will fail the worker."
+        logging.error(message)
+        kill_ci_runner(message)
         # We pass specific retcode to to ci/integration_test_check.py to skip status reporting and restart job
         sys.exit(13)
 
@@ -355,20 +359,13 @@ class ClickhouseIntegrationTestsRunner:
                     logging.info("Package found in %s", full_path)
                     log_name = "install_" + f + ".log"
                     log_path = os.path.join(str(self.path()), log_name)
-                    with open(log_path, "w", encoding="utf-8") as log:
-                        cmd = f"dpkg -x {full_path} ."
-                        logging.info("Executing installation cmd %s", cmd)
-                        with subprocess.Popen(
-                            cmd, shell=True, stderr=log, stdout=log
-                        ) as proc:
-                            if proc.wait() == 0:
-                                logging.info(
-                                    "Installation of %s successfull", full_path
-                                )
-                            else:
-                                raise RuntimeError(
-                                    f"Installation of {full_path} failed"
-                                )
+                    cmd = f"dpkg -x {full_path} ."
+                    logging.info("Executing installation cmd %s", cmd)
+                    with TeePopen(cmd, log_file=log_path) as proc:
+                        if proc.wait() == 0:
+                            logging.info("Installation of %s successfull", full_path)
+                        else:
+                            raise RuntimeError(f"Installation of {full_path} failed")
                     break
             else:
                 raise FileNotFoundError(f"Package with {package} not found")
@@ -421,12 +418,12 @@ class ClickhouseIntegrationTestsRunner:
 
         return " ".join(result)
 
-    def _get_all_tests(self, repo_path):
-        image_cmd = self._get_runner_image_cmd(repo_path)
+    def _get_all_tests(self) -> List[str]:
+        image_cmd = self._get_runner_image_cmd()
         runner_opts = self._get_runner_opts()
         out_file_full = os.path.join(self.result_path, "runner_get_all_tests.log")
         cmd = (
-            f"cd {repo_path}/tests/integration && "
+            f"cd {self.repo_path}/tests/integration && "
             f"timeout --signal=KILL 1h ./runner {runner_opts} {image_cmd} -- --setup-plan "
         )
 
@@ -434,7 +431,14 @@ class ClickhouseIntegrationTestsRunner:
             "Getting all tests to the file %s with cmd: \n%s", out_file_full, cmd
         )
         with open(out_file_full, "wb") as ofd:
-            subprocess.check_call(cmd, shell=True, stdout=ofd, stderr=ofd)
+            try:
+                subprocess.check_call(cmd, shell=True, stdout=ofd, stderr=ofd)
+            except subprocess.CalledProcessError as ex:
+                print("ERROR: Setting test plan failed. Output:")
+                with open(out_file_full, "r", encoding="utf-8") as file:
+                    for line in file:
+                        print("    " + line, end="")
+                raise ex
 
         all_tests = set()
         with open(out_file_full, "r", encoding="utf-8") as all_tests_fd:
@@ -500,10 +504,10 @@ class ClickhouseIntegrationTestsRunner:
             for test in current_counters[state]:
                 main_counters[state].append(test)
 
-    def _get_runner_image_cmd(self, repo_path):
+    def _get_runner_image_cmd(self):
         image_cmd = ""
         if self._can_run_with(
-            os.path.join(repo_path, "tests/integration", "runner"),
+            os.path.join(self.repo_path, "tests/integration", "runner"),
             "--docker-image-version",
         ):
             for img in IMAGES:
@@ -515,7 +519,7 @@ class ClickhouseIntegrationTestsRunner:
                     image_cmd += f" --docker-image-version={runner_version} "
                 else:
                     if self._can_run_with(
-                        os.path.join(repo_path, "tests/integration", "runner"),
+                        os.path.join(self.repo_path, "tests/integration", "runner"),
                         "--docker-compose-images-tags",
                     ):
                         image_cmd += (
@@ -556,19 +560,19 @@ class ClickhouseIntegrationTestsRunner:
 
     def try_run_test_group(
         self,
-        repo_path,
         test_group,
         tests_in_group,
         num_tries,
         num_workers,
+        repeat_count,
     ):
         try:
             return self.run_test_group(
-                repo_path,
                 test_group,
                 tests_in_group,
                 num_tries,
                 num_workers,
+                repeat_count,
             )
         except Exception as e:
             logging.info("Failed to run %s:\n%s", test_group, e)
@@ -586,11 +590,11 @@ class ClickhouseIntegrationTestsRunner:
 
     def run_test_group(
         self,
-        repo_path,
         test_group,
         tests_in_group,
         num_tries,
         num_workers,
+        repeat_count,
     ):
         counters = {
             "ERROR": [],
@@ -609,13 +613,16 @@ class ClickhouseIntegrationTestsRunner:
                 tests_times[test] = 0
             return counters, tests_times, []
 
-        image_cmd = self._get_runner_image_cmd(repo_path)
+        image_cmd = self._get_runner_image_cmd()
         test_group_str = test_group.replace("/", "_").replace(".", "_")
 
         log_paths = []
         test_data_dirs = {}
 
         for i in range(num_tries):
+            if timeout_expired:
+                print("Timeout expired - break test group execution")
+                break
             logging.info("Running test group %s for the %s retry", test_group, i)
             clear_ip_tables_and_restart_daemons()
 
@@ -625,32 +632,35 @@ class ClickhouseIntegrationTestsRunner:
                     test_names.add(test_name)
 
             if i == 0:
-                test_data_dirs = self._find_test_data_dirs(repo_path, test_names)
+                test_data_dirs = self._find_test_data_dirs(self.repo_path, test_names)
 
             info_basename = test_group_str + "_" + str(i) + ".nfo"
-            info_path = os.path.join(repo_path, "tests/integration", info_basename)
+            info_path = os.path.join(self.repo_path, "tests/integration", info_basename)
 
             test_cmd = " ".join([shlex.quote(test) for test in sorted(test_names)])
             parallel_cmd = f" --parallel {num_workers} " if num_workers > 0 else ""
+            repeat_cmd = f" --count {repeat_count} " if repeat_count > 0 else ""
             # -r -- show extra test summary:
             # -f -- (f)ailed
             # -E -- (E)rror
             # -p -- (p)assed
             # -s -- (s)kipped
             cmd = (
-                f"cd {repo_path}/tests/integration && "
+                f"cd {self.repo_path}/tests/integration && "
                 f"timeout --signal=KILL 1h ./runner {self._get_runner_opts()} "
-                f"{image_cmd} -t {test_cmd} {parallel_cmd} -- -rfEps --run-id={i} "
+                f"{image_cmd} -t {test_cmd} {parallel_cmd} {repeat_cmd} -- -rfEps --run-id={i} "
                 f"--color=no --durations=0 {_get_deselect_option(self.should_skip_tests())} "
                 f"| tee {info_path}"
             )
 
             log_basename = test_group_str + "_" + str(i) + ".log"
-            log_path = os.path.join(repo_path, "tests/integration", log_basename)
+            log_path = os.path.join(self.repo_path, "tests/integration", log_basename)
             with open(log_path, "w", encoding="utf-8") as log:
                 logging.info("Executing cmd: %s", cmd)
                 # ignore retcode, since it meaningful due to pipe to tee
                 with subprocess.Popen(cmd, shell=True, stderr=log, stdout=log) as proc:
+                    global runner_subprocess  # pylint:disable=global-statement
+                    runner_subprocess = proc
                     proc.wait()
 
             extra_logs_names = [log_basename]
@@ -661,7 +671,7 @@ class ClickhouseIntegrationTestsRunner:
             log_paths.append(log_result_path)
 
             for pytest_log_path in glob.glob(
-                os.path.join(repo_path, "tests/integration/pytest*.log")
+                os.path.join(self.repo_path, "tests/integration/pytest*.log")
             ):
                 new_name = (
                     test_group_str
@@ -672,11 +682,13 @@ class ClickhouseIntegrationTestsRunner:
                 )
                 os.rename(
                     pytest_log_path,
-                    os.path.join(repo_path, "tests/integration", new_name),
+                    os.path.join(self.repo_path, "tests/integration", new_name),
                 )
                 extra_logs_names.append(new_name)
 
-            dockerd_log_path = os.path.join(repo_path, "tests/integration/dockerd.log")
+            dockerd_log_path = os.path.join(
+                self.repo_path, "tests/integration/dockerd.log"
+            )
             if os.path.exists(dockerd_log_path):
                 new_name = (
                     test_group_str
@@ -687,7 +699,7 @@ class ClickhouseIntegrationTestsRunner:
                 )
                 os.rename(
                     dockerd_log_path,
-                    os.path.join(repo_path, "tests/integration", new_name),
+                    os.path.join(self.repo_path, "tests/integration", new_name),
                 )
                 extra_logs_names.append(new_name)
 
@@ -704,7 +716,7 @@ class ClickhouseIntegrationTestsRunner:
                 for test_name, test_time in new_tests_times.items():
                     tests_times[test_name] = test_time
 
-            test_data_dirs_new = self._find_test_data_dirs(repo_path, test_names)
+            test_data_dirs_new = self._find_test_data_dirs(self.repo_path, test_names)
             test_data_dirs_diff = self._get_test_data_dirs_difference(
                 test_data_dirs_new, test_data_dirs
             )
@@ -716,7 +728,7 @@ class ClickhouseIntegrationTestsRunner:
                     "integration_run_" + test_group_str + "_" + str(i) + ".tar.zst",
                 )
                 self._compress_logs(
-                    os.path.join(repo_path, "tests/integration"),
+                    os.path.join(self.repo_path, "tests/integration"),
                     extra_logs_names + list(test_data_dirs_diff),
                     extras_result_path,
                 )
@@ -756,10 +768,10 @@ class ClickhouseIntegrationTestsRunner:
 
         return counters, tests_times, log_paths
 
-    def run_flaky_check(self, repo_path, build_path, should_fail=False):
+    def run_flaky_check(self, build_path, should_fail=False):
         pr_info = self.params["pr_info"]
 
-        tests_to_run = get_changed_tests_to_run(pr_info, repo_path)
+        tests_to_run = get_changed_tests_to_run(pr_info, self.repo_path)
         if not tests_to_run:
             logging.info("No integration tests to run found")
             return "success", NO_CHANGES_MSG, [(NO_CHANGES_MSG, "OK")], ""
@@ -768,39 +780,70 @@ class ClickhouseIntegrationTestsRunner:
         logging.info("Found '%s' tests to run", " ".join(tests_to_run))
         result_state = "success"
         description_prefix = "No flaky tests: "
-        start = time.time()
         logging.info("Starting check with retries")
         final_retry = 0
-        logs = []
-        tires_num = 1 if should_fail else FLAKY_TRIES_COUNT
-        for i in range(tires_num):
-            final_retry += 1
-            logging.info("Running tests for the %s time", i)
-            counters, tests_times, log_paths = self.try_run_test_group(
-                repo_path, "bugfix" if should_fail else "flaky", tests_to_run, 1, 1
-            )
-            logs += log_paths
-            if counters["FAILED"]:
-                logging.info("Found failed tests: %s", " ".join(counters["FAILED"]))
-                description_prefix = "Failed tests found: "
-                result_state = "failure"
-                if not should_fail:
+        counters = {
+            "ERROR": [],
+            "PASSED": [],
+            "FAILED": [],
+            "SKIPPED": [],
+            "BROKEN": [],
+            "NOT_FAILED": [],
+        }  # type: Dict
+        tests_times = defaultdict(float)  # type: Dict
+        tests_log_paths = defaultdict(list)
+        id_counter = 0
+        for test_to_run in tests_to_run:
+            tries_num = 1 if should_fail else FLAKY_TRIES_COUNT
+            for i in range(tries_num):
+                if timeout_expired:
+                    print("Timeout expired - break flaky check execution")
                     break
-            if counters["ERROR"]:
-                description_prefix = "Failed tests found: "
-                logging.info("Found error tests: %s", " ".join(counters["ERROR"]))
-                # NOTE "error" result state will restart the whole test task,
-                # so we use "failure" here
-                result_state = "failure"
-                if not should_fail:
+                final_retry += 1
+                logging.info("Running tests for the %s time", i)
+                group_counters, group_test_times, log_paths = self.try_run_test_group(
+                    f"bugfix_{id_counter}" if should_fail else f"flaky{id_counter}",
+                    [test_to_run],
+                    1,
+                    1,
+                    FLAKY_REPEAT_COUNT,
+                )
+                id_counter = id_counter + 1
+                for counter, value in group_counters.items():
+                    logging.info(
+                        "Tests from group %s stats, %s count %s",
+                        test_to_run,
+                        counter,
+                        len(value),
+                    )
+                    counters[counter] += value
+
+                for test_name, test_time in group_test_times.items():
+                    tests_times[test_name] = test_time
+                    tests_log_paths[test_name] = log_paths
+                if not should_fail and (
+                    group_counters["FAILED"] or group_counters["ERROR"]
+                ):
+                    logging.info(
+                        "Unexpected failure in group %s. Fail fast for current group",
+                        test_to_run,
+                    )
                     break
-            logging.info("Try is OK, all tests passed, going to clear env")
-            clear_ip_tables_and_restart_daemons()
-            logging.info("And going to sleep for some time")
-            if time.time() - start > MAX_TIME_SECONDS:
-                logging.info("Timeout reached, going to finish flaky check")
-                break
-            time.sleep(5)
+
+        if counters["FAILED"]:
+            logging.info("Found failed tests: %s", " ".join(counters["FAILED"]))
+            description_prefix = "Failed tests found: "
+            result_state = "failure"
+        if counters["ERROR"]:
+            description_prefix = "Failed tests found: "
+            logging.info("Found error tests: %s", " ".join(counters["ERROR"]))
+            # NOTE "error" result state will restart the whole test task,
+            # so we use "failure" here
+            result_state = "failure"
+        logging.info("Try is OK, all tests passed, going to clear env")
+        clear_ip_tables_and_restart_daemons()
+        logging.info("And going to sleep for some time")
+        time.sleep(5)
 
         test_result = []
         for state in ("ERROR", "FAILED", "PASSED", "SKIPPED"):
@@ -811,13 +854,10 @@ class ClickhouseIntegrationTestsRunner:
             else:
                 text_state = state
             test_result += [
-                (
-                    c + " (✕" + str(final_retry) + ")",
-                    text_state,
-                    f"{tests_times[c]:.2f}",
-                )
+                (c, text_state, f"{tests_times[c]:.2f}", tests_log_paths[c])
                 for c in counters[state]
             ]
+
         status_text = description_prefix + ", ".join(
             [
                 str(n).lower().replace("failed", "fail") + ": " + str(len(c))
@@ -825,34 +865,68 @@ class ClickhouseIntegrationTestsRunner:
             ]
         )
 
-        return result_state, status_text, test_result, logs
+        return result_state, status_text, test_result, tests_log_paths
 
-    def run_impl(self, repo_path, build_path):
+    def run_impl(self, build_path):
+        stopwatch = Stopwatch()
         if self.flaky_check or self.bugfix_validate_check:
-            return self.run_flaky_check(
-                repo_path, build_path, should_fail=self.bugfix_validate_check
+            result_state, status_text, test_result, tests_log_paths = (
+                self.run_flaky_check(build_path, should_fail=self.bugfix_validate_check)
+            )
+        else:
+            result_state, status_text, test_result, tests_log_paths = (
+                self.run_normal_check(build_path)
             )
 
+        if self.soft_deadline_time < time.time():
+            status_text = "Timeout, " + status_text
+            result_state = "failure"
+
+        if timeout_expired:
+            logging.error(
+                "Job killed by external timeout signal - setting status to failure!"
+            )
+            status_text = "Job timeout expired, " + status_text
+            result_state = "failure"
+            # add mock test case to make timeout visible in job report and in ci db
+            test_result.insert(
+                0, (JOB_TIMEOUT_TEST_NAME, "FAIL", f"{stopwatch.duration_seconds}", "")
+            )
+
+        if "(memory)" in self.params["context_name"]:
+            result_state = "success"
+
+        return result_state, status_text, test_result, tests_log_paths
+
+    def _get_tests_by_hash(self) -> List[str]:
+        "Tries it's best to group the tests equally between groups"
+        all_tests = self._get_all_tests()
+        if self.run_by_hash_total == 0:
+            return all_tests
+        grouped_tests = self.group_test_by_file(all_tests)
+        groups_by_hash = {
+            g: [] for g in range(self.run_by_hash_total)
+        }  # type: Dict[int, List[str]]
+        for tests_in_group in grouped_tests.values():
+            # It should work determenistic, because it searches groups with min tests
+            min_group = min(len(tests) for tests in groups_by_hash.values())
+            # And then it takes a group with min index
+            group_to_increase = min(
+                g for g, t in groups_by_hash.items() if len(t) == min_group
+            )
+            groups_by_hash[group_to_increase].extend(tests_in_group)
+        return groups_by_hash[self.run_by_hash_num]
+
+    def run_normal_check(self, build_path):
         self._install_clickhouse(build_path)
-
         logging.info("Pulling images")
-        self._pre_pull_images(repo_path)
-
+        self._pre_pull_images()
         logging.info(
             "Dump iptables before run %s",
             subprocess.check_output("sudo iptables -nvL", shell=True),
         )
-        all_tests = self._get_all_tests(repo_path)
-
-        if self.run_by_hash_total != 0:
-            grouped_tests = self.group_test_by_file(all_tests)
-            all_filtered_by_hash_tests = []
-            for group, tests_in_group in grouped_tests.items():
-                if stringhash(group) % self.run_by_hash_total == self.run_by_hash_num:
-                    all_filtered_by_hash_tests += tests_in_group
-            all_tests = all_filtered_by_hash_tests
-
-        parallel_skip_tests = self._get_parallel_tests_skip_list(repo_path)
+        all_tests = self._get_tests_by_hash()
+        parallel_skip_tests = self._get_parallel_tests_skip_list(self.repo_path)
         logging.info(
             "Found %s tests first 3 %s", len(all_tests), " ".join(all_tests[:3])
         )
@@ -883,14 +957,12 @@ class ClickhouseIntegrationTestsRunner:
             len(not_found_tests),
             " ".join(not_found_tests[:3]),
         )
-
         grouped_tests = self.group_test_by_file(filtered_sequential_tests)
         i = 0
         for par_group in chunks(filtered_parallel_tests, PARALLEL_GROUP_SIZE):
             grouped_tests[f"parallel{i}"] = par_group
             i += 1
         logging.info("Found %s tests groups", len(grouped_tests))
-
         counters = {
             "ERROR": [],
             "PASSED": [],
@@ -901,18 +973,18 @@ class ClickhouseIntegrationTestsRunner:
         }  # type: Dict
         tests_times = defaultdict(float)
         tests_log_paths = defaultdict(list)
-
         items_to_run = list(grouped_tests.items())
-
         logging.info("Total test groups %s", len(items_to_run))
         if self.shuffle_test_groups():
             logging.info("Shuffling test groups")
             random.shuffle(items_to_run)
-
         for group, tests in items_to_run:
+            if timeout_expired:
+                print("Timeout expired - break tests execution")
+                break
             logging.info("Running test group %s containing %s tests", group, len(tests))
             group_counters, group_test_times, log_paths = self.try_run_test_group(
-                repo_path, group, tests, MAX_RETRY, NUM_WORKERS
+                group, tests, MAX_RETRY, NUM_WORKERS, 0
             )
             total_tests = 0
             for counter, value in group_counters.items():
@@ -933,7 +1005,6 @@ class ClickhouseIntegrationTestsRunner:
             if len(counters["FAILED"]) + len(counters["ERROR"]) >= 20:
                 logging.info("Collected more than 20 failed/error tests, stopping")
                 break
-
         if counters["FAILED"] or counters["ERROR"]:
             logging.info(
                 "Overall status failure, because we have tests in FAILED or ERROR state"
@@ -942,7 +1013,6 @@ class ClickhouseIntegrationTestsRunner:
         else:
             logging.info("Overall success!")
             result_state = "success"
-
         test_result = []
         for state in (
             "ERROR",
@@ -962,22 +1032,14 @@ class ClickhouseIntegrationTestsRunner:
                 (c, text_state, f"{tests_times[c]:.2f}", tests_log_paths[c])
                 for c in counters[state]
             ]
-
         failed_sum = len(counters["FAILED"]) + len(counters["ERROR"])
         status_text = f"fail: {failed_sum}, passed: {len(counters['PASSED'])}"
-
-        if self.soft_deadline_time < time.time():
-            status_text = "Timeout, " + status_text
-            result_state = "failure"
 
         if not counters or sum(len(counter) for counter in counters.values()) == 0:
             status_text = "No tests found for some reason! It's a bug"
             result_state = "failure"
 
-        if "(memory)" in self.params["context_name"]:
-            result_state = "success"
-
-        return result_state, status_text, test_result, []
+        return result_state, status_text, test_result, tests_log_paths
 
 
 def write_results(results_file, status_file, results, status):
@@ -990,17 +1052,19 @@ def write_results(results_file, status_file, results, status):
 
 
 def run():
+    signal.signal(signal.SIGTERM, handle_sigterm)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 
-    repo_path = os.environ.get("CLICKHOUSE_TESTS_REPO_PATH")
-    build_path = os.environ.get("CLICKHOUSE_TESTS_BUILD_PATH")
-    result_path = os.environ.get("CLICKHOUSE_TESTS_RESULT_PATH")
-    params_path = os.environ.get("CLICKHOUSE_TESTS_JSON_PARAMS_PATH")
+    repo_path = os.environ.get("CLICKHOUSE_TESTS_REPO_PATH", "")
+    build_path = os.environ.get("CLICKHOUSE_TESTS_BUILD_PATH", "")
+    result_path = os.environ.get("CLICKHOUSE_TESTS_RESULT_PATH", "")
+    params_path = os.environ.get("CLICKHOUSE_TESTS_JSON_PARAMS_PATH", "")
 
-    assert params_path
+    assert all((repo_path, build_path, result_path, params_path))
+
     with open(params_path, "r", encoding="utf-8") as jfd:
         params = json.loads(jfd.read())
-    runner = ClickhouseIntegrationTestsRunner(result_path, params)
+    runner = ClickhouseIntegrationTestsRunner(repo_path, result_path, params)
 
     logging.info("Running tests")
 
@@ -1009,7 +1073,7 @@ def run():
         logging.info("Clearing dmesg before run")
         subprocess.check_call("sudo -E dmesg --clear", shell=True)
 
-    state, description, test_results, _ = runner.run_impl(repo_path, build_path)
+    state, description, test_results, _test_log_paths = runner.run_impl(build_path)
     logging.info("Tests finished")
 
     if IS_CI:
@@ -1022,6 +1086,19 @@ def run():
     out_status_file = os.path.join(str(runner.path()), "check_status.tsv")
     write_results(out_results_file, out_status_file, test_results, status)
     logging.info("Result written")
+
+
+timeout_expired = False
+runner_subprocess = None  # type:Optional[subprocess.Popen]
+
+
+def handle_sigterm(signum, _frame):
+    # TODO: think on how to process it without globals?
+    print(f"WARNING: Received signal {signum}")
+    global timeout_expired  # pylint:disable=global-statement
+    timeout_expired = True
+    if runner_subprocess:
+        runner_subprocess.send_signal(signal.SIGTERM)
 
 
 if __name__ == "__main__":

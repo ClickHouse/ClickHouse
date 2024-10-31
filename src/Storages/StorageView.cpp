@@ -19,6 +19,8 @@
 
 #include <Common/typeid_cast.h>
 
+#include <Core/Settings.h>
+
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -31,6 +33,13 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool extremes;
+    extern const SettingsUInt64 max_result_rows;
+    extern const SettingsUInt64 max_result_bytes;
+}
 
 namespace ErrorCodes
 {
@@ -95,10 +104,10 @@ bool hasJoin(const ASTSelectWithUnionQuery & ast)
 ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot)
 {
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
-    Settings view_settings = view_context->getSettings();
-    view_settings.max_result_rows = 0;
-    view_settings.max_result_bytes = 0;
-    view_settings.extremes = false;
+    Settings view_settings = view_context->getSettingsCopy();
+    view_settings[Setting::max_result_rows] = 0;
+    view_settings[Setting::max_result_bytes] = 0;
+    view_settings[Setting::extremes] = false;
     view_context->setSettings(view_settings);
     return view_context;
 }
@@ -162,7 +171,7 @@ void StorageView::read(
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
-    if (context->getSettingsRef().allow_experimental_analyzer)
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         InterpreterSelectQueryAnalyzer interpreter(current_inner_query, getViewContext(context, storage_snapshot), options, column_names);
         interpreter.addStorageLimits(*query_info.storage_limits);
@@ -177,16 +186,16 @@ void StorageView::read(
 
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
-    auto materializing_actions = std::make_shared<ActionsDAG>(query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
-    materializing_actions->addMaterializingOutputActions();
+    ActionsDAG materializing_actions(query_plan.getCurrentHeader().getColumnsWithTypeAndName());
+    materializing_actions.addMaterializingOutputActions(/*materialize_sparse=*/ true);
 
-    auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(materializing_actions));
+    auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(materializing_actions));
     materializing->setStepDescription("Materialize constants after VIEW subquery");
     query_plan.addStep(std::move(materializing));
 
     /// And also convert to expected structure.
     const auto & expected_header = storage_snapshot->getSampleBlockForColumns(column_names);
-    const auto & header = query_plan.getCurrentDataStream().header;
+    const auto & header = query_plan.getCurrentHeader();
 
     const auto * select_with_union = current_inner_query->as<ASTSelectWithUnionQuery>();
     if (select_with_union && hasJoin(*select_with_union) && changedNullabilityOneWay(header, expected_header))
@@ -203,7 +212,7 @@ void StorageView::read(
             expected_header.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
 
-    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag);
+    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert_actions_dag));
     converting->setStepDescription("Convert VIEW subquery result to VIEW table structure");
     query_plan.addStep(std::move(converting));
 }

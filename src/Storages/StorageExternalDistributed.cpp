@@ -1,11 +1,13 @@
-#include "StorageExternalDistributed.h"
+#include <Storages/StorageExternalDistributed.h>
 
-
+#include <Core/Settings.h>
 #include <Storages/StorageFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Common/parseAddress.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/parseRemoteDescription.h>
@@ -22,6 +24,15 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 glob_expansion_max_elements;
+    extern const SettingsUInt64 postgresql_connection_attempt_timeout;
+    extern const SettingsBool postgresql_connection_pool_auto_close_connection;
+    extern const SettingsUInt64 postgresql_connection_pool_retries;
+    extern const SettingsUInt64 postgresql_connection_pool_size;
+    extern const SettingsUInt64 postgresql_connection_pool_wait_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -82,12 +93,12 @@ void StorageExternalDistributed::read(
         return;
     }
 
-    DataStreams input_streams;
-    input_streams.reserve(plans.size());
+    Headers input_headers;
+    input_headers.reserve(plans.size());
     for (auto & plan : plans)
-        input_streams.emplace_back(plan->getCurrentDataStream());
+        input_headers.emplace_back(plan->getCurrentHeader());
 
-    auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
+    auto union_step = std::make_unique<UnionStep>(std::move(input_headers));
     query_plan.unitePlans(std::move(union_step), std::move(plans));
 }
 
@@ -103,7 +114,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
 
         auto context = args.getLocalContext();
         const auto & settings = context->getSettingsRef();
-        size_t max_addresses = settings.glob_expansion_max_elements;
+        size_t max_addresses = settings[Setting::glob_expansion_max_elements];
         auto get_addresses = [&](const std::string addresses_expr)
         {
             return parseRemoteDescription(addresses_expr, 0, addresses_expr.size(), ',', max_addresses);
@@ -112,14 +123,39 @@ void registerStorageExternalDistributed(StorageFactory & factory)
         std::unordered_set<StoragePtr> shards;
         ASTs inner_engine_args(engine_args.begin() + 1, engine_args.end());
 
+        ASTPtr * address_arg = nullptr;
+
+        /// If there is a named collection argument, named `addresses_expr`
+        for (auto & node : inner_engine_args)
+        {
+            if (ASTFunction * func = node->as<ASTFunction>(); func && func->name == "equals" && func->arguments)
+            {
+                if (ASTExpressionList * func_args = func->arguments->as<ASTExpressionList>(); func_args && func_args->children.size() == 2)
+                {
+                    if (ASTIdentifier * arg_name = func_args->children[0]->as<ASTIdentifier>(); arg_name && arg_name->name() == "addresses_expr")
+                    {
+                        address_arg = &func_args->children[1];
+                        break;
+                    }
+                }
+            }
+        }
+
+        /// Otherwise it is the first argument.
+        if (!address_arg)
+            address_arg = &inner_engine_args.at(0);
+
+        String addresses_expr = checkAndGetLiteralArgument<String>(*address_arg, "addresses");
+        Strings shards_addresses = get_addresses(addresses_expr);
+
         auto engine_name = checkAndGetLiteralArgument<String>(engine_args[0], "engine_name");
         if (engine_name == "URL")
         {
-            auto configuration = StorageURL::getConfiguration(inner_engine_args, context);
-            auto shards_addresses = get_addresses(configuration.addresses_expr);
             auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
             for (const auto & shard_address : shards_addresses)
             {
+                *address_arg = std::make_shared<ASTLiteral>(shard_address);
+                auto configuration = StorageURL::getConfiguration(inner_engine_args, context);
                 auto uri_options = parseRemoteDescription(shard_address, 0, shard_address.size(), '|', max_addresses);
                 if (uri_options.size() > 1)
                 {
@@ -140,13 +176,12 @@ void registerStorageExternalDistributed(StorageFactory & factory)
         else if (engine_name == "MySQL")
         {
             MySQLSettings mysql_settings;
-            auto configuration = StorageMySQL::getConfiguration(inner_engine_args, context, mysql_settings);
-            auto shards_addresses = get_addresses(configuration.addresses_expr);
             for (const auto & shard_address : shards_addresses)
             {
-                auto current_configuration{configuration};
-                current_configuration.addresses = parseRemoteDescriptionForExternalDatabase(shard_address, max_addresses, 3306);
-                auto pool = createMySQLPoolWithFailover(current_configuration, mysql_settings);
+                *address_arg = std::make_shared<ASTLiteral>(shard_address);
+                auto configuration = StorageMySQL::getConfiguration(inner_engine_args, context, mysql_settings);
+                configuration.addresses = parseRemoteDescriptionForExternalDatabase(shard_address, max_addresses, 3306);
+                auto pool = createMySQLPoolWithFailover(configuration, mysql_settings);
                 shards.insert(std::make_shared<StorageMySQL>(
                     args.table_id, std::move(pool), configuration.database, configuration.table,
                     /* replace_query = */ false, /* on_duplicate_clause = */ "",
@@ -157,18 +192,18 @@ void registerStorageExternalDistributed(StorageFactory & factory)
 #if USE_LIBPQXX
         else if (engine_name == "PostgreSQL")
         {
-            auto configuration = StoragePostgreSQL::getConfiguration(inner_engine_args, context);
-            auto shards_addresses = get_addresses(configuration.addresses_expr);
             for (const auto & shard_address : shards_addresses)
             {
-                auto current_configuration{configuration};
-                current_configuration.addresses = parseRemoteDescriptionForExternalDatabase(shard_address, max_addresses, 5432);
+                *address_arg = std::make_shared<ASTLiteral>(shard_address);
+                auto configuration = StoragePostgreSQL::getConfiguration(inner_engine_args, context);
+                configuration.addresses = parseRemoteDescriptionForExternalDatabase(shard_address, max_addresses, 5432);
                 auto pool = std::make_shared<postgres::PoolWithFailover>(
-                    current_configuration,
-                    settings.postgresql_connection_pool_size,
-                    settings.postgresql_connection_pool_wait_timeout,
-                    POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
-                    settings.postgresql_connection_pool_auto_close_connection);
+                    configuration,
+                    settings[Setting::postgresql_connection_pool_size],
+                    settings[Setting::postgresql_connection_pool_wait_timeout],
+                    settings[Setting::postgresql_connection_pool_retries],
+                    settings[Setting::postgresql_connection_pool_auto_close_connection],
+                    settings[Setting::postgresql_connection_attempt_timeout]);
                 shards.insert(std::make_shared<StoragePostgreSQL>(
                     args.table_id, std::move(pool), configuration.table, args.columns, args.constraints, String{}, context));
             }

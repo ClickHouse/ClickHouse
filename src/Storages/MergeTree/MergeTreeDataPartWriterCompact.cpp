@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include "Formats/MarkInCompressedFile.h"
 
 namespace DB
 {
@@ -52,6 +53,11 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
             settings_.marks_compress_block_size);
 
         marks_source_hashing = std::make_unique<HashingWriteBuffer>(*marks_compressor);
+    }
+
+    if (settings.save_marks_in_cache)
+    {
+        cached_marks[MergeTreeDataPartCompact::DATA_FILE_NAME] = std::make_unique<MarksInCompressedFile::PlainArray>();
     }
 
     for (const auto & column : columns_list)
@@ -154,7 +160,8 @@ void writeColumnSingleGranule(
     const SerializationPtr & serialization,
     ISerialization::OutputStreamGetter stream_getter,
     size_t from_row,
-    size_t number_of_rows)
+    size_t number_of_rows,
+    const MergeTreeWriterSettings & settings)
 {
     ISerialization::SerializeBinaryBulkStatePtr state;
     ISerialization::SerializeBinaryBulkSettings serialize_settings;
@@ -162,7 +169,8 @@ void writeColumnSingleGranule(
     serialize_settings.getter = stream_getter;
     serialize_settings.position_independent_encoding = true;
     serialize_settings.low_cardinality_max_dictionary_size = 0;
-    serialize_settings.dynamic_write_statistics = ISerialization::SerializeBinaryBulkSettings::DynamicStatisticsMode::PREFIX;
+    serialize_settings.use_compact_variant_discriminators_serialization = settings.use_compact_variant_discriminators_serialization;
+    serialize_settings.object_and_dynamic_write_statistics = ISerialization::SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::PREFIX;
 
     serialization->serializeBinaryBulkStatePrefix(*column.column, serialize_settings, state);
     serialization->serializeBinaryBulkWithMultipleStreams(*column.column, from_row, number_of_rows, serialize_settings, state);
@@ -211,11 +219,11 @@ void MergeTreeDataPartWriterCompact::writeDataBlockPrimaryIndexAndSkipIndices(co
 
     if (settings.rewrite_primary_key)
     {
-        Block primary_key_block = getBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), nullptr);
+        Block primary_key_block = getIndexBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), nullptr);
         calculateAndSerializePrimaryIndex(primary_key_block, granules_to_write);
     }
 
-    Block skip_indices_block = getBlockAndPermute(block, getSkipIndicesColumns(), nullptr);
+    Block skip_indices_block = getIndexBlockAndPermute(block, getSkipIndicesColumns(), nullptr);
     calculateAndSerializeSkipIndices(skip_indices_block, granules_to_write);
 }
 
@@ -253,13 +261,16 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 return &result_stream->hashing_buf;
             };
 
+            MarkInCompressedFile mark{plain_hashing.count(), static_cast<UInt64>(0)};
+            writeBinaryLittleEndian(mark.offset_in_compressed_file, marks_out);
+            writeBinaryLittleEndian(mark.offset_in_decompressed_block, marks_out);
 
-            writeBinaryLittleEndian(plain_hashing.count(), marks_out);
-            writeBinaryLittleEndian(static_cast<UInt64>(0), marks_out);
+             if (!cached_marks.empty())
+                cached_marks.begin()->second->push_back(mark);
 
             writeColumnSingleGranule(
                 block.getByName(name_and_type->name), getSerialization(name_and_type->name),
-                stream_getter, granule.start_row, granule.rows_to_write);
+                stream_getter, granule.start_row, granule.rows_to_write, settings);
 
             /// Each type always have at least one substream
             prev_stream->hashing_buf.next();
@@ -294,11 +305,17 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(MergeTreeDataPartChecksum
 
     if (with_final_mark && data_written)
     {
+        MarkInCompressedFile mark{plain_hashing.count(), 0};
+
         for (size_t i = 0; i < columns_list.size(); ++i)
         {
-            writeBinaryLittleEndian(plain_hashing.count(), marks_out);
-            writeBinaryLittleEndian(static_cast<UInt64>(0), marks_out);
+            writeBinaryLittleEndian(mark.offset_in_compressed_file, marks_out);
+            writeBinaryLittleEndian(mark.offset_in_decompressed_block, marks_out);
+
+            if (!cached_marks.empty())
+                cached_marks.begin()->second->push_back(mark);
         }
+
         writeBinaryLittleEndian(static_cast<UInt64>(0), marks_out);
     }
 

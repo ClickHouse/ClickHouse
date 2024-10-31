@@ -2,7 +2,9 @@
 
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/filesystemHelpers.h>
+#include <Core/Settings.h>
 
 #include <Poco/DigestStream.h>
 #include <Poco/Exception.h>
@@ -11,6 +13,13 @@
 #include <filesystem>
 #include <fstream>
 
+namespace DB
+{
+namespace Setting
+{
+    extern const SettingsTimezone session_timezone;
+}
+}
 
 namespace
 {
@@ -201,5 +210,5 @@ DateLUT & DateLUT::getInstance()
 
 std::string DateLUT::extractTimezoneFromContext(DB::ContextPtr query_context)
 {
-    return query_context->getSettingsRef().session_timezone.value;
+    return query_context->getSettingsRef()[DB::Setting::session_timezone].value;
 }

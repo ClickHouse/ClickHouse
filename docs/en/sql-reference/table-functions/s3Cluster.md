@@ -58,17 +58,26 @@ Count the total amount of rows in all files in the cluster `cluster_simple`:
 If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 :::
 
-For production use cases it is recommended to use [named collections](/docs/en/operations/named-collections.md). Here is the example:
+For production use cases, it is recommended to use [named collections](/docs/en/operations/named-collections.md). Here is the example:
 ``` sql
 
 CREATE NAMED COLLECTION creds AS
-        access_key_id = 'minio'
+        access_key_id = 'minio',
         secret_access_key = 'minio123';
 SELECT count(*) FROM s3Cluster(
     'cluster_simple', creds, url='https://s3-object-url.csv',
     format='CSV', structure='name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))'
 )
 ```
+
+## Accessing private and public buckets
+
+Users can use the same approaches as document for the s3 function [here](/docs/en/sql-reference/table-functions/s3#accessing-public-buckets).
+
+## Optimizing performance
+
+For details on optimizing the performance of the s3 function see [our detailed guide](/docs/en/integrations/s3/performance).
+
 
 **See Also**
 

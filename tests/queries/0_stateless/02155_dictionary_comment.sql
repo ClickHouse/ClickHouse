@@ -49,5 +49,5 @@ SELECT name, comment FROM system.tables WHERE name == '02155_test_dictionary_vie
 SELECT name, comment FROM system.tables WHERE name == '02155_test_dictionary_view' AND database == currentDatabase();
 
 DROP TABLE 02155_test_dictionary_view;
-DROP TABLE 02155_test_table;
 DROP DICTIONARY 02155_test_dictionary;
+DROP TABLE 02155_test_table;

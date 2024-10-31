@@ -70,6 +70,11 @@ public:
         }
         return std::make_shared<DataTypeUInt64>();
     }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeUInt64>();
+    }
 };
 
 template <UInt8 max_dimensions, UInt8 min_ratio, UInt8 max_ratio>
@@ -132,9 +137,7 @@ public:
         }
         DataTypes types(tuple_size);
         for (size_t i = 0; i < tuple_size; i++)
-        {
             types[i] = std::make_shared<DataTypeUInt64>();
-        }
         return std::make_shared<DataTypeTuple>(types);
     }
 };

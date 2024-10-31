@@ -26,6 +26,7 @@
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/ThreadPool.h>
+#include <Core/Settings.h>
 
 #include <boost/range/adaptor/map.hpp>
 
@@ -42,6 +43,15 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 backup_restore_batch_size_for_keeper_multiread;
+    extern const SettingsUInt64 backup_restore_keeper_max_retries;
+    extern const SettingsUInt64 backup_restore_keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 backup_restore_keeper_retry_max_backoff_ms;
+    extern const SettingsUInt64 backup_restore_keeper_fault_injection_seed;
+    extern const SettingsFloat backup_restore_keeper_fault_injection_probability;
+}
 
 namespace ErrorCodes
 {
@@ -80,10 +90,8 @@ namespace
                 backup_settings.internal,
                 context->getProcessListElement());
         }
-        else
-        {
-            return std::make_shared<BackupCoordinationLocal>(!backup_settings.deduplicate_files);
-        }
+
+        return std::make_shared<BackupCoordinationLocal>(!backup_settings.deduplicate_files);
     }
 
     std::shared_ptr<IRestoreCoordination>
@@ -97,12 +105,12 @@ namespace
 
             RestoreCoordinationRemote::RestoreKeeperSettings keeper_settings
             {
-                .keeper_max_retries = context->getSettingsRef().backup_restore_keeper_max_retries,
-                .keeper_retry_initial_backoff_ms = context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,
-                .keeper_retry_max_backoff_ms = context->getSettingsRef().backup_restore_keeper_retry_max_backoff_ms,
-                .batch_size_for_keeper_multiread = context->getSettingsRef().backup_restore_batch_size_for_keeper_multiread,
-                .keeper_fault_injection_probability = context->getSettingsRef().backup_restore_keeper_fault_injection_probability,
-                .keeper_fault_injection_seed = context->getSettingsRef().backup_restore_keeper_fault_injection_seed
+                .keeper_max_retries = context->getSettingsRef()[Setting::backup_restore_keeper_max_retries],
+                .keeper_retry_initial_backoff_ms = context->getSettingsRef()[Setting::backup_restore_keeper_retry_initial_backoff_ms],
+                .keeper_retry_max_backoff_ms = context->getSettingsRef()[Setting::backup_restore_keeper_retry_max_backoff_ms],
+                .batch_size_for_keeper_multiread = context->getSettingsRef()[Setting::backup_restore_batch_size_for_keeper_multiread],
+                .keeper_fault_injection_probability = context->getSettingsRef()[Setting::backup_restore_keeper_fault_injection_probability],
+                .keeper_fault_injection_seed = context->getSettingsRef()[Setting::backup_restore_keeper_fault_injection_seed]
             };
 
             auto all_hosts = BackupSettings::Util::filterHostIDs(
@@ -118,10 +126,8 @@ namespace
                 restore_settings.internal,
                 context->getProcessListElement());
         }
-        else
-        {
-            return std::make_shared<RestoreCoordinationLocal>();
-        }
+
+        return std::make_shared<RestoreCoordinationLocal>();
     }
 
     /// Sends information about an exception to IBackupCoordination or IRestoreCoordination.
@@ -190,16 +196,14 @@ namespace
     {
         if (getCurrentExceptionCode() == ErrorCodes::QUERY_WAS_CANCELLED)
             return BackupStatus::BACKUP_CANCELLED;
-        else
-            return BackupStatus::BACKUP_FAILED;
+        return BackupStatus::BACKUP_FAILED;
     }
 
     BackupStatus getRestoreStatusFromCurrentException()
     {
         if (getCurrentExceptionCode() == ErrorCodes::QUERY_WAS_CANCELLED)
             return BackupStatus::RESTORE_CANCELLED;
-        else
-            return BackupStatus::RESTORE_FAILED;
+        return BackupStatus::RESTORE_FAILED;
     }
 
     /// Used to change num_active_backups.
@@ -383,6 +387,7 @@ BackupsWorker::BackupsWorker(ContextMutablePtr global_context, size_t num_backup
     , allow_concurrent_backups(global_context->getConfigRef().getBool("backups.allow_concurrent_backups", true))
     , allow_concurrent_restores(global_context->getConfigRef().getBool("backups.allow_concurrent_restores", true))
     , remove_backup_files_after_failure(global_context->getConfigRef().getBool("backups.remove_backup_files_after_failure", true))
+    , test_randomize_order(global_context->getConfigRef().getBool("backups.test_randomize_order", false))
     , test_inject_sleep(global_context->getConfigRef().getBool("backups.test_inject_sleep", false))
     , log(getLogger("BackupsWorker"))
     , backup_log(global_context->getBackupLog())
@@ -405,8 +410,7 @@ OperationID BackupsWorker::start(const ASTPtr & backup_or_restore_query, Context
     const ASTBackupQuery & backup_query = typeid_cast<const ASTBackupQuery &>(*backup_or_restore_query);
     if (backup_query.kind == ASTBackupQuery::Kind::BACKUP)
         return startMakingBackup(backup_or_restore_query, context);
-    else
-        return startRestoring(backup_or_restore_query, context);
+    return startRestoring(backup_or_restore_query, context);
 }
 
 
@@ -600,6 +604,7 @@ void BackupsWorker::doBackup(
     backup_create_params.allow_s3_native_copy = backup_settings.allow_s3_native_copy;
     backup_create_params.allow_azure_native_copy = backup_settings.allow_azure_native_copy;
     backup_create_params.use_same_s3_credentials_for_base_backup = backup_settings.use_same_s3_credentials_for_base_backup;
+    backup_create_params.use_same_password_for_base_backup = backup_settings.use_same_password_for_base_backup;
     backup_create_params.azure_attempt_to_create_container = backup_settings.azure_attempt_to_create_container;
     backup_create_params.read_settings = getReadSettingsForBackup(context, backup_settings);
     backup_create_params.write_settings = getWriteSettingsForBackup(context);
@@ -712,14 +717,25 @@ void BackupsWorker::writeBackupEntries(
     bool always_single_threaded = !backup->supportsWritingInMultipleThreads();
     auto & thread_pool = getThreadPool(ThreadPoolId::BACKUP_COPY_FILES);
 
+    std::vector<size_t> writing_order;
+    if (test_randomize_order)
+    {
+        /// Randomize the order in which we write backup entries to the backup.
+        writing_order.resize(backup_entries.size());
+        std::iota(writing_order.begin(), writing_order.end(), 0);
+        std::shuffle(writing_order.begin(), writing_order.end(), thread_local_rng);
+    }
+
     ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "BackupWorker");
     for (size_t i = 0; i != backup_entries.size(); ++i)
     {
         if (failed)
             break;
 
-        auto & entry = backup_entries[i].second;
-        const auto & file_info = file_infos[i];
+        size_t index = !writing_order.empty() ? writing_order[i] : i;
+
+        auto & entry = backup_entries[index].second;
+        const auto & file_info = file_infos[index];
 
         auto job = [&]()
         {
@@ -911,6 +927,7 @@ void BackupsWorker::doRestore(
     backup_open_params.password = restore_settings.password;
     backup_open_params.allow_s3_native_copy = restore_settings.allow_s3_native_copy;
     backup_open_params.use_same_s3_credentials_for_base_backup = restore_settings.use_same_s3_credentials_for_base_backup;
+    backup_open_params.use_same_password_for_base_backup = restore_settings.use_same_password_for_base_backup;
     backup_open_params.read_settings = getReadSettingsForRestore(context);
     backup_open_params.write_settings = getWriteSettingsForRestore(context);
     backup_open_params.is_internal_backup = restore_settings.internal;
@@ -1053,8 +1070,7 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
     {
         if (throw_if_error)
            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown backup ID {}", id);
-        else
-            return;
+        return;
     }
 
     auto & extended_info = it->second;

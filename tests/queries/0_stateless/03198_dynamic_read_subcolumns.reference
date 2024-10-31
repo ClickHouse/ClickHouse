@@ -1,0 +1,17 @@
+QUERY id: 0
+  PROJECTION COLUMNS
+    d.String Nullable(String)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: d.String, result_type: Nullable(String), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.test_dynamic
+  SETTINGS allow_experimental_analyzer=1
+foo
+\N
+\N
+foo
+\N
+\N
+6
+6

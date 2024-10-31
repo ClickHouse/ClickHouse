@@ -26,12 +26,16 @@ std::optional<RaftServerConfig> RaftServerConfig::parse(std::string_view server)
     if (!with_id_endpoint && !with_server_type && !with_priority)
         return std::nullopt;
 
-    const std::string_view id_str = parts[0];
+    std::string_view id_str = parts[0];
     if (!id_str.starts_with("server."))
         return std::nullopt;
 
+    id_str = id_str.substr(7);
+    if (auto eq_pos = id_str.find('='); std::string_view::npos != eq_pos)
+        id_str = id_str.substr(0, eq_pos);
+
     Int32 id;
-    if (!tryParse(id, std::next(id_str.begin(), 7)))
+    if (!tryParse(id, id_str))
         return std::nullopt;
     if (id <= 0)
         return std::nullopt;

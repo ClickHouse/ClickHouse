@@ -231,8 +231,8 @@ static Int64 transformSigned(Int64 x, UInt64 seed)
 {
     if (x >= 0)
         return transform(x, seed);
-    else
-        return -transform(-x, seed);    /// It works Ok even for minimum signed number.
+
+    return -transform(-x, seed);    /// It works Ok even for minimum signed number.
 }
 
 
@@ -1105,8 +1105,8 @@ public:
         {
             if (isUInt(data_type))
                 return std::make_unique<UnsignedIntegerModel>(seed);
-            else
-                return std::make_unique<SignedIntegerModel>(seed);
+
+            return std::make_unique<SignedIntegerModel>(seed);
         }
 
         if (typeid_cast<const DataTypeFloat32 *>(&data_type))
@@ -1307,6 +1307,7 @@ try
             throw ErrnoException(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Input must be seekable file (it will be read twice)");
 
         SingleReadBufferIterator read_buffer_iterator(std::move(file));
+
         schema_columns = readSchemaFromFormat(input_format, {}, read_buffer_iterator, context_const);
     }
     else

@@ -7,14 +7,13 @@
 #include <mutex>
 #include <set>
 #include <Core/BackgroundSchedulePool.h>
+#include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/ReadSettings.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileBase.h>
-#include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Interpreters/Context.h>
 #include <Storages/Cache/IRemoteFileMetadata.h>
 #include <Storages/Cache/RemoteCacheController.h>
@@ -53,7 +52,7 @@ public:
     bool nextImpl() override;
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;
-    size_t getFileSize() override { return remote_file_size; }
+    std::optional<size_t> tryGetFileSize() override { return remote_file_size; }
 
 private:
     std::unique_ptr<LocalFileHolder> local_file_holder;

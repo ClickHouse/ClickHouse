@@ -23,7 +23,7 @@ SELECT b AS a, a FROM tb JOIN tabc USING (a) ORDER BY ALL;
 3	3
 SELECT 1 AS b FROM tb JOIN ta USING (b); -- { serverError UNKNOWN_IDENTIFIER }
 -- SELECT * returns all columns from both tables in new analyzer
-SELECT 3 AS a, a, * FROM tb FULL JOIN tabc USING (a) ORDER BY ALL SETTINGS allow_experimental_analyzer = 1;
+SELECT 3 AS a, a, * FROM tb FULL JOIN tabc USING (a) ORDER BY ALL SETTINGS enable_analyzer = 1;
 3	3	0	3	abc3
 3	3	1	3	abc3
 3	3	2	3	abc3
@@ -31,57 +31,57 @@ SELECT 3 AS a, a, * FROM tb FULL JOIN tabc USING (a) ORDER BY ALL SETTINGS allow
 3	3	\N	0	abc0
 3	3	\N	1	abc1
 3	3	\N	2	abc2
-SELECT b + 1 AS a, * FROM tb JOIN tabc USING (a) ORDER BY ALL SETTINGS allow_experimental_analyzer = 1;
+SELECT b + 1 AS a, * FROM tb JOIN tabc USING (a) ORDER BY ALL SETTINGS enable_analyzer = 1;
 1	0	1	abc1
 2	1	2	abc2
 3	2	3	abc3
-SELECT b + 1 AS a, * FROM tb JOIN tabc USING (a) ORDER BY ALL SETTINGS allow_experimental_analyzer = 1;
+SELECT b + 1 AS a, * FROM tb JOIN tabc USING (a) ORDER BY ALL SETTINGS enable_analyzer = 1;
 1	0	1	abc1
 2	1	2	abc2
 3	2	3	abc3
-SELECT b + 1 AS a, * FROM tb LEFT JOIN tabc USING (a) ORDER BY ALL SETTINGS allow_experimental_analyzer = 1;
-1	0	1	abc1
-2	1	2	abc2
-3	2	3	abc3
-4	3	\N	\N
-SELECT b + 1 AS a, * FROM tb RIGHT JOIN tabc USING (a) ORDER BY ALL SETTINGS allow_experimental_analyzer = 1;
-1	0	1	abc1
-2	1	2	abc2
-3	2	3	abc3
-\N	\N	0	abc0
-SELECT b + 1 AS a, * FROM tb FULL JOIN tabc USING (a) ORDER BY ALL SETTINGS allow_experimental_analyzer = 1;
+SELECT b + 1 AS a, * FROM tb LEFT JOIN tabc USING (a) ORDER BY ALL SETTINGS enable_analyzer = 1;
 1	0	1	abc1
 2	1	2	abc2
 3	2	3	abc3
 4	3	\N	\N
+SELECT b + 1 AS a, * FROM tb RIGHT JOIN tabc USING (a) ORDER BY ALL SETTINGS enable_analyzer = 1;
+1	0	1	abc1
+2	1	2	abc2
+3	2	3	abc3
 \N	\N	0	abc0
-SELECT b + 1 AS a, * FROM tb FULL JOIN tabc USING (a) ORDER BY ALL SETTINGS asterisk_include_alias_columns = 1, allow_experimental_analyzer = 1;
+SELECT b + 1 AS a, * FROM tb FULL JOIN tabc USING (a) ORDER BY ALL SETTINGS enable_analyzer = 1;
+1	0	1	abc1
+2	1	2	abc2
+3	2	3	abc3
+4	3	\N	\N
+\N	\N	0	abc0
+SELECT b + 1 AS a, * FROM tb FULL JOIN tabc USING (a) ORDER BY ALL SETTINGS asterisk_include_alias_columns = 1, enable_analyzer = 1;
 1	0	1	abc1	2	3
 2	1	2	abc2	3	4
 3	2	3	abc3	4	5
 4	3	\N	\N	\N	\N
 \N	\N	0	abc0	1	2
-SELECT b + 1 AS a, * FROM (SELECT b FROM tb) t1 JOIN (SELECT a, b FROM tabc) t2 USING (a) ORDER BY ALL SETTINGS allow_experimental_analyzer = 1;
+SELECT b + 1 AS a, * FROM (SELECT b FROM tb) t1 JOIN (SELECT a, b FROM tabc) t2 USING (a) ORDER BY ALL SETTINGS enable_analyzer = 1;
 1	0	1	2
 2	1	2	3
 3	2	3	4
-SELECT b + 1 AS a, * FROM (SELECT b FROM tb) t1 LEFT JOIN (SELECT a, b FROM tabc) t2 USING (a) ORDER BY ALL SETTINGS allow_experimental_analyzer = 1;
-1	0	1	2
-2	1	2	3
-3	2	3	4
-4	3	\N	\N
-SELECT b + 1 AS a, * FROM (SELECT b FROM tb) t1 RIGHT JOIN (SELECT a, b FROM tabc) t2 USING (a) ORDER BY ALL SETTINGS allow_experimental_analyzer = 1;
-1	0	1	2
-2	1	2	3
-3	2	3	4
-\N	\N	0	1
-SELECT b + 1 AS a, * FROM (SELECT b FROM tb) t1 FULL JOIN (SELECT a, b FROM tabc) t2 USING (a) ORDER BY ALL SETTINGS allow_experimental_analyzer = 1;
+SELECT b + 1 AS a, * FROM (SELECT b FROM tb) t1 LEFT JOIN (SELECT a, b FROM tabc) t2 USING (a) ORDER BY ALL SETTINGS enable_analyzer = 1;
 1	0	1	2
 2	1	2	3
 3	2	3	4
 4	3	\N	\N
+SELECT b + 1 AS a, * FROM (SELECT b FROM tb) t1 RIGHT JOIN (SELECT a, b FROM tabc) t2 USING (a) ORDER BY ALL SETTINGS enable_analyzer = 1;
+1	0	1	2
+2	1	2	3
+3	2	3	4
 \N	\N	0	1
-SELECT b + 1 AS a, s FROM tb FULL OUTER JOIN tabc USING (a) PREWHERE a > 2 ORDER BY ALL SETTINGS allow_experimental_analyzer = 1;
+SELECT b + 1 AS a, * FROM (SELECT b FROM tb) t1 FULL JOIN (SELECT a, b FROM tabc) t2 USING (a) ORDER BY ALL SETTINGS enable_analyzer = 1;
+1	0	1	2
+2	1	2	3
+3	2	3	4
+4	3	\N	\N
+\N	\N	0	1
+SELECT b + 1 AS a, s FROM tb FULL OUTER JOIN tabc USING (a) PREWHERE a > 2 ORDER BY ALL SETTINGS enable_analyzer = 1;
 3	abc3
 4	\N
 \N	abc0
@@ -94,7 +94,7 @@ SELECT a + 2 AS b FROM tb JOIN tabc USING (b) ORDER BY ALL
 SETTINGS analyzer_compatibility_join_using_top_level_identifier = 1; -- { serverError UNKNOWN_IDENTIFIER }
 -- In new analyzer with `analyzer_compatibility_join_using_top_level_identifier = 0` we get `b` from left table
 SELECT a + 2 AS b FROM tb JOIN tabc USING (b) ORDER BY ALL
-SETTINGS analyzer_compatibility_join_using_top_level_identifier = 0, allow_experimental_analyzer = 1;
+SETTINGS analyzer_compatibility_join_using_top_level_identifier = 0, enable_analyzer = 1;
 2
 3
 4
@@ -108,7 +108,7 @@ SELECT u1.uid, u1.spouse_name as name, u2.uid, u2.name
 FROM users u1 JOIN users u2 USING (name)
 ORDER BY u1.uid
 FORMAT TSVWithNamesAndTypes
-SETTINGS allow_experimental_analyzer = 1, analyzer_compatibility_join_using_top_level_identifier = 1;
+SETTINGS enable_analyzer = 1, analyzer_compatibility_join_using_top_level_identifier = 1;
 uid	name	u2.uid	u2.name
 Int16	String	Int16	String
 1231	Ksenia	6666	Ksenia
@@ -116,7 +116,7 @@ SELECT u1.uid, u1.spouse_name as name, u2.uid, u2.name
 FROM users u1 JOIN users u2 USING (name)
 ORDER BY u1.uid
 FORMAT TSVWithNamesAndTypes
-SETTINGS allow_experimental_analyzer = 1, analyzer_compatibility_join_using_top_level_identifier = 0;
+SETTINGS enable_analyzer = 1, analyzer_compatibility_join_using_top_level_identifier = 0;
 uid	name	u2.uid	u2.name
 Int16	String	Int16	String
 1231	Ksenia	1231	John
@@ -125,7 +125,7 @@ SELECT u1.uid, u1.spouse_name as name, u2.uid, u2.name
 FROM users u1 JOIN users u2 USING (name)
 ORDER BY u1.uid
 FORMAT TSVWithNamesAndTypes
-SETTINGS allow_experimental_analyzer = 0;
+SETTINGS enable_analyzer = 0;
 uid	name	u2.uid	u2.name
 Int16	String	Int16	String
 1231	Ksenia	6666	Ksenia

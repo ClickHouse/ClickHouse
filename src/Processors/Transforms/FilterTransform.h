@@ -48,7 +48,7 @@ private:
     bool are_prepared_sets_initialized = false;
 
     void doTransform(Chunk & chunk);
-    void removeFilterIfNeed(Chunk & chunk) const;
+    void removeFilterIfNeed(Columns & columns) const;
 };
 
 }

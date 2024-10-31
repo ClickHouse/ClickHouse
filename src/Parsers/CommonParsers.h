@@ -4,6 +4,7 @@
 
 #include <cassert>
 #include <string_view>
+#include <unordered_set>
 
 namespace DB
 {
@@ -84,6 +85,7 @@ namespace DB
     MR_MACROS(CLEAR_INDEX, "CLEAR INDEX") \
     MR_MACROS(CLEAR_PROJECTION, "CLEAR PROJECTION") \
     MR_MACROS(CLEAR_STATISTICS, "CLEAR STATISTICS") \
+    MR_MACROS(CLONE_AS, "CLONE AS") \
     MR_MACROS(CLUSTER, "CLUSTER") \
     MR_MACROS(CLUSTERS, "CLUSTERS") \
     MR_MACROS(CN, "CN") \
@@ -97,6 +99,7 @@ namespace DB
     MR_MACROS(COMPRESSION, "COMPRESSION") \
     MR_MACROS(CONST, "CONST") \
     MR_MACROS(CONSTRAINT, "CONSTRAINT") \
+    MR_MACROS(CONNECTIONS, "CONNECTIONS") \
     MR_MACROS(CREATE_POLICY, "CREATE POLICY") \
     MR_MACROS(CREATE_PROFILE, "CREATE PROFILE") \
     MR_MACROS(CREATE_QUOTA, "CREATE QUOTA") \
@@ -116,6 +119,8 @@ namespace DB
     MR_MACROS(CURRENT_TRANSACTION, "CURRENT TRANSACTION") \
     MR_MACROS(CURRENTUSER, "CURRENTUSER") \
     MR_MACROS(D, "D") \
+    MR_MACROS(DATA, "DATA") \
+    MR_MACROS(DATA_INNER_UUID, "DATA INNER UUID") \
     MR_MACROS(DATABASE, "DATABASE") \
     MR_MACROS(DATABASES, "DATABASES") \
     MR_MACROS(DATE, "DATE") \
@@ -250,6 +255,7 @@ namespace DB
     MR_MACROS(IS_NOT_NULL, "IS NOT NULL") \
     MR_MACROS(IS_NULL, "IS NULL") \
     MR_MACROS(JOIN, "JOIN") \
+    MR_MACROS(JWT, "JWT") \
     MR_MACROS(KERBEROS, "KERBEROS") \
     MR_MACROS(KEY_BY, "KEY BY") \
     MR_MACROS(KEY, "KEY") \
@@ -287,6 +293,8 @@ namespace DB
     MR_MACROS(MCS, "MCS") \
     MR_MACROS(MEMORY, "MEMORY") \
     MR_MACROS(MERGES, "MERGES") \
+    MR_MACROS(METRICS, "METRICS") \
+    MR_MACROS(METRICS_INNER_UUID, "METRICS INNER UUID") \
     MR_MACROS(MI, "MI") \
     MR_MACROS(MICROSECOND, "MICROSECOND") \
     MR_MACROS(MICROSECONDS, "MICROSECONDS") \
@@ -366,6 +374,7 @@ namespace DB
     MR_MACROS(POPULATE, "POPULATE") \
     MR_MACROS(PRECEDING, "PRECEDING") \
     MR_MACROS(PRECISION, "PRECISION") \
+    MR_MACROS(PREFIX, "PREFIX") \
     MR_MACROS(PREWHERE, "PREWHERE") \
     MR_MACROS(PRIMARY_KEY, "PRIMARY KEY") \
     MR_MACROS(PRIMARY, "PRIMARY") \
@@ -383,6 +392,7 @@ namespace DB
     MR_MACROS(RANDOMIZE_FOR, "RANDOMIZE FOR") \
     MR_MACROS(RANDOMIZED, "RANDOMIZED") \
     MR_MACROS(RANGE, "RANGE") \
+    MR_MACROS(READ, "READ") \
     MR_MACROS(READONLY, "READONLY") \
     MR_MACROS(REALM, "REALM") \
     MR_MACROS(RECOMPRESS, "RECOMPRESS") \
@@ -401,6 +411,8 @@ namespace DB
     MR_MACROS(REPLACE_PARTITION, "REPLACE PARTITION") \
     MR_MACROS(REPLACE, "REPLACE") \
     MR_MACROS(RESET_SETTING, "RESET SETTING") \
+    MR_MACROS(RESET_AUTHENTICATION_METHODS_TO_NEW, "RESET AUTHENTICATION METHODS TO NEW") \
+    MR_MACROS(RESOURCE, "RESOURCE") \
     MR_MACROS(RESPECT_NULLS, "RESPECT NULLS") \
     MR_MACROS(RESTORE, "RESTORE") \
     MR_MACROS(RESTRICT, "RESTRICT") \
@@ -417,6 +429,7 @@ namespace DB
     MR_MACROS(SALT, "SALT") \
     MR_MACROS(SAMPLE_BY, "SAMPLE BY") \
     MR_MACROS(SAMPLE, "SAMPLE") \
+    MR_MACROS(SAN, "SAN") \
     MR_MACROS(SCHEME, "SCHEME") \
     MR_MACROS(SECOND, "SECOND") \
     MR_MACROS(SECONDS, "SECONDS") \
@@ -443,6 +456,7 @@ namespace DB
     MR_MACROS(SHOW, "SHOW") \
     MR_MACROS(SIGNED, "SIGNED") \
     MR_MACROS(SIMPLE, "SIMPLE") \
+    MR_MACROS(SKIP, "SKIP") \
     MR_MACROS(SOURCE, "SOURCE") \
     MR_MACROS(SPATIAL, "SPATIAL") \
     MR_MACROS(SQL_SECURITY, "SQL SECURITY") \
@@ -462,6 +476,9 @@ namespace DB
     MR_MACROS(TABLE_OVERRIDE, "TABLE OVERRIDE") \
     MR_MACROS(TABLE, "TABLE") \
     MR_MACROS(TABLES, "TABLES") \
+    MR_MACROS(TAG, "TAG") \
+    MR_MACROS(TAGS, "TAGS") \
+    MR_MACROS(TAGS_INNER_UUID, "TAGS INNER UUID") \
     MR_MACROS(TEMPORARY_TABLE, "TEMPORARY TABLE") \
     MR_MACROS(TEMPORARY, "TEMPORARY") \
     MR_MACROS(TEST, "TEST") \
@@ -508,6 +525,7 @@ namespace DB
     MR_MACROS(WHEN, "WHEN") \
     MR_MACROS(WHERE, "WHERE") \
     MR_MACROS(WINDOW, "WINDOW") \
+    MR_MACROS(WORKLOAD, "WORKLOAD") \
     MR_MACROS(QUALIFY, "QUALIFY") \
     MR_MACROS(WITH_ADMIN_OPTION, "WITH ADMIN OPTION") \
     MR_MACROS(WITH_CHECK, "WITH CHECK") \
@@ -516,9 +534,11 @@ namespace DB
     MR_MACROS(WITH_NAME, "WITH NAME") \
     MR_MACROS(WITH_REPLACE_OPTION, "WITH REPLACE OPTION") \
     MR_MACROS(WITH_TIES, "WITH TIES") \
+    MR_MACROS(WITH_IMPLICIT, "WITH IMPLICIT") \
     MR_MACROS(WITH, "WITH") \
     MR_MACROS(RECURSIVE, "RECURSIVE") \
     MR_MACROS(WK, "WK") \
+    MR_MACROS(WRITE, "WRITE") \
     MR_MACROS(WRITABLE, "WRITABLE") \
     MR_MACROS(WW, "WW") \
     MR_MACROS(YEAR, "YEAR") \
@@ -575,6 +595,8 @@ enum class Keyword : size_t
 std::string_view toStringView(Keyword type);
 
 const std::vector<String> & getAllKeyWords();
+
+const std::unordered_set<std::string> & getKeyWordSet();
 
 
 /** Parse specified keyword such as SELECT or compound keyword such as ORDER BY.
@@ -633,6 +655,32 @@ protected:
     }
 };
 
+class ParserTokenSequence : public IParserBase
+{
+private:
+    std::vector<TokenType> token_types;
+public:
+    ParserTokenSequence(const std::vector<TokenType> & token_types_) : token_types(token_types_) {} /// NOLINT
+
+protected:
+    const char * getName() const override { return "token sequence"; }
+
+    bool parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected) override
+    {
+        for (auto token_type : token_types)
+        {
+            if (pos->type != token_type)
+            {
+                expected.add(pos, getTokenName(token_type));
+                return false;
+            }
+
+            ++pos;
+        }
+
+        return true;
+    }
+};
 
 // Parser always returns true and do nothing.
 class ParserNothing : public IParserBase

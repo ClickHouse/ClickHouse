@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/cramersv
-sidebar_position: 351
+sidebar_position: 127
 ---
 
 # cramersV

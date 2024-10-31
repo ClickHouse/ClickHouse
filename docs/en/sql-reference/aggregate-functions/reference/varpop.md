@@ -1,7 +1,7 @@
 ---
 title: "varPop"
-slug: "/en/sql-reference/aggregate-functions/reference/varpop"
-sidebar_position: 32
+slug: "/en/sql-reference/aggregate-functions/reference/varPop"
+sidebar_position: 210
 ---
 
 ## varPop

@@ -49,7 +49,10 @@ bool isSafePrimaryDataKeyType(const IDataType & data_type)
         case TypeIndex::Float32:
         case TypeIndex::Float64:
         case TypeIndex::Nullable:
+        case TypeIndex::ObjectDeprecated:
         case TypeIndex::Object:
+        case TypeIndex::Variant:
+        case TypeIndex::Dynamic:
             return false;
         case TypeIndex::Array:
         {
@@ -75,16 +78,6 @@ bool isSafePrimaryDataKeyType(const IDataType & data_type)
         {
             const auto & data_type_map = static_cast<const DataTypeMap &>(data_type);
             return isSafePrimaryDataKeyType(*data_type_map.getKeyType()) && isSafePrimaryDataKeyType(*data_type_map.getValueType());
-        }
-        case TypeIndex::Variant:
-        {
-            const auto & data_type_variant = static_cast<const DataTypeVariant &>(data_type);
-            const auto & data_type_variant_elements = data_type_variant.getVariants();
-            for (const auto & data_type_variant_element : data_type_variant_elements)
-                if (!isSafePrimaryDataKeyType(*data_type_variant_element))
-                    return false;
-
-            return false;
         }
         default:
         {
@@ -229,7 +222,6 @@ public:
         {
             ranges_in_data_parts.emplace_back(
                 initial_ranges_in_data_parts[part_index].data_part,
-                initial_ranges_in_data_parts[part_index].alter_conversions,
                 initial_ranges_in_data_parts[part_index].part_index_in_query,
                 MarkRanges{mark_range});
             part_index_to_initial_ranges_in_data_parts_index[it->second] = part_index;
@@ -264,7 +256,7 @@ struct PartsRangesIterator
         int compare_result = compareValues(value, other.value);
         if (compare_result == -1)
             return true;
-        else if (compare_result == 1)
+        if (compare_result == 1)
             return false;
 
         if (event == other.event)
@@ -943,7 +935,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 
         auto syntax_result = TreeRewriter(context).analyze(filter_function, primary_key.expression->getRequiredColumnsWithTypes());
         auto actions = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
-        reorderColumns(*actions, result.merging_pipes[i].getHeader(), filter_function->getColumnName());
+        reorderColumns(actions, result.merging_pipes[i].getHeader(), filter_function->getColumnName());
         ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
         auto description = fmt::format(
             "filter values in ({}, {}]", i ? ::toString(borders[i - 1]) : "-inf", i < borders.size() ? ::toString(borders[i]) : "+inf");

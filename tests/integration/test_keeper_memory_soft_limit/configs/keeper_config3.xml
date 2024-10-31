@@ -13,7 +13,7 @@
         <tcp_port>2181</tcp_port>
         <server_id>3</server_id>
 
-        <max_memory_usage_soft_limit>20000000</max_memory_usage_soft_limit>
+        <max_memory_usage_soft_limit>200000000</max_memory_usage_soft_limit>
 
         <coordination_settings>
             <operation_timeout_ms>10000</operation_timeout_ms>

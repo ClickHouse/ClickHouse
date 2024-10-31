@@ -1,10 +1,16 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Common/logger_useful.h>
 
 namespace DB
 {
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+}
 
 IMergedBlockOutputStream::IMergedBlockOutputStream(
     const MergeTreeSettingsPtr & storage_settings_,
@@ -21,7 +27,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     {
         SerializationInfo::Settings info_settings =
         {
-            .ratio_of_defaults_for_sparse = storage_settings->ratio_of_defaults_for_sparse_serialization,
+            .ratio_of_defaults_for_sparse = (*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
             .choose_kind = false,
         };
 

@@ -173,7 +173,7 @@ See function [substring](string-functions.md#substring).
 
 ## bitTest
 
-Takes any integer and converts it into [binary form](https://en.wikipedia.org/wiki/Binary_number), returns the value of a bit at specified position. The countdown starts from 0 from the right to the left.
+Takes any integer and converts it into [binary form](https://en.wikipedia.org/wiki/Binary_number), returns the value of a bit at specified position. Counting is right-to-left, starting at 0.
 
 **Syntax**
 
@@ -226,9 +226,9 @@ Result:
 
 ## bitTestAll
 
-Returns result of [logical conjuction](https://en.wikipedia.org/wiki/Logical_conjunction) (AND operator) of all bits at given positions. The countdown starts from 0 from the right to the left.
+Returns result of [logical conjunction](https://en.wikipedia.org/wiki/Logical_conjunction) (AND operator) of all bits at given positions. Counting is right-to-left, starting at 0.
 
-The conjuction for bit-wise operations:
+The conjunction for bit-wise operations:
 
 0 AND 0 = 0
 
@@ -251,7 +251,7 @@ SELECT bitTestAll(number, index1, index2, index3, index4, ...)
 
 **Returned value**
 
-- Result of the logical conjuction. [UInt8](../data-types/int-uint.md).
+- Result of the logical conjunction. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -289,7 +289,7 @@ Result:
 
 ## bitTestAny
 
-Returns result of [logical disjunction](https://en.wikipedia.org/wiki/Logical_disjunction) (OR operator) of all bits at given positions. The countdown starts from 0 from the right to the left.
+Returns result of [logical disjunction](https://en.wikipedia.org/wiki/Logical_disjunction) (OR operator) of all bits at given positions. Counting is right-to-left, starting at 0.
 
 The disjunction for bit-wise operations:
 

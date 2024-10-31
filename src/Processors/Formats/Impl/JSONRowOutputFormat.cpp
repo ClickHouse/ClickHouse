@@ -116,6 +116,8 @@ void JSONRowOutputFormat::finalizeImpl()
         row_count,
         statistics.rows_before_limit,
         statistics.applied_limit,
+        statistics.rows_before_aggregation,
+        statistics.applied_aggregation,
         statistics.watch,
         statistics.progress,
         settings.write_statistics && exception_message.empty(),
