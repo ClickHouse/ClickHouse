@@ -139,7 +139,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
       * http://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
       * Therefore, separate the resolving of the symbol from the call.
       */
-    static void * real_vfork = dlsym(RTLD_DEFAULT, "fork");
+    static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
 #else
     /// If we use Musl with static linking, there is no dlsym and no issue with vfork.
     static void * real_vfork = reinterpret_cast<void *>(&vfork);
