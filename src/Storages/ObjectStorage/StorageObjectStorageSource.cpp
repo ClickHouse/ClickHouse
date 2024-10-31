@@ -521,6 +521,8 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
     size_t buffer_size = prefer_bigger_buffer_size
         ? std::max<size_t>(read_settings.remote_fs_buffer_size, DBMS_DEFAULT_BUFFER_SIZE)
         : read_settings.remote_fs_buffer_size;
+    if (object_size)
+        buffer_size = std::min(object_size, buffer_size);
 
     auto & reader = context_->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
     impl = std::make_unique<AsynchronousBoundedReadBuffer>(
