@@ -381,7 +381,9 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
     if (!isSubjectInSubscriptions(subject))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Selected subject is not among engine subjects");
 
-    auto producer = std::make_unique<NATSProducer>(configuration, getContext()->getMessageBrokerSchedulePool(), subject, shutdown_called, log);
+    auto connection_future = event_handler.createConnection(configuration);
+
+    auto producer = std::make_unique<NATSProducer>(connection_future.get(), subject, shutdown_called, log);
     size_t max_rows = max_rows_per_message;
     /// Need for backward compatibility.
     if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
