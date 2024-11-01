@@ -1373,13 +1373,16 @@ try
         setOOMScore(oom_score, log);
 #endif
 
-    auto cancellation_task_holder = global_context->getSchedulePool().createTask("CancellationChecker", []{ CancellationChecker::getInstance().workerFunction(); });
-    auto cancellation_task = std::make_unique<DB::BackgroundSchedulePoolTaskHolder>(std::move(cancellation_task_holder));
-    (*cancellation_task)->activateAndSchedule();
+    if (server_settings[ServerSetting::background_schedule_pool_size] > 1)
+    {
+        auto cancellation_task_holder = global_context->getSchedulePool().createTask("CancellationChecker", []{ CancellationChecker::getInstance().workerFunction(); });
+        auto cancellation_task = std::make_unique<DB::BackgroundSchedulePoolTaskHolder>(std::move(cancellation_task_holder));
+        (*cancellation_task)->activateAndSchedule();
 
-    SCOPE_EXIT({
-        CancellationChecker::getInstance().terminateThread();
-    });
+        SCOPE_EXIT({
+            CancellationChecker::getInstance().terminateThread();
+        });
+    }
 
     global_context->setRemoteHostFilter(config());
     global_context->setHTTPHeaderFilter(config());
