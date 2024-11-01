@@ -653,14 +653,14 @@ static bool queryHasWithClause(const IAST & ast)
 }
 
 std::optional<bool>
-Client::processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query, const bool ignore_deep_recursion)
+Client::processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query, const bool permissive)
 {
     processParsedSingleQuery(query_to_execute, query_to_execute, parsed_query);
 
     const auto * exception = server_exception ? server_exception.get() : client_exception.get();
     // Sometimes you may get TOO_DEEP_RECURSION from the server,
     // and TOO_DEEP_RECURSION should not fail the fuzzer check.
-    if (ignore_deep_recursion && have_error && exception->code() == ErrorCodes::TOO_DEEP_RECURSION)
+    if (permissive && have_error && exception->code() == ErrorCodes::TOO_DEEP_RECURSION)
     {
         have_error = false;
         server_exception.reset();
@@ -706,7 +706,7 @@ Client::processFuzzingStep(const String & query_to_execute, const ASTPtr & parse
         // reproduce the error.
         printChangedSettings();
 
-        return false;
+        return permissive; //for BuzzHouse, don't continue on error
     }
 
     return std::nullopt;

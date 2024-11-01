@@ -2758,7 +2758,16 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery & sq,
         }
         else if (isdatabase)
         {
-            this->databases[static_cast<uint32_t>(std::stoul(att.object().database().database().substr(1)))]->attached = true;
+            const uint32_t dname = static_cast<uint32_t>(std::stoul(att.object().database().database().substr(1)));
+
+            this->databases[dname]->attached = true;
+            for (auto it = this->tables.begin(); it != this->tables.end(); ++it)
+            {
+                if (it->second.db && it->second.db->dname == dname)
+                {
+                    it->second.attached = true;
+                }
+            }
         }
     }
     else if (sq.has_inner_query() && query.has_detach() && success)
@@ -2778,7 +2787,16 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery & sq,
         }
         else if (isdatabase)
         {
-            this->databases[static_cast<uint32_t>(std::stoul(det.object().database().database().substr(1)))]->attached = false;
+            const uint32_t dname = static_cast<uint32_t>(std::stoul(det.object().database().database().substr(1)));
+
+            this->databases[dname]->attached = false;
+            for (auto it = this->tables.begin(); it != this->tables.end(); ++it)
+            {
+                if (it->second.db && it->second.db->dname == dname)
+                {
+                    it->second.attached = false;
+                }
+            }
         }
     }
     else if (sq.has_inner_query() && query.has_create_database())

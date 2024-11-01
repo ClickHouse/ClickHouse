@@ -459,13 +459,13 @@ public:
 
     void NextIPv4(std::string & ret)
     {
-        ret += this->NextRandomUInt8();
+        ret += std::to_string(this->NextRandomUInt8());
         ret += ".";
-        ret += this->NextRandomUInt8();
+        ret += std::to_string(this->NextRandomUInt8());
         ret += ".";
-        ret += this->NextRandomUInt8();
+        ret += std::to_string(this->NextRandomUInt8());
         ret += ".";
-        ret += this->NextRandomUInt8();
+        ret += std::to_string(this->NextRandomUInt8());
     }
 
     void NextIPv6(std::string & ret)
