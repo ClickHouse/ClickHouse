@@ -7,6 +7,8 @@ namespace buzzhouse
 
 using ColumnSpecial = enum ColumnSpecial { NONE = 0, SIGN = 1, IS_DELETED = 2, VERSION = 3 };
 
+using DetachStatus = enum DetachStatus { ATTACHED = 0, DETACHED = 1, PERM_DETACHED = 2 };
+
 struct SQLColumn
 {
 public:
@@ -67,7 +69,7 @@ public:
 struct SQLDatabase
 {
 public:
-    bool attached = true;
+    DetachStatus attached = ATTACHED;
     uint32_t dname = 0;
     sql_query_grammar::DatabaseEngineValues deng;
 };
@@ -77,7 +79,7 @@ struct SQLBase
 public:
     uint32_t tname = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
-    bool attached = true;
+    DetachStatus attached = ATTACHED;
     std::optional<sql_query_grammar::TableEngineOption> toption;
     sql_query_grammar::TableEngineValues teng;
 

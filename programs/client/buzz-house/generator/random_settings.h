@@ -211,7 +211,7 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
      }},
     {"max_bytes_before_remerge_sort",
      [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
-    {"max_bytes_in_distinct",
+    /*{"max_bytes_in_distinct",
      [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
     {"max_bytes_in_join",
      [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
@@ -226,7 +226,7 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
     {"max_bytes_to_transfer",
      [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
     {"max_columns_to_read",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 6)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 6)); }},*/
     {"max_compress_block_size",
      [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
     {"max_final_threads",
@@ -251,7 +251,7 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
      [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.5, 1, UINT32_C(4096))); }},
     {"max_read_buffer_size",
      [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
-    {"max_result_bytes",
+    /*{"max_result_bytes",
      [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
     {"max_result_rows",
      [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 21)); }},
@@ -274,7 +274,7 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
     {"max_temporary_columns",
      [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 6)); }},
     {"max_temporary_non_const_columns",
-     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 6)); }},
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.NextLargeNumber() % 6)); }},*/
     {"max_threads",
      [](RandomGenerator & rg, std::string & ret)
      { ret += std::to_string(rg.RandomInt<uint32_t>(1, std::thread::hardware_concurrency())); }},

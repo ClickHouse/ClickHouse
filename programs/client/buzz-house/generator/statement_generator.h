@@ -3,6 +3,7 @@
 #include "external_databases.h"
 #include "random_generator.h"
 #include "random_settings.h"
+#include "sql_catalog.h"
 
 
 namespace buzzhouse
@@ -345,20 +346,20 @@ private:
 
 public:
     const std::function<bool(const std::shared_ptr<SQLDatabase> &)> attached_databases
-        = [](const std::shared_ptr<SQLDatabase> & d) { return d->attached; };
+        = [](const std::shared_ptr<SQLDatabase> & d) { return d->attached == DetachStatus::ATTACHED; };
     const std::function<bool(const SQLTable &)> attached_tables
-        = [](const SQLTable & t) { return (!t.db || t.db->attached) && t.attached; };
-    const std::function<bool(const SQLView &)> attached_views = [](const SQLView & v) { return (!v.db || v.db->attached) && v.attached; };
+        = [](const SQLTable & t) { return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED; };
+    const std::function<bool(const SQLView &)> attached_views = [](const SQLView & v) { return (!v.db || v.db->attached == DetachStatus::ATTACHED) && v.attached == DetachStatus::ATTACHED; };
 
     const std::function<bool(const SQLTable &)> attached_tables_for_oracle
-        = [](const SQLTable & t) { return (!t.db || t.db->attached) && t.attached && !t.IsNotTruncableEngine(); };
+        = [](const SQLTable & t) { return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && !t.IsNotTruncableEngine(); };
 
 
     const std::function<bool(const std::shared_ptr<SQLDatabase> &)> detached_databases
-        = [](const std::shared_ptr<SQLDatabase> & d) { return !d->attached; };
+        = [](const std::shared_ptr<SQLDatabase> & d) { return d->attached != DetachStatus::ATTACHED; };
     const std::function<bool(const SQLTable &)> detached_tables
-        = [](const SQLTable & t) { return (t.db && !t.db->attached) || !t.attached; };
-    const std::function<bool(const SQLView &)> detached_views = [](const SQLView & v) { return (v.db && !v.db->attached) || !v.attached; };
+        = [](const SQLTable & t) { return (t.db && t.db->attached != DetachStatus::ATTACHED) || t.attached != DetachStatus::ATTACHED; };
+    const std::function<bool(const SQLView &)> detached_views = [](const SQLView & v) { return (v.db && v.db->attached != DetachStatus::ATTACHED) || v.attached != DetachStatus::ATTACHED; };
 
     StatementGenerator(const FuzzConfig & fuzzc, ExternalDatabases & conn, const bool scf)
         : fc(fuzzc), connections(conn), supports_cloud_features(scf)

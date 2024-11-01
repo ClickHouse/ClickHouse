@@ -388,13 +388,13 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator & rg, SQLBase & b,
     }
     else if (b.IsBufferEngine())
     {
-        const bool has_tables = CollectionHas<SQLTable>([](const SQLTable & t) { return t.db && t.db->attached && t.attached; }),
-                   has_views = CollectionHas<SQLView>([](const SQLView & v) { return v.db && v.db->attached && v.attached; });
+        const bool has_tables = CollectionHas<SQLTable>([](const SQLTable & t) { return t.db && t.db->attached == DetachStatus::ATTACHED && t.attached == DetachStatus::ATTACHED; }),
+                   has_views = CollectionHas<SQLView>([](const SQLView & v) { return v.db && v.db->attached == DetachStatus::ATTACHED && v.attached == DetachStatus::ATTACHED; });
 
         if (has_tables && (!has_views || rg.NextSmallNumber() < 8))
         {
             const SQLTable & t = rg.PickRandomlyFromVector(
-                FilterCollection<SQLTable>([](const SQLTable & tt) { return tt.db && tt.db->attached && tt.attached; }));
+                FilterCollection<SQLTable>([](const SQLTable & tt) { return tt.db && tt.db->attached == DetachStatus::ATTACHED && tt.attached == DetachStatus::ATTACHED; }));
 
             te->add_params()->mutable_database()->set_database("d" + std::to_string(t.db->dname));
             te->add_params()->mutable_table()->set_table("t" + std::to_string(t.tname));
@@ -402,7 +402,7 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator & rg, SQLBase & b,
         else
         {
             const SQLView & v = rg.PickRandomlyFromVector(
-                FilterCollection<SQLView>([](const SQLView & vv) { return vv.db && vv.db->attached && vv.attached; }));
+                FilterCollection<SQLView>([](const SQLView & vv) { return vv.db && vv.db->attached == DetachStatus::ATTACHED && vv.attached == DetachStatus::ATTACHED; }));
 
             te->add_params()->mutable_database()->set_database("d" + std::to_string(v.db->dname));
             te->add_params()->mutable_table()->set_table("v" + std::to_string(v.tname));
@@ -840,8 +840,8 @@ sql_query_grammar::TableEngineValues StatementGenerator::GetNextTableEngine(Rand
     this->ids.push_back(sql_query_grammar::Log);
     this->ids.push_back(sql_query_grammar::TinyLog);
     this->ids.push_back(sql_query_grammar::EmbeddedRocksDB);
-    if (CollectionHas<SQLTable>([](const SQLTable & t) { return t.db && t.db->attached && t.attached; })
-        || CollectionHas<SQLView>([](const SQLView & v) { return v.db && v.db->attached && v.attached; }))
+    if (CollectionHas<SQLTable>([](const SQLTable & t) { return t.db && t.db->attached == DetachStatus::ATTACHED && t.attached == DetachStatus::ATTACHED; })
+        || CollectionHas<SQLView>([](const SQLView & v) { return v.db && v.db->attached == DetachStatus::ATTACHED && v.attached == DetachStatus::ATTACHED; }))
     {
         this->ids.push_back(sql_query_grammar::Buffer);
     }
@@ -1264,7 +1264,7 @@ int StatementGenerator::GenerateNextOptimizeTable(RandomGenerator & rg, sql_quer
 {
     sql_query_grammar::ExprSchemaTable * est = ot->mutable_est();
     const SQLTable & t = rg.PickRandomlyFromVector(FilterCollection<SQLTable>(
-        [](const SQLTable & st) { return (!st.db || st.db->attached) && st.attached && st.IsMergeTreeFamily(); }));
+        [](const SQLTable & st) { return (!st.db || st.db->attached == DetachStatus::ATTACHED) && st.attached == DetachStatus::ATTACHED && st.IsMergeTreeFamily(); }));
 
     if (t.db)
     {
@@ -1610,7 +1610,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
     sql_query_grammar::ExprSchemaTable * est = at->mutable_est();
     const uint32_t nalters = rg.NextBool() ? 1 : ((rg.NextMediumNumber() % 4) + 1);
     const bool has_tables
-        = CollectionHas<SQLTable>([](const SQLTable & tt) { return (!tt.db || tt.db->attached) && tt.attached && !tt.IsFileEngine(); }),
+        = CollectionHas<SQLTable>([](const SQLTable & tt) { return (!tt.db || tt.db->attached == DetachStatus::ATTACHED) && tt.attached == DetachStatus::ATTACHED && !tt.IsFileEngine(); }),
         has_views = CollectionHas<SQLView>(attached_views);
 
     if (has_views && (!has_tables || rg.NextBool()))
@@ -1652,7 +1652,7 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
         SQLTable & t = const_cast<SQLTable &>(
             rg
                 .PickRandomlyFromVector(FilterCollection<SQLTable>(
-                    [](const SQLTable & tt) { return (!tt.db || tt.db->attached) && tt.attached && !tt.IsFileEngine(); }))
+                    [](const SQLTable & tt) { return (!tt.db || tt.db->attached == DetachStatus::ATTACHED) && tt.attached == DetachStatus::ATTACHED && !tt.IsFileEngine(); }))
                 .get());
 
         at->set_is_temp(t.is_temp);
@@ -2273,7 +2273,7 @@ int StatementGenerator::GenerateDetach(RandomGenerator & rg, sql_query_grammar::
     {
         assert(0);
     }
-    det->set_permanently(rg.NextBool());
+    det->set_permanently(!detach_database && rg.NextBool());
     det->set_sync(rg.NextBool());
     return 0;
 }
@@ -2293,14 +2293,14 @@ int StatementGenerator::GenerateNextQuery(RandomGenerator & rg, sql_query_gramma
                    truncate = 2 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables)),
                    optimize_table = 2
         * static_cast<uint32_t>(CollectionHas<SQLTable>([](const SQLTable & t)
-                                                        { return (!t.db || t.db->attached) && t.attached && t.IsMergeTreeFamily(); })),
+                                                        { return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && t.IsMergeTreeFamily(); })),
                    check_table = 2 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables)),
                    desc_table
         = 2 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables) || CollectionHas<SQLView>(attached_views)),
                    exchange_tables = 1 * static_cast<uint32_t>(CollectionCount<SQLTable>(attached_tables) > 1),
                    alter_table = 6
         * static_cast<uint32_t>(CollectionHas<SQLTable>([](const SQLTable & t)
-                                                        { return (!t.db || t.db->attached) && t.attached && !t.IsFileEngine(); })
+                                                        { return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && !t.IsFileEngine(); })
                                 || CollectionHas<SQLView>(attached_views)),
                    set_values = 5,
                    attach = 2
@@ -2750,22 +2750,22 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery & sq,
 
         if (isview)
         {
-            this->views[static_cast<uint32_t>(std::stoul(att.object().est().table().table().substr(1)))].attached = true;
+            this->views[static_cast<uint32_t>(std::stoul(att.object().est().table().table().substr(1)))].attached = DetachStatus::ATTACHED;
         }
         else if (istable)
         {
-            this->tables[static_cast<uint32_t>(std::stoul(att.object().est().table().table().substr(1)))].attached = true;
+            this->tables[static_cast<uint32_t>(std::stoul(att.object().est().table().table().substr(1)))].attached = DetachStatus::ATTACHED;
         }
         else if (isdatabase)
         {
             const uint32_t dname = static_cast<uint32_t>(std::stoul(att.object().database().database().substr(1)));
 
-            this->databases[dname]->attached = true;
+            this->databases[dname]->attached = DetachStatus::ATTACHED;
             for (auto it = this->tables.begin(); it != this->tables.end(); ++it)
             {
                 if (it->second.db && it->second.db->dname == dname)
                 {
-                    it->second.attached = true;
+                    it->second.attached = std::max(it->second.attached, DetachStatus::DETACHED);
                 }
             }
         }
@@ -2775,26 +2775,27 @@ void StatementGenerator::UpdateGenerator(const sql_query_grammar::SQLQuery & sq,
         const sql_query_grammar::Detach & det = sq.inner_query().detach();
         const bool istable = det.object().has_est() && det.object().est().table().table()[0] == 't',
                    isview = det.object().has_est() && det.object().est().table().table()[0] == 'v',
-                   isdatabase = det.object().has_database();
+                   isdatabase = det.object().has_database(),
+                   is_permanent = det.permanently();
 
         if (isview)
         {
-            this->views[static_cast<uint32_t>(std::stoul(det.object().est().table().table().substr(1)))].attached = false;
+            this->views[static_cast<uint32_t>(std::stoul(det.object().est().table().table().substr(1)))].attached = is_permanent ? DetachStatus::PERM_DETACHED : DetachStatus::DETACHED;
         }
         else if (istable)
         {
-            this->tables[static_cast<uint32_t>(std::stoul(det.object().est().table().table().substr(1)))].attached = false;
+            this->tables[static_cast<uint32_t>(std::stoul(det.object().est().table().table().substr(1)))].attached = is_permanent ? DetachStatus::PERM_DETACHED : DetachStatus::DETACHED;
         }
         else if (isdatabase)
         {
             const uint32_t dname = static_cast<uint32_t>(std::stoul(det.object().database().database().substr(1)));
 
-            this->databases[dname]->attached = false;
+            this->databases[dname]->attached = DetachStatus::DETACHED;
             for (auto it = this->tables.begin(); it != this->tables.end(); ++it)
             {
                 if (it->second.db && it->second.db->dname == dname)
                 {
-                    it->second.attached = false;
+                    it->second.attached = std::max(it->second.attached, DetachStatus::DETACHED);
                 }
             }
         }
