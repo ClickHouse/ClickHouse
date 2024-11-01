@@ -139,7 +139,7 @@ FileSegmentGuard::Lock FileSegment::lock() const
 
 void FileSegment::setDownloadState(State state, const FileSegmentGuard::Lock & lock)
 {
-    if (isCompleted(false) && state != State::DETACHED)
+    if (isCompleted(false))
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -700,6 +700,8 @@ void FileSegment::complete()
         case State::PARTIALLY_DOWNLOADED:
         {
             chassert(current_downloaded_size > 0);
+            chassert(fs::exists(getPath()));
+            chassert(fs::file_size(getPath()) > 0);
 
             if (is_last_holder)
             {
@@ -841,29 +843,60 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
         }
     }
 
-    if (download_state == State::DOWNLOADED)
+    switch (download_state.load())
     {
-        chassert(downloader_id.empty());
-        chassert(downloaded_size == reserved_size);
-        chassert(downloaded_size == range().size());
-        chassert(downloaded_size > 0);
-        chassert(std::filesystem::file_size(getPath()) > 0);
-        check_iterator(queue_iterator);
-    }
-    else
-    {
-        if (download_state == State::DOWNLOADING)
-        {
-            chassert(!downloader_id.empty());
-        }
-        else if (download_state == State::PARTIALLY_DOWNLOADED
-                 || download_state == State::EMPTY)
+        case State::EMPTY:
         {
             chassert(downloader_id.empty());
+            chassert(!fs::exists(getPath()));
+            chassert(!queue_iterator);
+            break;
         }
+        case State::DOWNLOADED:
+        {
+            chassert(downloader_id.empty());
 
-        chassert(reserved_size >= downloaded_size);
-        check_iterator(queue_iterator);
+            chassert(downloaded_size == reserved_size);
+            chassert(downloaded_size == range().size());
+            chassert(downloaded_size > 0);
+            chassert(fs::file_size(getPath()) > 0);
+
+            chassert(queue_iterator);
+            check_iterator(queue_iterator);
+            break;
+        }
+        case State::DOWNLOADING:
+        {
+            chassert(!downloader_id.empty());
+            if (downloaded_size)
+            {
+                chassert(queue_iterator);
+                chassert(fs::file_size(getPath()) > 0);
+            }
+            break;
+        }
+        case State::PARTIALLY_DOWNLOADED:
+        {
+            chassert(downloader_id.empty());
+
+            chassert(reserved_size >= downloaded_size);
+            chassert(downloaded_size > 0);
+            chassert(fs::file_size(getPath()) > 0);
+
+            chassert(queue_iterator);
+            check_iterator(queue_iterator);
+            break;
+        }
+        case State::PARTIALLY_DOWNLOADED_NO_CONTINUATION:
+        {
+            chassert(reserved_size >= downloaded_size);
+            check_iterator(queue_iterator);
+            break;
+        }
+        case State::DETACHED:
+        {
+            break;
+        }
     }
 
     return true;
@@ -991,7 +1024,12 @@ FileSegmentsHolder::FileSegmentsHolder(FileSegments && file_segments_)
 FileSegmentPtr FileSegmentsHolder::getSingleFileSegment() const
 {
     if (file_segments.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected single file segment, got: {} in holder {}", file_segments.size(), toString());
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Expected single file segment, got: {} in holder {}",
+            file_segments.size(), toString());
+    }
     return file_segments.front();
 }
 
@@ -1001,7 +1039,18 @@ void FileSegmentsHolder::reset()
 
     ProfileEvents::increment(ProfileEvents::FilesystemCacheUnusedHoldFileSegments, file_segments.size());
     for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end();)
-        file_segment_it = completeAndPopFrontImpl();
+    {
+        try
+        {
+            file_segment_it = completeAndPopFrontImpl();
+        }
+        catch (...)
+        {
+            chassert(false);
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            continue;
+        }
+    }
     file_segments.clear();
 }
 
