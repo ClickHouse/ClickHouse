@@ -62,7 +62,7 @@ private:
     std::mutex mutex;
     std::atomic_bool emergency_stop{false};
     BackgroundSchedulePoolTaskHolder task_handle;
-    
+
     static ReplicasReconnector * instance_ptr(ReplicasReconnector * ptr = nullptr, bool deinitialize = false)
     {
         static ReplicasReconnector * instance_ptr = nullptr;
