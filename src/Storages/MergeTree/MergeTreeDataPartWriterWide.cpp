@@ -6,6 +6,8 @@
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnSparse.h>
 #include <Common/logger_useful.h>
+#include <Storages/MergeTree/MergeTreeMarksLoader.h>
+#include <Storages/MarkCache.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
@@ -105,6 +107,12 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
             indices_to_recalc_, stats_to_recalc_, marks_file_extension_,
             default_codec_, settings_, index_granularity_)
 {
+    if (settings.save_marks_in_cache)
+    {
+        auto columns_vec = getColumnsToPrewarmMarks(*storage_settings, columns_list);
+        columns_to_load_marks = NameSet(columns_vec.begin(), columns_vec.end());
+    }
+
     for (const auto & column : columns_list)
     {
         auto compression = getCodecDescOrDefault(column.name, default_codec);
@@ -197,6 +205,9 @@ void MergeTreeDataPartWriterWide::addStreams(
             marks_compression_codec,
             settings.marks_compress_block_size,
             query_write_settings);
+
+        if (columns_to_load_marks.contains(name_and_type.name))
+            cached_marks.emplace(stream_name, std::make_unique<MarksInCompressedFile::PlainArray>());
 
         full_name_to_stream_name.emplace(full_stream_name, stream_name);
         stream_name_to_full_name.emplace(stream_name, full_stream_name);
@@ -366,8 +377,12 @@ void MergeTreeDataPartWriterWide::flushMarkToFile(const StreamNameAndMark & stre
 
     writeBinaryLittleEndian(stream_with_mark.mark.offset_in_compressed_file, marks_out);
     writeBinaryLittleEndian(stream_with_mark.mark.offset_in_decompressed_block, marks_out);
+
     if (settings.can_use_adaptive_granularity)
         writeBinaryLittleEndian(rows_in_mark, marks_out);
+
+    if (auto it = cached_marks.find(stream_with_mark.stream_name); it != cached_marks.end())
+        it->second->push_back(stream_with_mark.mark);
 }
 
 StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
@@ -742,7 +757,6 @@ void MergeTreeDataPartWriterWide::fillChecksums(MergeTreeDataPartChecksums & che
         fillPrimaryIndexChecksums(checksums);
 
     fillSkipIndicesChecksums(checksums);
-
     fillStatisticsChecksums(checksums);
 }
 
@@ -756,7 +770,6 @@ void MergeTreeDataPartWriterWide::finish(bool sync)
         finishPrimaryIndexSerialization(sync);
 
     finishSkipIndicesSerialization(sync);
-
     finishStatisticsSerialization(sync);
 }
 
