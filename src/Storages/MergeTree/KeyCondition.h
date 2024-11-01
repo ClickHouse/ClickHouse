@@ -237,6 +237,27 @@ public:
 
     bool isRelaxed() const { return relaxed; }
 
+    /// Space-filling curves in the key
+    enum class SpaceFillingCurveType
+    {
+        Unknown = 0,
+        Morton,
+        Hilbert
+    };
+    static const std::unordered_map<String, SpaceFillingCurveType> space_filling_curve_name_to_type;
+
+    struct SpaceFillingCurveDescription
+    {
+        size_t key_column_pos;
+        String function_name;
+        std::vector<String> arguments;
+        SpaceFillingCurveType type;
+    };
+    using SpaceFillingCurveDescriptions = std::vector<SpaceFillingCurveDescription>;
+    SpaceFillingCurveDescriptions key_space_filling_curves;
+
+    bool isSinglePoint() const { return single_point; }
+
 private:
     BoolMask checkInRange(
         size_t used_key_size,
@@ -357,24 +378,6 @@ private:
     /// All intermediate columns are used to calculate key_expr.
     const NameSet key_subexpr_names;
 
-    /// Space-filling curves in the key
-    enum class SpaceFillingCurveType
-    {
-        Unknown = 0,
-        Morton,
-        Hilbert
-    };
-    static const std::unordered_map<String, SpaceFillingCurveType> space_filling_curve_name_to_type;
-
-    struct SpaceFillingCurveDescription
-    {
-        size_t key_column_pos;
-        String function_name;
-        std::vector<String> arguments;
-        SpaceFillingCurveType type;
-    };
-    using SpaceFillingCurveDescriptions = std::vector<SpaceFillingCurveDescription>;
-    SpaceFillingCurveDescriptions key_space_filling_curves;
     void getAllSpaceFillingCurves();
 
     /// Array joined column names
