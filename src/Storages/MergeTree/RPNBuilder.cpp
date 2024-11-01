@@ -297,7 +297,10 @@ FutureSetPtr tryGetSetFromDAGNode(const ActionsDAG::Node * dag_node)
         column = &column_const->getDataColumn();
 
     if (const auto * column_set = typeid_cast<const ColumnSet *>(column))
+    {
+        std::cerr << ".... tryGetSetFromDAGNode " << reinterpret_cast<const void *>(column_set) << std::endl;
         return column_set->getData();
+    }
 
     return {};
 }

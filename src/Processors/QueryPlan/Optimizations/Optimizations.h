@@ -114,6 +114,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
+void optimizeFilterByJoinSet(QueryPlan::Node & node);
 
 /// A separate tree traverse to apply sorting properties after *InOrder optimizations.
 void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);

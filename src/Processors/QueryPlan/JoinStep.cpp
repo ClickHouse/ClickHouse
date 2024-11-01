@@ -3,9 +3,12 @@
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnSet.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 
 namespace DB
 {
@@ -50,6 +53,20 @@ JoinStep::JoinStep(
     updateInputHeaders({left_header_, right_header_});
 }
 
+void JoinStep::setDynamicParts(
+    DynamiclyFilteredPartsRangesPtr dynamic_parts_,
+    ActionsDAG dynamic_filter_,
+    ColumnSet * column_set_,
+    ContextPtr context_,
+    StorageMetadataPtr metdata_)
+{
+    dynamic_parts = std::move(dynamic_parts_);
+    dynamic_filter = std::move(dynamic_filter_);
+    column_set = column_set_;
+    context = std::move(context_);
+    metdata = std::move(metdata_);
+}
+
 QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
 {
     if (pipelines.size() != 2)
@@ -63,10 +80,119 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         return joined_pipeline;
     }
 
+    auto finish_callback = [
+        algo = this->join,
+        parts = this->dynamic_parts,
+        col_set = this->column_set,
+        filter = std::make_shared<ActionsDAG>(std::move(this->dynamic_filter)),
+        ctx = this->context,
+        metadata_snapshot = this->metdata]()
+    {
+        if (!parts)
+            return;
+
+        const auto * hash_join = typeid_cast<const HashJoin *>(algo.get());
+        if (!hash_join)
+            return;
+
+        const auto & blocks = hash_join->getJoinedData()->blocks;
+        if (blocks.empty())
+            return;
+
+        ColumnsWithTypeAndName squashed;
+        std::vector<size_t> positions;
+        const auto & table_join = hash_join->getTableJoin();
+        const auto & clause = table_join.getClauses().front();
+        std::cerr << "===== " << blocks.front().dumpStructure() << std::endl;
+        for (const auto & name : clause.key_names_right)
+        {
+            std::cerr << ".... " << name << std::endl;
+            if (blocks.front().has(name))
+                positions.push_back(blocks.front().getPositionByName(name));
+        }
+
+        if (positions.empty())
+            return;
+
+        bool first = true;
+        for (const auto & block : blocks)
+        {
+            if (first)
+            {
+                first = false;
+                for (size_t pos : positions)
+                    squashed.push_back(blocks.front().getByPosition(pos));
+                continue;
+            }
+
+            for (size_t i = 0; i < positions.size(); ++i)
+            {
+                auto & sq_col = squashed[i];
+                auto col_mutable = IColumn::mutate(std::move(sq_col.column));
+
+                const auto & rhs_col = block.getByPosition(positions[i]);
+                size_t rows = rhs_col.column->size();
+
+                col_mutable->insertRangeFrom(*rhs_col.column, 0, rows);
+                sq_col.column = std::move(col_mutable);
+            }
+        }
+
+        std::cerr << "Right join data rows " << squashed.front().column->size() << std::endl;
+
+        auto set = std::make_shared<FutureSetFromTuple>(squashed, ctx->getSettingsRef());
+        col_set->setData(std::move(set));
+
+        std::cerr << ".... ccc " << reinterpret_cast<const void *>(col_set) << std::endl;
+
+        const auto & primary_key = metadata_snapshot->getPrimaryKey();
+        const Names & primary_key_column_names = primary_key.column_names;
+
+        KeyCondition key_condition(filter.get(), ctx, primary_key_column_names, primary_key.expression);
+        std::cerr << "======== " << key_condition.toString() << std::endl;
+
+        const auto & settings = ctx->getSettingsRef();
+        auto log = getLogger("DynamicJoinFilter");
+
+        auto parts_with_lock = parts->parts_ranges_ptr->get();
+        RangesInDataParts filtered_part_ranges;
+        for (auto & part_range : parts_with_lock.parts_ranges)
+        {
+            MarkRanges filtered_ranges;
+            for (auto & range : part_range.ranges)
+            {
+                std::cerr << "Range " << range.begin << ' ' << range.end << std::endl;
+                auto new_ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
+                    part_range.data_part,
+                    range.begin,
+                    range.end,
+                    metadata_snapshot,
+                    key_condition,
+                    {}, nullptr, settings, log);
+
+                for (auto & new_range : new_ranges)
+                {
+                    std::cerr << "New Range " << new_range.begin << ' ' << new_range.end << std::endl;
+                    if (new_range.getNumberOfMarks())
+                        filtered_ranges.push_back(new_range);
+                }
+            }
+
+            if (!filtered_ranges.empty())
+            {
+                auto & filtered_range = filtered_part_ranges.emplace_back(part_range.data_part, part_range.part_index_in_query);
+                filtered_range.ranges = std::move(filtered_ranges);
+            }
+        }
+
+        parts_with_lock.parts_ranges = std::move(filtered_part_ranges);
+    };
+
     return QueryPipelineBuilder::joinPipelinesRightLeft(
         std::move(pipelines[0]),
         std::move(pipelines[1]),
         join,
+        std::move(finish_callback),
         *output_header,
         max_block_size,
         max_streams,
@@ -90,6 +216,13 @@ void JoinStep::describeActions(FormatSettings & settings) const
 
     for (const auto & [name, value] : describeJoinActions(join))
         settings.out << prefix << name << ": " << value << '\n';
+
+    if (dynamic_parts)
+    {
+        settings.out << prefix << "Dynamic Filter\n";
+        auto expression = std::make_shared<ExpressionActions>(dynamic_filter.clone());
+        expression->describeActions(settings.out, prefix);
+    }
 }
 
 void JoinStep::describeActions(JSONBuilder::JSONMap & map) const

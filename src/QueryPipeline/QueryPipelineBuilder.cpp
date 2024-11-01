@@ -382,6 +382,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     std::unique_ptr<QueryPipelineBuilder> left,
     std::unique_ptr<QueryPipelineBuilder> right,
     JoinPtr join,
+    std::function<void()> finish_callback,
     const Block & output_header,
     size_t max_block_size,
     size_t max_streams,
@@ -440,7 +441,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             Processors processors;
             for (auto & outport : outports)
             {
-                auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join);
+                auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join, finish_callback);
                 connect(*outport, adding_joined->getInputs().front());
                 processors.emplace_back(adding_joined);
             }
@@ -453,7 +454,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     {
         right->resize(1);
 
-        auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join);
+        auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join, finish_callback);
         InputPort * totals_port = nullptr;
         if (right->hasTotals())
             totals_port = adding_joined->addTotalsPort();

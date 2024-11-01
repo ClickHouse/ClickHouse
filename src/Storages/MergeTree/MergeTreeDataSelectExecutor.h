@@ -66,6 +66,8 @@ public:
 
     static MarkRanges markRangesFromPKRange(
         const MergeTreeData::DataPartPtr & part,
+        size_t start_mark,
+        size_t end_mark,
         const StorageMetadataPtr & metadata_snapshot,
         const KeyCondition & key_condition,
         const std::optional<KeyCondition> & part_offset_condition,

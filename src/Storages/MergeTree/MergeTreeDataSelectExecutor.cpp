@@ -130,7 +130,7 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     MarkRanges exact_ranges;
     for (const auto & part : parts)
     {
-        MarkRanges part_ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, &exact_ranges, settings, log);
+        MarkRanges part_ranges = markRangesFromPKRange(part, 0, part->index_granularity.getMarksCount(), metadata_snapshot, key_condition, {}, &exact_ranges, settings, log);
         for (const auto & range : part_ranges)
             rows_count += part->index_granularity.getRowsCountInRange(range);
     }
@@ -707,6 +707,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithPrimaryKey);
                 ranges.ranges = markRangesFromPKRange(
                     part,
+                    0, part->index_granularity.getMarksCount(),
                     metadata_snapshot,
                     key_condition,
                     part_offset_condition,
@@ -1052,6 +1053,8 @@ size_t MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
 /// If @exact_ranges is not null, fill it with ranges containing marks of fully matched records.
 MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const MergeTreeData::DataPartPtr & part,
+    size_t start_mark,
+    size_t end_mark,
     const StorageMetadataPtr & metadata_snapshot,
     const KeyCondition & key_condition,
     const std::optional<KeyCondition> & part_offset_condition,
@@ -1062,11 +1065,18 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     MarkRanges res;
 
     size_t marks_count = part->index_granularity.getMarksCount();
-    const auto & index = part->getIndex();
+    bool has_final_mark = part->index_granularity.hasFinalMark();
+
     if (marks_count == 0)
         return res;
 
-    bool has_final_mark = part->index_granularity.hasFinalMark();
+    if (has_final_mark && end_mark == marks_count)
+        --end_mark;
+
+    if (start_mark >= end_mark)
+        return res;
+
+    const auto & index = part->getIndex();
 
     bool key_condition_useful = !key_condition.alwaysUnknownOrTrue();
     bool part_offset_condition_useful = part_offset_condition && !part_offset_condition->alwaysUnknownOrTrue();
@@ -1074,11 +1084,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     /// If index is not used.
     if (!key_condition_useful && !part_offset_condition_useful)
     {
-        if (has_final_mark)
-            res.push_back(MarkRange(0, marks_count - 1));
-        else
-            res.push_back(MarkRange(0, marks_count));
-
+        res.push_back(MarkRange(start_mark, end_mark));
         return res;
     }
 
@@ -1220,7 +1226,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         /// At each step, take the left segment and check if it fits.
         /// If fits, split it into smaller ones and put them on the stack. If not, discard it.
         /// If the segment is already of one mark length, add it to response and discard it.
-        std::vector<MarkRange> ranges_stack = { {0, marks_count - (has_final_mark ? 1 : 0)} };
+        std::vector<MarkRange> ranges_stack = { {start_mark, end_mark} };
 
         size_t steps = 0;
 
@@ -1284,8 +1290,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
         MarkRange result_range;
 
-        size_t last_mark = marks_count - (has_final_mark ? 1 : 0);
-        size_t searched_left = 0;
+        size_t last_mark = end_mark;
+        size_t searched_left = start_mark;
         size_t searched_right = last_mark;
 
         bool check_left = false;

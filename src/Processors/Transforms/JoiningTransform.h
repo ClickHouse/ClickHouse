@@ -95,7 +95,7 @@ private:
 class FillingRightJoinSideTransform : public IProcessor
 {
 public:
-    FillingRightJoinSideTransform(Block input_header, JoinPtr join_);
+    FillingRightJoinSideTransform(Block input_header, JoinPtr join_, std::function<void()> on_finish_callback_);
     String getName() const override { return "FillingRightJoinSide"; }
 
     InputPort * addTotalsPort();
@@ -109,6 +109,9 @@ private:
     bool stop_reading = false;
     bool for_totals = false;
     bool set_totals = false;
+    bool on_finish = false;
+
+    std::function<void()> on_finish_callback;
 };
 
 

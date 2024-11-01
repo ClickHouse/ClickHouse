@@ -400,6 +400,7 @@ public:
             if (!key_condition.alwaysFalse())
                 mark_ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     data_part,
+                    0, data_part->index_granularity.getMarksCount(),
                     metadata_snapshot,
                     key_condition,
                     /*part_offset_condition=*/{},

@@ -132,6 +132,8 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
             if (optimization_settings.distinct_in_order)
                 optimizeDistinctInOrder(*frame.node, nodes);
+
+            optimizeFilterByJoinSet(*frame.node);
         }
 
         /// Traverse all children first.

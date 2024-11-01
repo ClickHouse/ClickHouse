@@ -77,6 +77,7 @@ class FutureSetFromTuple final : public FutureSet
 {
 public:
     FutureSetFromTuple(Block block, const Settings & settings);
+    explicit FutureSetFromTuple(Block block);
 
     SetPtr get() const override { return set; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;

@@ -222,9 +222,10 @@ Block JoiningTransform::readExecute(Chunk & chunk)
     return res;
 }
 
-FillingRightJoinSideTransform::FillingRightJoinSideTransform(Block input_header, JoinPtr join_)
+FillingRightJoinSideTransform::FillingRightJoinSideTransform(Block input_header, JoinPtr join_, std::function<void()> on_finish_callback_)
     : IProcessor({input_header}, {Block()})
     , join(std::move(join_))
+    , on_finish_callback(std::move(on_finish_callback_))
 {}
 
 InputPort * FillingRightJoinSideTransform::addTotalsPort()
@@ -293,12 +294,26 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
         return Status::Ready;
     }
 
+    if (!on_finish)
+    {
+        on_finish = true;
+        return Status::Ready;
+    }
+
     output.finish();
     return Status::Finished;
 }
 
 void FillingRightJoinSideTransform::work()
 {
+    if (on_finish)
+    {
+        join->tryRerangeRightTableData();
+        if (on_finish_callback)
+            on_finish_callback();
+        return;
+    }
+
     auto & input = inputs.front();
     auto block = input.getHeader().cloneWithColumns(chunk.detachColumns());
 
@@ -306,9 +321,6 @@ void FillingRightJoinSideTransform::work()
         join->setTotals(block);
     else
         stop_reading = !join->addBlockToJoin(block);
-
-    if (input.isFinished())
-        join->tryRerangeRightTableData();
 
     set_totals = for_totals;
 }

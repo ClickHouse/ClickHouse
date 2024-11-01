@@ -2,12 +2,18 @@
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include "Processors/QueryPlan/ReadFromMergeTree.h"
 
 namespace DB
 {
 
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
+
+struct DynamiclyFilteredPartsRanges;
+using DynamiclyFilteredPartsRangesPtr = std::shared_ptr<DynamiclyFilteredPartsRanges>;
+
+class ColumnSet;
 
 /// Join two data streams.
 class JoinStep : public IQueryPlanStep
@@ -34,6 +40,13 @@ public:
     void setJoin(JoinPtr join_) { join = std::move(join_); }
     bool allowPushDownToRight() const;
 
+    void setDynamicParts(
+        DynamiclyFilteredPartsRangesPtr dynamic_parts_,
+        ActionsDAG dynamic_filter_,
+        ColumnSet * column_set_,
+        ContextPtr context_,
+        StorageMetadataPtr metdata_);
+
 private:
     void updateOutputHeader() override;
 
@@ -41,6 +54,12 @@ private:
     size_t max_block_size;
     size_t max_streams;
     bool keep_left_read_in_order;
+
+    DynamiclyFilteredPartsRangesPtr dynamic_parts;
+    ActionsDAG dynamic_filter;
+    ColumnSet * column_set;
+    ContextPtr context;
+    StorageMetadataPtr metdata;
 };
 
 /// Special step for the case when Join is already filled.

@@ -85,6 +85,23 @@ FutureSetFromTuple::FutureSetFromTuple(Block block, const Settings & settings)
     set->finishInsert();
 }
 
+FutureSetFromTuple::FutureSetFromTuple(Block block)
+{
+    SizeLimits no_limits;
+    set = std::make_shared<Set>(no_limits, 0, 0);
+    set->setHeader(block.cloneEmpty().getColumnsWithTypeAndName());
+
+    Columns columns;
+    columns.reserve(block.columns());
+    for (const auto & column : block)
+        columns.emplace_back(column.column);
+
+    set_key_columns.filter = ColumnUInt8::create(block.rows());
+
+    set->insertFromColumns(columns, set_key_columns);
+    set->finishInsert();
+}
+
 DataTypes FutureSetFromTuple::getTypes() const { return set->getElementsTypes(); }
 
 SetPtr FutureSetFromTuple::buildOrderedSetInplace(const ContextPtr & context)
