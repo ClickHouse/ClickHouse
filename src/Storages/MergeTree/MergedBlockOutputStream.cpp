@@ -85,14 +85,14 @@ void MergedBlockOutputStream::writeWithPermutation(const Block & block, const IC
 
 struct MergedBlockOutputStream::Finalizer::Impl
 {
-    MergeTreeDataPartWriterPtr writer;
+    IMergeTreeDataPartWriter & writer;
     MergeTreeData::MutableDataPartPtr part;
     NameSet files_to_remove_after_finish;
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
     bool sync;
 
-    Impl(MergeTreeDataPartWriterPtr && writer_, MergeTreeData::MutableDataPartPtr part_, const NameSet & files_to_remove_after_finish_, bool sync_)
-        : writer(std::move(writer_))
+    Impl(IMergeTreeDataPartWriter & writer_, MergeTreeData::MutableDataPartPtr part_, const NameSet & files_to_remove_after_finish_, bool sync_)
+        : writer(writer_)
         , part(std::move(part_))
         , files_to_remove_after_finish(files_to_remove_after_finish_)
         , sync(sync_)
@@ -121,7 +121,7 @@ void MergedBlockOutputStream::Finalizer::cancel()
 
 void MergedBlockOutputStream::Finalizer::Impl::finish()
 {
-    writer->finish(sync);
+    writer.finish(sync);
 
     for (auto & file : written_files)
     {
@@ -150,7 +150,7 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
 
 void MergedBlockOutputStream::Finalizer::Impl::cancel()
 {
-    writer->cancel();
+    writer.cancel();
 
     for (auto & file : written_files)
     {
@@ -247,8 +247,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     if (default_codec != nullptr)
         new_part->default_codec = default_codec;
 
-
-    auto finalizer = std::make_unique<Finalizer::Impl>(std::move(writer), new_part, files_to_remove_after_sync, sync);
+    auto finalizer = std::make_unique<Finalizer::Impl>(*writer, new_part, files_to_remove_after_sync, sync);
     finalizer->written_files = std::move(written_files);
     return Finalizer(std::move(finalizer));
 }

@@ -712,7 +712,6 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(bool sync)
         stream.second->finalize();
         if (sync)
             stream.second->sync();
-        stream.second.reset();
     }
 
     column_streams.clear();

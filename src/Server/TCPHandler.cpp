@@ -447,6 +447,21 @@ void TCPHandler::runImpl()
             }
         }
 
+        /** An exception during the execution of request (it must be sent over the network to the client).
+         *  The client will be able to accept it, if it did not happen while sending another packet and the client has not disconnected yet.
+         */
+        std::unique_ptr<DB::Exception> exception;
+
+        SCOPE_EXIT({
+            if (exception)
+            {
+                if (exception->code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
+                    LOG_INFO(log, getExceptionMessageAndPattern(*exception, send_exception_with_stack_trace));
+                else
+                    LOG_ERROR(log, getExceptionMessageAndPattern(*exception, send_exception_with_stack_trace));
+            }
+        });
+
         OpenTelemetry::TracingContextHolderPtr thread_trace_context;
         /// Initialized later. It has to be destroyed after query_state is destroyed.
         std::optional<CurrentThread::QueryScope> query_scope;
@@ -455,11 +470,6 @@ void TCPHandler::runImpl()
         /// (i.e. deallocations from the Aggregator with two-level aggregation)
         /// Also it resets socket's timeouts.
         std::optional<QueryState> query_state;
-
-        /** An exception during the execution of request (it must be sent over the network to the client).
-         *  The client will be able to accept it, if it did not happen while sending another packet and the client has not disconnected yet.
-         */
-        std::unique_ptr<DB::Exception> exception;
 
         try
         {
@@ -742,11 +752,6 @@ void TCPHandler::runImpl()
             auto exception_code = exception->code();
 
             LOG_DEBUG(log, "we do not have an query state");
-
-            if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
-                LOG_INFO(log, getExceptionMessageAndPattern(*exception, send_exception_with_stack_trace));
-            else
-                LOG_ERROR(log, getExceptionMessageAndPattern(*exception, send_exception_with_stack_trace));
 
             if (!query_state.has_value())
                 return;
