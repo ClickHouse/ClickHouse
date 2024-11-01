@@ -65,6 +65,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     {"24.11",
         {
             {"validate_mutation_query", false, true, "New setting to validate mutation queries by default."},
+            {"distributed_cache_discard_connection_if_unread_data", true, true, "New setting"},
         }
     },
     {"24.10",
