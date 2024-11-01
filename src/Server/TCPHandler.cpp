@@ -655,6 +655,8 @@ void TCPHandler::runImpl()
                     {
                         auto callback = [this, &query_state]()
                         {
+                            LOG_DEBUG(log, " pipeline CancelCallback called");
+
                             std::lock_guard lock(callback_mutex);
 
                             receivePacketsExpectCancel(query_state.value());
@@ -2341,8 +2343,6 @@ void TCPHandler::processCancel(QueryState & state)
 
 void TCPHandler::receivePacketsExpectCancel(QueryState & state)
 {
-    std::lock_guard lock(callback_mutex);
-
     if (after_check_cancelled.elapsed() / 1000 < interactive_delay)
         return;
 
