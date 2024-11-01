@@ -16,6 +16,9 @@ $CLICKHOUSE_CLIENT -q "
     grant system views on ${second_db}.* to $test_user;
 "
 
+# TODO: After https://github.com/ClickHouse/ClickHouse/pull/71336 is merged, remove
+#       "definer CURRENT_USER sql security definer" part from both queries.
+
 # Check that permissions are checked on creation.
 $CLICKHOUSE_CLIENT --user $test_user -q "
     create materialized view ${second_db}.v refresh every 2 second (x String) engine Memory definer CURRENT_USER sql security definer as select * from a; -- {serverError ACCESS_DENIED}
