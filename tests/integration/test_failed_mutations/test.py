@@ -28,7 +28,7 @@ POSTPONE_MUTATION_LOG = (
     "According to exponential backoff policy, do not perform mutations for the part"
 )
 FAILING_MUTATION_QUERY = (
-    "ALTER TABLE test_mutations DELETE WHERE x IN (SELECT throwIf(1))"
+    "ALTER TABLE test_mutations DELETE WHERE x IN (SELECT throwIf(1)) SETTINGS allow_nondeterministic_mutations = 1"
 )
 
 all_nodes = [node_with_backoff, node_no_backoff]
@@ -111,7 +111,7 @@ def test_exponential_backoff_create_dependent_table(started_cluster):
 
     # Executing incorrect mutation.
     node_with_backoff.query(
-        "ALTER TABLE test_mutations DELETE WHERE x IN (SELECT x FROM dep_table) SETTINGS validate_mutation_query = 0"
+        "ALTER TABLE test_mutations DELETE WHERE x IN (SELECT x FROM dep_table) SETTINGS allow_nondeterministic_mutations = 1, validate_mutation_query = 0"
     )
 
     # Creating dependent table for mutation.
