@@ -1,17 +1,43 @@
+Rejects INSERTs of Arrays with different sizes
 Issue #52258: Empty Arrays or Arrays with default values are rejected
-- Annoy
-- Usearch
 It is possible to create parts with different Array vector sizes but there will be an error at query time
-- Annoy
-- Usearch
 Correctness of index with > 1 mark
-- Annoy
 1	[1,0]	0
 9000	[9000,0]	0
-1	(1,0)	0
-9000	(9000,0)	0
-- Usearch
-1	[1,0]	0
-9000	[9000,0]	0
-1	(1,0)	0
-9000	(9000,0)	0
+Issue #69085: Reference vector computed by a subquery
+Expression (Projection)
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Expression (Before ORDER BY)
+        ReadFromMergeTree (default.tab)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 4/4
+          Skip
+            Name: idx
+            Description: vector_similarity GRANULARITY 2
+            Parts: 1/1
+            Granules: 2/4
+Expression (Projection)
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Expression (Before ORDER BY)
+        ReadFromMergeTree (default.tab)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 4/4
+Expression (Projection)
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Expression (Before ORDER BY)
+        ReadFromMergeTree (default.tab)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 4/4
+index_granularity_bytes = 0 is disallowed

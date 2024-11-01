@@ -40,17 +40,18 @@ struct FunctionDetectProgrammingLanguageImpl
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         const auto & programming_freq = FrequencyHolder::getInstance().getProgrammingFrequency();
 
         /// Constant 5 is arbitrary
-        res_data.reserve(offsets.size() * 5);
-        res_offsets.resize(offsets.size());
+        res_data.reserve(input_rows_count * 5);
+        res_offsets.resize(input_rows_count);
 
         size_t res_offset = 0;
 
-        for (size_t i = 0; i < offsets.size(); ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * str = data.data() + offsets[i - 1];
             const size_t str_len = offsets[i] - offsets[i - 1] - 1;

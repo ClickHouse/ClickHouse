@@ -23,6 +23,7 @@
 #if USE_ROCKSDB
 #include <rocksdb/table.h>
 #include <rocksdb/convenience.h>
+#include <rocksdb/statistics.h>
 #include <rocksdb/utilities/db_ttl.h>
 #endif
 
@@ -88,7 +89,7 @@ static rocksdb::Options getRocksDBOptionsFromConfig(const Poco::Util::AbstractCo
     if (config.has("keeper_server.rocksdb.options"))
     {
         auto config_options = getOptionsFromConfig(config, "keeper_server.rocksdb.options");
-        status = rocksdb::GetDBOptionsFromMap(merged, config_options, &merged);
+        status = rocksdb::GetDBOptionsFromMap({}, merged, config_options, &merged);
         if (!status.ok())
         {
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from 'rocksdb.options' : {}",
@@ -98,7 +99,7 @@ static rocksdb::Options getRocksDBOptionsFromConfig(const Poco::Util::AbstractCo
     if (config.has("rocksdb.column_family_options"))
     {
         auto column_family_options = getOptionsFromConfig(config, "rocksdb.column_family_options");
-        status = rocksdb::GetColumnFamilyOptionsFromMap(merged, column_family_options, &merged);
+        status = rocksdb::GetColumnFamilyOptionsFromMap({}, merged, column_family_options, &merged);
         if (!status.ok())
         {
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from 'rocksdb.column_family_options' at: {}", status.ToString());
@@ -107,7 +108,7 @@ static rocksdb::Options getRocksDBOptionsFromConfig(const Poco::Util::AbstractCo
     if (config.has("rocksdb.block_based_table_options"))
     {
         auto block_based_table_options = getOptionsFromConfig(config, "rocksdb.block_based_table_options");
-        status = rocksdb::GetBlockBasedTableOptionsFromMap(table_options, block_based_table_options, &table_options);
+        status = rocksdb::GetBlockBasedTableOptionsFromMap({}, table_options, block_based_table_options, &table_options);
         if (!status.ok())
         {
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from 'rocksdb.block_based_table_options' at: {}", status.ToString());
@@ -137,8 +138,7 @@ KeeperContext::Storage KeeperContext::getRocksDBPathFromConfig(const Poco::Util:
 
     if (standalone_keeper)
         return create_local_disk(std::filesystem::path{config.getString("path", KEEPER_DEFAULT_PATH)} / "rocksdb");
-    else
-        return create_local_disk(std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/rocksdb");
+    return create_local_disk(std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/rocksdb");
 }
 
 void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config, KeeperDispatcher * dispatcher_)
@@ -167,6 +167,12 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
         digest_enabled = false; /// TODO: support digest
     }
     #endif
+
+    if (config.has("keeper_server.precommit_sleep_ms_for_testing"))
+        precommit_sleep_ms_for_testing = config.getInt64("keeper_server.precommit_sleep_ms_for_testing");
+
+    if (config.has("keeper_server.precommit_sleep_probability_for_testing"))
+        precommit_sleep_probability_for_testing = config.getDouble("keeper_server.precommit_sleep_probability_for_testing");
 }
 
 namespace
@@ -410,7 +416,9 @@ KeeperContext::Storage KeeperContext::getLogsPathFromConfig(const Poco::Util::Ab
         if (!fs::exists(path))
             fs::create_directories(path);
 
-        return std::make_shared<DiskLocal>("LocalLogDisk", path);
+        auto disk = std::make_shared<DiskLocal>("LocalLogDisk", path);
+        disk->startup(Context::getGlobalContextInstance(), false);
+        return disk;
     };
 
     /// the most specialized path
@@ -425,8 +433,7 @@ KeeperContext::Storage KeeperContext::getLogsPathFromConfig(const Poco::Util::Ab
 
     if (standalone_keeper)
         return create_local_disk(std::filesystem::path{config.getString("path", KEEPER_DEFAULT_PATH)} / "logs");
-    else
-        return create_local_disk(std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/logs");
+    return create_local_disk(std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/logs");
 }
 
 KeeperContext::Storage KeeperContext::getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const
@@ -436,7 +443,9 @@ KeeperContext::Storage KeeperContext::getSnapshotsPathFromConfig(const Poco::Uti
         if (!fs::exists(path))
             fs::create_directories(path);
 
-        return std::make_shared<DiskLocal>("LocalSnapshotDisk", path);
+        auto disk = std::make_shared<DiskLocal>("LocalSnapshotDisk", path);
+        disk->startup(Context::getGlobalContextInstance(), false);
+        return disk;
     };
 
     /// the most specialized path
@@ -451,8 +460,7 @@ KeeperContext::Storage KeeperContext::getSnapshotsPathFromConfig(const Poco::Uti
 
     if (standalone_keeper)
         return create_local_disk(std::filesystem::path{config.getString("path", KEEPER_DEFAULT_PATH)} / "snapshots");
-    else
-        return create_local_disk(std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/snapshots");
+    return create_local_disk(std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/snapshots");
 }
 
 KeeperContext::Storage KeeperContext::getStatePathFromConfig(const Poco::Util::AbstractConfiguration & config) const
@@ -462,7 +470,9 @@ KeeperContext::Storage KeeperContext::getStatePathFromConfig(const Poco::Util::A
         if (!fs::exists(path))
             fs::create_directories(path);
 
-        return std::make_shared<DiskLocal>("LocalStateFileDisk", path);
+        auto disk = std::make_shared<DiskLocal>("LocalStateFileDisk", path);
+        disk->startup(Context::getGlobalContextInstance(), false);
+        return disk;
     };
 
     if (config.has("keeper_server.state_storage_disk"))
@@ -479,8 +489,7 @@ KeeperContext::Storage KeeperContext::getStatePathFromConfig(const Poco::Util::A
 
     if (standalone_keeper)
         return create_local_disk(std::filesystem::path{config.getString("path", KEEPER_DEFAULT_PATH)});
-    else
-        return create_local_disk(std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination");
+    return create_local_disk(std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination");
 }
 
 void KeeperContext::initializeFeatureFlags(const Poco::Util::AbstractConfiguration & config)
@@ -555,9 +564,9 @@ void KeeperContext::waitLocalLogsPreprocessedOrShutdown()
     local_logs_preprocessed_cv.wait(lock, [this]{ return shutdown_called || local_logs_preprocessed; });
 }
 
-const CoordinationSettingsPtr & KeeperContext::getCoordinationSettings() const
+const CoordinationSettings & KeeperContext::getCoordinationSettings() const
 {
-    return coordination_settings;
+    return *coordination_settings;
 }
 
 uint64_t KeeperContext::lastCommittedIndex() const

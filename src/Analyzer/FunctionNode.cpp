@@ -173,9 +173,9 @@ bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compar
 
     if (lhs_result_type && rhs_result_type && !lhs_result_type->equals(*rhs_result_type))
         return false;
-    else if (lhs_result_type && !rhs_result_type)
+    if (lhs_result_type && !rhs_result_type)
         return false;
-    else if (!lhs_result_type && rhs_result_type)
+    if (!lhs_result_type && rhs_result_type)
         return false;
 
     return true;
@@ -242,7 +242,8 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
     /// Avoid cast for `IN tuple(...)` expression.
     /// Tuples could be quite big, and adding a type may significantly increase query size.
     /// It should be safe because set type for `column IN tuple` is deduced from `column` type.
-    if (isNameOfInFunction(function_name) && argument_nodes.size() > 1 &&  argument_nodes[1]->getNodeType() == QueryTreeNodeType::CONSTANT)
+    if (isNameOfInFunction(function_name) && argument_nodes.size() > 1 && argument_nodes[1]->getNodeType() == QueryTreeNodeType::CONSTANT
+        && !static_cast<const ConstantNode *>(argument_nodes[1].get())->hasSourceExpression())
         new_options.add_cast_for_constants = false;
 
     const auto & parameters = getParameters();

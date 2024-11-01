@@ -99,6 +99,9 @@ private:
         ColumnPtr create(const ColumnPtr & prev) const override;
     };
 
+    template <typename Reader>
+    void deserialize(IColumn & column, Reader && reader) const;
+
     SerializationPtr nested;
 };
 

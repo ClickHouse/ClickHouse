@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
 import argparse
-import clickhouse_driver
-import itertools
 import functools
+import itertools
+import logging
 import math
 import os
 import pprint
@@ -14,9 +14,10 @@ import string
 import sys
 import time
 import traceback
-import logging
 import xml.etree.ElementTree as et
 from threading import Thread
+
+import clickhouse_driver
 from scipy import stats
 
 logging.basicConfig(
@@ -344,6 +345,16 @@ for query_index in queries_to_run:
         query_display_name = f"{query_display_name[:1000]}...({query_index})"
 
     print(f"display-name\t{query_index}\t{tsv_escape(query_display_name)}")
+
+    for conn_index, c in enumerate(all_connections):
+        try:
+            c.execute("SYSTEM JEMALLOC PURGE")
+
+            print(f"purging jemalloc arenas\t{conn_index}\t{c.last_query.elapsed}")
+        except KeyboardInterrupt:
+            raise
+        except:
+            continue
 
     # Prewarm: run once on both servers. Helps to bring the data into memory,
     # precompile the queries, etc.

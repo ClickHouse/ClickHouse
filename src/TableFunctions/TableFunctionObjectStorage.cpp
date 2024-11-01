@@ -14,10 +14,11 @@
 
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/ObjectStorage/S3/Configuration.h>
-#include <Storages/ObjectStorage/HDFS/Configuration.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <Storages/ObjectStorage/HDFS/Configuration.h>
+#include <Storages/ObjectStorage/Local/Configuration.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 
 namespace DB
@@ -84,11 +85,11 @@ ColumnsDescription TableFunctionObjectStorage<
         context->checkAccess(getSourceAccessType());
         ColumnsDescription columns;
         auto storage = getObjectStorage(context, !is_insert_query);
-        resolveSchemaAndFormat(columns, configuration->format, storage, configuration, std::nullopt, context);
+        std::string sample_path;
+        resolveSchemaAndFormat(columns, configuration->format, storage, configuration, std::nullopt, sample_path, context);
         return columns;
     }
-    else
-        return parseColumnsListFromString(configuration->structure, context);
+    return parseColumnsListFromString(configuration->structure, context);
 }
 
 template <typename Definition, typename Configuration>
@@ -222,5 +223,5 @@ template class TableFunctionObjectStorage<OSSDefinition, StorageS3Configuration>
 template class TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfiguration>;
 template class TableFunctionObjectStorage<HDFSClusterDefinition, StorageHDFSConfiguration>;
 #endif
-
+template class TableFunctionObjectStorage<LocalDefinition, StorageLocalConfiguration>;
 }

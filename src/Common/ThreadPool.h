@@ -32,7 +32,7 @@ class JobWithPriority;
   *
   * This thread pool can be used as a task queue.
   * For example, you can create a thread pool with 10 threads (and queue of size 10) and schedule 1000 tasks
-  * - in this case you will be blocked to keep 10 tasks in fly.
+  * - in this case you will be blocked to keep 10 tasks in flight.
   *
   * Thread: std::thread or something with identical interface.
   */
@@ -40,8 +40,56 @@ template <typename Thread>
 class ThreadPoolImpl
 {
 public:
+    // used as 'unlimited' thread pool size
+    // on linux you can not have more threads even if the RAM is unlimited
+    // see https://docs.kernel.org/admin-guide/sysctl/kernel.html#threads-max
+    static constexpr int MAX_THEORETICAL_THREAD_COUNT = 0x3fffffff; // ~1 billion
+
     using Job = std::function<void()>;
     using Metric = CurrentMetrics::Metric;
+
+    // Subclass that encapsulates the thread and has the ability to remove itself from the pool.
+    class ThreadFromThreadPool
+    {
+    public:
+        using ThreadList = std::list<std::unique_ptr<ThreadFromThreadPool>>;
+
+        /// Constructor to initialize and start the thread (but not associate it with the pool)
+        explicit ThreadFromThreadPool(ThreadPoolImpl& parent_pool);
+
+        // Shift the thread state from Preparing to Running to allow the worker to start.
+        void start(ThreadList::iterator& it);
+
+        void join();
+
+        // Destructor to join the thread if needed (shift the state to Destructing if it was not running)
+        ~ThreadFromThreadPool();
+
+    private:
+        ThreadPoolImpl& parent_pool;
+        Thread thread;
+
+        enum class ThreadState
+        {
+            Preparing,
+            Running,
+            Destructing
+        };
+
+        // Atomic state to track the thread's state
+        std::atomic<ThreadState> thread_state;
+
+        // Stores the position of the thread in the parent thread pool list
+        typename std::list<std::unique_ptr<ThreadFromThreadPool>>::iterator thread_it;
+
+        // Remove itself from the parent pool
+        void removeSelfFromPoolNoPoolLock();
+
+        // Worker does a busy loop (with yield) while the state is Preparing.
+        // After that, immediately returns if the state changed to Destructing,
+        // or starts the main working loop if the state is Running.
+        void worker();
+    };
 
     /// Maximum number of threads is based on the number of physical cores.
     ThreadPoolImpl(Metric metric_threads_, Metric metric_active_threads_, Metric metric_scheduled_jobs_);
@@ -63,14 +111,14 @@ public:
         size_t queue_size_,
         bool shutdown_on_exception_ = true);
 
-    /// Add new job. Locks until number of scheduled jobs is less than maximum or exception in one of threads was thrown.
-    /// If any thread was throw an exception, first exception will be rethrown from this method,
-    ///  and exception will be cleared.
+    /// Add new job. Locks until the number of scheduled jobs is less than the maximum or an exception in one of the threads was thrown.
+    /// If any thread has thrown an exception, the first exception will be rethrown from this method,
+    /// and the exception will be cleared.
     /// Also throws an exception if cannot create thread.
     /// Priority: lower is higher.
-    /// NOTE: Probably you should call wait() if exception was thrown. If some previously scheduled jobs are using some objects,
-    /// located on stack of current thread, the stack must not be unwinded until all jobs finished. However,
-    /// if ThreadPool is a local object, it will wait for all scheduled jobs in own destructor.
+    /// NOTE: Probably you should call wait() if an exception was thrown. If some previously scheduled jobs are using some objects,
+    /// located on the stack of the current thread, the stack must not be unwound until all jobs are finished. However,
+    /// if ThreadPool is a local object, it will wait for all scheduled jobs in its own destructor.
     void scheduleOrThrowOnError(Job job, Priority priority = {});
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or return false.
@@ -81,12 +129,12 @@ public:
 
     /// Wait for all currently active jobs to be done.
     /// You may call schedule and wait many times in arbitrary order.
-    /// If any thread was throw an exception, first exception will be rethrown from this method,
-    ///  and exception will be cleared.
+    /// If any thread has thrown an exception, the first exception will be rethrown from this method,
+    /// and the exception will be cleared.
     void wait();
 
     /// Waits for all threads. Doesn't rethrow exceptions (use 'wait' method to rethrow exceptions).
-    /// You should not destroy object while calling schedule or wait methods from another threads.
+    /// You should not destroy the object while calling schedule or wait methods from other threads.
     ~ThreadPoolImpl();
 
     /// Returns number of running and scheduled jobs.
@@ -127,27 +175,39 @@ private:
     size_t queue_size;
 
     size_t scheduled_jobs = 0;
+
+    // Originally equals to max_threads, but changes dynamically.
+    // Decrements with every new thread started, increments when it finishes.
+    // If positive, then more threads can be started.
+    // When it comes to zero, it means that max_threads threads have already been started.
+    // it can be below zero when the threadpool is shutting down
+    std::atomic<int64_t> remaining_pool_capacity;
+
+    // Increments every time a new thread joins the thread pool or a job finishes.
+    // Decrements every time a task is scheduled.
+    // If positive, it means that there are more threads than jobs (and some are idle).
+    // If zero, it means that every thread has a job.
+    // If negative, it means that we have more jobs than threads.
+    std::atomic<int64_t> available_threads;
+
     bool shutdown = false;
     bool threads_remove_themselves = true;
     const bool shutdown_on_exception = true;
 
-    boost::heap::priority_queue<JobWithPriority> jobs;
-    std::list<Thread> threads;
+    boost::heap::priority_queue<JobWithPriority,boost::heap::stable<true>> jobs;
+    ThreadFromThreadPool::ThreadList threads;
     std::exception_ptr first_exception;
     std::stack<OnDestroyCallback> on_destroy_callbacks;
 
     template <typename ReturnType>
     ReturnType scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
 
-    void worker(typename std::list<Thread>::iterator thread_it);
-
-    /// Tries to start new threads if there are scheduled jobs and the limit `max_threads` is not reached. Must be called with `mutex` locked.
+    /// Tries to start new threads if there are scheduled jobs and the limit `max_threads` is not reached. Must be called with the mutex locked.
     void startNewThreadsNoLock();
 
     void finalize();
     void onDestroy();
 };
-
 
 /// ThreadPool with std::thread for threads.
 using FreeThreadPool = ThreadPoolImpl<std::thread>;

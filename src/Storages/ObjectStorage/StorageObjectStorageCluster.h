@@ -27,6 +27,8 @@ public:
     RemoteQueryExecutor::Extension getTaskIteratorExtension(
         const ActionsDAG::Node * predicate, const ContextPtr & context) const override;
 
+    String getPathSample(StorageInMemoryMetadata metadata, ContextPtr context);
+
 private:
     void updateQueryToSendIfNeeded(
         ASTPtr & query,

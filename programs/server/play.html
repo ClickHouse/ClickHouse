@@ -522,6 +522,9 @@
     const current_url = new URL(window.location);
     const opened_locally = location.protocol == 'file:';
 
+    /// Run query instantly after page is loaded if the run parameter is present.
+    const run_immediately = current_url.searchParams.has("run");
+
     const server_address = current_url.searchParams.get('url');
     if (server_address) {
         document.getElementById('url').value = server_address;
@@ -599,6 +602,9 @@
                     const title = "ClickHouse Query: " + query;
 
                     let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
+                    if (run_immediately) {
+                        history_url += "&run=1";
+                    }
                     if (server_address != location.origin) {
                         /// Save server's address in URL if it's not identical to the address of the play UI.
                         history_url += '&url=' + encodeURIComponent(server_address);
@@ -1158,6 +1164,10 @@
         media_query_list.addEventListener('change', function(e) {
             setColorTheme(e.matches ? 'dark' : 'light');
         });
+    }
+
+    if (run_immediately) {
+        post();
     }
 
     document.getElementById('toggle-light').onclick = function() {

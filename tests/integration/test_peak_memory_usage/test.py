@@ -1,6 +1,7 @@
-import pytest
-import tempfile
 import re
+import tempfile
+
+import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.uclient import client, prompt

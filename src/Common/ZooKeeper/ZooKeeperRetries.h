@@ -159,6 +159,8 @@ public:
     const std::string & getLastKeeperErrorMessage() const { return keeper_error.message; }
 
     /// action will be called only once and only after latest failed retry
+    /// NOTE: this one will be called only in case when retries finishes with Keeper exception
+    /// if it will be some other exception this function will not be called.
     void actionAfterLastFailedRetry(std::function<void()> f) { action_after_last_failed_retry = std::move(f); }
 
     const std::string & getName() const { return name; }

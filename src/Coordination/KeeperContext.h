@@ -92,7 +92,18 @@ public:
     /// returns true if the log is committed, false if timeout happened
     bool waitCommittedUpto(uint64_t log_idx, uint64_t wait_timeout_ms);
 
-    const CoordinationSettingsPtr & getCoordinationSettings() const;
+    const CoordinationSettings & getCoordinationSettings() const;
+
+    int64_t getPrecommitSleepMillisecondsForTesting() const
+    {
+        return precommit_sleep_ms_for_testing;
+    }
+
+    double getPrecommitSleepProbabilityForTesting() const
+    {
+        chassert(precommit_sleep_probability_for_testing >= 0 && precommit_sleep_probability_for_testing <= 1);
+        return precommit_sleep_probability_for_testing;
+    }
 
 private:
     /// local disk defined using path or disk name
@@ -150,6 +161,9 @@ private:
     std::optional<UInt64> wait_commit_upto_idx = 0;
     std::mutex last_committed_log_idx_cv_mutex;
     std::condition_variable last_committed_log_idx_cv;
+
+    int64_t precommit_sleep_ms_for_testing = 0;
+    double precommit_sleep_probability_for_testing = 0.0;
 
     CoordinationSettingsPtr coordination_settings;
 };

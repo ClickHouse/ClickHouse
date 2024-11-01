@@ -49,7 +49,7 @@ order by query;
  tuple(2)
 select 'optimize_skip_unused_shards_rewrite_in(2,)';
 optimize_skip_unused_shards_rewrite_in(2,)
-with (select currentDatabase()) as id_2 select *, ignore(id_2) from dist_01756 where dummy in (2,);
+with (select currentDatabase()) as id_2 select *, ignore(id_2) from dist_01756 where dummy in (2);
 system flush logs;
 select splitByString('IN', query)[-1] from system.query_log where
     event_date >= yesterday() and
@@ -59,10 +59,10 @@ select splitByString('IN', query)[-1] from system.query_log where
     query like concat('%', currentDatabase(), '%AS%id_2%') and
     type = 'QueryFinish'
 order by query;
- tuple(2)
+ (2)
 select 'optimize_skip_unused_shards_rewrite_in(0,)';
 optimize_skip_unused_shards_rewrite_in(0,)
-with (select currentDatabase()) as id_00 select *, ignore(id_00) from dist_01756 where dummy in (0,);
+with (select currentDatabase()) as id_00 select *, ignore(id_00) from dist_01756 where dummy in (0);
 0	0
 system flush logs;
 select splitByString('IN', query)[-1] from system.query_log where
@@ -73,7 +73,7 @@ select splitByString('IN', query)[-1] from system.query_log where
     query like concat('%', currentDatabase(), '%AS%id_00%') and
     type = 'QueryFinish'
 order by query;
- tuple(0)
+ (0)
 -- signed column
 select 'signed column';
 signed column
@@ -103,7 +103,7 @@ errors
 -- optimize_skip_unused_shards does not support non-constants
 select * from dist_01756 where dummy in (select * from system.one); -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
 -- this is a constant for analyzer
-select * from dist_01756 where dummy in (toUInt8(0)) settings allow_experimental_analyzer=0; -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
+select * from dist_01756 where dummy in (toUInt8(0)) settings enable_analyzer=0; -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
 -- NOT IN does not supported
 select * from dist_01756 where dummy not in (0, 2); -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
 --
@@ -140,7 +140,7 @@ select * from dist_01756_str where key in ('0', '2');
 select * from dist_01756_str where key in (0, 2);
 0
 -- analyzer does support this
-select * from dist_01756_str where key in ('0', Null) settings allow_experimental_analyzer=0; -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
+select * from dist_01756_str where key in ('0', Null) settings enable_analyzer=0; -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
 -- select * from dist_01756_str where key in (0, 2); -- { serverError TYPE_MISMATCH }
 -- select * from dist_01756_str where key in (0, Null); -- { serverError TYPE_MISMATCH }
 

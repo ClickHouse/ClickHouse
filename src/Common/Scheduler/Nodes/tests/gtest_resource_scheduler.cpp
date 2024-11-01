@@ -1,11 +1,13 @@
 #include <gtest/gtest.h>
 
-#include <Common/Scheduler/SchedulerRoot.h>
-
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
+
+#include <Common/Scheduler/SchedulerRoot.h>
+#include <Common/randomSeed.h>
 
 #include <barrier>
 #include <future>
+#include <pcg_random.hpp>
 
 using namespace DB;
 
@@ -21,6 +23,17 @@ struct ResourceTest : public ResourceTestBase
     ~ResourceTest()
     {
         scheduler.stop(true);
+    }
+
+    std::mutex rng_mutex;
+    pcg64 rng{randomSeed()};
+
+    template <typename T>
+    T randomInt(T from, T to)
+    {
+        std::uniform_int_distribution<T> distribution(from, to);
+        std::lock_guard lock(rng_mutex);
+        return distribution(rng);
     }
 };
 
@@ -109,24 +122,53 @@ TEST(SchedulerRoot, Smoke)
     r2.registerResource();
 
     {
-        ResourceGuard rg(a);
+        ResourceGuard rg(ResourceGuard::Metrics::getIOWrite(), a);
         EXPECT_TRUE(fc1->requests.contains(&rg.request));
+        rg.consume(1);
     }
 
     {
-        ResourceGuard rg(b);
+        ResourceGuard rg(ResourceGuard::Metrics::getIOWrite(), b);
         EXPECT_TRUE(fc1->requests.contains(&rg.request));
+        rg.consume(1);
     }
 
     {
-        ResourceGuard rg(c);
+        ResourceGuard rg(ResourceGuard::Metrics::getIOWrite(), c);
         EXPECT_TRUE(fc2->requests.contains(&rg.request));
+        rg.consume(1);
     }
 
     {
-        ResourceGuard rg(d);
+        ResourceGuard rg(ResourceGuard::Metrics::getIOWrite(), d);
         EXPECT_TRUE(fc2->requests.contains(&rg.request));
+        rg.consume(1);
     }
+}
+
+TEST(SchedulerRoot, Budget)
+{
+    ResourceTest t;
+
+    ResourceHolder r1(t);
+    r1.add<ConstraintTest>("/", "<max_requests>1</max_requests>");
+    r1.add<PriorityPolicy>("/prio");
+    auto a = r1.addQueue("/prio/A", "");
+    r1.registerResource();
+
+    ResourceCost total_real_cost = 0;
+    int total_requests = 10;
+    for (int i = 0 ; i < total_requests; i++)
+    {
+        ResourceCost est_cost = t.randomInt(1, 10);
+        ResourceCost real_cost = t.randomInt(0, 10);
+        ResourceGuard rg(ResourceGuard::Metrics::getIOWrite(), a, est_cost);
+        rg.consume(real_cost);
+        total_real_cost += real_cost;
+    }
+
+    EXPECT_EQ(total_requests, a.queue->dequeued_requests);
+    EXPECT_EQ(total_real_cost, a.queue->dequeued_cost - a.queue->getBudget());
 }
 
 TEST(SchedulerRoot, Cancel)

@@ -10,9 +10,9 @@
                 <type>cache</type>
                 <disk>local_disk</disk>
                 <path>/tiny_local_cache/</path>
-                <max_size>10M</max_size>
-                <max_file_segment_size>1M</max_file_segment_size>
-                <boundary_alignment>1M</boundary_alignment>
+                <max_size>12M</max_size>
+                <max_file_segment_size>100K</max_file_segment_size>
+                <boundary_alignment>100K</boundary_alignment>
                 <cache_on_write_operations>1</cache_on_write_operations>
             </tiny_local_cache>
 

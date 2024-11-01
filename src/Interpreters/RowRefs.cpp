@@ -144,7 +144,7 @@ public:
         return low;
     }
 
-    RowRef findAsof(const IColumn & asof_column, size_t row_num) override
+    RowRef * findAsof(const IColumn & asof_column, size_t row_num) override
     {
         sort();
 
@@ -156,10 +156,10 @@ public:
         if (pos != entries.size())
         {
             size_t row_ref_index = entries[pos].row_ref_index;
-            return row_refs[row_ref_index];
+            return &row_refs[row_ref_index];
         }
 
-        return {nullptr, 0};
+        return nullptr;
     }
 
 private:

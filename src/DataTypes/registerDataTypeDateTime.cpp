@@ -49,13 +49,13 @@ getArgument(const ASTPtr & arguments, size_t argument_index, const char * argume
             if (argument && argument->value.getType() != field_type)
                 throw Exception(getExceptionMessage(fmt::format(" has wrong type: {}", argument->value.getTypeName()),
                     argument_index, argument_name, context_data_type_name, field_type), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            else
-                throw Exception(getExceptionMessage(" is missing", argument_index, argument_name, context_data_type_name, field_type),
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(
+                getExceptionMessage(" is missing", argument_index, argument_name, context_data_type_name, field_type),
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
     }
 
-    return argument->value.get<NearestResultType>();
+    return argument->value.safeGet<NearestResultType>();
 }
 
 static DataTypePtr create(const ASTPtr & arguments)

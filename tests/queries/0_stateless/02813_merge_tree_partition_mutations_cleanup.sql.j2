@@ -18,7 +18,7 @@ drop table if exists {{table}};
 select 'against finished_mutations_to_keep={{keep}}';
 create table {{table}} (key Int, p Int) engine=MergeTree() order by tuple() partition by p settings finished_mutations_to_keep={{keep}};
 
-insert into {{table}} values (1, 2), (2, 3)
+insert into {{table}} values (1, 2), (2, 3);
 alter table {{table}} update key=key+1 in partition 2 where 1 settings mutations_sync = 1;
 alter table {{table}} update key=key+2 in partition 2 where 1 settings mutations_sync = 1;
 {{ print_mutations('mutations after first cleanup', table, keep*1) }}

@@ -1,6 +1,8 @@
-#include <Common/typeid_cast.h>
-#include <Parsers/ParserStringAndSubstitution.h>
 #include <Parsers/ParserAlterQuery.h>
+
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -9,15 +11,18 @@
 #include <Parsers/ParserRefreshStrategy.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTIndexDeclaration.h>
-#include <Parsers/ASTAlterQuery.h>
-#include <Parsers/ASTLiteral.h>
+#include <Parsers/ParserStringAndSubstitution.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int SYNTAX_ERROR;
+}
 
 bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -124,7 +129,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
     ParserStringAndSubstitution parser_string_and_substituion;
-    ParserIdentifier parser_remove_property;
     ParserCompoundColumnDeclaration parser_col_decl;
     ParserIndexDeclaration parser_idx_decl;
     ParserStatisticsDeclaration parser_stat_decl;
@@ -519,7 +523,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (!parser_string_literal.parse(pos, ast_space_name, expected))
                     return false;
 
-                command->move_destination_name = ast_space_name->as<ASTLiteral &>().value.get<const String &>();
+                command->move_destination_name = ast_space_name->as<ASTLiteral &>().value.safeGet<const String &>();
             }
             else if (s_move_partition.ignore(pos, expected))
             {
@@ -547,7 +551,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     if (!parser_string_literal.parse(pos, ast_space_name, expected))
                         return false;
 
-                    command->move_destination_name = ast_space_name->as<ASTLiteral &>().value.get<const String &>();
+                    command->move_destination_name = ast_space_name->as<ASTLiteral &>().value.safeGet<const String &>();
                 }
             }
             else if (s_add_constraint.ignore(pos, expected))
@@ -640,7 +644,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (!parser_string_literal.parse(pos, ast_from, expected))
                     return false;
 
-                command->from = ast_from->as<ASTLiteral &>().value.get<const String &>();
+                command->from = ast_from->as<ASTLiteral &>().value.safeGet<const String &>();
                 command->type = ASTAlterCommand::FETCH_PARTITION;
             }
             else if (s_fetch_part.ignore(pos, expected))
@@ -654,7 +658,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 ASTPtr ast_from;
                 if (!parser_string_literal.parse(pos, ast_from, expected))
                     return false;
-                command->from = ast_from->as<ASTLiteral &>().value.get<const String &>();
+                command->from = ast_from->as<ASTLiteral &>().value.safeGet<const String &>();
                 command->part = true;
                 command->type = ASTAlterCommand::FETCH_PARTITION;
             }
@@ -682,7 +686,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     if (!parser_string_literal.parse(pos, ast_with_name, expected))
                         return false;
 
-                    command->with_name = ast_with_name->as<ASTLiteral &>().value.get<const String &>();
+                    command->with_name = ast_with_name->as<ASTLiteral &>().value.safeGet<const String &>();
                 }
             }
             else if (s_unfreeze.ignore(pos, expected))
@@ -709,7 +713,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     if (!parser_string_literal.parse(pos, ast_with_name, expected))
                         return false;
 
-                    command->with_name = ast_with_name->as<ASTLiteral &>().value.get<const String &>();
+                    command->with_name = ast_with_name->as<ASTLiteral &>().value.safeGet<const String &>();
                 }
                 else
                 {
@@ -727,8 +731,21 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (!parser_modify_col_decl.parse(pos, command_col_decl, expected))
                     return false;
 
+                auto check_no_type = [&](const std::string_view keyword)
+                {
+                    const auto & column_decl = command_col_decl->as<const ASTColumnDeclaration &>();
+
+                    if (!column_decl.children.empty() || column_decl.null_modifier.has_value() || !column_decl.default_specifier.empty()
+                        || column_decl.ephemeral_default || column_decl.primary_key_specifier)
+                    {
+                        throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot specify column properties before '{}'", keyword);
+                    }
+                };
+
                 if (s_remove.ignore(pos, expected))
                 {
+                    check_no_type(s_remove.getName());
+
                     if (s_default.ignore(pos, expected))
                         command->remove_property = toStringView(Keyword::DEFAULT);
                     else if (s_materialized.ignore(pos, expected))
@@ -748,11 +765,15 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 }
                 else if (s_modify_setting.ignore(pos, expected))
                 {
+                    check_no_type(s_modify_setting.getName());
+
                     if (!parser_settings.parse(pos, command_settings_changes, expected))
                         return false;
                 }
                 else if (s_reset_setting.ignore(pos, expected))
                 {
+                    check_no_type(s_reset_setting.getName());
+
                     if (!parser_reset_setting.parse(pos, command_settings_resets, expected))
                         return false;
                 }
@@ -767,6 +788,11 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     }
                 }
                 command->type = ASTAlterCommand::MODIFY_COLUMN;
+
+                /// Make sure that type is not populated when REMOVE/MODIFY SETTING/RESET SETTING is used, because we wouldn't modify the type, which can be confusing
+                chassert(
+                    nullptr == command_col_decl->as<const ASTColumnDeclaration &>().type
+                    || (command->remove_property.empty() && nullptr == command_settings_changes && nullptr == command_settings_resets));
             }
             else if (s_modify_order_by.ignore(pos, expected))
             {

@@ -51,7 +51,7 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
         std::string contents;
         {
             ReadBufferFromFile in(path, 1024);
-            LimitReadBuffer limit_in(in, 1024, /* trow_exception */ false, /* exact_limit */ {});
+            LimitReadBuffer limit_in(in, 1024, /* throw_exception */ false, /* exact_limit */ {});
             readStringUntilEOF(contents, limit_in);
         }
 
@@ -73,8 +73,7 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
         {
             if (errno == EWOULDBLOCK)
                 throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Cannot lock file {}. Another server instance in same directory is already running.", path);
-            else
-                ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot lock file {}", path);
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot lock file {}", path);
         }
 
         if (0 != ftruncate(fd, 0))
@@ -100,7 +99,7 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
     }
     catch (...)
     {
-        int err = close(fd);
+        [[maybe_unused]] int err = close(fd);
         chassert(!err || errno == EINTR);
         throw;
     }

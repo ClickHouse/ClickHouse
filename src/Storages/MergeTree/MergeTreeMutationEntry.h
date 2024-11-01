@@ -17,7 +17,7 @@ class StorageMergeTree;
 struct MergeTreeMutationEntry
 {
     time_t create_time = 0;
-    MutationCommands commands;
+    std::shared_ptr<MutationCommands> commands;
 
     DiskPtr disk;
     String path_prefix;

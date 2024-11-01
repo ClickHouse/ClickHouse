@@ -3,15 +3,16 @@
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
 #include <Common/memcpySmall.h>
+#include <Common/checkStackSize.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/PeekableReadBuffer.h>
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
-#include <base/find_symbols.h>
 #include <cstdlib>
 #include <bit>
+#include <utility>
 
 #include <base/simd.h>
 
@@ -39,6 +40,7 @@ namespace ErrorCodes
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 template <size_t num_bytes, typename IteratorSrc, typename IteratorDst>
@@ -854,6 +856,12 @@ void readBackQuotedString(String & s, ReadBuffer & buf)
     readBackQuotedStringInto<false>(s, buf);
 }
 
+bool tryReadBackQuotedString(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    return readAnyQuotedStringInto<'`', false, String, bool>(s, buf);
+}
+
 void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
 {
     s.clear();
@@ -1269,8 +1277,83 @@ ReturnType readJSONArrayInto(Vector & s, ReadBuffer & buf)
 template void readJSONArrayInto<PaddedPODArray<UInt8>, void>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template bool readJSONArrayInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 
+std::string_view readJSONObjectAsViewPossiblyInvalid(ReadBuffer & buf, String & object_buffer)
+{
+    if (buf.eof() || *buf.position() != '{')
+        throw Exception(ErrorCodes::INCORRECT_DATA, "JSON object should start with '{{'");
+
+    char * start = buf.position();
+    bool use_object_buffer = false;
+    object_buffer.clear();
+
+    ++buf.position();
+    Int64 balance = 1;
+    bool quotes = false;
+
+    while (true)
+    {
+        if (!buf.hasPendingData() && !use_object_buffer)
+        {
+            use_object_buffer = true;
+            object_buffer.append(start, buf.position() - start);
+        }
+
+        if (buf.eof())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF while reading JSON object");
+
+        char * next_pos = find_first_symbols<'\\', '{', '}', '"'>(buf.position(), buf.buffer().end());
+        if (use_object_buffer)
+            object_buffer.append(buf.position(), next_pos - buf.position());
+        buf.position() = next_pos;
+
+        if (!buf.hasPendingData())
+            continue;
+
+        if (use_object_buffer)
+            object_buffer.push_back(*buf.position());
+
+        if (*buf.position() == '\\')
+        {
+            ++buf.position();
+            if (!buf.hasPendingData() && !use_object_buffer)
+            {
+                use_object_buffer = true;
+                object_buffer.append(start, buf.position() - start);
+            }
+
+            if (buf.eof())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF while reading JSON object");
+
+            if (use_object_buffer)
+                object_buffer.push_back(*buf.position());
+            ++buf.position();
+
+            continue;
+        }
+
+        if (*buf.position() == '"')
+            quotes = !quotes;
+        else if (!quotes) // can be only opening_bracket or closing_bracket
+            balance += *buf.position() == '{' ? 1 : -1;
+
+        ++buf.position();
+
+        if (balance == 0)
+        {
+            if (use_object_buffer)
+                return object_buffer;
+            return {start, buf.position()};
+        }
+
+        if (balance < 0)
+            break;
+    }
+
+    throw Exception(ErrorCodes::INCORRECT_DATA, "JSON object should have equal number of opening and closing brackets");
+}
+
 template <typename ReturnType>
-ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
+ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf, const char * allowed_delimiters)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -1289,8 +1372,7 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
             ++buf.position();
             return true;
         }
-        else
-            return false;
+        return false;
     };
 
     UInt16 year = 0;
@@ -1317,6 +1399,9 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
     }
     else
     {
+        if (!isSymbolIn(*buf.position(), allowed_delimiters))
+            return error();
+
         ++buf.position();
 
         if (!append_digit(month))
@@ -1324,7 +1409,11 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
         append_digit(month);
 
         if (!buf.eof() && !isNumericASCII(*buf.position()))
+        {
+            if (!isSymbolIn(*buf.position(), allowed_delimiters))
+                return error();
             ++buf.position();
+        }
         else
             return error();
 
@@ -1337,12 +1426,12 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
     return ReturnType(true);
 }
 
-template void readDateTextFallback<void>(LocalDate &, ReadBuffer &);
-template bool readDateTextFallback<bool>(LocalDate &, ReadBuffer &);
+template void readDateTextFallback<void>(LocalDate &, ReadBuffer &, const char * allowed_delimiters);
+template bool readDateTextFallback<bool>(LocalDate &, ReadBuffer &, const char * allowed_delimiters);
 
 
 template <typename ReturnType, bool dt64_mode>
-ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
+ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters, const char * allowed_time_delimiters)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -1399,10 +1488,8 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
         size_t size = buf.read(s_pos, remaining_date_size);
         if (size != remaining_date_size)
         {
-            s_pos[size] = 0;
-
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", s);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", std::string_view(s, already_read_length + size));
             else
                 return false;
         }
@@ -1411,6 +1498,9 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
         {
             if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[3])
                 || !isNumericASCII(s[5]) || !isNumericASCII(s[6]) || !isNumericASCII(s[8]) || !isNumericASCII(s[9]))
+                return false;
+
+            if (!isSymbolIn(s[4], allowed_date_delimiters) || !isSymbolIn(s[7], allowed_date_delimiters))
                 return false;
         }
 
@@ -1429,10 +1519,8 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
 
             if (size != time_broken_down_length)
             {
-                s_pos[size] = 0;
-
                 if constexpr (throw_exception)
-                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse time component of DateTime {}", s);
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse time component of DateTime {}", std::string_view(s, size));
                 else
                     return false;
             }
@@ -1441,6 +1529,9 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
             {
                 if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[3]) || !isNumericASCII(s[4])
                     || !isNumericASCII(s[6]) || !isNumericASCII(s[7]))
+                    return false;
+
+                if (!isSymbolIn(s[2], allowed_time_delimiters) || !isSymbolIn(s[5], allowed_time_delimiters))
                     return false;
             }
 
@@ -1487,16 +1578,26 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     return ReturnType(true);
 }
 
-template void readDateTimeTextFallback<void, false>(time_t &, ReadBuffer &, const DateLUTImpl &);
-template void readDateTimeTextFallback<void, true>(time_t &, ReadBuffer &, const DateLUTImpl &);
-template bool readDateTimeTextFallback<bool, false>(time_t &, ReadBuffer &, const DateLUTImpl &);
-template bool readDateTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const DateLUTImpl &);
+template void readDateTimeTextFallback<void, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
+template void readDateTimeTextFallback<void, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
+template bool readDateTimeTextFallback<bool, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
+template bool readDateTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
 
 
 template <typename ReturnType>
-ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings)
+ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings, size_t current_depth)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    if (unlikely(current_depth > settings.max_depth))
+    {
+        if constexpr (throw_exception)
+            throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "JSON is too deep for key '{}'", name_of_field.toString());
+        return ReturnType(false);
+    }
+
+    if (unlikely(current_depth > 0 && current_depth % 1024 == 0))
+        checkStackSize();
 
     if (buf.eof())
     {
@@ -1504,7 +1605,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field, const Fo
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF for key '{}'", name_of_field.toString());
         return ReturnType(false);
     }
-    else if (*buf.position() == '"') /// skip double-quoted string
+    if (*buf.position() == '"') /// skip double-quoted string
     {
         NullOutput sink;
         if constexpr (throw_exception)
@@ -1560,8 +1661,8 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field, const Fo
         while (true)
         {
             if constexpr (throw_exception)
-                skipJSONFieldImpl<ReturnType>(buf, name_of_field, settings);
-            else if (!skipJSONFieldImpl<ReturnType>(buf, name_of_field, settings))
+                skipJSONFieldImpl<ReturnType>(buf, name_of_field, settings, current_depth + 1);
+            else if (!skipJSONFieldImpl<ReturnType>(buf, name_of_field, settings, current_depth + 1))
                 return ReturnType(false);
 
             skipWhitespaceIfAny(buf);
@@ -1619,8 +1720,8 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field, const Fo
             skipWhitespaceIfAny(buf);
 
             if constexpr (throw_exception)
-                skipJSONFieldImpl<ReturnType>(buf, name_of_field, settings);
-            else if (!skipJSONFieldImpl<ReturnType>(buf, name_of_field, settings))
+                skipJSONFieldImpl<ReturnType>(buf, name_of_field, settings, current_depth + 1);
+            else if (!skipJSONFieldImpl<ReturnType>(buf, name_of_field, settings, current_depth + 1))
                 return ReturnType(false);
 
             skipWhitespaceIfAny(buf);
@@ -1659,12 +1760,12 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field, const Fo
 
 void skipJSONField(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings)
 {
-    skipJSONFieldImpl<void>(buf, name_of_field, settings);
+    skipJSONFieldImpl<void>(buf, name_of_field, settings, 0);
 }
 
 bool trySkipJSONField(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings)
 {
-    return skipJSONFieldImpl<bool>(buf, name_of_field, settings);
+    return skipJSONFieldImpl<bool>(buf, name_of_field, settings, 0);
 }
 
 
@@ -1894,6 +1995,11 @@ static ReturnType readParsedValueInto(Vector & s, ReadBuffer & buf, ParseFunc pa
     return ReturnType(true);
 }
 
+void readParsedValueIntoString(String & s, ReadBuffer & buf, std::function<void(ReadBuffer &)> parse_func)
+{
+    readParsedValueInto<void>(s, buf, std::move(parse_func));
+}
+
 template <typename ReturnType = void, typename Vector>
 static ReturnType readQuotedStringFieldInto(Vector & s, ReadBuffer & buf)
 {
@@ -2005,13 +2111,13 @@ ReturnType readQuotedFieldInto(Vector & s, ReadBuffer & buf)
 
     if (*buf.position() == '\'')
         return readQuotedStringFieldInto<ReturnType>(s, buf);
-    else if (*buf.position() == '[')
+    if (*buf.position() == '[')
         return readQuotedFieldInBracketsInto<ReturnType, '[', ']'>(s, buf);
-    else if (*buf.position() == '(')
+    if (*buf.position() == '(')
         return readQuotedFieldInBracketsInto<ReturnType, '(', ')'>(s, buf);
-    else if (*buf.position() == '{')
+    if (*buf.position() == '{')
         return readQuotedFieldInBracketsInto<ReturnType, '{', '}'>(s, buf);
-    else if (checkCharCaseInsensitive('n', buf))
+    if (checkCharCaseInsensitive('n', buf))
     {
         /// NULL or NaN
         if (checkCharCaseInsensitive('u', buf))

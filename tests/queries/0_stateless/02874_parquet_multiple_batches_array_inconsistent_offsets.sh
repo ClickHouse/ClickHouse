@@ -123,7 +123,7 @@ echo "Parquet"
 
 DATA_FILE=$CUR_DIR/data_parquet/string_int_list_inconsistent_offset_multiple_batches.parquet
 
-${CLICKHOUSE_LOCAL} --multiquery "
+${CLICKHOUSE_LOCAL} "
 DROP TABLE IF EXISTS parquet_load;
 CREATE TABLE parquet_load (ints Array(Int64), strings Nullable(String)) ENGINE = Memory;
 INSERT INTO parquet_load FROM INFILE '$DATA_FILE';

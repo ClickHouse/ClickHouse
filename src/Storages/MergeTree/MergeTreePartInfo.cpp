@@ -20,8 +20,7 @@ MergeTreePartInfo MergeTreePartInfo::fromPartName(const String & part_name, Merg
 {
     if (auto part_opt = tryParsePartName(part_name, format_version))
         return *part_opt;
-    else
-        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {} for format version: {}", part_name, format_version);
+    throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {} for format version: {}", part_name, format_version);
 }
 
 void MergeTreePartInfo::validatePartitionID(const ASTPtr & partition_id_ast, MergeTreeDataFormatVersion format_version)
@@ -398,17 +397,6 @@ void DetachedPartInfo::addParsedPartInfo(const MergeTreePartInfo & part)
 {
     // Both class are aggregates so it's ok.
     static_cast<MergeTreePartInfo &>(*this) = part;
-}
-
-void compactPartitionIds(PartitionIds & partition_ids)
-{
-    if (partition_ids.size() > 1)
-    {
-        std::sort(partition_ids.begin(), partition_ids.end());
-        auto last = std::unique(partition_ids.begin(), partition_ids.end());
-        partition_ids.erase(last, partition_ids.end());
-    }
-    partition_ids.shrink_to_fit();
 }
 
 }

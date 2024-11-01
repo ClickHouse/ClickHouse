@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/Chunk.h>
-#include <variant>
+#include <Common/ProfileEvents.h>
 
 namespace DB
 {
@@ -65,6 +65,15 @@ public:
 
     IMergingAlgorithm() = default;
     virtual ~IMergingAlgorithm() = default;
+
+    struct MergedStats
+    {
+        UInt64 bytes = 0;
+        UInt64 rows = 0;
+        UInt64 blocks = 0;
+    };
+
+    virtual MergedStats getMergedStats() const = 0;
 };
 
 // TODO: use when compile with clang which could support it

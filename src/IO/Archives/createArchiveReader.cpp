@@ -1,6 +1,7 @@
 #include <IO/Archives/LibArchiveReader.h>
 #include <IO/Archives/ZipArchiveReader.h>
 #include <IO/Archives/createArchiveReader.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <Common/Exception.h>
 
 
@@ -11,7 +12,6 @@ namespace ErrorCodes
 extern const int CANNOT_UNPACK_ARCHIVE;
 extern const int SUPPORT_IS_DISABLED;
 }
-
 
 std::shared_ptr<IArchiveReader> createArchiveReader(const String & path_to_archive)
 {
@@ -24,11 +24,7 @@ std::shared_ptr<IArchiveReader> createArchiveReader(
     [[maybe_unused]] const std::function<std::unique_ptr<SeekableReadBuffer>()> & archive_read_function,
     [[maybe_unused]] size_t archive_size)
 {
-    using namespace std::literals;
-    static constexpr std::array tar_extensions{
-        ".tar"sv, ".tar.gz"sv, ".tgz"sv, ".tar.zst"sv, ".tzst"sv, ".tar.xz"sv, ".tar.bz2"sv, ".tar.lzma"sv};
-
-    if (path_to_archive.ends_with(".zip") || path_to_archive.ends_with(".zipx"))
+    if (hasSupportedZipExtension(path_to_archive))
     {
 #if USE_MINIZIP
         return std::make_shared<ZipArchiveReader>(path_to_archive, archive_read_function, archive_size);
@@ -36,8 +32,7 @@ std::shared_ptr<IArchiveReader> createArchiveReader(
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "minizip library is disabled");
 #endif
     }
-    else if (std::any_of(
-                 tar_extensions.begin(), tar_extensions.end(), [&](const auto extension) { return path_to_archive.ends_with(extension); }))
+    else if (hasSupportedTarExtension(path_to_archive))
     {
 #if USE_LIBARCHIVE
         return std::make_shared<TarArchiveReader>(path_to_archive, archive_read_function);
@@ -45,7 +40,7 @@ std::shared_ptr<IArchiveReader> createArchiveReader(
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "libarchive library is disabled");
 #endif
     }
-    else if (path_to_archive.ends_with(".7z"))
+    else if (hasSupported7zExtension(path_to_archive))
     {
 #if USE_LIBARCHIVE
         return std::make_shared<SevenZipArchiveReader>(path_to_archive);

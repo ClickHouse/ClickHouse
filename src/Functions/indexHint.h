@@ -2,13 +2,11 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/ActionsDAG.h>
 
 
 namespace DB
 {
-
-class ActionsDAG;
-using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
 /** The `indexHint` function takes any number of any arguments and always returns one.
   *
@@ -64,11 +62,11 @@ public:
         return DataTypeUInt8().createColumnConst(input_rows_count, 1u);
     }
 
-    void setActions(ActionsDAGPtr actions_) { actions = std::move(actions_); }
-    const ActionsDAGPtr & getActions() const { return actions; }
+    void setActions(ActionsDAG actions_) { actions = std::move(actions_); }
+    const ActionsDAG & getActions() const { return actions; }
 
 private:
-    ActionsDAGPtr actions;
+    ActionsDAG actions;
 };
 
 }

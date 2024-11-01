@@ -8,6 +8,6 @@ SELECT
     count()
 FROM (SELECT number FROM numbers(10)) as tbl LEFT JOIN t_subcolumns_join ON number = id
 WHERE id is null
-SETTINGS allow_experimental_analyzer = 1, optimize_functions_to_subcolumns = 1, join_use_nulls = 1;
+SETTINGS enable_analyzer = 1, optimize_functions_to_subcolumns = 1, join_use_nulls = 1;
 
 DROP TABLE t_subcolumns_join;

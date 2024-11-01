@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-# Tags: no-parallel
 
 import os
-import sys
 import signal
+import sys
 
 CURDIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, os.path.join(CURDIR, "helpers"))
 
-from client import client, prompt, end_of_block
+from client import client, end_of_block, prompt
 
 log = None
 # uncomment the line below for debugging
@@ -17,10 +16,11 @@ log = None
 with client(name="client1>", log=log) as client1, client(
     name="client2>", log=log
 ) as client2:
+    database_name = os.environ["CLICKHOUSE_DATABASE"]
     client1.expect(prompt)
     client2.expect(prompt)
 
-    client1.send("SET allow_experimental_analyzer = 0")
+    client1.send("SET enable_analyzer = 0")
     client1.expect(prompt)
     client1.send("SET allow_experimental_window_view = 1")
     client1.expect(prompt)
@@ -28,43 +28,41 @@ with client(name="client1>", log=log) as client1, client(
     client1.expect(prompt)
     client2.send("SET allow_experimental_window_view = 1")
     client2.expect(prompt)
-    client2.send("SET allow_experimental_analyzer = 0")
+    client2.send("SET enable_analyzer = 0")
     client2.expect(prompt)
 
-    client1.send("CREATE DATABASE IF NOT EXISTS 01062_window_view_event_hop_watch_asc")
+    client1.send(f"DROP TABLE IF EXISTS {database_name}.mt")
     client1.expect(prompt)
-    client1.send("DROP TABLE IF EXISTS 01062_window_view_event_hop_watch_asc.mt")
-    client1.expect(prompt)
-    client1.send("DROP TABLE IF EXISTS 01062_window_view_event_hop_watch_asc.wv SYNC")
+    client1.send(f"DROP TABLE IF EXISTS {database_name}.wv SYNC")
     client1.expect(prompt)
 
     client1.send(
-        "CREATE TABLE 01062_window_view_event_hop_watch_asc.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple()"
+        f"CREATE TABLE {database_name}.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple()"
     )
     client1.expect(prompt)
     client1.send(
-        "CREATE WINDOW VIEW 01062_window_view_event_hop_watch_asc.wv ENGINE Memory WATERMARK=ASCENDING AS SELECT count(a) AS count, hopEnd(wid) AS w_end FROM 01062_window_view_event_hop_watch_asc.mt GROUP BY hop(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid"
+        f"CREATE WINDOW VIEW {database_name}.wv ENGINE Memory WATERMARK=ASCENDING AS SELECT count(a) AS count, hopEnd(wid) AS w_end FROM {database_name}.mt GROUP BY hop(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid"
     )
     client1.expect(prompt)
 
-    client1.send("WATCH 01062_window_view_event_hop_watch_asc.wv")
+    client1.send(f"WATCH {database_name}.wv")
     client1.expect("Query id" + end_of_block)
     client1.expect("Progress: 0.00 rows.*\\)")
     client2.send(
-        "INSERT INTO 01062_window_view_event_hop_watch_asc.mt VALUES (1, toDateTime('1990/01/01 12:00:00', 'US/Samoa'));"
+        f"INSERT INTO {database_name}.mt VALUES (1, toDateTime('1990/01/01 12:00:00', 'US/Samoa'));"
     )
     client2.expect(prompt)
     client2.send(
-        "INSERT INTO 01062_window_view_event_hop_watch_asc.mt VALUES (1, toDateTime('1990/01/01 12:00:05', 'US/Samoa'));"
+        f"INSERT INTO {database_name}.mt VALUES (1, toDateTime('1990/01/01 12:00:05', 'US/Samoa'));"
     )
     client2.expect(prompt)
     client1.expect("1*" + end_of_block)
     client2.send(
-        "INSERT INTO 01062_window_view_event_hop_watch_asc.mt VALUES (1, toDateTime('1990/01/01 12:00:06', 'US/Samoa'));"
+        f"INSERT INTO {database_name}.mt VALUES (1, toDateTime('1990/01/01 12:00:06', 'US/Samoa'));"
     )
     client2.expect(prompt)
     client2.send(
-        "INSERT INTO 01062_window_view_event_hop_watch_asc.mt VALUES (1, toDateTime('1990/01/01 12:00:10', 'US/Samoa'));"
+        f"INSERT INTO {database_name}.mt VALUES (1, toDateTime('1990/01/01 12:00:10', 'US/Samoa'));"
     )
     client2.expect(prompt)
     client1.expect("1" + end_of_block)
@@ -77,9 +75,7 @@ with client(name="client1>", log=log) as client1, client(
     if match.groups()[1]:
         client1.send(client1.command)
         client1.expect(prompt)
-    client1.send("DROP TABLE 01062_window_view_event_hop_watch_asc.wv SYNC")
+    client1.send(f"DROP TABLE {database_name}.wv SYNC")
     client1.expect(prompt)
-    client1.send("DROP TABLE 01062_window_view_event_hop_watch_asc.mt")
-    client1.expect(prompt)
-    client1.send("DROP DATABASE IF EXISTS 01062_window_view_event_hop_watch_asc")
+    client1.send(f"DROP TABLE {database_name}.mt")
     client1.expect(prompt)

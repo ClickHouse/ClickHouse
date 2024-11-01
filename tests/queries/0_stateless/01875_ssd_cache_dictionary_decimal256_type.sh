@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
     SET allow_experimental_bigint_types = 1;
 
     DROP TABLE IF EXISTS dictionary_decimal_source_table;
