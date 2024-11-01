@@ -3641,6 +3641,11 @@ Given that, for example, dictionaries, can be out of sync across nodes, mutation
 </profiles>
 ```
 )", 0) \
+ DECLARE(Bool, validate_mutation_query, true, R"(
+Validate mutation queries before accepting them. Mutations are executed in the background, and running an invalid query will cause mutations to get stuck, requiring manual intervention.
+
+Only change this setting if you encounter a backward-incompatible bug.
+)", 0) \
     DECLARE(Seconds, lock_acquire_timeout, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC, R"(
 Defines how many seconds a locking request waits before failing.
 

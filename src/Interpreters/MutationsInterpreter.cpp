@@ -53,6 +53,7 @@ namespace Setting
     extern const SettingsBool allow_nondeterministic_mutations;
     extern const SettingsUInt64 max_block_size;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsBool validate_mutation_query;
 }
 
 namespace MergeTreeSetting
@@ -1386,8 +1387,9 @@ void MutationsInterpreter::validate()
         }
     }
 
-    // Make sure the mutations query is valid
-    prepareQueryAffectedQueryTree(commands, source.getStorage(), context);
+    if (context->getSettingsRef()[Setting::validate_mutation_query])
+        // Make sure the mutation query is valid
+        prepareQueryAffectedQueryTree(commands, source.getStorage(), context);
 
     QueryPlan plan;
 
