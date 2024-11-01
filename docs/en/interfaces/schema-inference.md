@@ -128,7 +128,7 @@ There is a special setting [use_structure_from_insertion_table_in_table_function
 that controls this behaviour. It has 3 possible values:
 - 0 - table function will extract the structure from the data.
 - 1 - table function will use the structure from the insertion table.
-- 2 - ClickHouse will automatically determine if it's possible to use the structure from the insertion table or use schema inference. Default value.
+- 3 - ClickHouse will automatically determine if it's possible to use the structure from the insertion table or use schema inference. Default value.
 
 **Example 1:**
 
@@ -1277,7 +1277,7 @@ $$)
 
 ### Template {#template}
 
-In Template format ClickHouse first extracts all column values from the row according to the specified template and then tries to infer the 
+In Template format ClickHouse first extracts all column values from the row according to the specified template and then tries to infer the
 data type for each value according to its escaping rule.
 
 **Example**
@@ -1325,7 +1325,7 @@ data type for each value according to the specified escaping rule.
 ```sql
 SET format_regexp = '^Line: value_1=(.+?), value_2=(.+?), value_3=(.+?)',
        format_regexp_escaping_rule = 'CSV'
-       
+
 DESC format(Regexp, $$Line: value_1=42, value_2="Some string 1", value_3="[1, NULL, 3]"
 Line: value_1=2, value_2="Some string 2", value_3="[4, 5, NULL]"$$)
 ```
@@ -1983,7 +1983,7 @@ DESC format(JSONAsString, '{"x" : 42, "y" : "Hello, World!"}') SETTINGS allow_ex
 ## Schema inference modes {#schema-inference-modes}
 
 Schema inference from the set of data files can work in 2 different modes: `default` and `union`.
-The mode is controlled by the setting `schema_inference_mode`. 
+The mode is controlled by the setting `schema_inference_mode`.
 
 ### Default mode {#default-schema-inference-mode}
 
@@ -2027,13 +2027,13 @@ Result:
 └────────┴──────────────────┘
 ```
 
-As we can see, we don't have `field3` from file `data3.jsonl`. 
+As we can see, we don't have `field3` from file `data3.jsonl`.
 It happens because ClickHouse first tried to infer schema from file `data1.jsonl`, failed because of only nulls for field `field2`,
 and then tried to infer schema from `data2.jsonl` and succeeded, so data from file `data3.jsonl` wasn't read.
 
 ### Union mode {#default-schema-inference-mode}
 
-In union mode, ClickHouse assumes that files can have different schemas, so it infer schemas of all files and then union them to the common schema. 
+In union mode, ClickHouse assumes that files can have different schemas, so it infer schemas of all files and then union them to the common schema.
 
 Let's say we have 3 files `data1.jsonl`, `data2.jsonl` and `data3.jsonl` with the next content:
 

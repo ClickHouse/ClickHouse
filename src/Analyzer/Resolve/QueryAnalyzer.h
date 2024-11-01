@@ -28,6 +28,9 @@ using ProjectionNames = std::vector<ProjectionName>;
 
 struct Settings;
 
+class ITableFunction;
+using TableFunctionPtr = std::shared_ptr<ITableFunction>;
+
 /** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h first.
   * And additional documentation for each method, where special cases are described in detail.
   *
@@ -242,6 +245,11 @@ private:
     void resolveQuery(const QueryTreeNodePtr & query_node, IdentifierResolveScope & scope);
 
     void resolveUnion(const QueryTreeNodePtr & union_node, IdentifierResolveScope & scope);
+
+    void calculateStructureHintForTableFunctionIfNeeded(
+        const TableFunctionPtr & table_function_ptr,
+        IdentifierResolveScope & scope,
+        bool nested_table_function);
 
     /// Lambdas that are currently in resolve process
     std::unordered_set<IQueryTreeNode *> lambdas_in_resolve_process;

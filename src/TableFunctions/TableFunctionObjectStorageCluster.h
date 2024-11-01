@@ -63,7 +63,7 @@ protected:
 
     bool hasStaticStructure() const override { return Base::getConfiguration()->structure != "auto"; }
 
-    bool needStructureHint() const override { return Base::getConfiguration()->structure == "auto"; }
+    TableFunctionNeedStructureHint needStructureHint() const override { return Base::getConfiguration()->structure == "auto" ? TableFunctionNeedStructureHint::Auto : TableFunctionNeedStructureHint::No; }
 
     void setStructureHint(const ColumnsDescription & structure_hint_) override { Base::structure_hint = structure_hint_; }
 };

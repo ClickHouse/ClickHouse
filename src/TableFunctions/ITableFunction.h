@@ -16,6 +16,22 @@ namespace DB
 
 class Context;
 
+enum class TableFunctionNeedStructureHint
+{
+  /// Structure hint is useless, e.g. the structure is static.
+  No,
+  /// Structure is fixed, but it may be expensive to fetch, e.g. reading metadata from Parquet file.
+  /// Structure hint can improve performance, but we need to be careful to avoid changing behavior.
+  /// No hint for `SELECT *` by default to avoid reordering/skipping columns.
+  Optional,
+  /// Structure is flexible, column names or types are not known without hint.
+  /// E.g. CSV or generateRandom(). Use hint for `SELECT *`.
+  Required,
+
+  /// If supportsReadingSubsetOfColumns() then Optional, otherwise Required.
+  Auto,
+};
+
 /** Interface for table functions.
   *
   * Table functions are not relevant to other functions.
@@ -63,7 +79,7 @@ public:
     /// Check if table function needs a structure hint from SELECT query in case of
     /// INSERT INTO FUNCTION ... SELECT ... and INSERT INTO ... SELECT ... FROM table_function(...)
     /// It's used for schema inference.
-    virtual bool needStructureHint() const { return false; }
+    virtual TableFunctionNeedStructureHint needStructureHint() const { return TableFunctionNeedStructureHint::No; }
 
     /// Set a structure hint from SELECT query in case of
     /// INSERT INTO FUNCTION ... SELECT ... and INSERT INTO ... SELECT ... FROM table_function(...)

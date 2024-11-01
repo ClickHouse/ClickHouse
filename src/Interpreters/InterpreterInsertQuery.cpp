@@ -114,7 +114,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
 
         /// If table function needs structure hint from select query
         /// we can create a temporary pipeline and get the header.
-        if (query.select && table_function_ptr->needStructureHint())
+        if (query.select && table_function_ptr->needStructureHint() != TableFunctionNeedStructureHint::No)
         {
             Block header_block;
             auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);

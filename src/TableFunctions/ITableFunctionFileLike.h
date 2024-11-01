@@ -25,7 +25,7 @@ public:
         return signature;
     }
 
-    bool needStructureHint() const override { return structure == "auto"; }
+    TableFunctionNeedStructureHint needStructureHint() const override { return structure == "auto" ? TableFunctionNeedStructureHint::Auto : TableFunctionNeedStructureHint::No; }
 
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 
