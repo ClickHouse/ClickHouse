@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2984
+personal_ws-1.1 en 3156 
 AArch
 ACLs
 ALTERs
@@ -186,7 +186,6 @@ ComplexKeyCache
 ComplexKeyDirect
 ComplexKeyHashed
 Composable
-composable
 ConcurrencyControlAcquired
 ConcurrencyControlSoftLimit
 Config
@@ -405,12 +404,12 @@ ITION
 Identifiant
 IdentifierQuotingRule
 IdentifierQuotingStyle
-Incrementing
-IndexesAreNeighbors
-InfluxDB
 InJodaSyntax
 InJodaSyntaxOrNull
 InJodaSyntaxOrZero
+Incrementing
+IndexesAreNeighbors
+InfluxDB
 Instana
 IntN
 Integrations
@@ -1013,6 +1012,7 @@ TINYINT
 TLSv
 TMAX
 TMIN
+TOTP
 TPCH
 TSDB
 TSVRaw
@@ -1098,7 +1098,6 @@ URLEncode
 URLHash
 URLHierarchy
 URLPathHierarchy
-USearch
 USearch
 UTCTimestamp
 UUIDNumToString
@@ -2458,6 +2457,7 @@ punycodeEncode
 pushdown
 pwrite
 py
+qrencode
 qryn
 quantile
 quantileBFloat
@@ -2966,6 +2966,7 @@ topLevelDomain
 topLevelDomainRFC
 topk
 topkweighted
+totp
 tpcds
 tpch
 transactionID
