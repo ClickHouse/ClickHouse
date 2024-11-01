@@ -3120,7 +3120,7 @@ CONV_FN(Detach, dt)
     ret += SQLObject_Name(dt.sobject());
     ret += " ";
     SQLObjectNameToString(ret, dt.object());
-    if (dt.permanentely())
+    if (dt.permanently())
     {
         ret += " PERMANENTLY";
     }

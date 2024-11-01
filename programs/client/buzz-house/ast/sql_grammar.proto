@@ -3120,7 +3120,7 @@ message Attach {
 message Detach {
     required SQLObject sobject = 1;
     required SQLObjectName object = 2;
-    optional bool permanentely = 3;
+    optional bool permanently = 3;
     optional bool sync = 4;
 }
 

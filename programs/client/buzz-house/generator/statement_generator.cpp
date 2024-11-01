@@ -2273,7 +2273,7 @@ int StatementGenerator::GenerateDetach(RandomGenerator & rg, sql_query_grammar::
     {
         assert(0);
     }
-    det->set_permanentely(rg.NextBool());
+    det->set_permanently(rg.NextBool());
     det->set_sync(rg.NextBool());
     return 0;
 }
@@ -2306,13 +2306,13 @@ int StatementGenerator::GenerateNextQuery(RandomGenerator & rg, sql_query_gramma
                    attach = 2
         * static_cast<uint32_t>(CollectionHas<SQLTable>(detached_tables) || CollectionHas<SQLView>(detached_views)
                                 || CollectionHas<std::shared_ptr<SQLDatabase>>(detached_databases)),
-                   dettach = 2
+                   detach = 2
         * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables) || CollectionHas<SQLView>(attached_views)
                                 || CollectionHas<std::shared_ptr<SQLDatabase>>(attached_databases)),
                    create_database = 2 * static_cast<uint32_t>(databases.size() < this->fc.max_databases),
                    create_function = 5 * static_cast<uint32_t>(functions.size() < this->fc.max_functions), select_query = 350,
                    prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table
-        + desc_table + exchange_tables + alter_table + set_values + attach + dettach + create_database + create_function + select_query;
+        + desc_table + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + select_query;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.gen);
 
@@ -2389,10 +2389,10 @@ int StatementGenerator::GenerateNextQuery(RandomGenerator & rg, sql_query_gramma
         return GenerateAttach(rg, sq->mutable_attach());
     }
     else if (
-        dettach
+        detach
         && nopt
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
-               + exchange_tables + alter_table + set_values + attach + dettach + 1))
+               + exchange_tables + alter_table + set_values + attach + detach + 1))
     {
         return GenerateDetach(rg, sq->mutable_detach());
     }
@@ -2400,7 +2400,7 @@ int StatementGenerator::GenerateNextQuery(RandomGenerator & rg, sql_query_gramma
         create_database
         && nopt
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
-               + exchange_tables + alter_table + set_values + attach + dettach + create_database + 1))
+               + exchange_tables + alter_table + set_values + attach + detach + create_database + 1))
     {
         return GenerateNextCreateDatabase(rg, sq->mutable_create_database());
     }
@@ -2408,7 +2408,7 @@ int StatementGenerator::GenerateNextQuery(RandomGenerator & rg, sql_query_gramma
         create_function
         && nopt
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
-               + exchange_tables + alter_table + set_values + attach + dettach + create_database + create_function + 1))
+               + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + 1))
     {
         return GenerateNextCreateFunction(rg, sq->mutable_create_function());
     }

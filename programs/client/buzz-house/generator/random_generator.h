@@ -378,16 +378,16 @@ public:
         ret += pick;
     }
 
-    void NextString(std::string & ret, const std::string & delimeter, const bool allow_nasty, const uint32_t limit)
+    void NextString(std::string & ret, const std::string & delimiter, const bool allow_nasty, const uint32_t limit)
     {
         bool use_bad_utf8 = false;
 
-        if (delimeter == "'" && this->NextMediumNumber() < 4)
+        if (delimiter == "'" && this->NextMediumNumber() < 4)
         {
             ret += "x";
             use_bad_utf8 = true;
         }
-        ret += delimeter;
+        ret += delimiter;
         const std::string & pick = PickRandomlyFromVector(
             use_bad_utf8
                 ? bad_utf8
@@ -426,7 +426,7 @@ public:
         {
             ret += "a";
         }
-        ret += delimeter;
+        ret += delimiter;
     }
 
     void NextUUID(std::string & ret)
