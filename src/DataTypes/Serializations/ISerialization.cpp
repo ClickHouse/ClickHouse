@@ -434,6 +434,14 @@ bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath 
     return false;
 }
 
+bool ISerialization::isLowCardinalityDictionarySubcolumn(const DB::ISerialization::SubstreamPath & path)
+{
+    if (path.empty())
+        return false;
+
+    return path[path.size() - 1].type == SubstreamType::DictionaryKeys;
+}
+
 ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)
 {
     assert(prefix_len <= path.size());
