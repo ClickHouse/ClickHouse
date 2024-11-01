@@ -330,9 +330,6 @@
 [submodule "contrib/usearch"]
 	path = contrib/usearch
 	url = https://github.com/ClickHouse/usearch.git
-[submodule "contrib/SimSIMD"]
-	path = contrib/SimSIMD
-	url = https://github.com/ashvardanian/SimSIMD.git
 [submodule "contrib/FP16"]
 	path = contrib/FP16
 	url = https://github.com/Maratyszcza/FP16.git
