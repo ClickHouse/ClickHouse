@@ -17,19 +17,22 @@ struct DivideOrNullImpl
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
 
-    /// NOTE: res_nullmap already initialized with right_nullmap if it is not nullptr
     template <OpCase op_case>
     static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap [[maybe_unused]], NullMap * res_nullmap)
     {
+        chassert(res_nullmap);
         if constexpr (op_case == OpCase::RightConstant)
         {
-            if ((*res_nullmap)[0])
+            if (right_nullmap && (*right_nullmap)[0])
                 return;
 
-            if (*b == 0 && res_nullmap)
+            if (unlikely(*b == 0))
             {
                 for (size_t i = 0; i < size; ++i)
+                {
+                    c[i] = ResultType();
                     (*res_nullmap)[i] = 1;
+                }
                 return;
             }
 
@@ -39,8 +42,11 @@ struct DivideOrNullImpl
                 {
                     for (size_t i = 0; i < size; ++i)
                     {
-                        if (unlikely(a[i] == std::numeric_limits<A>::min()) && res_nullmap)
+                        if (unlikely(a[i] == std::numeric_limits<A>::min()))
+                        {
                             (*res_nullmap)[i] = 1;
+                            c[i] = ResultType();
+                        }
                         else
                             c[i] = -a[i];
                     }
@@ -60,15 +66,15 @@ struct DivideOrNullImpl
         }
     }
 
-    static ResultType process(A a, B b, NullMap::value_type * m = nullptr)
+    static ResultType process(A a, B b, NullMap::value_type * m)
     {
+        chassert(m);
         ResultType res{};
         try
         {
             if (b == 0)
             {
-                if (m)
-                    *m = 1;
+                *m = 1;
                 return res;
             }
             if constexpr (std::is_signed_v<B>)
@@ -77,8 +83,7 @@ struct DivideOrNullImpl
                 {
                     if (unlikely(a == std::numeric_limits<A>::min()))
                     {
-                        if (m)
-                            *m = 1;
+                        *m = 1;
                         return res;
                     }
                     return -a;
@@ -88,8 +93,7 @@ struct DivideOrNullImpl
         }
         catch (const std::exception&)
         {
-            if (m)
-                *m = 1;
+            *m = 1;
         }
         return res;
     }
@@ -103,9 +107,10 @@ struct DivideOrNullImpl
     template <typename Result = ResultType>
     static NO_SANITIZE_UNDEFINED Result apply(A a, B b, NullMap::value_type * m)
     {
+        chassert(m);
         auto res = static_cast<Result>(a) / b;
         if constexpr (std::is_floating_point_v<ResultType>)
-            if (unlikely(!std::isfinite(res)) && m)
+            if (unlikely(!std::isfinite(res)))
                 *m = 1;
 
         return res;
@@ -115,6 +120,7 @@ private:
     template <OpCase op_case>
     static void apply(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t i, NullMap::value_type * m)
     {
+        chassert(m);
         try
         {
             if constexpr (op_case == OpCase::Vector)
