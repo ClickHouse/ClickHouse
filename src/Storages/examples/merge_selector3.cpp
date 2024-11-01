@@ -35,6 +35,7 @@ struct SharedState
     AllReplicasState all_replicas;
     CurrentlyMergingPartsNames merging_parts;
     size_t currently_running_merges{0};
+    uint64_t total_parts{0};
 };
 
 class ITask
@@ -83,7 +84,6 @@ public:
     void updatePartsStateOnTaskStart(SharedState & state) override
     {
         auto & replica_state = state.all_replicas[replica_name];
-        replica_state.total_parts_count += 1;
         auto & replica_parts = replica_state.parts_without_currently_merging_parts;
         MergeTreePartInfo new_part_info = MergeTreePartInfo::fromPartName(reinterpret_cast<const char *>(part.data), MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
         std::optional<size_t> begin;
@@ -107,8 +107,16 @@ public:
         if (begin && end && *begin != *end)
         {
             replica_parts[*begin] = part;
+            replica_state.parts_names_cache.push_back(reinterpret_cast<const char *>(part.data));
+            replica_parts[*begin].data = replica_state.parts_names_cache.back().data();
             replica_parts.erase(replica_parts.begin() + *begin + 1, replica_parts.begin() + *end);
+            replica_state.total_parts_count += 1 - (*end - *begin);
         }
+        else
+        {
+            replica_state.total_parts_count += 1;
+        }
+
     }
 
     void updatePartsStateOnTaskFinish(SharedState &) override
@@ -149,6 +157,7 @@ public:
     {
         state.all_replicas[replica_name].parts_without_currently_merging_parts.push_back(part);
         state.all_replicas[replica_name].total_parts_count += 1;
+        state.total_parts += 1;
     }
 
     void updatePartsStateOnTaskFinish(SharedState &) override
@@ -202,6 +211,8 @@ public:
     {
         for (const auto & part_to_merge : parts_to_merge)
             state.merging_parts.insert(reinterpret_cast<const char *>(part_to_merge.data));
+
+        state.currently_running_merges++;
     }
 
     void updatePartsStateOnTaskFinish(SharedState & state) override
@@ -238,6 +249,8 @@ public:
         replica_parts.erase(replica_parts.begin() + start_index + 1, replica_parts.begin() + start_index + parts_to_merge.size());
 
         replica_state.total_parts_count += (1 - parts_to_merge.size());
+        state.total_parts += (1 - parts_to_merge.size());
+        state.currently_running_merges--;
     }
 
     TaskType getTaskType() const override
@@ -276,14 +289,10 @@ private:
     uint64_t number_of_free_entries_in_pool_to_lower_max_size_of_merge = 8;
     uint64_t merge_speed;
     uint64_t too_many_parts;
-    uint64_t currently_running_merges{0};
     SharedState state;
-    IMergeSelector::PartsRanges partitions;
-    IMergeSelector::PartsRange & parts_state;
     std::set<std::string> replicas;
 
     SimpleMergeSelector selector;
-    uint64_t total_parts{0};
 public:
     Simulator(const PartsWithTypeAndReplicas & parts,
               std::vector<uint64_t> insertion_times,
@@ -298,8 +307,6 @@ public:
         , max_part_uint64_to_merge(max_part_uint64_to_merge_)
         , merge_speed(merge_speed_)
         , too_many_parts(too_many_parts_)
-        , partitions(1)
-        , parts_state(partitions.back())
         , selector(settings)
     {
         for (uint64_t i = 0; i < parts.size(); ++i)
@@ -324,9 +331,9 @@ public:
 
     uint64_t getMaxSizeToMerge() const
     {
-        uint64_t free_entries = background_pool_size - currently_running_merges;
+        uint64_t free_entries = background_pool_size - state.currently_running_merges;
         UInt64 max_size = 0;
-        if (currently_running_merges <= 1 || free_entries >= number_of_free_entries_in_pool_to_lower_max_size_of_merge)
+        if (state.currently_running_merges <= 1 || free_entries >= number_of_free_entries_in_pool_to_lower_max_size_of_merge)
             max_size = max_part_uint64_to_merge;
         else
             max_size = static_cast<UInt64>(interpolateExponential(
@@ -340,9 +347,12 @@ public:
     {
         if (current_time % 1000 == 0)
         {
-            std::cerr << "Total parts count: " << total_parts << " merges running:" << currently_running_merges << std::endl;
-            for (auto & part : parts_state)
-                part.age++;
+            std::cerr << "Total parts count: " << state.total_parts << " merges running:" << state.currently_running_merges << std::endl;
+            for (auto & replica : state.all_replicas)
+            {
+                for (auto & part : replica.second.parts_without_currently_merging_parts)
+                    part.age++;
+            }
         }
 
         while (!tasks.empty())
@@ -356,7 +366,7 @@ public:
                 }
                 else if (top_task->getTaskType() == INSERT)
                 {
-                    if (total_parts < too_many_parts)
+                    if (state.total_parts < too_many_parts)
                     {
                         top_task->updatePartsStateOnTaskStart(state);
                     }
@@ -396,7 +406,6 @@ public:
                     auto new_merge = std::make_unique<MergeTask>(selected_parts, current_time, merge_speed, replica_name);
                     new_merge->updatePartsStateOnTaskStart(state);
                     tasks.push(std::move(new_merge));
-                    currently_running_merges++;
                 }
             }
 
@@ -460,11 +469,13 @@ int main(int, char **)
 
     while (true)
     {
-        try {
+        try
+        {
             simulator.step();
         }
         catch (...)
         {
+            std::cerr << getCurrentExceptionMessage(true) << std::endl;
             std::cerr << "Failed after: " << simulator.getTime() / 1000 << " seconds" << std::endl;
             return 1;
         }
