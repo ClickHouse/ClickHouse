@@ -254,7 +254,7 @@ private:
     const FileSegmentKind segment_kind;
     /// Size of the segment is not known until it is downloaded and
     /// can be bigger than max_file_segment_size.
-    const bool is_unbound = false;
+    const bool is_unbound;
     const bool background_download_enabled;
 
     std::atomic<State> download_state;

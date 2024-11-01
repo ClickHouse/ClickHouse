@@ -1438,6 +1438,8 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
                     "cached file `{}` does not fit in cache anymore (size: {})",
                     size_limit, offset_it->path().string(), size);
 
+                chassert(false); /// TODO: remove before merge.
+
                 fs::remove(offset_it->path());
             }
         }
