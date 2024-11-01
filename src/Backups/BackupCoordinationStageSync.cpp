@@ -641,7 +641,7 @@ void BackupCoordinationStageSync::cancelQueryIfError()
         exception = state.hosts.at(*state.host_with_error).exception;
     }
 
-    process_list_element->cancelQuery(false, exception);
+    process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER, exception);
     state_changed.notify_all();
 }
 
@@ -692,7 +692,7 @@ void BackupCoordinationStageSync::cancelQueryIfDisconnectedTooLong()
         state.cancelled = true;
     }
 
-    process_list_element->cancelQuery(false, exception);
+    process_list_element->cancelQuery(CancelReason::TIMEOUT, exception);
     state_changed.notify_all();
 }
 
