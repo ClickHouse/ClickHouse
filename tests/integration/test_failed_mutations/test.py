@@ -27,9 +27,7 @@ REPLICATED_POSTPONE_MUTATION_LOG = (
 POSTPONE_MUTATION_LOG = (
     "According to exponential backoff policy, do not perform mutations for the part"
 )
-FAILING_MUTATION_QUERY = (
-    "ALTER TABLE test_mutations DELETE WHERE x IN (SELECT throwIf(1)) SETTINGS allow_nondeterministic_mutations = 1"
-)
+FAILING_MUTATION_QUERY = "ALTER TABLE test_mutations DELETE WHERE x IN (SELECT throwIf(1)) SETTINGS allow_nondeterministic_mutations = 1"
 
 all_nodes = [node_with_backoff, node_no_backoff]
 
