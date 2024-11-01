@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Backups/IBackupCoordination.h>
+#include <Backups/BackupConcurrencyCheck.h>
+#include <Backups/BackupCoordinationCleaner.h>
 #include <Backups/BackupCoordinationFileInfos.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
 #include <Backups/BackupCoordinationReplicatedSQLObjects.h>
@@ -13,32 +15,35 @@
 namespace DB
 {
 
-/// We try to store data to zookeeper several times due to possible version conflicts.
-constexpr size_t MAX_ZOOKEEPER_ATTEMPTS = 10;
-
 /// Implementation of the IBackupCoordination interface performing coordination via ZooKeeper. It's necessary for "BACKUP ON CLUSTER".
-class BackupCoordinationRemote : public IBackupCoordination
+class BackupCoordinationOnCluster : public IBackupCoordination
 {
 public:
-    using BackupKeeperSettings = WithRetries::KeeperSettings;
+    /// Empty string as the current host is used to mark the initiator of a BACKUP ON CLUSTER query.
+    static const constexpr std::string_view kInitiator;
 
-    BackupCoordinationRemote(
-        zkutil::GetZooKeeper get_zookeeper_,
+    BackupCoordinationOnCluster(
+        const UUID & backup_uuid_,
+        bool is_plain_backup_,
         const String & root_zookeeper_path_,
+        zkutil::GetZooKeeper get_zookeeper_,
         const BackupKeeperSettings & keeper_settings_,
-        const String & backup_uuid_,
-        const Strings & all_hosts_,
         const String & current_host_,
-        bool plain_backup_,
-        bool is_internal_,
+        const Strings & all_hosts_,
+        bool allow_concurrent_backup_,
+        BackupConcurrencyCounters & concurrency_counters_,
+        ThreadPoolCallbackRunnerUnsafe<void> schedule_,
         QueryStatusPtr process_list_element_);
 
-    ~BackupCoordinationRemote() override;
+    ~BackupCoordinationOnCluster() override;
 
-    void setStage(const String & new_stage, const String & message) override;
-    void setError(const Exception & exception) override;
-    Strings waitForStage(const String & stage_to_wait) override;
-    Strings waitForStage(const String & stage_to_wait, std::chrono::milliseconds timeout) override;
+    Strings setStage(const String & new_stage, const String & message, bool sync) override;
+    void setBackupQueryWasSentToOtherHosts() override;
+    bool trySetError(std::exception_ptr exception) override;
+    void finish() override;
+    bool tryFinishAfterError() noexcept override;
+    void waitForOtherHostsToFinish() override;
+    bool tryWaitForOtherHostsToFinishAfterError() noexcept override;
 
     void addReplicatedPartNames(
         const String & table_zk_path,
@@ -73,13 +78,14 @@ public:
     BackupFileInfos getFileInfosForAllHosts() const override;
     bool startWritingFile(size_t data_file_index) override;
 
-    bool hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const override;
+    ZooKeeperRetriesInfo getOnClusterInitializationKeeperRetriesInfo() const override;
 
-    static size_t findCurrentHostIndex(const Strings & all_hosts, const String & current_host);
+    static Strings excludeInitiator(const Strings & all_hosts);
+    static size_t findCurrentHostIndex(const String & current_host, const Strings & all_hosts);
 
 private:
     void createRootNodes();
-    void removeAllNodes();
+    bool tryFinishImpl() noexcept;
 
     void serializeToMultipleZooKeeperNodes(const String & path, const String & value, const String & logging_name);
     String deserializeFromMultipleZooKeeperNodes(const String & path, const String & logging_name) const;
@@ -96,26 +102,27 @@ private:
     const String root_zookeeper_path;
     const String zookeeper_path;
     const BackupKeeperSettings keeper_settings;
-    const String backup_uuid;
+    const UUID backup_uuid;
     const Strings all_hosts;
+    const Strings all_hosts_without_initiator;
     const String current_host;
     const size_t current_host_index;
     const bool plain_backup;
-    const bool is_internal;
     LoggerPtr const log;
 
-    /// The order of these two fields matters, because stage_sync holds a reference to with_retries object
-    mutable WithRetries with_retries;
-    std::optional<BackupCoordinationStageSync> stage_sync;
+    const WithRetries with_retries;
+    BackupConcurrencyCheck concurrency_check;
+    BackupCoordinationStageSync stage_sync;
+    BackupCoordinationCleaner cleaner;
+    std::atomic<bool> backup_query_was_sent_to_other_hosts = false;
 
-    mutable std::optional<BackupCoordinationReplicatedTables> TSA_GUARDED_BY(replicated_tables_mutex) replicated_tables;
-    mutable std::optional<BackupCoordinationReplicatedAccess> TSA_GUARDED_BY(replicated_access_mutex) replicated_access;
-    mutable std::optional<BackupCoordinationReplicatedSQLObjects> TSA_GUARDED_BY(replicated_sql_objects_mutex) replicated_sql_objects;
-    mutable std::optional<BackupCoordinationFileInfos> TSA_GUARDED_BY(file_infos_mutex) file_infos;
+    mutable std::optional<BackupCoordinationReplicatedTables> replicated_tables TSA_GUARDED_BY(replicated_tables_mutex);
+    mutable std::optional<BackupCoordinationReplicatedAccess> replicated_access TSA_GUARDED_BY(replicated_access_mutex);
+    mutable std::optional<BackupCoordinationReplicatedSQLObjects> replicated_sql_objects TSA_GUARDED_BY(replicated_sql_objects_mutex);
+    mutable std::optional<BackupCoordinationFileInfos> file_infos TSA_GUARDED_BY(file_infos_mutex);
     mutable std::optional<BackupCoordinationKeeperMapTables> keeper_map_tables TSA_GUARDED_BY(keeper_map_tables_mutex);
-    std::unordered_set<size_t> TSA_GUARDED_BY(writing_files_mutex) writing_files;
+    std::unordered_set<size_t> writing_files TSA_GUARDED_BY(writing_files_mutex);
 
-    mutable std::mutex zookeeper_mutex;
     mutable std::mutex replicated_tables_mutex;
     mutable std::mutex replicated_access_mutex;
     mutable std::mutex replicated_sql_objects_mutex;
