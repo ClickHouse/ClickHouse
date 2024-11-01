@@ -83,8 +83,8 @@ jobs:
 {JOB_ADDONS}
       - name: Prepare env script
         run: |
-          export PYTHONPATH=.:$PYTHONPATH
           cat > {ENV_SETUP_SCRIPT} << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.
 {SETUP_ENVS}
           cat > {WORKFLOW_CONFIG_FILE} << 'EOF'
           ${{{{ needs.{WORKFLOW_CONFIG_JOB_NAME}.outputs.data }}}}
@@ -100,6 +100,7 @@ jobs:
       - name: Run
         id: run
         run: |
+          . /tmp/praktika_setup_env.sh
           set -o pipefail
           {PYTHON} -m praktika run --job '''{JOB_NAME}''' --workflow "{WORKFLOW_NAME}" --ci |& tee {RUN_LOG}
 {UPLOADS_GITHUB}\

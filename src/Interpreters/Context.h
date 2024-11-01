@@ -76,6 +76,7 @@ class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalUserDefinedExecutableFunctionsLoader;
 class IUserDefinedSQLObjectsStorage;
+class IWorkloadEntityStorage;
 class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
@@ -101,6 +102,7 @@ class Clusters;
 class QueryCache;
 class ISystemLog;
 class QueryLog;
+class QueryMetricLog;
 class QueryThreadLog;
 class QueryViewsLog;
 class PartLog;
@@ -892,6 +894,8 @@ public:
     void setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObjectsStorage> storage);
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
 
+    IWorkloadEntityStorage & getWorkloadEntityStorage() const;
+
 #if USE_NLP
     SynonymsExtensions & getSynonymsExtensions() const;
     Lemmatizers & getLemmatizers() const;
@@ -1174,6 +1178,7 @@ public:
     std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
     std::shared_ptr<BackupLog> getBackupLog() const;
     std::shared_ptr<BlobStorageLog> getBlobStorageLog() const;
+    std::shared_ptr<QueryMetricLog> getQueryMetricLog() const;
 
     SystemLogs getSystemLogs() const;
 
