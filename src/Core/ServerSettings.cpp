@@ -339,7 +339,7 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
         res_columns[4]->insert(setting.getDescription());
         res_columns[5]->insert(setting.getTypeName());
         res_columns[6]->insert(is_changeable ? changeable_settings_it->second.second : ChangeableWithoutRestart::No);
-        res_columns[7]->insert(setting.isObsolete());
+        res_columns[7]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
     }
 }
 }
