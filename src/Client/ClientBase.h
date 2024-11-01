@@ -328,6 +328,7 @@ protected:
 
     String home_path;
     String history_file; /// Path to a file containing command history.
+    UInt32 history_max_entries; /// Maximum number of entries in the history file.
 
     String current_profile;
 
