@@ -127,8 +127,6 @@ void AccessRightsElement::formatColumnNames(WriteBuffer & buffer) const
         if (std::exchange(need_comma, true))
             buffer << ", ";
         buffer << backQuoteIfNeed(column);
-        if (wildcard)
-            buffer << "*";
     }
     buffer << ")";
 }
