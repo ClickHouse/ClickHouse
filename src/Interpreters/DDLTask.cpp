@@ -1,7 +1,10 @@
+#include <Access/AccessControl.h>
+#include <Access/User.h>
 #include <Interpreters/DDLTask.h>
 #include <base/sort.h>
 #include <Common/DNSResolver.h>
 #include <Common/isLocalAddress.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -30,6 +33,11 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_query_size;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool validate_access_consistency_between_instances;
 }
 
 namespace ErrorCodes
@@ -147,6 +155,14 @@ String DDLLogEntry::toString() const
         wb << "\n";
     }
 
+    if (version >= INITIATOR_USER_VERSION)
+    {
+        wb << "initiator_user: ";
+        writeEscapedString(initial_query_id, wb);
+        wb << '\n';
+        wb << "access_hash: " << access_hash << "\n";
+    }
+
     return wb.str();
 }
 
@@ -219,6 +235,14 @@ void DDLLogEntry::parse(const String & data)
         rb >> "\n";
     }
 
+    if (version >= INITIATOR_USER_VERSION)
+    {
+        rb >> "initiator_user: ";
+        readEscapedString(initiator_user, rb);
+        rb >> "\n";
+        rb >> "access_hash: " >> access_hash >> "\n";
+    }
+
     assertEOF(rb);
 
     if (!host_id_strings.empty())
@@ -253,8 +277,25 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(""); // generate random query_id
     query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+
+    const auto & access_control = from_context->getAccessControl();
+    const auto user = access_control.tryRead<User>(entry.initiator_user);
+    if (!user)
+    {
+        if (from_context->getServerSettings()[ServerSetting::validate_access_consistency_between_instances])
+            throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION, "Initiator user is not present on instance.");
+        LOG_WARNING(getLogger("DDLTask"), "Initiator user is not present on the instance. Will use the global user for the query execution. This is a security vulnerability!");
+    }
+    else
+    {
+        query_context->setUser(access_control.getID<User>(entry.initiator_user));
+        if (sipHash64(user->access.toString()) != entry.access_hash && from_context->getServerSettings()[ServerSetting::validate_access_consistency_between_instances])
+            throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION, "Inconsistent access for the '{}' user on the instance.", user->getName());
+    }
+
     if (entry.settings)
         query_context->applySettingsChanges(*entry.settings);
+
     return query_context;
 }
 

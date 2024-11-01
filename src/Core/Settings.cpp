@@ -4410,7 +4410,7 @@ Possible values:
 
 Cloud default value: `none`.
 )", 0) \
-    DECLARE(UInt64, distributed_ddl_entry_format_version, 5, R"(
+    DECLARE(UInt64, distributed_ddl_entry_format_version, 8, R"(
 Compatibility version of distributed DDL (ON CLUSTER) queries
 )", 0) \
     \
