@@ -211,7 +211,7 @@ namespace
             ColumnsWithTypeAndName args = arguments;
             args[0].column = args[0].column->cloneResized(input_rows_count)->convertToFullColumnIfConst();
 
-            auto impl = FunctionToOverloadResolverAdaptor(std::make_shared<FunctionTransform>()).build(args);
+            auto impl = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTransform>())->build(args);
 
             return impl->execute(args, result_type, input_rows_count);
         }
