@@ -915,7 +915,7 @@ void copyS3File(
 
     if (!settings[S3RequestSetting::allow_native_copy])
     {
-        LOG_TRACE(getLogger("copyS3File"), "Native copy is disable for {}", src_bucket);
+        LOG_TRACE(getLogger("copyS3File"), "Native copy is disable for {}", src_key);
         fallback_method();
         return;
     }
