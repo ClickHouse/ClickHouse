@@ -97,8 +97,8 @@ std::stack<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTre
             case QueryTreeNodeType::JOIN:
             {
                 const auto & join_node = query_tree_node->as<JoinNode &>();
-                auto join_kind = join_node.getKind();
-                auto join_strictness = join_node.getStrictness();
+                const auto join_kind = join_node.getKind();
+                const auto join_strictness = join_node.getStrictness();
 
                 if (join_kind == JoinKind::Left || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All))
                     query_tree_node = join_node.getLeftTableExpression().get();
@@ -266,7 +266,7 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     /// Empty stack means that storage does not support parallel replicas.
     if (stack.empty())
     {
-        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Not found");
+        // LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Not found");
         return nullptr;
     }
 
@@ -310,10 +310,10 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
             new_stack.pop();
         }
     }
-    if (!res)
-        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Not found 2");
-    else
-        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Query:\n{}", query_tree_node->dumpTree());
+    // if (!res)
+    //     LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Not found 2");
+    // else
+    //     LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Query:\n{}", query_tree_node->dumpTree());
     return res;
 }
 
