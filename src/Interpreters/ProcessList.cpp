@@ -456,12 +456,16 @@ void QueryStatus::ExecutorHolder::remove()
     executor = nullptr;
 }
 
-CancellationCode QueryStatus::cancelQuery(CancelReason reason)
+CancellationCode QueryStatus::cancelQuery(bool /* kill */, std::exception_ptr exception)
 {
-    if (is_killed.load())
+    if (is_killed.exchange(true))
         return CancellationCode::CancelSent;
 
-    is_killed.store(true);
+    {
+        std::lock_guard lock{cancellation_exception_mutex};
+        if (!cancellation_exception)
+            cancellation_exception = exception;
+    }
 
     std::atomic_exchange(&cancel_reason, reason);
 
@@ -540,6 +544,15 @@ bool QueryStatus::checkTimeLimit()
     throwProperExceptionIfNeeded(limits.max_execution_time.totalMilliseconds(), elapsed_ns);
 
     return limits.checkTimeLimit(elapsed_ns, overflow_mode);
+}
+
+void QueryStatus::throwQueryWasCancelled() const
+{
+    std::lock_guard lock{cancellation_exception_mutex};
+    if (cancellation_exception)
+        std::rethrow_exception(cancellation_exception);
+    else
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 }
 
 bool QueryStatus::checkTimeLimitSoft()
