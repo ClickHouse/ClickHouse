@@ -456,7 +456,7 @@ void QueryStatus::ExecutorHolder::remove()
     executor = nullptr;
 }
 
-CancellationCode QueryStatus::cancelQuery(bool /* kill */, std::exception_ptr exception)
+CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_ptr exception)
 {
     if (is_killed.exchange(true))
         return CancellationCode::CancelSent;

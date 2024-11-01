@@ -243,7 +243,7 @@ public:
 
     /// Cancels the current query.
     /// Optional argument `exception` allows to set an exception which checkTimeLimit() will throw instead of "QUERY_WAS_CANCELLED".
-    CancellationCode cancelQuery(bool kill, std::exception_ptr exception = nullptr);
+    CancellationCode cancelQuery(CancelReason reason, std::exception_ptr exception = nullptr);
 
     bool isKilled() const { return is_killed; }
 
