@@ -948,7 +948,7 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
         chassert(false);
-        /// Do not rethrow, we much delete the file below.
+        /// Do not rethrow, we must delete the file below.
     }
 
     try

@@ -1046,8 +1046,8 @@ void FileSegmentsHolder::reset()
         }
         catch (...)
         {
-            chassert(false);
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            chassert(false);
             continue;
         }
     }
