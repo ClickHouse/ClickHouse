@@ -5112,6 +5112,9 @@ Only in ClickHouse Cloud. A maximum number of unacknowledged in-flight packets i
     DECLARE(UInt64, distributed_cache_data_packet_ack_window, DistributedCache::ACK_DATA_PACKET_WINDOW, R"(
 Only in ClickHouse Cloud. A window for sending ACK for DataPacket sequence in a single distributed cache read request
 )", 0) \
+    DECLARE(Bool, distributed_cache_discard_connection_if_unread_data, true, R"(
+Only in ClickHouse Cloud. Discard connection if some data is unread.
+)", 0) \
     \
     DECLARE(Bool, parallelize_output_from_storages, true, R"(
 Parallelize output for reading step from storage. It allows parallelization of  query processing right after reading from storage if possible
