@@ -179,9 +179,9 @@ StorageTimeSeries::StorageTimeSeries(
 StorageTimeSeries::~StorageTimeSeries() = default;
 
 
-TimeSeriesSettings StorageTimeSeries::getStorageSettings() const
+const TimeSeriesSettings & StorageTimeSeries::getStorageSettings() const
 {
-    return *getStorageSettingsPtr();
+    return *storage_settings;
 }
 
 void StorageTimeSeries::startup()

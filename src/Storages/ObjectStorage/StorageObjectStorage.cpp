@@ -152,7 +152,7 @@ public:
         ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(DataStream{.header = info_.source_header}, columns_to_read, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(info_.source_header, columns_to_read, query_info_, storage_snapshot_, context_)
         , object_storage(object_storage_)
         , configuration(configuration_)
         , info(std::move(info_))

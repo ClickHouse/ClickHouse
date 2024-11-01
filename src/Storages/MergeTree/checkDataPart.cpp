@@ -135,7 +135,6 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     }
 }
 
-
 static IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     const IDataPartStorage & data_part_storage,
@@ -191,7 +190,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     auto ratio_of_defaults = (*data_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization];
     SerializationInfoByName serialization_infos;
 
-    if (data_part_storage.exists(IMergeTreeDataPart::SERIALIZATION_FILE_NAME))
+    if (data_part_storage.existsFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME))
     {
         try
         {
@@ -263,7 +262,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     /// Checksums from the rest files listed in checksums.txt. May be absent. If present, they are subsequently compared with the actual data checksums.
     IMergeTreeDataPart::Checksums checksums_txt;
 
-    if (require_checksums || data_part_storage.exists("checksums.txt"))
+    if (require_checksums || data_part_storage.existsFile("checksums.txt"))
     {
         auto buf = data_part_storage.readFile("checksums.txt", read_settings, std::nullopt, std::nullopt);
         checksums_txt.read(*buf);
@@ -277,7 +276,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         auto file_name = it->name();
 
         /// We will check projections later.
-        if (data_part_storage.isDirectory(file_name) && file_name.ends_with(".proj"))
+        if (data_part_storage.existsDirectory(file_name) && file_name.ends_with(".proj"))
         {
             projections_on_disk.insert(file_name);
             continue;
@@ -413,7 +412,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
         for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
         {
             auto file_name = it->name();
-            if (!data_part_storage.isDirectory(file_name))
+            if (!data_part_storage.existsDirectory(file_name))
             {
                 auto remote_paths = data_part_storage.getRemotePaths(file_name);
                 for (const auto & remote_path : remote_paths)
@@ -422,6 +421,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
         }
 
         ReadSettings read_settings;
+        read_settings.read_through_distributed_cache = false;
         read_settings.enable_filesystem_cache = false;
         read_settings.enable_filesystem_cache_log = false;
         read_settings.enable_filesystem_read_prefetches_log = false;

@@ -98,7 +98,6 @@ public:
 
     /// Closes and removes session
     void closeSession(const String & session_id);
-
 private:
     std::shared_ptr<SessionLog> getSessionLog() const;
     ContextMutablePtr makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const;

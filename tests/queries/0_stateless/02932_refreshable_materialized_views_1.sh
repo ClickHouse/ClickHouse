@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Set session timezone to UTC to make all DateTime formatting and parsing use UTC, because refresh
 # scheduling is done in UTC.
 CLICKHOUSE_CLIENT="`echo "$CLICKHOUSE_CLIENT" | sed 's/--session_timezone[= ][^ ]*//g'`"
-CLICKHOUSE_CLIENT="`echo "$CLICKHOUSE_CLIENT --allow_experimental_refreshable_materialized_view=1 --session_timezone Etc/UTC"`"
+CLICKHOUSE_CLIENT="`echo "$CLICKHOUSE_CLIENT --session_timezone Etc/UTC"`"
 
 $CLICKHOUSE_CLIENT -q "create view refreshes as select * from system.view_refreshes where database = '$CLICKHOUSE_DATABASE' order by view"
 
@@ -50,14 +50,6 @@ done
 # to make sure the clock+timer code works at all. If it turns out flaky, increase refresh period above.
 $CLICKHOUSE_CLIENT -q "
     select '<3: time difference at least>', min2(reinterpret(now64(), 'Int64') - $start_time, 1000);"
-while :
-do
-    # Wait for status to change to Scheduled. If status = Scheduling, next_refresh_time is stale.
-    res="`$CLICKHOUSE_CLIENT -q "select '<4: next refresh in>', next_refresh_time-last_success_time, status from refreshes -- $LINENO"`"
-    echo "$res" | grep -q 'Scheduled' && break
-    sleep 0.5
-done
-echo "$res"
 
 # Create a source table from which views will read.
 $CLICKHOUSE_CLIENT -q "

@@ -121,7 +121,7 @@ void MergeTreeDataPartWide::loadIndexGranularityImpl(
 
     /// We can use any column, it doesn't matter
     std::string marks_file_path = index_granularity_info_.getMarksFilePath(any_column_file_name);
-    if (!data_part_storage_.exists(marks_file_path))
+    if (!data_part_storage_.existsFile(marks_file_path))
         throw Exception(
             ErrorCodes::NO_FILE_IN_DATA_PART, "Marks file '{}' doesn't exist",
             std::string(fs::path(data_part_storage_.getFullPath()) / marks_file_path));
@@ -182,10 +182,56 @@ void MergeTreeDataPartWide::loadIndexGranularity()
     loadIndexGranularityImpl(index_granularity, index_granularity_info, getDataPartStorage(), *any_column_filename);
 }
 
+void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const
+{
+    if (column_names.empty() || !mark_cache)
+        return;
+
+    std::vector<std::unique_ptr<MergeTreeMarksLoader>> loaders;
+
+    auto context = storage.getContext();
+    auto read_settings = context->getReadSettings();
+    auto * load_marks_threadpool = read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
+    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
+
+    LOG_TEST(getLogger("MergeTreeDataPartWide"), "Loading marks into mark cache for columns {} of part {}", toString(column_names), name);
+
+    for (const auto & column_name : column_names)
+    {
+        auto serialization = getSerialization(column_name);
+        serialization->enumerateStreams([&](const auto & subpath)
+        {
+            auto stream_name = getStreamNameForColumn(column_name, subpath, checksums);
+            if (!stream_name)
+                return;
+
+            loaders.emplace_back(std::make_unique<MergeTreeMarksLoader>(
+                info_for_read,
+                mark_cache,
+                index_granularity_info.getMarksFilePath(*stream_name),
+                index_granularity.getMarksCount(),
+                index_granularity_info,
+                /*save_marks_in_cache=*/ true,
+                read_settings,
+                load_marks_threadpool,
+                /*num_columns_in_mark=*/ 1));
+
+            loaders.back()->startAsyncLoad();
+        });
+    }
+
+    for (auto & loader : loaders)
+        loader->loadMarks();
+}
 
 bool MergeTreeDataPartWide::isStoredOnRemoteDisk() const
 {
     return getDataPartStorage().isStoredOnRemoteDisk();
+}
+
+bool MergeTreeDataPartWide::isStoredOnReadonlyDisk() const
+{
+    return getDataPartStorage().isReadonly();
 }
 
 bool MergeTreeDataPartWide::isStoredOnRemoteDiskWithZeroCopySupport() const

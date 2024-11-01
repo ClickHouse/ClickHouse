@@ -29,7 +29,7 @@ DiskWithPath::DiskWithPath(DiskPtr disk_, std::optional<String> path_) : disk(di
     }
 
     String relative_path = normalizePathAndGetAsRelative(path);
-    if (disk->isDirectory(relative_path) || (relative_path.empty() && (disk->isDirectory("/"))))
+    if (disk->existsDirectory(relative_path) || (relative_path.empty() && (disk->existsDirectory("/"))))
     {
         return;
     }

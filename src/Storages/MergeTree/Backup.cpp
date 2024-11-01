@@ -48,7 +48,7 @@ void BackupImpl(
         auto source = it->path();
         auto destination = fs::path(destination_path) / it->name();
 
-        if (!src_disk->isDirectory(source))
+        if (!src_disk->existsDirectory(source))
         {
             if (make_source_readonly)
             {
@@ -142,7 +142,7 @@ void Backup(
     const NameSet & files_to_copy_intead_of_hardlinks,
     DiskTransactionPtr disk_transaction)
 {
-    if (dst_disk->exists(destination_path) && !dst_disk->isDirectoryEmpty(destination_path))
+    if (dst_disk->existsFileOrDirectory(destination_path) && !dst_disk->isDirectoryEmpty(destination_path))
     {
         throw DB::Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory {} already exists and is not empty.",
                             DB::fullPath(dst_disk, destination_path));

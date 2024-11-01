@@ -37,7 +37,7 @@ Expression (Projection)
             Parts: 1/1
             Granules: 2/4
 Special cases
--- Non-default metric, M, ef_construction, ef_search
+-- Non-default metric, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction
 6	[1,9.3]	0.005731362878640178
 4	[2.4,5.2]	0.09204062768384846
 1	[2,3.2]	0.15200169244542905

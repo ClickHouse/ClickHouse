@@ -704,7 +704,7 @@ ReadFromSystemZooKeeper::ReadFromSystemZooKeeper(
     const Block & header,
     UInt64 max_block_size_)
     : SourceStepWithFilter(
-        {.header = header},
+        header,
         column_names_,
         query_info_,
         storage_snapshot_,
@@ -716,7 +716,7 @@ ReadFromSystemZooKeeper::ReadFromSystemZooKeeper(
 
 void ReadFromSystemZooKeeper::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    const auto & header = getOutputStream().header;
+    const auto & header = getOutputHeader();
     auto source = std::make_shared<SystemZooKeeperSource>(std::move(paths), header, max_block_size, context);
     source->setStorageLimits(storage_limits);
     processors.emplace_back(source);

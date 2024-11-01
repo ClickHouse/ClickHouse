@@ -1,24 +1,12 @@
 #pragma once
 
-
-#include <Core/Types.h>
 #include <Core/DistributedCacheProtocol.h>
+#include <Core/Types.h>
+#include <IO/DistributedCacheLogMode.h>
+#include <IO/DistributedCachePoolBehaviourOnLimit.h>
 
 namespace DB
 {
-
-enum class DistributedCachePoolBehaviourOnLimit
-{
-    WAIT,
-    ALLOCATE_NEW_BYPASSING_POOL,
-};
-
-enum class DistributedCacheLogMode
-{
-    LOG_NOTHING,
-    LOG_ON_ERROR,
-    LOG_ALL,
-};
 
 struct DistributedCacheSettings
 {

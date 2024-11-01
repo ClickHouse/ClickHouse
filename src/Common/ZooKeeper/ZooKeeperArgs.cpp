@@ -99,9 +99,12 @@ void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfig
         if (auto session_timeout_key = coordination_key + ".session_timeout_ms";
             config.has(session_timeout_key))
             session_timeout_ms = config.getInt(session_timeout_key);
-    }
 
-    use_xid_64 = config.getBool(std::string{config_name} + ".use_xid_64", false);
+        if (auto use_xid_64_key = coordination_key + ".use_xid_64";
+            config.has(use_xid_64_key))
+            use_xid_64 = config.getBool(use_xid_64_key);
+
+    }
 
     Poco::Util::AbstractConfiguration::Keys keys;
     std::string raft_configuration_key = std::string{config_name} + ".raft_configuration";

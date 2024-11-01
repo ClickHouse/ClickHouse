@@ -33,10 +33,10 @@ public:
 TEST_F(DiskTest, createDirectories)
 {
     disk->createDirectories("test_dir1/");
-    EXPECT_TRUE(disk->isDirectory("test_dir1/"));
+    EXPECT_TRUE(disk->existsDirectory("test_dir1/"));
 
     disk->createDirectories("test_dir2/nested_dir/");
-    EXPECT_TRUE(disk->isDirectory("test_dir2/nested_dir/"));
+    EXPECT_TRUE(disk->existsDirectory("test_dir2/nested_dir/"));
 }
 
 

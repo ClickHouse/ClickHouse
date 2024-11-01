@@ -243,7 +243,7 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
         moving_part.part->assertOnDisk();
         String path_to_clone = fs::path(data->getRelativeDataPath()) / MergeTreeData::MOVING_DIR_NAME / "";
         String relative_path = part->getDataPartStorage().getPartDirectory();
-        if (disk->exists(path_to_clone + relative_path))
+        if (disk->existsFile(path_to_clone + relative_path))
         {
             // If setting is on, we should've already cleaned moving/ dir on startup
             if (data->allowRemoveStaleMovingParts())
