@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.h"
+#include <memory>
 
 #if USE_LIBPQXX
 
@@ -48,14 +49,19 @@ private:
     {
         ConnectionInfo connection_info;
         PoolPtr pool;
+        /// Pool is online.
+        std::atomic<bool> online{true};
 
         PoolHolder(const ConnectionInfo & connection_info_, size_t pool_size)
             : connection_info(connection_info_), pool(std::make_shared<Pool>(pool_size)) {}
     };
 
     /// Highest priority is 0, the bigger the number in map, the less the priority
-    using Replicas = std::vector<PoolHolder>;
+    using PoolHolderPtr = std::shared_ptr<PoolHolder>;
+    using Replicas = std::vector<PoolHolderPtr>;
     using ReplicasWithPriority = std::map<size_t, Replicas>;
+
+    static auto connectionReistablisher(std::weak_ptr<PoolHolder> pool, size_t pool_wait_timeout);
 
     ReplicasWithPriority replicas_with_priority;
     size_t pool_wait_timeout;
