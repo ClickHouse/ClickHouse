@@ -46,7 +46,7 @@ public:
     void disconnect();
 
     natsConnection * getConnection() { return connection.get(); }
-    int getReconnectWait() { return configuration.reconnect_wait; }
+    int getReconnectWait() const { return configuration.reconnect_wait; }
 
     String connectionInfoForLog() const;
 
