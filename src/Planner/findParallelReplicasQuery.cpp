@@ -274,7 +274,8 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     if (stack.top() == query_tree_node.get())
     {
         LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Query itself:\n{}", query_tree_node->dumpTree());
-        return query_node;
+        return nullptr;
+        // return query_node;
     }
 
     /// This is needed to avoid infinite recursion.
