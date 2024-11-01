@@ -786,7 +786,13 @@ void registerStorageNATS(StorageFactory & factory)
         return std::make_shared<StorageNATS>(args.table_id, args.getContext(), args.columns, args.comment, std::move(nats_settings), args.mode);
     };
 
-    factory.registerStorage("NATS", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
+    factory.registerStorage(
+        "NATS",
+        creator_fn,
+        StorageFactory::StorageFeatures{
+            .supports_settings = true,
+            .source_access_type = AccessType::NATS,
+        });
 }
 
 }
