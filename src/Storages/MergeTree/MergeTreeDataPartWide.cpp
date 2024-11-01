@@ -182,6 +182,47 @@ void MergeTreeDataPartWide::loadIndexGranularity()
     loadIndexGranularityImpl(index_granularity, index_granularity_info, getDataPartStorage(), *any_column_filename);
 }
 
+void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const
+{
+    if (column_names.empty() || !mark_cache)
+        return;
+
+    std::vector<std::unique_ptr<MergeTreeMarksLoader>> loaders;
+
+    auto context = storage.getContext();
+    auto read_settings = context->getReadSettings();
+    auto * load_marks_threadpool = read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
+    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
+
+    LOG_TEST(getLogger("MergeTreeDataPartWide"), "Loading marks into mark cache for columns {} of part {}", toString(column_names), name);
+
+    for (const auto & column_name : column_names)
+    {
+        auto serialization = getSerialization(column_name);
+        serialization->enumerateStreams([&](const auto & subpath)
+        {
+            auto stream_name = getStreamNameForColumn(column_name, subpath, checksums);
+            if (!stream_name)
+                return;
+
+            loaders.emplace_back(std::make_unique<MergeTreeMarksLoader>(
+                info_for_read,
+                mark_cache,
+                index_granularity_info.getMarksFilePath(*stream_name),
+                index_granularity.getMarksCount(),
+                index_granularity_info,
+                /*save_marks_in_cache=*/ true,
+                read_settings,
+                load_marks_threadpool,
+                /*num_columns_in_mark=*/ 1));
+
+            loaders.back()->startAsyncLoad();
+        });
+    }
+
+    for (auto & loader : loaders)
+        loader->loadMarks();
+}
 
 bool MergeTreeDataPartWide::isStoredOnRemoteDisk() const
 {

@@ -78,6 +78,10 @@ Specifying privileges you can use asterisk (`*`) instead of a table or a databas
 Also, you can omit database name. In this case privileges are granted for current database.
 For example, `GRANT SELECT ON * TO john` grants the privilege on all the tables in the current database, `GRANT SELECT ON mytable TO john` grants the privilege on the `mytable` table in the current database.
 
+:::note
+The feature described below is available starting with the 24.10 ClickHouse version.
+:::
+
 You can also put asterisks at the end of a table or a database name. This feature allows you to grant privileges on an abstract prefix of the table's path.
 Example: `GRANT SELECT ON db.my_tables* TO john`. This query allows `john` to execute the `SELECT` query over all the `db` database tables with the prefix `my_tables*`.
 

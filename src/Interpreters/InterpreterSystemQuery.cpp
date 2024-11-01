@@ -89,6 +89,9 @@ namespace CurrentMetrics
     extern const Metric RestartReplicaThreads;
     extern const Metric RestartReplicaThreadsActive;
     extern const Metric RestartReplicaThreadsScheduled;
+    extern const Metric MergeTreePartsLoaderThreads;
+    extern const Metric MergeTreePartsLoaderThreadsActive;
+    extern const Metric MergeTreePartsLoaderThreadsScheduled;
 }
 
 namespace DB
@@ -97,6 +100,7 @@ namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSeconds receive_timeout;
+    extern const SettingsMaxThreads max_threads;
 }
 
 namespace ServerSetting
@@ -357,6 +361,11 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_CONNECTIONS_CACHE);
             HTTPConnectionPools::instance().dropCache();
+            break;
+        }
+        case Type::PREWARM_MARK_CACHE:
+        {
+            prewarmMarkCache();
             break;
         }
         case Type::DROP_MARK_CACHE:
@@ -1016,7 +1025,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
                 {
                     ReplicatedTableStatus status;
                     storage_replicated->getStatus(status);
-                    if (status.zookeeper_info.path == query.replica_zk_path)
+                    if (status.replica_path == remote_replica_path)
                         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED,
                                         "There is a local table {}, which has the same table path in ZooKeeper. "
                                         "Please check the path in query. "
@@ -1298,6 +1307,28 @@ RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
     return tasks;
 }
 
+void InterpreterSystemQuery::prewarmMarkCache()
+{
+    if (table_id.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table is not specified for prewarming marks cache");
+
+    getContext()->checkAccess(AccessType::SYSTEM_PREWARM_MARK_CACHE, table_id);
+
+    auto table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
+    auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
+
+    if (!merge_tree)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM MARK CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
+
+    ThreadPool pool(
+        CurrentMetrics::MergeTreePartsLoaderThreads,
+        CurrentMetrics::MergeTreePartsLoaderThreadsActive,
+        CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
+        getContext()->getSettingsRef()[Setting::max_threads]);
+
+    merge_tree->prewarmMarkCache(pool);
+}
+
 
 AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() const
 {
@@ -1497,6 +1528,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::WAIT_LOADING_PARTS:
         {
             required_access.emplace_back(AccessType::SYSTEM_WAIT_LOADING_PARTS, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::PREWARM_MARK_CACHE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_PREWARM_MARK_CACHE, query.getDatabase(), query.getTable());
             break;
         }
         case Type::SYNC_DATABASE_REPLICA:
