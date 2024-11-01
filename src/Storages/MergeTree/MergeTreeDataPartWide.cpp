@@ -195,7 +195,14 @@ bool MergeTreeDataPartWide::isStoredOnRemoteDiskWithZeroCopySupport() const
 
 MergeTreeDataPartWide::~MergeTreeDataPartWide()
 {
-    removeIfNeeded();
+    try
+    {
+        removeIfNeeded();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
