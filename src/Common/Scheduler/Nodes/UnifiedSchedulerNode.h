@@ -492,7 +492,7 @@ public:
             nodes.push_back(impl.semaphore);
         if (impl.branch.queue)
             nodes.push_back(impl.branch.queue);
-        for (auto & [_, branch] : impl.branch.branch.branches)
+        for (auto & [_0, branch] : impl.branch.branch.branches)
         {
             for (auto & [_1, child] : branch.children)
                 child->addRawPointerNodes(nodes);
