@@ -1,0 +1,23 @@
+{
+	"meta":
+	[
+		{
+			"name": "int8",
+			"type": "Nullable(Int8)"
+		}
+	],
+
+	"data":
+	[
+
+	],
+
+	"rows": 0,
+
+	"statistics":
+	{
+		"elapsed": 0.05269874,
+		"rows_read": 0,
+		"bytes_read": 0
+	}
+}
