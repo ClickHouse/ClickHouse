@@ -5,8 +5,9 @@
 
 #include "buzz-house/ast/sql_grammar.pb.h"
 
-namespace buzzhouse {
+namespace buzzhouse
+{
 
-void SQLQueryToString(std::string &ret, const sql_query_grammar::SQLQuery&);
+void SQLQueryToString(std::string & ret, const sql_query_grammar::SQLQuery &);
 
-}  // namespace buzzhouse
+} // namespace buzzhouse

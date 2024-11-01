@@ -11,10 +11,7 @@ class Client : public ClientApplicationBase
 public:
     using Arguments = ClientApplicationBase::Arguments;
 
-    Client()
-    {
-        fuzzer = QueryFuzzer(randomSeed(), &std::cout, &std::cerr);
-    }
+    Client() { fuzzer = QueryFuzzer(randomSeed(), &std::cout, &std::cerr); }
 
     void initialize(Poco::Util::Application & self) override;
 
@@ -55,8 +52,8 @@ protected:
 private:
     void printChangedSettings() const;
     void showWarnings();
-    void ProcessQueryAndLog(std::ofstream &outf, const std::string &full_query);
-    bool ProcessBuzzHouseQuery(const std::string &full_query);
+    void ProcessQueryAndLog(std::ofstream & outf, const std::string & full_query);
+    bool ProcessBuzzHouseQuery(const std::string & full_query);
     void parseConnectionsCredentials(Poco::Util::AbstractConfiguration & config, const std::string & connection_name);
     std::vector<String> loadWarningMessages();
 };

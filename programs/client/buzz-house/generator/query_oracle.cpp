@@ -321,7 +321,6 @@ static const std::vector<TestSetting> test_settings{
     TestSetting("compile_sort_description", {"0", "1"}),
     TestSetting("cross_join_min_bytes_to_compress", {"0", "1"}),
     TestSetting("cross_join_min_rows_to_compress", {"0", "1"}),
-    TestSetting("deduplicate_blocks_in_dependent_materialized_views", {"0", "1"}),
     TestSetting("describe_include_subcolumns", {"0", "1"}),
     TestSetting("distributed_aggregation_memory_efficient", {"0", "1"}),
     TestSetting("enable_analyzer", {"0", "1"}),
