@@ -494,7 +494,7 @@ public:
             nodes.push_back(impl.branch.queue);
         for (auto & [_, branch] : impl.branch.branch.branches)
         {
-            for (auto & [_, child] : branch.children)
+            for (auto & [_1, child] : branch.children)
                 child->addRawPointerNodes(nodes);
         }
     }
