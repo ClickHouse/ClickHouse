@@ -276,7 +276,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
                 thread_group->performance_counters.setTraceProfileEvents(settings[Setting::trace_profile_events]);
             }
 
-            thread_group->memory_tracker.setDescription("(for query)");
+            thread_group->memory_tracker.setDescription("Query");
             if (settings[Setting::memory_tracker_fault_probability] > 0.0)
                 thread_group->memory_tracker.setFaultProbability(settings[Setting::memory_tracker_fault_probability]);
 
@@ -311,7 +311,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         /// Track memory usage for all simultaneously running queries from single user.
         user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage_for_user]);
         user_process_list.user_memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator_for_user]);
-        user_process_list.user_memory_tracker.setDescription("(for user)");
+        user_process_list.user_memory_tracker.setDescription("User");
 
         if (!total_network_throttler && settings[Setting::max_network_bandwidth_for_all_users])
         {

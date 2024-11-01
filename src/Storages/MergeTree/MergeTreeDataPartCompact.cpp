@@ -136,6 +136,32 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
     loadIndexGranularityImpl(index_granularity, index_granularity_info, columns.size(), getDataPartStorage());
 }
 
+void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const
+{
+    if (column_names.empty() || !mark_cache)
+        return;
+
+    auto context = storage.getContext();
+    auto read_settings = context->getReadSettings();
+    auto * load_marks_threadpool = read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
+    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
+
+    LOG_TEST(getLogger("MergeTreeDataPartCompact"), "Loading marks into mark cache for columns {} of part {}", toString(column_names), name);
+
+    MergeTreeMarksLoader loader(
+        info_for_read,
+        mark_cache,
+        index_granularity_info.getMarksFilePath(DATA_FILE_NAME),
+        index_granularity.getMarksCount(),
+        index_granularity_info,
+        /*save_marks_in_cache=*/ true,
+        read_settings,
+        load_marks_threadpool,
+        columns.size());
+
+    loader.loadMarks();
+}
+
 bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) const
 {
     if (!getColumnPosition(column.getNameInStorage()))

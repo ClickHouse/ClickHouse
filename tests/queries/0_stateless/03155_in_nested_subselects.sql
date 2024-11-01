@@ -16,4 +16,4 @@ using id;
 
 INSERT INTO Null SELECT number AS id FROM numbers(2);
 
-select * from Example;  -- should return 4 rows
+select * from Example order by all;  -- should return 4 rows
