@@ -121,6 +121,8 @@ String getOneTimePasswordSecretLink(const OneTimePasswordSecret & secret)
         secret.key, secret.params.num_digits, secret.params.period, toString(secret.params.algorithm));
 }
 
+struct CStringDeleter { void operator()(char * ptr) const { std::free(ptr); } };
+
 String getOneTimePassword(const String & secret [[ maybe_unused ]], const OneTimePasswordParams & config [[ maybe_unused ]], UInt64 current_time [[ maybe_unused ]])
 {
 #if USE_SSL
@@ -129,7 +131,7 @@ String getOneTimePassword(const String & secret [[ maybe_unused ]], const OneTim
                  : TOTP_SHA1;
 
     cotp_error_t error;
-    auto result = std::unique_ptr<char>(get_totp_at(secret.c_str(), current_time, config.num_digits, config.period, sha_algo, &error));
+    auto result = std::unique_ptr<char, CStringDeleter>(get_totp_at(secret.c_str(), current_time, config.num_digits, config.period, sha_algo, &error));
 
     if (result == nullptr || (error != NO_ERROR && error != VALID))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while retrieving one-time password, code: {}",
