@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 set allow_experimental_json_type = 1;
 set allow_experimental_object_type = 1;
 set allow_experimental_variant_type = 1;
