@@ -66,6 +66,11 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
         {
             {"distributed_cache_discard_connection_if_unread_data", true, true, "New setting"},
             {"azure_check_objects_after_upload", false, false, "Check each uploaded object in azure blob storage to be sure that upload was successful"},
+            {"backup_restore_keeper_max_retries", 20, 1000, "Should be big enough so the whole operation BACKUP or RESTORE operation won't fail because of a temporary [Zoo]Keeper failure in the middle of it."},
+            {"backup_restore_failure_after_host_disconnected_for_seconds", 0, 3600, "New setting."},
+            {"backup_restore_keeper_max_retries_while_initializing", 0, 20, "New setting."},
+            {"backup_restore_keeper_max_retries_while_handling_error", 0, 20, "New setting."},
+            {"backup_restore_finish_timeout_after_error_sec", 0, 180, "New setting."},
         }
     },
     {"24.10",
