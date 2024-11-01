@@ -3,7 +3,6 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
-#include <Interpreters/TemporaryDataOnDisk.h>
 
 namespace DB
 {
@@ -16,7 +15,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     size_t max_block_size_bytes_,
     SortingQueueStrategy sorting_queue_strategy_,
     UInt64 limit_,
-    std::shared_ptr<TemporaryDataBuffer> out_row_sources_buf_,
+    WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes)
     : header(std::move(header_))
     , merged_data(use_average_block_sizes, max_block_size_, max_block_size_bytes_)

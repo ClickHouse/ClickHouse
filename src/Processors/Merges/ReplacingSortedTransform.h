@@ -21,7 +21,7 @@ public:
         const String & is_deleted_column, const String & version_column,
         size_t max_block_size_rows,
         size_t max_block_size_bytes,
-        std::shared_ptr<TemporaryDataBuffer> temp_data_buffer_ = nullptr,
+        WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false,
         bool cleanup = false,
         bool enable_vertical_final = false)
@@ -34,7 +34,7 @@ public:
             version_column,
             max_block_size_rows,
             max_block_size_bytes,
-            temp_data_buffer_,
+            out_row_sources_buf_,
             use_average_block_sizes,
             cleanup,
             enable_vertical_final)

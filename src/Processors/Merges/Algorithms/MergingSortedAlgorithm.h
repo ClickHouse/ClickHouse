@@ -9,8 +9,6 @@
 namespace DB
 {
 
-class TemporaryDataBuffer;
-
 /// Merges several sorted inputs into one sorted output.
 class MergingSortedAlgorithm final : public IMergingAlgorithm
 {
@@ -23,7 +21,7 @@ public:
         size_t max_block_size_bytes_,
         SortingQueueStrategy sorting_queue_strategy_,
         UInt64 limit_ = 0,
-        std::shared_ptr<TemporaryDataBuffer> out_row_sources_buf_ = nullptr,
+        WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false);
 
     void addInput();
@@ -47,7 +45,7 @@ private:
 
     /// Used in Vertical merge algorithm to gather non-PK/non-index columns (on next step)
     /// If it is not nullptr then it should be populated during execution
-    std::shared_ptr<TemporaryDataBuffer> out_row_sources_buf = nullptr;
+    WriteBuffer * out_row_sources_buf = nullptr;
 
     /// Chunks currently being merged.
     Inputs current_inputs;
