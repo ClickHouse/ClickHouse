@@ -1121,6 +1121,13 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
                 "Expected entry with data kind Preprocessed. Got: {}", entry->chunk.getDataKind());
 
         Block block_to_insert = *block;
+        if (block_to_insert.rows() == 0)
+        {
+            add_to_async_insert_log(entry, /*parsing_exception=*/ "", block_to_insert.rows(), block_to_insert.bytes());
+            entry->resetChunk();
+            continue;
+        }
+
         if (!isCompatibleHeader(block_to_insert, header))
             convertBlockToHeader(block_to_insert, header);
 
