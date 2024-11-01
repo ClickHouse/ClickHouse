@@ -176,11 +176,10 @@ namespace
         else if (has_otp_secret)
         {
             String secret = config.getString(user_config + ".time_based_one_time_password.secret", "");
-            OneTimePasswordConfig otp_config(
+            OneTimePasswordParams otp_config(
                 config.getInt(user_config + ".time_based_one_time_password.digits", {}),
                 config.getInt(user_config + ".time_based_one_time_password.period", {}),
-                config.getString(user_config + ".time_based_one_time_password.algorithm", "")
-            );
+                config.getString(user_config + ".time_based_one_time_password.algorithm", {}));
             user->authentication_methods.emplace_back(AuthenticationType::ONE_TIME_PASSWORD).setOneTimePassword(secret, otp_config, validate);
         }
         else if (has_ldap)

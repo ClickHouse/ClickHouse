@@ -37,8 +37,8 @@ public:
     /// Returns the password. Allowed to use only for Type::PLAINTEXT_PASSWORD.
     String getPassword() const;
 
-    void setOneTimePassword(const String & password_, OneTimePasswordConfig config, bool validate);
-    const OneTimePasswordConfig & getOneTimePasswordConfig() const { return otp_config; }
+    void setOneTimePassword(const String & password_, OneTimePasswordParams config, bool validate);
+    const OneTimePasswordSecret & getOneTimePassword() const { return otp_secret.value(); }
 
     /// Sets the password as a string of hexadecimal digits.
     void setPasswordHashHex(const String & hash, bool validate);
@@ -100,7 +100,7 @@ public:
 private:
     AuthenticationType type = AuthenticationType::NO_PASSWORD;
     Digest password_hash;
-    OneTimePasswordConfig otp_config;
+    std::optional<OneTimePasswordSecret> otp_secret;
     String ldap_server_name;
     String kerberos_realm;
     SSLCertificateSubjects ssl_certificate_subjects;

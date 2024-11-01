@@ -141,8 +141,7 @@ namespace
             {
                 return checkOneTimePassword(
                     /* password */ basic_credentials->getPassword(),
-                    /* secret */ authentication_method.getPassword(),
-                    /* config */ authentication_method.getOneTimePasswordConfig());
+                    /* secret */ authentication_method.getOneTimePassword());
             }
             case AuthenticationType::LDAP:
             {

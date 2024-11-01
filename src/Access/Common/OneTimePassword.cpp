@@ -30,10 +30,11 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-static const UInt8 b32_alphabet[] = u8"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-
+/// Checks if the secret contains only valid base32 characters.
+/// The secret may contain spaces, which are ignored and lower-case characters, which are converted to upper-case.
 String normalizeOneTimePasswordSecret(const String & secret)
 {
+    static const UInt8 b32_alphabet[] = u8"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
     static const UInt8 b32_lower_alphabet[] = u8"abcdefghijklmnopqrstuvwxyz";
 
     constexpr static UInt8 CHAR_IS_VALID = 1;
@@ -67,37 +68,20 @@ String normalizeOneTimePasswordSecret(const String & secret)
     return result;
 }
 
-static bool validateBase32Secret(const String & secret)
-{
-    if (secret.empty())
-        return false;
-
-    std::array<UInt8, 128> table = {};
-    for (const auto * p = b32_alphabet; *p; p++)
-        table[*p] = 1;
-    for (const auto c : secret)
-    {
-        size_t idx = static_cast<UInt8>(c);
-        if (idx >= table.size() || table[idx] == 0)
-            return false;
-    }
-    return true;
-}
-
-static std::string_view toString(OneTimePasswordConfig::Algorithm algorithm)
+static std::string_view toString(OneTimePasswordParams::Algorithm algorithm)
 {
     switch (algorithm)
     {
-        case OneTimePasswordConfig::Algorithm::SHA1: return "SHA1";
-        case OneTimePasswordConfig::Algorithm::SHA256: return "SHA256";
-        case OneTimePasswordConfig::Algorithm::SHA512: return "SHA512";
+        case OneTimePasswordParams::Algorithm::SHA1: return "SHA1";
+        case OneTimePasswordParams::Algorithm::SHA256: return "SHA256";
+        case OneTimePasswordParams::Algorithm::SHA512: return "SHA512";
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown algorithm for one-time password: {}", static_cast<UInt32>(algorithm));
 }
 
-static OneTimePasswordConfig::Algorithm hashingAlgorithmFromString(const String & algorithm_name)
+static OneTimePasswordParams::Algorithm hashingAlgorithmFromString(const String & algorithm_name)
 {
-    for (auto alg : {OneTimePasswordConfig::Algorithm::SHA1, OneTimePasswordConfig::Algorithm::SHA256, OneTimePasswordConfig::Algorithm::SHA512})
+    for (auto alg : {OneTimePasswordParams::Algorithm::SHA1, OneTimePasswordParams::Algorithm::SHA256, OneTimePasswordParams::Algorithm::SHA512})
     {
         if (Poco::toUpper(algorithm_name) == toString(alg))
             return alg;
@@ -105,7 +89,7 @@ static OneTimePasswordConfig::Algorithm hashingAlgorithmFromString(const String 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown algorithm for one-time password: '{}'", algorithm_name);
 }
 
-OneTimePasswordConfig::OneTimePasswordConfig(Int32 num_digits_, Int32 period_, const String & algorithm_name_)
+OneTimePasswordParams::OneTimePasswordParams(Int32 num_digits_, Int32 period_, const String & algorithm_name_)
 {
     if (num_digits_)
         num_digits = num_digits_;
@@ -120,24 +104,28 @@ OneTimePasswordConfig::OneTimePasswordConfig(Int32 num_digits_, Int32 period_, c
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid period for one-time password: {}", period);
 }
 
-std::string_view OneTimePasswordConfig::getAlgorithmName() const { return toString(algorithm); }
+std::string_view OneTimePasswordParams::getAlgorithmName() const { return toString(algorithm); }
 
-String getOneTimePasswordSecretLink(const String & secret, const OneTimePasswordConfig & config)
+
+OneTimePasswordSecret::OneTimePasswordSecret(const String & key_, OneTimePasswordParams params_)
+    : key(normalizeOneTimePasswordSecret(key_)), params(params_)
 {
-    validateBase32Secret(secret);
-
-    if (config == OneTimePasswordConfig{})
-        return fmt::format("otpauth://totp/ClickHouse?issuer=ClickHouse&secret={}", secret);
-
-    return fmt::format("otpauth://totp/ClickHouse?issuer=ClickHouse&secret={}&digits={}&period={}&algorithm={}",
-        secret, config.num_digits, config.period, toString(config.algorithm));
 }
 
-String getOneTimePassword(const String & secret [[ maybe_unused ]], const OneTimePasswordConfig & config [[ maybe_unused ]], UInt64 current_time [[ maybe_unused ]])
+String getOneTimePasswordSecretLink(const OneTimePasswordSecret & secret)
+{
+    if (secret.params == OneTimePasswordParams{})
+        return fmt::format("otpauth://totp/ClickHouse?issuer=ClickHouse&secret={}", secret.key);
+
+    return fmt::format("otpauth://totp/ClickHouse?issuer=ClickHouse&secret={}&digits={}&period={}&algorithm={}",
+        secret.key, secret.params.num_digits, secret.params.period, toString(secret.params.algorithm));
+}
+
+String getOneTimePassword(const String & secret [[ maybe_unused ]], const OneTimePasswordParams & config [[ maybe_unused ]], UInt64 current_time [[ maybe_unused ]])
 {
 #if USE_SSL
-    int sha_algo = config.algorithm == OneTimePasswordConfig::Algorithm::SHA512 ? TOTP_SHA512
-                 : config.algorithm == OneTimePasswordConfig::Algorithm::SHA256 ? TOTP_SHA256
+    int sha_algo = config.algorithm == OneTimePasswordParams::Algorithm::SHA512 ? TOTP_SHA512
+                 : config.algorithm == OneTimePasswordParams::Algorithm::SHA256 ? TOTP_SHA256
                  : TOTP_SHA1;
 
     cotp_error_t error;
@@ -153,18 +141,16 @@ String getOneTimePassword(const String & secret [[ maybe_unused ]], const OneTim
 }
 
 
-bool checkOneTimePassword(const String & password, const String & secret, const OneTimePasswordConfig & config)
+bool checkOneTimePassword(const String & password, const OneTimePasswordSecret & secret)
 {
-    if (password.size() != static_cast<size_t>(config.num_digits)
+    if (password.size() != static_cast<size_t>(secret.params.num_digits)
      || !std::all_of(password.begin(), password.end(), isdigit))
         return false;
-
-    validateBase32Secret(secret);
 
     auto current_time = static_cast<UInt64>(std::time(nullptr));
     for (int delta : {0, -1, 1})
     {
-        if (password == getOneTimePassword(secret, config, current_time + delta * config.period))
+        if (password == getOneTimePassword(secret.key, secret.params, current_time + delta * secret.params.period))
             return true;
     }
     return false;

@@ -134,7 +134,7 @@ void AuthenticationData::setPassword(const String & password_, bool validate)
             return;
 
         case AuthenticationType::ONE_TIME_PASSWORD:
-            setPasswordHashBinary(Util::stringToDigest(normalizeOneTimePasswordSecret(password_)), validate);
+            setOneTimePassword(password_, OneTimePasswordParams{}, validate);
             return;
 
         case AuthenticationType::BCRYPT_PASSWORD:
@@ -153,13 +153,13 @@ void AuthenticationData::setPassword(const String & password_, bool validate)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setPassword(): authentication type {} not supported", toString(type));
 }
 
-void AuthenticationData::setOneTimePassword(const String & password_, OneTimePasswordConfig config, bool validate)
+void AuthenticationData::setOneTimePassword(const String & password_, OneTimePasswordParams config, bool validate)
 {
     if (type != AuthenticationType::ONE_TIME_PASSWORD)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify one-time password for authentication type {}", toString(type));
 
-    otp_config = config;
-    setPasswordHashBinary(Util::stringToDigest(normalizeOneTimePasswordSecret(password_)), validate);
+    otp_secret.emplace(password_, config);
+    setPasswordHashBinary(Util::stringToDigest(otp_secret->key), validate);
 }
 
 void AuthenticationData::setPasswordBcrypt(const String & password_, int workfactor_, bool validate)
@@ -172,10 +172,13 @@ void AuthenticationData::setPasswordBcrypt(const String & password_, int workfac
 
 String AuthenticationData::getPassword() const
 {
-    if (type != AuthenticationType::PLAINTEXT_PASSWORD
-     && type != AuthenticationType::ONE_TIME_PASSWORD)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot decode the password for authentication type {}", type);
-    return String(password_hash.data(), password_hash.data() + password_hash.size());
+    if (type == AuthenticationType::PLAINTEXT_PASSWORD)
+        return String(password_hash.data(), password_hash.data() + password_hash.size());
+
+    if (type == AuthenticationType::ONE_TIME_PASSWORD && otp_secret)
+        return otp_secret->key;
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot decode the password for authentication type {}", type);
 }
 
 

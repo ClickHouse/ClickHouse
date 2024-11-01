@@ -151,12 +151,12 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
             }
             else if (auth_data.getType() == AuthenticationType::ONE_TIME_PASSWORD)
             {
-                const auto & config = auth_data.getOneTimePasswordConfig();
-                if (config != OneTimePasswordConfig{})
+                const auto & secret = auth_data.getOneTimePassword();
+                if (secret.params != OneTimePasswordParams{})
                 {
-                    auth_params_json.set("algorithm", toString(config.algorithm));
-                    auth_params_json.set("num_digits", toString(config.num_digits));
-                    auth_params_json.set("period", toString(config.period));
+                    auth_params_json.set("algorithm", toString(secret.params.algorithm));
+                    auth_params_json.set("num_digits", toString(secret.params.num_digits));
+                    auth_params_json.set("period", toString(secret.params.period));
                 }
             }
             else if (auth_data.getType() == AuthenticationType::SSL_CERTIFICATE)

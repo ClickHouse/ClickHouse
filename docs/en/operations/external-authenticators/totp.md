@@ -50,6 +50,14 @@ This command will produce a base32-encoded secret that can be added to the secre
 
 To enable TOTP for a specific user, replace any existing password-based fields (like `password` or `password_sha256_hex`) with the `time_based_one_time_password` section. Only one authentication method is allowed per user, so TOTP cannot be combined with other methods such as password or LDAP.
 
+The [qrencode](https://linux.die.net/man/1/qrencode) tool can be used to generate a QR code for the TOTP secret.
+
+```bash
+$ qrencode -t ansiutf8 'otpauth://totp/ClickHouse?issuer=ClickHouse&secret=JBSWY3DPEHPK3PXP'
+```
+
+After configuring TOTP for a user, one-time password can be used as a password for a user.
+
 ## Enabling TOTP Authentication using SQL {#enabling-totp-auth-using-sql}
 
 When SQL-driven Access Control and Account Management is enabled, TOTP authentication can be set for users via SQL:
