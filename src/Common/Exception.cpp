@@ -627,7 +627,7 @@ PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with
     return PreformattedMessage{stream.str(), e.tryGetMessageFormatString(), e.getMessageFormatStringArgs()};
 }
 
-std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace)
+std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace, bool check_embedded_stacktrace)
 {
     try
     {
@@ -635,7 +635,7 @@ std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace)
     }
     catch (...)
     {
-        return getCurrentExceptionMessage(with_stacktrace);
+        return getCurrentExceptionMessage(with_stacktrace, check_embedded_stacktrace);
     }
 }
 
