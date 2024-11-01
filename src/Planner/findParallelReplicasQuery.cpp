@@ -265,11 +265,17 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     auto stack = getSupportingParallelReplicasQuery(query_tree_node.get());
     /// Empty stack means that storage does not support parallel replicas.
     if (stack.empty())
+    {
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Not found");
         return nullptr;
+    }
 
     /// We don't have any subquery and storage can process parallel replicas by itself.
     if (stack.top() == query_tree_node.get())
+    {
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Query itself:\n{}", query_tree_node->dumpTree());
         return query_node;
+    }
 
     /// This is needed to avoid infinite recursion.
     auto mutable_context = Context::createCopy(context);
@@ -303,7 +309,10 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
             new_stack.pop();
         }
     }
-
+    if (!res)
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Not found 2");
+    else
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Query:\n{}", query_tree_node->dumpTree());
     return res;
 }
 

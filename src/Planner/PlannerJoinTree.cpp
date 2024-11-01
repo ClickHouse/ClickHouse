@@ -659,7 +659,7 @@ std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
 }
 
 JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
-    const QueryNode & parent_query_node,
+    [[maybe_unused]] const QueryNode & parent_query_node,
     const SelectQueryInfo & select_query_info,
     const SelectQueryOptions & select_query_options,
     PlannerContextPtr & planner_context,
@@ -958,6 +958,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     return true;
                 };
 
+                LOG_DEBUG(
+                    getLogger(__PRETTY_FUNCTION__),
+                    "parallel_replicas_node={} parent_query_node={}",
+                    UInt64(planner_context->getGlobalPlannerContext()->parallel_replicas_node),
+                    UInt64(&parent_query_node));
+
+                // const JoinNode * table_join_node = parent_query_node.getJoinTree()->as<JoinNode>();
+
                 /// query_plan can be empty if there is nothing to read
                 if (query_plan.isInitialized() && parallel_replicas_enabled_for_storage(storage, settings))
                 {
@@ -984,9 +992,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         }
                     }
                     else if (
-                        ClusterProxy::canUseParallelReplicasOnInitiator(query_context)
-                        && planner_context->getGlobalPlannerContext()->parallel_replicas_node
-                        && planner_context->getGlobalPlannerContext()->parallel_replicas_node == &parent_query_node)
+                        ClusterProxy::canUseParallelReplicasOnInitiator(query_context))
+                        // && (!table_join_node
+                        //     || (table_join_node && planner_context->getGlobalPlannerContext()->parallel_replicas_node
+                        //         && planner_context->getGlobalPlannerContext()->parallel_replicas_node == &parent_query_node)))
                     {
                         // (1) find read step
                         QueryPlan::Node * node = query_plan.getRootNode();
