@@ -186,7 +186,8 @@ public:
     /// Get description of database.
     std::string getDescription() const
     {
-        return description;
+        std::lock_guard lock(mutex);
+        return getDescriptionImpl();
     }
 
     void removeConnection(Connection * connection);
@@ -212,7 +213,7 @@ private:
     /// List of connections.
     Connections connections;
     /// Lock for connections list access
-    std::mutex mutex;
+    mutable std::mutex mutex;
     /// Description of connection.
     std::string description;
 
@@ -242,6 +243,11 @@ private:
 
     /** Create new connection. */
     Connection * allocConnection(bool dont_throw_if_failed_first_time = false);
+
+    std::string getDescriptionImpl() const
+    {
+        return description;
+    }
 };
 
 }
