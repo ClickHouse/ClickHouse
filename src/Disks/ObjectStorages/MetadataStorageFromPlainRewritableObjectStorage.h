@@ -13,20 +13,28 @@ class MetadataStorageFromPlainRewritableObjectStorage final : public MetadataSto
 {
 private:
     const std::string metadata_key_prefix;
-    std::shared_ptr<InMemoryPathMap> path_map;
+    std::shared_ptr<InMemoryDirectoryPathMap> path_map;
 
 public:
-    MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_);
+    MetadataStorageFromPlainRewritableObjectStorage(
+        ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t object_metadata_cache_size);
     ~MetadataStorageFromPlainRewritableObjectStorage() override;
 
     MetadataStorageType getType() const override { return MetadataStorageType::PlainRewritable; }
+
     bool exists(const std::string & path) const override;
+
+    bool isFile(const std::string & path) const override;
+
     bool isDirectory(const std::string & path) const override;
+
     std::vector<std::string> listDirectory(const std::string & path) const override;
+
+    std::optional<Poco::Timestamp> getLastModifiedIfExists(const String & path) const override;
 
 protected:
     std::string getMetadataKeyPrefix() const override { return metadata_key_prefix; }
-    std::shared_ptr<InMemoryPathMap> getPathMap() const override { return path_map; }
+    std::shared_ptr<InMemoryDirectoryPathMap> getPathMap() const override { return path_map; }
     void getDirectChildrenOnDisk(
         const std::string & storage_key,
         const RelativePathsWithMetadata & remote_paths,

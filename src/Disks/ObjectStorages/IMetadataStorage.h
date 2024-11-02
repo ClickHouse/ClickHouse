@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <vector>
 #include <unordered_map>
 #include <Poco/Timestamp.h>
@@ -190,7 +191,21 @@ public:
 
     virtual uint64_t getFileSize(const std::string & path) const = 0;
 
+    virtual std::optional<uint64_t> getFileSizeIfExists(const std::string & path) const
+    {
+        if (isFile(path))
+            return getFileSize(path);
+        return std::nullopt;
+    }
+
     virtual Poco::Timestamp getLastModified(const std::string & path) const = 0;
+
+    virtual std::optional<Poco::Timestamp> getLastModifiedIfExists(const std::string & path) const
+    {
+        if (exists(path))
+            return getLastModified(path);
+        return std::nullopt;
+    }
 
     virtual time_t getLastChanged(const std::string & /* path */) const
     {
