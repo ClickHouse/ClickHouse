@@ -65,6 +65,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     {"24.11",
         {
             {"read_in_order_use_virtual_row", false, false, "Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched."},
+            {"distributed_cache_discard_connection_if_unread_data", true, true, "New setting"},
         }
     },
     {"24.10",
@@ -114,6 +115,11 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"input_format_parquet_bloom_filter_push_down", false, true, "When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and bloom filter in the Parquet metadata."},
             {"date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands", false, false, "Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to (0, 3, 6), corresponding to 'seconds', 'milliseconds', and 'microseconds'."},
             {"azure_check_objects_after_upload", false, false, "Check each uploaded object in azure blob storage to be sure that upload was successful"},
+            {"backup_restore_keeper_max_retries", 20, 1000, "Should be big enough so the whole operation BACKUP or RESTORE operation won't fail because of a temporary [Zoo]Keeper failure in the middle of it."},
+            {"backup_restore_failure_after_host_disconnected_for_seconds", 0, 3600, "New setting."},
+            {"backup_restore_keeper_max_retries_while_initializing", 0, 20, "New setting."},
+            {"backup_restore_keeper_max_retries_while_handling_error", 0, 20, "New setting."},
+            {"backup_restore_finish_timeout_after_error_sec", 0, 180, "New setting."},
         }
     },
     {"24.9",
