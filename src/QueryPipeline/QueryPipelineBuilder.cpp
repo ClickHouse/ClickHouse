@@ -26,6 +26,7 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/PasteJoinTransform.h>
+#include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <Common/CurrentThread.h>
@@ -441,9 +442,12 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             Processors processors;
             for (auto & outport : outports)
             {
+                auto squashing = std::make_shared<SimpleSquashingChunksTransform>(right->getHeader(), max_block_size / 2, 0);
+                connect(*outport, squashing->getInputs().front());
+                processors.emplace_back(squashing);
                 auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join);
-                connect(*outport, adding_joined->getInputs().front());
-                processors.emplace_back(adding_joined);
+                connect(squashing->getOutputPort(), adding_joined->getInputs().front());
+                processors.emplace_back(std::move(adding_joined));
             }
             return processors;
         };
@@ -497,10 +501,13 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     Block left_header = left->getHeader();
     for (size_t i = 0; i < num_streams; ++i)
     {
+        auto squashing = std::make_shared<SimpleSquashingChunksTransform>(left->getHeader(), max_block_size / 2, 0);
+        connect(**lit, squashing->getInputs().front());
+
         auto joining = std::make_shared<JoiningTransform>(
             left_header, output_header, join, max_block_size, false, default_totals, finish_counter);
 
-        connect(**lit, joining->getInputs().front());
+        connect(squashing->getOutputPort(), joining->getInputs().front());
         connect(**rit, joining->getInputs().back());
         if (delayed_root)
         {
@@ -532,6 +539,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         if (collected_processors)
             collected_processors->emplace_back(joining);
 
+        left->pipe.processors->emplace_back(std::move(squashing));
         left->pipe.processors->emplace_back(std::move(joining));
     }
 
