@@ -9,11 +9,9 @@ import signal
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Tuple, Optional
 
 from build_download_helper import download_all_deb_packages
-from ci_config import CI
-from ci_utils import Shell, Utils
 from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from download_release_packages import download_last_release
@@ -22,16 +20,18 @@ from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
 from report import (
     ERROR,
-    FAILURE,
     SUCCESS,
     JobReport,
     StatusType,
-    TestResult,
     TestResults,
     read_test_results,
+    FAILURE,
+    TestResult,
 )
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
+from ci_config import CI
+from ci_utils import Utils, Shell
 
 NO_CHANGES_MSG = "Nothing to run"
 
@@ -119,24 +119,24 @@ def get_run_command(
     envs += [f"-e {e}" for e in additional_envs]
 
     env_str = " ".join(envs)
-
-    if "stateful" in check_name.lower():
-        run_script = "/repo/tests/docker_scripts/stateful_runner.sh"
-    elif "stateless" in check_name.lower():
-        run_script = "/repo/tests/docker_scripts/stateless_runner.sh"
-    else:
-        assert False
+    volume_with_broken_test = (
+        f"--volume={repo_path}/tests/analyzer_tech_debt.txt:/analyzer_tech_debt.txt "
+        if "analyzer" not in check_name
+        else ""
+    )
 
     return (
         f"docker run --rm --name func-tester --volume={builds_path}:/package_folder "
         # For dmesg and sysctl
         "--privileged "
-        f"{ci_logs_args} "
-        f"--volume={repo_path}:/repo "
+        f"{ci_logs_args}"
+        f"--volume={repo_path}/tests:/usr/share/clickhouse-test "
+        f"--volume={repo_path}/utils/grpc-client:/usr/share/clickhouse-utils/grpc-client "
+        f"{volume_with_broken_test}"
         f"--volume={result_path}:/test_output "
         f"--volume={server_log_path}:/var/log/clickhouse-server "
         "--security-opt seccomp=unconfined "  # required to issue io_uring sys-calls
-        f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image} {run_script}"
+        f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image}"
     )
 
 
@@ -243,11 +243,10 @@ timeout_expired = False
 
 
 def handle_sigterm(signum, _frame):
-    # TODO: think on how to process it without globals
     print(f"WARNING: Received signal {signum}")
-    global timeout_expired  # pylint:disable=global-statement
+    global timeout_expired
     timeout_expired = True
-    Shell.check("docker exec func-tester pkill -f clickhouse-test", verbose=True)
+    Shell.check(f"docker exec func-tester pkill -f clickhouse-test", verbose=True)
 
 
 def main():
@@ -339,7 +338,7 @@ def main():
         logging.info("Going to run func tests: %s", run_command)
 
         with TeePopen(run_command, run_log_path) as process:
-            global test_process  # pylint:disable=global-statement
+            global test_process
             test_process = process
             retcode = process.wait()
             if retcode == 0:
@@ -401,7 +400,7 @@ def main():
             failed_cnt
             and failed_cnt <= CI.MAX_TOTAL_FAILURES_PER_JOB_BEFORE_BLOCKING_CI
         ):
-            print("Won't block the CI workflow")
+            print(f"Won't block the CI workflow")
             should_block_ci = False
 
     if should_block_ci:

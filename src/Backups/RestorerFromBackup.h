@@ -20,7 +20,8 @@ struct StorageID;
 class IDatabase;
 using DatabasePtr = std::shared_ptr<IDatabase>;
 class AccessRestorerFromBackup;
-struct AccessEntitiesToRestore;
+struct IAccessEntity;
+using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 
@@ -67,7 +68,7 @@ public:
     void addDataRestoreTasks(DataRestoreTasks && new_tasks);
 
     /// Returns the list of access entities to restore.
-    AccessEntitiesToRestore getAccessEntitiesToRestore(const String & data_path_in_backup) const;
+    std::vector<std::pair<UUID, AccessEntityPtr>> getAccessEntitiesToRestore();
 
     /// Throws an exception that a specified table is already non-empty.
     [[noreturn]] static void throwTableIsNotEmpty(const StorageID & storage_id);
@@ -100,7 +101,6 @@ private:
     size_t getNumDatabases() const;
     size_t getNumTables() const;
 
-    void loadSystemAccessTables();
     void checkAccessForObjectsFoundInBackup() const;
 
     void createDatabases();

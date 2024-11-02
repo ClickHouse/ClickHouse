@@ -42,9 +42,10 @@ ISerialization::Kind ISerialization::stringToKind(const String & str)
 {
     if (str == "Default")
         return Kind::DEFAULT;
-    if (str == "Sparse")
+    else if (str == "Sparse")
         return Kind::SPARSE;
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind '{}'", str);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind '{}'", str);
 }
 
 const std::set<SubstreamType> ISerialization::Substream::named_types
@@ -161,7 +162,7 @@ String getNameForSubstreamPath(
     String stream_name,
     SubstreamIterator begin,
     SubstreamIterator end,
-    bool escape_tuple_delimiter)
+    bool escape_for_file_name)
 {
     using Substream = ISerialization::Substream;
 
@@ -186,7 +187,7 @@ String getNameForSubstreamPath(
             /// Because nested data may be represented not by Array of Tuple,
             /// but by separate Array columns with names in a form of a.b,
             /// and name is encoded as a whole.
-            if (it->type == Substream::TupleElement && escape_tuple_delimiter)
+            if (it->type == Substream::TupleElement && escape_for_file_name)
                 stream_name += escapeForFileName(substream_name);
             else
                 stream_name += substream_name;
@@ -206,7 +207,7 @@ String getNameForSubstreamPath(
         else if (it->type == SubstreamType::ObjectSharedData)
             stream_name += ".object_shared_data";
         else if (it->type == SubstreamType::ObjectTypedPath || it->type == SubstreamType::ObjectDynamicPath)
-            stream_name += "." + it->object_path_name;
+            stream_name += "." + (escape_for_file_name ? escapeForFileName(it->object_path_name) : it->object_path_name);
     }
 
     return stream_name;
@@ -417,21 +418,6 @@ bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPat
 
     size_t last_elem = prefix_len - 1;
     return path[last_elem].type == Substream::VariantElementNullMap;
-}
-
-bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
-{
-    if (prefix_len == 0 || prefix_len > path.size())
-        return false;
-
-    for (size_t i = 0; i != prefix_len; ++i)
-    {
-        if (path[i].type == SubstreamType::DynamicData || path[i].type == SubstreamType::DynamicStructure
-            || path[i].type == SubstreamType::ObjectData || path[i].type == SubstreamType::ObjectStructure)
-            return true;
-    }
-
-    return false;
 }
 
 ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)

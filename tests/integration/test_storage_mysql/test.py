@@ -1,13 +1,12 @@
-import threading
-import time
 from contextlib import contextmanager
 
 ## sudo -H pip install PyMySQL
 import pymysql.cursors
 import pytest
-
-from helpers.client import QueryRuntimeException
+import time
+import threading
 from helpers.cluster import ClickHouseCluster
+from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
 
@@ -446,7 +445,7 @@ def test_mysql_distributed(started_cluster):
     query = "SELECT * FROM ("
     for i in range(3):
         query += "SELECT name FROM test_replicas UNION DISTINCT "
-    query += "SELECT name FROM test_replicas) ORDER BY name"
+    query += "SELECT name FROM test_replicas)"
 
     result = node2.query(query)
     assert result == "host2\nhost3\nhost4\n"
@@ -828,9 +827,6 @@ def test_settings(started_cluster):
         f"with settings: connect_timeout={connect_timeout}, read_write_timeout={rw_timeout}"
     )
 
-    node1.query("DROP DATABASE IF EXISTS m")
-    node1.query("DROP DATABASE IF EXISTS mm")
-
     rw_timeout = 40123001
     connect_timeout = 40123002
     node1.query(
@@ -858,9 +854,6 @@ def test_settings(started_cluster):
     assert node1.contains_in_log(
         f"with settings: connect_timeout={connect_timeout}, read_write_timeout={rw_timeout}"
     )
-
-    node1.query("DROP DATABASE m")
-    node1.query("DROP DATABASE mm")
 
     drop_mysql_table(conn, table_name)
     conn.close()
@@ -937,9 +930,6 @@ def test_joins(started_cluster):
 
     conn.commit()
 
-    node1.query("DROP TABLE IF EXISTS test_joins_table_users")
-    node1.query("DROP TABLE IF EXISTS test_joins_table_tickets")
-
     node1.query(
         """
         CREATE TABLE test_joins_table_users
@@ -973,9 +963,6 @@ def test_joins(started_cluster):
         WHERE test_joins_table_tickets.Created = '2024-06-25 12:09:41'
         """
     ) == "281607\tFeedback\t2024-06-25 12:09:41\tuser@example.com\n"
-
-    node1.query("DROP TABLE test_joins_table_users")
-    node1.query("DROP TABLE test_joins_table_tickets")
 
 
 if __name__ == "__main__":

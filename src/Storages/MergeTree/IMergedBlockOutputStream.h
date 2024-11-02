@@ -34,11 +34,6 @@ public:
         return writer->getIndexGranularity();
     }
 
-    PlainMarksByName releaseCachedMarks()
-    {
-        return writer->releaseCachedMarks();
-    }
-
 protected:
 
     /// Remove all columns marked expired in data_part. Also, clears checksums

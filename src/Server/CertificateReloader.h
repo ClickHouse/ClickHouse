@@ -104,9 +104,6 @@ private:
     mutable std::mutex data_mutex;
 };
 
-/// A callback for OpenSSL
-int setCertificateCallback(SSL * ssl, const CertificateReloader::Data * current_data, LoggerPtr log);
-
 }
 
 #endif

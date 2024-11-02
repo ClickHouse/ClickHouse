@@ -77,11 +77,6 @@ struct BackupSettings
     /// Allow to create backup with broken projections.
     bool allow_backup_broken_projections = false;
 
-    /// Whether dependents of access entities should be written along with the access entities.
-    /// For example, if a role is granted to a user and we're making a backup of system.roles (but not system.users)
-    /// this is whether the backup will contain information to grant the role to the corresponding user again.
-    bool write_access_entities_dependents = true;
-
     /// Internal, should not be specified by user.
     /// Whether this backup is a part of a distributed backup created by BACKUP ON CLUSTER.
     bool internal = false;

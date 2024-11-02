@@ -40,14 +40,6 @@ namespace CurrentMetrics
 namespace DB
 {
 
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
-    extern const MergeTreeSettingsBool enable_the_endpoint_id_with_zookeeper_name_prefix;
-    extern const MergeTreeSettingsBool fsync_part_directory;
-    extern const MergeTreeSettingsUInt64 min_compressed_bytes_to_fsync_after_fetch;
-}
-
 namespace ErrorCodes
 {
     extern const int NO_SUCH_DATA_PART;
@@ -210,7 +202,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             writeBinary(projections.size(), out);
         }
 
-        if ((*data_settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication] &&
+        if (data_settings->allow_remote_fs_zero_copy_replication &&
             client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY)
         {
             auto disk_type = part->getDataPartStorage().getDiskType();
@@ -388,7 +380,7 @@ MergeTreeData::DataPartPtr Service::findPart(const String & name)
     if (!part)
         throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No part {} in table", name);
 
-    bool zero_copy_enabled = (*data.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
+    bool zero_copy_enabled = data.getSettings()->allow_remote_fs_zero_copy_replication;
     if (!zero_copy_enabled)
         return part;
 
@@ -456,7 +448,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     auto part_info = MergeTreePartInfo::fromPartName(part_name, data.format_version);
 
     String endpoint_id = getEndpointId(
-            (*data_settings)[MergeTreeSetting::enable_the_endpoint_id_with_zookeeper_name_prefix] ?
+        data_settings->enable_the_endpoint_id_with_zookeeper_name_prefix ?
         zookeeper_name + ":" + replica_path :
         replica_path);
 
@@ -481,7 +473,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     }
 
     Strings capability;
-    if (try_zero_copy && (*data_settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
+    if (try_zero_copy && data_settings->allow_remote_fs_zero_copy_replication)
     {
         if (!disk)
         {
@@ -618,8 +610,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     if (revision)
         disk->syncRevision(revision);
 
-    bool sync = ((*data_settings)[MergeTreeSetting::min_compressed_bytes_to_fsync_after_fetch]
-                    && sum_files_size >= (*data_settings)[MergeTreeSetting::min_compressed_bytes_to_fsync_after_fetch]);
+    bool sync = (data_settings->min_compressed_bytes_to_fsync_after_fetch
+                    && sum_files_size >= data_settings->min_compressed_bytes_to_fsync_after_fetch);
 
     using PartType = MergeTreeDataPartType;
     PartType part_type = PartType::Wide;
@@ -857,14 +849,14 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         ///
         /// We don't control the amount of refs for temporary parts so we cannot decide can we remove blobs
         /// or not. So we are not doing it
-        bool keep_shared = part_storage_for_loading->supportZeroCopyReplication() && (*data_settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
+        bool keep_shared = part_storage_for_loading->supportZeroCopyReplication() && data_settings->allow_remote_fs_zero_copy_replication;
         part_storage_for_loading->removeSharedRecursive(keep_shared);
     }
 
     part_storage_for_loading->createDirectories();
 
     SyncGuardPtr sync_guard;
-    if ((*data.getSettings())[MergeTreeSetting::fsync_part_directory])
+    if (data.getSettings()->fsync_part_directory)
         sync_guard = part_storage_for_loading->getDirectorySyncGuard();
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedFetch};

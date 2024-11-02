@@ -33,7 +33,8 @@ const ClassifierDescription & ClassifiersConfig::get(const String & classifier_n
 {
     if (auto it = classifiers.find(classifier_name); it != classifiers.end())
         return it->second;
-    throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "Unknown workload classifier '{}' to access resources", classifier_name);
+    else
+        throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "Unknown workload classifier '{}' to access resources", classifier_name);
 }
 
 }
