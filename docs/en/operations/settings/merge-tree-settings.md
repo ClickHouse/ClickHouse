@@ -1079,6 +1079,8 @@ Possible values:
 
 Default value: 0 bytes.
 
+Note that if both `min_free_disk_bytes_to_perform_insert` and `min_free_disk_ratio_to_perform_insert` are specified, ClickHouse will count on the value that will allow to perform inserts on a bigger amount of free memory.
+
 ## min_free_disk_ratio_to_perform_insert 
 
 The minimum free to total disk space ratio to perform an `INSERT`. Must be a floating point value between 0 and 1. Note that this setting:
