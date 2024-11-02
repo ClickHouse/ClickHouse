@@ -195,6 +195,15 @@ struct SortCursorHelper
         /// The last row of this cursor is no larger than the first row of the another cursor.
         return !derived().greaterAt(rhs.derived(), impl->rows - 1, 0);
     }
+
+    bool ALWAYS_INLINE totallyLess(const SortCursorHelper & rhs) const
+    {
+        if (impl->rows == 0 || rhs.impl->rows == 0)
+            return false;
+
+        /// The last row of this cursor is less than the first row of the another cursor.
+        return rhs.derived().template greaterAt<false>(derived(), 0, impl->rows - 1);
+    }
 };
 
 
@@ -203,6 +212,7 @@ struct SortCursor : SortCursorHelper<SortCursor>
     using SortCursorHelper<SortCursor>::SortCursorHelper;
 
     /// The specified row of this cursor is greater than the specified row of another cursor.
+    template <bool consider_order = true>
     bool ALWAYS_INLINE greaterAt(const SortCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
 #if USE_EMBEDDED_COMPILER
@@ -218,7 +228,10 @@ struct SortCursor : SortCursorHelper<SortCursor>
             if (res < 0)
                 return false;
 
-            return impl->order > rhs.impl->order;
+            if constexpr (consider_order)
+                return impl->order > rhs.impl->order;
+            else
+                return false;
         }
 #endif
 
@@ -235,7 +248,10 @@ struct SortCursor : SortCursorHelper<SortCursor>
                 return false;
         }
 
-        return impl->order > rhs.impl->order;
+        if constexpr (consider_order)
+            return impl->order > rhs.impl->order;
+        else
+            return false;
     }
 };
 
@@ -245,6 +261,7 @@ struct SimpleSortCursor : SortCursorHelper<SimpleSortCursor>
 {
     using SortCursorHelper<SimpleSortCursor>::SortCursorHelper;
 
+    template <bool consider_order = true>
     bool ALWAYS_INLINE greaterAt(const SimpleSortCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
         int res = 0;
@@ -271,7 +288,10 @@ struct SimpleSortCursor : SortCursorHelper<SimpleSortCursor>
         if (res < 0)
             return false;
 
-        return impl->order > rhs.impl->order;
+        if constexpr (consider_order)
+            return impl->order > rhs.impl->order;
+        else
+            return false;
     }
 };
 
@@ -280,6 +300,7 @@ struct SpecializedSingleColumnSortCursor : SortCursorHelper<SpecializedSingleCol
 {
     using SortCursorHelper<SpecializedSingleColumnSortCursor>::SortCursorHelper;
 
+    template <bool consider_order = true>
     bool ALWAYS_INLINE greaterAt(const SortCursorHelper<SpecializedSingleColumnSortCursor> & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
         auto & this_impl = this->impl;
@@ -302,7 +323,10 @@ struct SpecializedSingleColumnSortCursor : SortCursorHelper<SpecializedSingleCol
         if (res < 0)
             return false;
 
-        return this_impl->order > rhs.impl->order;
+        if constexpr (consider_order)
+            return this_impl->order > rhs.impl->order;
+        else
+            return false;
     }
 };
 
@@ -311,6 +335,7 @@ struct SortCursorWithCollation : SortCursorHelper<SortCursorWithCollation>
 {
     using SortCursorHelper<SortCursorWithCollation>::SortCursorHelper;
 
+    template <bool consider_order = true>
     bool ALWAYS_INLINE greaterAt(const SortCursorWithCollation & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
         for (size_t i = 0; i < impl->sort_columns_size; ++i)
@@ -330,7 +355,10 @@ struct SortCursorWithCollation : SortCursorHelper<SortCursorWithCollation>
             if (res < 0)
                 return false;
         }
-        return impl->order > rhs.impl->order;
+        if constexpr (consider_order)
+            return impl->order > rhs.impl->order;
+        else
+            return false;
     }
 };
 

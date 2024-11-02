@@ -4393,7 +4393,7 @@ Result:
 
 ## globalVariable
 
-Takes constant string argument and returns the value of global variable with that name. It is intended for compatibility with MySQL.
+Takes a constant string argument and returns the value of the global variable with that name. This function is intended for compatibility with MySQL and not needed or useful for normal operation of ClickHouse. Only few dummy global variables are defined.
 
 **Syntax**
 

@@ -67,19 +67,6 @@ struct HashTableNoState
 };
 
 
-/// These functions can be overloaded for custom types.
-namespace ZeroTraits
-{
-
-template <typename T>
-bool check(const T x) { return x == T{}; }
-
-template <typename T>
-void set(T & x) { x = T{}; }
-
-}
-
-
 /** Numbers are compared bitwise.
   * Complex types are compared by operator== as usual (this is important if there are gaps).
   *
@@ -87,15 +74,29 @@ void set(T & x) { x = T{}; }
   * Otherwise the invariants in hash table probing do not met when NaNs are present.
   */
 template <typename T>
-inline bool bitEquals(T && a, T && b)
+inline bool bitEquals(T a, T b)
 {
-    using RealT = std::decay_t<T>;
-
-    if constexpr (std::is_floating_point_v<RealT>)
-        /// Note that memcmp with constant size is compiler builtin.
-        return 0 == memcmp(&a, &b, sizeof(RealT)); /// NOLINT
+    if constexpr (std::is_floating_point_v<T>)
+        /// Note that memcmp with constant size is a compiler builtin.
+        return 0 == memcmp(&a, &b, sizeof(T)); /// NOLINT
     else
         return a == b;
+}
+
+
+/// These functions can be overloaded for custom types.
+namespace ZeroTraits
+{
+
+template <typename T>
+bool check(const T x)
+{
+    return bitEquals(x, T{});
+}
+
+template <typename T>
+void set(T & x) { x = T{}; }
+
 }
 
 
