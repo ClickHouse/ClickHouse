@@ -191,7 +191,26 @@ public:
         /// Only parameters that matter during merge.
         Params(const Names & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_, size_t max_block_size_, double min_hit_rate_to_use_consecutive_keys_optimization_)
             : Params(
-                keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, max_block_size_, false, true, false, min_hit_rate_to_use_consecutive_keys_optimization_, {})
+                keys_,
+                aggregates_,
+                overflow_row_,
+                /*max_rows_to_group_by_=*/0,
+                OverflowMode::THROW,
+                /*group_by_two_level_threshold_=*/0,
+                /*group_by_two_level_threshold_bytes_=*/0,
+                /*max_bytes_before_external_group_by_=*/0,
+                /*empty_result_for_aggregation_by_empty_set_=*/false,
+                /*tmp_data_scope_=*/nullptr,
+                max_threads_,
+                /*min_free_disk_space_=*/0,
+                /*compile_aggregate_expressions_=*/false,
+                /*min_count_to_compile_aggregate_expression_=*/0,
+                max_block_size_,
+                /*enable_prefetch_=*/false,
+                /*only_merge_=*/true,
+                /*optimize_group_by_constant_keys_=*/false,
+                min_hit_rate_to_use_consecutive_keys_optimization_,
+                /*stats_collecting_params_=*/{})
         {
         }
 
