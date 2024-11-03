@@ -30,7 +30,8 @@ public:
         size_t pool_wait_timeout,
         size_t max_tries_,
         bool auto_close_connection_,
-        size_t connection_attempt_timeout_);
+        size_t connection_attempt_timeout_,
+        bool bg_reconnect_ = false);
 
     explicit PoolWithFailover(
         const DB::StoragePostgreSQL::Configuration & configuration,
@@ -38,7 +39,8 @@ public:
         size_t pool_wait_timeout,
         size_t max_tries_,
         bool auto_close_connection_,
-        size_t connection_attempt_timeout_);
+        size_t connection_attempt_timeout_,
+        bool bg_reconnect_ = false);
 
     PoolWithFailover(const PoolWithFailover & other) = delete;
 
@@ -67,6 +69,7 @@ private:
     size_t pool_wait_timeout;
     size_t max_tries;
     bool auto_close_connection;
+    bool bg_reconnect;
     std::mutex mutex;
     LoggerPtr log = getLogger("PostgreSQLConnectionPool");
 };

@@ -56,6 +56,7 @@ PoolWithFailover::PoolWithFailover(
     : max_tries(max_tries_)
     , shareable(config_.getBool(config_name_ + ".share_connection", false))
     , wait_timeout(UINT64_MAX)
+    , bg_reconnect(config_.getBool(config_name_ + ".bg_reconnect", false))
 {
     if (config_.has(config_name_ + ".replica"))
     {
@@ -73,7 +74,8 @@ PoolWithFailover::PoolWithFailover(
                 replicas_by_priority[priority].emplace_back(
                     std::make_shared<Pool>(config_, replica_name, default_connections_, max_connections_, config_name_.c_str()));
 
-                DB::ReplicasReconnector::instance().add(connectionReistablisher(std::weak_ptr(replicas_by_priority[priority].back())));
+                if (bg_reconnect)
+                    DB::ReplicasReconnector::instance().add(connectionReistablisher(std::weak_ptr(replicas_by_priority[priority].back())));
             }
         }
 
@@ -91,8 +93,8 @@ PoolWithFailover::PoolWithFailover(
     {
         replicas_by_priority[0].emplace_back(
             std::make_shared<Pool>(config_, config_name_, default_connections_, max_connections_));
-
-        DB::ReplicasReconnector::instance().add(connectionReistablisher(std::weak_ptr(replicas_by_priority[0].back())));
+        if (bg_reconnect)
+            DB::ReplicasReconnector::instance().add(connectionReistablisher(std::weak_ptr(replicas_by_priority[0].back())));
     }
 
 }
@@ -118,11 +120,13 @@ PoolWithFailover::PoolWithFailover(
         unsigned max_connections_,
         size_t max_tries_,
         uint64_t wait_timeout_,
+        bool bg_reconnect_,
         size_t connect_timeout_,
         size_t rw_timeout_)
     : max_tries(max_tries_)
     , shareable(false)
     , wait_timeout(wait_timeout_)
+    , bg_reconnect(bg_reconnect_)
 {
     /// Replicas have the same priority, but traversed replicas are moved to the end of the queue.
     for (const auto & [host, port] : addresses)
@@ -134,8 +138,8 @@ PoolWithFailover::PoolWithFailover(
             rw_timeout_,
             default_connections_,
             max_connections_));
-
-        DB::ReplicasReconnector::instance().add(connectionReistablisher(std::weak_ptr(replicas_by_priority[0].back())));
+        if (bg_reconnect)
+            DB::ReplicasReconnector::instance().add(connectionReistablisher(std::weak_ptr(replicas_by_priority[0].back())));
     }
 
 }
@@ -145,6 +149,7 @@ PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
     : max_tries{other.max_tries}
     , shareable{other.shareable}
     , wait_timeout(other.wait_timeout)
+    , bg_reconnect(other.bg_reconnect)
 {
     if (shareable)
     {
@@ -159,8 +164,8 @@ PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
             for (const auto & pool : priority_replicas.second)
             {
                 replicas.emplace_back(std::make_shared<Pool>(*pool));
-
-                DB::ReplicasReconnector::instance().add(connectionReistablisher(std::weak_ptr(replicas.back())));
+                if (bg_reconnect)
+                    DB::ReplicasReconnector::instance().add(connectionReistablisher(std::weak_ptr(replicas.back())));
             }
             replicas_by_priority.emplace(priority_replicas.first, std::move(replicas));
         }
@@ -195,7 +200,7 @@ PoolWithFailover::Entry PoolWithFailover::get()
             {
                 PoolPtr & pool = replicas[i];
 
-                if (!pool->isOnline())
+                if (bg_reconnect && !pool->isOnline())
                     continue;
 
                 try

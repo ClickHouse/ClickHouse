@@ -39,6 +39,7 @@ public:
         const std::string update_field;
         const UInt64 update_lag;
         const bool dont_check_update_time;
+        const bool bg_reconnect;
     };
 
     MySQLDictionarySource(

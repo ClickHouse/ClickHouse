@@ -85,10 +85,12 @@ PoolWithFailover::PoolWithFailover(
     size_t pool_wait_timeout_,
     size_t max_tries_,
     bool auto_close_connection_,
-    size_t connection_attempt_timeout_)
+    size_t connection_attempt_timeout_,
+    bool bg_reconnect_)
     : pool_wait_timeout(pool_wait_timeout_)
     , max_tries(max_tries_)
     , auto_close_connection(auto_close_connection_)
+    , bg_reconnect(bg_reconnect_)
 {
     LOG_TRACE(getLogger("PostgreSQLConnectionPool"), "PostgreSQL connection pool size: {}, connection wait timeout: {}, max failover tries: {}",
               pool_size, pool_wait_timeout, max_tries_);
@@ -105,7 +107,8 @@ PoolWithFailover::PoolWithFailover(
                 replica_configuration.password,
                 connection_attempt_timeout_);
             replicas_with_priority[priority].emplace_back(std::make_shared<PoolHolder>(connection_info, pool_size));
-            DB::ReplicasReconnector::instance().add(connectionReistablisher(std::weak_ptr(replicas_with_priority[priority].back()), pool_wait_timeout));
+            if (bg_reconnect)
+                DB::ReplicasReconnector::instance().add(connectionReistablisher(std::weak_ptr(replicas_with_priority[priority].back()), pool_wait_timeout));
         }
     }
 }
@@ -116,10 +119,12 @@ PoolWithFailover::PoolWithFailover(
     size_t pool_wait_timeout_,
     size_t max_tries_,
     bool auto_close_connection_,
-    size_t connection_attempt_timeout_)
+    size_t connection_attempt_timeout_,
+    bool bg_reconnect_)
     : pool_wait_timeout(pool_wait_timeout_)
     , max_tries(max_tries_)
     , auto_close_connection(auto_close_connection_)
+    , bg_reconnect(bg_reconnect_)
 {
     LOG_TRACE(getLogger("PostgreSQLConnectionPool"), "PostgreSQL connection pool size: {}, connection wait timeout: {}, max failover tries: {}",
               pool_size, pool_wait_timeout, max_tries_);
@@ -136,7 +141,8 @@ PoolWithFailover::PoolWithFailover(
             configuration.password,
             connection_attempt_timeout_);
         replicas_with_priority[0].emplace_back(std::make_shared<PoolHolder>(connection_string, pool_size));
-        DB::ReplicasReconnector::instance().add(connectionReistablisher(std::weak_ptr(replicas_with_priority[0].back()), pool_wait_timeout));
+        if (bg_reconnect)
+            DB::ReplicasReconnector::instance().add(connectionReistablisher(std::weak_ptr(replicas_with_priority[0].back()), pool_wait_timeout));
     }
 }
 
@@ -157,7 +163,7 @@ ConnectionHolderPtr PoolWithFailover::get()
             {
                 auto & replica = replicas[i];
 
-                if (!replica->online)
+                if (bg_reconnect && !replica->online)
                     continue;
 
                 ConnectionPtr connection;

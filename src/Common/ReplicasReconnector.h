@@ -84,7 +84,7 @@ private:
         return instance_ptr;
     }
 
-    ReplicasReconnector(ContextPtr context)
+    explicit ReplicasReconnector(ContextPtr context)
         : task_handle(context->getSchedulePool().createTask("ReplicasReconnector", [this]{ run(); }))
     {
     }
