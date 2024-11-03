@@ -18,6 +18,8 @@ anyLast(column) [RESPECT NULLS]
 
 :::note
 Supports the `RESPECT NULLS` modifier after the function name. Using this modifier will ensure the function selects the first value passed, regardless of whether it is `NULL` or not.
+
+Alias: anyLastRepectNulls
 :::
 
 **Returned value**
