@@ -1614,7 +1614,8 @@ void TCPHandler::receiveHello()
                 if (e.code() != DB::ErrorCodes::AUTHENTICATION_FAILED)
                     throw;
 
-                tryLogCurrentException(log, "SSL authentication failed, falling back to password authentication");
+                tryLogCurrentException(log, "SSL authentication failed, falling back to password authentication", LogsLevel::debug);
+                /// ^^ Log at debug level instead of default error level as authentication failures are not an unusual event.
             }
         }
     }
