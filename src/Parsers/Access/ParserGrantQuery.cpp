@@ -155,6 +155,9 @@ namespace
 
                 for (auto & [access_flags, columns] : access_and_columns)
                 {
+                    if (wildcard && !columns.empty())
+                        return false;
+
                     AccessRightsElement element;
                     element.access_flags = access_flags;
                     element.columns = std::move(columns);
