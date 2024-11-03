@@ -30,6 +30,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int AZURE_BLOB_STORAGE_ERROR;
     extern const int LOGICAL_ERROR;
 }
 
@@ -59,7 +60,7 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     const WriteSettings & write_settings_,
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings_,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_)
-    : WriteBufferFromFileBase(buf_size_, nullptr, 0)
+    : WriteBufferFromFileBase(std::min(buf_size_, static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE)), nullptr, 0)
     , log(getLogger("WriteBufferFromAzureBlobStorage"))
     , buffer_allocation_policy(createBufferAllocationPolicy(*settings_))
     , max_single_part_upload_size(settings_->max_single_part_upload_size)
@@ -71,7 +72,8 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
           std::make_unique<TaskTracker>(
               std::move(schedule_),
               settings_->max_inflight_parts_for_one_file,
-              limitedLog))
+              limited_log))
+    , check_objects_after_upload(settings_->check_objects_after_upload)
 {
     allocateBuffer();
 }
@@ -79,7 +81,7 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
 
 WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
 {
-    LOG_TRACE(limitedLog, "Close WriteBufferFromAzureBlobStorage. {}.", blob_path);
+    LOG_TRACE(limited_log, "Close WriteBufferFromAzureBlobStorage. {}.", blob_path);
 
     /// That destructor could be call with finalized=false in case of exceptions
     if (!finalized)
@@ -152,10 +154,8 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
         detached_part_data.pop_front();
         return;
     }
-    else
-    {
-        writeMultipartUpload();
-    }
+
+    writeMultipartUpload();
 }
 
 void WriteBufferFromAzureBlobStorage::finalizeImpl()
@@ -179,6 +179,24 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
 
         execWithRetry([&](){ block_blob_client.CommitBlockList(block_ids); }, max_unexpected_write_error_retries);
         LOG_TRACE(log, "Committed {} blocks for blob `{}`", block_ids.size(), blob_path);
+    }
+
+    if (check_objects_after_upload)
+    {
+        try
+        {
+            auto blob_client = blob_container_client->GetBlobClient(blob_path);
+            blob_client.GetProperties();
+        }
+        catch (const Azure::Storage::StorageException & e)
+        {
+            if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+                throw Exception(
+                        ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+                        "Object {} not uploaded to azure blob storage, it's a bug in Azure Blob Storage or its API.",
+                        blob_path);
+            throw;
+        }
     }
 }
 
@@ -244,11 +262,21 @@ void WriteBufferFromAzureBlobStorage::allocateBuffer()
     buffer_allocation_policy->nextBuffer();
     chassert(0 == hidden_size);
 
-    auto size = buffer_allocation_policy->getBufferSize();
-
+    /// First buffer was already allocated in BufferWithOwnMemory constructor with buffer size provided in constructor.
+    /// It will be reallocated in subsequent nextImpl calls up to the desired buffer size from buffer_allocation_policy.
     if (buffer_allocation_policy->getBufferNumber() == 1)
-        size = std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), size);
+    {
+        /// Reduce memory size if initial size was larger then desired size from buffer_allocation_policy.
+        /// Usually it doesn't happen but we have it in unit tests.
+        if (memory.size() > buffer_allocation_policy->getBufferSize())
+        {
+            memory.resize(buffer_allocation_policy->getBufferSize());
+            WriteBuffer::set(memory.data(), memory.size());
+        }
+        return;
+    }
 
+    auto size = buffer_allocation_policy->getBufferSize();
     memory = Memory(size);
     WriteBuffer::set(memory.data(), memory.size());
 }

@@ -769,7 +769,7 @@ private:
             if (this == &rhs)
                 return *this;
 
-            int err = ::close(fd);
+            [[maybe_unused]] int err = ::close(fd);
             chassert(!err || errno == EINTR);
 
             fd = rhs.fd;
@@ -780,7 +780,7 @@ private:
         {
             if (fd != -1)
             {
-                int err = close(fd);
+                [[maybe_unused]] int err = close(fd);
                 chassert(!err || errno == EINTR);
             }
         }
@@ -860,8 +860,8 @@ public:
     {
         if (dictionary_key_type == DictionaryKeyType::Simple)
             return "SSDCache";
-        else
-            return "SSDComplexKeyCache";
+
+        return "SSDComplexKeyCache";
     }
 
     bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::Simple; }
@@ -1244,6 +1244,7 @@ private:
 
         SSDCacheIndex cache_index {0, 0};
 
+        /// NOLINTBEGIN(readability-else-after-return)
         while (true)
         {
             bool started_reusing_old_partitions = memory_buffer_partitions.size() == configuration.max_partitions_count;
@@ -1364,6 +1365,7 @@ private:
                 }
             }
         }
+        /// NOLINTEND(readability-else-after-return)
     }
 
     void setCellDeadline(Cell & cell, TimePoint now)

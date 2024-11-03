@@ -13,30 +13,28 @@ namespace DB
 
 void WriteBufferFromHTTPServerResponse::startSendHeaders()
 {
-    if (!headers_started_sending)
+    if (headers_started_sending)
+        return;
+
+    headers_started_sending = true;
+
+    if (!response.getChunkedTransferEncoding() && response.getContentLength() == Poco::Net::HTTPMessage::UNKNOWN_CONTENT_LENGTH)
     {
-        headers_started_sending = true;
-
-        if (response.getChunkedTransferEncoding())
-            setChunked();
-        else if (response.getContentLength() == Poco::Net::HTTPMessage::UNKNOWN_CONTENT_LENGTH)
-        {
-            /// In case there is no Content-Length we cannot use keep-alive,
-            /// since there is no way to know when the server send all the
-            /// data, so "Connection: close" should be sent.
-            response.setKeepAlive(false);
-        }
-
-        if (add_cors_header)
-            response.set("Access-Control-Allow-Origin", "*");
-
-        setResponseDefaultHeaders(response);
-
-        std::stringstream header; //STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        response.beginWrite(header);
-        auto header_str = header.str();
-        socketSendBytes(header_str.data(), header_str.size());
+        /// In case there is no Content-Length we cannot use keep-alive,
+        /// since there is no way to know when the server send all the
+        /// data, so "Connection: close" should be sent.
+        response.setKeepAlive(false);
     }
+
+    if (add_cors_header)
+        response.set("Access-Control-Allow-Origin", "*");
+
+    setResponseDefaultHeaders(response);
+
+    std::stringstream header; //STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    response.beginWrite(header);
+    auto header_str = header.str();
+    socketSendBytes(header_str.data(), header_str.size());
 }
 
 void WriteBufferFromHTTPServerResponse::writeHeaderProgressImpl(const char * header_name)
@@ -134,6 +132,8 @@ WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     , response(response_)
     , is_http_method_head(is_http_method_head_)
 {
+    if (response.getChunkedTransferEncoding())
+        setChunked();
 }
 
 

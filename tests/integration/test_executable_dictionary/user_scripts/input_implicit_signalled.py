@@ -1,8 +1,8 @@
 #!/usr/bin/python3
 
-import sys
 import os
 import signal
+import sys
 import time
 
 if __name__ == "__main__":

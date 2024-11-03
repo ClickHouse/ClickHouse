@@ -24,6 +24,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool parallel_replicas_allow_in_with_subquery;
+}
 
 namespace ErrorCodes
 {
@@ -52,7 +56,13 @@ std::stack<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTre
                 const auto & storage = table_node.getStorage();
                 /// Here we check StorageDummy as well, to support a query tree with replaced storages.
                 if (std::dynamic_pointer_cast<MergeTreeData>(storage) || typeid_cast<const StorageDummy *>(storage.get()))
+                {
+                    /// parallel replicas is not supported with FINAL
+                    if (table_node.getTableExpressionModifiers() && table_node.getTableExpressionModifiers()->hasFinal())
+                        return {};
+
                     return res;
+                }
 
                 return {};
             }
@@ -196,7 +206,7 @@ const QueryNode * findQueryForParallelReplicas(
                 const auto * filter = typeid_cast<FilterStep *>(step);
 
                 const auto * creating_sets = typeid_cast<DelayedCreatingSetsStep *>(step);
-                bool allowed_creating_sets = settings.parallel_replicas_allow_in_with_subquery && creating_sets;
+                bool allowed_creating_sets = settings[Setting::parallel_replicas_allow_in_with_subquery] && creating_sets;
 
                 if (!expression && !filter && !allowed_creating_sets)
                     can_distribute_full_node = false;
@@ -436,7 +446,7 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     /// header is a header which is returned by the follower.
     /// They are different because tables will have different aliases (e.g. _table1 or _table5).
     /// Here we just rename columns by position, with the hope the types would match.
-    auto step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(converting));
+    auto step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(converting));
     step->setStepDescription("Convert distributed names");
     query_plan.addStep(std::move(step));
 

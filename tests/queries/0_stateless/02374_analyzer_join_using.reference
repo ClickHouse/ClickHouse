@@ -19,7 +19,7 @@ SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (
 1
 1
 SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value)
-FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (test_value); -- { serverError 47 }
+FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (test_value); -- { serverError UNKNOWN_IDENTIFIER }
 SELECT 'JOIN LEFT';
 JOIN LEFT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -42,7 +42,7 @@ SELECT 1 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (i
 1
 1
 SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value)
-FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (test_value); -- { serverError 47 }
+FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (test_value); -- { serverError UNKNOWN_IDENTIFIER }
 SELECT 'JOIN RIGHT';
 JOIN RIGHT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -65,7 +65,7 @@ SELECT 1 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (
 1
 1
 SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value)
-FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (test_value); -- { serverError 47 }
+FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (test_value); -- { serverError UNKNOWN_IDENTIFIER }
 SELECT 'JOIN FULL';
 JOIN FULL
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -91,7 +91,7 @@ SELECT 1 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (i
 1
 1
 SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value)
-FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (test_value); -- { serverError 47 }
+FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (test_value); -- { serverError UNKNOWN_IDENTIFIER }
 SELECT 'First JOIN INNER second JOIN INNER';
 First JOIN INNER second JOIN INNER
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -110,7 +110,7 @@ SELECT '--';
 SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id);
 1
 1
-SELECT id FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id INNER JOIN test_table_join_3 AS t3 USING (id); -- { serverError 207 }
+SELECT id FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id INNER JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
 SELECT 'First JOIN INNER second JOIN LEFT';
 First JOIN INNER second JOIN LEFT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -129,7 +129,7 @@ SELECT '--';
 SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id);
 1
 1
-SELECT id FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id LEFT JOIN test_table_join_3 AS t3 USING (id); -- { serverError 207 }
+SELECT id FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id LEFT JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
 SELECT 'First JOIN INNER second JOIN RIGHT';
 First JOIN INNER second JOIN RIGHT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -151,7 +151,7 @@ SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (
 1
 1
 1
-SELECT id FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id RIGHT JOIN test_table_join_3 AS t3 USING (id); -- { serverError 207 }
+SELECT id FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id RIGHT JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
 SELECT 'First JOIN INNER second JOIN FULL';
 First JOIN INNER second JOIN FULL
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -173,7 +173,7 @@ SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (
 1
 1
 1
-SELECT id FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id FULL JOIN test_table_join_3 AS t3 USING (id); -- { serverError 207 }
+SELECT id FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id FULL JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
 SELECT 'First JOIN LEFT second JOIN INNER';
 First JOIN LEFT second JOIN INNER
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -192,7 +192,7 @@ SELECT '--';
 SELECT 1 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id);
 1
 1
-SELECT id FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON t1.id = t2.id INNER JOIN test_table_join_3 AS t3 USING (id); -- { serverError 207 }
+SELECT id FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON t1.id = t2.id INNER JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
 SELECT 'First JOIN LEFT second JOIN LEFT';
 First JOIN LEFT second JOIN LEFT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -214,7 +214,7 @@ SELECT 1 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (i
 1
 1
 1
-SELECT id FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON t1.id = t2.id LEFT JOIN test_table_join_3 AS t3 USING (id); -- { serverError 207 }
+SELECT id FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON t1.id = t2.id LEFT JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
 SELECT 'First JOIN LEFT second JOIN RIGHT';
 First JOIN LEFT second JOIN RIGHT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -236,7 +236,7 @@ SELECT 1 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (i
 1
 1
 1
-SELECT id FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON t1.id = t2.id RIGHT JOIN test_table_join_3 AS t3 USING (id); -- { serverError 207 }
+SELECT id FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON t1.id = t2.id RIGHT JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
 SELECT 'First JOIN LEFT second JOIN FULL';
 First JOIN LEFT second JOIN FULL
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -261,7 +261,7 @@ SELECT 1 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (i
 1
 1
 1
-SELECT id FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON t1.id = t2.id FULL JOIN test_table_join_3 AS t3 USING (id); -- { serverError 207 }
+SELECT id FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON t1.id = t2.id FULL JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
 SELECT 'First JOIN RIGHT second JOIN INNER';
 First JOIN RIGHT second JOIN INNER
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -280,7 +280,7 @@ SELECT '--';
 SELECT 1 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id);
 1
 1
-SELECT id FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON t1.id = t2.id INNER JOIN test_table_join_3 AS t3 USING (id); -- { serverError 207 }
+SELECT id FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON t1.id = t2.id INNER JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
 SELECT 'First JOIN RIGHT second JOIN LEFT';
 First JOIN RIGHT second JOIN LEFT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -302,7 +302,7 @@ SELECT 1 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (
 1
 1
 1
-SELECT id FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON t1.id = t2.id LEFT JOIN test_table_join_3 AS t3 USING (id); -- { serverError 207 }
+SELECT id FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON t1.id = t2.id LEFT JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
 SELECT 'First JOIN RIGHT second JOIN RIGHT';
 First JOIN RIGHT second JOIN RIGHT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -324,7 +324,7 @@ SELECT 1 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (
 1
 1
 1
-SELECT id FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON t1.id = t2.id RIGHT JOIN test_table_join_3 AS t3 USING (id); -- { serverError 207 }
+SELECT id FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON t1.id = t2.id RIGHT JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
 SELECT 'First JOIN RIGHT second JOIN FULL';
 First JOIN RIGHT second JOIN FULL
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -349,7 +349,7 @@ SELECT 1 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (
 1
 1
 1
-SELECT id FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON t1.id = t2.id FULL JOIN test_table_join_3 AS t3 USING (id); -- { serverError 207 }
+SELECT id FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON t1.id = t2.id FULL JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
 SELECT 'First JOIN FULL second JOIN INNER';
 First JOIN FULL second JOIN INNER
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -369,7 +369,7 @@ SELECT '--';
 SELECT 1 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id);
 1
 1
-SELECT id FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON t1.id = t2.id INNER JOIN test_table_join_3 AS t3 USING (id); -- { serverError 207 }
+SELECT id FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON t1.id = t2.id INNER JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
 SELECT 'First JOIN FULL second JOIN LEFT';
 First JOIN FULL second JOIN LEFT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -394,7 +394,7 @@ SELECT 1 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (i
 1
 1
 1
-SELECT id FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON t1.id = t2.id LEFT JOIN test_table_join_3 AS t3 USING (id); -- { serverError 207 }
+SELECT id FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON t1.id = t2.id LEFT JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
 SELECT 'First JOIN FULL second JOIN RIGHT';
 First JOIN FULL second JOIN RIGHT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -417,7 +417,7 @@ SELECT 1 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (i
 1
 1
 1
-SELECT id FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON t1.id = t2.id RIGHT JOIN test_table_join_3 AS t3 USING (id); -- { serverError 207 }
+SELECT id FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON t1.id = t2.id RIGHT JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
 SELECT 'First JOIN FULL second JOIN FULL';
 First JOIN FULL second JOIN FULL
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -445,4 +445,4 @@ SELECT 1 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (i
 1
 1
 1
-SELECT id FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON t1.id = t2.id FULL JOIN test_table_join_3 AS t3 USING (id); -- { serverError 207 }
+SELECT id FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON t1.id = t2.id FULL JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }

@@ -467,7 +467,7 @@ private:
 
     /// Merge data from hash table `src` into `dst`.
     template <typename Method, typename Table>
-    void mergeDataImpl(Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch) const;
+    void mergeDataImpl(Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const;
 
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
     template <typename Method, typename Table>
@@ -490,7 +490,7 @@ private:
 
     template <typename Method>
     void mergeSingleLevelDataImpl(
-        ManyAggregatedDataVariants & non_empty_data) const;
+        ManyAggregatedDataVariants & non_empty_data, std::atomic<bool> & is_cancelled) const;
 
     template <bool return_single_block>
     using ConvertToBlockRes = std::conditional_t<return_single_block, Block, BlocksList>;

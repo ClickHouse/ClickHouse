@@ -39,8 +39,7 @@ std::unique_ptr<SeekableReadBuffer> BackupEntryFromImmutableFile::getReadBuffer(
 {
     if (copy_encrypted)
         return disk->readEncryptedFile(file_path, read_settings);
-    else
-        return disk->readFile(file_path, read_settings);
+    return disk->readFile(file_path, read_settings);
 }
 
 UInt64 BackupEntryFromImmutableFile::getSize() const

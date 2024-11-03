@@ -1,9 +1,11 @@
-#include <Core/Settings.h>
+#include <Core/SettingsTierType.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Storages/System/StorageSystemMergeTreeSettings.h>
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 
@@ -29,6 +31,14 @@ ColumnsDescription SystemMergeTreeSettings<replicated>::getColumnsDescription()
         },
         {"type",        std::make_shared<DataTypeString>(), "Setting type (implementation specific string value)."},
         {"is_obsolete", std::make_shared<DataTypeUInt8>(), "Shows whether a setting is obsolete."},
+        {"tier", getSettingsTierEnum(), R"(
+Support level for this feature. ClickHouse features are organized in tiers, varying depending on the current status of their
+development and the expectations one might have when using them:
+* PRODUCTION: The feature is stable, safe to use and does not have issues interacting with other PRODUCTION features.
+* BETA: The feature is stable and safe. The outcome of using it together with other features is unknown and correctness is not guaranteed. Testing and reports are welcome.
+* EXPERIMENTAL: The feature is under development. Only intended for developers and ClickHouse enthusiasts. The feature might or might not work and could be removed at any time.
+* OBSOLETE: No longer supported. Either it is already removed or it will be removed in future releases.
+)"},
     };
 }
 
@@ -38,30 +48,9 @@ void SystemMergeTreeSettings<replicated>::fillData(MutableColumns & res_columns,
     const auto & settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
     auto constraints_and_current_profiles = context->getSettingsConstraintsAndCurrentProfiles();
     const auto & constraints = constraints_and_current_profiles->constraints;
-    for (const auto & setting : settings.all())
-    {
-        const auto & setting_name = setting.getName();
-        res_columns[0]->insert(setting_name);
-        res_columns[1]->insert(setting.getValueString());
-        res_columns[2]->insert(setting.isValueChanged());
-        res_columns[3]->insert(setting.getDescription());
 
-        Field min, max;
-        SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
-        constraints.get(settings, setting_name, min, max, writability);
-
-        /// These two columns can accept strings only.
-        if (!min.isNull())
-            min = Settings::valueToStringUtil(setting_name, min);
-        if (!max.isNull())
-            max = Settings::valueToStringUtil(setting_name, max);
-
-        res_columns[4]->insert(min);
-        res_columns[5]->insert(max);
-        res_columns[6]->insert(writability == SettingConstraintWritability::CONST);
-        res_columns[7]->insert(setting.getTypeName());
-        res_columns[8]->insert(setting.isObsolete());
-    }
+    MutableColumnsAndConstraints params(res_columns, constraints);
+    settings.dumpToSystemMergeTreeSettingsColumns(params);
 }
 
 template class SystemMergeTreeSettings<false>;

@@ -67,10 +67,18 @@ std::string SigsegvErrorString(const siginfo_t & info, [[maybe_unused]] const uc
         = info.si_addr == nullptr ? "NULL pointer"s : (shouldShowAddress(info.si_addr) ? fmt::format("{}", info.si_addr) : ""s);
 
     const std::string_view access =
-#if defined(__x86_64__) && !defined(OS_FREEBSD) && !defined(OS_DARWIN) && !defined(__arm__) && !defined(__powerpc__)
-        (context.uc_mcontext.gregs[REG_ERR] & 0x02) ? "write" : "read";
+#if defined(__arm__)
+        "<not available on ARM>";
+#elif defined(__powerpc__)
+        "<not available on PowerPC>";
+#elif defined(OS_DARWIN)
+        "<not available on Darwin>";
+#elif defined(OS_FREEBSD)
+        "<not available on FreeBSD>";
+#elif !defined(__x86_64__)
+        "<not available>";
 #else
-        "";
+        (context.uc_mcontext.gregs[REG_ERR] & 0x02) ? "write" : "read";
 #endif
 
     std::string_view message;

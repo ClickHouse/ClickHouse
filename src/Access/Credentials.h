@@ -1,9 +1,8 @@
 #pragma once
 
-#include <base/types.h>
-#include <boost/container/flat_set.hpp>
-#include <Access/Common/SSLCertificateSubjects.h>
 #include <memory>
+#include <Access/Common/SSLCertificateSubjects.h>
+#include <base/types.h>
 
 #include "config.h"
 
@@ -15,6 +14,9 @@ class Credentials
 public:
     explicit Credentials() = default;
     explicit Credentials(const String & user_name_);
+
+    Credentials(const Credentials &) = default;
+    Credentials(Credentials &&) = default;
 
     virtual ~Credentials() = default;
 

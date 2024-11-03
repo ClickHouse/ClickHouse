@@ -51,6 +51,10 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool s3_use_adaptive_timeouts;
+}
 
 namespace ErrorCodes
 {
@@ -995,7 +999,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         s3_retry_attempts,
         enable_s3_requests_logging,
         for_disk_s3,
-        context->getGlobalContext()->getSettingsRef().s3_use_adaptive_timeouts,
+        context->getGlobalContext()->getSettingsRef()[Setting::s3_use_adaptive_timeouts],
         get_request_throttler,
         put_request_throttler,
         error_report);
