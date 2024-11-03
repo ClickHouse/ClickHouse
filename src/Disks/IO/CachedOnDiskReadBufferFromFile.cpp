@@ -28,6 +28,7 @@ extern const Event CachedReadBufferReadFromCacheMicroseconds;
 extern const Event CachedReadBufferCacheWriteMicroseconds;
 extern const Event CachedReadBufferReadFromSourceBytes;
 extern const Event CachedReadBufferReadFromCacheBytes;
+extern const Event CachedReadBufferPredownloadedBytes;
 extern const Event CachedReadBufferCacheWriteBytes;
 extern const Event CachedReadBufferCreateBufferMicroseconds;
 
@@ -294,12 +295,10 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
             read_type = ReadType::CACHED;
             return getCacheReadBuffer(file_segment);
         }
-        else
-        {
-            LOG_TEST(log, "Bypassing cache because `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` option is used");
-            read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
-            return getRemoteReadBuffer(file_segment, read_type);
-        }
+
+        LOG_TEST(log, "Bypassing cache because `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` option is used");
+        read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+        return getRemoteReadBuffer(file_segment, read_type);
     }
 
     while (true)
@@ -402,14 +401,13 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
                     read_type = ReadType::CACHED;
                     return getCacheReadBuffer(file_segment);
                 }
-                else
-                {
-                    LOG_TRACE(
-                        log, "Bypassing cache because file segment state is "
-                        "`PARTIALLY_DOWNLOADED_NO_CONTINUATION` and downloaded part already used");
-                    read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
-                    return getRemoteReadBuffer(file_segment, read_type);
-                }
+
+                LOG_TRACE(
+                    log,
+                    "Bypassing cache because file segment state is "
+                    "`PARTIALLY_DOWNLOADED_NO_CONTINUATION` and downloaded part already used");
+                read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+                return getRemoteReadBuffer(file_segment, read_type);
             }
         }
     }
@@ -644,6 +642,7 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
             size_t current_predownload_size = std::min(current_impl_buffer_size, bytes_to_predownload);
 
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceBytes, current_impl_buffer_size);
+            ProfileEvents::increment(ProfileEvents::CachedReadBufferPredownloadedBytes, current_impl_buffer_size);
 
             std::string failure_reason;
             bool continue_predownload = file_segment.reserve(

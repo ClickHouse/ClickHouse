@@ -231,22 +231,20 @@ struct PositionImpl
                 }
                 return;
             }
-            else
-            {
-                /// Needle is empty and start_pos is not constant
-                for (size_t i = 0; i < input_rows_count; ++i)
-                {
-                    size_t haystack_size = Impl::countChars(
-                        reinterpret_cast<const char *>(pos), reinterpret_cast<const char *>(pos + haystack_offsets[i] - prev_offset - 1));
-                    UInt64 start = start_pos->getUInt(i);
-                    start = std::max(static_cast<UInt64>(1), start);
-                    res[i] = (start <= haystack_size + 1) ? start : 0;
 
-                    pos = begin + haystack_offsets[i];
-                    prev_offset = haystack_offsets[i];
-                }
-                return;
+            /// Needle is empty and start_pos is not constant
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                size_t haystack_size = Impl::countChars(
+                    reinterpret_cast<const char *>(pos), reinterpret_cast<const char *>(pos + haystack_offsets[i] - prev_offset - 1));
+                UInt64 start = start_pos->getUInt(i);
+                start = std::max(static_cast<UInt64>(1), start);
+                res[i] = (start <= haystack_size + 1) ? start : 0;
+
+                pos = begin + haystack_offsets[i];
+                prev_offset = haystack_offsets[i];
             }
+            return;
         }
 
         /// Current index in the array of strings.

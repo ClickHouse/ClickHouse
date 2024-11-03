@@ -25,7 +25,7 @@ EXTRA_COLUMNS_EXPRESSION_TRACE_LOG="${EXTRA_COLUMNS_EXPRESSION}, arrayMap(x -> d
 
 # coverage_log needs more columns for symbolization, but only symbol names (the line numbers are too heavy to calculate)
 EXTRA_COLUMNS_COVERAGE_LOG="${EXTRA_COLUMNS} symbols Array(LowCardinality(String)), "
-EXTRA_COLUMNS_EXPRESSION_COVERAGE_LOG="${EXTRA_COLUMNS_EXPRESSION}, arrayMap(x -> demangle(addressToSymbol(x)), coverage)::Array(LowCardinality(String)) AS symbols"
+EXTRA_COLUMNS_EXPRESSION_COVERAGE_LOG="${EXTRA_COLUMNS_EXPRESSION}, arrayDistinct(arrayMap(x -> demangle(addressToSymbol(x)), coverage))::Array(LowCardinality(String)) AS symbols"
 
 
 function __set_connection_args
@@ -124,6 +124,8 @@ function setup_logs_replication
     check_logs_credentials || return 0
     __set_connection_args
 
+    echo "My hostname is ${HOSTNAME}"
+
     echo 'Create all configured system logs'
     clickhouse-client --query "SYSTEM FLUSH LOGS"
 
@@ -184,7 +186,17 @@ function setup_logs_replication
             /^TTL /d
             ')
 
-        echo -e "Creating remote destination table ${table}_${hash} with statement:\n${statement}" >&2
+        echo -e "Creating remote destination table ${table}_${hash} with statement:" >&2
+
+        echo "::group::${table}"
+        # there's the only way big "$statement" can be printed without causing EAGAIN error
+        # cat: write error: Resource temporarily unavailable
+        statement_print="${statement}"
+        if [ "${#statement_print}" -gt 4000 ]; then
+          statement_print="${statement::1999}\n…\n${statement:${#statement}-1999}"
+        fi
+        echo -e "$statement_print"
+        echo "::endgroup::"
 
         echo "$statement" | clickhouse-client --database_replicated_initial_query_timeout_sec=10 \
             --distributed_ddl_task_timeout=30 --distributed_ddl_output_mode=throw_only_active \

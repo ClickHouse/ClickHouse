@@ -33,7 +33,7 @@ public:
 
     bool isDirectory(const String & any_path) const
     {
-        return disk->isDirectory(getRelativeFromRoot(any_path)) || (getRelativeFromRoot(any_path).empty() && (disk->isDirectory("/")));
+        return disk->existsDirectory(getRelativeFromRoot(any_path)) || (getRelativeFromRoot(any_path).empty() && (disk->existsDirectory("/")));
     }
 
     std::vector<String> listAllFilesByPath(const String & any_path) const;

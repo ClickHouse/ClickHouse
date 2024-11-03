@@ -11,6 +11,12 @@
 namespace DB
 {
 
+namespace CoordinationSetting
+{
+    extern const CoordinationSettingsUInt64 disk_move_retries_during_init;
+    extern const CoordinationSettingsUInt64 disk_move_retries_wait_ms;
+}
+
 static size_t findLastSlash(StringRef path)
 {
     if (path.size == 0)
@@ -60,8 +66,8 @@ void moveFileBetweenDisks(
     auto tmp_file_name = from_path.parent_path() / (std::string{tmp_keeper_file_prefix} + from_path.filename().string());
 
     const auto & coordination_settings = keeper_context->getCoordinationSettings();
-    auto max_retries_on_init = coordination_settings->disk_move_retries_during_init.value;
-    auto retries_sleep = std::chrono::milliseconds(coordination_settings->disk_move_retries_wait_ms);
+    auto max_retries_on_init = coordination_settings[CoordinationSetting::disk_move_retries_during_init].value;
+    auto retries_sleep = std::chrono::milliseconds(coordination_settings[CoordinationSetting::disk_move_retries_wait_ms]);
     auto run_with_retries = [&](const auto & op, std::string_view operation_description)
     {
         size_t retry_num = 0;

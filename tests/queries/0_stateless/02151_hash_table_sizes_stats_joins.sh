@@ -12,7 +12,7 @@ opts=(
     --join_algorithm='parallel_hash'
 )
 
-$CLICKHOUSE_CLIENT -nq "
+$CLICKHOUSE_CLIENT -q "
   CREATE TABLE t1(a UInt32, b UInt32) ENGINE=MergeTree ORDER BY ();
   INSERT INTO t1 SELECT number, number FROM numbers_mt(1e6);
 

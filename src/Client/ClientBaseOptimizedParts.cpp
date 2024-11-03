@@ -1,5 +1,4 @@
 #include <Client/ClientApplicationBase.h>
-#include <Core/BaseSettingsProgramOptions.h>
 
 namespace DB
 {
@@ -18,17 +17,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-/// Define transparent hash to we can use
-/// std::string_view with the containers
-struct TransparentStringHash
-{
-    using is_transparent = void;
-    size_t operator()(std::string_view txt) const
-    {
-        return std::hash<std::string_view>{}(txt);
-    }
-};
 
 /*
  * This functor is used to parse command line arguments and replace dashes with underscores,
@@ -83,47 +71,14 @@ private:
 void ClientApplicationBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
     if (allow_repeated_settings)
-        addProgramOptionsAsMultitokens(cmd_settings, options_description.main_description.value());
+        cmd_settings.addToProgramOptionsAsMultitokens(options_description.main_description.value());
     else
-        addProgramOptions(cmd_settings, options_description.main_description.value());
+        cmd_settings.addToProgramOptions(options_description.main_description.value());
 
     if (allow_merge_tree_settings)
     {
-        /// Add merge tree settings manually, because names of some settings
-        /// may clash. Query settings have higher priority and we just
-        /// skip ambiguous merge tree settings.
         auto & main_options = options_description.main_description.value();
-
-        std::unordered_set<std::string, TransparentStringHash, std::equal_to<>> main_option_names;
-        for (const auto & option : main_options.options())
-            main_option_names.insert(option->long_name());
-
-        for (const auto & setting : cmd_merge_tree_settings.all())
-        {
-            const auto add_setting = [&](const std::string_view name)
-            {
-                if (auto it = main_option_names.find(name); it != main_option_names.end())
-                    return;
-
-                if (allow_repeated_settings)
-                    addProgramOptionAsMultitoken(cmd_merge_tree_settings, main_options, name, setting);
-                else
-                    addProgramOption(cmd_merge_tree_settings, main_options, name, setting);
-            };
-
-            const auto & setting_name = setting.getName();
-
-            add_setting(setting_name);
-
-            const auto & settings_to_aliases = MergeTreeSettings::Traits::settingsToAliases();
-            if (auto it = settings_to_aliases.find(setting_name); it != settings_to_aliases.end())
-            {
-                for (const auto alias : it->second)
-                {
-                    add_setting(alias);
-                }
-            }
-        }
+        cmd_merge_tree_settings.addToProgramOptionsIfNotPresent(main_options, allow_repeated_settings);
     }
 
     /// Parse main commandline options.

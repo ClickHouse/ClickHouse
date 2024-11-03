@@ -30,6 +30,15 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 glob_expansion_max_elements;
+    extern const SettingsUInt64 postgresql_connection_pool_size;
+    extern const SettingsUInt64 postgresql_connection_pool_wait_timeout;
+    extern const SettingsUInt64 postgresql_connection_pool_retries;
+    extern const SettingsBool postgresql_connection_pool_auto_close_connection;
+    extern const SettingsUInt64 postgresql_connection_attempt_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -513,7 +522,7 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
                 engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.context);
 
             const auto & host_port = safeGetLiteralValue<String>(engine_args[0], engine_name);
-            size_t max_addresses = args.context->getSettingsRef().glob_expansion_max_elements;
+            size_t max_addresses = args.context->getSettingsRef()[Setting::glob_expansion_max_elements];
 
             configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
             configuration.database = safeGetLiteralValue<String>(engine_args[1], engine_name);
@@ -543,11 +552,11 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
         const auto & settings = args.context->getSettingsRef();
         auto pool = std::make_shared<postgres::PoolWithFailover>(
             configuration,
-            settings.postgresql_connection_pool_size,
-            settings.postgresql_connection_pool_wait_timeout,
-            settings.postgresql_connection_pool_retries,
-            settings.postgresql_connection_pool_auto_close_connection,
-            settings.postgresql_connection_attempt_timeout);
+            settings[Setting::postgresql_connection_pool_size],
+            settings[Setting::postgresql_connection_pool_wait_timeout],
+            settings[Setting::postgresql_connection_pool_retries],
+            settings[Setting::postgresql_connection_pool_auto_close_connection],
+            settings[Setting::postgresql_connection_attempt_timeout]);
 
         return std::make_shared<DatabasePostgreSQL>(
             args.context,
@@ -558,7 +567,7 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
             pool,
             use_table_cache);
     };
-    factory.registerDatabase("PostgreSQL", create_fn);
+    factory.registerDatabase("PostgreSQL", create_fn, {.supports_arguments = true});
 }
 }
 

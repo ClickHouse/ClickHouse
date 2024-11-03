@@ -1,9 +1,10 @@
 from __future__ import print_function
-from helpers.cluster import ClickHouseCluster
-from helpers.client import QueryRuntimeException
-import helpers
+
 import pytest
 
+import helpers
+from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(

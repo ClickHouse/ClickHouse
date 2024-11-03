@@ -1,8 +1,10 @@
-import pytest
-import socket
-from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
-from time import sleep
 import os
+import socket
+from time import sleep
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
 
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
