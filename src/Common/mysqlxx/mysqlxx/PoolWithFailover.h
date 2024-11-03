@@ -125,9 +125,9 @@ namespace mysqlxx
             unsigned max_connections_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS,
             size_t max_tries_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
             uint64_t wait_timeout_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_CONNECTION_WAIT_TIMEOUT,
-            bool bg_reconnect_ = false,
             size_t connect_timeout = MYSQLXX_DEFAULT_TIMEOUT,
-            size_t rw_timeout = MYSQLXX_DEFAULT_RW_TIMEOUT);
+            size_t rw_timeout = MYSQLXX_DEFAULT_RW_TIMEOUT,
+            bool bg_reconnect_ = false);
 
         PoolWithFailover(const PoolWithFailover & other);
 

@@ -120,9 +120,9 @@ PoolWithFailover::PoolWithFailover(
         unsigned max_connections_,
         size_t max_tries_,
         uint64_t wait_timeout_,
-        bool bg_reconnect_,
         size_t connect_timeout_,
-        size_t rw_timeout_)
+        size_t rw_timeout_,
+        bool bg_reconnect_)
     : max_tries(max_tries_)
     , shareable(false)
     , wait_timeout(wait_timeout_)
