@@ -122,6 +122,17 @@ Default value: `0`.
 
 Cloud default value: half the memory amount per replica.
 
+## max_bytes_ratio_before_external_group_by {#settings-max_bytes_ratio_before_external_group_by}
+
+The ratio of used memory before enabling [GROUP BY in external
+memory](../../sql-reference/statements/select/group-by.md#select-group-by-in-external-memory)
+determines when this feature activates based on memory consumption.
+
+For example, if set to `0.6`, GROUP BY in external memory will be used once
+memory usage reaches `60%` of used memory for the query.
+
+Default value: `0.0`.
+
 ## max_bytes_before_external_sort {#settings-max_bytes_before_external_sort}
 
 Enables or disables execution of `ORDER BY` clauses in external memory. See [ORDER BY Implementation Details](../../sql-reference/statements/select/order-by.md#implementation-details)

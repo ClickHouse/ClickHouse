@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <future>
 #include <numeric>
+#include <utility>
 #include <Poco/Util/Application.h>
 
 #ifdef OS_LINUX
@@ -165,13 +166,13 @@ size_t getMinBytesForPrefetch()
     return 4 * std::max<size_t>(l2_size, 256 * 1024);
 }
 
-Int64 getCurrentQueryMemoryUsage()
+std::pair<Int64, Int64> getCurrentQueryMemoryUsageAndLimit()
 {
     /// Use query-level memory tracker
     if (auto * memory_tracker_child = DB::CurrentThread::getMemoryTracker())
         if (auto * memory_tracker = memory_tracker_child->getParent())
-            return memory_tracker->get();
-    return 0;
+            return std::make_pair(memory_tracker->get(), memory_tracker->getHardLimit());
+    return std::make_pair(0, 0);
 }
 }
 
@@ -346,7 +347,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     , tmp_data(params.tmp_data_scope ? params.tmp_data_scope->childScope(CurrentMetrics::TemporaryFilesForAggregation) : nullptr)
     , min_bytes_for_prefetch(getMinBytesForPrefetch())
 {
-    memory_usage_before_aggregation = getCurrentQueryMemoryUsage();
+    memory_usage_before_aggregation = getCurrentQueryMemoryUsageAndLimit().first;
 
     aggregate_functions.resize(params.aggregates_size);
     for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -1479,7 +1480,7 @@ bool Aggregator::executeOnBlock(Columns columns,
     }
 
     size_t result_size = result.sizeWithoutOverflowRow();
-    Int64 current_memory_usage = getCurrentQueryMemoryUsage();
+    auto [current_memory_usage, memory_limit] = getCurrentQueryMemoryUsageAndLimit();
 
     /// Here all the results in the sum are taken into account, from different threads.
     auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;
@@ -1500,13 +1501,25 @@ bool Aggregator::executeOnBlock(Columns columns,
     /** Flush data to disk if too much RAM is consumed.
       * Data can only be flushed to disk if a two-level aggregation structure is used.
       */
-    if (params.max_bytes_before_external_group_by
-        && result.isTwoLevel()
-        && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
-        && worth_convert_to_two_level)
+    if (worth_convert_to_two_level && result.isTwoLevel())
     {
-        size_t size = current_memory_usage + params.min_free_disk_space;
-        writeToTemporaryFile(result, size);
+        bool write_temporary_file = false;
+        if (params.max_bytes_before_external_group_by && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
+            write_temporary_file = true;
+        if (params.max_bytes_ratio_before_external_group_by > 0. && current_memory_usage > memory_limit * params.max_bytes_ratio_before_external_group_by)
+        {
+            LOG_TEST(log, "Use external aggregation due to max_bytes_ratio_before_external_group_by reached. Current memory usage is {} (> {}*{})",
+                formatReadableSizeWithBinarySuffix(current_memory_usage),
+                formatReadableSizeWithBinarySuffix(memory_limit),
+                params.max_bytes_ratio_before_external_group_by);
+            write_temporary_file = true;
+        }
+
+        if (write_temporary_file)
+        {
+            size_t size = current_memory_usage + params.min_free_disk_space;
+            writeToTemporaryFile(result, size);
+        }
     }
 
     return true;
@@ -2908,7 +2921,7 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
 
     size_t result_size = result.sizeWithoutOverflowRow();
-    Int64 current_memory_usage = getCurrentQueryMemoryUsage();
+    auto [current_memory_usage, memory_limit] = getCurrentQueryMemoryUsageAndLimit();
 
     /// Here all the results in the sum are taken into account, from different threads.
     auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;
@@ -2929,13 +2942,25 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
     /** Flush data to disk if too much RAM is consumed.
       * Data can only be flushed to disk if a two-level aggregation structure is used.
       */
-    if (params.max_bytes_before_external_group_by
-        && result.isTwoLevel()
-        && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
-        && worth_convert_to_two_level)
+    if (worth_convert_to_two_level && result.isTwoLevel())
     {
-        size_t size = current_memory_usage + params.min_free_disk_space;
-        writeToTemporaryFile(result, size);
+        bool write_temporary_file = false;
+        if (params.max_bytes_before_external_group_by && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
+            write_temporary_file = true;
+        if (params.max_bytes_ratio_before_external_group_by > 0. && current_memory_usage > memory_limit * params.max_bytes_ratio_before_external_group_by)
+        {
+            LOG_TEST(log, "Use external aggregation due to max_bytes_ratio_before_external_group_by reached. Current memory usage is {} (> {}*{})",
+                formatReadableSizeWithBinarySuffix(current_memory_usage),
+                formatReadableSizeWithBinarySuffix(memory_limit),
+                params.max_bytes_ratio_before_external_group_by);
+            write_temporary_file = true;
+        }
+
+        if (write_temporary_file)
+        {
+            size_t size = current_memory_usage + params.min_free_disk_space;
+            writeToTemporaryFile(result, size);
+        }
     }
 
     return true;

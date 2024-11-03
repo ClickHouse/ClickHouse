@@ -74,6 +74,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage", true, true, "New setting"},
             {"filesystem_cache_enable_background_download_during_fetch", true, true, "New setting"},
             {"azure_check_objects_after_upload", false, false, "Check each uploaded object in azure blob storage to be sure that upload was successful"},
+            {"max_bytes_ratio_before_external_group_by", 0., 0., "New setting."},
             {"backup_restore_keeper_max_retries", 20, 1000, "Should be big enough so the whole operation BACKUP or RESTORE operation won't fail because of a temporary [Zoo]Keeper failure in the middle of it."},
             {"backup_restore_failure_after_host_disconnected_for_seconds", 0, 3600, "New setting."},
             {"backup_restore_keeper_max_retries_while_initializing", 0, 20, "New setting."},

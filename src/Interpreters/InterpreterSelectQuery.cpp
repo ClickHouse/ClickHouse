@@ -141,6 +141,7 @@ namespace Setting
     extern const SettingsUInt64 max_analyze_depth;
     extern const SettingsUInt64 max_block_size;
     extern const SettingsUInt64 max_bytes_before_external_group_by;
+    extern const SettingsDouble max_bytes_ratio_before_external_group_by;
     extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsUInt64 max_columns_to_read;
     extern const SettingsUInt64 max_distributed_connections;
@@ -2765,6 +2766,7 @@ static Aggregator::Params getAggregatorParams(
         group_by_two_level_threshold,
         group_by_two_level_threshold_bytes,
         settings[Setting::max_bytes_before_external_group_by],
+        settings[Setting::max_bytes_ratio_before_external_group_by],
         settings[Setting::empty_result_for_aggregation_by_empty_set]
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set] && keys.empty()
                 && query_analyzer.hasConstAggregationKeys()),

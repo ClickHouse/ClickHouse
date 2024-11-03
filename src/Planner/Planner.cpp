@@ -113,6 +113,7 @@ namespace Setting
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
     extern const SettingsBool group_by_use_nulls;
     extern const SettingsUInt64 max_bytes_before_external_group_by;
+    extern const SettingsDouble max_bytes_ratio_before_external_group_by;
     extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsUInt64 max_block_size;
     extern const SettingsUInt64 max_size_to_preallocate_for_aggregation;
@@ -445,6 +446,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::group_by_two_level_threshold],
         settings[Setting::group_by_two_level_threshold_bytes],
         settings[Setting::max_bytes_before_external_group_by],
+        settings[Setting::max_bytes_ratio_before_external_group_by],
         settings[Setting::empty_result_for_aggregation_by_empty_set]
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set] && aggregation_analysis_result.aggregation_keys.empty()
                 && aggregation_analysis_result.group_by_with_constant_keys),
