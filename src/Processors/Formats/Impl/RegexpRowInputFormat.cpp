@@ -196,7 +196,7 @@ static std::pair<bool, size_t> segmentationEngine(ReadBuffer & in, DB::Memory<> 
         pos = find_first_symbols<'\r', '\n'>(pos, in.buffer().end());
         if (pos > in.buffer().end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-        else if (pos == in.buffer().end())
+        if (pos == in.buffer().end())
             continue;
 
         ++number_of_rows;

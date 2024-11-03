@@ -565,3 +565,13 @@ If there's a refresh in progress for the given view, interrupt and cancel it. Ot
 ```sql
 SYSTEM CANCEL VIEW [db.]name
 ```
+
+### SYSTEM WAIT VIEW
+
+Waits for the running refresh to complete. If no refresh is running, returns immediately. If the latest refresh attempt failed, reports an error.
+
+Can be used right after creating a new refreshable materialized view (without EMPTY keyword) to wait for the initial refresh to complete.
+
+```sql
+SYSTEM WAIT VIEW [db.]name
+```

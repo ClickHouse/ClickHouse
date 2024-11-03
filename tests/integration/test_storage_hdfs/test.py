@@ -1,13 +1,14 @@
 import os
+import re
+import time
+import uuid
 
 import pytest
-import uuid
-import time
-import re
-from helpers.cluster import ClickHouseCluster, is_arm
-from helpers.client import QueryRuntimeException
-from helpers.test_tools import TSV
 from pyhdfs import HdfsClient
+
+from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.test_tools import TSV
 
 if is_arm():
     pytestmark = pytest.mark.skip
@@ -393,6 +394,21 @@ def test_read_files_with_spaces(started_cluster):
     assert node1.query("select * from test order by id") == "1\n2\n3\n"
     fs.delete(dir, recursive=True)
     node1.query(f"drop table test")
+
+
+def test_write_files_with_spaces(started_cluster):
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    dir = "/itime=2024-10-24 10%3A02%3A04"
+    fs.mkdirs(dir)
+
+    node1.query(
+        f"insert into function hdfs('hdfs://hdfs1:9000{dir}/test.csv', TSVRaw) select 123 settings hdfs_truncate_on_insert=1"
+    )
+    result = node1.query(
+        f"select * from hdfs('hdfs://hdfs1:9000{dir}/test.csv', TSVRaw)"
+    )
+    assert int(result) == 123
+    fs.delete(dir, recursive=True)
 
 
 def test_truncate_table(started_cluster):

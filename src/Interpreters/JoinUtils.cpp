@@ -157,7 +157,7 @@ static ColumnPtr tryConvertColumnToNullable(ColumnPtr col)
         {
             return col;
         }
-        else if (col_lc.nestedCanBeInsideNullable())
+        if (col_lc.nestedCanBeInsideNullable())
         {
             return col_lc.cloneNullable();
         }
@@ -169,7 +169,7 @@ static ColumnPtr tryConvertColumnToNullable(ColumnPtr col)
         {
             return makeNullable(col);
         }
-        else if (nested->lowCardinality())
+        if (nested->lowCardinality())
         {
             ColumnPtr nested_nullable = tryConvertColumnToNullable(nested);
             if (nested_nullable)
@@ -510,8 +510,7 @@ JoinMask getColumnAsMask(const Block & block, const String & column_name)
             res->getData()[i] = !null_map.getData()[i] && nest_col.getData()[i];
         return JoinMask(std::move(res));
     }
-    else
-        return JoinMask(std::move(join_condition_col));
+    return JoinMask(std::move(join_condition_col));
 }
 
 

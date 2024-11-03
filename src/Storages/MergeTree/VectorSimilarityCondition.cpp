@@ -48,17 +48,15 @@ VectorSimilarityCondition::Info::DistanceFunction stringToDistanceFunction(const
 {
     if (distance_function == "L2Distance")
         return VectorSimilarityCondition::Info::DistanceFunction::L2;
-    else if (distance_function == "cosineDistance")
+    if (distance_function == "cosineDistance")
         return VectorSimilarityCondition::Info::DistanceFunction::Cosine;
-    else
-        return VectorSimilarityCondition::Info::DistanceFunction::Unknown;
+    return VectorSimilarityCondition::Info::DistanceFunction::Unknown;
 }
 
 }
 
 VectorSimilarityCondition::VectorSimilarityCondition(const SelectQueryInfo & query_info, ContextPtr context)
     : block_with_constants(KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context))
-    , index_granularity(context->getMergeTreeSettings().index_granularity)
     , max_limit_for_ann_queries(context->getSettingsRef()[Setting::max_limit_for_ann_queries])
     , index_is_useful(checkQueryStructure(query_info))
 {}
@@ -185,7 +183,7 @@ bool VectorSimilarityCondition::traverseAtomAST(const ASTPtr & node, RPNElement 
         return true;
     }
     /// Match identifier
-    else if (const auto * identifier = node->as<ASTIdentifier>())
+    if (const auto * identifier = node->as<ASTIdentifier>())
     {
         out.function = RPNElement::FUNCTION_IDENTIFIER;
         out.identifier.emplace(identifier->name());

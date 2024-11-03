@@ -56,7 +56,7 @@ namespace JSONUtils
 
                 if (pos > in.buffer().end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-                else if (pos == in.buffer().end())
+                if (pos == in.buffer().end())
                     continue;
 
                 if (*pos == '\\')
@@ -77,10 +77,10 @@ namespace JSONUtils
 
                 if (pos > in.buffer().end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-                else if (pos == in.buffer().end())
+                if (pos == in.buffer().end())
                     continue;
 
-                else if (*pos == opening_bracket)
+                if (*pos == opening_bracket)
                 {
                     ++balance;
                     ++pos;
@@ -136,7 +136,7 @@ namespace JSONUtils
 
                 if (in.position() > in.buffer().end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-                else if (in.position() == in.buffer().end())
+                if (in.position() == in.buffer().end())
                     continue;
 
                 if (*in.position() == '\\')
@@ -158,10 +158,10 @@ namespace JSONUtils
 
                 if (in.position() > in.buffer().end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-                else if (in.position() == in.buffer().end())
+                if (in.position() == in.buffer().end())
                     continue;
 
-                else if (*in.position() == opening_bracket)
+                if (*in.position() == opening_bracket)
                 {
                     ++balance;
                     ++in.position();
@@ -299,8 +299,7 @@ namespace JSONUtils
 
             if (format_settings.json.empty_as_default)
                 return JSONUtils::deserializeEmpyStringAsDefaultOrNested<bool, false>(column, in, deserialize);
-            else
-                return deserialize(column, in);
+            return deserialize(column, in);
         }
         catch (Exception & e)
         {
@@ -493,33 +492,6 @@ namespace JSONUtils
         writeArrayEnd(out, 1);
     }
 
-
-    void writeCompactMetadata(const Names & names, const DataTypes & types, const FormatSettings & settings, WriteBuffer & out)
-    {
-        writeCompactArrayStart(out, 0, "meta");
-
-        for (size_t i = 0; i < names.size(); ++i)
-        {
-            writeCompactObjectStart(out);
-            writeTitle("name", out, 0, "");
-
-            /// The field names are pre-escaped to be put into JSON string literal.
-            writeChar('"', out);
-            writeString(names[i], out);
-            writeChar('"', out);
-
-            writeFieldCompactDelimiter(out);
-            writeTitle("type", out, 0, "");
-            writeJSONString(types[i]->getName(), out, settings);
-            writeCompactObjectEnd(out);
-
-            if (i + 1 < names.size())
-                writeFieldCompactDelimiter(out);
-        }
-
-        writeCompactArrayEnd(out);
-    }
-
     void writeAdditionalInfo(
         size_t rows,
         size_t rows_before_limit,
@@ -565,45 +537,6 @@ namespace JSONUtils
 
             writeObjectEnd(out, 1);
         }
-    }
-
-    void writeCompactAdditionalInfo(
-        size_t rows,
-        size_t rows_before_limit,
-        bool applied_limit,
-        const Stopwatch & watch,
-        const Progress & progress,
-        bool write_statistics,
-        WriteBuffer & out)
-    {
-        writeCompactObjectStart(out);
-        writeCompactObjectStart(out, 0, "statistics");
-        writeTitle("rows", out, 0, "");
-        writeIntText(rows, out);
-
-        if (applied_limit)
-        {
-            writeFieldCompactDelimiter(out);
-            writeTitle("rows_before_limit_at_least", out, 0, "");
-            writeIntText(rows_before_limit, out);
-        }
-
-        if (write_statistics)
-        {
-            writeFieldCompactDelimiter(out);
-            writeTitle("elapsed", out, 0, "");
-            writeText(watch.elapsedSeconds(), out);
-            writeFieldCompactDelimiter(out);
-
-            writeTitle("rows_read", out, 0, "");
-            writeText(progress.read_rows.load(), out);
-            writeFieldCompactDelimiter(out);
-
-            writeTitle("bytes_read", out, 0, "");
-            writeText(progress.read_bytes.load(), out);
-        }
-        writeCompactObjectEnd(out);
-        writeCompactObjectEnd(out);
     }
 
     void writeException(const String & exception_message, WriteBuffer & out, const FormatSettings & settings, size_t indent)

@@ -17,6 +17,9 @@ set(LIBBSON_SOURCES_ROOT "${ClickHouse_SOURCE_DIR}/contrib/mongo-c-driver/src")
 set(LIBBSON_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/libbson/src")
 file(GLOB_RECURSE LIBBSON_SOURCES "${LIBBSON_SOURCE_DIR}/*.c")
 
+set(LIBBSON_BINARY_ROOT "${ClickHouse_BINARY_DIR}/contrib/mongo-c-driver/src")
+set(LIBBSON_BINARY_DIR "${LIBBSON_BINARY_ROOT}/libbson/src")
+
 include(TestBigEndian)
 test_big_endian(BSON_BIG_ENDIAN)
 if(BSON_BIG_ENDIAN)
@@ -98,16 +101,11 @@ set(MONGOC_HAVE_SS_FAMILY 0)
 
 configure_file(
         ${LIBBSON_SOURCE_DIR}/bson/bson-config.h.in
-        ${LIBBSON_SOURCE_DIR}/bson/bson-config.h
+        ${LIBBSON_BINARY_DIR}/bson/bson-config.h
 )
 configure_file(
         ${LIBBSON_SOURCE_DIR}/bson/bson-version.h.in
-        ${LIBBSON_SOURCE_DIR}/bson/bson-version.h
-)
-
-configure_file(
-        ${LIBBSON_SOURCE_DIR}/bson/bson-version.h.in
-        ${LIBBSON_SOURCE_DIR}/bson/bson-version.h
+        ${LIBBSON_BINARY_DIR}/bson/bson-version.h
 )
 
 set(COMMON_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/common")
@@ -118,7 +116,7 @@ configure_file(
 )
 add_library(_libbson ${LIBBSON_SOURCES} ${COMMON_SOURCES})
 add_library(ch_contrib::libbson ALIAS _libbson)
-target_include_directories(_libbson SYSTEM PUBLIC ${LIBBSON_SOURCE_DIR} ${COMMON_SOURCE_DIR})
+target_include_directories(_libbson SYSTEM PUBLIC ${LIBBSON_SOURCE_DIR} ${LIBBSON_BINARY_DIR} ${COMMON_SOURCE_DIR})
 target_compile_definitions(_libbson PRIVATE BSON_COMPILATION)
 if(OS_LINUX)
     target_compile_definitions(_libbson PRIVATE -D_GNU_SOURCE -D_POSIX_C_SOURCE=199309L -D_XOPEN_SOURCE=600)

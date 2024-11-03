@@ -1,4 +1,8 @@
+env:
+  PYTHONUNBUFFERED: 1
+
 name: StageWF
+
 'on':
   workflow_call:
     inputs:

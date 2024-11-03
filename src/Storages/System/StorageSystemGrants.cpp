@@ -135,13 +135,13 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
         for (const auto & element : elements)
         {
             auto access_types = element.access_flags.toAccessTypes();
-            if (access_types.empty() || (!element.any_column && element.columns.empty()))
+            if (access_types.empty() || (!element.anyColumn() && element.columns.empty()))
                 continue;
 
-            const auto * database = element.any_database ? nullptr : &element.database;
-            const auto * table = element.any_table ? nullptr : &element.table;
+            const auto * database = element.anyDatabase() ? nullptr : &element.database;
+            const auto * table = element.anyTable() ? nullptr : &element.table;
 
-            if (element.any_column)
+            if (element.anyColumn())
             {
                 for (const auto & access_type : access_types)
                     add_row(grantee_name, grantee_type, access_type, database, table, nullptr, element.is_partial_revoke, element.grant_option);

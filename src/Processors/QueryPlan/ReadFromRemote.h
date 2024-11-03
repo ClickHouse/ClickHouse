@@ -40,7 +40,7 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    void enforceSorting(SortDescription output_sort_description);
+    void enableMemoryBoundMerging();
     void enforceAggregationInOrder();
 
 private:
@@ -86,7 +86,7 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    void enforceSorting(SortDescription output_sort_description);
+    void enableMemoryBoundMerging();
     void enforceAggregationInOrder();
 
 private:

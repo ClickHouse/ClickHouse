@@ -1,4 +1,4 @@
-// NOLINTBEGIN(readability-inconsistent-declaration-parameter-name)
+// NOLINTBEGIN(readability-inconsistent-declaration-parameter-name,readability-else-after-return)
 
 #include <csignal>
 #include <sys/time.h>
@@ -450,4 +450,4 @@ FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER_USING_INTERNAL_SYMBOLS)
 #endif
 }
 
-// NOLINTEND(readability-inconsistent-declaration-parameter-name)
+// NOLINTEND(readability-inconsistent-declaration-parameter-name,readability-else-after-return)
