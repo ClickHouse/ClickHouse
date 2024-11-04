@@ -629,7 +629,7 @@ protected:
 
     mutable PartMetadataManagerPtr metadata_manager;
 
-    void removeIfNeeded();
+    void removeIfNeeded() noexcept;
 
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
