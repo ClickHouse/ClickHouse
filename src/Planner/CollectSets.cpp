@@ -42,7 +42,6 @@ public:
 
     void enterImpl(const QueryTreeNodePtr & node)
     {
-        LOG_DEBUG(getLogger("CollectSets"), "Enter node: {}", node->dumpTree());
         if (const auto * constant_node = node->as<ConstantNode>())
             /// Collect sets from source expression as well.
             /// Most likely we will not build them, but those sets could be requested during analysis.
