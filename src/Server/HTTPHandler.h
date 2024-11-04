@@ -12,6 +12,7 @@
 #include <IO/CascadeWriteBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Common/re2.h>
+#include <Access/Credentials.h>
 
 #include "HTTPResponseHeaderWriter.h"
 
@@ -26,17 +27,28 @@ namespace DB
 {
 
 class Session;
-class Credentials;
 class IServer;
 struct Settings;
 class WriteBufferFromHTTPServerResponse;
 
 using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;
 
+struct HTTPHandlerConnectionConfig
+{
+    std::optional<BasicCredentials> credentials;
+
+    /// TODO:
+    /// String quota;
+    /// String default_database;
+
+    HTTPHandlerConnectionConfig() = default;
+    HTTPHandlerConnectionConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
+};
+
 class HTTPHandler : public HTTPRequestHandler
 {
 public:
-    HTTPHandler(IServer & server_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_);
+    HTTPHandler(IServer & server_, const HTTPHandlerConnectionConfig & connection_config_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_);
     ~HTTPHandler() override;
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
@@ -146,16 +158,7 @@ private:
     // The request_credential instance may outlive a single request/response loop.
     // This happens only when the authentication mechanism requires more than a single request/response exchange (e.g., SPNEGO).
     std::unique_ptr<Credentials> request_credentials;
-
-    // Returns true when the user successfully authenticated,
-    //  the session instance will be configured accordingly, and the request_credentials instance will be dropped.
-    // Returns false when the user is not authenticated yet, and the 'Negotiate' response is sent,
-    //  the session and request_credentials instances are preserved.
-    // Throws an exception if authentication failed.
-    bool authenticateUser(
-        HTTPServerRequest & request,
-        HTMLForm & params,
-        HTTPServerResponse & response);
+    HTTPHandlerConnectionConfig connection_config;
 
     /// Also initializes 'used_output'.
     void processQuery(
@@ -174,6 +177,13 @@ private:
         Output & used_output);
 
     static void pushDelayedResults(Output & used_output);
+
+protected:
+    // @see authenticateUserByHTTP()
+    virtual bool authenticateUser(
+        HTTPServerRequest & request,
+        HTMLForm & params,
+        HTTPServerResponse & response);
 };
 
 class DynamicQueryHandler : public HTTPHandler
@@ -184,6 +194,7 @@ private:
 public:
     explicit DynamicQueryHandler(
         IServer & server_,
+        const HTTPHandlerConnectionConfig & connection_config,
         const std::string & param_name_ = "query",
         const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt);
 
@@ -203,6 +214,7 @@ private:
 public:
     PredefinedQueryHandler(
         IServer & server_,
+        const HTTPHandlerConnectionConfig & connection_config,
         const NameSet & receive_params_,
         const std::string & predefined_query_,
         const CompiledRegexPtr & url_regex_,

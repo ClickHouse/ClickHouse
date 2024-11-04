@@ -1,9 +1,12 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-shared-merge-tree
+-- no-shared-merge-tree: depend on custom storage policy
 
 SET send_logs_level = 'fatal';
 
 drop table if exists rmt;
 drop table if exists rmt2;
+
+set apply_mutations_on_fly = 0;
 
 -- Disable compact parts, because we need hardlinks in mutations.
 create table rmt (n int, m int, k int) engine=ReplicatedMergeTree('/test/02432/{database}', '1') order by tuple()
