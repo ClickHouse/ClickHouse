@@ -67,9 +67,6 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, 
 QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_node);
 
 /** Build table expressions stack that consists from table, table function, query, union, join, array join from join tree.
-  * Parameters:
-  * query_node - query node that contains join tree.
-  * nearest_query - if not nullptr, then nearest query node will be stored in this variable.
   *
   * Example: SELECT * FROM t1 INNER JOIN t2 INNER JOIN t3.
   * Result table expressions stack:
@@ -78,11 +75,8 @@ QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_n
   * 3. t1 INNER JOIN t2
   * 4. t2
   * 5. t1
-  *
-  * Nearest query is the query itself in this case.
   */
-QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & query_node, QueryTreeNodes * nearest_query = nullptr);
-
+QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_node);
 
 /** Assert that there are no function nodes with specified function name in node children.
   * Do not visit subqueries.

@@ -552,40 +552,35 @@ QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_n
 namespace
 {
 
-void buildTableExpressionsStackImpl(const QueryTreeNodePtr & join_tree_node, QueryTreeNodePtr nearest_query_node, QueryTreeNodes & result, QueryTreeNodes & nearest_query)
+void buildTableExpressionsStackImpl(const QueryTreeNodePtr & join_tree_node, QueryTreeNodes & result)
 {
     auto node_type = join_tree_node->getNodeType();
+
     switch (node_type)
     {
-        case QueryTreeNodeType::QUERY:
-        {
-            nearest_query_node = join_tree_node;
-            [[fallthrough]];
-        }
         case QueryTreeNodeType::TABLE:
+            [[fallthrough]];
+        case QueryTreeNodeType::QUERY:
             [[fallthrough]];
         case QueryTreeNodeType::UNION:
             [[fallthrough]];
         case QueryTreeNodeType::TABLE_FUNCTION:
         {
-            nearest_query.push_back(nearest_query_node);
             result.push_back(join_tree_node);
             break;
         }
         case QueryTreeNodeType::ARRAY_JOIN:
         {
             auto & array_join_node = join_tree_node->as<ArrayJoinNode &>();
-            buildTableExpressionsStackImpl(array_join_node.getTableExpression(), nearest_query_node, result, nearest_query);
-            nearest_query.push_back(nearest_query_node);
+            buildTableExpressionsStackImpl(array_join_node.getTableExpression(), result);
             result.push_back(join_tree_node);
             break;
         }
         case QueryTreeNodeType::JOIN:
         {
             auto & join_node = join_tree_node->as<JoinNode &>();
-            buildTableExpressionsStackImpl(join_node.getLeftTableExpression(), nearest_query_node, result, nearest_query);
-            buildTableExpressionsStackImpl(join_node.getRightTableExpression(), nearest_query_node, result, nearest_query);
-            nearest_query.push_back(nearest_query_node);
+            buildTableExpressionsStackImpl(join_node.getLeftTableExpression(), result);
+            buildTableExpressionsStackImpl(join_node.getRightTableExpression(), result);
             result.push_back(join_tree_node);
             break;
         }
@@ -600,15 +595,10 @@ void buildTableExpressionsStackImpl(const QueryTreeNodePtr & join_tree_node, Que
 
 }
 
-QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & query_node, QueryTreeNodes * nearest_query)
+QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_node)
 {
     QueryTreeNodes result;
-
-    QueryTreeNodes nearest_query_tmp;
-    if (nearest_query == nullptr)
-        nearest_query = &nearest_query_tmp;
-
-    buildTableExpressionsStackImpl(query_node->as<QueryNode>()->getJoinTree(), query_node, result, *nearest_query);
+    buildTableExpressionsStackImpl(join_tree_node, result);
 
     return result;
 }

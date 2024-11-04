@@ -1245,7 +1245,6 @@ void joinCastPlanColumnsToNullable(QueryPlan & plan_to_add_cast, PlannerContextP
 }
 
 JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_expression,
-    const QueryTreeNodePtr & nearest_query_node,
     JoinTreeQueryPlan left_join_tree_query_plan,
     JoinTreeQueryPlan right_join_tree_query_plan,
     const ColumnIdentifierSet & outer_scope_columns,
@@ -1283,11 +1282,9 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
     if (!join_constant && join_node.isOnJoinExpression())
     {
-        UNUSED(nearest_query_node);
         join_clauses_and_actions = buildJoinClausesAndActions(left_plan_output_columns,
             right_plan_output_columns,
             join_table_expression,
-            // nearest_query_node,
             planner_context);
 
         const auto & left_pre_filters = join_clauses_and_actions.join_clauses[0].getLeftFilterConditionNodes();
@@ -1871,8 +1868,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     const ColumnIdentifierSet & outer_scope_columns,
     PlannerContextPtr & planner_context)
 {
-    QueryTreeNodes table_expressions_stack_queries;
-    auto table_expressions_stack = buildTableExpressionsStack(query_node, &table_expressions_stack_queries);
+    auto table_expressions_stack = buildTableExpressionsStack(query_node->as<QueryNode &>().getJoinTree());
     size_t table_expressions_stack_size = table_expressions_stack.size();
     bool is_single_table_expression = table_expressions_stack_size == 1;
 
@@ -1933,7 +1929,6 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     for (size_t i = 0; i < table_expressions_stack_size; ++i)
     {
         const auto & table_expression = table_expressions_stack[i];
-        const auto & nearest_query = table_expressions_stack_queries[i];
         auto table_expression_node_type = table_expression->getNodeType();
 
         if (table_expression_node_type == QueryTreeNodeType::ARRAY_JOIN)
@@ -1963,7 +1958,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             query_plans_stack.pop_back();
 
             query_plans_stack.push_back(buildQueryPlanForJoinNode(
-                table_expression, nearest_query,
+                table_expression,
                 std::move(left_query_plan), std::move(right_query_plan),
                 table_expressions_outer_scope_columns[i], planner_context));
         }
