@@ -1310,7 +1310,7 @@ RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
 void InterpreterSystemQuery::prewarmMarkCache()
 {
     if (table_id.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table is not specified for prewarming marks cache");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table is not specified for PREWARM MARK CACHE command");
 
     getContext()->checkAccess(AccessType::SYSTEM_PREWARM_MARK_CACHE, table_id);
 
