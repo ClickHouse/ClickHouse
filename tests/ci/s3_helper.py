@@ -328,9 +328,7 @@ class S3Helper:
         only_dirs: bool = False,
     ) -> List[str]:
         paginator = self.client.get_paginator("list_objects_v2")
-        pages = paginator.paginate(
-            Bucket=bucket, Prefix=s3_prefix_path, Delimiter="/"
-        )
+        pages = paginator.paginate(Bucket=bucket, Prefix=s3_prefix_path, Delimiter="/")
         result = []
         for page in pages:
             if not only_dirs and "Contents" in page:
