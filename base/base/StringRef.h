@@ -86,7 +86,7 @@ using StringRefs = std::vector<StringRef>;
   * For more information, see hash_map_string_2.cpp
   */
 
-inline bool compare8(const char * p1, const char * p2)
+inline bool compare16(const char * p1, const char * p2)
 {
     return 0xFFFF == _mm_movemask_epi8(_mm_cmpeq_epi8(
         _mm_loadu_si128(reinterpret_cast<const __m128i *>(p1)),
@@ -115,7 +115,7 @@ inline bool compare64(const char * p1, const char * p2)
 
 #elif defined(__aarch64__) && defined(__ARM_NEON)
 
-inline bool compare8(const char * p1, const char * p2)
+inline bool compare16(const char * p1, const char * p2)
 {
     uint64_t mask = getNibbleMask(vceqq_u8(
             vld1q_u8(reinterpret_cast<const unsigned char *>(p1)), vld1q_u8(reinterpret_cast<const unsigned char *>(p2))));
@@ -185,13 +185,22 @@ inline bool memequalWide(const char * p1, const char * p2, size_t size)
 
     switch (size / 16) // NOLINT(bugprone-switch-missing-default-case)
     {
-        case 3: if (!compare8(p1 + 32, p2 + 32)) return false; [[fallthrough]];
-        case 2: if (!compare8(p1 + 16, p2 + 16)) return false; [[fallthrough]];
-        case 1: if (!compare8(p1, p2)) return false; [[fallthrough]];
+        case 3:
+            if (!compare16(p1 + 32, p2 + 32))
+                return false;
+            [[fallthrough]];
+        case 2:
+            if (!compare16(p1 + 16, p2 + 16))
+                return false;
+            [[fallthrough]];
+        case 1:
+            if (!compare16(p1, p2))
+                return false;
+            [[fallthrough]];
         default: ;
     }
 
-    return compare8(p1 + size - 16, p2 + size - 16);
+    return compare16(p1 + size - 16, p2 + size - 16);
 }
 
 #endif
