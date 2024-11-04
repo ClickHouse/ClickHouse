@@ -5,26 +5,44 @@
 
 namespace DB
 {
-class Exception;
 struct BackupFileInfo;
 using BackupFileInfos = std::vector<BackupFileInfo>;
 enum class AccessEntityType : uint8_t;
 enum class UserDefinedSQLObjectType : uint8_t;
+struct ZooKeeperRetriesInfo;
 
 /// Replicas use this class to coordinate what they're writing to a backup while executing BACKUP ON CLUSTER.
-/// There are two implementation of this interface: BackupCoordinationLocal and BackupCoordinationRemote.
+/// There are two implementation of this interface: BackupCoordinationLocal and BackupCoordinationOnCluster.
 /// BackupCoordinationLocal is used while executing BACKUP without ON CLUSTER and performs coordination in memory.
-/// BackupCoordinationRemote is used while executing BACKUP with ON CLUSTER and performs coordination via ZooKeeper.
+/// BackupCoordinationOnCluster is used while executing BACKUP with ON CLUSTER and performs coordination via ZooKeeper.
 class IBackupCoordination
 {
 public:
     virtual ~IBackupCoordination() = default;
 
     /// Sets the current stage and waits for other hosts to come to this stage too.
-    virtual void setStage(const String & new_stage, const String & message) = 0;
-    virtual void setError(const Exception & exception) = 0;
-    virtual Strings waitForStage(const String & stage_to_wait) = 0;
-    virtual Strings waitForStage(const String & stage_to_wait, std::chrono::milliseconds timeout) = 0;
+    virtual Strings setStage(const String & new_stage, const String & message, bool sync) = 0;
+
+    /// Sets that the backup query was sent to other hosts.
+    /// Function waitForOtherHostsToFinish() will check that to find out if it should really wait or not.
+    virtual void setBackupQueryWasSentToOtherHosts() = 0;
+
+    /// Lets other hosts know that the current host has encountered an error.
+    virtual bool trySetError(std::exception_ptr exception) = 0;
+
+    /// Lets other hosts know that the current host has finished its work.
+    virtual void finish() = 0;
+
+    /// Lets other hosts know that the current host has finished its work (as a part of error-handling process).
+    virtual bool tryFinishAfterError() noexcept = 0;
+
+    /// Waits until all the other hosts finish their work.
+    /// Stops waiting and throws an exception if another host encounters an error or if some host gets cancelled.
+    virtual void waitForOtherHostsToFinish() = 0;
+
+    /// Waits until all the other hosts finish their work (as a part of error-handling process).
+    /// Doesn't stops waiting if some host encounters an error or gets cancelled.
+    virtual bool tryWaitForOtherHostsToFinishAfterError() noexcept = 0;
 
     struct PartNameAndChecksum
     {
@@ -87,9 +105,7 @@ public:
     /// Starts writing a specified file, the function returns false if that file is already being written concurrently.
     virtual bool startWritingFile(size_t data_file_index) = 0;
 
-    /// This function is used to check if concurrent backups are running
-    /// other than the backup passed to the function
-    virtual bool hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const = 0;
+    virtual ZooKeeperRetriesInfo getOnClusterInitializationKeeperRetriesInfo() const = 0;
 };
 
 }
