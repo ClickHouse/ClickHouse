@@ -322,17 +322,23 @@ class S3Helper:
         return result
 
     def list_prefix_non_recursive(
-        self, s3_prefix_path: str, bucket: str = S3_BUILDS_BUCKET
+        self,
+        s3_prefix_path: str,
+        bucket: str = S3_BUILDS_BUCKET,
+        only_dirs: bool = False,
     ) -> List[str]:
         paginator = self.client.get_paginator("list_objects_v2")
-        pages = paginator.paginate(Bucket=bucket, Prefix=s3_prefix_path)
+        pages = paginator.paginate(
+            Bucket=bucket, Prefix=s3_prefix_path, Delimiter="/"
+        )
         result = []
         for page in pages:
-            if "Contents" in page:
+            if not only_dirs and "Contents" in page:
                 for obj in page["Contents"]:
-                    if "/" not in obj["Key"][len(s3_prefix_path) + 1 :]:
-                        result.append(obj["Key"])
-
+                    result.append(obj["Key"])
+            if "CommonPrefixes" in page:
+                for obj in page["CommonPrefixes"]:
+                    result.append(obj["Prefix"])
         return result
 
     def url_if_exists(self, key: str, bucket: str = S3_BUILDS_BUCKET) -> str:
