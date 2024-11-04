@@ -296,7 +296,9 @@ def test_insert_quorum_with_move_partition(started_cluster, add_new_data):
 
 
 def test_insert_quorum_with_ttl(started_cluster):
-    zero.query("DROP TABLE IF EXISTS test_insert_quorum_with_ttl ON CLUSTER cluster SYNC")
+    zero.query(
+        "DROP TABLE IF EXISTS test_insert_quorum_with_ttl ON CLUSTER cluster SYNC"
+    )
 
     create_query = (
         "CREATE TABLE test_insert_quorum_with_ttl "
@@ -363,7 +365,9 @@ def test_insert_quorum_with_ttl(started_cluster):
         )
     )
 
-    zero.query("DROP TABLE IF EXISTS test_insert_quorum_with_ttl ON CLUSTER cluster SYNC")
+    zero.query(
+        "DROP TABLE IF EXISTS test_insert_quorum_with_ttl ON CLUSTER cluster SYNC"
+    )
 
 
 def test_insert_quorum_with_keeper_loss_connection(started_cluster):
