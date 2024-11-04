@@ -264,13 +264,6 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
     Poco::Net::HTTPRequest request(method_, current_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
     prepareRequest(request, range);
 
-    {
-        std::stringstream dbg;
-        for (const auto & item: request)
-            dbg << "<" << item.first << ": " << item.second << "> ";
-        LOG_DEBUG(log, "call impl method {}, uri {} {}, req: {}", request.getMethod(), current_uri.getHost(), current_uri.getPathAndQuery(), dbg.str());
-    }
-
     auto session = makeHTTPSession(connection_group, current_uri, timeouts, proxy_config);
 
     ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPRequestsSent);
