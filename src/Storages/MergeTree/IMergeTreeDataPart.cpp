@@ -544,7 +544,7 @@ SerializationPtr IMergeTreeDataPart::tryGetSerialization(const String & column_n
     return it == serializations.end() ? nullptr : it->second;
 }
 
-void IMergeTreeDataPart::removeIfNeeded()
+void IMergeTreeDataPart::removeIfNeeded() noexcept
 {
     assert(assertHasValidVersionMetadata());
     if (!is_temp && state != MergeTreeDataPartState::DeleteOnDestroy)

@@ -1,5 +1,6 @@
 #include <Common/RemoteProxyConfigurationResolver.h>
 
+#include <string_view>
 #include <utility>
 #include <IO/HTTPCommon.h>
 #include <Poco/StreamCopier.h>
@@ -25,13 +26,18 @@ std::string RemoteProxyHostFetcherImpl::fetch(const Poco::URI & endpoint, const 
     Poco::Net::HTTPResponse response;
     auto & response_body_stream = session->receiveResponse(response);
 
+    char body[4096];
+    response_body_stream.read(body, sizeof(body)-1);
+    size_t body_length = response_body_stream.gcount();
+    body[body_length] = '\0';
+
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
         throw HTTPException(
             ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
             endpoint.toString(),
             response.getStatus(),
             response.getReason(),
-            /* body_length = */ 0);
+            std::string_view(body, body_length));
 
     std::string proxy_host;
     Poco::StreamCopier::copyToString(response_body_stream, proxy_host);
