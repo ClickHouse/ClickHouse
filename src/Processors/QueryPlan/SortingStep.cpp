@@ -27,6 +27,7 @@ namespace Setting
 {
     extern const SettingsUInt64 max_block_size;
     extern const SettingsUInt64 max_bytes_before_external_sort;
+    extern const SettingsDouble max_bytes_ratio_before_external_sort;
     extern const SettingsUInt64 max_bytes_before_remerge_sort;
     extern const SettingsUInt64 max_bytes_to_sort;
     extern const SettingsUInt64 max_rows_to_sort;
@@ -50,6 +51,7 @@ SortingStep::Settings::Settings(const Context & context)
     max_bytes_before_remerge = settings[Setting::max_bytes_before_remerge_sort];
     remerge_lowered_memory_bytes_ratio = settings[Setting::remerge_sort_lowered_memory_bytes_ratio];
     max_bytes_before_external_sort = settings[Setting::max_bytes_before_external_sort];
+    max_bytes_ratio_before_external_sort = settings[Setting::max_bytes_ratio_before_external_sort];
     tmp_data = context.getTempDataOnDisk();
     min_free_disk_space = settings[Setting::min_free_disk_space_for_temporary_data];
     max_block_bytes = settings[Setting::prefer_external_sort_block_bytes];
@@ -85,7 +87,7 @@ SortingStep::SortingStep(
     , limit(limit_)
     , sort_settings(settings_)
 {
-    if (sort_settings.max_bytes_before_external_sort && sort_settings.tmp_data == nullptr)
+    if ((sort_settings.max_bytes_before_external_sort || sort_settings.max_bytes_ratio_before_external_sort > 0.) && sort_settings.tmp_data == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage for external sorting is not provided");
 }
 
@@ -296,6 +298,7 @@ void SortingStep::mergeSorting(
                 sort_settings.max_bytes_before_remerge / pipeline.getNumStreams(),
                 sort_settings.remerge_lowered_memory_bytes_ratio,
                 sort_settings.max_bytes_before_external_sort,
+                sort_settings.max_bytes_ratio_before_external_sort,
                 std::move(tmp_data_on_disk),
                 sort_settings.min_free_disk_space);
         });

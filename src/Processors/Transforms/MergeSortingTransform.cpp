@@ -24,6 +24,21 @@ namespace ProfileEvents
 }
 
 
+namespace
+{
+
+std::pair<Int64, Int64> getCurrentQueryMemoryUsageAndLimit()
+{
+    /// Use query-level memory tracker
+    if (auto * memory_tracker_child = DB::CurrentThread::getMemoryTracker())
+        if (auto * memory_tracker = memory_tracker_child->getParent())
+            return std::make_pair(memory_tracker->get(), memory_tracker->getHardLimit());
+    return std::make_pair(0, 0);
+}
+
+}
+
+
 namespace DB
 {
 
@@ -94,6 +109,7 @@ MergeSortingTransform::MergeSortingTransform(
     size_t max_bytes_before_remerge_,
     double remerge_lowered_memory_bytes_ratio_,
     size_t max_bytes_before_external_sort_,
+    double max_bytes_ratio_before_external_sort_,
     TemporaryDataOnDiskScopePtr tmp_data_,
     size_t min_free_disk_space_)
     : SortingTransform(header, description_, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
@@ -103,6 +119,7 @@ MergeSortingTransform::MergeSortingTransform(
     , tmp_data(std::move(tmp_data_))
     , min_free_disk_space(min_free_disk_space_)
     , max_block_bytes(max_block_bytes_)
+    , max_bytes_ratio_before_external_sort(max_bytes_ratio_before_external_sort_)
 {
 }
 
@@ -174,7 +191,20 @@ void MergeSortingTransform::consume(Chunk chunk)
       *  will merge blocks that we have in memory at this moment and write merged stream to temporary (compressed) file.
       * NOTE. It's possible to check free space in filesystem.
       */
-    if (max_bytes_before_external_sort && sum_bytes_in_blocks > max_bytes_before_external_sort)
+    bool external_sort = max_bytes_before_external_sort && sum_bytes_in_blocks > max_bytes_before_external_sort;
+    if (!external_sort && max_bytes_ratio_before_external_sort > 0.)
+    {
+        auto [current_memory_usage, memory_limit] = getCurrentQueryMemoryUsageAndLimit();
+        if (current_memory_usage > memory_limit * max_bytes_ratio_before_external_sort)
+        {
+            external_sort = true;
+            LOG_TEST(log, "Use external sort due to max_bytes_ratio_before_external_sort reached. Current memory usage is {} (> {}*{})",
+                formatReadableSizeWithBinarySuffix(current_memory_usage),
+                formatReadableSizeWithBinarySuffix(memory_limit),
+                max_bytes_ratio_before_external_sort);
+        }
+    }
+    if (external_sort)
     {
         if (!tmp_data)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryDataOnDisk is not set for MergeSortingTransform");

@@ -144,6 +144,16 @@ Default value: 0.
 
 Cloud default value: half the memory amount per replica.
 
+## max_bytes_ratio_before_external_sort {#settings-max_bytes_ratio_before_external_sort}
+
+The ratio of used memory before enabling `ORDER BY` in external memory determines
+when this feature activates based on memory consumption.
+
+For example, if set to `0.6`, ORDER BY in external memory will be used once
+memory usage reaches `60%` of used memory for the query.
+
+Default value: `0.0`.
+
 ## max_rows_to_sort {#max-rows-to-sort}
 
 A maximum number of rows before sorting. This allows you to limit memory consumption when sorting.
