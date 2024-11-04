@@ -102,7 +102,7 @@ StorageObjectStorage::StorageObjectStorage(
         }
         else
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(log);
         }
     }
 
