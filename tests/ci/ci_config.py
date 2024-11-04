@@ -97,6 +97,15 @@ class CI:
             ),
             runner_type=Runners.BUILDER_ARM,
         ),
+        BuildNames.PACKAGE_ARM_ASAN: CommonJobConfigs.BUILD.with_properties(
+            build_config=BuildConfig(
+                name=BuildNames.PACKAGE_ARM_ASAN,
+                compiler="clang-18-aarch64",
+                sanitizer="address",
+                package_type="deb",
+            ),
+            runner_type=Runners.BUILDER_ARM,
+        ),
         BuildNames.PACKAGE_ASAN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.PACKAGE_ASAN,
@@ -274,6 +283,10 @@ class CI:
         JobNames.STATEFUL_TEST_ASAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN]
         ),
+        JobNames.STATEFUL_TEST_ARM_ASAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_ARM_ASAN],
+            runner_type=Runners.FUNC_TESTER_ARM,
+        ),
         JobNames.STATEFUL_TEST_TSAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN]
         ),
@@ -321,6 +334,11 @@ class CI:
         ),
         JobNames.STATELESS_TEST_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN], num_batches=2
+        ),
+        JobNames.STATELESS_TEST_ARM_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_ARM_ASAN],
+            num_batches=2,
+            runner_type=Runners.FUNC_TESTER_ARM,
         ),
         JobNames.STATELESS_TEST_TSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN], num_batches=4

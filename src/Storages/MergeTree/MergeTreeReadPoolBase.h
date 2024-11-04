@@ -56,6 +56,7 @@ public:
         const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
         const PoolSettings & settings_,
+        const MergeTreeReadTask::BlockSizeParams & params_,
         const ContextPtr & context_);
 
     Block getHeader() const override { return header; }
@@ -73,6 +74,7 @@ protected:
     const MergeTreeReaderSettings reader_settings;
     const Names column_names;
     const PoolSettings pool_settings;
+    const MergeTreeReadTask::BlockSizeParams block_size_params;
     const MarkCachePtr owned_mark_cache;
     const UncompressedCachePtr owned_uncompressed_cache;
     const Block header;
@@ -81,6 +83,8 @@ protected:
 
     void fillPerPartInfos(const RangesInDataParts & parts_ranges);
     static std::vector<size_t> getPerPartSumMarks(const RangesInDataParts & parts_ranges);
+
+    MergeTreeReadTaskPtr createTask(MergeTreeReadTaskInfoPtr read_info, MergeTreeReadTask::Readers task_readers, MarkRanges ranges) const;
 
     MergeTreeReadTaskPtr createTask(
         MergeTreeReadTaskInfoPtr read_info,

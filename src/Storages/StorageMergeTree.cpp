@@ -38,6 +38,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
+#include <IO/SharedThreadPools.h>
 
 
 namespace DB
@@ -154,6 +155,7 @@ StorageMergeTree::StorageMergeTree(
 
     loadMutations();
     loadDeduplicationLog();
+    prewarmMarkCache(getActivePartsLoadingThreadPool().get());
 }
 
 

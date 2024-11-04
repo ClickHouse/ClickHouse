@@ -2,7 +2,8 @@
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include "Processors/QueryPlan/ReadFromMergeTree.h"
+#include <Core/Joins.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 namespace DB
 {
@@ -25,7 +26,9 @@ public:
         JoinPtr join_,
         size_t max_block_size_,
         size_t max_streams_,
-        bool keep_left_read_in_order_);
+        NameSet required_output_,
+        bool keep_left_read_in_order_,
+        bool use_new_analyzer_);
 
     String getName() const override { return "Join"; }
 
@@ -37,7 +40,7 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     const JoinPtr & getJoin() const { return join; }
-    void setJoin(JoinPtr join_) { join = std::move(join_); }
+    void setJoin(JoinPtr join_, bool swap_streams_ = false);
     bool allowPushDownToRight() const;
 
     void setDynamicParts(
@@ -47,13 +50,23 @@ public:
         ContextPtr context_,
         StorageMetadataPtr metdata_);
 
+    JoinInnerTableSelectionMode inner_table_selection_mode = JoinInnerTableSelectionMode::Right;
+
 private:
     void updateOutputHeader() override;
+
+    /// Header that expected to be returned from IJoin
+    Block join_algorithm_header;
 
     JoinPtr join;
     size_t max_block_size;
     size_t max_streams;
+
+    const NameSet required_output;
+    std::set<size_t> columns_to_remove;
     bool keep_left_read_in_order;
+    bool use_new_analyzer = false;
+    bool swap_streams = false;
 
     DynamiclyFilteredPartsRangesPtr dynamic_parts;
     ActionsDAG dynamic_filter;

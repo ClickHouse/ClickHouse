@@ -877,7 +877,8 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 auto entry_buf = entry->get_buf_ptr();
 
                 IKeeperStateMachine::ZooKeeperLogSerializationVersion serialization_version;
-                auto request_for_session = state_machine->parseRequest(*entry_buf, /*final=*/false, &serialization_version);
+                size_t request_end_position = 0;
+                auto request_for_session = state_machine->parseRequest(*entry_buf, /*final=*/false, &serialization_version, &request_end_position);
                 request_for_session->zxid = next_zxid;
                 if (!state_machine->preprocess(*request_for_session))
                     return nuraft::cb_func::ReturnCode::ReturnNull;
@@ -892,9 +893,6 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_ZXID_DIGEST)
                     bytes_missing += sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version) + sizeof(request_for_session->digest->value);
 
-                if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_XID_64)
-                    bytes_missing += sizeof(uint32_t);
-
                 if (bytes_missing != 0)
                 {
                     auto new_buffer = nuraft::buffer::alloc(entry_buf->size() + bytes_missing);
@@ -904,12 +902,14 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 }
 
                 size_t write_buffer_header_size = sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version)
-                    + sizeof(request_for_session->digest->value) + sizeof(uint32_t);
+                    + sizeof(request_for_session->digest->value);
 
                 if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
                     write_buffer_header_size += sizeof(request_for_session->time);
+                else
+                    request_end_position += sizeof(request_for_session->time);
 
-                auto * buffer_start = reinterpret_cast<BufferBase::Position>(entry_buf->data_begin() + entry_buf->size() - write_buffer_header_size);
+                auto * buffer_start = reinterpret_cast<BufferBase::Position>(entry_buf->data_begin() + request_end_position);
 
                 WriteBufferFromPointer write_buf(buffer_start, write_buffer_header_size);
 

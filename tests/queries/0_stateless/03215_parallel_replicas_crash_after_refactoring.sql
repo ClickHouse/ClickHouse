@@ -29,6 +29,6 @@ INSERT INTO 03215_parallel_replicas SELECT
 FROM numbers(2000, 1000);
 
 SET parallel_distributed_insert_select = 2, prefer_localhost_replica = false, enable_parallel_replicas = 1, max_parallel_replicas = 65535, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_single_task_marks_count_multiplier = -0., parallel_replicas_for_non_replicated_merge_tree = true;
-SELECT max(k) IGNORE NULLS FROM 03215_parallel_replicas WITH TOTALS SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 65535, prefer_localhost_replica = 0, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_single_task_marks_count_multiplier = -0; -- { serverError 36 }
+SELECT max(k) IGNORE NULLS FROM 03215_parallel_replicas WITH TOTALS SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 65535, prefer_localhost_replica = 0, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_single_task_marks_count_multiplier = -0;
 
 DROP TABLE IF EXISTS 03215_parallel_replicas;
