@@ -72,7 +72,7 @@ private:
     ActionsDAG dynamic_filter;
     ColumnSet * column_set;
     ContextPtr context;
-    StorageMetadataPtr metdata;
+    StorageMetadataPtr metadata;
 };
 
 /// Special step for the case when Join is already filled.

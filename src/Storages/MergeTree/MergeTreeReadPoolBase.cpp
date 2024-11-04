@@ -46,6 +46,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , header(storage_snapshot->getSampleBlockForColumns(column_names))
     , merge_tree_determine_task_size_by_prewhere_columns(context_->getSettingsRef()[Setting::merge_tree_determine_task_size_by_prewhere_columns])
     , merge_tree_min_bytes_per_task_for_remote_reading(context_->getSettingsRef()[Setting::merge_tree_min_bytes_per_task_for_remote_reading])
+    , merge_tree_min_read_task_size(context_->getSettingsRef()[Setting::merge_tree_min_read_task_size])
     , profile_callback([this](ReadBufferFromFileBase::ProfileInfo info_) { profileFeedback(info_); })
 {
     //fillPerPartInfos(context_->getSettingsRef());
@@ -78,10 +79,11 @@ calculateMinMarksPerTask(
     const std::vector<NamesAndTypesList> & prewhere_steps_columns,
     const MergeTreeReadPoolBase::PoolSettings & pool_settings,
     bool merge_tree_determine_task_size_by_prewhere_columns,
+    UInt64 merge_tree_min_read_task_size,
     UInt64 merge_tree_min_bytes_per_task_for_remote_reading)
 {
     size_t min_marks_per_task
-        = std::max<size_t>(settings[Setting::merge_tree_min_read_task_size], pool_settings.min_marks_for_concurrent_read);
+        = std::max<size_t>(merge_tree_min_read_task_size, pool_settings.min_marks_for_concurrent_read);
     size_t avg_mark_bytes = 0;
     /// It is important to obtain marks count from the part itself instead of calling `part.getMarksCount()`,
     /// because `part` will report number of marks selected from this part by the query.
@@ -99,7 +101,7 @@ calculateMinMarksPerTask(
             const size_t part_compressed_bytes = getSizeOfColumns(*part.data_part, columns);
 
             avg_mark_bytes = std::max<size_t>(part_compressed_bytes / part_marks_count, 1);
-            const auto min_bytes_per_task = settings[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
+            const auto min_bytes_per_task = merge_tree_min_bytes_per_task_for_remote_reading;
             /// We're taking min here because number of tasks shouldn't be too low - it will make task stealing impossible.
             /// We also create at least two tasks per thread to have something to steal from a slow thread.
             const auto heuristic_min_marks
@@ -189,7 +191,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const RangesInDataParts & parts_ran
 
         is_part_on_remote_disk.push_back(part_with_ranges.data_part->isStoredOnRemoteDisk());
         std::tie(read_task_info.min_marks_per_task, read_task_info.approx_size_of_mark)
-            = calculateMinMarksPerTask(part_with_ranges, column_names, read_task_info.task_columns.pre_columns, pool_settings, merge_tree_determine_task_size_by_prewhere_columns, merge_tree_min_bytes_per_task_for_remote_reading);
+            = calculateMinMarksPerTask(part_with_ranges, column_names, read_task_info.task_columns.pre_columns, pool_settings, merge_tree_determine_task_size_by_prewhere_columns, merge_tree_min_bytes_per_task_for_remote_reading, merge_tree_min_read_task_size);
         per_part_infos.push_back(std::make_shared<MergeTreeReadTaskInfo>(std::move(read_task_info)));
     }
 }

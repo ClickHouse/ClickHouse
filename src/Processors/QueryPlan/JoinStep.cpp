@@ -97,13 +97,13 @@ void JoinStep::setDynamicParts(
     ActionsDAG dynamic_filter_,
     ColumnSet * column_set_,
     ContextPtr context_,
-    StorageMetadataPtr metdata_)
+    StorageMetadataPtr metadata_)
 {
     dynamic_parts = std::move(dynamic_parts_);
     dynamic_filter = std::move(dynamic_filter_);
     column_set = column_set_;
     context = std::move(context_);
-    metdata = std::move(metdata_);
+    metadata = std::move(metadata_);
 }
 
 QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
@@ -131,7 +131,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         col_set = this->column_set,
         filter = std::make_shared<ActionsDAG>(std::move(this->dynamic_filter)),
         ctx = this->context,
-        metadata_snapshot = this->metdata]()
+        metadata_snapshot = this->metadata]()
     {
         if (!parts)
             return;
@@ -226,7 +226,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         }
     };
 
-    return QueryPipelineBuilder::joinPipelinesRightLeft(
+    auto pipeline = QueryPipelineBuilder::joinPipelinesRightLeft(
         std::move(pipelines[0]),
         std::move(pipelines[1]),
         join,

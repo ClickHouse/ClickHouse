@@ -80,6 +80,7 @@ protected:
     const Block header;
     const bool merge_tree_determine_task_size_by_prewhere_columns;
     const UInt64 merge_tree_min_bytes_per_task_for_remote_reading;
+    const UInt64 merge_tree_min_read_task_size;
 
     void fillPerPartInfos(const RangesInDataParts & parts_ranges);
     static std::vector<size_t> getPerPartSumMarks(const RangesInDataParts & parts_ranges);
