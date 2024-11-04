@@ -509,7 +509,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
 
     loadDataParts(skip_sanity_checks, expected_parts_on_this_replica);
-    prewarmMarkCache(getActivePartsLoadingThreadPool().get());
+    prewarmMarkCacheIfNeeded(getActivePartsLoadingThreadPool().get());
 
     if (LoadingStrictnessLevel::ATTACH <= mode)
     {
