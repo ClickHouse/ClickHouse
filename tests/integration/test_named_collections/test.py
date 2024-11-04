@@ -803,7 +803,7 @@ def test_keeper_storage_remove_on_cluster(cluster, ignore, expected_raise):
 def test_name_escaping(cluster, instance_name):
     node = cluster.instances[instance_name]
 
-    node.query("DROP NAMED COLLECTION IF EXISTS test;")
+    node.query("DROP NAMED COLLECTION IF EXISTS `test_!strange/symbols!`;")
     node.query("CREATE NAMED COLLECTION `test_!strange/symbols!` AS key1=1, key2=2")
     node.restart_clickhouse()
 
