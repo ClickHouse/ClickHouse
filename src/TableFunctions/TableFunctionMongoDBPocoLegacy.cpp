@@ -98,9 +98,9 @@ void TableFunctionMongoDBPocoLegacy::parseArguments(const ASTPtr & ast_function,
         if (const auto * ast_func = typeid_cast<const ASTFunction *>(args[i].get()))
         {
             const auto * args_expr = assert_cast<const ASTExpressionList *>(ast_func->arguments.get());
-            auto function_args = args_expr->children;
-            if (function_args.size() != 2)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
+            const auto & function_args = args_expr->children;
+            if (function_args.size() != 2 || ast_func->name != "equals" || function_args[0]->as<ASTIdentifier>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument, got {}", ast_func->formatForErrorMessage());
 
             auto arg_name = function_args[0]->as<ASTIdentifier>()->name();
 
@@ -108,6 +108,8 @@ void TableFunctionMongoDBPocoLegacy::parseArguments(const ASTPtr & ast_function,
                 structure = checkAndGetLiteralArgument<String>(function_args[1], "structure");
             else if (arg_name == "options")
                 main_arguments.push_back(function_args[1]);
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument, got {}", ast_func->formatForErrorMessage());
         }
         else if (i == 5)
         {
