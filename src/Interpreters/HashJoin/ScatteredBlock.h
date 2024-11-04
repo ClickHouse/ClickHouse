@@ -302,8 +302,6 @@ struct ScatteredBlock : private boost::noncopyable
     /// Cut first `num_rows` rows from `block` in place and returns block with remaining rows
     ScatteredBlock cut(size_t num_rows)
     {
-        SCOPE_EXIT(filterBySelector());
-
         if (num_rows >= rows())
             return ScatteredBlock{Block{}};
 
