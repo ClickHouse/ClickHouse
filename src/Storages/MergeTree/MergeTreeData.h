@@ -508,6 +508,7 @@ public:
 
     /// Prewarm mark cache for the most recent data parts.
     void prewarmMarkCache(ThreadPool & pool);
+    void prewarmMarkCacheIfNeeded(ThreadPool & pool);
 
     String getLogName() const { return log.loadName(); }
 
