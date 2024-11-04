@@ -669,12 +669,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     auto query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
-    LOG_DEBUG(
-        getLogger(__PRETTY_FUNCTION__),
-        "pr_enabled={} table_expression:\n{}",
-        settings[Setting::allow_experimental_parallel_reading_from_replicas].toString(),
-        table_expression->dumpTree());
-
     auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
 
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::Enum::FetchColumns;

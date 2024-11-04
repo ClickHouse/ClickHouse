@@ -265,18 +265,11 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     auto stack = getSupportingParallelReplicasQuery(query_tree_node.get());
     /// Empty stack means that storage does not support parallel replicas.
     if (stack.empty())
-    {
-        // LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Not found");
         return nullptr;
-    }
 
     /// We don't have any subquery and storage can process parallel replicas by itself.
     if (stack.top() == query_tree_node.get())
-    {
-        // LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Query itself:\n{}", query_tree_node->dumpTree());
         return nullptr;
-        // return query_node;
-    }
 
     /// This is needed to avoid infinite recursion.
     auto mutable_context = Context::createCopy(context);
@@ -310,17 +303,11 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
             new_stack.pop();
         }
     }
-    // if (!res)
-    //     LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Not found 2");
-    // else
-    //     LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Query:\n{}", query_tree_node->dumpTree());
     return res;
 }
 
 static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * query_tree_node)
 {
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "\n{}", StackTrace().toString());
-
     std::stack<const IQueryTreeNode *> join_nodes;
     while (query_tree_node || !join_nodes.empty())
     {
@@ -426,12 +413,7 @@ const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tr
     if (!context->canUseParallelReplicasOnFollower())
         return nullptr;
 
-    const auto * res = findTableForParallelReplicas(query_tree_node.get());
-    // if (res)
-    //     LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Table found {}", res->getStorageID().getFullTableName());
-    // else
-    //     LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Not table found");
-    return res;
+    return findTableForParallelReplicas(query_tree_node.get());
 }
 
 JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
@@ -439,8 +421,6 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     const PlannerContextPtr & planner_context,
     std::shared_ptr<const StorageLimitsList> storage_limits)
 {
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "\n{}", StackTrace().toString());
-
     auto processed_stage = QueryProcessingStage::WithMergeableState;
     auto context = planner_context->getQueryContext();
 
