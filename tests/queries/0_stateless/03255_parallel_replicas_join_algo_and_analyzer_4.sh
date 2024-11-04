@@ -75,23 +75,27 @@ query3="
   ORDER BY price_sold
 "
 
-for prefer_local_plan in {0..1}; do
-  for query in "${query1}" "${query2}" "${query3}"; do
-    for enable_parallel_replicas in {0..1}; do
-      ${CLICKHOUSE_CLIENT} --query="
-      set enable_analyzer=1;
-      set parallel_replicas_local_plan=${prefer_local_plan};
-      set allow_experimental_parallel_reading_from_replicas=${enable_parallel_replicas}, cluster_for_parallel_replicas='parallel_replicas', max_parallel_replicas=100, parallel_replicas_for_non_replicated_merge_tree=1;
+for parallel_replicas_prefer_local_join in 1 0; do
+  for prefer_local_plan in {0..1}; do
+    for query in "${query1}" "${query2}" "${query3}"; do
+      for enable_parallel_replicas in {0..1}; do
+        ${CLICKHOUSE_CLIENT} --query="
+        set enable_analyzer=1;
+        set parallel_replicas_prefer_local_join=${parallel_replicas_prefer_local_join};
+        set parallel_replicas_local_plan=${prefer_local_plan};
+        set allow_experimental_parallel_reading_from_replicas=${enable_parallel_replicas}, cluster_for_parallel_replicas='parallel_replicas', max_parallel_replicas=100, parallel_replicas_for_non_replicated_merge_tree=1;
 
-      ${query};
+        --SELECT '----- enable_parallel_replicas=$enable_parallel_replicas prefer_local_plan=$prefer_local_plan parallel_replicas_prefer_local_join=$parallel_replicas_prefer_local_join -----';
+        ${query};
 
-      SELECT replaceRegexpAll(explain, '.*Query: (.*) Replicas:.*', '\\1')
-      FROM
-      (
-        EXPLAIN actions=1 ${query}
-      )
-      WHERE explain LIKE '%ParallelReplicas%';
-      "
+        SELECT replaceRegexpAll(explain, '.*Query: (.*) Replicas:.*', '\\1')
+        FROM
+        (
+          EXPLAIN actions=1 ${query}
+        )
+        WHERE explain LIKE '%ParallelReplicas%';
+        "
+      done
     done
   done
 done
