@@ -171,7 +171,8 @@ private:
 
 /// Call the same func twice - for left arguments and then right arguments
 template <typename Func, typename... Args>
-void forJoinSides(Func && func, std::tuple<Args...> && left, std::tuple<Args...> && right) {
+void forJoinSides(Func && func, std::tuple<Args...> && left, std::tuple<Args...> && right)
+{
     std::apply([&](auto &&... args)
     {
         func(JoinTableSide::Left, std::forward<decltype(args)>(args)...);
