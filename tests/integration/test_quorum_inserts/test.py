@@ -46,7 +46,7 @@ def started_cluster():
 
 
 def test_simple_add_replica(started_cluster):
-    zero.query("DROP TABLE IF EXISTS test_simple ON CLUSTER cluster")
+    zero.query("DROP TABLE IF EXISTS test_simple ON CLUSTER cluster SYNC")
 
     create_query = (
         "CREATE TABLE test_simple "
@@ -82,12 +82,12 @@ def test_simple_add_replica(started_cluster):
     assert "1\t2011-01-01\n" == first.query("SELECT * from test_simple")
     assert "1\t2011-01-01\n" == second.query("SELECT * from test_simple")
 
-    zero.query("DROP TABLE IF EXISTS test_simple ON CLUSTER cluster")
+    zero.query("DROP TABLE IF EXISTS test_simple ON CLUSTER cluster SYNC")
 
 
 def test_drop_replica_and_achieve_quorum(started_cluster):
     zero.query(
-        "DROP TABLE IF EXISTS test_drop_replica_and_achieve_quorum ON CLUSTER cluster"
+        "DROP TABLE IF EXISTS test_drop_replica_and_achieve_quorum ON CLUSTER cluster SYNC"
     )
 
     create_query = (
@@ -156,7 +156,7 @@ def test_insert_quorum_with_drop_partition(started_cluster, add_new_data):
         if add_new_data
         else "test_quorum_insert_with_drop_partition"
     )
-    zero.query(f"DROP TABLE IF EXISTS {table_name} ON CLUSTER cluster")
+    zero.query(f"DROP TABLE IF EXISTS {table_name} ON CLUSTER cluster SYNC")
 
     create_query = (
         f"CREATE TABLE {table_name} ON CLUSTER cluster "
@@ -208,7 +208,7 @@ def test_insert_quorum_with_drop_partition(started_cluster, add_new_data):
         assert TSV("") == TSV(zero.query(f"SELECT * FROM {table_name}"))
         assert TSV("") == TSV(second.query(f"SELECT * FROM {table_name}"))
 
-    zero.query(f"DROP TABLE IF EXISTS {table_name} ON CLUSTER cluster")
+    zero.query(f"DROP TABLE IF EXISTS {table_name} ON CLUSTER cluster SYNC")
 
 
 @pytest.mark.parametrize(("add_new_data"), [False, True])
@@ -224,8 +224,8 @@ def test_insert_quorum_with_move_partition(started_cluster, add_new_data):
         if add_new_data
         else "test_insert_quorum_with_move_partition_destination"
     )
-    zero.query(f"DROP TABLE IF EXISTS {source_table_name} ON CLUSTER cluster")
-    zero.query(f"DROP TABLE IF EXISTS {destination_table_name} ON CLUSTER cluster")
+    zero.query(f"DROP TABLE IF EXISTS {source_table_name} ON CLUSTER cluster SYNC")
+    zero.query(f"DROP TABLE IF EXISTS {destination_table_name} ON CLUSTER cluster SYNC")
 
     create_source = (
         f"CREATE TABLE {source_table_name} ON CLUSTER cluster "
@@ -291,12 +291,12 @@ def test_insert_quorum_with_move_partition(started_cluster, add_new_data):
         assert TSV("") == TSV(zero.query(f"SELECT * FROM {source_table_name}"))
         assert TSV("") == TSV(second.query(f"SELECT * FROM {source_table_name}"))
 
-    zero.query(f"DROP TABLE IF EXISTS {source_table_name} ON CLUSTER cluster")
-    zero.query(f"DROP TABLE IF EXISTS {destination_table_name} ON CLUSTER cluster")
+    zero.query(f"DROP TABLE IF EXISTS {source_table_name} ON CLUSTER cluster SYNC")
+    zero.query(f"DROP TABLE IF EXISTS {destination_table_name} ON CLUSTER cluster SYNC")
 
 
 def test_insert_quorum_with_ttl(started_cluster):
-    zero.query("DROP TABLE IF EXISTS test_insert_quorum_with_ttl ON CLUSTER cluster")
+    zero.query("DROP TABLE IF EXISTS test_insert_quorum_with_ttl ON CLUSTER cluster SYNC")
 
     create_query = (
         "CREATE TABLE test_insert_quorum_with_ttl "
@@ -363,12 +363,12 @@ def test_insert_quorum_with_ttl(started_cluster):
         )
     )
 
-    zero.query("DROP TABLE IF EXISTS test_insert_quorum_with_ttl ON CLUSTER cluster")
+    zero.query("DROP TABLE IF EXISTS test_insert_quorum_with_ttl ON CLUSTER cluster SYNC")
 
 
 def test_insert_quorum_with_keeper_loss_connection(started_cluster):
     zero.query(
-        "DROP TABLE IF EXISTS test_insert_quorum_with_keeper_loss ON CLUSTER cluster"
+        "DROP TABLE IF EXISTS test_insert_quorum_with_keeper_loss ON CLUSTER cluster SYNC"
     )
     create_query = (
         "CREATE TABLE test_insert_quorum_with_keeper_loss"
