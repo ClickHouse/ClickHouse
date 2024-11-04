@@ -36,7 +36,7 @@ public:
 
     bool isCloneSupported() const override
     {
-        return true;
+        return !getTotals();
     }
 
     std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
