@@ -273,7 +273,7 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     /// We don't have any subquery and storage can process parallel replicas by itself.
     if (stack.top() == query_tree_node.get())
     {
-        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Query itself:\n{}", query_tree_node->dumpTree());
+        // LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Query itself:\n{}", query_tree_node->dumpTree());
         return nullptr;
         // return query_node;
     }
@@ -427,10 +427,10 @@ const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tr
         return nullptr;
 
     const auto * res = findTableForParallelReplicas(query_tree_node.get());
-    if (res)
-        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Table found {}", res->getStorageID().getFullTableName());
-    else
-        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Not table found");
+    // if (res)
+    //     LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Table found {}", res->getStorageID().getFullTableName());
+    // else
+    //     LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Not table found");
     return res;
 }
 
