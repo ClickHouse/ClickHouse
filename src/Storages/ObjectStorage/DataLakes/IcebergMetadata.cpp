@@ -515,11 +515,8 @@ DataLakeMetadataPtr IcebergMetadata::create(
     auto snapshots = object->get("snapshots").extract<Poco::JSON::Array::Ptr>();
 
     String manifest_list_file;
-            const auto path = snapshot->getValue<String>("manifest-list");
-            manifest_list_file = std::filesystem::path(configuration->getPath()) / "metadata" / std::filesystem::path(path).filename();
-            break;
-        }
-    }
+    const auto path = object->getValue<String>("manifest-list");
+    manifest_list_file = std::filesystem::path(configuration->getPath()) / "metadata" / std::filesystem::path(path).filename();
 
     Int32 format_version = object->getValue<Int32>("format-version");
 

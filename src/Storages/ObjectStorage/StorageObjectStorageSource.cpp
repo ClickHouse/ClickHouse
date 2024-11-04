@@ -1,23 +1,27 @@
 #include "StorageObjectStorageSource.h"
 #include <optional>
 #include <Core/Settings.h>
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
 #include <Formats/FormatFactory.h>
-#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Processors/Transforms/ExpressionTransform.h>
+#include "Disks/IO/CachedOnDiskReadBufferFromFile.h"
+#include "Interpreters/Cache/FileCache.h"
+#include "Interpreters/Cache/FileCacheKey.h"
 
 
 namespace fs = std::filesystem;
