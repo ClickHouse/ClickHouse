@@ -71,6 +71,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"backup_restore_keeper_max_retries_while_initializing", 0, 20, "New setting."},
             {"backup_restore_keeper_max_retries_while_handling_error", 0, 20, "New setting."},
             {"backup_restore_finish_timeout_after_error_sec", 0, 180, "New setting."},
+            {"query_plan_join_inner_table_selection", "auto", "auto", "New setting."},
         }
     },
     {"24.10",
@@ -85,7 +86,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"restore_replace_external_dictionary_source_to_null", false, false, "New setting."},
             {"show_create_query_identifier_quoting_rule", "when_necessary", "when_necessary", "New setting."},
             {"show_create_query_identifier_quoting_style", "Backticks", "Backticks", "New setting."},
-            {"query_plan_join_inner_table_selection", "auto", "auto", "New setting."},
             {"merge_tree_min_read_task_size", 8, 8, "New setting"},
             {"merge_tree_min_rows_for_concurrent_read_for_remote_filesystem", (20 * 8192), 0, "Setting is deprecated"},
             {"merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem", (24 * 10 * 1024 * 1024), 0, "Setting is deprecated"},
