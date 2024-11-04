@@ -17,7 +17,7 @@ namespace ErrorCodes
 
 bool FilterTransform::canUseType(const DataTypePtr & filter_type)
 {
-    return filter_type->onlyNull() || isUInt8(removeNullable(removeLowCardinality(filter_type)));
+    return filter_type->onlyNull() || isUInt8(removeLowCardinalityAndNullable(filter_type));
 }
 
 Block FilterTransform::transformHeader(

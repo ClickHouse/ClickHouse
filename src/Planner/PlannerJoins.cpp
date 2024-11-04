@@ -378,8 +378,8 @@ void buildJoinClause(
             {
                 throw Exception(
                     ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                    "OUTER JOIN ON expression {} contains column from left and right table, which is not supported with join_use_nulls",
-                    join_expression->formatASTForErrorMessage());
+                    "{} JOIN ON expression {} contains column from left and right table, which is not supported with `join_use_nulls`",
+                    toString(join_node.getKind()), join_expression->formatASTForErrorMessage());
             }
         }
     }
@@ -474,7 +474,7 @@ JoinClausesAndActions buildJoinClausesAndActions(
                 join_right_table_expressions,
                 join_node,
                 result.join_clauses.back());
-            has_residual_filters |= !result.join_clauses.back().getMixedFilterConditionNodes().empty();
+            has_residual_filters |= !result.join_clauses.back().getResidualFilterConditionNodes().empty();
         }
     }
     else
@@ -491,7 +491,7 @@ JoinClausesAndActions buildJoinClausesAndActions(
                 join_right_table_expressions,
                 join_node,
                 result.join_clauses.back());
-        has_residual_filters |= !result.join_clauses.back().getMixedFilterConditionNodes().empty();
+        has_residual_filters |= !result.join_clauses.back().getResidualFilterConditionNodes().empty();
     }
 
     auto and_function = FunctionFactory::instance().get("and", planner_context->getQueryContext());
@@ -618,29 +618,29 @@ JoinClausesAndActions buildJoinClausesAndActions(
         /// So, for each column, we recalculate the value of the whole expression from JOIN ON to check if rows should be joined.
         if (result.join_clauses.size() > 1)
         {
-            ActionsDAG mixed_join_expressions_actions(result_relation_columns);
+            ActionsDAG residual_join_expressions_actions(result_relation_columns);
             PlannerActionsVisitor join_expression_visitor(planner_context);
-            auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(mixed_join_expressions_actions, join_expression);
+            auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(residual_join_expressions_actions, join_expression);
             if (join_expression_dag_node_raw_pointers.size() != 1)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR, "JOIN {} ON clause contains multiple expressions", join_node.formatASTForErrorMessage());
 
-            mixed_join_expressions_actions.addOrReplaceInOutputs(*join_expression_dag_node_raw_pointers[0]);
+            residual_join_expressions_actions.addOrReplaceInOutputs(*join_expression_dag_node_raw_pointers[0]);
             Names required_names{join_expression_dag_node_raw_pointers[0]->result_name};
-            mixed_join_expressions_actions.removeUnusedActions(required_names);
-            result.mixed_join_expressions_actions = std::move(mixed_join_expressions_actions);
+            residual_join_expressions_actions.removeUnusedActions(required_names);
+            result.residual_join_expressions_actions = std::move(residual_join_expressions_actions);
         }
         else
         {
             const auto & join_clause = result.join_clauses.front();
-            const auto & mixed_filter_condition_nodes = join_clause.getMixedFilterConditionNodes();
-            auto mixed_join_expressions_actions = ActionsDAG::buildFilterActionsDAG(mixed_filter_condition_nodes, {}, true);
-            result.mixed_join_expressions_actions = std::move(mixed_join_expressions_actions);
+            const auto & residual_filter_condition_nodes = join_clause.getResidualFilterConditionNodes();
+            auto residual_join_expressions_actions = ActionsDAG::buildFilterActionsDAG(residual_filter_condition_nodes, {}, true);
+            result.residual_join_expressions_actions = std::move(residual_join_expressions_actions);
         }
-        auto outputs = result.mixed_join_expressions_actions->getOutputs();
+        auto outputs = result.residual_join_expressions_actions->getOutputs();
         if (outputs.size() != 1)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Only one output is expected, got: {}", result.mixed_join_expressions_actions->dumpDAG());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Only one output is expected, got: {}", result.residual_join_expressions_actions->dumpDAG());
         }
         auto output_type = removeNullable(outputs[0]->result_type);
         WhichDataType which_type(output_type);
@@ -648,8 +648,8 @@ JoinClausesAndActions buildJoinClausesAndActions(
         {
             DataTypePtr uint8_ty = std::make_shared<DataTypeUInt8>();
             auto true_col = ColumnWithTypeAndName(uint8_ty->createColumnConst(1, 1), uint8_ty, "true");
-            const auto * true_node = &result.mixed_join_expressions_actions->addColumn(true_col);
-            result.mixed_join_expressions_actions = ActionsDAG::buildFilterActionsDAG({outputs[0], true_node});
+            const auto * true_node = &result.residual_join_expressions_actions->addColumn(true_col);
+            result.residual_join_expressions_actions = ActionsDAG::buildFilterActionsDAG({outputs[0], true_node});
         }
     }
 

@@ -600,15 +600,15 @@ void buildTableExpressionsStackImpl(const QueryTreeNodePtr & join_tree_node, Que
 
 }
 
-QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & query_node, QueryTreeNodes * out_nearest_query)
+QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & query_node, QueryTreeNodes * nearest_query)
 {
     QueryTreeNodes result;
 
     QueryTreeNodes nearest_query_tmp;
-    if (out_nearest_query == nullptr)
-        out_nearest_query = &nearest_query_tmp;
+    if (nearest_query == nullptr)
+        nearest_query = &nearest_query_tmp;
 
-    buildTableExpressionsStackImpl(query_node->as<QueryNode>()->getJoinTree(), query_node, result, *out_nearest_query);
+    buildTableExpressionsStackImpl(query_node->as<QueryNode>()->getJoinTree(), query_node, result, *nearest_query);
 
     return result;
 }

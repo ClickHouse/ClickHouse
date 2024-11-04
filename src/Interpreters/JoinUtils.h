@@ -5,6 +5,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Core/Joins.h>
 
 namespace DB
 {
@@ -167,5 +168,19 @@ private:
 
     void setRightIndex(size_t right_pos, size_t result_position);
 };
+
+/// Call the same func twice - for left arguments and then right arguments
+template <typename Func, typename... Args>
+void forJoinSides(Func && func, std::tuple<Args...> && left, std::tuple<Args...> && right) {
+    std::apply([&](auto &&... args)
+    {
+        func(JoinTableSide::Left, std::forward<decltype(args)>(args)...);
+    }, std::forward<std::tuple<Args...>>(left));
+
+    std::apply([&](auto &&... args)
+    {
+        func(JoinTableSide::Right, std::forward<decltype(args)>(args)...);
+    }, std::forward<std::tuple<Args...>>(right));
+}
 
 }
