@@ -76,21 +76,15 @@ void OwnJSONPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_
 
         DB::writeChar('\"', wb);
         static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
-        /// Change delimiters in date for compatibility with old logs.
         writeDateTimeTextISO(msg_ext.time_seconds, 0, wb, utc_time_zone);
-        DB::writeChar('.', wb);
-        DB::writeChar('0' + ((msg_ext.time_microseconds / 100000) % 10), wb);
-        DB::writeChar('0' + ((msg_ext.time_microseconds / 10000) % 10), wb);
-        DB::writeChar('0' + ((msg_ext.time_microseconds / 1000) % 10), wb);
-        DB::writeChar('0' + ((msg_ext.time_microseconds / 100) % 10), wb);
-        DB::writeChar('0' + ((msg_ext.time_microseconds / 10) % 10), wb);
-        DB::writeChar('0' + ((msg_ext.time_microseconds / 1) % 10), wb);
+
         DB::writeChar('\"', wb);
         print_comma = true;
     }
 
     if (!date_time.empty())
     {
+        if (print_comma) DB::writeChar(',', wb);
         writeJSONString(date_time, wb, settings);
         DB::writeChar(':', wb);
 
@@ -107,7 +101,6 @@ void OwnJSONPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_
         DB::writeChar('\"', wb);
         print_comma = true;
     }
-
 
 
     if (!thread_name.empty())
