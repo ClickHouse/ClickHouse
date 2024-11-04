@@ -6,6 +6,12 @@
 
 namespace DB
 {
+
+namespace ErrorCode
+{
+extern const int LOGICAL_ERROR;
+}
+
 void RewriteArrayExistsFunctionMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * func = ast->as<ASTFunction>())
