@@ -1,8 +1,9 @@
+import time
+
 import pytest
 
 import helpers.client
 import helpers.cluster
-import time
 
 cluster = helpers.cluster.ClickHouseCluster(__file__)
 
