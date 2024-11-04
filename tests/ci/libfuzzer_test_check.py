@@ -22,6 +22,7 @@ from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
 NO_CHANGES_MSG = "Nothing to run"
+TIMEOUT = 60
 s3 = S3Helper()
 
 
@@ -263,6 +264,8 @@ def main():
     additional_envs = get_additional_envs(
         check_name, run_by_hash_num, run_by_hash_total
     )
+
+    additional_envs.append(f"TIMEOUT={TIMEOUT}")
 
     ci_logs_credentials = CiLogsCredentials(Path(temp_path) / "export-logs-config.sh")
     ci_logs_args = ci_logs_credentials.get_docker_arguments(
