@@ -83,6 +83,8 @@ CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.lo
 # This means that this minimum need to be, at least, 1 year older than the current release
 CLICKHOUSE_CI_MIN_TESTED_VERSION = "23.3"
 
+ZOOKEEPER_CONTAINERS = ("zoo1", "zoo2", "zoo3")
+
 
 # to create docker-compose env file
 def _create_env_file(path, variables):
@@ -2061,6 +2063,11 @@ class ClickHouseCluster:
         container_id = self.get_container_id(instance_name)
         return self.docker_client.api.logs(container_id).decode()
 
+    def query_zookeeper(self, query, node=ZOOKEEPER_CONTAINERS[0], nothrow=False):
+        cmd = f'clickhouse keeper-client -p {self.zookeeper_port} -q "{query}"'
+        container_id = self.get_container_id(node)
+        return self.exec_in_container(container_id, cmd, nothrow=nothrow, use_cli=False)
+
     def exec_in_container(
         self,
         container_id: str,
@@ -2124,6 +2131,16 @@ class ClickHouseCluster:
                     "echo {} | base64 --decode > {}".format(encodedStr, dest_path),
                 ],
             )
+
+    def remove_file_from_container(self, container_id, path):
+        self.exec_in_container(
+            container_id,
+            [
+                "bash",
+                "-c",
+                "rm {}".format(path),
+            ],
+        )
 
     def wait_for_url(
         self, url="http://localhost:8123/ping", conn_timeout=2, interval=2, timeout=60
@@ -2352,7 +2369,7 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
 
-    def wait_rabbitmq_to_start(self, timeout=60):
+    def wait_rabbitmq_to_start(self, timeout=120):
         self.print_all_docker_pieces()
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
@@ -2391,16 +2408,16 @@ class ClickHouseCluster:
 
     def wait_zookeeper_secure_to_start(self, timeout=20):
         logging.debug("Wait ZooKeeper Secure to start")
-        nodes = ["zoo1", "zoo2", "zoo3"]
-        self.wait_zookeeper_nodes_to_start(nodes, timeout)
+        self.wait_zookeeper_nodes_to_start(ZOOKEEPER_CONTAINERS, timeout)
 
     def wait_zookeeper_to_start(self, timeout: float = 180) -> None:
         logging.debug("Wait ZooKeeper to start")
-        nodes = ["zoo1", "zoo2", "zoo3"]
-        self.wait_zookeeper_nodes_to_start(nodes, timeout)
+        self.wait_zookeeper_nodes_to_start(ZOOKEEPER_CONTAINERS, timeout)
 
     def wait_zookeeper_nodes_to_start(
-        self, nodes: List[str], timeout: float = 60
+        self,
+        nodes: List[str],
+        timeout: float = 60,
     ) -> None:
         start = time.time()
         err = Exception("")
@@ -3226,7 +3243,11 @@ class ClickHouseCluster:
         return zk
 
     def run_kazoo_commands_with_retries(
-        self, kazoo_callback, zoo_instance_name="zoo1", repeats=1, sleep_for=1
+        self,
+        kazoo_callback,
+        zoo_instance_name=ZOOKEEPER_CONTAINERS[0],
+        repeats=1,
+        sleep_for=1,
     ):
         zk = self.get_kazoo_client(zoo_instance_name)
         logging.debug(
@@ -3944,11 +3965,11 @@ class ClickHouseInstance:
         )
         logging.info(f"PS RESULT:\n{ps_clickhouse}")
         pid = self.get_process_pid("clickhouse")
-        if pid is not None:
-            self.exec_in_container(
-                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
-                user="root",
-            )
+        # if pid is not None:
+        #     self.exec_in_container(
+        #         ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
+        #         user="root",
+        #     )
         if last_err is not None:
             raise last_err
 
@@ -4127,6 +4148,9 @@ class ClickHouseInstance:
         return self.cluster.copy_file_to_container(
             self.docker_id, local_path, dest_path
         )
+
+    def remove_file_from_container(self, path):
+        return self.cluster.remove_file_from_container(self.docker_id, path)
 
     def get_process_pid(self, process_name):
         output = self.exec_in_container(
@@ -4648,9 +4672,7 @@ class ClickHouseInstance:
             depends_on.append("nats1")
 
         if self.with_zookeeper:
-            depends_on.append("zoo1")
-            depends_on.append("zoo2")
-            depends_on.append("zoo3")
+            depends_on += list(ZOOKEEPER_CONTAINERS)
 
         if self.with_minio:
             depends_on.append("minio1")
