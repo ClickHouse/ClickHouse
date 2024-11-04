@@ -5448,16 +5448,13 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
       */
     scope.use_identifier_lookup_to_result_cache = false;
 
-    if (query_node_typed.getJoinTree())
-    {
-        TableExpressionsAliasVisitor table_expressions_visitor(scope);
-        table_expressions_visitor.visit(query_node_typed.getJoinTree());
+    TableExpressionsAliasVisitor table_expressions_visitor(scope);
+    table_expressions_visitor.visit(query_node_typed.getJoinTree());
 
-        initializeQueryJoinTreeNode(query_node_typed.getJoinTree(), scope);
-        scope.aliases.alias_name_to_table_expression_node.clear();
+    initializeQueryJoinTreeNode(query_node_typed.getJoinTree(), scope);
+    scope.aliases.alias_name_to_table_expression_node.clear();
 
-        resolveQueryJoinTreeNode(query_node_typed.getJoinTree(), scope, visitor);
-    }
+    resolveQueryJoinTreeNode(query_node_typed.getJoinTree(), scope, visitor);
 
     if (!scope.group_by_use_nulls)
         scope.use_identifier_lookup_to_result_cache = true;
