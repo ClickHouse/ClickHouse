@@ -800,6 +800,12 @@ void TCPHandler::runImpl()
             if (thread_trace_context)
                     thread_trace_context->root_span.addAttribute(*exception);
 
+            if (query_state->raw_out->isCanceled())
+            {
+                tryLogCurrentException(log, "Can't send logs or exception to client. Close connection.");
+                return;
+            }
+
             try
             {
                 LOG_DEBUG(log, "try send logs");
@@ -1225,7 +1231,10 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
             while (executor.pull(block, interactive_delay / 1000))
             {
 
-                receivePacketsExpectCancel(state);
+                {
+                    std::lock_guard lock(callback_mutex);
+                    receivePacketsExpectCancel(state);
+                }
 
                 if (state.stop_read_return_partial_result)
                 {
