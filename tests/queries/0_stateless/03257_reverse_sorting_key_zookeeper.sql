@@ -1,4 +1,4 @@
--- Tags: zookeeper
+-- Tags: zookeeper, no-random-merge-tree-settings
 
 drop table if exists x1;
 drop table if exists x2;
