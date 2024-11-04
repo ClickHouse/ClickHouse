@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 
 DEBUGGER = os.getenv("DEBUGGER", "")
-FUZZER_ARGS = os.getenv("FUZZER_ARGS", "")
+TIMEOUT = int(os.getenv("TIMEOUT", "0"))
 OUTPUT = "/test_output"
 
 
@@ -150,11 +150,7 @@ def main():
 
     subprocess.check_call("ls -al", shell=True)
 
-    timeout = 60
-
-    match = re.search(r"(^|\s+)-max_total_time=(\d+)($|\s)", FUZZER_ARGS)
-    if match:
-        timeout = int(match.group(2))
+    timeout = 30 if TIMEOUT == 0 else TIMEOUT
 
     with Path() as current:
         for fuzzer in current.iterdir():
