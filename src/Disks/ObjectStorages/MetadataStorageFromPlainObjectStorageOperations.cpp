@@ -97,20 +97,22 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo(std::un
 {
     auto metadata_object_key = createMetadataObjectKey(object_key_prefix, metadata_key_prefix);
 
-    if (write_finalized)
+    if (write_finalized || write_created)
     {
         const auto base_path = path.parent_path();
+        size_t erase_count = 0;
         {
             std::lock_guard lock(path_map.mutex);
-            path_map.map.erase(base_path);
+            erase_count = path_map.map.erase(base_path);
         }
-        auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
-        CurrentMetrics::sub(metric, 1);
+        if (erase_count)
+        {
+            auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
+            CurrentMetrics::sub(metric, erase_count);
+        }
 
         object_storage->removeObjectIfExists(StoredObject(metadata_object_key.serialize(), path / PREFIX_PATH_FILE_NAME));
     }
-    else if (write_created)
-        object_storage->removeObjectIfExists(StoredObject(metadata_object_key.serialize(), path / PREFIX_PATH_FILE_NAME));
 }
 
 MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFromPlainObjectStorageMoveDirectoryOperation(
