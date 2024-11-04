@@ -29,7 +29,6 @@ namespace MergeTreeSetting
 namespace ErrorCodes
 {
     extern const int REPLICA_IS_ALREADY_ACTIVE;
-    extern const int REPLICA_STATUS_CHANGED;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
 }
