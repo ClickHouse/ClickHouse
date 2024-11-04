@@ -339,6 +339,7 @@ public:
         Block sample_block; /// Block as it would appear in the BlockList
         BlocksList blocks; /// Blocks of "right" table.
         BlockNullmapList blocks_nullmaps; /// Nullmaps for blocks of "right" table (if needed)
+        BlocksList right_key_columns_for_filter;
 
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
         Arena pool;
@@ -389,6 +390,8 @@ public:
 
     void setMaxJoinedBlockRows(size_t value) { max_joined_block_rows = value; }
 
+    void saveRightKeyColumnsForFilter() { save_right_key_columns_for_filter = true; }
+
 private:
     friend class NotJoinedHash;
 
@@ -419,6 +422,7 @@ private:
     mutable std::unique_ptr<JoinStuff::JoinUsedFlags> used_flags;
     RightTableDataPtr data;
     bool have_compressed = false;
+    bool save_right_key_columns_for_filter = false;
 
     std::vector<Sizes> key_sizes;
 

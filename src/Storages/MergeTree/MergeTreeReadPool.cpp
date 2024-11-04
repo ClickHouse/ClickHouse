@@ -231,6 +231,9 @@ void MergeTreeReadPool::fillPerThreadInfo(const RangesInDataParts & parts_ranges
 
         for (size_t i = 0; i < parts_ranges.size(); ++i)
         {
+            if (parts_ranges[i].ranges.empty())
+                continue;
+
             PartInfo part_info{parts_ranges[i], per_part_sum_marks[i], i};
             if (parts_ranges[i].data_part->isStoredOnDisk())
                 parts_per_disk[parts_ranges[i].data_part->getDataPartStorage().getDiskName()].push_back(std::move(part_info));

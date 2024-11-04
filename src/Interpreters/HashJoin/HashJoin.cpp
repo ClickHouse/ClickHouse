@@ -96,6 +96,22 @@ static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nulla
     }
 }
 
+static void filterBlock(Block & block, const IColumn::Filter & filter)
+{
+    for (auto & elem : block)
+    {
+        if (elem.column->size() != filter.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of column {} doesn't match size of filter {}",
+                elem.column->size(), filter.size());
+
+        if (elem.column->empty())
+        {
+            block.clear();
+            return;
+        }
+    }
+}
+
 HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_,
                    bool any_take_last_row_, size_t reserve_num_, const String & instance_id_)
     : table_join(table_join_)
@@ -513,6 +529,14 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
     if (shrink_blocks)
         block_to_save = block_to_save.shrinkToFit();
 
+    Block right_key_columns_for_filter;
+    if (save_right_key_columns_for_filter)
+    {
+        right_key_columns_for_filter = prepareRightBlock(source_block, right_table_keys);
+        if (shrink_blocks)
+            right_key_columns_for_filter = right_key_columns_for_filter.shrinkToFit();
+    }
+
     size_t max_bytes_in_join = table_join->sizeLimits().max_bytes;
     size_t max_rows_in_join = table_join->sizeLimits().max_rows;
 
@@ -550,7 +574,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
         }
 
         doDebugAsserts();
-        data->blocks_allocated_size += block_to_save.allocatedBytes();
+        data->blocks_allocated_size += block_to_save.allocatedBytes() + right_key_columns_for_filter.allocatedBytes();
         data->blocks.emplace_back(std::move(block_to_save));
         Block * stored_block = &data->blocks.back();
         doDebugAsserts();
@@ -577,6 +601,15 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
                 /// Save rows with NULL keys
                 for (size_t i = 0; !save_nullmap && i < null_map->size(); ++i)
                     save_nullmap |= (*null_map)[i];
+            }
+
+            if (save_right_key_columns_for_filter)
+            {
+                if (null_map)
+                    filterBlock(right_key_columns_for_filter, *null_map);
+
+                if (right_key_columns_for_filter)
+                    data->right_key_columns_for_filter.emplace_back(std::move(right_key_columns_for_filter));
             }
 
             auto join_mask_col = JoinCommon::getColumnAsMask(source_block, onexprs[onexpr_idx].condColumnNames().second);
