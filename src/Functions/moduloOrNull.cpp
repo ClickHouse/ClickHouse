@@ -18,12 +18,17 @@ struct ModuloOrNullImpl
     static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap [[maybe_unused]], NullMap * res_nullmap)
     {
         chassert(res_nullmap);
-        /// NOTE: dismiss the compiler error with libdivide
-        if constexpr (op_case == OpCase::RightConstant && !std::is_same_v<ResultType, Float64> && !is_big_int_v<A> && !is_big_int_v<B> && !std::is_same_v<A, Int8> && !std::is_same_v<B, Int8> && !std::is_same_v<A, UInt8> && !std::is_same_v<B, UInt8>)
+
+        if constexpr (op_case == OpCase::RightConstant)
         {
             if (right_nullmap && (*right_nullmap)[0])
                 return;
-            vectorConstant(a, *b, c, size, res_nullmap);
+            if constexpr (!std::is_same_v<ResultType, Float64> && !is_big_int_v<A> && !is_big_int_v<B>
+            && !std::is_same_v<A, Int8> && !std::is_same_v<A, UInt8>)
+                vectorConstant(a, *b, c, size, res_nullmap);
+            else
+                for (size_t i = 0; i < size; ++i)
+                    apply<op_case>(a, b, c, i, &((*res_nullmap)[i]));
         }
         else
         {
@@ -153,21 +158,22 @@ private:
     {
         try
         {
+            c[i] = ResultType();
             if constexpr (op_case == OpCase::Vector)
                 c[i] = Op::template apply<ResultType>(a[i], b[i]);
+            else if constexpr (op_case == OpCase::RightConstant)
+                c[i] = Op::template apply<ResultType>(a[i], *b);
             else
                 c[i] = Op::template apply<ResultType>(*a, b[i]);
 
             if constexpr (std::is_floating_point_v<ResultType>)
                 if (unlikely(!std::isfinite(c[i])))
                 {
-                    c[i] = ResultType();
                     *m = 1;
                 }
         }
         catch (const std::exception&)
         {
-            c[i] = ResultType();
             *m = 1;
         }
     }
