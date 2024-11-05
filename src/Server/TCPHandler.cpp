@@ -310,7 +310,6 @@ void TCPHandler::runImpl()
     socket().setNoDelay(true);
 
     in = std::make_shared<ReadBufferFromPocoSocketChunked>(socket(), read_event);
-    out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocketChunked>>(socket(), write_event);
 
     /// Support for PROXY protocol
     if (parse_proxy_protocol && !receiveProxyHeader())
@@ -321,6 +320,8 @@ void TCPHandler::runImpl()
         LOG_INFO(log, "Client has not sent any data.");
         return;
     }
+
+    out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocketChunked>>(socket(), write_event);
 
     /// User will be authenticated here. It will also set settings from user profile into connection_context.
     try
@@ -746,9 +747,12 @@ void TCPHandler::runImpl()
 
         LOG_DEBUG(log, "we have an exception {}", bool(exception));
 
+
         if (exception)
         {
             auto exception_code = exception->code();
+
+            LOG_DEBUG(log, "XX exception {}: {}",exception_code, exception->message());
 
             if (!query_state.has_value())
             {
@@ -801,7 +805,7 @@ void TCPHandler::runImpl()
 
             if (out && out->isCanceled())
             {
-                tryLogCurrentException(log, "Can't send logs or exception to client. Close connection.");
+                LOG_DEBUG(log, "Can't send logs or exception to client. Close connection.");
                 return;
             }
 
@@ -2135,6 +2139,8 @@ void TCPHandler::processQuery(std::optional<QueryState> & state)
         std::chrono::milliseconds ms(sleep_after_receiving_query.totalMilliseconds());
         std::this_thread::sleep_for(ms);
     }
+
+    state->read_all_data = false;
 }
 
 void TCPHandler::processUnexpectedQuery()

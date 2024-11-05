@@ -92,7 +92,7 @@ struct QueryState
     /// Request requires data from the client (INSERT, but not INSERT SELECT).
     bool need_receive_data_for_insert = false;
     /// Data was read.
-    bool read_all_data = false;
+    bool read_all_data = true;
 
     /// A state got uuids to exclude from a query
     std::optional<std::vector<UUID>> part_uuids_to_ignore;
