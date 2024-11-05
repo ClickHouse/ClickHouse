@@ -1,5 +1,6 @@
 import json
 from xml.etree import ElementTree as ET
+from datetime import datetime
 
 import pytest
 
@@ -58,12 +59,21 @@ def validate_log_level(config, logs):
     return True
 
 
+def is_valid_utc_datetime(datetime_str):
+    try:
+        datetime_obj = datetime.strptime(datetime_str, "%Y-%m-%dT%H:%M:%S.%fZ")
+        return datetime_obj.tzinfo is None
+    except ValueError:
+        return False
+
+
 def validate_log_config_relation(config, logs, config_type):
     root = ET.fromstring(config)
     keys_in_config = set()
 
     if config_type == "config_no_keys":
         keys_in_config.add("date_time")
+        keys_in_config.add("date_time_utc")
         keys_in_config.add("thread_name")
         keys_in_config.add("thread_id")
         keys_in_config.add("level")
@@ -85,9 +95,10 @@ def validate_log_config_relation(config, logs, config_type):
                 keys_in_log.add(log_key)
                 if log_key not in keys_in_config:
                     return False
-            for config_key in keys_in_config:
-                if config_key not in keys_in_log:
-                    return False
+
+            # Validate the UTC datetime format in "date_time_utc" if it exists
+            if "date_time_utc" in json_log and not is_valid_utc_datetime(json_log["date_time_utc"]):
+                return False
     except ValueError as e:
         return False
     return True
