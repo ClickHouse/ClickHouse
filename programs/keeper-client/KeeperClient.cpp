@@ -164,6 +164,10 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
             .binding("operation-timeout"));
 
     options.addOption(
+        Poco::Util::Option("use-xid-64", "", "use 64-bit XID. default false.")
+            .binding("use-xid-64"));
+
+    options.addOption(
         Poco::Util::Option("config-file", "c", "if set, will try to get a connection string from clickhouse config. default `config.xml`")
             .argument("<file>")
             .binding("config-file"));
@@ -411,6 +415,7 @@ int KeeperClient::main(const std::vector<String> & /* args */)
     zk_args.connection_timeout_ms = config().getInt("connection-timeout", 10) * 1000;
     zk_args.session_timeout_ms = config().getInt("session-timeout", 10) * 1000;
     zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;
+    zk_args.use_xid_64 = config().hasOption("use-xid-64");
     zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(zk_args);
 
     if (config().has("no-confirmation") || config().has("query"))

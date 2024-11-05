@@ -3,8 +3,8 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
 #include <Interpreters/PartLog.h>
-#include <Common/Exception.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
+#include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/SipHash.h>

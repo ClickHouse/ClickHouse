@@ -6867,6 +6867,18 @@ Same as for [parseDateTimeInJodaSyntax](#parsedatetimeinjodasyntax) except that 
 
 Same as for [parseDateTimeInJodaSyntax](#parsedatetimeinjodasyntax) except that it returns `NULL` when it encounters a date format that cannot be processed.
 
+## parseDateTime64InJodaSyntax
+
+Similar to [parseDateTimeInJodaSyntax](#parsedatetimeinjodasyntax). Differently, it returns a value of type [DateTime64](../data-types/datetime64.md).
+
+## parseDateTime64InJodaSyntaxOrZero
+
+Same as for [parseDateTime64InJodaSyntax](#parsedatetime64injodasyntax) except that it returns zero date when it encounters a date format that cannot be processed.
+
+## parseDateTime64InJodaSyntaxOrNull
+
+Same as for [parseDateTime64InJodaSyntax](#parsedatetime64injodasyntax) except that it returns `NULL` when it encounters a date format that cannot be processed.
+
 ## parseDateTimeBestEffort
 ## parseDateTime32BestEffort
 

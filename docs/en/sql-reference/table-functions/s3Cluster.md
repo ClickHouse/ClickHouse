@@ -70,6 +70,10 @@ SELECT count(*) FROM s3Cluster(
 )
 ```
 
+## Optimizing performance
+
+For details on optimizing the performance of the s3 function see [our detailed guide](/docs/en/integrations/s3/performance).
+
 **See Also**
 
 - [S3 engine](../../engines/table-engines/integrations/s3.md)
