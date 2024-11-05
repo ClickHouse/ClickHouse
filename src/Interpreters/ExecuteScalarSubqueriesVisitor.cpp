@@ -67,7 +67,7 @@ bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr 
             return false;
     }
 
-    if (auto tables = node->as<ASTTablesInSelectQueryElement>())
+    if (auto * tables = node->as<ASTTablesInSelectQueryElement>())
     {
         /// Contrary to what's said in the code block above, ARRAY JOIN needs to resolve the subquery if possible
         /// and assign an alias for 02367_optimize_trivial_count_with_array_join to pass. Otherwise it will fail in
