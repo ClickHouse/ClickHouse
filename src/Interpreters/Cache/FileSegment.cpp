@@ -139,7 +139,7 @@ FileSegmentGuard::Lock FileSegment::lock() const
 
 void FileSegment::setDownloadState(State state, const FileSegmentGuard::Lock & lock)
 {
-    if (isCompleted(false))
+    if (isCompleted(false) && state != State::DETACHED)
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
