@@ -19,7 +19,8 @@ endif ()
 add_library(ch_contrib::usearch ALIAS _usearch)
 
 
-
+# Cf. https://github.com/llvm/llvm-project/issues/107810 (though it is not 100% the same stack)
+#
 # LLVM ERROR: Cannot select: 0x7996e7a73150: f32,ch = load<(load (s16) from %ir.22, !tbaa !54231), anyext from bf16> 0x79961cb737c0, 0x7996e7a1a500, undef:i64, ./contrib/SimSIMD/include/simsimd/dot.h:215:1
 #   0x7996e7a1a500: i64 = add 0x79961e770d00, Constant:i64<-16>, ./contrib/SimSIMD/include/simsimd/dot.h:215:1
 #     0x79961e770d00: i64,ch = CopyFromReg 0x79961cb737c0, Register:i64 %4, ./contrib/SimSIMD/include/simsimd/dot.h:215:1
