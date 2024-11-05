@@ -1353,9 +1353,11 @@ try
     }
 
     FailPointInjection::enableFromGlobalConfig(config());
+#endif
 
     memory_worker.start();
 
+#if defined(OS_LINUX)
     int default_oom_score = 0;
 
 #if !defined(NDEBUG)

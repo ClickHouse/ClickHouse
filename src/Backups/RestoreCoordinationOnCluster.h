@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Backups/IRestoreCoordination.h>
+#include <Backups/BackupConcurrencyCheck.h>
+#include <Backups/BackupCoordinationCleaner.h>
 #include <Backups/BackupCoordinationStageSync.h>
 #include <Backups/WithRetries.h>
 
@@ -9,28 +11,33 @@ namespace DB
 {
 
 /// Implementation of the IRestoreCoordination interface performing coordination via ZooKeeper. It's necessary for "RESTORE ON CLUSTER".
-class RestoreCoordinationRemote : public IRestoreCoordination
+class RestoreCoordinationOnCluster : public IRestoreCoordination
 {
 public:
-    using RestoreKeeperSettings = WithRetries::KeeperSettings;
+    /// Empty string as the current host is used to mark the initiator of a RESTORE ON CLUSTER query.
+    static const constexpr std::string_view kInitiator;
 
-    RestoreCoordinationRemote(
-        zkutil::GetZooKeeper get_zookeeper_,
+    RestoreCoordinationOnCluster(
+        const UUID & restore_uuid_,
         const String & root_zookeeper_path_,
-        const RestoreKeeperSettings & keeper_settings_,
-        const String & restore_uuid_,
-        const Strings & all_hosts_,
+        zkutil::GetZooKeeper get_zookeeper_,
+        const BackupKeeperSettings & keeper_settings_,
         const String & current_host_,
-        bool is_internal_,
+        const Strings & all_hosts_,
+        bool allow_concurrent_restore_,
+        BackupConcurrencyCounters & concurrency_counters_,
+        ThreadPoolCallbackRunnerUnsafe<void> schedule_,
         QueryStatusPtr process_list_element_);
 
-    ~RestoreCoordinationRemote() override;
+    ~RestoreCoordinationOnCluster() override;
 
-    /// Sets the current stage and waits for other hosts to come to this stage too.
-    void setStage(const String & new_stage, const String & message) override;
-    void setError(const Exception & exception) override;
-    Strings waitForStage(const String & stage_to_wait) override;
-    Strings waitForStage(const String & stage_to_wait, std::chrono::milliseconds timeout) override;
+    Strings setStage(const String & new_stage, const String & message, bool sync) override;
+    void setRestoreQueryWasSentToOtherHosts() override;
+    bool trySetError(std::exception_ptr exception) override;
+    void finish() override;
+    bool tryFinishAfterError() noexcept override;
+    void waitForOtherHostsToFinish() override;
+    bool tryWaitForOtherHostsToFinishAfterError() noexcept override;
 
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
     bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) override;
@@ -55,27 +62,27 @@ public:
     /// (because otherwise the macro "{uuid}" in the ZooKeeper path will not work correctly).
     void generateUUIDForTable(ASTCreateQuery & create_query) override;
 
-    bool hasConcurrentRestores(const std::atomic<size_t> & num_active_restores) const override;
+    ZooKeeperRetriesInfo getOnClusterInitializationKeeperRetriesInfo() const override;
 
 private:
     void createRootNodes();
-    void removeAllNodes();
+    bool tryFinishImpl() noexcept;
 
-    /// get_zookeeper will provide a zookeeper client without any fault injection
-    const zkutil::GetZooKeeper get_zookeeper;
     const String root_zookeeper_path;
-    const RestoreKeeperSettings keeper_settings;
-    const String restore_uuid;
+    const BackupKeeperSettings keeper_settings;
+    const UUID restore_uuid;
     const String zookeeper_path;
     const Strings all_hosts;
+    const Strings all_hosts_without_initiator;
     const String current_host;
     const size_t current_host_index;
-    const bool is_internal;
     LoggerPtr const log;
 
-    mutable WithRetries with_retries;
-    std::optional<BackupCoordinationStageSync> stage_sync;
-    mutable std::mutex mutex;
+    const WithRetries with_retries;
+    BackupConcurrencyCheck concurrency_check;
+    BackupCoordinationStageSync stage_sync;
+    BackupCoordinationCleaner cleaner;
+    std::atomic<bool> restore_query_was_sent_to_other_hosts = false;
 };
 
 }

@@ -117,6 +117,7 @@ GRANT SELECT ON db*.* TO john -- correct
 GRANT SELECT ON *.my_table TO john -- wrong
 GRANT SELECT ON foo*bar TO john -- wrong
 GRANT SELECT ON *suffix TO john -- wrong
+GRANT SELECT(foo) ON db.table* TO john -- wrong
 ```
 
 ## Privileges
@@ -242,10 +243,13 @@ Hierarchy of privileges:
     - `HDFS`
     - `HIVE`
     - `JDBC`
+    - `KAFKA`
     - `MONGO`
     - `MYSQL`
+    - `NATS`
     - `ODBC`
     - `POSTGRES`
+    - `RABBITMQ`
     - `REDIS`
     - `REMOTE`
     - `S3`
@@ -524,10 +528,13 @@ Allows using external data sources. Applies to [table engines](../../engines/tab
     - `HDFS`. Level: `GLOBAL`
     - `HIVE`. Level: `GLOBAL`
     - `JDBC`. Level: `GLOBAL`
+    - `KAFKA`. Level: `GLOBAL`
     - `MONGO`. Level: `GLOBAL`
     - `MYSQL`. Level: `GLOBAL`
+    - `NATS`. Level: `GLOBAL`
     - `ODBC`. Level: `GLOBAL`
     - `POSTGRES`. Level: `GLOBAL`
+    - `RABBITMQ`. Level: `GLOBAL`
     - `REDIS`. Level: `GLOBAL`
     - `REMOTE`. Level: `GLOBAL`
     - `S3`. Level: `GLOBAL`
