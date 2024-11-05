@@ -2984,6 +2984,57 @@ BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types) const
 {
+    return checkRPNAgainstHyperrectangle(rpn, hyperrectangle, key_space_filling_curves, data_types, single_point);
+}
+
+bool mayExistOnBloomFilter(const std::vector<uint64_t> & hashes, const std::unique_ptr<KeyCondition::BloomFilter> & bloom_filter)
+{
+    for (const auto hash : hashes)
+    {
+        if (bloom_filter->findHash(hash))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool mayExistOnBloomFilter(const KeyCondition::BloomFilterData & condition_bloom_filter_data,
+                           const KeyCondition::ColumnIndexToBloomFilter & column_index_to_column_bf)
+{
+    bool maybe_true = true;
+    for (auto column_index = 0u; column_index < condition_bloom_filter_data.hashes_per_column.size(); column_index++)
+    {
+        // in case bloom filter is not present for this row group
+        // https://github.com/ClickHouse/ClickHouse/pull/62966#discussion_r1722361237
+        if (!column_index_to_column_bf.contains(condition_bloom_filter_data.key_columns[column_index]))
+        {
+            continue;
+        }
+
+        bool column_maybe_contains = mayExistOnBloomFilter(
+            condition_bloom_filter_data.hashes_per_column[column_index],
+            column_index_to_column_bf.at(condition_bloom_filter_data.key_columns[column_index]));
+
+        if (!column_maybe_contains)
+        {
+            maybe_true = false;
+            break;
+        }
+    }
+
+    return maybe_true;
+}
+
+BoolMask KeyCondition::checkRPNAgainstHyperrectangle(
+    const RPN & rpn,
+    const Hyperrectangle & hyperrectangle,
+    const KeyCondition::SpaceFillingCurveDescriptions & key_space_filling_curves,
+    const DataTypes & data_types,
+    bool single_point,
+    const ColumnIndexToBloomFilter & column_index_to_column_bf)
+{
     std::vector<BoolMask> rpn_stack;
 
     auto curve_type = [&](size_t key_column_pos)
@@ -2998,6 +3049,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
     {
         if (element.argument_num_of_space_filling_curve.has_value())
         {
+            // todo arthur, not sure what to do here yet
             /// If a condition on argument of a space filling curve wasn't collapsed into FUNCTION_ARGS_IN_HYPERRECTANGLE,
             /// we cannot process it.
             rpn_stack.emplace_back(true, true);
@@ -3032,7 +3084,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 if (!new_range)
                 {
                     rpn_stack.emplace_back(true, true);
-                    // aqui eu pergunto pro bloom filter
                     continue;
                 }
                 transformed_range = *new_range;
@@ -3042,9 +3093,13 @@ BoolMask KeyCondition::checkInHyperrectangle(
             bool intersects = element.range.intersectsRange(*key_range);
             bool contains = element.range.containsRange(*key_range);
 
-            // aqui eu pergunto pro bloom filter
-
             rpn_stack.emplace_back(intersects, !contains);
+
+            if (rpn_stack.back().can_be_true && element.bloom_filter_data)
+            {
+                rpn_stack.back().can_be_true = mayExistOnBloomFilter(*element.bloom_filter_data, column_index_to_column_bf);
+            }
+
             if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
                 rpn_stack.back() = !rpn_stack.back();
         }
@@ -3217,8 +3272,13 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (!element.set_index)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Set for IN is not created yet");
 
-            // aqui eu pergunto pro bloom filter
             rpn_stack.emplace_back(element.set_index->checkInRange(hyperrectangle, data_types, single_point));
+
+            if (rpn_stack.back().can_be_true && element.bloom_filter_data)
+            {
+                rpn_stack.back().can_be_true = mayExistOnBloomFilter(*element.bloom_filter_data, column_index_to_column_bf);
+            }
+
             if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
                 rpn_stack.back() = !rpn_stack.back();
         }

@@ -148,6 +148,13 @@ public:
     /// TODO handle the cases when generate RPN.
     bool extractPlainRanges(Ranges & ranges) const;
 
+    struct BloomFilterData
+    {
+        using HashesForColumns = std::vector<std::vector<uint64_t>>;
+        HashesForColumns hashes_per_column;
+        std::vector<std::size_t> key_columns;
+    };
+
     /// The expression is stored as Reverse Polish Notation.
     struct RPNElement
     {
@@ -224,6 +231,8 @@ public:
         Polygon polygon;
 
         MonotonicFunctionsChain monotonic_functions_chain;
+
+        std::optional<BloomFilterData> bloom_filter_data;
     };
 
     using RPN = std::vector<RPNElement>;
@@ -255,6 +264,23 @@ public:
     };
     using SpaceFillingCurveDescriptions = std::vector<SpaceFillingCurveDescription>;
     SpaceFillingCurveDescriptions key_space_filling_curves;
+
+    struct BloomFilter
+    {
+        virtual ~BloomFilter() = default;
+
+        virtual bool findHash(uint64_t hash) = 0;
+    };
+
+    using ColumnIndexToBloomFilter = std::unordered_map<std::size_t, std::unique_ptr<BloomFilter>>;
+
+    static BoolMask checkRPNAgainstHyperrectangle(
+        const RPN & rpn,
+        const Hyperrectangle & hyperrectangle,
+        const KeyCondition::SpaceFillingCurveDescriptions & key_space_filling_curves,
+        const DataTypes & data_types,
+        bool single_point,
+        const ColumnIndexToBloomFilter & column_index_to_column_bf = {});
 
     bool isSinglePoint() const { return single_point; }
 

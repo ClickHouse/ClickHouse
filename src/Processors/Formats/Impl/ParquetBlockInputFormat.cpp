@@ -27,8 +27,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Processors/Formats/Impl/Parquet/ParquetRecordReader.h>
-#include <Processors/Formats/Impl/Parquet/ParquetBloomFilterCondition.h>
-#include <Processors/Formats/Impl/Parquet/ParquetFilterCondition.h>
+#include <Processors/Formats/Impl/Parquet/keyConditionRPNToParquetRPN.h>
 #include <Interpreters/convertFieldToType.h>
 
 namespace ProfileEvents
@@ -276,7 +275,21 @@ static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type
     return field;
 }
 
-static ParquetBloomFilterCondition::ColumnIndexToBF buildColumnIndexToBF(
+struct ParquetBloomFilter : public KeyCondition::BloomFilter
+{
+    ParquetBloomFilter(std::unique_ptr<parquet::BloomFilter> && parquet_bf_)
+        : parquet_bf(std::move(parquet_bf_)) {}
+
+    bool findHash(uint64_t hash) override
+    {
+        return parquet_bf->FindHash(hash);
+    }
+
+private:
+    std::unique_ptr<parquet::BloomFilter> parquet_bf;
+};
+
+static KeyCondition::ColumnIndexToBloomFilter buildColumnIndexToBF(
     parquet::BloomFilterReader & bf_reader,
     int row_group,
     const std::vector<ArrowFieldIndexUtil::ClickHouseIndexToParquetIndex> & clickhouse_column_index_to_parquet_index,
@@ -290,7 +303,7 @@ static ParquetBloomFilterCondition::ColumnIndexToBF buildColumnIndexToBF(
         return {};
     }
 
-    ParquetBloomFilterCondition::ColumnIndexToBF index_to_column_bf;
+    KeyCondition::ColumnIndexToBloomFilter index_to_column_bf;
 
     for (const auto & [clickhouse_index, parquet_indexes] : clickhouse_column_index_to_parquet_index)
     {
@@ -307,14 +320,14 @@ static ParquetBloomFilterCondition::ColumnIndexToBF buildColumnIndexToBF(
 
         auto parquet_index = parquet_indexes[0];
 
-        auto bf = rg_bf->GetColumnBloomFilter(parquet_index);
+        auto parquet_bf = rg_bf->GetColumnBloomFilter(parquet_index);
 
-        if (!bf)
+        if (!parquet_bf)
         {
             continue;
         }
 
-        index_to_column_bf[clickhouse_index] = std::move(bf);
+        index_to_column_bf[clickhouse_index] = std::make_unique<ParquetBloomFilter>(std::move(parquet_bf));
     }
 
     return index_to_column_bf;
@@ -485,6 +498,24 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
     return hyperrectangle;
 }
 
+std::unordered_set<std::size_t> getBloomFilterFilteringColumnKeys(const KeyCondition::RPN & rpn)
+{
+    std::unordered_set<std::size_t> column_keys;
+
+    for (const auto & element : rpn)
+    {
+        if (auto bf_data = element.bloom_filter_data)
+        {
+            for (const auto index : bf_data->key_columns)
+            {
+                column_keys.insert(index);
+            }
+        }
+    }
+
+    return column_keys;
+}
+
 ParquetBlockInputFormat::ParquetBlockInputFormat(
     ReadBuffer & buf,
     const Block & header_,
@@ -578,72 +609,67 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         return std::min(std::max(preferred_num_rows, MIN_ROW_NUM), static_cast<size_t>(format_settings.parquet.max_block_size));
     };
 
-    std::unique_ptr<ParquetBloomFilterCondition> parquet_bloom_filter_condition;
-
     std::unordered_set<std::size_t> filtering_columns;
 
     if (format_settings.parquet.bloom_filter_push_down && key_condition)
     {
         bf_reader = parquet::BloomFilterReader::Make(arrow_file, metadata, bf_reader_properties, nullptr);
 
-        const auto parquet_conditions = keyConditionRPNToParquetBloomFilterCondition(
+        const auto parquet_conditions = keyConditionRPNToParquetRPN(
             key_condition->getRPN(),
             index_mapping,
             metadata->RowGroup(0));
-        parquet_bloom_filter_condition = std::make_unique<ParquetBloomFilterCondition>(parquet_conditions, getPort().getHeader());
 
-        filtering_columns = parquet_bloom_filter_condition->getFilteringColumnKeys();
+        filtering_columns = getBloomFilterFilteringColumnKeys(parquet_conditions);
     }
+
+    auto skip_row_group_based_on_filters = [&](int row_group)
+    {
+        if (!format_settings.parquet.filter_push_down && !format_settings.parquet.bloom_filter_push_down)
+        {
+            return false;
+        }
+
+        KeyCondition::RPN possibly_modified_rpn = key_condition->getRPN();
+        KeyCondition::ColumnIndexToBloomFilter column_index_to_bloom_filter;
+
+        const auto & header = getPort().getHeader();
+
+        std::vector<Range> hyperrectangle(header.columns(), Range::createWholeUniverse());
+
+        if (format_settings.parquet.filter_push_down)
+        {
+            hyperrectangle = getHyperrectangleForRowGroup(*metadata, row_group, header, format_settings);getHyperrectangleForRowGroup(*metadata, row_group, getPort().getHeader(), format_settings);
+        }
+
+        if (format_settings.parquet.bloom_filter_push_down)
+        {
+            possibly_modified_rpn = keyConditionRPNToParquetRPN(key_condition->getRPN(),
+                                                                index_mapping,
+                                                                metadata->RowGroup(row_group));
+
+            column_index_to_bloom_filter = buildColumnIndexToBF(*bf_reader, row_group, index_mapping, filtering_columns);
+        }
+
+        bool maybe_exists = KeyCondition::checkRPNAgainstHyperrectangle(
+                                possibly_modified_rpn,
+                                hyperrectangle,
+                                key_condition->key_space_filling_curves,
+                                getPort().getHeader().getDataTypes(),
+                                key_condition->isSinglePoint(),
+                                column_index_to_bloom_filter).can_be_true;
+
+        return !maybe_exists;
+    };
 
     for (int row_group = 0; row_group < num_row_groups; ++row_group)
     {
         if (skip_row_groups.contains(row_group))
             continue;
 
-        if (key_condition)
+        if (key_condition && skip_row_group_based_on_filters(row_group))
         {
-            if (format_settings.parquet.filter_push_down && format_settings.parquet.bloom_filter_push_down)
-            {
-                auto parquet_rpn = abcdefgh(key_condition->getRPN(),
-                                            index_mapping,
-                                            metadata->RowGroup(row_group));
-                auto hyperrectangle = getHyperrectangleForRowGroup(*metadata, row_group, getPort().getHeader(), format_settings);
-
-                const auto column_index_to_bf = buildColumnIndexToBF(*bf_reader, row_group, index_mapping, filtering_columns);
-
-                bool maybe_exists = ParquetFilterCondition::check(
-                    parquet_rpn,
-                    hyperrectangle,
-                    key_condition->key_space_filling_curves,
-                    getPort().getHeader().getDataTypes(),
-                    column_index_to_bf,
-                    key_condition->isSinglePoint()).can_be_true;
-
-                if (!maybe_exists)
-                {
-                    continue;
-                }
-            }
-            else if (format_settings.parquet.filter_push_down)
-            {
-                if (!key_condition
-                         ->checkInHyperrectangle(
-                             getHyperrectangleForRowGroup(*metadata, row_group, getPort().getHeader(), format_settings),
-                             getPort().getHeader().getDataTypes())
-                         .can_be_true)
-                {
-                    continue;
-                }
-            }
-            else if (format_settings.parquet.bloom_filter_push_down)
-            {
-                const auto column_index_to_bf = buildColumnIndexToBF(*bf_reader, row_group, index_mapping, filtering_columns);
-
-                if (!parquet_bloom_filter_condition->mayBeTrueOnRowGroup(column_index_to_bf))
-                {
-                    continue;
-                }
-            }
+            continue;
         }
 
         // When single-threaded parsing, can prefetch row groups, so need to put all row groups in the same row_group_batch
