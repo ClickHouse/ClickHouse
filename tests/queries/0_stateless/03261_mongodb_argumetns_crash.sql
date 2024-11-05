@@ -11,3 +11,4 @@ SELECT * FROM mongodb('mongodb://some-cluster:27017/?retryWrites=false', 'test',
 SELECT * FROM mongodb('mongodb://some-cluster:27017/?retryWrites=false', 'test', 'my_collection', 'test_user', 'password', NULL, 'x Int32'); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM mongodb(NULL, 'test', 'my_collection', 'test_user', 'password', 'x Int32');  -- { serverError BAD_ARGUMENTS }
 
+CREATE TABLE IF NOT EXISTS store_version ( `_id` String ) ENGINE = MongoDB(`localhost:27017`, mongodb, storeinfo, adminUser, adminUser); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
