@@ -73,7 +73,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat min_free_disk_ratio_to_perform_insert;
     extern const MergeTreeSettingsBool optimize_row_order;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
-    extern const MergeTreeSettingsBool prewarm_mark_cache;
 }
 
 namespace ErrorCodes
@@ -685,7 +684,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
-    bool save_marks_in_cache = (*data_settings)[MergeTreeSetting::prewarm_mark_cache] && data.getContext()->getMarkCache();
 
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
@@ -695,9 +693,8 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         statistics,
         compression_codec,
         context->getCurrentTransaction() ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
-        /*reset_columns=*/ false,
-        save_marks_in_cache,
-        /*blocks_are_granules_size=*/ false,
+        false,
+        false,
         context->getWriteSettings());
 
     out->writeWithPermutation(block, perm_ptr);
@@ -832,7 +829,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
-    bool save_marks_in_cache = (*data.getSettings())[MergeTreeSetting::prewarm_mark_cache] && data.getContext()->getMarkCache();
 
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
@@ -843,10 +839,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         ColumnsStatistics{},
         compression_codec,
         Tx::PrehistoricTID,
-        /*reset_columns=*/ false,
-        save_marks_in_cache,
-        /*blocks_are_granules_size=*/ false,
-        data.getContext()->getWriteSettings());
+        false, false, data.getContext()->getWriteSettings());
 
     out->writeWithPermutation(block, perm_ptr);
     auto finalizer = out->finalizePartAsync(new_data_part, false);

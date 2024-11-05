@@ -93,6 +93,10 @@ void registerStoragePostgreSQL(StorageFactory & factory);
 void registerStorageMaterializedPostgreSQL(StorageFactory & factory);
 #endif
 
+#if USE_MYSQL || USE_LIBPQXX
+void registerStorageExternalDistributed(StorageFactory & factory);
+#endif
+
 #if USE_FILELOG
 void registerStorageFileLog(StorageFactory & factory);
 #endif
@@ -199,6 +203,10 @@ void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
     #if USE_LIBPQXX
     registerStoragePostgreSQL(factory);
     registerStorageMaterializedPostgreSQL(factory);
+    #endif
+
+    #if USE_MYSQL || USE_LIBPQXX
+    registerStorageExternalDistributed(factory);
     #endif
 
     #if USE_SQLITE

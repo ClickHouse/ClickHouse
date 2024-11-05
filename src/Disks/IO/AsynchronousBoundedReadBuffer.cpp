@@ -367,7 +367,7 @@ AsynchronousBoundedReadBuffer::~AsynchronousBoundedReadBuffer()
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 

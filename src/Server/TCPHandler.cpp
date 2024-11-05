@@ -301,9 +301,6 @@ void TCPHandler::runImpl()
     {
         receiveHello();
 
-        if (!default_database.empty())
-            DatabaseCatalog::instance().assertDatabaseExists(default_database);
-
         /// In interserver mode queries are executed without a session context.
         if (!is_interserver_mode)
             session->makeSessionContext();

@@ -68,7 +68,7 @@ def check_duplicate_includes(file_path):
 def check_whitespaces(file_paths):
     for file in file_paths:
         exit_code, out, err = Shell.get_res_stdout_stderr(
-            f'./ci/jobs/scripts/check_style/double_whitespaces.pl "{file}"',
+            f'./ci_v2/jobs/scripts/check_style/double_whitespaces.pl "{file}"',
             verbose=False,
         )
         if out or err:
@@ -174,7 +174,7 @@ def check_broken_links(path, exclude_paths):
 
 def check_cpp_code():
     res, out, err = Shell.get_res_stdout_stderr(
-        "./ci/jobs/scripts/check_style/check_cpp.sh"
+        "./ci_v2/jobs/scripts/check_style/check_cpp.sh"
     )
     if err:
         out += err
@@ -183,7 +183,7 @@ def check_cpp_code():
 
 def check_repo_submodules():
     res, out, err = Shell.get_res_stdout_stderr(
-        "./ci/jobs/scripts/check_style/check_submodules.sh"
+        "./ci_v2/jobs/scripts/check_style/check_submodules.sh"
     )
     if err:
         out += err
@@ -192,7 +192,7 @@ def check_repo_submodules():
 
 def check_other():
     res, out, err = Shell.get_res_stdout_stderr(
-        "./ci/jobs/scripts/check_style/checks_to_refactor.sh"
+        "./ci_v2/jobs/scripts/check_style/checks_to_refactor.sh"
     )
     if err:
         out += err
@@ -201,7 +201,7 @@ def check_other():
 
 def check_codespell():
     res, out, err = Shell.get_res_stdout_stderr(
-        "./ci/jobs/scripts/check_style/check_typos.sh"
+        "./ci_v2/jobs/scripts/check_style/check_typos.sh"
     )
     if err:
         out += err
@@ -210,7 +210,7 @@ def check_codespell():
 
 def check_aspell():
     res, out, err = Shell.get_res_stdout_stderr(
-        "./ci/jobs/scripts/check_style/check_aspell.sh"
+        "./ci_v2/jobs/scripts/check_style/check_aspell.sh"
     )
     if err:
         out += err
@@ -219,7 +219,7 @@ def check_aspell():
 
 def check_mypy():
     res, out, err = Shell.get_res_stdout_stderr(
-        "./ci/jobs/scripts/check_style/check-mypy"
+        "./ci_v2/jobs/scripts/check_style/check-mypy"
     )
     if err:
         out += err
@@ -228,7 +228,7 @@ def check_mypy():
 
 def check_pylint():
     res, out, err = Shell.get_res_stdout_stderr(
-        "./ci/jobs/scripts/check_style/check-pylint"
+        "./ci_v2/jobs/scripts/check_style/check-pylint"
     )
     if err:
         out += err

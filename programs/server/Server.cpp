@@ -86,7 +86,7 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Common/Scheduler/Nodes/registerSchedulerNodes.h>
-#include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
+#include <Common/Scheduler/Nodes/registerResourceManagers.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
 #include "MetricsTransmitter.h"
@@ -168,11 +168,9 @@ namespace ServerSetting
 {
     extern const ServerSettingsUInt32 asynchronous_heavy_metrics_update_period_s;
     extern const ServerSettingsUInt32 asynchronous_metrics_update_period_s;
-    extern const ServerSettingsBool asynchronous_metrics_enable_heavy_metrics;
     extern const ServerSettingsBool async_insert_queue_flush_on_shutdown;
     extern const ServerSettingsUInt64 async_insert_threads;
     extern const ServerSettingsBool async_load_databases;
-    extern const ServerSettingsBool async_load_system_database;
     extern const ServerSettingsUInt64 background_buffer_flush_schedule_pool_size;
     extern const ServerSettingsUInt64 background_common_pool_size;
     extern const ServerSettingsUInt64 background_distributed_schedule_pool_size;
@@ -920,6 +918,7 @@ try
     registerFormats();
     registerRemoteFileMetadatas();
     registerSchedulerNodes();
+    registerResourceManagers();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
@@ -1060,7 +1059,6 @@ try
     ServerAsynchronousMetrics async_metrics(
         global_context,
         server_settings[ServerSetting::asynchronous_metrics_update_period_s],
-        server_settings[ServerSetting::asynchronous_metrics_enable_heavy_metrics],
         server_settings[ServerSetting::asynchronous_heavy_metrics_update_period_s],
         [&]() -> std::vector<ProtocolServerMetrics>
         {
@@ -2196,7 +2194,6 @@ try
 
     LOG_INFO(log, "Loading metadata from {}", path_str);
 
-    LoadTaskPtrs load_system_metadata_tasks;
     LoadTaskPtrs load_metadata_tasks;
 
     // Make sure that if exception is thrown during startup async, new async loading jobs are not going to be called.
@@ -2220,8 +2217,12 @@ try
         auto & database_catalog = DatabaseCatalog::instance();
         /// We load temporary database first, because projections need it.
         database_catalog.initializeAndLoadTemporaryDatabase();
-        load_system_metadata_tasks = loadMetadataSystem(global_context, server_settings[ServerSetting::async_load_system_database]);
-        maybeConvertSystemDatabase(global_context, load_system_metadata_tasks);
+        auto system_startup_tasks = loadMetadataSystem(global_context);
+        maybeConvertSystemDatabase(global_context, system_startup_tasks);
+        /// This has to be done before the initialization of system logs,
+        /// otherwise there is a race condition between the system database initialization
+        /// and creation of new tables in the database.
+        waitLoad(TablesLoaderForegroundPoolId, system_startup_tasks);
 
         /// Startup scripts can depend on the system log tables.
         if (config().has("startup_scripts") && !server_settings[ServerSetting::prepare_system_log_tables_on_startup].changed)
@@ -2252,8 +2253,6 @@ try
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
         global_context->getUserDefinedSQLObjectsStorage().loadObjects();
-        /// Load WORKLOADs and RESOURCEs.
-        global_context->getWorkloadEntityStorage().loadEntities();
 
         global_context->getRefreshSet().setRefreshesStopped(false);
     }
@@ -2262,30 +2261,6 @@ try
         tryLogCurrentException(log, "Caught exception while loading metadata");
         throw;
     }
-
-    bool found_stop_flag = false;
-
-    if (has_zookeeper && global_context->getMacros()->getMacroMap().contains("replica"))
-    {
-        try
-        {
-            auto zookeeper = global_context->getZooKeeper();
-            String stop_flag_path = "/clickhouse/stop_replicated_ddl_queries/{replica}";
-            stop_flag_path = global_context->getMacros()->expand(stop_flag_path);
-            found_stop_flag = zookeeper->exists(stop_flag_path);
-        }
-        catch (const Coordination::Exception & e)
-        {
-            if (e.code != Coordination::Error::ZCONNECTIONLOSS)
-                throw;
-            tryLogCurrentException(log);
-        }
-    }
-
-    if (found_stop_flag)
-        LOG_INFO(log, "Found a stop flag for replicated DDL queries. They will be disabled");
-    else
-        DatabaseCatalog::instance().startReplicatedDDLQueries();
 
     LOG_DEBUG(log, "Loaded metadata.");
 
@@ -2341,7 +2316,6 @@ try
 
 #if USE_SSL
         CertificateReloader::instance().tryLoad(config());
-        CertificateReloader::instance().tryLoadClient(config());
 #endif
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
@@ -2390,28 +2364,17 @@ try
         if (has_zookeeper && config().has("distributed_ddl"))
         {
             /// DDL worker should be started after all tables were loaded
-            String ddl_queue_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
-            String ddl_replicas_path = config().getString("distributed_ddl.replicas_path", "/clickhouse/task_queue/replicas/");
+            String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
             int pool_size = config().getInt("distributed_ddl.pool_size", 1);
             if (pool_size < 1)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "distributed_ddl.pool_size should be greater then 0");
-            global_context->setDDLWorker(
-                std::make_unique<DDLWorker>(
-                    pool_size,
-                    ddl_queue_path,
-                    ddl_replicas_path,
-                    global_context,
-                    &config(),
-                    "distributed_ddl",
-                    "DDLWorker",
-                    &CurrentMetrics::MaxDDLEntryID,
-                    &CurrentMetrics::MaxPushedDDLEntryID),
-                joinTasks(load_system_metadata_tasks, load_metadata_tasks));
+            global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, global_context, &config(),
+                                                                     "distributed_ddl", "DDLWorker",
+                                                                     &CurrentMetrics::MaxDDLEntryID, &CurrentMetrics::MaxPushedDDLEntryID),
+                                         load_metadata_tasks);
         }
 
         /// Do not keep tasks in server, they should be kept inside databases. Used here to make dependent tasks only.
-        load_system_metadata_tasks.clear();
-        load_system_metadata_tasks.shrink_to_fit();
         load_metadata_tasks.clear();
         load_metadata_tasks.shrink_to_fit();
 
@@ -3030,7 +2993,7 @@ void Server::updateServers(
 
     for (auto * server : all_servers)
     {
-        if (server->supportsRuntimeReconfiguration() && !server->isStopping())
+        if (!server->isStopping())
         {
             std::string port_name = server->getPortName();
             bool has_host = false;

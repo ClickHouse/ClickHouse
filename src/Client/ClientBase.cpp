@@ -2665,8 +2665,6 @@ void ClientBase::runInteractive()
         }
     }
 
-    history_max_entries = getClientConfiguration().getUInt("history_max_entries");
-
     LineReader::Patterns query_extenders = {"\\"};
     LineReader::Patterns query_delimiters = {";", "\\G", "\\G;"};
     char word_break_characters[] = " \t\v\f\a\b\r\n`~!@#$%^&*()-=+[{]}\\|;:'\",<.>/?";
@@ -2679,7 +2677,6 @@ void ClientBase::runInteractive()
     ReplxxLineReader lr(
         *suggest,
         history_file,
-        history_max_entries,
         getClientConfiguration().has("multiline"),
         getClientConfiguration().getBool("ignore_shell_suspend", true),
         query_extenders,

@@ -236,7 +236,6 @@ void DisksApp::runInteractiveReplxx()
     ReplxxLineReader lr(
         suggest,
         history_file,
-        history_max_entries,
         /* multiline= */ false,
         /* ignore_shell_suspend= */ false,
         query_extenders,
@@ -399,8 +398,6 @@ void DisksApp::initializeHistoryFile()
                 throw;
         }
     }
-
-    history_max_entries = config().getUInt("history-max-entries", 1000000);
 }
 
 void DisksApp::init(const std::vector<String> & common_arguments)

@@ -64,13 +64,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.11",
         {
-            {"distributed_cache_discard_connection_if_unread_data", true, true, "New setting"},
-            {"azure_check_objects_after_upload", false, false, "Check each uploaded object in azure blob storage to be sure that upload was successful"},
-            {"backup_restore_keeper_max_retries", 20, 1000, "Should be big enough so the whole operation BACKUP or RESTORE operation won't fail because of a temporary [Zoo]Keeper failure in the middle of it."},
-            {"backup_restore_failure_after_host_disconnected_for_seconds", 0, 3600, "New setting."},
-            {"backup_restore_keeper_max_retries_while_initializing", 0, 20, "New setting."},
-            {"backup_restore_keeper_max_retries_while_handling_error", 0, 20, "New setting."},
-            {"backup_restore_finish_timeout_after_error_sec", 0, 180, "New setting."},
         }
     },
     {"24.10",
@@ -85,7 +78,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"restore_replace_external_dictionary_source_to_null", false, false, "New setting."},
             {"show_create_query_identifier_quoting_rule", "when_necessary", "when_necessary", "New setting."},
             {"show_create_query_identifier_quoting_style", "Backticks", "Backticks", "New setting."},
-            {"query_plan_join_inner_table_selection", "auto", "auto", "New setting."},
             {"merge_tree_min_read_task_size", 8, 8, "New setting"},
             {"merge_tree_min_rows_for_concurrent_read_for_remote_filesystem", (20 * 8192), 0, "Setting is deprecated"},
             {"merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem", (24 * 10 * 1024 * 1024), 0, "Setting is deprecated"},
@@ -119,7 +111,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"hnsw_candidate_list_size_for_search", 64, 256, "New setting. Previously, the value was optionally specified in CREATE INDEX and 64 by default."},
             {"allow_reorder_prewhere_conditions", false, true, "New setting"},
             {"input_format_parquet_bloom_filter_push_down", false, true, "When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and bloom filter in the Parquet metadata."},
-            {"date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands", false, false, "Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to (0, 3, 6), corresponding to 'seconds', 'milliseconds', and 'microseconds'."},
+            {"date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands", false, false, "Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to (0, 3, 6), corresponding to 'seconds', 'milliseconds', and 'microseconds'."}
         }
     },
     {"24.9",
