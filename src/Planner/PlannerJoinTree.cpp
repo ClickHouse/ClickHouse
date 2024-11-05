@@ -1345,8 +1345,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected only one {} pre-filter condition node. Actual [{}]",
                     side, fmt::join(pre_filters | std::views::transform([](const auto & node) { return node->result_name; }), ", "));
         };
-        check_pre_filter(left_pre_filters);
-        check_pre_filter(right_pre_filters);
+        check_pre_filter(JoinTableSide::Left, left_pre_filters);
+        check_pre_filter(JoinTableSide::Right, right_pre_filters);
 
         can_move_out_residuals = join_clauses_and_actions.join_clauses.size() == 1
             && join_strictness == JoinStrictness::All
@@ -1354,7 +1354,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             && (right_pre_filters.empty() || FilterStep::canUseType(right_pre_filters[0]->result_type))
             && (left_pre_filters.empty() || FilterStep::canUseType(left_pre_filters[0]->result_type));
 
-        auto add_pre_filter = [&](JoinTableSide, ActionsDAG & join_expressions_actions, QueryPlan & plan, const auto & pre_filters)
+        auto add_pre_filter = [&](ActionsDAG & join_expressions_actions, QueryPlan & plan, const auto & pre_filters)
         {
             join_expressions_actions.appendInputsForUnusedColumns(left_plan.getCurrentHeader());
             appendSetsFromActionsDAG(join_expressions_actions, left_join_tree_query_plan.useful_sets);
