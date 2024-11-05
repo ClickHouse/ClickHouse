@@ -646,14 +646,13 @@ void dispatchKind(JoinKind kind, Args && ... args)
 {
     if (Impl<JoinKind::Inner>::enabled && kind == JoinKind::Inner)
         return Impl<JoinKind::Inner>::join(std::forward<Args>(args)...);
-    else if (Impl<JoinKind::Left>::enabled && kind == JoinKind::Left)
+    if (Impl<JoinKind::Left>::enabled && kind == JoinKind::Left)
         return Impl<JoinKind::Left>::join(std::forward<Args>(args)...);
-    else if (Impl<JoinKind::Right>::enabled && kind == JoinKind::Right)
+    if (Impl<JoinKind::Right>::enabled && kind == JoinKind::Right)
         return Impl<JoinKind::Right>::join(std::forward<Args>(args)...);
-    else if (Impl<JoinKind::Full>::enabled && kind == JoinKind::Full)
+    if (Impl<JoinKind::Full>::enabled && kind == JoinKind::Full)
         return Impl<JoinKind::Full>::join(std::forward<Args>(args)...);
-    else
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported join kind: \"{}\"", kind);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported join kind: \"{}\"", kind);
 }
 
 MutableColumns MergeJoinAlgorithm::getEmptyResultColumns() const
@@ -1103,7 +1102,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
 
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TODO: implement ASOF equality join");
         }
-        else if (cmp < 0)
+        if (cmp < 0)
         {
             if (asof_join_state.hasMatch(left_cursor, asof_inequality))
             {
@@ -1116,10 +1115,9 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
                 left_cursor->next();
                 continue;
             }
-            else
-            {
-                asof_join_state.reset();
-            }
+
+            asof_join_state.reset();
+
 
             /// no matches for rows in left table, just pass them through
             size_t num = nextDistinct(*left_cursor);

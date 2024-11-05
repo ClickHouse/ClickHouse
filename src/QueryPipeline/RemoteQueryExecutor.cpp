@@ -570,8 +570,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::restartQueryWithoutDuplicat
     /// Consecutive read will implicitly send query first.
     if (!read_context)
         return read();
-    else
-        return readAsync();
+    return readAsync();
 }
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet)

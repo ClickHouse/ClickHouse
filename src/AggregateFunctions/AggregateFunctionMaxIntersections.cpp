@@ -87,8 +87,7 @@ public:
     {
         if (kind_ == AggregateFunctionIntersectionsKind::Count)
             return std::make_shared<DataTypeUInt64>();
-        else
-            return std::make_shared<DataTypeNumber<PointType>>();
+        return std::make_shared<DataTypeNumber<PointType>>();
     }
 
     /// MaxIntersectionsData::Allocator uses the arena

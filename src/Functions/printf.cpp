@@ -44,10 +44,9 @@ private:
         {
             if (is_literal)
                 return executeLiteral(format);
-            else if (isColumnConst(*input.column))
+            if (isColumnConst(*input.column))
                 return executeConstant(input);
-            else
-                return executeNonconstant(input);
+            return executeNonconstant(input);
         }
 
     private:
@@ -143,19 +142,17 @@ private:
             {
                 return {std::move(res_col), std::make_shared<DataTypeString>(), arg.name};
             }
-            else if (
-                which.isStringOrFixedString()
+            if (which.isStringOrFixedString()
                 && (executeString<ColumnString>(*arg.column, res_chars, res_offsets)
                     || executeString<ColumnFixedString>(*arg.column, res_chars, res_offsets)))
             {
                 return {std::move(res_col), std::make_shared<DataTypeString>(), arg.name};
             }
-            else
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The argument type of function {} is {}, but native numeric or string type is expected",
-                    FunctionPrintf::name,
-                    arg.type->getName());
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "The argument type of function {} is {}, but native numeric or string type is expected",
+                FunctionPrintf::name,
+                arg.type->getName());
         }
     };
 
@@ -235,14 +232,13 @@ public:
                         instruction.format,
                         getName(),
                         e.what());
-                else
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Bad format {} in function {} with {} as input argument, reason: {}",
-                        instructions[i].format,
-                        getName(),
-                        instruction.input.dumpStructure(),
-                        e.what());
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Bad format {} in function {} with {} as input argument, reason: {}",
+                    instructions[i].format,
+                    getName(),
+                    instruction.input.dumpStructure(),
+                    e.what());
             }
         }
 

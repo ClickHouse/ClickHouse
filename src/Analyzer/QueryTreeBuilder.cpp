@@ -676,7 +676,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
 
         result = std::move(query_node);
     }
-    else if (const auto * select_with_union_query = expression->as<ASTSelectWithUnionQuery>())
+    else if (const auto * /*select_with_union_query*/ _ = expression->as<ASTSelectWithUnionQuery>())
     {
         auto query_node = buildSelectWithUnionExpression(expression, false /*is_subquery*/, {} /*cte_name*/, context);
         result = std::move(query_node);

@@ -7,6 +7,8 @@
 #include <Functions/FunctionHelpers.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/MaterializedView/RefreshSet.h>
+#include <Storages/MaterializedView/RefreshTask.h>
 
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JoinUtils.h>
@@ -417,9 +419,16 @@ QueryTreeNodePtr IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalo
     bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
 
     StoragePtr storage;
+    TableLockHolder storage_lock;
 
     if (is_temporary_table)
         storage = DatabaseCatalog::instance().getTable(storage_id, context);
+    else if (auto refresh_task = context->getRefreshSet().tryGetTaskForInnerTable(storage_id))
+    {
+        /// If table is the target of a refreshable materialized view, it needs additional
+        /// synchronization to make sure we see all of the data (e.g. if refresh happened on another replica).
+        std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(storage_id, context);
+    }
     else
         storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
 
@@ -434,7 +443,8 @@ QueryTreeNodePtr IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalo
     if (!storage)
         return {};
 
-    auto storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    if (!storage_lock)
+        storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
     auto result = std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
     if (is_temporary_table)
@@ -542,9 +552,9 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromExpressionArguments
     auto node_type = it->second->getNodeType();
     if (identifier_lookup.isExpressionLookup() && !isExpressionNodeType(node_type))
         return {};
-    else if (identifier_lookup.isTableExpressionLookup() && !isTableExpressionNodeType(node_type))
+    if (identifier_lookup.isTableExpressionLookup() && !isTableExpressionNodeType(node_type))
         return {};
-    else if (identifier_lookup.isFunctionLookup() && !isFunctionExpressionNodeType(node_type))
+    if (identifier_lookup.isFunctionLookup() && !isFunctionExpressionNodeType(node_type))
         return {};
 
     if (!resolve_full_identifier && identifier_lookup.identifier.isCompound() && identifier_lookup.isExpressionLookup())
@@ -628,10 +638,9 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
 
         if (parts_size == 1 && path_start == table_name)
             return true;
-        else if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
+        if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
             return true;
-        else
-            return false;
+        return false;
     }
 
     if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier)) || table_expression_data.canBindIdentifier(IdentifierView(identifier)))
@@ -900,10 +909,9 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableExpression(con
 
         if (parts_size == 1 && path_start == table_name)
             return table_expression_node;
-        else if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
+        if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
             return table_expression_node;
-        else
-            return {};
+        return {};
     }
 
      /** If identifier first part binds to some column start or table has full identifier name. Then we can try to find whole identifier in table.

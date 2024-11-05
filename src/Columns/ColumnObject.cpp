@@ -30,6 +30,23 @@ const std::shared_ptr<SerializationDynamic> & getDynamicSerialization()
     return dynamic_serialization;
 }
 
+struct ColumnObjectCheckpoint : public ColumnCheckpoint
+{
+    using CheckpointsMap = std::unordered_map<std::string_view, ColumnCheckpointPtr>;
+
+    ColumnObjectCheckpoint(size_t size_, CheckpointsMap typed_paths_, CheckpointsMap dynamic_paths_, ColumnCheckpointPtr shared_data_)
+        : ColumnCheckpoint(size_)
+        , typed_paths(std::move(typed_paths_))
+        , dynamic_paths(std::move(dynamic_paths_))
+        , shared_data(std::move(shared_data_))
+    {
+    }
+
+    CheckpointsMap typed_paths;
+    CheckpointsMap dynamic_paths;
+    ColumnCheckpointPtr shared_data;
+};
+
 }
 
 ColumnObject::ColumnObject(
@@ -85,6 +102,29 @@ ColumnObject::ColumnObject(
     paths_and_values.emplace_back(ColumnString::create());
     paths_and_values.emplace_back(ColumnString::create());
     shared_data = ColumnArray::create(ColumnTuple::create(std::move(paths_and_values)));
+}
+
+ColumnObject::ColumnObject(const ColumnObject & other)
+    : COWHelper<IColumnHelper<ColumnObject>, ColumnObject>(other)
+    , typed_paths(other.typed_paths)
+    , dynamic_paths(other.dynamic_paths)
+    , dynamic_paths_ptrs(other.dynamic_paths_ptrs)
+    , shared_data(other.shared_data)
+    , max_dynamic_paths(other.max_dynamic_paths)
+    , global_max_dynamic_paths(other.global_max_dynamic_paths)
+    , max_dynamic_types(other.max_dynamic_types)
+    , statistics(other.statistics)
+{
+    /// We should update string_view in sorted_typed_paths and sorted_dynamic_paths so they
+    /// point to the new strings in typed_paths and dynamic_paths.
+    sorted_typed_paths.clear();
+    for (const auto & [path, _] : typed_paths)
+        sorted_typed_paths.emplace_back(path);
+    std::sort(sorted_typed_paths.begin(), sorted_typed_paths.end());
+
+    sorted_dynamic_paths.clear();
+    for (const auto & [path, _] : dynamic_paths)
+        sorted_dynamic_paths.emplace(path);
 }
 
 ColumnObject::Ptr ColumnObject::create(
@@ -295,6 +335,19 @@ void ColumnObject::setDynamicPaths(const std::vector<String> & paths)
         if (size)
             new_dynamic_column->insertManyDefaults(size);
         auto it = dynamic_paths.emplace(path, std::move(new_dynamic_column)).first;
+        dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(it->second.get());
+        sorted_dynamic_paths.insert(it->first);
+    }
+}
+
+void ColumnObject::setDynamicPaths(const std::vector<std::pair<String, ColumnPtr>> & paths)
+{
+    if (paths.size() > max_dynamic_paths)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set dynamic paths to Object column, the number of paths ({}) exceeds the limit ({})", paths.size(), max_dynamic_paths);
+
+    for (const auto & [path, column] : paths)
+    {
+        auto it = dynamic_paths.emplace(path, column).first;
         dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(it->second.get());
         sorted_dynamic_paths.insert(it->first);
     }
@@ -660,6 +713,69 @@ void ColumnObject::popBack(size_t n)
     for (auto & [_, column] : dynamic_paths_ptrs)
         column->popBack(n);
     shared_data->popBack(n);
+}
+
+ColumnCheckpointPtr ColumnObject::getCheckpoint() const
+{
+    auto get_checkpoints = [](const auto & columns)
+    {
+        ColumnObjectCheckpoint::CheckpointsMap checkpoints;
+        for (const auto & [name, column] : columns)
+            checkpoints[name] = column->getCheckpoint();
+
+        return checkpoints;
+    };
+
+    return std::make_shared<ColumnObjectCheckpoint>(size(), get_checkpoints(typed_paths), get_checkpoints(dynamic_paths_ptrs), shared_data->getCheckpoint());
+}
+
+void ColumnObject::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    auto & object_checkpoint = assert_cast<ColumnObjectCheckpoint &>(checkpoint);
+
+    auto update_checkpoints = [&](const auto & columns_map, auto & checkpoints_map)
+    {
+        for (const auto & [name, column] : columns_map)
+        {
+            auto & nested = checkpoints_map[name];
+            if (!nested)
+                nested = column->getCheckpoint();
+            else
+                column->updateCheckpoint(*nested);
+        }
+    };
+
+    checkpoint.size = size();
+    update_checkpoints(typed_paths, object_checkpoint.typed_paths);
+    update_checkpoints(dynamic_paths, object_checkpoint.dynamic_paths);
+    shared_data->updateCheckpoint(*object_checkpoint.shared_data);
+}
+
+void ColumnObject::rollback(const ColumnCheckpoint & checkpoint)
+{
+    const auto & object_checkpoint = assert_cast<const ColumnObjectCheckpoint &>(checkpoint);
+
+    auto rollback_columns = [&](auto & columns_map, const auto & checkpoints_map)
+    {
+        NameSet names_to_remove;
+
+        /// Rollback subcolumns and remove paths that were not in checkpoint.
+        for (auto & [name, column] : columns_map)
+        {
+            auto it = checkpoints_map.find(name);
+            if (it == checkpoints_map.end())
+                names_to_remove.insert(name);
+            else
+                column->rollback(*it->second);
+        }
+
+        for (const auto & name : names_to_remove)
+            columns_map.erase(name);
+    };
+
+    rollback_columns(typed_paths, object_checkpoint.typed_paths);
+    rollback_columns(dynamic_paths, object_checkpoint.dynamic_paths);
+    shared_data->rollback(*object_checkpoint.shared_data);
 }
 
 StringRef ColumnObject::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const

@@ -15,14 +15,15 @@ namespace ErrorCodes
 
 struct ZooKeeperRetriesInfo
 {
+    ZooKeeperRetriesInfo() = default;
     ZooKeeperRetriesInfo(UInt64 max_retries_, UInt64 initial_backoff_ms_, UInt64 max_backoff_ms_)
         : max_retries(max_retries_), initial_backoff_ms(std::min(initial_backoff_ms_, max_backoff_ms_)), max_backoff_ms(max_backoff_ms_)
     {
     }
 
-    UInt64 max_retries;
-    UInt64 initial_backoff_ms;
-    UInt64 max_backoff_ms;
+    UInt64 max_retries = 0; /// "max_retries = 0" means only one attempt.
+    UInt64 initial_backoff_ms = 100;
+    UInt64 max_backoff_ms = 5000;
 };
 
 class ZooKeeperRetriesControl
@@ -159,6 +160,8 @@ public:
     const std::string & getLastKeeperErrorMessage() const { return keeper_error.message; }
 
     /// action will be called only once and only after latest failed retry
+    /// NOTE: this one will be called only in case when retries finishes with Keeper exception
+    /// if it will be some other exception this function will not be called.
     void actionAfterLastFailedRetry(std::function<void()> f) { action_after_last_failed_retry = std::move(f); }
 
     const std::string & getName() const { return name; }
@@ -218,6 +221,7 @@ private:
             return false;
         }
 
+        /// Check if the query was cancelled.
         if (process_list_element)
             process_list_element->checkTimeLimit();
 
@@ -225,6 +229,10 @@ private:
         logLastError("will retry due to error");
         sleepForMilliseconds(current_backoff_ms);
         current_backoff_ms = std::min(current_backoff_ms * 2, retries_info.max_backoff_ms);
+
+        /// Check if the query was cancelled again after sleeping.
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
 
         return true;
     }

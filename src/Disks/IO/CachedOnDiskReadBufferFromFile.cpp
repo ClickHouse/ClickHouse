@@ -295,12 +295,10 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
             read_type = ReadType::CACHED;
             return getCacheReadBuffer(file_segment);
         }
-        else
-        {
-            LOG_TEST(log, "Bypassing cache because `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` option is used");
-            read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
-            return getRemoteReadBuffer(file_segment, read_type);
-        }
+
+        LOG_TEST(log, "Bypassing cache because `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` option is used");
+        read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+        return getRemoteReadBuffer(file_segment, read_type);
     }
 
     while (true)
@@ -403,14 +401,13 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
                     read_type = ReadType::CACHED;
                     return getCacheReadBuffer(file_segment);
                 }
-                else
-                {
-                    LOG_TRACE(
-                        log, "Bypassing cache because file segment state is "
-                        "`PARTIALLY_DOWNLOADED_NO_CONTINUATION` and downloaded part already used");
-                    read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
-                    return getRemoteReadBuffer(file_segment, read_type);
-                }
+
+                LOG_TRACE(
+                    log,
+                    "Bypassing cache because file segment state is "
+                    "`PARTIALLY_DOWNLOADED_NO_CONTINUATION` and downloaded part already used");
+                read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+                return getRemoteReadBuffer(file_segment, read_type);
             }
         }
     }
@@ -538,7 +535,7 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
     chassert(file_offset_of_buffer_end > completed_range.right);
     cache_file_reader.reset();
 
-    file_segments->popFront();
+    file_segments->completeAndPopFront(settings.filesystem_cache_allow_background_download);
     if (file_segments->empty() && !nextFileSegmentsBatch())
         return false;
 
@@ -558,6 +555,12 @@ CachedOnDiskReadBufferFromFile::~CachedOnDiskReadBufferFromFile()
     if (cache_log && file_segments && !file_segments->empty())
     {
         appendFilesystemCacheLog(file_segments->front(), read_type);
+    }
+
+    if (file_segments && !file_segments->empty() && !file_segments->front().isCompleted())
+    {
+        file_segments->completeAndPopFront(settings.filesystem_cache_allow_background_download);
+        file_segments = {};
     }
 }
 

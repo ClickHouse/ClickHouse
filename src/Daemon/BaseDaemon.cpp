@@ -797,11 +797,9 @@ void systemdNotify(const std::string_view & command)
         {
             if (errno == EINTR)
                 continue;
-            else
-                throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Failed to notify systemd, sendto returned error");
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Failed to notify systemd, sendto returned error");
         }
-        else
-            sent_bytes_total += sent_bytes;
+        sent_bytes_total += sent_bytes;
     }
 }
 #endif

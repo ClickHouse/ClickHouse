@@ -64,8 +64,7 @@ public:
     {
         if (dictionary_key_type == DictionaryKeyType::Simple)
             return "Cache";
-        else
-            return "ComplexKeyCache";
+        return "ComplexKeyCache";
     }
 
     bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::Simple; }
@@ -585,7 +584,7 @@ private:
     template <typename GetContainerFunc>
     void getAttributeContainer(size_t attribute_index, GetContainerFunc && func) const
     {
-        return const_cast<std::decay_t<decltype(*this)> *>(this)->template getAttributeContainer(attribute_index, std::forward<GetContainerFunc>(func));
+        return const_cast<std::decay_t<decltype(*this)> *>(this)->getAttributeContainer(attribute_index, std::forward<GetContainerFunc>(func));
     }
 
     template<typename ValueType>

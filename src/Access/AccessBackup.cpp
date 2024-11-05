@@ -116,16 +116,14 @@ namespace
                         reading_dependents = false;
                         continue;
                     }
-                    else if (line == "DEPENDENTS")
+                    if (line == "DEPENDENTS")
                     {
                         reading_dependents = true;
                         reading_dependencies = false;
                         continue;
                     }
-                    else if (line.empty())
-                    {
+                    if (line.empty())
                         continue;
-                    }
 
                     size_t separator1 = line.find('\t');
                     size_t separator2 = line.find('\t', separator1 + 1);

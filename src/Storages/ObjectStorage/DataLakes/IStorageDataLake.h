@@ -86,14 +86,11 @@ public:
         {
             return ColumnsDescription(std::move(schema_from_metadata));
         }
-        else
-        {
-            ConfigurationPtr configuration = base_configuration->clone();
-            configuration->setPaths(metadata->getDataFiles());
-            std::string sample_path;
-            return Storage::resolveSchemaFromData(
-                object_storage_, configuration, format_settings_, sample_path, local_context);
-        }
+
+        ConfigurationPtr configuration = base_configuration->clone();
+        configuration->setPaths(metadata->getDataFiles());
+        std::string sample_path;
+        return Storage::resolveSchemaFromData(object_storage_, configuration, format_settings_, sample_path, local_context);
     }
 
     void updateConfiguration(ContextPtr local_context) override
