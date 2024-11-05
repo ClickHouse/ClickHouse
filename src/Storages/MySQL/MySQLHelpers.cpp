@@ -7,6 +7,15 @@
 namespace DB
 {
 
+namespace MySQLSetting
+{
+    extern const MySQLSettingsUInt64 connection_max_tries;
+    extern const MySQLSettingsUInt64 connection_pool_size;
+    extern const MySQLSettingsUInt64 connection_wait_timeout;
+    extern const MySQLSettingsUInt64 connect_timeout;
+    extern const MySQLSettingsUInt64 read_write_timeout;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -26,17 +35,17 @@ mysqlxx::PoolWithFailover createMySQLPoolWithFailover(
     const std::string & password,
     const MySQLSettings & mysql_settings)
 {
-    if (!mysql_settings.connection_pool_size)
+    if (!mysql_settings[MySQLSetting::connection_pool_size])
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Connection pool cannot have zero size");
 
     return mysqlxx::PoolWithFailover(
         database, addresses, username, password,
         MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
-        static_cast<unsigned>(mysql_settings.connection_pool_size),
-        mysql_settings.connection_max_tries,
-        mysql_settings.connection_wait_timeout,
-        mysql_settings.connect_timeout,
-        mysql_settings.read_write_timeout);
+        static_cast<unsigned>(mysql_settings[MySQLSetting::connection_pool_size]),
+        mysql_settings[MySQLSetting::connection_max_tries],
+        mysql_settings[MySQLSetting::connection_wait_timeout],
+        mysql_settings[MySQLSetting::connect_timeout],
+        mysql_settings[MySQLSetting::read_write_timeout]);
 }
 
 }

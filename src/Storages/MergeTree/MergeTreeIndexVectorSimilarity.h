@@ -11,10 +11,18 @@
 namespace DB
 {
 
+/// Defaults for HNSW parameters. Instead of using the default parameters provided by USearch (default_connectivity(),
+/// default_expansion_add(), default_expansion_search()), we experimentally came up with our own default parameters. They provide better
+/// trade-offs with regards to index construction time, search precision and queries-per-second (speed).
+static constexpr size_t default_connectivity = 32;
+static constexpr size_t default_expansion_add = 128;
+static constexpr size_t default_expansion_search = 256;
+
+/// Parameters for HNSW index construction.
 struct UsearchHnswParams
 {
-    size_t connectivity = unum::usearch::default_connectivity();
-    size_t expansion_add = unum::usearch::default_expansion_add();
+    size_t connectivity = default_connectivity;
+    size_t expansion_add = default_expansion_add;
 };
 
 using USearchIndex = unum::usearch::index_dense_t;
