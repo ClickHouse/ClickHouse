@@ -1339,12 +1339,14 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
         const auto & left_pre_filters = join_clauses_and_actions.join_clauses[0].getLeftFilterConditionNodes();
         const auto & right_pre_filters = join_clauses_and_actions.join_clauses[0].getRightFilterConditionNodes();
-        forJoinSides([](JoinTableSide side, const auto & pre_filters)
+        auto check_pre_filter = [](JoinTableSide side, const auto & pre_filters)
         {
             if (!pre_filters.empty() && pre_filters.size() != 1)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected only one {} pre-filter condition node. Actual [{}]",
                     side, fmt::join(pre_filters | std::views::transform([](const auto & node) { return node->result_name; }), ", "));
-        }, std::make_tuple(std::ref(left_pre_filters)), std::make_tuple(std::ref(right_pre_filters)));
+        };
+        check_pre_filter(left_pre_filters);
+        check_pre_filter(right_pre_filters);
 
         can_move_out_residuals = join_clauses_and_actions.join_clauses.size() == 1
             && join_strictness == JoinStrictness::All
@@ -1352,7 +1354,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             && (right_pre_filters.empty() || FilterStep::canUseType(right_pre_filters[0]->result_type))
             && (left_pre_filters.empty() || FilterStep::canUseType(left_pre_filters[0]->result_type));
 
-        forJoinSides([&](JoinTableSide, ActionsDAG & join_expressions_actions, QueryPlan & plan, const auto & pre_filters)
+        auto add_pre_filter = [&](JoinTableSide, ActionsDAG & join_expressions_actions, QueryPlan & plan, const auto & pre_filters)
         {
             join_expressions_actions.appendInputsForUnusedColumns(left_plan.getCurrentHeader());
             appendSetsFromActionsDAG(join_expressions_actions, left_join_tree_query_plan.useful_sets);
@@ -1365,8 +1367,9 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
             join_expressions_actions_step->setStepDescription("JOIN actions");
             plan.addStep(std::move(join_expressions_actions_step));
-        }, std::make_tuple(std::ref(join_clauses_and_actions.left_join_expressions_actions), std::ref(left_plan), std::ref(left_pre_filters)),
-        std::make_tuple(std::ref(join_clauses_and_actions.right_join_expressions_actions), std::ref(right_plan), std::ref(right_pre_filters)));
+        };
+        add_pre_filter(join_clauses_and_actions.left_join_expressions_actions, left_plan, left_pre_filters);
+        add_pre_filter(join_clauses_and_actions.right_join_expressions_actions, right_plan, right_pre_filters);
     }
 
     std::unordered_map<ColumnIdentifier, DataTypePtr> left_plan_column_name_to_cast_type;
