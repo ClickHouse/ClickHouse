@@ -41,3 +41,4 @@ Expression (Projection)
             Parts: 1/1
             Granules: 4/4
 index_granularity_bytes = 0 is disallowed
+Issue #71381: Vector similarity index and other skipping indexes used on the same table

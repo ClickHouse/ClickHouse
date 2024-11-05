@@ -117,3 +117,18 @@ CREATE TABLE tab(id Int32, vec Array(Float32)) ENGINE = MergeTree ORDER BY id SE
 ALTER TABLE tab ADD INDEX vec_idx1(vec) TYPE vector_similarity('hnsw', 'cosineDistance'); -- { serverError INVALID_SETTING_VALUE }
 
 DROP TABLE tab;
+
+SELECT 'Issue #71381: Vector similarity index and other skipping indexes used on the same table';
+
+CREATE TABLE tab(
+  val String,
+  vec Array(Float32),
+  INDEX ann_idx vec TYPE vector_similarity('hnsw', 'cosineDistance'),
+  INDEX set_idx val TYPE set(100) GRANULARITY 100
+)
+ENGINE = MergeTree()
+ORDER BY tuple();
+
+INSERT INTO tab VALUES ('hello world', [0.0]);
+
+DROP TABLE tab;
