@@ -21,6 +21,7 @@
 #include <IO/ReadBufferFromPocoSocketChunked.h>
 #include <IO/WriteBufferFromPocoSocketChunked.h>
 
+#include "IO/WriteBuffer.h"
 #include "IServer.h"
 #include "Interpreters/AsynchronousInsertQueue.h"
 #include "Server/TCPProtocolStackData.h"
@@ -71,7 +72,6 @@ struct QueryState
     std::unique_ptr<NativeReader> block_in;
 
     /// Where to write result data.
-    std::shared_ptr<WriteBuffer> raw_out;
     std::shared_ptr<WriteBuffer> maybe_compressed_out;
     std::unique_ptr<NativeWriter> block_out;
     Block block_for_insert;
@@ -120,18 +120,20 @@ struct QueryState
 
     std::mutex mutex;
 
-    void finalizeOut()
+    void finalizeOut(std::shared_ptr<WriteBufferFromPocoSocketChunked> & raw_out)
     {
-        if (maybe_compressed_out && maybe_compressed_out != raw_out)
+        if (maybe_compressed_out && maybe_compressed_out.get() != raw_out.get())
             maybe_compressed_out->finalize();
         if (raw_out)
             raw_out->next();
     }
 
-    void cancelOut()
+    void cancelOut(std::shared_ptr<WriteBufferFromPocoSocketChunked> & raw_out)
     {
-        if (maybe_compressed_out && maybe_compressed_out != raw_out)
+        if (maybe_compressed_out && maybe_compressed_out.get() != raw_out.get())
             maybe_compressed_out->cancel();
+        if (raw_out)
+            raw_out->cancel();
     }
 
     bool isEnanbledPartialResultOnFirstCancel() const;

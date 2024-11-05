@@ -712,11 +712,10 @@ void TCPHandler::runImpl()
             sendLogs(query_state.value());
             sendEndOfStream(query_state.value());
 
-            query_state->finalizeOut();
+            query_state->finalizeOut(out);
         }
         catch (const Exception & e)
         {
-            LOG_DEBUG(log, "XX Exception: {}", e.what());
             exception.reset(e.clone());
         }
         catch (const Poco::Exception & e)
@@ -751,10 +750,11 @@ void TCPHandler::runImpl()
         {
             auto exception_code = exception->code();
 
-            LOG_DEBUG(log, "we do not have an query state");
-
             if (!query_state.has_value())
+            {
+                LOG_DEBUG(log, "we do not have an query state");
                 return;
+            }
 
             try
             {
@@ -762,7 +762,7 @@ void TCPHandler::runImpl()
             }
             catch (...)
             {
-                LOG_DEBUG(log, "query_state->io.onException()");
+                //LOG_DEBUG(log, "query_state->io.onException()");
                 query_state->io.onException(exception_code != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT);
             }
 
@@ -786,21 +786,20 @@ void TCPHandler::runImpl()
                 /// To avoid any potential exploits, we simply close connection on any exceptions
                 /// that happen before the first query is authenticated with the cluster secret.
                 LOG_DEBUG(log, "is_interserver_mode && !is_interserver_authenticated");
-                query_state->cancelOut();
+                query_state->cancelOut(out);
                 return;
             }
 
             if (exception_code == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
             {
-                LOG_DEBUG(log, "XX Exception UNKNOWN_PACKET_FROM_CLIENT");
-                query_state->cancelOut();
+                query_state->cancelOut(out);
                 return;
             }
 
             if (thread_trace_context)
                     thread_trace_context->root_span.addAttribute(*exception);
 
-            if (query_state->raw_out->isCanceled())
+            if (out && out->isCanceled())
             {
                 tryLogCurrentException(log, "Can't send logs or exception to client. Close connection.");
                 return;
@@ -835,7 +834,7 @@ void TCPHandler::runImpl()
             catch (...)
             {
                 LOG_DEBUG(log, "failed");
-                query_state->cancelOut();
+                query_state->cancelOut(out);
                 tryLogCurrentException(log, "Can't send logs or exception to client. Close connection.");
                 return;
             }
@@ -844,12 +843,12 @@ void TCPHandler::runImpl()
                 || exception->code() == ErrorCodes::USER_EXPIRED)
             {
                 LOG_DEBUG(log, "Going to close connection due to exception: {}", exception->message());
-                query_state->finalizeOut();
+                query_state->finalizeOut(out);
                 return;
             }
         }
 
-        query_state->finalizeOut();
+        query_state->finalizeOut(out);
     }
 }
 
@@ -2280,8 +2279,6 @@ void TCPHandler::initBlockOutput(QueryState & state, const Block & block)
 {
     if (!state.block_out)
     {
-        state.raw_out = out;
-
         const Settings & query_settings = state.query_context->getSettingsRef();
         if (!state.maybe_compressed_out)
         {
