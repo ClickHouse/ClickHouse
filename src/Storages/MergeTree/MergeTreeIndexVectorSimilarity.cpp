@@ -118,8 +118,6 @@ USearchIndexWithSerialization::USearchIndexWithSerialization(
     if (!result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not create vector similarity index. Error: {}", String(result.error.release()));
     swap(result.index);
-
-    /// LOG_TRACE(getLogger("XXX"), "{}", simsimd_uses_dynamic_dispatch());
 }
 
 void USearchIndexWithSerialization::serialize(WriteBuffer & ostr) const
