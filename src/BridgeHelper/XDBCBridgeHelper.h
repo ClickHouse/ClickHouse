@@ -144,7 +144,7 @@ protected:
 
     void startBridge(std::unique_ptr<ShellCommand> cmd) const override
     {
-        getContext()->addBridgeCommand(std::move(cmd));
+        getContext()->addBackgroundShellCommand(std::move(cmd));
     }
 
 

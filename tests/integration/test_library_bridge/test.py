@@ -39,6 +39,13 @@ def create_dict_simple(ch_instance):
     )
 
 
+def check_no_zombie_processes(instance):
+    res = instance.exec_in_container(
+        ["bash", "-c", "ps ax -ostat,pid | grep -e '[zZ]' | wc -l"], user="root"
+    )
+    assert res == "0\n"
+
+
 @pytest.fixture(scope="module")
 def ch_cluster():
     try:
@@ -268,12 +275,8 @@ def test_recover_after_bridge_crash(ch_cluster):
     instance.exec_in_container(
         ["bash", "-c", "kill -9 `pidof clickhouse-library-bridge`"], user="root"
     )
-    ## There are no zombie processes.
-    res = instance.exec_in_container(
-        ["bash", "-c", "ps ax -ostat,pid | grep -e '[zZ]' | wc -l"], user="root"
-    )
-    assert res == "0\n"
 
+    check_no_zombie_processes(instance)
     instance.query("DROP DICTIONARY lib_dict_c")
 
 
@@ -298,6 +301,8 @@ def test_server_restart_bridge_might_be_stil_alive(ch_cluster):
 
     result = instance.query("""select dictGet(lib_dict_c, 'value1', toUInt64(1));""")
     assert result.strip() == "101"
+
+    check_no_zombie_processes(instance)
 
     instance.query("DROP DICTIONARY lib_dict_c")
 

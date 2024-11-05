@@ -100,6 +100,7 @@
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
+#include <Common/BackgroundShellCommandHolder.h>
 #include <Common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
@@ -540,8 +541,9 @@ struct ContextSharedPart : boost::noncopyable
     /// No lock required for application_type modified only during initialization
     Context::ApplicationType application_type = Context::ApplicationType::SERVER;
 
-    /// vector of xdbc-bridge commands, they will be killed when Context will be destroyed
-    std::vector<std::unique_ptr<ShellCommand>> bridge_commands TSA_GUARDED_BY(mutex);
+    /// Manager of running background shell commands.
+    /// They will be killed when Context will be destroyed or with SIGCHLD signal.
+    BackgroundShellCommandHolder background_active_shell_commands;
 
     /// No lock required for config_reload_callback, start_servers_callback, stop_servers_callback modified only during initialization
     Context::ConfigReloadCallback config_reload_callback;
@@ -5067,10 +5069,14 @@ void Context::addQueryParameters(const NameToNameMap & parameters)
         query_parameters.insert_or_assign(name, value);
 }
 
-void Context::addBridgeCommand(std::unique_ptr<ShellCommand> cmd) const
+void Context::addBackgroundShellCommand(std::unique_ptr<ShellCommand> cmd) const
 {
-    std::lock_guard lock(shared->mutex);
-    shared->bridge_commands.emplace_back(std::move(cmd));
+    shared->background_active_shell_commands.addCommand(std::move(cmd));
+}
+
+void Context::terminateBackgroundShellCommand(pid_t pid) const
+{
+    shared->background_active_shell_commands.removeCommand(pid);
 }
 
 

@@ -25,7 +25,6 @@ namespace
         CANNOT_EXEC                 = 0x55555558,
         CANNOT_DUP_READ_DESCRIPTOR  = 0x55555559,
         CANNOT_DUP_WRITE_DESCRIPTOR = 0x55555560,
-        CANNOT_VFORK_IN_CHILD       = 0x55555561,
     };
 }
 
@@ -152,10 +151,6 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     PipeFDs pipe_stdout;
     PipeFDs pipe_stderr;
 
-    PipeFDs pipe_with_child;
-    WriteBufferFromFile write_buffer_for_child(pipe_with_child.fds_rw[1]);
-    ReadBufferFromFile  read_buffer_for_parent(pipe_with_child.fds_rw[0]);
-
     std::vector<std::unique_ptr<PipeFDs>> read_pipe_fds;
     std::vector<std::unique_ptr<PipeFDs>> write_pipe_fds;
 
@@ -165,93 +160,64 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     for (size_t i = 0; i < config.write_fds.size(); ++i)
         write_pipe_fds.emplace_back(std::make_unique<PipeFDs>());
 
-    pid_t child_pid = reinterpret_cast<pid_t(*)()>(real_vfork)();
+    pid_t pid = reinterpret_cast<pid_t(*)()>(real_vfork)();
 
-    if (child_pid == -1)
+    if (pid == -1)
         throw ErrnoException(ErrorCodes::CANNOT_FORK, "Cannot vfork");
 
-    /// Here we are using double vfork technique to prevent zombie process.
-    if (0 == child_pid)
+    if (0 == pid)
     {
-        pid_t pid = reinterpret_cast<pid_t(*)()>(real_vfork)();
+        /// We are in the freshly created process.
 
-        if (pid == -1)
-            _exit(static_cast<int>(ReturnCodes::CANNOT_VFORK_IN_CHILD));
+        /// Why `_exit` and not `exit`? Because `exit` calls `atexit` and destructors of thread local storage.
+        /// And there is a lot of garbage (including, for example, mutex is blocked). And this can not be done after `vfork` - deadlock happens.
 
-        if (pid == 0)
+        /// Replace the file descriptors with the ends of our pipes.
+        if (STDIN_FILENO != dup2(pipe_stdin.fds_rw[0], STDIN_FILENO))
+            _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_STDIN));
+
+        if (!config.pipe_stdin_only)
         {
-            /// We are in the freshly created process.
+            if (STDOUT_FILENO != dup2(pipe_stdout.fds_rw[1], STDOUT_FILENO))
+                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_STDOUT));
 
-            /// Why `_exit` and not `exit`? Because `exit` calls `atexit` and destructors of thread local storage.
-            /// And there is a lot of garbage (including, for example, mutex is blocked). And this can not be done after `vfork` - deadlock happens.
-
-            /// Replace the file descriptors with the ends of our pipes.
-            if (STDIN_FILENO != dup2(pipe_stdin.fds_rw[0], STDIN_FILENO))
-                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_STDIN));
-
-            if (!config.pipe_stdin_only)
-            {
-                if (STDOUT_FILENO != dup2(pipe_stdout.fds_rw[1], STDOUT_FILENO))
-                    _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_STDOUT));
-
-                if (STDERR_FILENO != dup2(pipe_stderr.fds_rw[1], STDERR_FILENO))
-                    _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_STDERR));
-            }
-
-            for (size_t i = 0; i < config.read_fds.size(); ++i)
-            {
-                auto & fds = *read_pipe_fds[i];
-                auto fd = config.read_fds[i];
-
-                if (fd != dup2(fds.fds_rw[1], fd))
-                    _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_READ_DESCRIPTOR));
-            }
-
-            for (size_t i = 0; i < config.write_fds.size(); ++i)
-            {
-                auto & fds = *write_pipe_fds[i];
-                auto fd = config.write_fds[i];
-
-                if (fd != dup2(fds.fds_rw[0], fd))
-                    _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_WRITE_DESCRIPTOR));
-            }
-
-            // Reset the signal mask: it may be non-empty and will be inherited
-            // by the child process, which might not expect this.
-            sigset_t mask;
-            sigemptyset(&mask);
-            sigprocmask(0, nullptr, &mask); // NOLINT(concurrency-mt-unsafe)
-            sigprocmask(SIG_UNBLOCK, &mask, nullptr); // NOLINT(concurrency-mt-unsafe)
-
-            execv(filename, argv);
-            /// If the process is running, then `execv` does not return here.
-
-            _exit(static_cast<int>(ReturnCodes::CANNOT_EXEC));
+            if (STDERR_FILENO != dup2(pipe_stderr.fds_rw[1], STDERR_FILENO))
+                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_STDERR));
         }
-        else
+
+        for (size_t i = 0; i < config.read_fds.size(); ++i)
         {
-            DB::writeIntBinary(pid, write_buffer_for_child);
-            write_buffer_for_child.next();
-            _exit(0);
+            auto & fds = *read_pipe_fds[i];
+            auto fd = config.read_fds[i];
+
+            if (fd != dup2(fds.fds_rw[1], fd))
+                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_READ_DESCRIPTOR));
         }
+
+        for (size_t i = 0; i < config.write_fds.size(); ++i)
+        {
+            auto & fds = *write_pipe_fds[i];
+            auto fd = config.write_fds[i];
+
+            if (fd != dup2(fds.fds_rw[0], fd))
+                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_WRITE_DESCRIPTOR));
+        }
+
+        // Reset the signal mask: it may be non-empty and will be inherited
+        // by the child process, which might not expect this.
+        sigset_t mask;
+        sigemptyset(&mask);
+        sigprocmask(0, nullptr, &mask); // NOLINT(concurrency-mt-unsafe)
+        sigprocmask(SIG_UNBLOCK, &mask, nullptr); // NOLINT(concurrency-mt-unsafe)
+
+        execv(filename, argv);
+        /// If the process is running, then `execv` does not return here.
+
+        _exit(static_cast<int>(ReturnCodes::CANNOT_EXEC));
     }
-    else
-    {
-        int status = 0;
-        while (waitpid(child_pid, &status, 0) < 0)
-        {
-            if (errno != EINTR)
-                throw ErrnoException(ErrorCodes::CANNOT_WAITPID, "Cannot waitpid");
-        }
-        int return_code = handleWaitStatus(child_pid, status);
-        handleProceesReturnCode(child_pid, return_code);
-    }
-
-    pid_t grandchild_pid  = 0;
-    DB::readIntBinary(grandchild_pid, read_buffer_for_parent);
 
     std::unique_ptr<ShellCommand> res(new ShellCommand(
-        grandchild_pid,
+        pid,
         pipe_stdin.fds_rw[1],
         pipe_stdout.fds_rw[0],
         pipe_stderr.fds_rw[0],
@@ -275,7 +241,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         getLogger(),
         "Started shell command '{}' with pid {} and file descriptors: out {}, err {}",
         filename,
-        grandchild_pid,
+        pid,
         res->out.getFD(),
         res->err.getFD());
 
@@ -351,53 +317,44 @@ int ShellCommand::tryWait()
 
     LOG_TRACE(getLogger(), "Wait for shell command pid {} completed with status {}", pid, status);
 
-    return handleWaitStatus(pid, status);
-}
-
-void ShellCommand::wait()
-{
-    int retcode = tryWait();
-    handleProceesReturnCode(pid, retcode);
-}
-
-int ShellCommand::handleWaitStatus(pid_t pid, int status)
-{
     if (WIFEXITED(status))
         return WEXITSTATUS(status);
 
     if (WIFSIGNALED(status))
-        throw Exception(ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY, "Child process {} was terminated by signal {}", pid, toString(WTERMSIG(status)));
+        throw Exception(ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY, "Child process was terminated by signal {}", toString(WTERMSIG(status)));
 
     if (WIFSTOPPED(status))
-        throw Exception(ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY, "Child process {} was stopped by signal {}", pid, toString(WSTOPSIG(status)));
+        throw Exception(ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY, "Child process was stopped by signal {}", toString(WSTOPSIG(status)));
 
-    throw Exception(ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY, "Child process {} was not exited normally by unknown reason", pid);
+    throw Exception(ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY, "Child process was not exited normally by unknown reason");
 }
 
-void ShellCommand::handleProceesReturnCode(pid_t pid, int retcode)
+
+void ShellCommand::wait()
 {
+    int retcode = tryWait();
+
     if (retcode != EXIT_SUCCESS)
     {
         switch (retcode)
         {
             case static_cast<int>(ReturnCodes::CANNOT_DUP_STDIN):
-                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 stdin of child process: {}", pid);
+                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 stdin of child process");
             case static_cast<int>(ReturnCodes::CANNOT_DUP_STDOUT):
-                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 stdout of child process {}", pid);
+                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 stdout of child process");
             case static_cast<int>(ReturnCodes::CANNOT_DUP_STDERR):
-                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 stderr of child process {}", pid);
+                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 stderr of child process");
             case static_cast<int>(ReturnCodes::CANNOT_EXEC):
-                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot execv in child process {}", pid);
+                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot execv in child process");
             case static_cast<int>(ReturnCodes::CANNOT_DUP_READ_DESCRIPTOR):
-                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 read descriptor of child process {}", pid);
+                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 read descriptor of child process");
             case static_cast<int>(ReturnCodes::CANNOT_DUP_WRITE_DESCRIPTOR):
-                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 write descriptor of child process {}", pid);
-            case static_cast<int>(ReturnCodes::CANNOT_VFORK_IN_CHILD):
-                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot vfork in child procces {}", pid);
+                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 write descriptor of child process");
             default:
-                throw Exception(ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY, "Child process {} was exited with return code {}", pid, toString(retcode));
+                throw Exception(ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY, "Child process was exited with return code {}", toString(retcode));
         }
     }
 }
+
 
 }

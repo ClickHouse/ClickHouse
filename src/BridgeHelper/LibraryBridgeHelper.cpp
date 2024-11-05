@@ -29,7 +29,7 @@ LibraryBridgeHelper::LibraryBridgeHelper(ContextPtr context_)
 
 void LibraryBridgeHelper::startBridge(std::unique_ptr<ShellCommand> cmd) const
 {
-    getContext()->addBridgeCommand(std::move(cmd));
+    getContext()->addBackgroundShellCommand(std::move(cmd));
 }
 
 

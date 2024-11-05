@@ -67,6 +67,11 @@ public:
         DestructorStrategy terminate_in_destructor_strategy = DestructorStrategy(false, 0);
     };
 
+    pid_t getPid()
+    {
+        return pid;
+    }
+
     /// Run the command using /bin/sh -c.
     /// If terminate_in_destructor is true, send terminate signal in destructor and don't wait process.
     static std::unique_ptr<ShellCommand> execute(const Config & config);
@@ -98,9 +103,6 @@ private:
     bool tryWaitProcessWithTimeout(size_t timeout_in_seconds);
 
     static LoggerPtr getLogger();
-
-    static int handleWaitStatus(pid_t pid, int status);
-    static void handleProceesReturnCode(pid_t pid, int exit_code);
 
     /// Print command name and the list of arguments to log. NOTE: No escaping of arguments is performed.
     static void logCommand(const char * filename, char * const argv[]);
