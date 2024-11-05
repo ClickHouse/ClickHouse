@@ -803,9 +803,10 @@ void TCPHandler::runImpl()
             if (thread_trace_context)
                     thread_trace_context->root_span.addAttribute(*exception);
 
-            if (out && out->isCanceled())
+            if (!out || out->isCanceled())
             {
                 LOG_DEBUG(log, "Can't send logs or exception to client. Close connection.");
+                query_state->cancelOut(out);
                 return;
             }
 
