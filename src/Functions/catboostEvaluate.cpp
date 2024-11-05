@@ -50,7 +50,7 @@ public:
 
     void initBridge(const ColumnConst * name_col) const
     {
-        String library_path = getContext()->getConfigRef().getString("catboost_lib_path");
+        String library_path = getContext()->getConfig()->getString("catboost_lib_path");
         if (!std::filesystem::exists(library_path))
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can't load library {}: file doesn't exist", library_path);
 

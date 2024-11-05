@@ -21,6 +21,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/IStorage_fwd.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
 #include "config.h"
 
@@ -614,7 +615,8 @@ public:
 
     /// Global application configuration settings.
     void setConfig(const ConfigurationPtr & config);
-    const Poco::Util::AbstractConfiguration & getConfigRef() const;
+    void setReloadedConfig(const ConfigurationPtr & config);
+    ConfigurationPtr getConfig() const;
 
     AccessControl & getAccessControl();
     const AccessControl & getAccessControl() const;

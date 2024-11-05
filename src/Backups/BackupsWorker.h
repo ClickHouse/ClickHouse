@@ -7,6 +7,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <unordered_map>
 
+#include <Poco/AutoPtr.h>
 
 namespace Poco::Util { class AbstractConfiguration; }
 
@@ -136,6 +137,7 @@ private:
 
     class ThreadPools;
     std::unique_ptr<ThreadPools> thread_pools;
+    Poco::AutoPtr<Poco::Util::AbstractConfiguration> config;
 
     const bool allow_concurrent_backups;
     const bool allow_concurrent_restores;

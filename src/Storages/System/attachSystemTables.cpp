@@ -241,7 +241,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
         attach<StorageSystemZooKeeperConnection>(context, system_database, "zookeeper_connection", "Shows the information about current connections to [Zoo]Keeper (including auxiliary [ZooKeepers)");
     }
 
-    if (context->getConfigRef().getInt("allow_experimental_transactions", 0))
+    if (context->getConfig()->getInt("allow_experimental_transactions", 0))
         attach<StorageSystemTransactions>(context, system_database, "transactions", "Contains a list of transactions and their state.");
 }
 

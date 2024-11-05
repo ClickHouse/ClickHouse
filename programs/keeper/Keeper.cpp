@@ -226,45 +226,46 @@ namespace
 struct KeeperHTTPContext : public IHTTPContext
 {
     explicit KeeperHTTPContext(ContextPtr context_)
-        : context(std::move(context_))
+        : context(std::move(context_)), config(context->getConfig())
     {}
 
     uint64_t getMaxHstsAge() const override
     {
-        return context->getConfigRef().getUInt64("keeper_server.hsts_max_age", 0);
+        return config->getUInt64("keeper_server.hsts_max_age", 0);
     }
 
     uint64_t getMaxUriSize() const override
     {
-        return context->getConfigRef().getUInt64("keeper_server.http_max_uri_size", 1048576);
+        return config->getUInt64("keeper_server.http_max_uri_size", 1048576);
     }
 
     uint64_t getMaxFields() const override
     {
-        return context->getConfigRef().getUInt64("keeper_server.http_max_fields", 1000000);
+        return config->getUInt64("keeper_server.http_max_fields", 1000000);
     }
 
     uint64_t getMaxFieldNameSize() const override
     {
-        return context->getConfigRef().getUInt64("keeper_server.http_max_field_name_size", 128 * 1024);
+        return config->getUInt64("keeper_server.http_max_field_name_size", 128 * 1024);
     }
 
     uint64_t getMaxFieldValueSize() const override
     {
-        return context->getConfigRef().getUInt64("keeper_server.http_max_field_value_size", 128 * 1024);
+        return config->getUInt64("keeper_server.http_max_field_value_size", 128 * 1024);
     }
 
     Poco::Timespan getReceiveTimeout() const override
     {
-        return {context->getConfigRef().getInt64("keeper_server.http_receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0};
+        return {config->getInt64("keeper_server.http_receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0};
     }
 
     Poco::Timespan getSendTimeout() const override
     {
-        return {context->getConfigRef().getInt64("keeper_server.http_send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0};
+        return {config->getInt64("keeper_server.http_send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0};
     }
 
     ContextPtr context;
+    Poco::AutoPtr<Poco::Util::AbstractConfiguration> config;
 };
 
 HTTPContextPtr httpContext()
@@ -447,9 +448,9 @@ try
     global_context->initializeKeeperDispatcher(/* start_async = */ false);
     FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
 
-    auto config_getter = [&] () -> const Poco::Util::AbstractConfiguration &
+    auto config_getter = [config_snapshot = global_context->getConfig()] () -> const Poco::Util::AbstractConfiguration &
     {
-        return global_context->getConfigRef();
+        return *config_snapshot;
     };
 
     auto tcp_receive_timeout = config().getInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC);

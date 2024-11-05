@@ -1238,14 +1238,14 @@ try
     zkutil::EventPtr main_config_zk_changed_event = std::make_shared<Poco::Event>();
     if (loaded_config.has_zk_includes)
     {
-        auto old_configuration = loaded_config.configuration;
         ConfigProcessor config_processor(config_path);
         loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
             main_config_zk_node_cache, main_config_zk_changed_event, /* fallback_to_preprocessed = */ true);
         config_processor.savePreprocessedConfig(loaded_config, path_str);
-        config().removeConfiguration(old_configuration.get());
-        config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
-        global_context->setConfig(loaded_config.configuration);
+        if (last_configuration != nullptr)
+            config().removeConfiguration(last_configuration);
+        last_configuration = loaded_config.configuration.duplicate();
+        config().add(last_configuration, PRIO_DEFAULT, false);
     }
 
     Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
@@ -1665,16 +1665,9 @@ try
         config().getString("path", DBMS_DEFAULT_PATH),
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
-        [&, config_file = config().getString("config-file", "config.xml")](ConfigurationPtr config, bool initial_loading)
+        [&](ConfigurationPtr config, bool initial_loading)
         {
-            if (!initial_loading)
-            {
-                /// Add back "config-file" key which is absent in the reloaded config.
-                config->setString("config-file", config_file);
-
-                /// Apply config updates in global context.
-                global_context->setConfig(config);
-            }
+            global_context->setReloadedConfig(config);
 
             Settings::checkNoSettingNamesAtTopLevel(*config, config_path);
 
@@ -1957,9 +1950,9 @@ try
         global_context->initializeKeeperDispatcher(can_initialize_keeper_async);
         FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
 
-        auto config_getter = [this] () -> const Poco::Util::AbstractConfiguration &
+        auto config_getter = [config_snapshot = global_context->getConfig()] () -> const Poco::Util::AbstractConfiguration &
         {
-            return global_context->getConfigRef();
+            return *config_snapshot;
         };
 
         for (const auto & listen_host : listen_hosts)
@@ -2523,8 +2516,9 @@ try
         std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
         for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
         {
+            auto config_snapshot = global_context->getConfig();
             metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(
-                global_context->getConfigRef(), graphite_key, async_metrics));
+                *config_snapshot, graphite_key, async_metrics));
         }
 
         waitForTerminationRequest();

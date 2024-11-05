@@ -241,12 +241,13 @@ public:
                     auto get_raw_read_buf = [&]() -> std::unique_ptr<ReadBuffer>
                     {
                         bool thread_pool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
+                        auto config = getContext()->getGlobalContext()->getConfig();
                         if (thread_pool_read)
                         {
                             auto buf = std::make_unique<ReadBufferFromHDFS>(
                                 hdfs_namenode_url,
                                 current_path,
-                                getContext()->getGlobalContext()->getConfigRef(),
+                                *config,
                                 getContext()->getReadSettings(),
                                 /* read_until_position */0,
                                 /* use_external_buffer */true);
@@ -258,7 +259,7 @@ public:
                         return std::make_unique<ReadBufferFromHDFS>(
                             hdfs_namenode_url,
                             current_path,
-                            getContext()->getGlobalContext()->getConfigRef(),
+                            *config,
                             getContext()->getReadSettings());
 
                     };
@@ -853,7 +854,8 @@ void StorageHive::read(
 {
     lazyInitialize();
 
-    HDFSBuilderWrapper builder = createHDFSBuilder(hdfs_namenode_url, context_->getGlobalContext()->getConfigRef());
+    auto config = context_->getGlobalContext()->getConfig();
+    HDFSBuilderWrapper builder = createHDFSBuilder(hdfs_namenode_url, *config);
     HDFSFSPtr fs = createHDFSFS(builder.get());
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url);
     auto hive_table_metadata = hive_metastore_client->getTableMetadata(hive_database, hive_table);
@@ -1064,7 +1066,8 @@ StorageHive::totalRowsImpl(const Settings & settings, const ActionsDAG * filter_
 
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url);
     auto hive_table_metadata = hive_metastore_client->getTableMetadata(hive_database, hive_table);
-    HDFSBuilderWrapper builder = createHDFSBuilder(hdfs_namenode_url, getContext()->getGlobalContext()->getConfigRef());
+    auto config = getContext()->getGlobalContext()->getConfig();
+    HDFSBuilderWrapper builder = createHDFSBuilder(hdfs_namenode_url, *config);
     HDFSFSPtr fs = createHDFSFS(builder.get());
     HiveFiles hive_files = collectHiveFiles(settings[Setting::max_threads], filter_actions_dag, hive_table_metadata, fs, context_, prune_level);
 

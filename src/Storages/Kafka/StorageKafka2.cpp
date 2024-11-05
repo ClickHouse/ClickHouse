@@ -454,8 +454,9 @@ KafkaConsumer2Ptr StorageKafka2::createConsumer(size_t consumer_number)
 
 cppkafka::Configuration StorageKafka2::getConsumerConfiguration(size_t consumer_number)
 {
+    auto config = getContext()->getConfig();
     KafkaConfigLoader::ConsumerConfigParams params{
-        {getContext()->getConfigRef(), collection_name, topics, log},
+        {*config, collection_name, topics, log},
         brokers,
         group,
         num_consumers > 1,
@@ -470,8 +471,9 @@ cppkafka::Configuration StorageKafka2::getConsumerConfiguration(size_t consumer_
 
 cppkafka::Configuration StorageKafka2::getProducerConfiguration()
 {
+    auto config = getContext()->getConfig();
     KafkaConfigLoader::ProducerConfigParams params{
-        {getContext()->getConfigRef(), collection_name, topics, log},
+        {*config, collection_name, topics, log},
         brokers,
         client_id};
     return KafkaConfigLoader::getProducerConfiguration(*this, params);

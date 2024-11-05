@@ -125,9 +125,9 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
             }
 
             path = args[0].safeGet<String>();
-            const auto & config = params.context->getConfigRef();
+            auto config = params.context->getConfig();
             const auto & data_dir = params.context->getPath();
-            checkPath(path, config, data_dir);
+            checkPath(path, *config, data_dir);
         }
         else if (engine_name == "Disk")
         {
@@ -137,8 +137,8 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
             }
 
             String disk_name = args[0].safeGet<String>();
-            const auto & config = params.context->getConfigRef();
-            checkDiskName(disk_name, config);
+            auto config = params.context->getConfig();
+            checkDiskName(disk_name, *config);
             path = args[1].safeGet<String>();
             disk = params.context->getDisk(disk_name);
             checkPath(disk_name, disk, path);

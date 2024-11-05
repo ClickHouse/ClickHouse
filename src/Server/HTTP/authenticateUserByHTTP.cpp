@@ -242,7 +242,7 @@ bool authenticateUserByHTTP(
     String forwarded_address = session.getClientInfo().getLastForwardedFor();
     try
     {
-        if (!forwarded_address.empty() && global_context->getConfigRef().getBool("auth_use_forwarded_address", false))
+        if (!forwarded_address.empty() && global_context->getConfig()->getBool("auth_use_forwarded_address", false))
             session.authenticate(*current_credentials, Poco::Net::SocketAddress(forwarded_address, request.clientAddress().port()));
         else
             session.authenticate(*current_credentials, request.clientAddress());

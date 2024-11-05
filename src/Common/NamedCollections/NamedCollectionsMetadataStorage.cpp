@@ -379,8 +379,8 @@ public:
     NamedCollectionsMetadataStorageEncrypted(ContextPtr context_, const std::string & path_)
         : BaseMetadataStorage(context_, path_)
     {
-        const auto & config = BaseMetadataStorage::getContext()->getConfigRef();
-        auto key_hex = config.getRawString("named_collections_storage.key_hex", "");
+        auto config = BaseMetadataStorage::getContext()->getConfig();
+        auto key_hex = config->getRawString("named_collections_storage.key_hex", "");
         try
         {
             key = boost::algorithm::unhex(key_hex);
@@ -391,7 +391,7 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read key_hex, check for valid characters [0-9a-fA-F] and length");
         }
 
-        algorithm = FileEncryption::parseAlgorithmFromString(config.getString("named_collections_storage.algorithm", "aes_128_ctr"));
+        algorithm = FileEncryption::parseAlgorithmFromString(config->getString("named_collections_storage.algorithm", "aes_128_ctr"));
     }
 
     std::string readHook(const std::string & data) const override
@@ -605,20 +605,20 @@ bool NamedCollectionsMetadataStorage::waitUpdate()
     if (!storage->isReplicated())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Periodic updates are not supported");
 
-    const auto & config = Context::getGlobalContextInstance()->getConfigRef();
-    const size_t timeout = config.getUInt(named_collections_storage_config_path + ".update_timeout_ms", 5000);
+    auto config = Context::getGlobalContextInstance()->getConfig();
+    const size_t timeout = config->getUInt(named_collections_storage_config_path + ".update_timeout_ms", 5000);
 
     return storage->waitUpdate(timeout);
 }
 
 std::unique_ptr<NamedCollectionsMetadataStorage> NamedCollectionsMetadataStorage::create(const ContextPtr & context_)
 {
-    const auto & config = context_->getConfigRef();
-    const auto storage_type = config.getString(named_collections_storage_config_path + ".type", "local");
+    auto config = context_->getConfig();
+    const auto storage_type = config->getString(named_collections_storage_config_path + ".type", "local");
 
     if (storage_type == "local" || storage_type == "local_encrypted")
     {
-        const auto path = config.getString(
+        const auto path = config->getString(
             named_collections_storage_config_path + ".path",
             std::filesystem::path(context_->getPath()) / "named_collections");
 
@@ -642,7 +642,7 @@ std::unique_ptr<NamedCollectionsMetadataStorage> NamedCollectionsMetadataStorage
     }
     if (storage_type == "zookeeper" || storage_type == "keeper" || storage_type == "zookeeper_encrypted" || storage_type == "keeper_encrypted")
     {
-        const auto path = config.getString(named_collections_storage_config_path + ".path");
+        const auto path = config->getString(named_collections_storage_config_path + ".path");
 
         std::unique_ptr<INamedCollectionsStorage> zk_storage;
         if (!storage_type.ends_with("_encrypted"))

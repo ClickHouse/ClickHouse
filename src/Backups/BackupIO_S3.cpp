@@ -104,7 +104,7 @@ namespace
         S3::ClientSettings client_settings{
             .use_virtual_addressing = s3_uri.is_virtual_hosted_style,
             .disable_checksum = local_settings[Setting::s3_disable_checksum],
-            .gcs_issue_compose_request = context->getConfigRef().getBool("s3.gcs_issue_compose_request", false),
+            .gcs_issue_compose_request = context->getConfig()->getBool("s3.gcs_issue_compose_request", false),
             .is_s3express_bucket = S3::isS3ExpressEndpoint(s3_uri.endpoint),
         };
 
@@ -152,7 +152,8 @@ BackupReaderS3::BackupReaderS3(
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false}
 {
-    s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
+    auto config = context_->getConfig();
+    s3_settings.loadFromConfig(*config, "s3", context_->getSettingsRef());
 
     if (auto endpoint_settings = context_->getStorageS3Settings().getSettings(
             s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup))
@@ -247,11 +248,12 @@ BackupWriterS3::BackupWriterS3(
     const ContextPtr & context_,
     bool is_internal_backup)
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterS3"))
+    , config(context_->getConfig())
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false}
-    , s3_capabilities(getCapabilitiesFromConfig(context_->getConfigRef(), "s3"))
+    , s3_capabilities(getCapabilitiesFromConfig(*config, "s3"))
 {
-    s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
+    s3_settings.loadFromConfig(*config, "s3", context_->getSettingsRef());
 
     if (auto endpoint_settings = context_->getStorageS3Settings().getSettings(
             s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup))

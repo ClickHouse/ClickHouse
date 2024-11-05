@@ -29,7 +29,7 @@ BackupKeeperSettings BackupKeeperSettings::fromContext(const ContextPtr & contex
     BackupKeeperSettings keeper_settings;
 
     const auto & settings = context->getSettingsRef();
-    const auto & config = context->getConfigRef();
+    auto config = context->getConfig();
 
     keeper_settings.max_retries = settings[Setting::backup_restore_keeper_max_retries];
     keeper_settings.retry_initial_backoff_ms = std::chrono::milliseconds{settings[Setting::backup_restore_keeper_retry_initial_backoff_ms]};
@@ -40,11 +40,11 @@ BackupKeeperSettings BackupKeeperSettings::fromContext(const ContextPtr & contex
     keeper_settings.max_retries_while_handling_error = settings[Setting::backup_restore_keeper_max_retries_while_handling_error];
     keeper_settings.finish_timeout_after_error = std::chrono::seconds(settings[Setting::backup_restore_finish_timeout_after_error_sec]);
 
-    if (config.has("backups.sync_period_ms"))
-        keeper_settings.sync_period_ms = std::chrono::milliseconds{config.getUInt64("backups.sync_period_ms")};
+    if (config->has("backups.sync_period_ms"))
+        keeper_settings.sync_period_ms = std::chrono::milliseconds{config->getUInt64("backups.sync_period_ms")};
 
-    if (config.has("backups.max_attempts_after_bad_version"))
-        keeper_settings.max_attempts_after_bad_version = config.getUInt64("backups.max_attempts_after_bad_version");
+    if (config->has("backups.max_attempts_after_bad_version"))
+        keeper_settings.max_attempts_after_bad_version = config->getUInt64("backups.max_attempts_after_bad_version");
 
     keeper_settings.value_max_size = settings[Setting::backup_restore_keeper_value_max_size];
     keeper_settings.batch_size_for_multi = settings[Setting::backup_restore_batch_size_for_keeper_multi];

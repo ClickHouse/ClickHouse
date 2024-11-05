@@ -60,7 +60,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     auto context = Context::getGlobalContextInstance();
     if (context)
     {
-        const auto *config = &context->getConfigRef();
+        auto config = context->getConfig();
         if (config->has("url_scheme_mappers"))
         {
             std::vector<String> config_keys;

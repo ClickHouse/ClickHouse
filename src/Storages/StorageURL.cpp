@@ -235,7 +235,8 @@ namespace
     {
         auto protocol = protocol_string == "https" ? ProxyConfigurationResolver::Protocol::HTTPS
                                              : ProxyConfigurationResolver::Protocol::HTTP;
-        return ProxyConfigurationResolverProvider::get(protocol, Context::getGlobalContextInstance()->getConfigRef())->resolve();
+        auto config = Context::getGlobalContextInstance()->getConfig();
+        return ProxyConfigurationResolverProvider::get(protocol, *config)->resolve();
     }
 }
 
@@ -1372,7 +1373,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
 
 SchemaCache & IStorageURLBase::getSchemaCache(const ContextPtr & context)
 {
-    static SchemaCache schema_cache(context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_url", DEFAULT_SCHEMA_CACHE_ELEMENTS));
+    static SchemaCache schema_cache(context->getConfig()->getUInt("schema_inference_cache_max_elements_for_url", DEFAULT_SCHEMA_CACHE_ELEMENTS));
     return schema_cache;
 }
 

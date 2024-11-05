@@ -32,7 +32,7 @@ void HDFSObjectStorage::initializeHDFSFS() const
     if (initialized)
         return;
 
-    hdfs_builder = createHDFSBuilder(url, config);
+    hdfs_builder = createHDFSBuilder(url, *config);
     hdfs_fs = createHDFSFS(hdfs_builder.get());
     initialized = true;
 }
@@ -84,7 +84,7 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLIN
     return std::make_unique<ReadBufferFromHDFS>(
         fs::path(url_without_path) / "",
         fs::path(data_directory) / path,
-        config,
+        *config,
         patchSettings(read_settings),
         /* read_until_position */0,
         read_settings.remote_read_buffer_use_external_buffer);
@@ -108,7 +108,7 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
     return std::make_unique<WriteBufferFromHDFS>(
         url_without_path,
         fs::path(data_directory) / path,
-        config,
+        *config,
         settings->replication,
         patchSettings(write_settings),
         buf_size,

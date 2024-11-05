@@ -17,11 +17,11 @@ namespace ServerSetting
 
 LibraryBridgeHelper::LibraryBridgeHelper(ContextPtr context_)
     : IBridgeHelper(context_)
-    , config(context_->getConfigRef())
+    , config(context_->getConfig())
     , log(getLogger("LibraryBridgeHelper"))
     , http_timeout(context_->getGlobalContext()->getSettingsRef()[Setting::http_receive_timeout].value)
-    , bridge_host(config.getString("library_bridge.host", DEFAULT_HOST))
-    , bridge_port(config.getUInt("library_bridge.port", DEFAULT_PORT))
+    , bridge_host(config->getString("library_bridge.host", DEFAULT_HOST))
+    , bridge_port(config->getUInt("library_bridge.port", DEFAULT_PORT))
     , http_timeouts(ConnectionTimeouts::getHTTPTimeouts(context_->getSettingsRef(), context_->getServerSettings()))
 {
 }

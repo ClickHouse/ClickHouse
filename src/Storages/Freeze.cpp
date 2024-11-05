@@ -128,9 +128,9 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
 {
     LOG_DEBUG(log, "Unfreezing backup {}", escapeForFileName(backup_name));
 
-    const auto & config = local_context->getConfigRef();
+    auto config = local_context->getConfig();
     static constexpr auto config_key = "enable_system_unfreeze";
-    if (!config.getBool(config_key, false))
+    if (!config->getBool(config_key, false))
     {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "Support for SYSTEM UNFREEZE query is disabled. You can enable it via '{}' server setting",

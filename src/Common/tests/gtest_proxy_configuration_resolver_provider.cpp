@@ -34,10 +34,10 @@ Poco::URI https_list_proxy_server = Poco::URI("http://https_list_proxy:3128");
 TEST_F(ProxyConfigurationResolverProviderTests, EnvironmentResolverShouldBeUsedIfNoSettings)
 {
     EnvironmentProxySetter setter;
-    const auto & config = getContext().context->getConfigRef();
+    auto config = getContext().context->getConfig();
 
-    auto http_resolver = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTP, config);
-    auto https_resolver = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTPS, config);
+    auto http_resolver = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTP, *config);
+    auto https_resolver = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTPS, *config);
 
     ASSERT_TRUE(std::dynamic_pointer_cast<DB::EnvironmentProxyConfigurationResolver>(http_resolver));
     ASSERT_TRUE(std::dynamic_pointer_cast<DB::EnvironmentProxyConfigurationResolver>(https_resolver));

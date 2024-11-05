@@ -375,7 +375,7 @@ static UInt64 getQueryMetricLogInterval(ContextPtr context)
     const auto & settings = context->getSettingsRef();
     auto interval_milliseconds = settings[Setting::query_metric_log_interval];
     if (interval_milliseconds < 0)
-        interval_milliseconds = context->getConfigRef().getUInt64("query_metric_log.collect_interval_milliseconds", 1000);
+        interval_milliseconds = context->getConfig()->getUInt64("query_metric_log.collect_interval_milliseconds", 1000);
 
     return interval_milliseconds;
 }

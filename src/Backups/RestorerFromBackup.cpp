@@ -100,7 +100,7 @@ RestorerFromBackup::RestorerFromBackup(
     , context(context_)
     , process_list_element(context->getProcessListElement())
     , after_task_callback(after_task_callback_)
-    , create_table_timeout(context->getConfigRef().getUInt64("backups.create_table_timeout", 300000))
+    , create_table_timeout(context->getConfig()->getUInt64("backups.create_table_timeout", 300000))
     , log(getLogger("RestorerFromBackup"))
     , tables_dependencies("RestorerFromBackup")
     , thread_pool(thread_pool_)

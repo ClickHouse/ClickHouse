@@ -222,7 +222,7 @@ ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, const Cont
         {
             /// Table was created on older version of ClickHouse and CREATE contains not folded expression.
             /// Current database is not set yet during server startup, so we cannot evaluate it correctly.
-            literal.value = context->getConfigRef().getString("default_database", "default");
+            literal.value = context->getConfig()->getString("default_database", "default");
         }
         else
             literal.value = current_database;

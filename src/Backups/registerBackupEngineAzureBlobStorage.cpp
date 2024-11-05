@@ -56,16 +56,16 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
 
         if (!id_arg.empty())
         {
-            const auto & config = params.context->getConfigRef();
+            auto config = params.context->getConfig();
             auto config_prefix = "named_collections." + id_arg;
 
-            if (!config.has(config_prefix))
+            if (!config->has(config_prefix))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", id_arg);
 
             connection_params =
             {
-                .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
-                .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
+                .endpoint = AzureBlobStorage::processEndpoint(*config, config_prefix),
+                .auth_method = AzureBlobStorage::getAuthMethod(*config, config_prefix),
                 .client_options = AzureBlobStorage::getClientOptions(*request_settings, /*for_disk=*/ true),
             };
 

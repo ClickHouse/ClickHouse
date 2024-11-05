@@ -104,14 +104,15 @@ StorageNATS::StorageNATS(
     auto nats_token = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_token]);
     auto nats_credential_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credential_file]);
 
+    auto config = getContext()->getConfig();
     configuration =
     {
         .url = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_url]),
         .servers = parseList(getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_server_list]), ','),
-        .username = nats_username.empty() ? getContext()->getConfigRef().getString("nats.user", "") : nats_username,
-        .password = nats_password.empty() ? getContext()->getConfigRef().getString("nats.password", "") : nats_password,
-        .token = nats_token.empty() ? getContext()->getConfigRef().getString("nats.token", "") : nats_token,
-        .credential_file = nats_credential_file.empty() ? getContext()->getConfigRef().getString("nats.credential_file", "") : nats_credential_file,
+        .username = nats_username.empty() ? config->getString("nats.user", "") : nats_username,
+        .password = nats_password.empty() ? config->getString("nats.password", "") : nats_password,
+        .token = nats_token.empty() ? config->getString("nats.token", "") : nats_token,
+        .credential_file = nats_credential_file.empty() ? config->getString("nats.credential_file", "") : nats_credential_file,
         .max_reconnect = static_cast<int>((*nats_settings)[NATSSetting::nats_max_reconnect].value),
         .reconnect_wait = static_cast<int>((*nats_settings)[NATSSetting::nats_reconnect_wait].value),
         .secure = (*nats_settings)[NATSSetting::nats_secure].value

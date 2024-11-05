@@ -34,7 +34,7 @@ TablesLoader::TablesLoader(ContextMutablePtr global_context_, Databases database
 
 LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)
 {
-    bool need_resolve_dependencies = !global_context->getConfigRef().has("ignore_table_dependencies_on_metadata_loading");
+    bool need_resolve_dependencies = !global_context->getConfig()->has("ignore_table_dependencies_on_metadata_loading");
 
     /// Load all Lazy, MySQL, PostgreSQL, SQLite, etc databases first.
     /// Note that this loading is NOT async because it should be fast and it cannot have any dependencies

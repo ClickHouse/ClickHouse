@@ -142,7 +142,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         std::find_if(queue_settings_list.begin(), queue_settings_list.end(),
                      [](const String & name) { return name.starts_with(deadletter_exchange_setting); });
 
-    const auto & config = getContext()->getConfigRef();
+    auto config = getContext()->getConfig();
 
     std::pair<String, UInt16> parsed_address;
     auto setting_rabbitmq_username = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_username].value;
@@ -151,8 +151,8 @@ StorageRabbitMQ::StorageRabbitMQ(
 
     if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_host_port].changed)
     {
-        username = setting_rabbitmq_username.empty() ? config.getString("rabbitmq.username", "") : setting_rabbitmq_username;
-        password = setting_rabbitmq_password.empty() ? config.getString("rabbitmq.password", "") : setting_rabbitmq_password;
+        username = setting_rabbitmq_username.empty() ? config->getString("rabbitmq.username", "") : setting_rabbitmq_username;
+        password = setting_rabbitmq_password.empty() ? config->getString("rabbitmq.password", "") : setting_rabbitmq_password;
         if (username.empty() || password.empty())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -175,7 +175,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         .port = parsed_address.second,
         .username = username,
         .password = password,
-        .vhost = config.getString("rabbitmq.vhost", getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_vhost])),
+        .vhost = config->getString("rabbitmq.vhost", getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_vhost])),
         .secure = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_secure].value,
         .connection_string = getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_address])
     };

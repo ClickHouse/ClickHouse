@@ -2223,7 +2223,7 @@ void registerStorageFile(StorageFactory & factory)
 
 SchemaCache & StorageFile::getSchemaCache(const ContextPtr & context)
 {
-    static SchemaCache schema_cache(context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_file", DEFAULT_SCHEMA_CACHE_ELEMENTS));
+    static SchemaCache schema_cache(context->getConfig()->getUInt("schema_inference_cache_max_elements_for_file", DEFAULT_SCHEMA_CACHE_ELEMENTS));
     return schema_cache;
 }
 

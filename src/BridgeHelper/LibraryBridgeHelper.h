@@ -29,7 +29,7 @@ protected:
 
     String configPrefix() const override { return "library_bridge"; }
 
-    const Poco::Util::AbstractConfiguration & getConfig() const override { return config; }
+    const Poco::Util::AbstractConfiguration & getConfig() const override { return *config; }
 
     LoggerPtr getLog() const override { return log; }
 
@@ -39,7 +39,7 @@ protected:
 
     static constexpr size_t DEFAULT_PORT = 9012;
 
-    const Poco::Util::AbstractConfiguration & config;
+    Poco::AutoPtr<Poco::Util::AbstractConfiguration> config;
     LoggerPtr log;
     const Poco::Timespan http_timeout;
     std::string bridge_host;

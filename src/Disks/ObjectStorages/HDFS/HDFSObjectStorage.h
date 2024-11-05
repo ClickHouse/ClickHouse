@@ -35,9 +35,9 @@ public:
     HDFSObjectStorage(
         const String & hdfs_root_path_,
         SettingsPtr settings_,
-        const Poco::Util::AbstractConfiguration & config_,
+        ContextPtr context,
         bool lazy_initialize)
-        : config(config_)
+        : config(context->getConfig())
         , settings(std::move(settings_))
         , log(getLogger("HDFSObjectStorage(" + hdfs_root_path_ + ")"))
     {
@@ -117,7 +117,7 @@ private:
     void initializeHDFSFS() const;
     std::string extractObjectKeyFromURL(const StoredObject & object) const;
 
-    const Poco::Util::AbstractConfiguration & config;
+    Poco::AutoPtr<Poco::Util::AbstractConfiguration> config;
 
     mutable HDFSBuilderWrapper hdfs_builder;
     mutable HDFSFSPtr hdfs_fs;

@@ -36,13 +36,13 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
     {
         HTMLForm params(getContext()->getSettingsRef(), request);
 
-        const auto & config = getContext()->getConfigRef();
+        auto config = getContext()->getConfig();
 
         const MergeTreeSettings & settings = getContext()->getReplicatedMergeTreeSettings();
 
         /// Even if lag is small, output detailed information about the lag.
         bool verbose = false;
-        bool enable_verbose = config.getBool("enable_verbose_replicas_status", true);
+        bool enable_verbose = config->getBool("enable_verbose_replicas_status", true);
 
         if (params.get("verbose", "") == "1" && enable_verbose)
             verbose = true;
