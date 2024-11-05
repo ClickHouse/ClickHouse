@@ -366,7 +366,7 @@ def test_insert_quorum_with_ttl(started_cluster):
     zero.query("DROP TABLE IF EXISTS test_insert_quorum_with_ttl ON CLUSTER cluster")
 
 
-def test_insert_quorum_with_keeper_loss_connection(started_cluster):
+def test_insert_quorum_with_keeper_loss_connection():
     zero.query(
         "DROP TABLE IF EXISTS test_insert_quorum_with_keeper_fail ON CLUSTER cluster"
     )
