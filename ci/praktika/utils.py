@@ -81,25 +81,26 @@ class MetaClasses:
 class ContextManager:
     @staticmethod
     @contextmanager
-    def cd(to: Optional[Union[Path, str]] = None) -> Iterator[None]:
+    def cd(to: Optional[Union[Path, str]]) -> Iterator[None]:
         """
         changes current working directory to @path or `git root` if @path is None
         :param to:
         :return:
         """
-        if not to:
-            try:
-                to = Shell.get_output_or_raise("git rev-parse --show-toplevel")
-            except:
-                pass
-            if not to:
-                if Path(_Settings.DOCKER_WD).is_dir():
-                    to = _Settings.DOCKER_WD
-            if not to:
-                assert False, "FIX IT"
-            assert to
+        # if not to:
+        #     try:
+        #         to = Shell.get_output_or_raise("git rev-parse --show-toplevel")
+        #     except:
+        #         pass
+        #     if not to:
+        #         if Path(_Settings.DOCKER_WD).is_dir():
+        #             to = _Settings.DOCKER_WD
+        #     if not to:
+        #         assert False, "FIX IT"
+        #     assert to
         old_pwd = os.getcwd()
-        os.chdir(to)
+        if to:
+            os.chdir(to)
         try:
             yield
         finally:

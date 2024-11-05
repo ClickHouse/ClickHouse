@@ -1,6 +1,5 @@
 import argparse
 
-from praktika.param import get_param
 from praktika.result import Result
 from praktika.settings import Settings
 from praktika.utils import MetaClasses, Shell, Utils
@@ -16,8 +15,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Build Job")
     parser.add_argument(
         "--build-type",
-        help="Type: <amd|arm>_<debug|release>_<asan|msan|..>",
-        default=None,
+        help="Type: <amd|arm>,<debug|release>,<asan|msan|..>",
     )
     parser.add_argument(
         "--param",
@@ -30,7 +28,7 @@ def parse_args():
 CMAKE_CMD = """cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA \
 -DCMAKE_BUILD_TYPE={BUILD_TYPE} \
 -DSANITIZE={SANITIZER} \
--DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DENABLE_TESTS=0 \
+-DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 \
 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr \
 -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON \
 {AUX_DEFS} \
@@ -54,33 +52,26 @@ def main():
             stages.pop(0)
         stages.insert(0, stage)
 
-    cmake_build_type = "Release"
-    sanitizer = ""
-
-    if args.build_type and get_param():
-        assert (
-            False
-        ), "Build type must provided via job parameter (CI case) or via --build-type input argument not both"
-
-    build_type = args.build_type or get_param()
+    build_type = args.build_type
     assert (
         build_type
     ), "build_type must be provided either as input argument or as a parameter of parametrized job in CI"
     build_type = build_type.lower()
 
-    # if Environment.is_local_run():
-    #     build_cache_type = "disabled"
-    # else:
     CACHE_TYPE = "sccache"
 
     if "debug" in build_type:
         print("Build type set: debug")
         BUILD_TYPE = "Debug"
-        AUX_DEFS = " -DSPLIT_DEBUG_SYMBOLS=ON -DBUILD_STANDALONE_KEEPER=1 "
+        AUX_DEFS = (
+            " -DENABLE_TESTS=1 -DSPLIT_DEBUG_SYMBOLS=ON -DBUILD_STANDALONE_KEEPER=1 "
+        )
     elif "release" in build_type:
         print("Build type set: release")
-        BUILD_TYPE = "None"
-        AUX_DEFS = " -DENABLE_TESTS=1 "
+        BUILD_TYPE = "RelWithDebInfo"
+        AUX_DEFS = " -DENABLE_TESTS=0 "
+    else:
+        assert False
 
     if "asan" in build_type:
         print("Sanitizer set: address")
@@ -135,6 +126,7 @@ def main():
         Shell.check("sccache --show-stats")
         Shell.check(f"ls -l {build_dir}/programs/")
         res = results[-1].is_ok()
+
 
     Result.create_from(results=results, stopwatch=stop_watch).complete_job()
 

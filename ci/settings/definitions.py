@@ -8,7 +8,7 @@ class RunnerLabels:
     CI_SERVICES = "ci_services"
     CI_SERVICES_EBS = "ci_services_ebs"
     BUILDER = "builder"
-    STYLE_CHECKER = "style-checker"
+    FUNC_TESTER_AMD = "func-tester"
 
 
 BASE_BRANCH = "master"
@@ -238,5 +238,4 @@ class JobNames:
     STYLE_CHECK = "Style Check"
     FAST_TEST = "Fast test"
     BUILD = "Build"
-    BUILD_AMD_DEBUG = "Build (amd, debug)"
-    STATELESS_TESTS = "Stateless tests (amd, debug)"
+    STATELESS = "Stateless tests"

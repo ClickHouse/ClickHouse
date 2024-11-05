@@ -215,11 +215,13 @@ def main():
         )
 
     if res and JobStages.TEST in stages:
+        stop_watch_ = Utils.Stopwatch()
         step_name = "Tests"
         print(step_name)
         res = res and CH.run_fast_test()
         if res:
             results.append(FTResultsProcessor(wd=Settings.OUTPUT_DIR).run())
+        results[-1].set_timing(stopwatch=stop_watch_)
 
     CH.terminate()
 

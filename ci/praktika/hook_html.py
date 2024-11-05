@@ -1,6 +1,5 @@
 import dataclasses
 import json
-import urllib.parse
 from pathlib import Path
 from typing import List
 
@@ -132,17 +131,9 @@ class HtmlRunnerHooks:
                 result = Result.generate_skipped(job.name)
             results.append(result)
         summary_result = Result.generate_pending(_workflow.name, results=results)
-        summary_result.aux_links.append(env.CHANGE_URL)
-        summary_result.aux_links.append(env.RUN_URL)
+        summary_result.links.append(env.CHANGE_URL)
+        summary_result.links.append(env.RUN_URL)
         summary_result.start_time = Utils.timestamp()
-        page_url = "/".join(
-            ["https:/", Settings.HTML_S3_PATH, str(Path(Settings.HTML_PAGE_FILE).name)]
-        )
-        for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
-            page_url = page_url.replace(bucket, endpoint)
-        # TODO: add support for non-PRs (use branch?)
-        page_url += f"?PR={env.PR_NUMBER}&sha=latest&name_0={urllib.parse.quote(env.WORKFLOW_NAME, safe='')}"
-        summary_result.html_link = page_url
 
         # clean the previous latest results in PR if any
         if env.PR_NUMBER:
@@ -152,13 +143,14 @@ class HtmlRunnerHooks:
             unlock=False,
         )
 
+        page_url = env.get_report_url(settings=Settings)
         print(f"CI Status page url [{page_url}]")
 
         res1 = GH.post_commit_status(
             name=_workflow.name,
             status=Result.Status.PENDING,
             description="",
-            url=page_url,
+            url=env.get_report_url(settings=Settings),
         )
         res2 = GH.post_pr_comment(
             comment_body=f"Workflow [[{_workflow.name}]({page_url})], commit [{_Environment.get().SHA[:8]}]",
@@ -248,11 +240,11 @@ class HtmlRunnerHooks:
         )
         if workflow_result.status != old_status:
             print(
-                f"Update GH commit status [{result.name}]: [{old_status} -> {workflow_result.status}], link [{workflow_result.html_link}]"
+                f"Update GH commit status [{result.name}]: [{old_status} -> {workflow_result.status}]"
             )
             GH.post_commit_status(
                 name=workflow_result.name,
                 status=GH.convert_to_gh_status(workflow_result.status),
                 description="",
-                url=workflow_result.html_link,
+                url=env.get_report_url(settings=Settings),
             )

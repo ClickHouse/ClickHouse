@@ -342,7 +342,7 @@ def _finish_workflow(workflow, job_name):
                 f"NOTE: Result for [{result.name}] has not ok status [{result.status}]"
             )
             ready_for_merge_status = Result.Status.FAILED
-            failed_results.append(result.name.split("(", maxsplit=1)[0])  # cut name
+            failed_results.append(result.name)
 
     if failed_results:
         ready_for_merge_description = f"failed: {', '.join(failed_results)}"
@@ -362,9 +362,7 @@ def _finish_workflow(workflow, job_name):
             unlock=False,
         )  # no lock - no unlock
 
-    Result.from_fs(job_name).set_status(Result.Status.SUCCESS).set_info(
-        ready_for_merge_description
-    )
+    Result.from_fs(job_name).set_status(Result.Status.SUCCESS)
 
 
 if __name__ == "__main__":

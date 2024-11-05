@@ -26,10 +26,6 @@ class Result(MetaClasses.Serializable):
         files (List[str]): A list of file paths or names related to the result.
         links (List[str]): A list of URLs related to the result (e.g., links to reports or resources).
         info (str): Additional information about the result. Free-form text.
-        # TODO: rename
-        aux_links (List[str]): A list of auxiliary links that provide additional context for the result.
-        # TODO: remove
-        html_link (str): A direct link to an HTML representation of the result (e.g., a detailed report page).
 
     Inner Class:
         Status: Defines possible statuses for the task, such as "success", "failure", etc.
@@ -51,8 +47,6 @@ class Result(MetaClasses.Serializable):
     files: List[str] = dataclasses.field(default_factory=list)
     links: List[str] = dataclasses.field(default_factory=list)
     info: str = ""
-    aux_links: List[str] = dataclasses.field(default_factory=list)
-    html_link: str = ""
 
     @staticmethod
     def create_from(

@@ -81,8 +81,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            clear-repository: true
-            ref: ${{{{ github.event.pull_reguest.head.sha }}}}
+            ref: ${{{{ github.head_ref }}}}
 {JOB_ADDONS}
       - name: Prepare env script
         run: |
@@ -191,12 +190,10 @@ jobs:
                     False
                 ), f"Workflow event not yet supported [{workflow_config.event}]"
 
-            with ContextManager.cd():
-                with open(self._get_workflow_file_name(workflow_config.name), "w") as f:
-                    f.write(yaml_workflow_str)
+            with open(self._get_workflow_file_name(workflow_config.name), "w") as f:
+                f.write(yaml_workflow_str)
 
-        with ContextManager.cd():
-            Shell.check("git add ./.github/workflows/*.yaml")
+        Shell.check("git add ./.github/workflows/*.yaml")
 
 
 class PullRequestPushYamlGen:

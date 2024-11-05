@@ -1,15 +1,13 @@
 import argparse
-import os
+import time
 from pathlib import Path
 
-from praktika.param import get_param
 from praktika.result import Result
 from praktika.settings import Settings
 from praktika.utils import MetaClasses, Shell, Utils
 
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
-from ci.settings.definitions import azure_secret
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -21,9 +19,14 @@ class JobStages(metaclass=MetaClasses.WithIter):
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Build Job")
     parser.add_argument(
-        "BUILD_TYPE", help="Type: <amd|arm>_<debug|release>_<asan|tsan|..>"
+        "--ch-path", help="Path to clickhouse binary", default=f"{Settings.INPUT_DIR}"
     )
-    parser.add_argument("--param", help="Optional custom job start stage", default=None)
+    parser.add_argument(
+        "--test-options",
+        help="Comma separated option(s): parallel|non-parallel|BATCH_NUM/BTATCH_TOT|..",
+        default="",
+    )
+    parser.add_argument("--param", help="Optional job start stage", default=None)
     return parser.parse_args()
 
 
@@ -50,28 +53,31 @@ def run_stateless_test(
 def main():
 
     args = parse_args()
-    params = get_param().split(" ")
-    parallel_or_sequential = None
-    no_parallel = False
-    no_sequential = False
-    if params:
-        parallel_or_sequential = params[0]
-    if len(params) > 1:
-        batch_num, total_batches = map(int, params[1].split("/"))
-    else:
-        batch_num, total_batches = 0, 0
-    if parallel_or_sequential:
-        no_parallel = parallel_or_sequential == "non-parallel"
-        no_sequential = parallel_or_sequential == "parallel"
+    test_options = args.test_options.split(",")
+    no_parallel = "non-parallel" in test_options
+    no_sequential = "parallel" in test_options
+    batch_num, total_batches = 0, 0
+    for to in test_options:
+        if "/" in to:
+            batch_num, total_batches = map(int, to.split("/"))
 
-    os.environ["AZURE_CONNECTION_STRING"] = Shell.get_output(
-        f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
-        verbose=True,
-    )
+    # os.environ["AZURE_CONNECTION_STRING"] = Shell.get_output(
+    #     f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
+    #     verbose=True,
+    #     strict=True
+    # )
+
+    ch_path = args.ch_path
+    assert Path(
+        ch_path + "/clickhouse"
+    ).is_file(), f"clickhouse binary not found under [{ch_path}]"
 
     stop_watch = Utils.Stopwatch()
 
     stages = list(JobStages)
+
+    logs_to_attach = []
+
     stage = args.param or JobStages.INSTALL_CLICKHOUSE
     if stage:
         assert stage in JobStages, f"--param must be one of [{list(JobStages)}]"
@@ -83,19 +89,22 @@ def main():
     res = True
     results = []
 
-    Utils.add_to_PATH(f"{Settings.INPUT_DIR}:tests")
+    Utils.add_to_PATH(f"{ch_path}:tests")
 
     if res and JobStages.INSTALL_CLICKHOUSE in stages:
         commands = [
-            f"chmod +x {Settings.INPUT_DIR}/clickhouse",
-            f"ln -sf {Settings.INPUT_DIR}/clickhouse {Settings.INPUT_DIR}/clickhouse-server",
-            f"ln -sf {Settings.INPUT_DIR}/clickhouse {Settings.INPUT_DIR}/clickhouse-client",
+            f"chmod +x {ch_path}/clickhouse",
+            f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-server",
+            f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-client",
             f"rm -rf {Settings.TEMP_DIR}/etc/ && mkdir -p {Settings.TEMP_DIR}/etc/clickhouse-client {Settings.TEMP_DIR}/etc/clickhouse-server",
             f"cp programs/server/config.xml programs/server/users.xml {Settings.TEMP_DIR}/etc/clickhouse-server/",
             f"./tests/config/install.sh {Settings.TEMP_DIR}/etc/clickhouse-server {Settings.TEMP_DIR}/etc/clickhouse-client --s3-storage",
             # update_path_ch_config,
-            f"sed -i 's|>/var/|>{Settings.TEMP_DIR}/var/|g; s|>/etc/|>{Settings.TEMP_DIR}/etc/|g' {Settings.TEMP_DIR}/etc/clickhouse-server/config.xml",
-            f"sed -i 's|>/etc/|>{Settings.TEMP_DIR}/etc/|g' {Settings.TEMP_DIR}/etc/clickhouse-server/config.d/ssl_certs.xml",
+            # f"sed -i 's|>/var/|>{Settings.TEMP_DIR}/var/|g; s|>/etc/|>{Settings.TEMP_DIR}/etc/|g' {Settings.TEMP_DIR}/etc/clickhouse-server/config.xml",
+            # f"sed -i 's|>/etc/|>{Settings.TEMP_DIR}/etc/|g' {Settings.TEMP_DIR}/etc/clickhouse-server/config.d/ssl_certs.xml",
+            f"for file in /tmp/praktika/etc/clickhouse-server/config.d/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|>/var/log|>{Settings.TEMP_DIR}/var/log|g; s|>/etc/|>{Settings.TEMP_DIR}/etc/|g' $(readlink -f $file); done",
+            f"for file in /tmp/praktika/etc/clickhouse-server/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|>/var/log|>{Settings.TEMP_DIR}/var/log|g; s|>/etc/|>{Settings.TEMP_DIR}/etc/|g' $(readlink -f $file); done",
+            f"for file in /tmp/praktika/etc/clickhouse-server/config.d/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|<path>local_disk|<path>{Settings.TEMP_DIR}/local_disk|g' $(readlink -f $file); done",
             f"clickhouse-server --version",
         ]
         results.append(
@@ -110,22 +119,27 @@ def main():
         stop_watch_ = Utils.Stopwatch()
         step_name = "Start ClickHouse Server"
         print(step_name)
-        res = res and CH.start_minio()
+        minio_log = "/tmp/praktika/output/minio.log"
+        res = res and CH.start_minio(log_file_path=minio_log)
+        logs_to_attach += [minio_log]
+        time.sleep(10)
+        Shell.check("ps -ef | grep minio", verbose=True)
+        res = res and Shell.check(
+            "aws s3 ls s3://test --endpoint-url http://localhost:11111/", verbose=True
+        )
         res = res and CH.start()
         res = res and CH.wait_ready()
+        if res:
+            print("ch started")
+        logs_to_attach += [
+            "/tmp/praktika/var/log/clickhouse-server/clickhouse-server.log",
+            "/tmp/praktika/var/log/clickhouse-server/clickhouse-server.err.log",
+        ]
         results.append(
             Result.create_from(
                 name=step_name,
                 status=res,
                 stopwatch=stop_watch_,
-                files=(
-                    [
-                        "/tmp/praktika/var/log/clickhouse-server/clickhouse-server.log",
-                        "/tmp/praktika/var/log/clickhouse-server/clickhouse-server.err.log",
-                    ]
-                    if not res
-                    else []
-                ),
             )
         )
         res = results[-1].is_ok()
@@ -144,7 +158,9 @@ def main():
         results[-1].set_timing(stopwatch=stop_watch_)
         res = results[-1].is_ok()
 
-    Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+    Result.create_from(
+        results=results, stopwatch=stop_watch, files=logs_to_attach if not res else []
+    ).complete_job()
 
 
 if __name__ == "__main__":

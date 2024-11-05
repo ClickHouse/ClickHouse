@@ -89,6 +89,7 @@ class Job:
                 ), "Job.Config.provides must be empty for parametrized jobs"
                 if parameter_:
                     obj.parameter = parameter_
+                    obj.command = obj.command.format(PARAMETER=parameter_)
                 if runs_on_:
                     obj.runs_on = runs_on_
                 if timeout_:

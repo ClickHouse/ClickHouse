@@ -80,7 +80,6 @@ class Runner:
         print("Read GH Environment")
         env = _Environment.from_env()
         env.JOB_NAME = job.name
-        env.PARAMETER = job.parameter
         env.dump()
         print(env)
 
@@ -128,7 +127,6 @@ class Runner:
         # re-set envs for local run
         env = _Environment.get()
         env.JOB_NAME = job.name
-        env.PARAMETER = job.parameter
         env.dump()
 
         if param:
@@ -143,6 +141,7 @@ class Runner:
                 job.run_in_docker.split("+")[1:],
             )
             from_root = "root" in docker_settings
+            settings = [s for s in docker_settings if s.startswith("--")]
             if ":" in job.run_in_docker:
                 docker_name, docker_tag = job.run_in_docker.split(":")
                 print(
@@ -154,9 +153,11 @@ class Runner:
                     RunConfig.from_fs(workflow.name).digest_dockers[job.run_in_docker],
                 )
             docker = docker or f"{docker_name}:{docker_tag}"
-            cmd = f"docker run --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='{Settings.DOCKER_WD}:{Settings.DOCKER_WD}/ci' --volume ./:{Settings.DOCKER_WD} --volume {Settings.TEMP_DIR}:{Settings.TEMP_DIR} --workdir={Settings.DOCKER_WD} {docker} {job.command}"
+            cmd = f"docker run --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='{Settings.DOCKER_WD}:{Settings.DOCKER_WD}/ci' --volume ./:{Settings.DOCKER_WD} --volume {Settings.TEMP_DIR}:{Settings.TEMP_DIR} --workdir={Settings.DOCKER_WD} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
+            python_path = os.getenv("PYTHONPATH", ":")
+            os.environ["PYTHONPATH"] = f".:{python_path}"
 
         if param:
             print(f"Custom --param [{param}] will be passed to job's script")

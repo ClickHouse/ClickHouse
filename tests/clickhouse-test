@@ -2619,14 +2619,14 @@ def run_tests_process(*args, **kwargs):
 
 
 def do_run_tests(jobs, test_suite: TestSuite):
-    if jobs > 1 and len(test_suite.parallel_tests) > 0:
-        print(
-            "Found",
-            len(test_suite.parallel_tests),
-            "parallel tests and",
-            len(test_suite.sequential_tests),
-            "sequential tests",
-        )
+    print(
+        "Found",
+        len(test_suite.parallel_tests),
+        "parallel tests and",
+        len(test_suite.sequential_tests),
+        "sequential tests",
+    )
+    if test_suite.parallel_tests:
         tests_n = len(test_suite.parallel_tests)
         jobs = min(jobs, tests_n)
 
@@ -2639,6 +2639,7 @@ def do_run_tests(jobs, test_suite: TestSuite):
         # It makes it more difficult to detect real flaky tests,
         # because the distribution and the amount
         # of failures will be nearly the same for all tests from the group.
+        # TODO: add shuffle for sequential tests
         random.shuffle(test_suite.parallel_tests)
 
         batch_size = len(test_suite.parallel_tests) // jobs
@@ -2684,6 +2685,7 @@ def do_run_tests(jobs, test_suite: TestSuite):
                 if not p.is_alive():
                     processes.remove(p)
 
+    if test_suite.sequential_tests:
         run_tests_array(
             (
                 test_suite.sequential_tests,
@@ -2693,17 +2695,7 @@ def do_run_tests(jobs, test_suite: TestSuite):
             )
         )
 
-        return len(test_suite.sequential_tests) + len(test_suite.parallel_tests)
-    num_tests = len(test_suite.all_tests)
-    run_tests_array(
-        (
-            test_suite.all_tests,
-            num_tests,
-            test_suite,
-            False,
-        )
-    )
-    return num_tests
+    return len(test_suite.sequential_tests) + len(test_suite.parallel_tests)
 
 
 def is_test_from_dir(suite_dir, case):

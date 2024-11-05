@@ -1,5 +1,4 @@
-import threading
-import time
+import subprocess
 from pathlib import Path
 
 from praktika.settings import Settings
@@ -39,39 +38,25 @@ class ClickHouseProc:
         Utils.set_env("CLICKHOUSE_USER_FILES", self.user_files_path)
         Utils.set_env("CLICKHOUSE_SCHEMA_FILES", f"{self.ch_config_dir}/format_schemas")
 
-        if not fast_test:
-            with open(f"{self.ch_config_dir}/config.d/backups.xml", "w") as file:
-                file.write(self.BACKUPS_XML)
+        # if not fast_test:
+        #     with open(f"{self.ch_config_dir}/config.d/backups.xml", "w") as file:
+        #         file.write(self.BACKUPS_XML)
 
         self.minio_proc = None
 
-    def start_minio(self):
-        print("Starting minio")
-
-        def run_minio():
-            self.minio_proc = Shell.run_async(
-                self.minio_cmd, verbose=True, suppress_output=True
+    def start_minio(self, log_file_path):
+        command = ["tests/docker_scripts/setup_minio.sh", "stateless", "./tests"]
+        with open(log_file_path, "w") as log_file:
+            process = subprocess.Popen(
+                command, stdout=log_file, stderr=subprocess.STDOUT
             )
-
-        thread = threading.Thread(target=run_minio)
-        thread.daemon = True  # Allow program to exit even if thread is still running
-        thread.start()
-        time.sleep(5)
-        return thread.is_alive()
+        print(f"Started setup_minio.sh asynchronously with PID {process.pid}")
+        return True
 
     def start(self):
         print("Starting ClickHouse server")
         Shell.check(f"rm {self.pid_file}")
-
-        def run_clickhouse():
-            self.proc = Shell.run_async(
-                self.command, verbose=True, suppress_output=False
-            )
-
-        thread = threading.Thread(target=run_clickhouse)
-        thread.daemon = True  # Allow program to exit even if thread is still running
-        thread.start()
-
+        self.proc = subprocess.Popen(self.command, stderr=subprocess.STDOUT, shell=True)
         started = False
         try:
             for _ in range(5):

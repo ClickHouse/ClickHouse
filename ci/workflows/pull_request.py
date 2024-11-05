@@ -41,8 +41,9 @@ fast_test_job = Job.Config(
 amd_build_jobs = Job.Config(
     name=JobNames.BUILD,
     runs_on=[RunnerLabels.BUILDER],
-    command="python3 ./ci/jobs/build_clickhouse.py",
+    command="python3 ./ci/jobs/build_clickhouse.py --build-type {PARAMETER}",
     run_in_docker="clickhouse/fasttest",
+    timeout=3600 * 2,
     digest_config=Job.CacheDigestConfig(
         include_paths=[
             "./src",
@@ -55,6 +56,7 @@ amd_build_jobs = Job.Config(
             "./docker/packager/packager",
             "./rust",
             "./tests/ci/version_helper.py",
+            "./ci/jobs/build_clickhouse.py",
         ],
     ),
 ).parametrize(
@@ -62,26 +64,52 @@ amd_build_jobs = Job.Config(
     provides=[[ArtifactNames.CH_AMD_DEBUG], [ArtifactNames.CH_AMD_RELEASE]],
 )
 
-statless_batch_num = 2
-stateless_tests_amd_debug_jobs = Job.Config(
-    name=JobNames.STATELESS_TESTS,
+stateless_tests_jobs = Job.Config(
+    name=JobNames.STATELESS,
     runs_on=[RunnerLabels.BUILDER],
-    command="python3 ./ci/jobs/functional_stateless_tests.py amd_debug",
-    run_in_docker="clickhouse/stateless-test",
+    command="python3 ./ci/jobs/functional_stateless_tests.py --test-options {PARAMETER}",
+    run_in_docker="clickhouse/stateless-test+--security-opt seccomp=unconfined+--volume=/tmp/praktika:/var/lib/clickhouse",
     digest_config=Job.CacheDigestConfig(
         include_paths=[
             "./ci/jobs/functional_stateless_tests.py",
         ],
     ),
-    requires=[ArtifactNames.CH_AMD_DEBUG],
 ).parametrize(
     parameter=[
-        f"parallel {i+1}/{statless_batch_num}" for i in range(statless_batch_num)
-    ]
-    + ["non-parallel"],
-    runs_on=[[RunnerLabels.BUILDER] for _ in range(statless_batch_num)]
-    + [[RunnerLabels.STYLE_CHECKER]],
+        "amd_debug,parallel",
+        "amd_debug,non-parallel",
+        "amd_release,parallel",
+        "amd_release,non-parallel",
+    ],
+    runs_on=[
+        [RunnerLabels.BUILDER],
+        [RunnerLabels.FUNC_TESTER_AMD],
+        [RunnerLabels.BUILDER],
+        [RunnerLabels.FUNC_TESTER_AMD],
+    ],
+    requires=[
+        [ArtifactNames.CH_AMD_DEBUG],
+        [ArtifactNames.CH_AMD_DEBUG],
+        [ArtifactNames.CH_AMD_RELEASE],
+        [ArtifactNames.CH_AMD_RELEASE],
+    ],
 )
+
+# stateless_tests_amd_release_jobs = Job.Config(
+#     name=JobNames.STATELESS_AMD_RELEASE,
+#     runs_on=[RunnerLabels.BUILDER],
+#     command="python3 ./ci/jobs/functional_stateless_tests.py --test-options {PARAMETER}",
+#     run_in_docker="clickhouse/stateless-test+--security-opt seccomp=unconfined+--volume=/tmp/praktika:/var/lib/clickhouse",
+#     digest_config=Job.CacheDigestConfig(
+#         include_paths=[
+#             "./ci/jobs/functional_stateless_tests.py",
+#         ],
+#     ),
+#     requires=[ArtifactNames.CH_AMD_RELEASE],
+# ).parametrize(
+#     parameter=["parallel", "non-parallel"],
+#     runs_on=[[RunnerLabels.BUILDER], [RunnerLabels.FUNC_TESTER_AMD]],
+# )
 
 workflow = Workflow.Config(
     name="PR",
@@ -91,7 +119,7 @@ workflow = Workflow.Config(
         style_check_job,
         fast_test_job,
         *amd_build_jobs,
-        *stateless_tests_amd_debug_jobs,
+        *stateless_tests_jobs,
     ],
     artifacts=[
         Artifact.Config(

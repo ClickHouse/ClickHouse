@@ -31,6 +31,9 @@ class Digest:
         cache_key = self._hash_digest_config(config)
 
         if cache_key in self.digest_cache:
+            print(
+                f"calc digest for job [{job_config.name}]: hash_key [{cache_key}] - from cache"
+            )
             return self.digest_cache[cache_key]
 
         included_files = Utils.traverse_paths(
@@ -38,12 +41,9 @@ class Digest:
             job_config.digest_config.exclude_paths,
             sorted=True,
         )
-
         print(
             f"calc digest for job [{job_config.name}]: hash_key [{cache_key}], include [{len(included_files)}] files"
         )
-        # Sort files to ensure consistent hash calculation
-        included_files.sort()
 
         # Calculate MD5 hash
         res = ""
@@ -52,11 +52,11 @@ class Digest:
             print(f"NOTE: empty digest config [{config}] - return dummy digest")
         else:
             hash_md5 = hashlib.md5()
-            for file_path in included_files:
-                res = self._calc_file_digest(file_path, hash_md5)
-        assert res
-        self.digest_cache[cache_key] = res
-        return res
+            for i, file_path in enumerate(included_files):
+                hash_md5 = self._calc_file_digest(file_path, hash_md5)
+        digest = hash_md5.hexdigest()[: Settings.CACHE_DIGEST_LEN]
+        self.digest_cache[cache_key] = digest
+        return digest
 
     def calc_docker_digest(
         self,
@@ -103,10 +103,10 @@ class Digest:
                 print(
                     f"WARNING: No valid file resolved by link {file_path} -> {resolved_path} - skipping digest calculation"
                 )
-                return hash_md5.hexdigest()[: Settings.CACHE_DIGEST_LEN]
+                return hash_md5
 
         with open(resolved_path, "rb") as f:
             for chunk in iter(lambda: f.read(4096), b""):
                 hash_md5.update(chunk)
 
-        return hash_md5.hexdigest()[: Settings.CACHE_DIGEST_LEN]
+        return hash_md5

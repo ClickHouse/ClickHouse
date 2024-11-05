@@ -30,7 +30,6 @@ class _Environment(MetaClasses.Serializable):
     INSTANCE_ID: str
     INSTANCE_LIFE_CYCLE: str
     LOCAL_RUN: bool = False
-    PARAMETER: Any = None
     REPORT_INFO: List[str] = dataclasses.field(default_factory=list)
     name = "environment"
 
@@ -172,18 +171,15 @@ class _Environment(MetaClasses.Serializable):
 
     # TODO: find a better place for the function. This file should not import praktika.settings
     #   as it's requires reading users config, that's why imports nested inside the function
-    def get_report_url(self):
+    def get_report_url(self, settings):
         import urllib
 
-        from praktika.settings import Settings
-        from praktika.utils import Utils
-
-        path = Settings.HTML_S3_PATH
-        for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
+        path = settings.HTML_S3_PATH
+        for bucket, endpoint in settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
             if bucket in path:
                 path = path.replace(bucket, endpoint)
                 break
-        REPORT_URL = f"https://{path}/{Path(Settings.HTML_PAGE_FILE).name}?PR={self.PR_NUMBER}&sha={self.SHA}&name_0={urllib.parse.quote(self.WORKFLOW_NAME, safe='')}&name_1={urllib.parse.quote(self.JOB_NAME, safe='')}"
+        REPORT_URL = f"https://{path}/{Path(settings.HTML_PAGE_FILE).name}?PR={self.PR_NUMBER}&sha={self.SHA}&name_0={urllib.parse.quote(self.WORKFLOW_NAME, safe='')}&name_1={urllib.parse.quote(self.JOB_NAME, safe='')}"
         return REPORT_URL
 
     def is_local_run(self):

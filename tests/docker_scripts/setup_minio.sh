@@ -4,8 +4,10 @@ set -euxf -o pipefail
 
 export MINIO_ROOT_USER=${MINIO_ROOT_USER:-clickhouse}
 export MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-clickhouse}
+TEST_DIR=${2:-/repo/tests/}
 
 if [ -d "$TEMP_DIR" ]; then
+  TEST_DIR=$(readlink -f $TEST_DIR)
   cd "$TEMP_DIR"
   # add / for minio mc in docker
   PATH="/:.:$PATH"
@@ -79,7 +81,7 @@ start_minio() {
   pwd
   mkdir -p ./minio_data
   minio --version
-  minio server --address ":11111" ./minio_data &
+  nohup minio server --address ":11111" ./minio_data &
   wait_for_it
   lsof -i :11111
   sleep 5
@@ -153,7 +155,7 @@ main() {
   fi
   start_minio
   setup_minio "$1"
-  upload_data "${query_dir}" "${2:-/repo/tests/}"
+  upload_data "${query_dir}" "$TEST_DIR"
   setup_aws_credentials
 }
 

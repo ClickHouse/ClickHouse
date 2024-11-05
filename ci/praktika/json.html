@@ -663,19 +663,19 @@
                 let targetData = navigatePath(data, nameParams);
                 let nest_level = nameParams.length;
 
+                // Add footer links from top-level  Result
+                if (Array.isArray(data.links) && data.links.length > 0) {
+                    data.links.forEach(link => {
+                        const a = document.createElement('a');
+                        a.href = link;
+                        a.textContent = link.split('/').pop();
+                        a.target = '_blank';
+                        footerRight.appendChild(a);
+                    });
+                }
+
                 if (targetData) {
                     infoElement.style.display = 'none';
-
-                    // Handle footer links if present
-                    if (Array.isArray(data.aux_links) && data.aux_links.length > 0) {
-                        data.aux_links.forEach(link => {
-                            const a = document.createElement('a');
-                            a.href = link;
-                            a.textContent = link.split('/').pop();
-                            a.target = '_blank';
-                            footerRight.appendChild(a);
-                        });
-                    }
 
                     addStatusToStatus(targetData.status, targetData.start_time, targetData.duration)
 

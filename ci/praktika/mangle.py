@@ -14,35 +14,34 @@ def _get_workflows(name=None, file=None):
     """
     res = []
 
-    with ContextManager.cd():
-        directory = Path(_Settings.WORKFLOWS_DIRECTORY)
-        for py_file in directory.glob("*.py"):
-            if file and file not in str(py_file):
-                continue
-            module_name = py_file.name.removeprefix(".py")
-            spec = importlib.util.spec_from_file_location(
-                module_name, f"{_Settings.WORKFLOWS_DIRECTORY}/{module_name}"
-            )
-            assert spec
-            foo = importlib.util.module_from_spec(spec)
-            assert spec.loader
-            spec.loader.exec_module(foo)
-            try:
-                for workflow in foo.WORKFLOWS:
-                    if name:
-                        if name == workflow.name:
-                            print(f"Read workflow [{name}] config from [{module_name}]")
-                            res = [workflow]
-                            break
-                        else:
-                            continue
+    directory = Path(_Settings.WORKFLOWS_DIRECTORY)
+    for py_file in directory.glob("*.py"):
+        if file and file not in str(py_file):
+            continue
+        module_name = py_file.name.removeprefix(".py")
+        spec = importlib.util.spec_from_file_location(
+            module_name, f"{_Settings.WORKFLOWS_DIRECTORY}/{module_name}"
+        )
+        assert spec
+        foo = importlib.util.module_from_spec(spec)
+        assert spec.loader
+        spec.loader.exec_module(foo)
+        try:
+            for workflow in foo.WORKFLOWS:
+                if name:
+                    if name == workflow.name:
+                        print(f"Read workflow [{name}] config from [{module_name}]")
+                        res = [workflow]
+                        break
                     else:
-                        res += foo.WORKFLOWS
-                        print(f"Read workflow configs from [{module_name}]")
-            except Exception as e:
-                print(
-                    f"WARNING: Failed to add WORKFLOWS config from [{module_name}], exception [{e}]"
-                )
+                        continue
+                else:
+                    res += foo.WORKFLOWS
+                    print(f"Read workflow configs from [{module_name}]")
+        except Exception as e:
+            print(
+                f"WARNING: Failed to add WORKFLOWS config from [{module_name}], exception [{e}]"
+            )
     if not res:
         Utils.raise_with_error(f"Failed to find workflow [{name or file}]")
 
