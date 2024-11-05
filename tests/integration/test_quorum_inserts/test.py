@@ -88,10 +88,8 @@ def test_simple_add_replica(started_cluster):
 
 
 def test_drop_replica_and_achieve_quorum(started_cluster):
-    table_name = "test_drop_replica_and_achieve_quorum_" + uuid.uuid4().hex    
-    zero.query(
-        f"DROP TABLE IF EXISTS {table_name} ON CLUSTER cluster"
-    )
+    table_name = "test_drop_replica_and_achieve_quorum_" + uuid.uuid4().hex
+    zero.query(f"DROP TABLE IF EXISTS {table_name} ON CLUSTER cluster")
     create_query = (
         f"CREATE TABLE {table_name} "
         "(a Int8, d Date) "
@@ -361,9 +359,7 @@ def test_insert_quorum_with_ttl(started_cluster):
 
 def test_insert_quorum_with_keeper_loss_connection(started_cluster):
     table_name = "test_insert_quorum_with_keeper_loss_" + uuid.uuid4().hex
-    zero.query(
-        f"DROP TABLE IF EXISTS {table_name} ON CLUSTER cluster"
-    )
+    zero.query(f"DROP TABLE IF EXISTS {table_name} ON CLUSTER cluster")
     create_query = (
         f"CREATE TABLE {table_name} "
         "(a Int8, d Date) "
@@ -394,9 +390,7 @@ def test_insert_quorum_with_keeper_loss_connection(started_cluster):
         zk = cluster.get_kazoo_client("zoo1")
         while True:
             if (
-                zk.exists(
-                    f"/clickhouse/tables/{table_name}/replicas/zero/is_active"
-                )
+                zk.exists(f"/clickhouse/tables/{table_name}/replicas/zero/is_active")
                 is None
             ):
                 break
