@@ -28,8 +28,7 @@ public:
         const StoredObjects & blobs_to_read_,
         const ReadSettings & settings_,
         std::shared_ptr<FilesystemCacheLog> cache_log_,
-        bool use_external_buffer_,
-        size_t buffer_size);
+        bool use_external_buffer_);
 
     ~ReadBufferFromRemoteFSGather() override;
 
@@ -85,4 +84,6 @@ private:
 
     LoggerPtr log;
 };
+
+size_t chooseBufferSizeForRemoteReading(const DB::ReadSettings & settings, size_t file_size);
 }

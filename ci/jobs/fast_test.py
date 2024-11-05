@@ -1,12 +1,11 @@
-import argparse
 import threading
 from pathlib import Path
 
+from ci_v2.jobs.scripts.functional_tests_results import FTResultsProcessor
+from praktika.environment import Environment
 from praktika.result import Result
 from praktika.settings import Settings
 from praktika.utils import MetaClasses, Shell, Utils
-
-from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 
 
 class ClickHouseProc:
@@ -209,18 +208,11 @@ class JobStages(metaclass=MetaClasses.WithIter):
     TEST = "test"
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="ClickHouse Fast Test Job")
-    parser.add_argument("--param", help="Optional custom job start stage", default=None)
-    return parser.parse_args()
-
-
 def main():
-    args = parse_args()
     stop_watch = Utils.Stopwatch()
 
     stages = list(JobStages)
-    stage = args.param or JobStages.CHECKOUT_SUBMODULES
+    stage = Environment.LOCAL_RUN_PARAM or JobStages.CHECKOUT_SUBMODULES
     if stage:
         assert stage in JobStages, f"--param must be one of [{list(JobStages)}]"
         print(f"Job will start from stage [{stage}]")

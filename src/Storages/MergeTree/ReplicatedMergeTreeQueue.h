@@ -334,7 +334,6 @@ public:
         UPDATE,
         MERGE_PREDICATE,
         SYNC,
-        FIX_METADATA_VERSION,
         OTHER,
     };
 

@@ -28,7 +28,6 @@ namespace ProfileEvents
     extern const Event FileSegmentFailToIncreasePriority;
     extern const Event FilesystemCacheHoldFileSegments;
     extern const Event FilesystemCacheUnusedHoldFileSegments;
-    extern const Event FilesystemCacheBackgroundDownloadQueuePush;
 }
 
 namespace CurrentMetrics
@@ -628,7 +627,7 @@ void FileSegment::completePartAndResetDownloader()
     LOG_TEST(log, "Complete batch. ({})", getInfoForLogUnlocked(lk));
 }
 
-void FileSegment::complete(bool allow_background_download)
+void FileSegment::complete()
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentCompleteMicroseconds);
 
@@ -705,9 +704,8 @@ void FileSegment::complete(bool allow_background_download)
             if (is_last_holder)
             {
                 bool added_to_download_queue = false;
-                if (allow_background_download && background_download_enabled && remote_file_reader)
+                if (background_download_enabled && remote_file_reader)
                 {
-                    ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundDownloadQueuePush);
                     added_to_download_queue = locked_key->addToDownloadQueue(offset(), segment_lock); /// Finish download in background.
                 }
 
@@ -1003,14 +1001,7 @@ void FileSegmentsHolder::reset()
 
     ProfileEvents::increment(ProfileEvents::FilesystemCacheUnusedHoldFileSegments, file_segments.size());
     for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end();)
-    {
-        /// One might think it would have been more correct to do `false` here,
-        /// not to allow background download for file segments that we actually did not start reading.
-        /// But actually we would only do that, if those file segments were already read partially by some other thread/query
-        /// but they were not put to the download queue, because current thread was holding them in Holder.
-        /// So as a culprit, we need to allow to happen what would have happened if we did not exist.
-        file_segment_it = completeAndPopFrontImpl(true);
-    }
+        file_segment_it = completeAndPopFrontImpl();
     file_segments.clear();
 }
 
@@ -1019,9 +1010,9 @@ FileSegmentsHolder::~FileSegmentsHolder()
     reset();
 }
 
-FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl(bool allow_background_download)
+FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
 {
-    front().complete(allow_background_download);
+    front().complete();
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheHoldFileSegments);
     return file_segments.erase(file_segments.begin());
 }

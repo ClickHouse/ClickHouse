@@ -43,19 +43,6 @@ namespace
         });
     }
 
-    bool parseValidUntil(IParserBase::Pos & pos, Expected & expected, ASTPtr & valid_until)
-    {
-        return IParserBase::wrapParseImpl(pos, [&]
-        {
-            if (!ParserKeyword{Keyword::VALID_UNTIL}.ignore(pos, expected))
-                return false;
-
-            ParserStringAndSubstitution until_p;
-
-            return until_p.parse(pos, valid_until, expected);
-        });
-    }
-
     bool parseAuthenticationData(
         IParserBase::Pos & pos,
         Expected & expected,
@@ -236,8 +223,6 @@ namespace
             if (http_auth_scheme)
                 auth_data->children.push_back(std::move(http_auth_scheme));
 
-            parseValidUntil(pos, expected, auth_data->valid_until);
-
             return true;
         });
     }
@@ -297,8 +282,6 @@ namespace
             {
                 authentication_methods.emplace_back(std::make_shared<ASTAuthenticationData>());
                 authentication_methods.back()->type = AuthenticationType::NO_PASSWORD;
-
-                parseValidUntil(pos, expected, authentication_methods.back()->valid_until);
 
                 return true;
             }
@@ -488,6 +471,19 @@ namespace
         });
     }
 
+    bool parseValidUntil(IParserBase::Pos & pos, Expected & expected, ASTPtr & valid_until)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{Keyword::VALID_UNTIL}.ignore(pos, expected))
+                return false;
+
+            ParserStringAndSubstitution until_p;
+
+            return until_p.parse(pos, valid_until, expected);
+        });
+    }
+
     bool parseAddIdentifiedWith(IParserBase::Pos & pos, Expected & expected, std::vector<std::shared_ptr<ASTAuthenticationData>> & auth_data)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -558,7 +554,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     std::shared_ptr<ASTSettingsProfileElements> settings;
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
     std::shared_ptr<ASTDatabaseOrNone> default_database;
-    ASTPtr global_valid_until;
+    ASTPtr valid_until;
     String cluster;
     String storage_name;
     bool reset_authentication_methods_to_new = false;
@@ -572,27 +568,20 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         {
             parsed_identified_with = parseIdentifiedOrNotIdentified(pos, expected, auth_data);
 
-            if (parsed_identified_with)
-            {
-                continue;
-            }
-            else if (alter)
+            if (!parsed_identified_with && alter)
             {
                 parsed_add_identified_with = parseAddIdentifiedWith(pos, expected, auth_data);
-                if (parsed_add_identified_with)
-                {
-                    continue;
-                }
             }
         }
 
         if (!reset_authentication_methods_to_new && alter && auth_data.empty())
         {
             reset_authentication_methods_to_new = parseResetAuthenticationMethods(pos, expected);
-            if (reset_authentication_methods_to_new)
-            {
-                continue;
-            }
+        }
+
+        if (!valid_until)
+        {
+            parseValidUntil(pos, expected, valid_until);
         }
 
         AllowedClientHosts new_hosts;
@@ -651,14 +640,6 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (storage_name.empty() && ParserKeyword{Keyword::IN}.ignore(pos, expected) && parseAccessStorageName(pos, expected, storage_name))
             continue;
 
-        if (auth_data.empty() && !global_valid_until)
-        {
-            if (parseValidUntil(pos, expected, global_valid_until))
-            {
-                continue;
-            }
-        }
-
         break;
     }
 
@@ -693,7 +674,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->settings = std::move(settings);
     query->grantees = std::move(grantees);
     query->default_database = std::move(default_database);
-    query->global_valid_until = std::move(global_valid_until);
+    query->valid_until = std::move(valid_until);
     query->storage_name = std::move(storage_name);
     query->reset_authentication_methods_to_new = reset_authentication_methods_to_new;
     query->add_identified_with = parsed_add_identified_with;
@@ -704,8 +685,8 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         query->children.push_back(authentication_method);
     }
 
-    if (query->global_valid_until)
-        query->children.push_back(query->global_valid_until);
+    if (query->valid_until)
+        query->children.push_back(query->valid_until);
 
     return true;
 }

@@ -189,7 +189,7 @@ public:
      * ========== Methods that must do cv.notify() ==================
      */
 
-    void complete(bool allow_background_download);
+    void complete();
 
     void completePartAndResetDownloader();
 
@@ -297,7 +297,7 @@ struct FileSegmentsHolder final : private boost::noncopyable
 
     String toString(bool with_state = false) const;
 
-    void completeAndPopFront(bool allow_background_download) { completeAndPopFrontImpl(allow_background_download); }
+    void popFront() { completeAndPopFrontImpl(); }
 
     FileSegment & front() { return *file_segments.front(); }
     const FileSegment & front() const { return *file_segments.front(); }
@@ -319,7 +319,7 @@ struct FileSegmentsHolder final : private boost::noncopyable
 private:
     FileSegments file_segments{};
 
-    FileSegments::iterator completeAndPopFrontImpl(bool allow_background_download);
+    FileSegments::iterator completeAndPopFrontImpl();
 };
 
 using FileSegmentsHolderPtr = std::unique_ptr<FileSegmentsHolder>;
