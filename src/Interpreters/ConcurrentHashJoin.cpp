@@ -402,9 +402,16 @@ ScatteredBlocks scatterBlocksWithSelector(size_t num_shards, const IColumn::Sele
     return result;
 }
 
-ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, const Block & from_block)
+ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, Block & from_block)
 {
     size_t num_shards = hash_joins.size();
+    if (num_shards == 1)
+    {
+        ScatteredBlocks res;
+        res.emplace_back(std::move(from_block));
+        return res;
+    }
+
     IColumn::Selector selector = selectDispatchBlock(num_shards, key_columns_names, from_block);
 
     /// With zero-copy approach we won't copy the source columns, but will create a new one with indices.
