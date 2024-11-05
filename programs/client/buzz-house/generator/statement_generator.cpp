@@ -1159,6 +1159,13 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator & rg, sql_query_
         {
             sv->set_property("input_format_with_names_use_header");
             sv->set_value("0");
+            if (next.IsS3Engine())
+            {
+                sql_query_grammar::SetValue * sv2 = svs->add_other_values();
+
+                sv2->set_property(rg.NextBool() ? "s3_create_new_file_on_insert" : "s3_create_new_file_on_insert");
+                sv2->set_value("'1");
+            }
         }
     }
     assert(!next.toption.has_value() || next.IsMergeTreeFamily());

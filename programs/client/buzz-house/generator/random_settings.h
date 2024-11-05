@@ -688,7 +688,7 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
         }}};
 
 const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> S3TableSettings
-    = {{"s3_create_new_file_on_insert", TrueOrFalse}, {"s3_skip_empty_files", TrueOrFalse}, {"s3_truncate_on_insert", TrueOrFalse}};
+    = {{"s3_skip_empty_files", TrueOrFalse}};
 
 const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> S3QueueTableSettings = {
     {"after_processing",
@@ -713,8 +713,7 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
      { ret += std::to_string(rg.RandomInt<uint32_t>(1, std::thread::hardware_concurrency())); }},
     {"s3_create_new_file_on_insert", TrueOrFalse},
     {"s3_skip_empty_files", TrueOrFalse},
-    {"s3_truncate_on_insert", TrueOrFalse},
-};
+    {"s3_truncate_on_insert", TrueOrFalse}};
 
 const std::map<sql_query_grammar::TableEngineValues, std::map<std::string, std::function<void(RandomGenerator &, std::string &)>>>
     AllTableSettings
