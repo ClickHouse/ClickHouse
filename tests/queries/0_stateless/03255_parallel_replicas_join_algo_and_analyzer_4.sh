@@ -88,7 +88,7 @@ for parallel_replicas_prefer_local_join in 1 0; do
         --SELECT '----- enable_parallel_replicas=$enable_parallel_replicas prefer_local_plan=$prefer_local_plan parallel_replicas_prefer_local_join=$parallel_replicas_prefer_local_join -----';
         ${query};
 
-        SELECT replaceRegexpAll(explain, '.*Query: (.*) Replicas:.*', '\\1')
+        SELECT replaceRegexpAll(replaceRegexpAll(explain, '.*Query: (.*) Replicas:.*', '\\1'), '(.*)_data_[\d]+_[\d]+(.*)', '\1_data_x_y_\2') 
         FROM
         (
           EXPLAIN actions=1 ${query}
