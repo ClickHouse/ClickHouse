@@ -845,11 +845,12 @@ class CiCache:
                     del self.jobs_to_wait[job]
 
                 if not dry_run:
-                    # Avoid `seconds left [-3]`
-                    expired_sec = min(int(time.time() - start_at), TIMEOUT)
-                    print(
-                        f"...awaiting continues... seconds left [{TIMEOUT - expired_sec}]"
-                    )
+                    expired_sec = int(time.time() - start_at)
+                    msg = f"...awaiting continues... seconds left [{TIMEOUT - expired_sec}]"
+                    if expired_sec >= TIMEOUT:
+                        # Avoid `seconds left [-3]`
+                        msg = f"awaiting for round {round_cnt} is finished"
+                    print(msg)
                 else:
                     # make up for 2 iterations in dry_run
                     expired_sec += int(TIMEOUT / 2) + 1
