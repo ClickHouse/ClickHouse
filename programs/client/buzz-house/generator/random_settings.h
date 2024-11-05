@@ -690,22 +690,21 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
             ret += "'";
         }}};
 
-const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> S3TableSettings
-    = {{"s3_skip_empty_files", TrueOrFalse}};
+const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> S3TableSettings = {{"s3_skip_empty_files", TrueOrFalse}};
 
-const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> S3QueueTableSettings = {
-    {"after_processing",
-     [](RandomGenerator & rg, std::string & ret)
-     {
-         const std::vector<std::string> & choices = {"", "keep", "delete"};
-         ret += "'";
-         ret += rg.PickRandomlyFromVector(choices);
-         ret += "'";
-     }},
-    {"enable_logging_to_s3queue_log", TrueOrFalse},
-    {"processing_threads_num",
-     [](RandomGenerator & rg, std::string & ret)
-     { ret += std::to_string(rg.RandomInt<uint32_t>(1, std::thread::hardware_concurrency())); }}};
+const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> S3QueueTableSettings
+    = {{"after_processing",
+        [](RandomGenerator & rg, std::string & ret)
+        {
+            const std::vector<std::string> & choices = {"", "keep", "delete"};
+            ret += "'";
+            ret += rg.PickRandomlyFromVector(choices);
+            ret += "'";
+        }},
+       {"enable_logging_to_s3queue_log", TrueOrFalse},
+       {"processing_threads_num",
+        [](RandomGenerator & rg, std::string & ret)
+        { ret += std::to_string(rg.RandomInt<uint32_t>(1, std::thread::hardware_concurrency())); }}};
 
 const std::map<sql_query_grammar::TableEngineValues, std::map<std::string, std::function<void(RandomGenerator &, std::string &)>>>
     AllTableSettings
@@ -730,7 +729,10 @@ const std::map<sql_query_grammar::TableEngineValues, std::map<std::string, std::
        {sql_query_grammar::SQLite, {}},
        {sql_query_grammar::Redis, {}},
        {sql_query_grammar::S3, S3TableSettings},
-       {sql_query_grammar::S3Queue, S3QueueTableSettings}};
+       {sql_query_grammar::S3Queue, S3QueueTableSettings},
+       {sql_query_grammar::Hudi, {}},
+       {sql_query_grammar::DeltaLake, {}},
+       {sql_query_grammar::IcebergS3, {}}};
 
 const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> MergeTreeColumnSettings
     = {{"min_compress_block_size",
@@ -761,7 +763,10 @@ const std::map<sql_query_grammar::TableEngineValues, std::map<std::string, std::
        {sql_query_grammar::SQLite, {}},
        {sql_query_grammar::Redis, {}},
        {sql_query_grammar::S3, {}},
-       {sql_query_grammar::S3Queue, {}}};
+       {sql_query_grammar::S3Queue, {}},
+       {sql_query_grammar::Hudi, {}},
+       {sql_query_grammar::DeltaLake, {}},
+       {sql_query_grammar::IcebergS3, {}}};
 
 void SetRandomSetting(
     RandomGenerator & rg,

@@ -115,9 +115,16 @@ public:
 
     bool IsAnyS3Engine() const { return IsS3Engine() || IsS3QueueEngine(); }
 
+    bool IsHudiEngine() const { return teng == sql_query_grammar::TableEngineValues::Hudi; }
+
+    bool IsDeltaLakeEngine() const { return teng == sql_query_grammar::TableEngineValues::DeltaLake; }
+
+    bool IsIcebergEngine() const { return teng == sql_query_grammar::TableEngineValues::IcebergS3; }
+
     bool IsNotTruncableEngine() const
     {
-        return IsNullEngine() || IsSetEngine() || IsMySQLEngine() || IsPostgreSQLEngine() || IsSQLiteEngine() || IsRedisEngine()  || IsAnyS3Engine();
+        return IsNullEngine() || IsSetEngine() || IsMySQLEngine() || IsPostgreSQLEngine() || IsSQLiteEngine() || IsRedisEngine()
+            || IsAnyS3Engine() || IsHudiEngine() || IsDeltaLakeEngine() || IsIcebergEngine();
     }
 };
 
@@ -168,7 +175,7 @@ public:
 struct SQLView : SQLBase
 {
 public:
-    bool is_materialized = false, is_refreshable = false;
+    bool is_materialized = false, is_refreshable = false, is_deteriministic = false;
     uint32_t ncols = 1, staged_ncols = 1;
 };
 

@@ -368,12 +368,12 @@ public:
 class RedisIntegration : public ClickHouseIntegration
 {
 public:
-    RedisIntegration(const FuzzConfig & fc) : ClickHouseIntegration() { }
+    RedisIntegration() : ClickHouseIntegration() { }
 
     bool PerformIntegration(RandomGenerator & rg, const uint32_t tname, std::vector<InsertEntry> & entries) override
     {
         (void)rg;
-        (void) tname;
+        (void)tname;
         (void)entries;
         return true;
     }
@@ -425,6 +425,10 @@ public:
             postresql = new PostgreSQLIntegration(fc);
         }
         sqlite = new SQLiteIntegration(fc);
+        if (fc.redis_server.port)
+        {
+            redis = new RedisIntegration();
+        }
         if (fc.minio_server.user != "" && fc.minio_server.password != "")
         {
             minio = new MinIOIntegration(fc);

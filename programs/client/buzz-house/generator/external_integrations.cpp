@@ -2,12 +2,12 @@
 
 #include <array>
 #include <cctype>
-#include <stdexcept>
 #include <cinttypes>
 #include <cstring>
 #include <ctime>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <netdb.h>
 #include <unistd.h>

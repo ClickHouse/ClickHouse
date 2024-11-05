@@ -2757,6 +2757,9 @@ enum TableEngineValues {
     Redis = 20;
     S3 = 21;
     S3Queue = 22;
+    Hudi = 23;
+    DeltaLake = 24;
+    IcebergS3 = 25;
 }
 
 enum TableEngineOption {

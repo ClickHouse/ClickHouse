@@ -102,8 +102,14 @@ int StatementGenerator::GenerateFromElement(RandomGenerator & rg, const uint32_t
     const uint32_t derived_table = 30 * static_cast<uint32_t>(this->depth < this->fc.max_depth && this->width < this->fc.max_width),
                    cte = 10 * static_cast<uint32_t>(!this->ctes.empty()),
                    table = 40 * static_cast<uint32_t>(CollectionHas<SQLTable>(attached_tables)),
-                   view = 20 * static_cast<uint32_t>(CollectionHas<SQLView>(attached_views)), tudf = 5,
-                   prob_space = derived_table + cte + table + view + tudf;
+                   view = 20
+        * static_cast<uint32_t>(CollectionHas<SQLView>(
+            [&](const SQLView & vv)
+            {
+                return (!vv.db || vv.db->attached == DetachStatus::ATTACHED) && vv.attached == DetachStatus::ATTACHED
+                    && (vv.is_deteriministic || this->allow_not_deterministic);
+            })),
+                   tudf = 5, prob_space = derived_table + cte + table + view + tudf;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.gen);
 
@@ -155,7 +161,12 @@ int StatementGenerator::GenerateFromElement(RandomGenerator & rg, const uint32_t
         SQLRelation rel(name);
         sql_query_grammar::JoinedTable * jt = tos->mutable_joined_table();
         sql_query_grammar::ExprSchemaTable * est = jt->mutable_est();
-        const SQLView & v = rg.PickRandomlyFromVector(FilterCollection<SQLView>(attached_views));
+        const SQLView & v = rg.PickRandomlyFromVector(FilterCollection<SQLView>(
+            [&](const SQLView & vv)
+            {
+                return (!vv.db || vv.db->attached == DetachStatus::ATTACHED) && vv.attached == DetachStatus::ATTACHED
+                    && (vv.is_deteriministic || this->allow_not_deterministic);
+            }));
 
         if (v.db)
         {
@@ -1094,7 +1105,7 @@ int StatementGenerator::GenerateSelect(
             GenerateOrderBy(rg, ncols, (allowed_clauses & allow_orderby_settings), ssc->mutable_orderby());
             this->depth--;
         }
-        if ((allowed_clauses & allow_limit) && rg.NextSmallNumber() < 4)
+        if ((allowed_clauses & allow_limit) && this->allow_not_deterministic && rg.NextSmallNumber() < 4)
         {
             GenerateLimit(rg, ssc->has_orderby(), ssc->s_or_d() == sql_query_grammar::AllOrDistinct::DISTINCT, ncols, ssc->mutable_limit());
         }

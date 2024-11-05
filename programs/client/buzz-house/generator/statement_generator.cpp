@@ -499,7 +499,7 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator & rg, SQLBase & b,
 
         connections.CreateExternalDatabaseTable(rg, IntegrationCall::Redis, b.tname, entries);
     }
-    else if (b.IsAnyS3Engine())
+    else if (b.IsAnyS3Engine() || b.IsHudiEngine() || b.IsDeltaLakeEngine() || b.IsIcebergEngine())
     {
         const ServerCredentials & sc = fc.minio_server;
         const std::string nresource = sc.database + "/file" + std::to_string(b.tname) + (b.IsS3QueueEngine() ? "/*" : "");
@@ -507,17 +507,19 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator & rg, SQLBase & b,
         te->add_params()->set_svalue("http://" + sc.hostname + ":" + std::to_string(sc.port) + nresource);
         te->add_params()->set_svalue(sc.user);
         te->add_params()->set_svalue(sc.password);
-        te->add_params()->set_in_out(static_cast<sql_query_grammar::InOutFormat>(
-            (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::InOutFormat_MAX)) + 1));
-        if (rg.NextSmallNumber() < 4)
+        if (b.IsAnyS3Engine() || b.IsIcebergEngine())
         {
-            te->add_params()->set_svalue(rg.PickRandomlyFromVector(s3_compress));
+            te->add_params()->set_in_out(static_cast<sql_query_grammar::InOutFormat>(
+                (rg.NextRandomUInt32() % static_cast<uint32_t>(sql_query_grammar::InOutFormat_MAX)) + 1));
+            if (rg.NextSmallNumber() < 4)
+            {
+                te->add_params()->set_svalue(rg.PickRandomlyFromVector(s3_compress));
+            }
+            if (b.IsAnyS3Engine() && rg.NextSmallNumber() < 5)
+            {
+                GenerateTableKey(rg, te->mutable_partition_by());
+            }
         }
-        if (rg.NextSmallNumber() < 5)
-        {
-            GenerateTableKey(rg, te->mutable_partition_by());
-        }
-
         connections.CreateExternalDatabaseTable(rg, IntegrationCall::MinIO, b.tname, entries);
     }
     if ((b.IsRocksEngine() || b.IsRedisEngine()) && add_pkey && !entries.empty())
@@ -922,7 +924,10 @@ sql_query_grammar::TableEngineValues StatementGenerator::GetNextTableEngine(Rand
         if (connections.HasMinIOConnection())
         {
             this->ids.push_back(sql_query_grammar::S3);
-            this->ids.push_back(sql_query_grammar::S3Queue);
+            //this->ids.push_back(sql_query_grammar::S3Queue);
+            this->ids.push_back(sql_query_grammar::Hudi);
+            this->ids.push_back(sql_query_grammar::DeltaLake);
+            //this->ids.push_back(sql_query_grammar::IcebergS3);
         }
     }
 
@@ -1273,9 +1278,19 @@ int StatementGenerator::GenerateNextCreateView(RandomGenerator & rg, sql_query_g
             cv->set_populate(rg.NextSmallNumber() < 4);
         }
     }
+    if ((next.is_deteriministic = rg.NextBool()))
+    {
+        this->SetAllowNotDetermistic(false);
+        this->EnforceFinal(true);
+    }
     this->levels[this->current_level] = QueryLevel(this->current_level);
     GenerateSelect(
         rg, false, next.ncols, next.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(), cv->mutable_select());
+    if (next.is_deteriministic)
+    {
+        this->SetAllowNotDetermistic(true);
+        this->EnforceFinal(false);
+    }
     assert(!next.toption.has_value() || next.IsMergeTreeFamily());
     this->staged_views[tname] = std::move(next);
     return 0;
@@ -1726,6 +1741,11 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
             else
             {
                 v.staged_ncols = (rg.NextMediumNumber() % (rg.NextBool() ? 5 : 30)) + 1;
+                if (v.is_deteriministic)
+                {
+                    this->SetAllowNotDetermistic(false);
+                    this->EnforceFinal(true);
+                }
                 this->levels[this->current_level] = QueryLevel(this->current_level);
                 GenerateSelect(
                     rg,
@@ -1733,6 +1753,11 @@ int StatementGenerator::GenerateAlterTable(RandomGenerator & rg, sql_query_gramm
                     v.staged_ncols,
                     v.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
                     ati->mutable_modify_query());
+                if (v.is_deteriministic)
+                {
+                    this->SetAllowNotDetermistic(true);
+                    this->EnforceFinal(false);
+                }
             }
         }
     }
