@@ -1,7 +1,6 @@
 #include <Core/SettingsEnums.h>
 #include <magic_enum.hpp>
 #include <Access/Common/SQLSecurityDefs.h>
-
 #include <boost/range/adaptor/map.hpp>
 
 
@@ -56,6 +55,10 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
      {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE},
      {"grace_hash",           JoinAlgorithm::GRACE_HASH}})
 
+IMPLEMENT_SETTING_ENUM(JoinInnerTableSelectionMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"left",       JoinInnerTableSelectionMode::Left},
+     {"right",      JoinInnerTableSelectionMode::Right},
+     {"auto",       JoinInnerTableSelectionMode::Auto}})
 
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,
     {{"before_having",          TotalsMode::BEFORE_HAVING},
@@ -68,6 +71,14 @@ IMPLEMENT_SETTING_ENUM(OverflowMode, ErrorCodes::UNKNOWN_OVERFLOW_MODE,
     {{"throw", OverflowMode::THROW},
      {"break", OverflowMode::BREAK}})
 
+IMPLEMENT_SETTING_ENUM(DistributedCacheLogMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"nothing", DistributedCacheLogMode::LOG_NOTHING},
+     {"on_error", DistributedCacheLogMode::LOG_ON_ERROR},
+     {"all", DistributedCacheLogMode::LOG_ALL}})
+
+IMPLEMENT_SETTING_ENUM(DistributedCachePoolBehaviourOnLimit, ErrorCodes::BAD_ARGUMENTS,
+    {{"wait", DistributedCachePoolBehaviourOnLimit::WAIT},
+     {"allocate_bypassing_pool", DistributedCachePoolBehaviourOnLimit::ALLOCATE_NEW_BYPASSING_POOL}});
 
 IMPLEMENT_SETTING_ENUM(OverflowModeGroupBy, ErrorCodes::UNKNOWN_OVERFLOW_MODE,
     {{"throw", OverflowMode::THROW},
@@ -178,7 +189,8 @@ IMPLEMENT_SETTING_ENUM(LightweightMutationProjectionMode, ErrorCodes::BAD_ARGUME
      {"rebuild", LightweightMutationProjectionMode::REBUILD}})
 
 IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"throw", DeduplicateMergeProjectionMode::THROW},
+    {{"ignore", DeduplicateMergeProjectionMode::IGNORE},
+     {"throw", DeduplicateMergeProjectionMode::THROW},
      {"drop", DeduplicateMergeProjectionMode::DROP},
      {"rebuild", DeduplicateMergeProjectionMode::REBUILD}})
 
@@ -264,4 +276,12 @@ IMPLEMENT_SETTING_ENUM(
     {{"user_display", IdentifierQuotingRule::UserDisplay},
      {"when_necessary", IdentifierQuotingRule::WhenNecessary},
      {"always", IdentifierQuotingRule::Always}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeSelectorAlgorithm,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"Simple", MergeSelectorAlgorithm::SIMPLE},
+     {"StochasticSimple", MergeSelectorAlgorithm::STOCHASTIC_SIMPLE},
+     {"Trivial", MergeSelectorAlgorithm::TRIVIAL}})
+
 }

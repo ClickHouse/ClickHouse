@@ -1412,7 +1412,7 @@ def test_parallel_read(cluster):
 
     res = azure_query(
         node,
-        f"select count() from azureBlobStorage('{connection_string}', 'cont', 'test_parallel_read.parquet')",
+        f"select count() from azureBlobStorage('{connection_string}', 'cont', 'test_parallel_read.parquet') settings remote_filesystem_read_method='read'",
     )
     assert int(res) == 10000
     assert_logs_contain_with_retry(node, "AzureBlobStorage readBigAt read bytes")

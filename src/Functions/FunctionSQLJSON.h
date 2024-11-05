@@ -334,10 +334,8 @@ public:
             DataTypePtr string_type = std::make_shared<DataTypeString>();
             return std::make_shared<DataTypeNullable>(string_type);
         }
-        else
-        {
-            return std::make_shared<DataTypeString>();
-        }
+
+        return std::make_shared<DataTypeString>();
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
@@ -355,7 +353,7 @@ public:
                 {
                     break;
                 }
-                else if (!(current_element.isArray() || current_element.isObject()))
+                if (!(current_element.isArray() || current_element.isObject()))
                 {
                     break;
                 }

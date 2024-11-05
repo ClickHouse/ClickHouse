@@ -509,7 +509,7 @@ DESC format(JSONEachRow, $$
                               {"value" : "424242424242"}
                          $$)
 ```
-```reponse
+```response
 ┌─name──┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ value │ Nullable(Int64) │              │                    │         │                  │                │
 └───────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -910,9 +910,9 @@ This setting is disabled by default.
 
 ```sql
 SET input_format_json_try_infer_numbers_from_strings = 1;
-DESC format(CSV, '"42","42.42"');
+DESC format(CSV, '42,42.42');
 ```
-```reponse
+```response
 ┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Int64)   │              │                    │         │                  │                │
 │ c2   │ Nullable(Float64) │              │                    │         │                  │                │

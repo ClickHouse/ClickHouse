@@ -155,6 +155,9 @@ namespace
 
                 for (auto & [access_flags, columns] : access_and_columns)
                 {
+                    if (wildcard && !columns.empty())
+                        return false;
+
                     AccessRightsElement element;
                     element.access_flags = access_flags;
                     element.columns = std::move(columns);
@@ -224,14 +227,14 @@ namespace
 
             if (!element.anyColumn())
                 throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the column level", old_flags.toString());
-            else if (!element.anyTable())
+            if (!element.anyTable())
                 throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the table level", old_flags.toString());
-            else if (!element.anyDatabase())
+            if (!element.anyDatabase())
                 throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the database level", old_flags.toString());
-            else if (!element.anyParameter())
+            if (!element.anyParameter())
                 throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the global with parameter level", old_flags.toString());
-            else
-                throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted", old_flags.toString());
+
+            throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted", old_flags.toString());
         });
     }
 

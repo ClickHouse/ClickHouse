@@ -440,7 +440,9 @@ void ZooKeeper::connect(
     if (nodes.empty())
         throw Exception::fromMessage(Error::ZBADARGUMENTS, "No nodes passed to ZooKeeper constructor");
 
-    static constexpr size_t num_tries = 3;
+    /// We always have at least one attempt to connect.
+    size_t num_tries = args.num_connection_retries + 1;
+
     bool connected = false;
     bool dns_error = false;
 
@@ -473,8 +475,7 @@ void ZooKeeper::connect(
         if (dns_error)
             throw zkutil::KeeperException::fromMessage(
                 Coordination::Error::ZCONNECTIONLOSS, "Cannot resolve any of provided ZooKeeper hosts due to DNS error");
-        else
-            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
+        throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
     }
 
     WriteBufferFromOwnString fail_reasons;
@@ -577,10 +578,8 @@ void ZooKeeper::connect(
         message << fail_reasons.str() << "\n";
         throw Exception(Error::ZCONNECTIONLOSS, "All connection tries failed while connecting to ZooKeeper. nodes: {}", message.str());
     }
-    else
-    {
-        LOG_INFO(log, "Connected to ZooKeeper at {} with session_id {}{}", socket.peerAddress().toString(), session_id, fail_reasons.str());
-    }
+
+    LOG_INFO(log, "Connected to ZooKeeper at {} with session_id {}{}", socket.peerAddress().toString(), session_id, fail_reasons.str());
 }
 
 
@@ -1229,6 +1228,9 @@ void ZooKeeper::pushRequest(RequestInfo && info)
         if (!info.request->xid)
         {
             info.request->xid = next_xid.fetch_add(1);
+            if (!use_xid_64)
+                info.request->xid = static_cast<int32_t>(info.request->xid);
+
             if (info.request->xid == close_xid)
                 throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "xid equal to close_xid");
             if (info.request->xid < 0)
@@ -1286,7 +1288,7 @@ std::optional<String> ZooKeeper::tryGetSystemZnode(const std::string & path, con
         LOG_TRACE(log, "Failed to get {}", description);
         return std::nullopt;
     }
-    else if (response.error != Coordination::Error::ZOK)
+    if (response.error != Coordination::Error::ZOK)
     {
         throw Exception(response.error, "Failed to get {}", description);
     }
@@ -1593,8 +1595,7 @@ std::optional<int8_t> ZooKeeper::getConnectedNodeIdx() const
     int8_t res = original_index.load();
     if (res == -1)
         return std::nullopt;
-    else
-        return res;
+    return res;
 }
 
 String ZooKeeper::getConnectedHostPort() const
@@ -1602,8 +1603,7 @@ String ZooKeeper::getConnectedHostPort() const
     auto idx = getConnectedNodeIdx();
     if (idx)
         return args.hosts[*idx];
-    else
-        return "";
+    return "";
 }
 
 int64_t ZooKeeper::getConnectionXid() const

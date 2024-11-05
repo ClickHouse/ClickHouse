@@ -56,7 +56,6 @@ Block HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         const auto & key_names = !is_join_get ? onexprs[i].key_names_left : onexprs[i].key_names_right;
         join_on_keys.emplace_back(block, key_names, onexprs[i].condColumnNames().first, join.key_sizes[i]);
     }
-    size_t existing_columns = block.columns();
 
     /** If you use FULL or RIGHT JOIN, then the columns from the "left" table must be materialized.
       * Because if they are constants, then in the "not joined" rows, they may have different values
@@ -99,6 +98,22 @@ Block HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         added_columns.buildJoinGetOutput();
     else
         added_columns.buildOutput();
+
+    const auto & table_join = join.table_join;
+    std::set<size_t> block_columns_to_erase;
+    if (join.canRemoveColumnsFromLeftBlock())
+    {
+        std::unordered_set<String> left_output_columns;
+        for (const auto & out_column : table_join->getOutputColumns(JoinTableSide::Left))
+            left_output_columns.insert(out_column.name);
+        for (size_t i = 0; i < block.columns(); ++i)
+        {
+            if (!left_output_columns.contains(block.getByPosition(i).name))
+                block_columns_to_erase.insert(i);
+        }
+    }
+    size_t existing_columns = block.columns();
+
     for (size_t i = 0; i < added_columns.size(); ++i)
         block.insert(added_columns.moveColumn(i));
 
@@ -160,6 +175,7 @@ Block HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
             block.safeGetByPosition(pos).column = block.safeGetByPosition(pos).column->replicate(*offsets_to_replicate);
         }
     }
+    block.erase(block_columns_to_erase);
     return remaining_block;
 }
 
@@ -291,11 +307,9 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchNu
         return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, true>(
             std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags);
     }
-    else
-    {
-        return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, false>(
-            std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags);
-    }
+
+    return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, false>(
+        std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags);
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
@@ -772,8 +786,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
                             selected_right_row_it = selected_right_row_it + row_replicate_offset[i] - replicated_row;
                             break;
                         }
-                        else
-                            ++selected_right_row_it;
+                        ++selected_right_row_it;
                     }
                 }
             }

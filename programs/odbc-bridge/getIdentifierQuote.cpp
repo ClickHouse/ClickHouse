@@ -39,13 +39,13 @@ IdentifierQuotingStyle getQuotingStyle(nanodbc::ConnectionHolderPtr connection)
     auto identifier_quote = getIdentifierQuote(connection);
     if (identifier_quote.empty())
         return IdentifierQuotingStyle::Backticks;
-    else if (identifier_quote[0] == '`')
+    if (identifier_quote[0] == '`')
         return IdentifierQuotingStyle::Backticks;
-    else if (identifier_quote[0] == '"')
+    if (identifier_quote[0] == '"')
         return IdentifierQuotingStyle::DoubleQuotes;
-    else
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Can not map quote identifier '{}' to IdentifierQuotingStyle value", identifier_quote);
+
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Can not map quote identifier '{}' to IdentifierQuotingStyle value", identifier_quote);
 }
 
 }

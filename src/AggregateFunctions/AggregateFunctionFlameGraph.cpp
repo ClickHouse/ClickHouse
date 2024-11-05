@@ -328,21 +328,19 @@ struct AggregateFunctionFlameGraphData
             list = list->next;
             return entry;
         }
-        else
+
+        Entry * parent = list;
+        while (parent->next && parent->next->size != size)
+            parent = parent->next;
+
+        if (parent->next && parent->next->size == size)
         {
-            Entry * parent = list;
-            while (parent->next && parent->next->size != size)
-                parent = parent->next;
-
-            if (parent->next && parent->next->size == size)
-            {
-                Entry * entry = parent->next;
-                parent->next = entry->next;
-                return entry;
-            }
-
-            return nullptr;
+            Entry * entry = parent->next;
+            parent->next = entry->next;
+            return entry;
         }
+
+        return nullptr;
     }
 
     void add(UInt64 ptr, Int64 size, const UInt64 * stack, size_t stack_size, Arena * arena)

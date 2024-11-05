@@ -83,7 +83,7 @@ static void mixNumberColumns(
 
                 return true;
             }
-            else if (auto col_defs = checkAndGetColumn<ColVecType>(col_defaults.get()))
+            if (auto col_defs = checkAndGetColumn<ColVecType>(col_defaults.get()))
             {
                 auto & src = col_defs->getData();
                 for (size_t i = 0; i < defaults_mask.size(); ++i)

@@ -41,7 +41,7 @@ std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServer
         Poco::Net::HTTPBasicCredentials credentials(info);
         return server_credentials->isValidUser(credentials.getUsername(), credentials.getPassword());
     }
-    else if (request.hasCredentials())
+    if (request.hasCredentials())
     {
         return {"Client requires HTTP Basic authentication, but server doesn't provide it", false};
     }

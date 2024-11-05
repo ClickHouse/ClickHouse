@@ -39,12 +39,6 @@ public:
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const override;
 
-    std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
-        const StoredObjects & objects,
-        const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const override;
-
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
         const StoredObject & object,
@@ -130,16 +124,14 @@ protected:
         {
             if (is_file)
                 return std::map<String, FileDataPtr>::find(path);
-            else
-                return std::map<String, FileDataPtr>::find(path.ends_with("/") ? path : path + '/');
+            return std::map<String, FileDataPtr>::find(path.ends_with("/") ? path : path + '/');
         }
 
         auto add(const String & path, FileDataPtr data)
         {
             if (data->type == FileType::Directory)
                 return emplace(path.ends_with("/") ? path : path + '/', data);
-            else
-                return emplace(path, data);
+            return emplace(path, data);
         }
     };
 

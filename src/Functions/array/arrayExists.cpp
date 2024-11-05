@@ -35,8 +35,7 @@ ColumnPtr ArrayExistsImpl::execute(const ColumnArray & array, ColumnPtr mapped)
 
             return out_column;
         }
-        else
-            return DataTypeUInt8().createColumnConst(array.size(), 0u);
+        return DataTypeUInt8().createColumnConst(array.size(), 0u);
     }
 
     const IColumn::Filter & filter = column_filter->getData();

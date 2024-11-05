@@ -86,11 +86,11 @@ constexpr ASOFJoinInequality reverseASOFJoinInequality(ASOFJoinInequality inequa
 {
     if (inequality == ASOFJoinInequality::Less)
         return ASOFJoinInequality::Greater;
-    else if (inequality == ASOFJoinInequality::Greater)
+    if (inequality == ASOFJoinInequality::Greater)
         return ASOFJoinInequality::Less;
-    else if (inequality == ASOFJoinInequality::LessOrEquals)
+    if (inequality == ASOFJoinInequality::LessOrEquals)
         return ASOFJoinInequality::GreaterOrEquals;
-    else if (inequality == ASOFJoinInequality::GreaterOrEquals)
+    if (inequality == ASOFJoinInequality::GreaterOrEquals)
         return ASOFJoinInequality::LessOrEquals;
 
     return ASOFJoinInequality::None;
@@ -118,5 +118,16 @@ enum class JoinTableSide : uint8_t
 };
 
 const char * toString(JoinTableSide join_table_side);
+
+/// Setting to choose which table to use as the inner table in hash join
+enum class JoinInnerTableSelectionMode : uint8_t
+{
+    /// Use left table
+    Left,
+    /// Use right table
+    Right,
+    /// Use the table with the smallest number of rows
+    Auto,
+};
 
 }

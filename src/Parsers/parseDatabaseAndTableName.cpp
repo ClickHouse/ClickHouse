@@ -110,7 +110,7 @@ bool parseDatabaseAndTableNameOrAsterisks(IParser::Pos & pos, Expected & expecte
                     table.clear();
                     return true;
                 }
-                else if (identifier_parser.parse(pos, ast, expected))
+                if (identifier_parser.parse(pos, ast, expected))
                 {
                     /// db.table
                     database = std::move(first_identifier);

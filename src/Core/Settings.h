@@ -5,9 +5,7 @@
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsWriteFormat.h>
-#include <Core/ParallelReplicasMode.h>
 #include <base/types.h>
-#include <Common/SettingConstraintWritability.h>
 #include <Common/SettingsChanges.h>
 
 #include <string_view>
@@ -54,6 +52,8 @@ class WriteBuffer;
     M(CLASS_NAME, DefaultDatabaseEngine) \
     M(CLASS_NAME, DefaultTableEngine) \
     M(CLASS_NAME, Dialect) \
+    M(CLASS_NAME, DistributedCacheLogMode) /* Cloud only */ \
+    M(CLASS_NAME, DistributedCachePoolBehaviourOnLimit) /* Cloud only */ \
     M(CLASS_NAME, DistributedDDLOutputMode) \
     M(CLASS_NAME, DistributedProductMode) \
     M(CLASS_NAME, Double) \
@@ -66,6 +66,7 @@ class WriteBuffer;
     M(CLASS_NAME, IntervalOutputFormat) \
     M(CLASS_NAME, JoinAlgorithm) \
     M(CLASS_NAME, JoinStrictness) \
+    M(CLASS_NAME, JoinInnerTableSelectionMode) \
     M(CLASS_NAME, LightweightMutationProjectionMode) \
     M(CLASS_NAME, LoadBalancing) \
     M(CLASS_NAME, LocalFSReadMethod) \

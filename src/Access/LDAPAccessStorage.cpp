@@ -330,10 +330,7 @@ std::set<String> LDAPAccessStorage::mapExternalRolesNoLock(const LDAPClient::Sea
 
         for (const auto & external_role : external_role_set)
         {
-            if (
-                prefix.size() < external_role.size() &&
-                external_role.compare(0, prefix.size(), prefix) == 0
-            )
+            if (prefix.size() < external_role.size() && external_role.starts_with(prefix))
             {
                 role_names.emplace(external_role, prefix.size());
             }

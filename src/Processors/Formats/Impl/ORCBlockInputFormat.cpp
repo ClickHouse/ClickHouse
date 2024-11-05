@@ -67,7 +67,7 @@ Chunk ORCBlockInputFormat::read()
     /// are not presented in data) the number of rows in record batch will be 0.
     size_t num_rows = file_reader->GetRawORCReader()->getStripe(stripe_current)->getNumberOfRows();
 
-    auto table = table_result.ValueOrDie();
+    const auto & table = table_result.ValueOrDie();
     if (!table || !num_rows)
         return {};
 

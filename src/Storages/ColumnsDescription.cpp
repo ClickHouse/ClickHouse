@@ -1,36 +1,42 @@
 #include <Storages/ColumnsDescription.h>
 
+#include <memory>
+#include <Compression/CompressionFactory.h>
+#include <Core/Defines.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/NestedUtils.h>
+#include <IO/ReadBuffer.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/addTypeConversionToAST.h>
+#include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSetQuery.h>
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadBuffer.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/ReadBufferFromString.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeNested.h>
-#include <Common/Exception.h>
-#include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
+#include <Common/Exception.h>
+#include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
-#include <Core/Defines.h>
-#include <Compression/CompressionFactory.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/FunctionNameNormalizer.h>
 
 
 namespace DB
@@ -209,7 +215,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
                 comment = col_ast->comment->as<ASTLiteral &>().value.safeGet<String>();
 
             if (col_ast->codec)
-                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true, true);
+                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true);
 
             if (col_ast->ttl)
                 ttl = col_ast->ttl;
@@ -607,7 +613,7 @@ bool ColumnsDescription::hasSubcolumn(const String & column_name) const
     auto it = columns.get<1>().find(ordinary_column_name);
     if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
     {
-        if (auto dynamic_subcolumn_type = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
+        if (auto /*dynamic_subcolumn_type*/ _ = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
             return true;
     }
 
@@ -811,7 +817,7 @@ bool ColumnsDescription::hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, cons
     it = columns.get<1>().find(ordinary_column_name);
     if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
     {
-        if (auto dynamic_subcolumn_type = it->type->hasSubcolumn(dynamic_subcolumn_name))
+        if (auto /*dynamic_subcolumn_type*/ _ = it->type->hasSubcolumn(dynamic_subcolumn_name))
             return true;
     }
 
@@ -970,7 +976,36 @@ std::vector<String> ColumnsDescription::getAllRegisteredNames() const
     return names;
 }
 
-Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context)
+void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const DataTypePtr & data_type, DefaultExpressionsInfo & info)
+{
+    if (!col_decl.default_expression)
+        return;
+
+    /** For columns with explicitly-specified type create two expressions:
+    * 1. default_expression aliased as column name with _tmp suffix
+    * 2. conversion of expression (1) to explicitly-specified type alias as column name
+    */
+    if (col_decl.type)
+    {
+        const auto & final_column_name = col_decl.name;
+        const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
+        const auto * data_type_ptr = data_type.get();
+
+        info.expr_list->children.emplace_back(setAlias(
+            addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
+
+        info.expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), tmp_column_name));
+    }
+    else
+    {
+        info.has_columns_with_default_without_type = true;
+        info.expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), col_decl.name));
+    }
+}
+
+namespace
+{
+std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context, bool get_sample_block)
 {
     for (const auto & child : default_expr_list->children)
         if (child->as<ASTSelectQuery>() || child->as<ASTSelectWithUnionQuery>() || child->as<ASTSubquery>())
@@ -984,6 +1019,9 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
             if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
                 throw Exception(ErrorCodes::THERE_IS_NO_DEFAULT_VALUE, "Unsupported default value that requires ARRAY JOIN action");
 
+        if (!get_sample_block)
+            return {};
+
         return actions->getSampleBlock();
     }
     catch (Exception & ex)
@@ -991,6 +1029,20 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
         ex.addMessage("default expression and column type are incompatible.");
         throw;
     }
+}
+}
+
+void validateColumnsDefaults(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context)
+{
+    /// Do not execute the default expressions as they might be heavy, e.g.: access remote servers, etc.
+    validateColumnsDefaultsAndGetSampleBlockImpl(default_expr_list, all_columns, context, /*get_sample_block=*/false);
+}
+
+Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context)
+{
+    auto result = validateColumnsDefaultsAndGetSampleBlockImpl(default_expr_list, all_columns, context, /*get_sample_block=*/true);
+    chassert(result.has_value());
+    return std::move(*result);
 }
 
 }

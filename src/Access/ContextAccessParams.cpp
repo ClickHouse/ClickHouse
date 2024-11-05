@@ -89,10 +89,9 @@ bool operator ==(const ContextAccessParams & left, const ContextAccessParams & r
         {
             if (!x)
                 return !y;
-            else if (!y)
+            if (!y)
                 return false;
-            else
-                return *x == *y;
+            return *x == *y;
         }
         else
         {
@@ -132,23 +131,21 @@ bool operator <(const ContextAccessParams & left, const ContextAccessParams & ri
         {
             if (!x)
                 return y ? -1 : 0;
-            else if (!y)
+            if (!y)
                 return 1;
-            else if (*x == *y)
+            if (*x == *y)
                 return 0;
-            else if (*x < *y)
+            if (*x < *y)
                 return -1;
-            else
-                return 1;
+            return 1;
         }
         else
         {
             if (x == y)
                 return 0;
-            else if (x < y)
+            if (x < y)
                 return -1;
-            else
-                return 1;
+            return 1;
         }
     };
 

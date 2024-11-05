@@ -22,13 +22,19 @@ namespace Setting
     extern const SettingsSeconds http_receive_timeout;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsSeconds keep_alive_timeout;
+    extern const ServerSettingsSeconds replicated_fetches_http_connection_timeout;
+    extern const ServerSettingsSeconds replicated_fetches_http_receive_timeout;
+    extern const ServerSettingsSeconds replicated_fetches_http_send_timeout;
+}
 
 Poco::Timespan ConnectionTimeouts::saturate(Poco::Timespan timespan, Poco::Timespan limit)
 {
     if (limit.totalMicroseconds() == 0)
         return timespan;
-    else
-        return (timespan > limit) ? limit : timespan;
+    return (timespan > limit) ? limit : timespan;
 }
 
 /// Timeouts for the case when we have just single attempt to connect.
@@ -52,29 +58,29 @@ ConnectionTimeouts ConnectionTimeouts::getTCPTimeoutsWithFailover(const Settings
         .withSecureConnectionTimeout(settings[Setting::connect_timeout_with_failover_secure_ms]);
 }
 
-ConnectionTimeouts ConnectionTimeouts::getHTTPTimeouts(const Settings & settings, Poco::Timespan http_keep_alive_timeout)
+ConnectionTimeouts ConnectionTimeouts::getHTTPTimeouts(const Settings & settings, const ServerSettings & server_settings)
 {
     return ConnectionTimeouts()
         .withConnectionTimeout(settings[Setting::http_connection_timeout])
         .withSendTimeout(settings[Setting::http_send_timeout])
         .withReceiveTimeout(settings[Setting::http_receive_timeout])
-        .withHTTPKeepAliveTimeout(http_keep_alive_timeout)
+        .withHTTPKeepAliveTimeout(server_settings[ServerSetting::keep_alive_timeout])
         .withTCPKeepAliveTimeout(settings[Setting::tcp_keep_alive_timeout])
         .withHandshakeTimeout(settings[Setting::handshake_timeout_ms]);
 }
 
 ConnectionTimeouts ConnectionTimeouts::getFetchPartHTTPTimeouts(const ServerSettings & server_settings, const Settings & user_settings)
 {
-    auto timeouts = getHTTPTimeouts(user_settings, server_settings.keep_alive_timeout);
+    auto timeouts = getHTTPTimeouts(user_settings, server_settings);
 
-    if (server_settings.replicated_fetches_http_connection_timeout.changed)
-        timeouts.connection_timeout = server_settings.replicated_fetches_http_connection_timeout;
+    if (server_settings[ServerSetting::replicated_fetches_http_connection_timeout].changed)
+        timeouts.connection_timeout = server_settings[ServerSetting::replicated_fetches_http_connection_timeout];
 
-    if (server_settings.replicated_fetches_http_send_timeout.changed)
-        timeouts.send_timeout = server_settings.replicated_fetches_http_send_timeout;
+    if (server_settings[ServerSetting::replicated_fetches_http_send_timeout].changed)
+        timeouts.send_timeout = server_settings[ServerSetting::replicated_fetches_http_send_timeout];
 
-    if (server_settings.replicated_fetches_http_receive_timeout.changed)
-        timeouts.receive_timeout = server_settings.replicated_fetches_http_receive_timeout;
+    if (server_settings[ServerSetting::replicated_fetches_http_receive_timeout].changed)
+        timeouts.receive_timeout = server_settings[ServerSetting::replicated_fetches_http_receive_timeout];
 
     return timeouts;
 }

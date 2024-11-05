@@ -150,13 +150,6 @@ public:
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const = 0;
 
-    /// Read multiple objects with common prefix
-    virtual std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
-        const StoredObjects & objects,
-        const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const = 0;
-
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
         const StoredObject & object,

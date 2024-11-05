@@ -5230,14 +5230,51 @@ Result:
 
 Also see the `toUnixTimestamp` function.
 
-## toFixedString(s, N)
+## toFixedString
 
 Converts a [String](../data-types/string.md) type argument to a [FixedString(N)](../data-types/fixedstring.md) type (a string of fixed length N).
 If the string has fewer bytes than N, it is padded with null bytes to the right. If the string has more bytes than N, an exception is thrown.
 
-## toStringCutToZero(s)
+**Syntax**
+
+```sql
+toFixedString(s, N)
+```
+
+**Arguments**
+
+- `s` — A String to convert to a fixed string. [String](../data-types/string.md).
+- `N` — Length N. [UInt8](../data-types/int-uint.md)
+
+**Returned value**
+
+- An N length fixed string of `s`. [FixedString](../data-types/fixedstring.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toFixedString('foo', 8) AS s;
+```
+
+Result:
+
+```response
+┌─s─────────────┐
+│ foo\0\0\0\0\0 │
+└───────────────┘
+```
+
+## toStringCutToZero
 
 Accepts a String or FixedString argument. Returns the String with the content truncated at the first zero byte found.
+
+**Syntax**
+
+```sql
+toStringCutToZero(s)
+```
 
 **Example**
 
@@ -6829,6 +6866,18 @@ Same as for [parseDateTimeInJodaSyntax](#parsedatetimeinjodasyntax) except that 
 ## parseDateTimeInJodaSyntaxOrNull
 
 Same as for [parseDateTimeInJodaSyntax](#parsedatetimeinjodasyntax) except that it returns `NULL` when it encounters a date format that cannot be processed.
+
+## parseDateTime64InJodaSyntax
+
+Similar to [parseDateTimeInJodaSyntax](#parsedatetimeinjodasyntax). Differently, it returns a value of type [DateTime64](../data-types/datetime64.md).
+
+## parseDateTime64InJodaSyntaxOrZero
+
+Same as for [parseDateTime64InJodaSyntax](#parsedatetime64injodasyntax) except that it returns zero date when it encounters a date format that cannot be processed.
+
+## parseDateTime64InJodaSyntaxOrNull
+
+Same as for [parseDateTime64InJodaSyntax](#parsedatetime64injodasyntax) except that it returns `NULL` when it encounters a date format that cannot be processed.
 
 ## parseDateTimeBestEffort
 ## parseDateTime32BestEffort

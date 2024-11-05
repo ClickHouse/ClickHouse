@@ -33,6 +33,12 @@ namespace DB
 {
 struct Settings;
 
+namespace ServerSetting
+{
+    extern const ServerSettingsGroupArrayActionWhenLimitReached aggregate_function_group_array_action_when_limit_is_reached;
+    extern const ServerSettingsUInt64 aggregate_function_group_array_max_element_size;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -90,8 +96,7 @@ struct GroupArraySamplerData
         /// With a large number of values, we will generate random numbers several times slower.
         if (lim <= static_cast<UInt64>(pcg32_fast::max()))
             return rng() % lim;
-        else
-            return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(pcg32::max()) + 1ULL) + static_cast<UInt64>(rng())) % lim;
+        return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(pcg32::max()) + 1ULL) + static_cast<UInt64>(rng())) % lim;
     }
 
     void randomShuffle()
@@ -747,7 +752,7 @@ inline AggregateFunctionPtr createAggregateFunctionGroupArrayImpl(const DataType
 size_t getMaxArraySize()
 {
     if (auto context = Context::getGlobalContextInstance())
-        return context->getServerSettings().aggregate_function_group_array_max_element_size;
+        return context->getServerSettings()[ServerSetting::aggregate_function_group_array_max_element_size];
 
     return 0xFFFFFF;
 }
@@ -755,7 +760,7 @@ size_t getMaxArraySize()
 bool discardOnLimitReached()
 {
     if (auto context = Context::getGlobalContextInstance())
-        return context->getServerSettings().aggregate_function_group_array_action_when_limit_is_reached
+        return context->getServerSettings()[ServerSetting::aggregate_function_group_array_action_when_limit_is_reached]
             == GroupArrayActionWhenLimitReached::DISCARD;
 
     return false;
@@ -797,8 +802,8 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "groupArrayLast make sense only with max_elems (groupArrayLast(max_elems)())");
         return createAggregateFunctionGroupArrayImpl<GroupArrayTrait</* Thas_limit= */ false, Tlast, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters, max_elems, std::nullopt);
     }
-    else
-        return createAggregateFunctionGroupArrayImpl<GroupArrayTrait</* Thas_limit= */ true, Tlast, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters, max_elems, std::nullopt);
+    return createAggregateFunctionGroupArrayImpl<GroupArrayTrait</* Thas_limit= */ true, Tlast, /* Tsampler= */ Sampler::NONE>>(
+        argument_types[0], parameters, max_elems, std::nullopt);
 }
 
 AggregateFunctionPtr createAggregateFunctionGroupArraySample(
