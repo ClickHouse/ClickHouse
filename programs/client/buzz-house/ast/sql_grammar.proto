@@ -2754,6 +2754,8 @@ enum TableEngineValues {
     MySQL = 17;
     PostgreSQL = 18;
     SQLite = 19;
+    S3 = 20;
+    S3Queue = 21;
 }
 
 enum TableEngineOption {

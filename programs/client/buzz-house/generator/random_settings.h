@@ -673,6 +673,49 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
        {"connection_max_tries", [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(1, 16)); }},
        {"connection_auto_close", TrueOrFalse}};
 
+const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> FileTableSettings
+    = {{"engine_file_allow_create_multiple_files", TrueOrFalse},
+       {"engine_file_empty_if_not_exists", TrueOrFalse},
+       {"engine_file_skip_empty_files", TrueOrFalse},
+       {"engine_file_truncate_on_insert", TrueOrFalse},
+       {"storage_file_read_method",
+        [](RandomGenerator & rg, std::string & ret)
+        {
+            const std::vector<std::string> & choices = {"read", "pread", "mmap"};
+            ret += "'";
+            ret += rg.PickRandomlyFromVector(choices);
+            ret += "'";
+        }}};
+
+const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> S3TableSettings
+    = {{"s3_create_new_file_on_insert", TrueOrFalse}, {"s3_skip_empty_files", TrueOrFalse}, {"s3_truncate_on_insert", TrueOrFalse}};
+
+const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> S3QueueTableSettings = {
+    {"after_processing",
+     [](RandomGenerator & rg, std::string & ret)
+     {
+         const std::vector<std::string> & choices = {"", "keep", "delete"};
+         ret += "'";
+         ret += rg.PickRandomlyFromVector(choices);
+         ret += "'";
+     }},
+    {"mode",
+     [](RandomGenerator & rg, std::string & ret)
+     {
+         const std::vector<std::string> & choices = {"", "ordered", "unordered"};
+         ret += "'";
+         ret += rg.PickRandomlyFromVector(choices);
+         ret += "'";
+     }},
+    {"enable_logging_to_s3queue_log", TrueOrFalse},
+    {"processing_threads_num",
+     [](RandomGenerator & rg, std::string & ret)
+     { ret += std::to_string(rg.RandomInt<uint32_t>(1, std::thread::hardware_concurrency())); }},
+    {"s3_create_new_file_on_insert", TrueOrFalse},
+    {"s3_skip_empty_files", TrueOrFalse},
+    {"s3_truncate_on_insert", TrueOrFalse},
+};
+
 const std::map<sql_query_grammar::TableEngineValues, std::map<std::string, std::function<void(RandomGenerator &, std::string &)>>>
     AllTableSettings
     = {{sql_query_grammar::MergeTree, MergeTreeTableSettings},
@@ -681,7 +724,7 @@ const std::map<sql_query_grammar::TableEngineValues, std::map<std::string, std::
        {sql_query_grammar::AggregatingMergeTree, MergeTreeTableSettings},
        {sql_query_grammar::CollapsingMergeTree, MergeTreeTableSettings},
        {sql_query_grammar::VersionedCollapsingMergeTree, MergeTreeTableSettings},
-       {sql_query_grammar::File, {}},
+       {sql_query_grammar::File, FileTableSettings},
        {sql_query_grammar::Null, {}},
        {sql_query_grammar::Set, SetTableSettings},
        {sql_query_grammar::Join, JoinTableSettings},
@@ -693,7 +736,9 @@ const std::map<sql_query_grammar::TableEngineValues, std::map<std::string, std::
        {sql_query_grammar::Buffer, {}},
        {sql_query_grammar::MySQL, MySQLTableSettings},
        {sql_query_grammar::PostgreSQL, {}},
-       {sql_query_grammar::SQLite, {}}};
+       {sql_query_grammar::SQLite, {}},
+       {sql_query_grammar::S3, S3TableSettings},
+       {sql_query_grammar::S3Queue, S3QueueTableSettings}};
 
 const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> MergeTreeColumnSettings
     = {{"min_compress_block_size",
@@ -721,7 +766,9 @@ const std::map<sql_query_grammar::TableEngineValues, std::map<std::string, std::
        {sql_query_grammar::Buffer, {}},
        {sql_query_grammar::MySQL, {}},
        {sql_query_grammar::PostgreSQL, {}},
-       {sql_query_grammar::SQLite, {}}};
+       {sql_query_grammar::SQLite, {}},
+       {sql_query_grammar::S3, {}},
+       {sql_query_grammar::S3Queue, {}}};
 
 void SetRandomSetting(
     RandomGenerator & rg,

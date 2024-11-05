@@ -1,6 +1,6 @@
 #pragma once
 
-#include "external_databases.h"
+#include "external_integrations.h"
 #include "random_generator.h"
 #include "random_settings.h"
 #include "sql_catalog.h"
@@ -68,7 +68,7 @@ class StatementGenerator
 {
 private:
     const FuzzConfig & fc;
-    ExternalDatabases & connections;
+    ExternalIntegrations & connections;
     const bool supports_cloud_features;
 
     std::string buf;
@@ -251,7 +251,7 @@ private:
         RandomGenerator & rg, const sql_query_grammar::TableEngineValues teng, const bool add_pkey, sql_query_grammar::TableEngine * te);
     int GenerateEngineDetails(RandomGenerator & rg, SQLBase & b, const bool add_pkey, sql_query_grammar::TableEngine * te);
 
-    sql_query_grammar::TableEngineValues GetNextTableEngine(RandomGenerator & rg, const bool use_external_database);
+    sql_query_grammar::TableEngineValues GetNextTableEngine(RandomGenerator & rg, const bool use_external_integrations);
     int GenerateNextRefreshableView(RandomGenerator & rg, sql_query_grammar::RefreshableView * cv);
     int GenerateNextCreateView(RandomGenerator & rg, sql_query_grammar::CreateView * cv);
     int GenerateNextDrop(RandomGenerator & rg, sql_query_grammar::Drop * sq);
@@ -349,19 +349,21 @@ public:
         = [](const std::shared_ptr<SQLDatabase> & d) { return d->attached == DetachStatus::ATTACHED; };
     const std::function<bool(const SQLTable &)> attached_tables
         = [](const SQLTable & t) { return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED; };
-    const std::function<bool(const SQLView &)> attached_views = [](const SQLView & v) { return (!v.db || v.db->attached == DetachStatus::ATTACHED) && v.attached == DetachStatus::ATTACHED; };
+    const std::function<bool(const SQLView &)> attached_views
+        = [](const SQLView & v) { return (!v.db || v.db->attached == DetachStatus::ATTACHED) && v.attached == DetachStatus::ATTACHED; };
 
-    const std::function<bool(const SQLTable &)> attached_tables_for_oracle
-        = [](const SQLTable & t) { return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && !t.IsNotTruncableEngine(); };
+    const std::function<bool(const SQLTable &)> attached_tables_for_oracle = [](const SQLTable & t)
+    { return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && !t.IsNotTruncableEngine(); };
 
 
     const std::function<bool(const std::shared_ptr<SQLDatabase> &)> detached_databases
         = [](const std::shared_ptr<SQLDatabase> & d) { return d->attached != DetachStatus::ATTACHED; };
     const std::function<bool(const SQLTable &)> detached_tables
         = [](const SQLTable & t) { return (t.db && t.db->attached != DetachStatus::ATTACHED) || t.attached != DetachStatus::ATTACHED; };
-    const std::function<bool(const SQLView &)> detached_views = [](const SQLView & v) { return (v.db && v.db->attached != DetachStatus::ATTACHED) || v.attached != DetachStatus::ATTACHED; };
+    const std::function<bool(const SQLView &)> detached_views
+        = [](const SQLView & v) { return (v.db && v.db->attached != DetachStatus::ATTACHED) || v.attached != DetachStatus::ATTACHED; };
 
-    StatementGenerator(const FuzzConfig & fuzzc, ExternalDatabases & conn, const bool scf)
+    StatementGenerator(const FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool scf)
         : fc(fuzzc), connections(conn), supports_cloud_features(scf)
     {
         buf.reserve(2048);
@@ -371,7 +373,7 @@ public:
     int GenerateNextCreateDatabase(RandomGenerator & rg, sql_query_grammar::CreateDatabase * cd);
     int GenerateNextStatement(RandomGenerator & rg, sql_query_grammar::SQLQuery & sq);
 
-    void UpdateGenerator(const sql_query_grammar::SQLQuery & sq, ExternalDatabases & ed, bool success);
+    void UpdateGenerator(const sql_query_grammar::SQLQuery & sq, ExternalIntegrations & ei, bool success);
 
     friend class QueryOracle;
 };

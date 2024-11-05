@@ -124,13 +124,13 @@ class FuzzConfig
 {
 public:
     std::vector<const std::string> collations;
-    ServerCredentials mysql_server, postgresql_server, sqlite_server;
+    ServerCredentials mysql_server, postgresql_server, sqlite_server, minio_server;
     bool read_log = false, fuzz_floating_points = true;
     uint32_t seed = 0, max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5;
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
                           db_file_path = std::filesystem::temp_directory_path() / "db";
 
-    FuzzConfig() : mysql_server(), postgresql_server() { }
+    FuzzConfig() : mysql_server(), postgresql_server(), sqlite_server(), minio_server() { }
 
     FuzzConfig(const std::string & path)
     {
@@ -194,6 +194,10 @@ public:
             else if (key == "sqlite")
             {
                 sqlite_server = LoadServerCredentials(value, key, 0);
+            }
+            else if (key == "minio")
+            {
+                minio_server = LoadServerCredentials(value, key, 9000);
             }
             else
             {

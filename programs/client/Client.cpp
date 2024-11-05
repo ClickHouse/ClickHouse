@@ -652,8 +652,7 @@ static bool queryHasWithClause(const IAST & ast)
     return false;
 }
 
-std::optional<bool>
-Client::processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query, const bool permissive)
+std::optional<bool> Client::processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query, const bool permissive)
 {
     processParsedSingleQuery(query_to_execute, query_to_execute, parsed_query);
 
@@ -1004,7 +1003,7 @@ bool Client::buzzHouse()
     bool server_up = true;
     std::string full_query;
     buzzhouse::FuzzConfig fc(buzz_house_options_path);
-    buzzhouse::ExternalDatabases ed(fc);
+    buzzhouse::ExternalIntegrations ei(fc);
 
     full_query.reserve(8192);
     if (fc.read_log)
@@ -1046,7 +1045,7 @@ bool Client::buzzHouse()
         fc.LoadCollations();
 
         full_query2.reserve(8192);
-        buzzhouse::StatementGenerator gen(fc, ed, has_cloud_features);
+        buzzhouse::StatementGenerator gen(fc, ei, has_cloud_features);
         buzzhouse::QueryOracle qo(fc);
         while (server_up)
         {
@@ -1060,7 +1059,7 @@ bool Client::buzzHouse()
                 outf << full_query << std::endl;
                 server_up &= ProcessBuzzHouseQuery(full_query);
 
-                gen.UpdateGenerator(sq1, ed, !have_error);
+                gen.UpdateGenerator(sq1, ei, !have_error);
                 nsuccessfull_create_database += (have_error ? 0 : 1);
                 total_create_database_tries++;
             }
@@ -1073,7 +1072,7 @@ bool Client::buzzHouse()
                 outf << full_query << std::endl;
                 server_up &= ProcessBuzzHouseQuery(full_query);
 
-                gen.UpdateGenerator(sq1, ed, !have_error);
+                gen.UpdateGenerator(sq1, ei, !have_error);
                 nsuccessfull_create_table += (have_error ? 0 : 1);
                 total_create_table_tries++;
             }
@@ -1174,7 +1173,7 @@ bool Client::buzzHouse()
                     outf << full_query << std::endl;
                     server_up &= ProcessBuzzHouseQuery(full_query);
 
-                    gen.UpdateGenerator(sq1, ed, !have_error);
+                    gen.UpdateGenerator(sq1, ei, !have_error);
                 }
             }
         }

@@ -10,6 +10,7 @@ set (CLICKHOUSE_CLIENT_SOURCES
     buzz-house/generator/statement_generator.cpp
     buzz-house/generator/random_settings.cpp
     buzz-house/generator/query_oracle.cpp
+    buzz-house/generator/external_integrations.cpp
     buzz-house/third_party/hugeint.cpp
     buzz-house/third_party/uhugeint.cpp
     ${GRAMMAR_SRC}
