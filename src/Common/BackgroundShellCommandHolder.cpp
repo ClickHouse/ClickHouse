@@ -30,7 +30,7 @@ void BackgroundShellCommandHolder::addCommand(std::unique_ptr<ShellCommand> comm
 
     auto [iterator, is_inserted] = active_shell_commands.emplace(std::make_pair(command_pid, std::move(command)));
     if (!is_inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't insert proccess PID {} into active shell commands, because there are running proccess with same PID", command_pid);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't insert process PID {} into active shell commands, because there are running process with same PID", command_pid);
 
     LOG_TRACE(getLogger(), "Inserted the command with pid {}", command_pid);
 }
