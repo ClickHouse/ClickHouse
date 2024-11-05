@@ -143,7 +143,7 @@ def test_insert_quorum_with_drop_partition(started_cluster, add_new_data):
         "test_quorum_insert_with_drop_partition_new_data"
         if add_new_data
         else "test_quorum_insert_with_drop_partition"
-    )
+    ) + uuid.uuid4().hex
     zero.query(f"DROP TABLE IF EXISTS {table_name} ON CLUSTER cluster")
 
     create_query = (
@@ -206,12 +206,12 @@ def test_insert_quorum_with_move_partition(started_cluster, add_new_data):
         "test_insert_quorum_with_move_partition_source_new_data"
         if add_new_data
         else "test_insert_quorum_with_move_partition_source"
-    )
+    ) + uuid.uuid4().hex
     destination_table_name = (
         "test_insert_quorum_with_move_partition_destination_new_data"
         if add_new_data
         else "test_insert_quorum_with_move_partition_destination"
-    )
+    ) + uuid.uuid4().hex
     zero.query(f"DROP TABLE IF EXISTS {source_table_name} ON CLUSTER cluster")
     zero.query(f"DROP TABLE IF EXISTS {destination_table_name} ON CLUSTER cluster")
 
