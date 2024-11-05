@@ -1037,6 +1037,7 @@ bool Client::buzzHouse()
 
         outf << "--Session seed: " << rg.GetSeed() << std::endl;
         ProcessQueryAndLog(outf, "SET engine_file_truncate_on_insert = 1;");
+        ProcessQueryAndLog(outf, rg.NextBool() ? "SET s3_truncate_on_insert = 1;" : "SET s3_create_new_file_on_insert = 1;");
 
         //Load collations
         full_query.resize(0);

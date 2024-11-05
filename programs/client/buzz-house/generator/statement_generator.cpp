@@ -503,7 +503,7 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator & rg, SQLBase & b,
     else if (b.IsAnyS3Engine())
     {
         const ServerCredentials & sc = fc.minio_server;
-        const std::string nresource = sc.database + "/file" + std::to_string(b.tname);
+        const std::string nresource = sc.database + "/file" + std::to_string(b.tname) + (b.IsS3QueueEngine() ? "/*" : "");
 
         te->add_params()->set_svalue("http://" + sc.hostname + ":" + std::to_string(sc.port) + nresource);
         te->add_params()->set_svalue(sc.user);
@@ -1159,12 +1159,12 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator & rg, sql_query_
         {
             sv->set_property("input_format_with_names_use_header");
             sv->set_value("0");
-            if (next.IsS3Engine())
+            if (next.IsS3QueueEngine())
             {
                 sql_query_grammar::SetValue * sv2 = svs->add_other_values();
 
-                sv2->set_property(rg.NextBool() ? "s3_create_new_file_on_insert" : "s3_create_new_file_on_insert");
-                sv2->set_value("'1");
+                sv2->set_property("mode");
+                sv2->set_value(rg.NextBool() ? "'ordered'" : "'unordered'");
             }
         }
     }

@@ -634,6 +634,9 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
        {"replicated_can_become_leader", TrueOrFalse},
        {"replicated_max_mutations_in_one_entry",
         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.ThresholdGenerator<uint32_t>(0.2, 0.3, 0, 10000)); }},
+       {"s3_create_new_file_on_insert", TrueOrFalse},
+       {"s3_skip_empty_files", TrueOrFalse},
+       {"s3_truncate_on_insert", TrueOrFalse},
        {"ttl_only_drop_parts", TrueOrFalse},
        {"use_adaptive_write_buffer_for_dynamic_subcolumns", TrueOrFalse},
        {"use_async_block_ids_cache", TrueOrFalse},
@@ -699,21 +702,10 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
          ret += rg.PickRandomlyFromVector(choices);
          ret += "'";
      }},
-    {"mode",
-     [](RandomGenerator & rg, std::string & ret)
-     {
-         const std::vector<std::string> & choices = {"", "ordered", "unordered"};
-         ret += "'";
-         ret += rg.PickRandomlyFromVector(choices);
-         ret += "'";
-     }},
     {"enable_logging_to_s3queue_log", TrueOrFalse},
     {"processing_threads_num",
      [](RandomGenerator & rg, std::string & ret)
-     { ret += std::to_string(rg.RandomInt<uint32_t>(1, std::thread::hardware_concurrency())); }},
-    {"s3_create_new_file_on_insert", TrueOrFalse},
-    {"s3_skip_empty_files", TrueOrFalse},
-    {"s3_truncate_on_insert", TrueOrFalse}};
+     { ret += std::to_string(rg.RandomInt<uint32_t>(1, std::thread::hardware_concurrency())); }}};
 
 const std::map<sql_query_grammar::TableEngineValues, std::map<std::string, std::function<void(RandomGenerator &, std::string &)>>>
     AllTableSettings
