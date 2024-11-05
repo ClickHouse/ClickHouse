@@ -144,6 +144,9 @@ Squash blocks passed to the external table to a specified size in bytes, if bloc
     M(UInt64, max_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
 Maximum block size for JOIN result (if join algorithm supports it). 0 means unlimited.
 )", 0) \
+    M(UInt64, min_joined_block_size_rows, 1024, R"(
+Minimum block size for JOIN result (if join algorithm supports it). 0 means unlimited.
+)", 0) \
     M(UInt64, max_insert_threads, 0, R"(
 The maximum number of threads to execute the `INSERT SELECT` query.
 

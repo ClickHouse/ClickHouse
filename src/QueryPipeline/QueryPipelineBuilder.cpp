@@ -386,6 +386,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     JoinPtr join,
     const Block & output_header,
     size_t max_block_size,
+    size_t min_block_size,
     size_t max_streams,
     bool keep_left_read_in_order,
     Processors * collected_processors)
@@ -442,7 +443,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             Processors processors;
             for (auto & outport : outports)
             {
-                auto squashing = std::make_shared<SimpleSquashingChunksTransform>(right->getHeader(), max_block_size / 2, 0);
+                auto squashing = std::make_shared<SimpleSquashingChunksTransform>(right->getHeader(), min_block_size, 0);
                 connect(*outport, squashing->getInputs().front());
                 processors.emplace_back(squashing);
                 auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join);
@@ -501,7 +502,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     Block left_header = left->getHeader();
     for (size_t i = 0; i < num_streams; ++i)
     {
-        auto squashing = std::make_shared<SimpleSquashingChunksTransform>(left->getHeader(), max_block_size / 2, 0);
+        auto squashing = std::make_shared<SimpleSquashingChunksTransform>(left->getHeader(), min_block_size, 0);
         connect(**lit, squashing->getInputs().front());
 
         auto joining = std::make_shared<JoiningTransform>(

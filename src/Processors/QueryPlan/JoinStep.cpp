@@ -44,9 +44,14 @@ JoinStep::JoinStep(
     const Header & right_header_,
     JoinPtr join_,
     size_t max_block_size_,
+    size_t min_block_size_,
     size_t max_streams_,
     bool keep_left_read_in_order_)
-    : join(std::move(join_)), max_block_size(max_block_size_), max_streams(max_streams_), keep_left_read_in_order(keep_left_read_in_order_)
+    : join(std::move(join_))
+    , max_block_size(max_block_size_)
+    , min_block_size(min_block_size_)
+    , max_streams(max_streams_)
+    , keep_left_read_in_order(keep_left_read_in_order_)
 {
     updateInputHeaders({left_header_, right_header_});
 }
@@ -70,12 +75,13 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         join,
         *output_header,
         max_block_size,
+        min_block_size,
         max_streams,
         keep_left_read_in_order,
         &processors);
 
     ppl->addSimpleTransform([&](const Block & header)
-                            { return std::make_shared<SimpleSquashingChunksTransform>(header, max_block_size / 2, 0); });
+                            { return std::make_shared<SimpleSquashingChunksTransform>(header, min_block_size, 0); });
 
     return ppl;
 }

@@ -104,6 +104,7 @@ namespace Setting
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsUInt64 min_joined_block_size_rows;
 }
 
 namespace ErrorCodes
@@ -1623,6 +1624,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             right_plan.getCurrentHeader(),
             std::move(join_algorithm),
             settings[Setting::max_block_size],
+            settings[Setting::min_joined_block_size_rows],
             settings[Setting::max_threads],
             false /*optimize_read_in_order*/);
 
