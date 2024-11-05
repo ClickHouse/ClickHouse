@@ -608,7 +608,7 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
     }
     catch (...)
     {
-        tryLogCurrentException(getLogger(), "from: " + address.toString() + ", user: " + credentials.getUserName()  + ": Authentication failed");
+        tryLogCurrentException(getLogger(), "from: " + address.toString() + ", user: " + credentials.getUserName()  + ": Authentication failed", LogsLevel::information);
 
         WriteBufferFromOwnString message;
         message << credentials.getUserName() << ": Authentication failed: password is incorrect, or there is no user with such name.";
@@ -622,8 +622,9 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
                 << "and deleting this file will reset the password.\n"
                 << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed.\n\n";
 
-        /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons,
-        /// only the log will show the exact reason.
+        /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons.
+        /// Only the log ((*), above) will show the exact reason. Note that (*) logs at information level instead of the default error level as
+        /// authentication failures are not an unusual event.
         throw Exception(PreformattedMessage{message.str(),
                                             "{}: Authentication failed: password is incorrect, or there is no user with such name",
                                             std::vector<std::string>{credentials.getUserName()}},
