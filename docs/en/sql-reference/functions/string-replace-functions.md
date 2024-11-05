@@ -253,7 +253,7 @@ SELECT format('{} {}', 'Hello', 'World')
 
 ## translate
 
-Replaces characters in the string `s` using a one-to-one character mapping defined by `from` and `to` strings. `from` and `to` must be constant ASCII strings of the same size. Non-ASCII characters in the original string are not modified.
+Replaces characters in the string `s` using a one-to-one character mapping defined by `from` and `to` strings. `from` and `to` must be constant ASCII strings. Non-ASCII characters in the original string are not modified.
 
 **Syntax**
 

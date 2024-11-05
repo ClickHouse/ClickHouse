@@ -32,17 +32,24 @@ struct TranslateImpl
         const std::string & map_from,
         const std::string & map_to)
     {
-        if (map_from.size() != map_to.size())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second and third arguments must be the same length");
+        if (map_from.size() < map_to.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second arguments must be equal or longer than the third");
 
         iota(map.data(), map.size(), UInt8(0));
 
-        for (size_t i = 0; i < map_from.size(); ++i)
+        for (size_t i = 0; i < map_to.size(); ++i)
         {
             if (!isASCII(map_from[i]) || !isASCII(map_to[i]))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second and third arguments must be ASCII strings");
 
             map[map_from[i]] = map_to[i];
+        }
+        for (size_t i = map_to.size(); i < map_from.size(); ++i)
+        {
+            if (!isASCII(map_from[i]))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second arguments must be ASCII strings");
+
+            map[map_from[i]] = ascii_upper_bound + 1;
         }
     }
 
@@ -70,13 +77,18 @@ struct TranslateImpl
 
             while (src < src_end)
             {
-                if (*src <= ascii_upper_bound)
+                if (*src <= ascii_upper_bound && map[*src] != ascii_upper_bound + 1)
+                {
                     *dst = map[*src];
-                else
+                    ++dst;
+                }
+                else if (*src > ascii_upper_bound)
+                {
                     *dst = *src;
+                    ++dst;
+                }
 
                 ++src;
-                ++dst;
             }
 
             /// Technically '\0' can be mapped into other character,
@@ -103,13 +115,18 @@ struct TranslateImpl
 
         while (src < src_end)
         {
-            if (*src <= ascii_upper_bound)
+            if (*src <= ascii_upper_bound && map[*src] != ascii_upper_bound + 1)
+            {
                 *dst = map[*src];
-            else
+                ++dst;
+            }
+            else if (*src > ascii_upper_bound)
+            {
                 *dst = *src;
+                ++dst;
+            }
 
             ++src;
-            ++dst;
         }
     }
 
@@ -131,8 +148,8 @@ struct TranslateUTF8Impl
         auto map_from_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(map_from.data()), map_from.size());
         auto map_to_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(map_to.data()), map_to.size());
 
-        if (map_from_size != map_to_size)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second and third arguments must be the same length");
+        if (map_from_size < map_to_size)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second arguments must be equal or longer than third");
 
         iota(map_ascii.data(), map_ascii.size(), UInt32(0));
 
@@ -141,32 +158,44 @@ struct TranslateUTF8Impl
         const UInt8 * map_to_ptr = reinterpret_cast<const UInt8 *>(map_to.data());
         const UInt8 * map_to_end = map_to_ptr + map_to.size();
 
-        while (map_from_ptr < map_from_end && map_to_ptr < map_to_end)
+        while (map_from_ptr < map_from_end)
         {
             size_t len_from = UTF8::seqLength(*map_from_ptr);
-            size_t len_to = UTF8::seqLength(*map_to_ptr);
 
             std::optional<UInt32> res_from, res_to;
 
             if (map_from_ptr + len_from <= map_from_end)
                 res_from = UTF8::convertUTF8ToCodePoint(map_from_ptr, len_from);
 
-            if (map_to_ptr + len_to <= map_to_end)
-                res_to = UTF8::convertUTF8ToCodePoint(map_to_ptr, len_to);
-
             if (!res_from)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be a valid UTF-8 string");
 
-            if (!res_to)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Third argument must be a valid UTF-8 string");
+            if (map_to_ptr < map_to_end)
+            {
+                size_t len_to = UTF8::seqLength(*map_to_ptr);
 
-            if (*map_from_ptr <= ascii_upper_bound)
-                map_ascii[*map_from_ptr] = *res_to;
+                if (map_to_ptr + len_to <= map_to_end)
+                    res_to = UTF8::convertUTF8ToCodePoint(map_to_ptr, len_to);
+
+                if (!res_to)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Third argument must be a valid UTF-8 string");
+
+                if (*map_from_ptr <= ascii_upper_bound)
+                    map_ascii[*map_from_ptr] = *res_to;
+                else
+                    map[*res_from] = *res_to;
+
+                map_to_ptr += len_to;
+            }
             else
-                map[*res_from] = *res_to;
+            {
+                if (*map_from_ptr <= ascii_upper_bound)
+                    map_ascii[*map_from_ptr] = max_uint32;
+                else
+                    map[*res_from] = max_uint32;
+            }
 
             map_from_ptr += len_from;
-            map_to_ptr += len_to;
         }
     }
 
@@ -205,6 +234,12 @@ struct TranslateUTF8Impl
 
                 if (*src <= ascii_upper_bound)
                 {
+                    if (map_ascii[*src] == max_uint32)
+                    {
+                        src += 1;
+                        continue;
+                    }
+
                     size_t dst_len = UTF8::convertCodePointToUTF8(map_ascii[*src], dst, 4);
                     assert(0 < dst_len && dst_len <= 4);
 
@@ -226,6 +261,12 @@ struct TranslateUTF8Impl
                         auto * it = map.find(*src_code_point);
                         if (it != map.end())
                         {
+                            if (it->getMapped() == max_uint32)
+                            {
+                                src += src_len;
+                                continue;
+                            }
+
                             size_t dst_len = UTF8::convertCodePointToUTF8(it->getMapped(), dst, 4);
                             assert(0 < dst_len && dst_len <= 4);
 
@@ -270,6 +311,7 @@ struct TranslateUTF8Impl
 
 private:
     static constexpr auto ascii_upper_bound = '\x7f';
+    static constexpr auto max_uint32 = 0xffffffff;
 };
 
 
