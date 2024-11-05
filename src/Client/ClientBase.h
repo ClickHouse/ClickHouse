@@ -328,6 +328,7 @@ protected:
 
     String home_path;
     String history_file; /// Path to a file containing command history.
+    UInt32 history_max_entries; /// Maximum number of entries in the history file.
 
     String current_profile;
 
@@ -340,6 +341,7 @@ protected:
     ProgressTable progress_table;
     bool need_render_progress = true;
     bool need_render_progress_table = true;
+    bool progress_table_toggle_enabled = true;
     std::atomic_bool progress_table_toggle_on = false;
     bool need_render_profile_events = true;
     bool written_first_block = false;

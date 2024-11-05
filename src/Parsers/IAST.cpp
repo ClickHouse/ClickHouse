@@ -9,6 +9,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
+
 #include <algorithm>
 
 namespace DB

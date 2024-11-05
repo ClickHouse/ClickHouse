@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-shared-merge-tree
 
 DROP TABLE IF EXISTS test_01640;
 DROP TABLE IF EXISTS restore_01640;
@@ -32,5 +32,3 @@ SELECT _part, * FROM restore_01640;
 
 DROP TABLE test_01640;
 DROP TABLE restore_01640;
-
-

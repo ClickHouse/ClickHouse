@@ -789,6 +789,7 @@ def get_localzone():
     return os.getenv("TZ", "/".join(os.readlink("/etc/localtime").split("/")[-2:]))
 
 
+# Refer to `tests/integration/helpers/random_settings.py` for integration test random settings
 class SettingsRandomizer:
     settings = {
         "max_insert_threads": lambda: (
@@ -919,7 +920,11 @@ class SettingsRandomizer:
         "max_parsing_threads": lambda: random.choice([0, 1, 10]),
         "optimize_functions_to_subcolumns": lambda: random.randint(0, 1),
         "parallel_replicas_local_plan": lambda: random.randint(0, 1),
+        "query_plan_join_inner_table_selection": lambda: random.choice(
+            ["left", "auto", "right"]
+        ),
         "output_format_native_write_json_as_string": lambda: random.randint(0, 1),
+        "enable_vertical_final": lambda: random.randint(0, 1),
     }
 
     @staticmethod
@@ -2683,8 +2688,6 @@ def do_run_tests(jobs, test_suite: TestSuite):
             for p in processes[:]:
                 if not p.is_alive():
                     processes.remove(p)
-
-            sleep(5)
 
         run_tests_array(
             (

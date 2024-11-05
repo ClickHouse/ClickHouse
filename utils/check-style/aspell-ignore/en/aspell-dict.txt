@@ -408,6 +408,9 @@ IdentifierQuotingStyle
 Incrementing
 IndexesAreNeighbors
 InfluxDB
+InJodaSyntax
+InJodaSyntaxOrNull
+InJodaSyntaxOrZero
 Instana
 IntN
 Integrations
@@ -2466,6 +2469,7 @@ quantileExactHigh
 quantileExactInclusive
 quantileExactLow
 quantileExactWeighted
+quantileExactWeightedInterpolated
 quantileGK
 quantileInterpolatedWeighted
 quantileTDigest
@@ -2477,6 +2481,7 @@ quantileddsketch
 quantiledeterministic
 quantileexact
 quantileexactweighted
+quantileexactweightedinterpolated
 quantiles
 quantilesExactExclusive
 quantilesExactInclusive

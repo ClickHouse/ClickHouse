@@ -12,7 +12,9 @@
 #include <Core/ShortCircuitFunctionEvaluation.h>
 #include <Core/StreamingHandleErrorMode.h>
 #include <Formats/FormatSettings.h>
-#include <IO/ReadSettings.h>
+#include <IO/DistributedCacheLogMode.h>
+#include <IO/DistributedCachePoolBehaviourOnLimit.h>
+#include <IO/ReadMethod.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/ShellCommandSettings.h>
@@ -126,8 +128,8 @@ constexpr auto getEnumValues();
 DECLARE_SETTING_ENUM(LoadBalancing)
 
 DECLARE_SETTING_ENUM(JoinStrictness)
-
 DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
+DECLARE_SETTING_ENUM(JoinInnerTableSelectionMode)
 
 
 /// Which rows should be included in TOTALS.

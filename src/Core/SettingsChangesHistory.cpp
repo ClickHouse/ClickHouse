@@ -64,10 +64,19 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.11",
         {
+            {"distributed_cache_discard_connection_if_unread_data", true, true, "New setting"},
+            {"azure_check_objects_after_upload", false, false, "Check each uploaded object in azure blob storage to be sure that upload was successful"},
+            {"backup_restore_keeper_max_retries", 20, 1000, "Should be big enough so the whole operation BACKUP or RESTORE operation won't fail because of a temporary [Zoo]Keeper failure in the middle of it."},
+            {"backup_restore_failure_after_host_disconnected_for_seconds", 0, 3600, "New setting."},
+            {"backup_restore_keeper_max_retries_while_initializing", 0, 20, "New setting."},
+            {"backup_restore_keeper_max_retries_while_handling_error", 0, 20, "New setting."},
+            {"backup_restore_finish_timeout_after_error_sec", 0, 180, "New setting."},
+            {"query_plan_join_inner_table_selection", "auto", "auto", "New setting."},
         }
     },
     {"24.10",
         {
+            {"query_metric_log_interval", 0, -1, "New setting."},
             {"enforce_strict_identifier_format", false, false, "New setting."},
             {"enable_parsing_to_custom_serialization", false, true, "New setting"},
             {"mongodb_throw_on_unsupported_query", false, true, "New setting."},
@@ -86,7 +95,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"input_format_binary_read_json_as_string", false, false, "Add new setting to read values of JSON type as JSON string in RowBinary input format"},
             {"min_free_disk_bytes_to_perform_insert", 0, 0, "New setting."},
             {"min_free_disk_ratio_to_perform_insert", 0.0, 0.0, "New setting."},
-            {"enable_named_columns_in_function_tuple", false, true, "Re-enable the setting since all known bugs are fixed"},
+            {"enable_named_columns_in_function_tuple", false, false, "Disabled pending usability improvements"},
             {"cloud_mode_database_engine", 1, 1, "A setting for ClickHouse Cloud"},
             {"allow_experimental_shared_set_join", 1, 1, "A setting for ClickHouse Cloud"},
             {"read_through_distributed_cache", 0, 0, "A setting for ClickHouse Cloud"},
@@ -106,11 +115,11 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"input_format_parquet_enable_row_group_prefetch", false, true, "Enable row group prefetching during parquet parsing. Currently, only single-threaded parsing can prefetch."},
             {"input_format_orc_dictionary_as_low_cardinality", false, true, "Treat ORC dictionary encoded columns as LowCardinality columns while reading ORC files"},
             {"allow_experimental_refreshable_materialized_view", false, true, "Not experimental anymore"},
-            {"max_parts_to_move", 1000, 1000, "New setting"},
-            {"hnsw_candidate_list_size_for_search", 0, 0, "New setting"},
+            {"max_parts_to_move", 0, 1000, "New setting"},
+            {"hnsw_candidate_list_size_for_search", 64, 256, "New setting. Previously, the value was optionally specified in CREATE INDEX and 64 by default."},
             {"allow_reorder_prewhere_conditions", false, true, "New setting"},
             {"input_format_parquet_bloom_filter_push_down", false, true, "When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and bloom filter in the Parquet metadata."},
-            {"date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands", false, false, "Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to (0, 3, 6), corresponding to 'seconds', 'milliseconds', and 'microseconds'."}
+            {"date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands", false, false, "Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to (0, 3, 6), corresponding to 'seconds', 'milliseconds', and 'microseconds'."},
         }
     },
     {"24.9",

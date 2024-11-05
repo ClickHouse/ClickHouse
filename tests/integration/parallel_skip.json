@@ -170,6 +170,18 @@
   "test_storage_kerberized_kafka/test.py::test_kafka_json_as_string",
   "test_storage_kerberized_kafka/test.py::test_kafka_json_as_string_request_new_ticket_after_expiration",
   "test_storage_kerberized_kafka/test.py::test_kafka_json_as_string_no_kdc",
-  "test_storage_kerberized_kafka/test.py::test_kafka_config_from_sql_named_collection"
+  "test_storage_kerberized_kafka/test.py::test_kafka_config_from_sql_named_collection",
 
+  "test_dns_cache/test.py::test_ip_change_drop_dns_cache",
+  "test_dns_cache/test.py::test_ip_change_update_dns_cache",
+  "test_dns_cache/test.py::test_dns_cache_update",
+  "test_dns_cache/test.py::test_user_access_ip_change",
+  "test_dns_cache/test.py::test_host_is_drop_from_cache_after_consecutive_failures",
+  "test_dns_cache/test.py::test_dns_resolver_filter",
+
+  "test_https_replication/test_change_ip.py::test_replication_when_node_ip_changed",
+
+  "test_host_regexp_multiple_ptr_records/test.py::test_host_regexp_multiple_ptr_v4_fails_with_wrong_resolution",
+  "test_host_regexp_multiple_ptr_records/test.py::test_host_regexp_multiple_ptr_v4",
+  "test_host_regexp_multiple_ptr_records/test.py::test_host_regexp_multiple_ptr_v6"
 ]
