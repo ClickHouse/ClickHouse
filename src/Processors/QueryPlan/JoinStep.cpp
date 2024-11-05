@@ -75,7 +75,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         &processors);
 
     ppl->addSimpleTransform([&](const Block & header)
-                            { return std::make_shared<SimpleSquashingChunksTransform>(header, max_block_size / 2, 1_MiB / 2); });
+                            { return std::make_shared<SimpleSquashingChunksTransform>(header, max_block_size / 2, 0); });
 
     return ppl;
 }
