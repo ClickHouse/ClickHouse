@@ -2343,11 +2343,16 @@ void MergeTreeData::stopOutdatedAndUnexpectedDataPartsLoadingTask()
     }
 }
 
-void MergeTreeData::prewarmMarkCache(ThreadPool & pool)
+void MergeTreeData::prewarmMarkCacheIfNeeded(ThreadPool & pool)
 {
     if (!(*getSettings())[MergeTreeSetting::prewarm_mark_cache])
         return;
 
+    prewarmMarkCache(pool);
+}
+
+void MergeTreeData::prewarmMarkCache(ThreadPool & pool)
+{
     auto * mark_cache = getContext()->getMarkCache().get();
     if (!mark_cache)
         return;
