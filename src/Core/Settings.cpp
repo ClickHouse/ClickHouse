@@ -5745,7 +5745,7 @@ Parts virtually divided into segments to be distributed between replicas for par
     DECLARE(Bool, allow_archive_path_syntax, true, R"(
 File/S3 engines/table function will parse paths with '::' as '\\<archive\\> :: \\<file\\>' if archive has correct extension
 )", 0) \
-    DECLARE(Bool, parallel_replicas_local_plan, false, R"(
+    DECLARE(Bool, parallel_replicas_local_plan, true, R"(
 Build local plan for local replica
 )", 0) \
     \
