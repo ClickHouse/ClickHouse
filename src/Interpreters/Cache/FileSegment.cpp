@@ -171,10 +171,11 @@ void FileSegment::setQueueIterator(Priority::IteratorPtr iterator)
     queue_iterator = iterator;
 }
 
-void FileSegment::resetQueueIterator()
+void FileSegment::markDelayedRemovalAndResetQueueIterator()
 {
     auto lk = lock();
-    queue_iterator.reset();
+    on_delayed_removal = true;
+    queue_iterator = {};
 }
 
 size_t FileSegment::getCurrentWriteOffset() const
@@ -861,7 +862,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             chassert(downloaded_size > 0);
             chassert(fs::file_size(getPath()) > 0);
 
-            chassert(queue_iterator);
+            chassert(queue_iterator || on_delayed_removal);
             check_iterator(queue_iterator);
             break;
         }
