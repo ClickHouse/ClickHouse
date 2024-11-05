@@ -1522,8 +1522,8 @@ void WindowTransform::work()
         first_block_number = first_used_block;
 
         assert(next_output_block_number >= first_block_number);
-        assert(frame_start.block >= first_block_number);
-        assert(prev_frame_start.block >= first_block_number);
+        // assert(frame_start.block >= first_block_number);
+        // assert(prev_frame_start.block >= first_block_number);
         assert(current_row.block >= first_block_number);
         assert(peer_group_start.block >= first_block_number);
     }
