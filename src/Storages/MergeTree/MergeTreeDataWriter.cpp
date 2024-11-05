@@ -79,7 +79,6 @@ namespace MergeTreeSetting
 
 namespace ErrorCodes
 {
-    extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_PARTS;
     extern const int NOT_ENOUGH_SPACE;
