@@ -2754,8 +2754,9 @@ enum TableEngineValues {
     MySQL = 17;
     PostgreSQL = 18;
     SQLite = 19;
-    S3 = 20;
-    S3Queue = 21;
+    Redis = 20;
+    S3 = 21;
+    S3Queue = 22;
 }
 
 enum TableEngineOption {
@@ -2875,6 +2876,7 @@ message Truncate {
         ExprSchemaTable est = 1;
         bool all = 2;
     }
+    optional bool sync = 3;
 }
 
 enum ExpPlanOpt {

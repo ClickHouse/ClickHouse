@@ -728,6 +728,7 @@ const std::map<sql_query_grammar::TableEngineValues, std::map<std::string, std::
        {sql_query_grammar::MySQL, MySQLTableSettings},
        {sql_query_grammar::PostgreSQL, {}},
        {sql_query_grammar::SQLite, {}},
+       {sql_query_grammar::Redis, {}},
        {sql_query_grammar::S3, S3TableSettings},
        {sql_query_grammar::S3Queue, S3QueueTableSettings}};
 
@@ -758,6 +759,7 @@ const std::map<sql_query_grammar::TableEngineValues, std::map<std::string, std::
        {sql_query_grammar::MySQL, {}},
        {sql_query_grammar::PostgreSQL, {}},
        {sql_query_grammar::SQLite, {}},
+       {sql_query_grammar::Redis, {}},
        {sql_query_grammar::S3, {}},
        {sql_query_grammar::S3Queue, {}}};
 

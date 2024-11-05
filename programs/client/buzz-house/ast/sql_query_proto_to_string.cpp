@@ -2671,6 +2671,10 @@ CONV_FN(Truncate, trunc)
     {
         ret += " ALL TABLES FROM s0";
     }
+    if (trunc.sync())
+    {
+        ret += " SYNC";
+    }
 }
 
 CONV_FN(CheckTable, ct)

@@ -105,17 +105,19 @@ public:
 
     bool IsPostgreSQLEngine() const { return teng == sql_query_grammar::TableEngineValues::PostgreSQL; }
 
+    bool IsSQLiteEngine() const { return teng == sql_query_grammar::TableEngineValues::SQLite; }
+
+    bool IsRedisEngine() const { return teng == sql_query_grammar::TableEngineValues::Redis; }
+
     bool IsS3Engine() const { return teng == sql_query_grammar::TableEngineValues::S3; }
 
     bool IsS3QueueEngine() const { return teng == sql_query_grammar::TableEngineValues::S3Queue; }
 
     bool IsAnyS3Engine() const { return IsS3Engine() || IsS3QueueEngine(); }
 
-    bool IsSQLiteEngine() const { return teng == sql_query_grammar::TableEngineValues::SQLite; }
-
     bool IsNotTruncableEngine() const
     {
-        return IsNullEngine() || IsSetEngine() || IsMySQLEngine() || IsPostgreSQLEngine() || IsSQLiteEngine() || IsAnyS3Engine();
+        return IsNullEngine() || IsSetEngine() || IsMySQLEngine() || IsPostgreSQLEngine() || IsSQLiteEngine() || IsRedisEngine()  || IsAnyS3Engine();
     }
 };
 

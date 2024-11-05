@@ -451,18 +451,6 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator & rg, SQLBase & b,
             te->add_params()->set_num(static_cast<int32_t>(rg.NextRandomUInt32() % 1001));
         }
     }
-    else if (b.IsRocksEngine() && add_pkey && !entries.empty())
-    {
-        const InsertEntry & entry = rg.PickRandomlyFromVector(entries);
-        sql_query_grammar::ExprColumn * ecol
-            = te->mutable_primary_key()->add_exprs()->mutable_comp_expr()->mutable_expr_stc()->mutable_col();
-
-        ecol->mutable_col()->set_column("c" + std::to_string(entry.cname1));
-        if (entry.cname2.has_value())
-        {
-            ecol->mutable_subcol()->set_column("c" + std::to_string(entry.cname2.value()));
-        }
-    }
     else if (b.IsMySQLEngine() || b.IsPostgreSQLEngine())
     {
         const ServerCredentials & sc = b.IsMySQLEngine() ? fc.mysql_server : fc.postgresql_server;
@@ -500,6 +488,17 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator & rg, SQLBase & b,
 
         connections.CreateExternalDatabaseTable(rg, IntegrationCall::SQLite, b.tname, entries);
     }
+    else if (b.IsRedisEngine())
+    {
+        const ServerCredentials & sc = fc.redis_server;
+
+        te->add_params()->set_svalue(sc.hostname + ":" + std::to_string(sc.port));
+        te->add_params()->set_num(rg.NextBool() ? 0 : rg.NextLargeNumber() % 16);
+        te->add_params()->set_svalue(fc.redis_server.password);
+        te->add_params()->set_num(rg.NextBool() ? 16 : rg.NextLargeNumber() % 33);
+
+        connections.CreateExternalDatabaseTable(rg, IntegrationCall::Redis, b.tname, entries);
+    }
     else if (b.IsAnyS3Engine())
     {
         const ServerCredentials & sc = fc.minio_server;
@@ -520,6 +519,18 @@ int StatementGenerator::GenerateEngineDetails(RandomGenerator & rg, SQLBase & b,
         }
 
         connections.CreateExternalDatabaseTable(rg, IntegrationCall::MinIO, b.tname, entries);
+    }
+    if ((b.IsRocksEngine() || b.IsRedisEngine()) && add_pkey && !entries.empty())
+    {
+        const InsertEntry & entry = rg.PickRandomlyFromVector(entries);
+        sql_query_grammar::ExprColumn * ecol
+            = te->mutable_primary_key()->add_exprs()->mutable_comp_expr()->mutable_expr_stc()->mutable_col();
+
+        ecol->mutable_col()->set_column("c" + std::to_string(entry.cname1));
+        if (entry.cname2.has_value())
+        {
+            ecol->mutable_subcol()->set_column("c" + std::to_string(entry.cname2.value()));
+        }
     }
     return 0;
 }
@@ -904,6 +915,10 @@ sql_query_grammar::TableEngineValues StatementGenerator::GetNextTableEngine(Rand
         {
             this->ids.push_back(sql_query_grammar::SQLite);
         }
+        if (connections.HasRedisConnection())
+        {
+            this->ids.push_back(sql_query_grammar::Redis);
+        }
         if (connections.HasMinIOConnection())
         {
             this->ids.push_back(sql_query_grammar::S3);
@@ -972,7 +987,7 @@ int StatementGenerator::GenerateNextCreateTable(RandomGenerator & rg, sql_query_
 
         next.teng = GetNextTableEngine(rg, true);
         te->set_engine(next.teng);
-        added_pkey |= (!next.IsMergeTreeFamily() && !next.IsRocksEngine());
+        added_pkey |= (!next.IsMergeTreeFamily() && !next.IsRocksEngine() && !next.IsRedisEngine());
         const bool add_version_to_replacing
             = next.teng == sql_query_grammar::TableEngineValues::ReplacingMergeTree && rg.NextSmallNumber() < 4;
         uint32_t added_cols = 0, added_idxs = 0, added_projs = 0, added_consts = 0, added_sign = 0, added_is_deleted = 0, added_version = 0;
@@ -1645,6 +1660,7 @@ int StatementGenerator::GenerateNextTruncate(RandomGenerator & rg, sql_query_gra
         est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
     }
     est->mutable_table()->set_table("t" + std::to_string(t.tname));
+    trunc->set_sync(rg.NextSmallNumber() < 4);
     return 0;
 }
 
@@ -2349,8 +2365,8 @@ int StatementGenerator::GenerateDetach(RandomGenerator & rg, sql_query_grammar::
     {
         assert(0);
     }
-    det->set_permanently(!detach_database && rg.NextBool());
-    det->set_sync(rg.NextBool());
+    det->set_permanently(!detach_database && rg.NextSmallNumber() < 4);
+    det->set_sync(rg.NextSmallNumber() < 4);
     return 0;
 }
 

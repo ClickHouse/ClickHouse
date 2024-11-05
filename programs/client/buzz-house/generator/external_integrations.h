@@ -15,7 +15,7 @@
 namespace buzzhouse
 {
 
-using IntegrationCall = enum IntegrationCall { MySQL = 1, PostgreSQL = 2, SQLite = 3, MinIO = 4 };
+using IntegrationCall = enum IntegrationCall { MySQL = 1, PostgreSQL = 2, SQLite = 3, Redis = 4, MinIO = 5 };
 
 class ClickHouseIntegration
 {
@@ -365,12 +365,29 @@ public:
     ~MinIOIntegration() override = default;
 };
 
+class RedisIntegration : public ClickHouseIntegration
+{
+public:
+    RedisIntegration(const FuzzConfig & fc) : ClickHouseIntegration() { }
+
+    bool PerformIntegration(RandomGenerator & rg, const uint32_t tname, std::vector<InsertEntry> & entries) override
+    {
+        (void)rg;
+        (void) tname;
+        (void)entries;
+        return true;
+    }
+
+    ~RedisIntegration() override = default;
+};
+
 class ExternalIntegrations
 {
 private:
     MySQLIntegration * mysql = nullptr;
     PostgreSQLIntegration * postresql = nullptr;
     SQLiteIntegration * sqlite = nullptr;
+    RedisIntegration * redis = nullptr;
     MinIOIntegration * minio = nullptr;
     bool requires_external_call_check = false, next_call_succeeded = false;
 
@@ -384,6 +401,8 @@ public:
     bool HasPostgreSQLConnection() const { return postresql != nullptr; }
 
     bool HasSQLiteConnection() const { return sqlite != nullptr; }
+
+    bool HasRedisConnection() const { return redis != nullptr; }
 
     bool HasMinIOConnection() const { return minio != nullptr; }
 
@@ -427,6 +446,9 @@ public:
             case IntegrationCall::SQLite:
                 next_call_succeeded = sqlite->PerformIntegration(rg, tname, entries);
                 break;
+            case IntegrationCall::Redis:
+                next_call_succeeded = redis->PerformIntegration(rg, tname, entries);
+                break;
             case IntegrationCall::MinIO:
                 next_call_succeeded = minio->PerformIntegration(rg, tname, entries);
                 break;
@@ -438,6 +460,7 @@ public:
         delete mysql;
         delete postresql;
         delete sqlite;
+        delete redis;
         delete minio;
     }
 };
