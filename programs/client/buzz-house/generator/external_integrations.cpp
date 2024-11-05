@@ -2,12 +2,12 @@
 
 #include <array>
 #include <cctype>
-#include <cstdlib>
+#include <stdexcept>
+#include <cinttypes>
 #include <cstring>
-#include <fstream>
+#include <ctime>
 #include <iostream>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 #include <netdb.h>
 #include <unistd.h>
@@ -15,85 +15,133 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
-static void ExecuteCommand(const char * cmd, std::string & result)
-{
-    std::array<char, 256> buffer;
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd, "r"), pclose);
-
-    if (!pipe)
-    {
-        throw std::runtime_error("popen() failed!");
-    }
-    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe.get()) != nullptr)
-    {
-        result += buffer.data();
-    }
-}
-
 namespace buzzhouse
 {
+
+static bool ExecuteCommand(const char * cmd, std::string & result)
+{
+    char buffer[1024];
+    FILE * pp = popen(cmd, "r");
+
+    if (!pp)
+    {
+        strerror_r(errno, buffer, sizeof(buffer));
+        std::cerr << "popen error: " << buffer << std::endl;
+        return false;
+    }
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(pp, pclose);
+    if (!pipe)
+    {
+        return false;
+    }
+    while (fgets(buffer, static_cast<int>(sizeof(buffer)), pipe.get()))
+    {
+        result += buffer;
+    }
+    return true;
+}
+
 bool MinIOIntegration::SendRequest(const std::string & resource)
 {
-    int sock;
-    char buffer[1024];
-    struct sockaddr_in client = {};
-    std::stringstream ss, sign_cmd;
+    struct tm ttm;
     std::string sign;
+    ssize_t nbytes = 0;
+    bool created = false;
+    int sock = -1, error = 0;
+    char buffer[1024], found_ip[1024];
     const std::time_t time = std::time({});
-    const struct hostent * host = gethostbyname(sc.hostname.c_str());
+    std::stringstream http_request, sign_cmd;
+    struct addrinfo hints = {}, *result = nullptr;
 
-    if (!host || !host->h_addr)
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+
+    (void)std::sprintf(buffer, "%" PRIu32 "", sc.port);
+    if ((error = getaddrinfo(sc.hostname.c_str(), buffer, &hints, &result)) != 0)
     {
-        std::cerr << "Error retrieving DNS information." << std::endl;
+        if (error == EAI_SYSTEM)
+        {
+            strerror_r(errno, buffer, sizeof(buffer));
+            std::cerr << "getaddrinfo: " << buffer << std::endl;
+        }
+        else
+        {
+            std::cerr << "getaddrinfo: " << gai_strerror(error) << std::endl;
+        }
         return false;
     }
-
-    client.sin_family = AF_INET;
-    client.sin_port = htonl(sc.port);
-    std::memcpy(&client.sin_addr, host->h_addr, host->h_length);
-
-    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    /* Loop through results */
+    for (const struct addrinfo * p = result; p; p = p->ai_next)
     {
-        std::cerr << "Error creating socket: " << strerror(errno) << std::endl;
+        if ((sock = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
+        {
+            strerror_r(errno, buffer, sizeof(buffer));
+            std::cerr << "Could not connect: " << buffer << std::endl;
+            return false;
+        }
+        if (connect(sock, p->ai_addr, p->ai_addrlen) == 0)
+        {
+            if ((error = getnameinfo(p->ai_addr, p->ai_addrlen, found_ip, sizeof(found_ip), nullptr, 0, NI_NUMERICHOST)) != 0)
+            {
+                if (error == EAI_SYSTEM)
+                {
+                    strerror_r(errno, buffer, sizeof(buffer));
+                    std::cerr << "getnameinfo: " << buffer << std::endl;
+                }
+                else
+                {
+                    std::cerr << "getnameinfo: " << gai_strerror(error) << std::endl;
+                }
+                return false;
+            }
+            break;
+        }
+        error = errno;
+        close(sock);
+        sock = -1;
+    }
+    freeaddrinfo(result);
+    if (sock == -1)
+    {
+        strerror_r(errno, buffer, sizeof(buffer));
+        std::cerr << "Could not connect: " << buffer << std::endl;
         return false;
     }
-    if (connect(sock, reinterpret_cast<const struct sockaddr *>(&client), sizeof(client)) < 0)
+    (void)gmtime_r(&time, &ttm);
+    (void)std::strftime(buffer, sizeof(buffer), "%a, %d %b %Y %H:%M:%S %z", &ttm);
+    sign_cmd << R"(printf "PUT\n\napplication/octet-stream\n)" << buffer << "\\n"
+             << resource << "\""
+             << " | openssl sha1 -hmac " << sc.password << " -binary | base64";
+    if (!ExecuteCommand(sign_cmd.str().c_str(), sign))
     {
         close(sock);
-        std::cerr << "Could not connect: " << strerror(errno) << std::endl;
         return false;
     }
 
-    (void)std::strftime(buffer, sizeof(buffer), "%a, %b %d %H:%M:%S %Y %Z", std::gmtime(&time));
-    sign_cmd << "echo -en \""
-             << "PUT\n\napplication/octet-stream\n"
-             << buffer << "\n"
-             << resource << "\" | openssl sha1 -hmac " << sc.password << " -binary | base64";
-    ExecuteCommand(sign_cmd.str().c_str(), sign);
+    http_request << "PUT " << resource << " HTTP/1.1" << std::endl
+                 << "Host: " << found_ip << ":" << std::to_string(sc.port) << std::endl
+                 << "Accept: */*" << std::endl
+                 << "Date: " << buffer << std::endl
+                 << "Content-Type: application/octet-stream" << std::endl
+                 << "Authorization: AWS " << sc.user << ":" << sign << "Content-Length: 0" << std::endl
+                 << std::endl
+                 << std::endl;
 
-    ss << "PUT " << resource << "HTTP/1.1\r\n"
-       << "Host: " << sc.hostname << ":" << std::to_string(sc.port) << "\r\n"
-       << "Accept: */*\r\n"
-       << "Date: " << buffer << "\r\n"
-       << "Content-Type: application/octet-stream\r\n"
-       << "Authorization: AWS " << sc.user << ":/" << sign << "\r\n"
-       << "Content-Length: 0\r\n"
-       << "\r\n\r\n";
-    const std::string & request = ss.str();
-
-    if (send(sock, request.c_str(), request.length(), 0) != static_cast<int>(request.length()))
+    if (send(sock, http_request.str().c_str(), http_request.str().length(), 0) != static_cast<int>(http_request.str().length()))
     {
+        strerror_r(errno, buffer, sizeof(buffer));
         close(sock);
-        std::cerr << "Error sending request: " << strerror(errno) << std::endl;
+        std::cerr << "Error sending request: " << http_request.str() << std::endl << buffer << std::endl;
         return false;
     }
-
-    while (read(sock, buffer, sizeof(buffer)) > 0)
+    if ((nbytes = read(sock, buffer, sizeof(buffer))) > 0 && nbytes < static_cast<ssize_t>(sizeof(buffer)) && nbytes > 12
+        && !(created = (std::strncmp(buffer + 9, "200", 3) == 0)))
     {
-        std::cout << buffer;
+        std::cerr << "Request not successful: " << http_request.str() << std::endl << buffer << std::endl;
     }
     close(sock);
-    return true;
+    return created;
 }
 
 }
