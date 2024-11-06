@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 const parquet::ColumnDescriptor * getColumnDescriptorIfBloomFilterIsPresent(
     const std::unique_ptr<parquet::RowGroupMetaData> & parquet_rg_metadata,
     const std::vector<ArrowFieldIndexUtil::ClickHouseIndexToParquetIndex> & clickhouse_column_index_to_parquet_index,
