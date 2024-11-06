@@ -48,7 +48,8 @@ class CiSettings:
         res = CiSettings()
         pr_info = PRInfo()
         if (
-            not pr_info.is_pr and not debug_message
+            (not pr_info.is_pr() and not debug_message)
+            or pr_info.body is None
         ):  # if commit_message is provided it's test/debug scenario - do not return
             # CI options can be configured in PRs only
             # if debug_message is provided - it's a test
