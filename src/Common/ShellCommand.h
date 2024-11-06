@@ -67,7 +67,7 @@ public:
         DestructorStrategy terminate_in_destructor_strategy = DestructorStrategy(false, 0);
     };
 
-    pid_t getPid()
+    pid_t getPid() const
     {
         return pid;
     }
