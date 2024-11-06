@@ -48,6 +48,13 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
+
+    void alter(
+        const AlterCommands & commands,
+        ContextPtr local_context,
+        AlterLockHolder & table_lock_holder) override;
+
     const auto & getFormatName() const { return configuration->format; }
 
     const fs::path & getZooKeeperPath() const { return zk_path; }
@@ -65,9 +72,9 @@ private:
     const std::string engine_name;
     const fs::path zk_path;
     const bool enable_logging_to_queue_log;
-    const UInt32 polling_min_timeout_ms;
-    const UInt32 polling_max_timeout_ms;
-    const UInt32 polling_backoff_ms;
+    UInt64 polling_min_timeout_ms;
+    UInt64 polling_max_timeout_ms;
+    UInt64 polling_backoff_ms;
     const CommitSettings commit_settings;
 
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
