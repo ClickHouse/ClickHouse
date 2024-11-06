@@ -26,6 +26,7 @@ public:
         double remerge_lowered_memory_bytes_ratio = 0;
         size_t max_bytes_before_external_sort = 0;
         double max_bytes_ratio_before_external_sort = 0;
+        double max_bytes_ratio_before_external_sort_for_server = 0;
         TemporaryDataOnDiskScopePtr tmp_data = nullptr;
         size_t min_free_disk_space = 0;
         size_t max_block_bytes = 0;

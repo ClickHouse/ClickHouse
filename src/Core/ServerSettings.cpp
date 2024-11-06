@@ -74,6 +74,7 @@ namespace DB
     DECLARE(UInt64, merges_mutations_memory_usage_soft_limit, 0, "Maximum total memory usage for merges and mutations in bytes. Zero means unlimited.", 0) \
     DECLARE(Double, merges_mutations_memory_usage_to_ram_ratio, 0.5, "Same as merges_mutations_memory_usage_soft_limit but in to RAM ratio. Allows to lower memory limit on low-memory systems.", 0) \
     DECLARE(Double, max_bytes_ratio_before_external_group_by_for_server, 0., "Same as max_bytes_ratio_before_external_group_by but for server. Allows to switch to external ORDER BY when the total server memory exceeds threshold.", 0) \
+    DECLARE(Double, max_bytes_ratio_before_external_sort_for_server, 0., "Same as max_bytes_ratio_before_external_sort but for server. Allows to switch to external ORDER BY when the total server memory exceeds threshold.", 0) \
     DECLARE(Bool, allow_use_jemalloc_memory, true, "Allows to use jemalloc memory.", 0) \
     DECLARE(UInt64, cgroups_memory_usage_observer_wait_time, 15, "Polling interval in seconds to read the current memory usage from cgroups. Zero means disabled.", 0) \
     DECLARE(Double, cgroup_memory_watcher_hard_limit_ratio, 0.95, "Hard memory limit ratio for cgroup memory usage observer", 0) \

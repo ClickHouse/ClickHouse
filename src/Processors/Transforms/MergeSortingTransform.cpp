@@ -1,6 +1,7 @@
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
+#include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -110,6 +111,7 @@ MergeSortingTransform::MergeSortingTransform(
     double remerge_lowered_memory_bytes_ratio_,
     size_t max_bytes_before_external_sort_,
     double max_bytes_ratio_before_external_sort_,
+    double max_bytes_ratio_before_external_sort_for_server_,
     TemporaryDataOnDiskScopePtr tmp_data_,
     size_t min_free_disk_space_)
     : SortingTransform(header, description_, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
@@ -117,9 +119,10 @@ MergeSortingTransform::MergeSortingTransform(
     , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
     , max_bytes_before_external_sort(max_bytes_before_external_sort_)
     , tmp_data(std::move(tmp_data_))
+    , max_bytes_ratio_before_external_sort(max_bytes_ratio_before_external_sort_)
+    , max_bytes_ratio_before_external_sort_for_server(max_bytes_ratio_before_external_sort_for_server_)
     , min_free_disk_space(min_free_disk_space_)
     , max_block_bytes(max_block_bytes_)
-    , max_bytes_ratio_before_external_sort(max_bytes_ratio_before_external_sort_)
 {
 }
 
@@ -202,6 +205,19 @@ void MergeSortingTransform::consume(Chunk chunk)
                 formatReadableSizeWithBinarySuffix(current_memory_usage),
                 formatReadableSizeWithBinarySuffix(memory_limit),
                 max_bytes_ratio_before_external_sort);
+        }
+    }
+    if (!external_sort && max_bytes_ratio_before_external_sort_for_server > 0.)
+    {
+        auto server_memory_usage = total_memory_tracker.get();
+        auto server_memory_limit = total_memory_tracker.getHardLimit();
+        if (server_memory_usage > server_memory_limit * max_bytes_ratio_before_external_sort_for_server)
+        {
+            external_sort = true;
+            LOG_TEST(log, "Use external sort due to max_bytes_ratio_before_external_sort_for_server reached. Current server memory usage is {} (> {}*{})",
+                formatReadableSizeWithBinarySuffix(server_memory_usage),
+                formatReadableSizeWithBinarySuffix(server_memory_limit),
+                max_bytes_ratio_before_external_sort_for_server);
         }
     }
     if (external_sort)

@@ -613,6 +613,7 @@ void MergeJoin::mergeInMemoryRightBlocks()
         /*remerge_lowered_memory_bytes_ratio_*/0,
         /*max_bytes_before_external_sort_*/0,
         /*max_bytes_ratio_before_external_sort_*/0,
+        /*max_bytes_ratio_before_external_sort_for_server_*/0,
         /*tmp_data_*/nullptr,
         /*min_free_disk_space_*/0));
 

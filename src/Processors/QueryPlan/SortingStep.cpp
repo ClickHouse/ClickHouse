@@ -10,6 +10,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
@@ -37,6 +38,10 @@ namespace Setting
     extern const SettingsFloat remerge_sort_lowered_memory_bytes_ratio;
     extern const SettingsOverflowMode sort_overflow_mode;
 }
+namespace ServerSetting
+{
+    extern const ServerSettingsDouble max_bytes_ratio_before_external_sort_for_server;
+}
 
 namespace ErrorCodes
 {
@@ -46,12 +51,14 @@ namespace ErrorCodes
 SortingStep::Settings::Settings(const Context & context)
 {
     const auto & settings = context.getSettingsRef();
+    const auto & server_settings = context.getServerSettings();
     max_block_size = settings[Setting::max_block_size];
     size_limits = SizeLimits(settings[Setting::max_rows_to_sort], settings[Setting::max_bytes_to_sort], settings[Setting::sort_overflow_mode]);
     max_bytes_before_remerge = settings[Setting::max_bytes_before_remerge_sort];
     remerge_lowered_memory_bytes_ratio = settings[Setting::remerge_sort_lowered_memory_bytes_ratio];
     max_bytes_before_external_sort = settings[Setting::max_bytes_before_external_sort];
     max_bytes_ratio_before_external_sort = settings[Setting::max_bytes_ratio_before_external_sort];
+    max_bytes_ratio_before_external_sort_for_server = server_settings[ServerSetting::max_bytes_ratio_before_external_sort_for_server];
     tmp_data = context.getTempDataOnDisk();
     min_free_disk_space = settings[Setting::min_free_disk_space_for_temporary_data];
     max_block_bytes = settings[Setting::prefer_external_sort_block_bytes];
@@ -299,6 +306,7 @@ void SortingStep::mergeSorting(
                 sort_settings.remerge_lowered_memory_bytes_ratio,
                 sort_settings.max_bytes_before_external_sort,
                 sort_settings.max_bytes_ratio_before_external_sort,
+                sort_settings.max_bytes_ratio_before_external_sort_for_server,
                 std::move(tmp_data_on_disk),
                 sort_settings.min_free_disk_space);
         });
