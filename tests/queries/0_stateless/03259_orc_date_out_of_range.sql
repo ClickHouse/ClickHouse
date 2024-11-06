@@ -1,4 +1,3 @@
-
 -- Tags: no-parallel
 
 SET session_timezone = 'UTC';
