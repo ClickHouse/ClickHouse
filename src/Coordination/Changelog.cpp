@@ -1890,7 +1890,7 @@ void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
     {
         auto & changelog_description = itr->second;
 
-        if (!disk->exists(timestamp_folder))
+        if (!disk->existsDirectory(timestamp_folder))
         {
             LOG_WARNING(log, "Moving broken logs to {}", timestamp_folder);
             disk->createDirectories(timestamp_folder);

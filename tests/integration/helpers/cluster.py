@@ -67,6 +67,7 @@ DEFAULT_ENV_NAME = ".env"
 DEFAULT_BASE_CONFIG_DIR = os.environ.get(
     "CLICKHOUSE_TESTS_BASE_CONFIG_DIR", "/etc/clickhouse-server/"
 )
+DOCKER_BASE_TAG = os.environ.get("DOCKER_BASE_TAG", "latest")
 
 SANITIZER_SIGN = "=================="
 
@@ -82,6 +83,8 @@ CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.lo
 # Keep in mind that we only support upgrading between releases that are at most 1 year different.
 # This means that this minimum need to be, at least, 1 year older than the current release
 CLICKHOUSE_CI_MIN_TESTED_VERSION = "23.3"
+
+ZOOKEEPER_CONTAINERS = ("zoo1", "zoo2", "zoo3")
 
 
 # to create docker-compose env file
@@ -501,7 +504,6 @@ class ClickHouseCluster:
             "CLICKHOUSE_TESTS_DOCKERD_HOST"
         )
         self.docker_api_version = os.environ.get("DOCKER_API_VERSION")
-        self.docker_base_tag = os.environ.get("DOCKER_BASE_TAG", "latest")
 
         self.base_cmd = ["docker", "compose"]
         if custom_dockerd_host:
@@ -563,6 +565,7 @@ class ClickHouseCluster:
         self.minio_redirect_ip = None
         self.minio_redirect_port = 8080
         self.minio_docker_id = self.get_instance_docker_id(self.minio_host)
+        self.resolver_logs_dir = os.path.join(self.instances_dir, "resolver")
 
         self.spark_session = None
 
@@ -1076,7 +1079,7 @@ class ClickHouseCluster:
 
         env_variables["keeper_binary"] = binary_path
         env_variables["keeper_cmd_prefix"] = keeper_cmd_prefix
-        env_variables["image"] = "clickhouse/integration-test:" + self.docker_base_tag
+        env_variables["image"] = "clickhouse/integration-test:" + DOCKER_BASE_TAG
         env_variables["user"] = str(os.getuid())
         env_variables["keeper_fs"] = "bind"
         for i in range(1, 4):
@@ -1445,6 +1448,8 @@ class ClickHouseCluster:
         env_variables["MINIO_DATA_DIR"] = self.minio_data_dir
         env_variables["MINIO_PORT"] = str(self.minio_port)
         env_variables["SSL_CERT_FILE"] = p.join(self.base_dir, cert_d, "public.crt")
+        env_variables["RESOLVER_LOGS"] = self.resolver_logs_dir
+        env_variables["RESOLVER_LOGS_FS"] = "bind"
 
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_minio.yml")]
@@ -1670,7 +1675,7 @@ class ClickHouseCluster:
             )
 
         if tag is None:
-            tag = self.docker_base_tag
+            tag = DOCKER_BASE_TAG
         if not env_variables:
             env_variables = {}
         self.use_keeper = use_keeper
@@ -2058,6 +2063,11 @@ class ClickHouseCluster:
         container_id = self.get_container_id(instance_name)
         return self.docker_client.api.logs(container_id).decode()
 
+    def query_zookeeper(self, query, node=ZOOKEEPER_CONTAINERS[0], nothrow=False):
+        cmd = f'clickhouse keeper-client -p {self.zookeeper_port} -q "{query}"'
+        container_id = self.get_container_id(node)
+        return self.exec_in_container(container_id, cmd, nothrow=nothrow, use_cli=False)
+
     def exec_in_container(
         self,
         container_id: str,
@@ -2121,6 +2131,16 @@ class ClickHouseCluster:
                     "echo {} | base64 --decode > {}".format(encodedStr, dest_path),
                 ],
             )
+
+    def remove_file_from_container(self, container_id, path):
+        self.exec_in_container(
+            container_id,
+            [
+                "bash",
+                "-c",
+                "rm {}".format(path),
+            ],
+        )
 
     def wait_for_url(
         self, url="http://localhost:8123/ping", conn_timeout=2, interval=2, timeout=60
@@ -2349,7 +2369,7 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
 
-    def wait_rabbitmq_to_start(self, timeout=60):
+    def wait_rabbitmq_to_start(self, timeout=120):
         self.print_all_docker_pieces()
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
@@ -2388,16 +2408,16 @@ class ClickHouseCluster:
 
     def wait_zookeeper_secure_to_start(self, timeout=20):
         logging.debug("Wait ZooKeeper Secure to start")
-        nodes = ["zoo1", "zoo2", "zoo3"]
-        self.wait_zookeeper_nodes_to_start(nodes, timeout)
+        self.wait_zookeeper_nodes_to_start(ZOOKEEPER_CONTAINERS, timeout)
 
     def wait_zookeeper_to_start(self, timeout: float = 180) -> None:
         logging.debug("Wait ZooKeeper to start")
-        nodes = ["zoo1", "zoo2", "zoo3"]
-        self.wait_zookeeper_nodes_to_start(nodes, timeout)
+        self.wait_zookeeper_nodes_to_start(ZOOKEEPER_CONTAINERS, timeout)
 
     def wait_zookeeper_nodes_to_start(
-        self, nodes: List[str], timeout: float = 60
+        self,
+        nodes: List[str],
+        timeout: float = 60,
     ) -> None:
         start = time.time()
         err = Exception("")
@@ -2691,7 +2711,8 @@ class ClickHouseCluster:
                     [
                         "bash",
                         "-c",
-                        f"/opt/bitnami/openldap/bin/ldapsearch -x -H ldap://{self.ldap_host}:{self.ldap_port} -D cn=admin,dc=example,dc=org -w clickhouse -b dc=example,dc=org"
+                        "test -f /tmp/.openldap-initialized"
+                        f"&& /opt/bitnami/openldap/bin/ldapsearch -x -H ldap://{self.ldap_host}:{self.ldap_port} -D cn=admin,dc=example,dc=org -w clickhouse -b dc=example,dc=org"
                         f'| grep -c -E "member: cn=j(ohn|ane)doe"'
                         f"| grep 2 >> /dev/null",
                     ],
@@ -2996,6 +3017,7 @@ class ClickHouseCluster:
                 os.mkdir(self.minio_dir)
                 if self.minio_certs_dir is None:
                     os.mkdir(os.path.join(self.minio_dir, "certs"))
+                    os.mkdir(os.path.join(self.minio_dir, "certs", "CAs"))
                 else:
                     shutil.copytree(
                         os.path.join(self.base_dir, self.minio_certs_dir),
@@ -3003,6 +3025,9 @@ class ClickHouseCluster:
                     )
                 os.mkdir(self.minio_data_dir)
                 os.chmod(self.minio_data_dir, stat.S_IRWXU | stat.S_IRWXO)
+
+                os.makedirs(self.resolver_logs_dir)
+                os.chmod(self.resolver_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 minio_start_cmd = self.base_minio_cmd + common_opts
 
@@ -3218,7 +3243,11 @@ class ClickHouseCluster:
         return zk
 
     def run_kazoo_commands_with_retries(
-        self, kazoo_callback, zoo_instance_name="zoo1", repeats=1, sleep_for=1
+        self,
+        kazoo_callback,
+        zoo_instance_name=ZOOKEEPER_CONTAINERS[0],
+        repeats=1,
+        sleep_for=1,
     ):
         zk = self.get_kazoo_client(zoo_instance_name)
         logging.debug(
@@ -3936,11 +3965,11 @@ class ClickHouseInstance:
         )
         logging.info(f"PS RESULT:\n{ps_clickhouse}")
         pid = self.get_process_pid("clickhouse")
-        if pid is not None:
-            self.exec_in_container(
-                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
-                user="root",
-            )
+        # if pid is not None:
+        #     self.exec_in_container(
+        #         ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
+        #         user="root",
+        #     )
         if last_err is not None:
             raise last_err
 
@@ -4119,6 +4148,9 @@ class ClickHouseInstance:
         return self.cluster.copy_file_to_container(
             self.docker_id, local_path, dest_path
         )
+
+    def remove_file_from_container(self, path):
+        return self.cluster.remove_file_from_container(self.docker_id, path)
 
     def get_process_pid(self, process_name):
         output = self.exec_in_container(
@@ -4506,7 +4538,12 @@ class ClickHouseInstance:
         if len(self.custom_dictionaries_paths):
             write_embedded_config("0_common_enable_dictionaries.xml", self.config_d_dir)
 
-        if self.randomize_settings and self.base_config_dir == DEFAULT_BASE_CONFIG_DIR:
+        if (
+            self.randomize_settings
+            and self.image == "clickhouse/integration-test"
+            and self.tag == DOCKER_BASE_TAG
+            and self.base_config_dir == DEFAULT_BASE_CONFIG_DIR
+        ):
             # If custom main config is used, do not apply random settings to it
             write_random_settings_config(Path(users_d_dir) / "0_random_settings.xml")
 
@@ -4640,9 +4677,7 @@ class ClickHouseInstance:
             depends_on.append("nats1")
 
         if self.with_zookeeper:
-            depends_on.append("zoo1")
-            depends_on.append("zoo2")
-            depends_on.append("zoo3")
+            depends_on += list(ZOOKEEPER_CONTAINERS)
 
         if self.with_minio:
             depends_on.append("minio1")

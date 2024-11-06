@@ -167,7 +167,7 @@ GinIndexStore::GinIndexStore(const String & name_, DataPartStoragePtr storage_, 
 bool GinIndexStore::exists() const
 {
     String segment_id_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
-    return storage->exists(segment_id_file_name);
+    return storage->existsFile(segment_id_file_name);
 }
 
 UInt32 GinIndexStore::getNextSegmentIDRange(const String & file_name, size_t n)
@@ -175,7 +175,7 @@ UInt32 GinIndexStore::getNextSegmentIDRange(const String & file_name, size_t n)
     std::lock_guard guard(mutex);
 
     /// When the method is called for the first time, the file doesn't exist yet, need to create it and write segment ID 1.
-    if (!storage->exists(file_name))
+    if (!storage->existsFile(file_name))
     {
         /// Create file
         std::unique_ptr<DB::WriteBufferFromFileBase> ostr = this->data_part_storage_builder->writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE, {});
@@ -233,7 +233,7 @@ UInt32 GinIndexStore::getNumOfSegments()
         return cached_segment_num;
 
     String segment_id_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
-    if (!storage->exists(segment_id_file_name))
+    if (!storage->existsFile(segment_id_file_name))
         return 0;
 
     UInt32 result = 0;
