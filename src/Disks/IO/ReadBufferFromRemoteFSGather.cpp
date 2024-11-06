@@ -18,24 +18,14 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
 }
 
-size_t chooseBufferSizeForRemoteReading(const DB::ReadSettings & settings, size_t file_size)
-{
-    /// Only when cache is used we could download bigger portions of FileSegments than what we actually gonna read within particular task.
-    if (!settings.enable_filesystem_cache && !settings.read_through_distributed_cache)
-        return settings.remote_fs_buffer_size;
-
-    /// Buffers used for prefetch and pre-download better to have enough size, but not bigger than the whole file.
-    return std::min<size_t>(std::max<size_t>(settings.remote_fs_buffer_size, DBMS_DEFAULT_BUFFER_SIZE), file_size);
-}
-
 ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     ReadBufferCreator && read_buffer_creator_,
     const StoredObjects & blobs_to_read_,
     const ReadSettings & settings_,
     std::shared_ptr<FilesystemCacheLog> cache_log_,
-    bool use_external_buffer_)
-    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : chooseBufferSizeForRemoteReading(
-        settings_, getTotalSize(blobs_to_read_)), nullptr, 0)
+    bool use_external_buffer_,
+    size_t buffer_size)
+    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : buffer_size, nullptr, 0)
     , settings(settings_)
     , blobs_to_read(blobs_to_read_)
     , read_buffer_creator(std::move(read_buffer_creator_))
