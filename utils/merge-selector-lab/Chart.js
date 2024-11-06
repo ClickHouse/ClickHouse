@@ -101,8 +101,10 @@ export class Chart {
                 .text("ℹ");
 
             // Initialize tippy.js tooltip for description
-            tippy(infoGroup.node(), {
+            this.tippy = tippy(infoGroup.node(), {
                 content: this.descriptionText,
+                allowHTML: true,
+                delay: [0, 500],
                 placement: 'right',
                 theme: 'light',
                 arrow: true,
@@ -117,6 +119,8 @@ export class Chart {
 
     removeChart()
     {
+        if (this.tippy)
+            this.tippy.destroy();
         this.rootSvg.remove();
     }
 

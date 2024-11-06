@@ -75,6 +75,14 @@ function determineTickStep(maxValue)
 //
 export function visualizeSimulation(sim, container)
 {
+    {
+        // Cleanup previous visualization
+        const oldSvg = container.select("svg");
+        if (oldSvg.node())
+            oldSvg.node().__tippy.destroy();
+        oldSvg.remove();
+    }
+
     // Input visuals
     const margin = { left: 60, right: 40, top: 40, bottom: 60 };
     const width = 930;
@@ -250,4 +258,38 @@ export function visualizeSimulation(sim, container)
             AvgPartCount: ${sim.avgActivePartCount().toFixed(2)}
             Time: ${(sim.current_time).toFixed(2)}s
         `);
+
+    // Add description with an information circle icon using tippy.js for tooltips
+    const infoGroup = svgContainer.append("g")
+        .attr("class", "chart-description")
+        .attr("transform", `translate(30, 10)`);
+
+    infoGroup.append("circle")
+        .attr("r", 10)
+        .attr("fill", "#1f77b4");
+
+    infoGroup.append("text")
+        .attr("text-anchor", "middle")
+        .attr("y", 4)
+        .attr("fill", "white")
+        .style("font-size", "16px")
+        .text("ℹ");
+
+    // Initialize tippy.js tooltip for description
+    svgContainer.node().__tippy = tippy(infoGroup.node(), {
+        content: `
+            This visualization represents a resulting merge tree after simulation.
+            Evert <b>part</b> is represented by a black bar with yellow mark on left side.
+            Parts are positioned vertically according to logarithm of their size.
+            Every <b>merge</b> is represented by a number of rectangles that connect source parts at bottom to the resulting part at the top.
+            Horizontal axis represent amount of inserted bytes: newly inserted parts appear on the right side.
+            Width of a part represent its size.
+            Note that time is not present explicitly on this chart, but merges push data upwards and inserts expand chart to right.
+            <b>Color</b> of a merge-related rectangles might represent on of selected metric: resulting size, order or time of merge, number of source parts, etc.
+        `,
+        allowHTML: true,
+        placement: 'right',
+        theme: 'light',
+        arrow: true,
+    });
 }

@@ -98,10 +98,7 @@ function showSimulation(data)
 {
     console.log("SHOW", data);
     if (data.sim !== undefined)
-    {
-        d3.select("#viz-container").select("svg").remove();
         visualizeSimulation(data.sim, d3.select("#viz-container"));
-    }
 }
 
 function argMin(array, func)
@@ -160,10 +157,10 @@ export async function main()
         d3.select("body").append("div").attr("id", "opt-container"),
         "Initial number of parts to merge",
         "Avg Part Count",
-        `This chart shows how different Merge Selector are compared according to average count of parts over time.
+        `This chart shows how different <i>Merge Selectors</i> are compared according to average count of parts over time.
         For fair comparison the same time interval is selected for all simulations.
         So basically we compare time integral of part count against initial number of parts.
-        NOTE: Click a point to see corresponding tree of merges.`
+        <br><b>Click a point to see corresponding tree of merges.</b>`
     );
 
     // For optimal merge tree visualization
@@ -173,15 +170,17 @@ export async function main()
         d3.select("body").append("div").attr("id", "var-container"),
         "Base (Part count for 1st level merges)",
         "Avg Part Count",
-        `This chart shows results of multiple simulations with numerical algorithms that explore possible merge tree structures with different parameters.
-        This is done to find the best approach in given scenario. Best (lowest) point is then returned as a "numerical" result and is shown on another chart.
+        `This chart shows results of multiple simulations with <i>numerical algorithms</i> that explore possible merge tree structures.
+        Every simulation has different algorithms <i>parameters</i> values.
+        This is done in attempt to find the best approach to merging in given scenario.
+        Best (lowest) point is then returned as a <u>numerical</u> result and is shown on another chart.
         It represents best guess we could hope for given optimization goal: minimize avg part count.
-        NOTE: Click a point to see corresponding tree of merges.`
+        <br><b>Click a point to see corresponding tree of merges.</b>`
     );
     variants_chart.trackMin();
 
-    let analytical_series = optimal_chart.addSeries("BaseAnalytical", showSimulation);
-    let numerical_series = optimal_chart.addSeries("BaseNumerical", showSimulation);
+    let analytical_series = optimal_chart.addSeries("Analytical", showSimulation);
+    let numerical_series = optimal_chart.addSeries("Numerical", showSimulation);
     let simple_series = optimal_chart.addSeries("SimpleMergeSelector", showSimulation);
     for (let parts = 4; parts <= 200; parts++)
     {
