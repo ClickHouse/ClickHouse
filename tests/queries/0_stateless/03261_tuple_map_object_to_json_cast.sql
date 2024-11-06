@@ -5,6 +5,7 @@ set allow_experimental_object_type = 1;
 set allow_experimental_variant_type = 1;
 set use_variant_as_common_type = 1;
 set enable_named_columns_in_function_tuple = 1;
+set enable_analyzer = 1;
 
 select 'Map to JSON';
 select map('a', number::UInt32, 'b', toDate(number), 'c', range(number), 'd', [map('e', number::UInt32)])::JSON as json, JSONAllPathsWithTypes(json) from numbers(5);
