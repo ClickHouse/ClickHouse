@@ -65,3 +65,9 @@ desc format(CSV, '"[NULL, 1]"');
 desc format(CSV, '"[1, 2]"\n"[3]"');
 desc format(CSV, '"[1, 2]"\n"[null]"');
 
+set schema_inference_make_columns_nullable=0;
+desc format(CSV, '\\N,\\N,1\nb,\\N,1');
+set schema_inference_make_columns_nullable='auto';
+desc format(CSV, '\\N,\\N,1\nb,\\N,1');
+set schema_inference_make_columns_nullable=3;
+desc format(CSV, '\\N,\\N,1\nb,\\N,1');

@@ -287,7 +287,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.max_bytes_to_read_for_schema_inference = settings[Setting::input_format_max_bytes_to_read_for_schema_inference];
     format_settings.column_names_for_schema_inference = settings[Setting::column_names_for_schema_inference];
     format_settings.schema_inference_hints = settings[Setting::schema_inference_hints];
-    format_settings.schema_inference_make_columns_nullable = settings[Setting::schema_inference_make_columns_nullable].valueOr(3);
+    format_settings.schema_inference_make_columns_nullable = settings[Setting::schema_inference_make_columns_nullable].valueOr(2);
     format_settings.mysql_dump.table_name = settings[Setting::input_format_mysql_dump_table_name];
     format_settings.mysql_dump.map_column_names = settings[Setting::input_format_mysql_dump_map_column_names];
     format_settings.sql_insert.max_batch_size = settings[Setting::output_format_sql_insert_max_batch_size];
