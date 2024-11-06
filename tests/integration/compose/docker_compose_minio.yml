@@ -14,6 +14,10 @@ services:
     depends_on:
       - proxy1
       - proxy2
+    networks:
+        default:
+            aliases:
+                - warehouse.minio
 
   # HTTP proxies for Minio.
   proxy1:

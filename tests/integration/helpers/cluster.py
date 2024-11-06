@@ -440,6 +440,7 @@ class ClickHouseCluster:
         zookeeper_keyfile=None,
         zookeeper_certfile=None,
         with_spark=False,
+        with_iceberg_catalog=False,
     ):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
@@ -1462,6 +1463,18 @@ class ClickHouseCluster:
         )
         return self.base_minio_cmd
 
+    def setup_iceberg_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_iceberg_rest_catalog.yml")]
+        )
+        self.base_iceberg_catalog_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_iceberg_rest_catalog.yml"),
+        )
+        return self.base_minio_cmd
+
     def setup_azurite_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_azurite = True
         env_variables["AZURITE_PORT"] = str(self.azurite_port)
@@ -1916,6 +1929,9 @@ class ClickHouseCluster:
         if with_minio and not self.with_minio:
             cmds.append(
                 self.setup_minio_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+            cmds.append(
+                self.setup_iceberg_catalog_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
         if with_azurite and not self.with_azurite:
