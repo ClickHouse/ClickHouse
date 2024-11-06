@@ -1,5 +1,7 @@
 SET joined_subquery_requires_alias = 0;
 
+SET query_plan_join_inner_table_selection = 'auto';
+
 {% for join_algorithm in ['partial_merge', 'hash'] -%}
 
 SET join_algorithm = '{{ join_algorithm }}';
