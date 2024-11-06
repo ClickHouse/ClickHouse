@@ -65,6 +65,8 @@ CREATE TABLE test_s3(c1 Int8, c2 Date) ENGINE = ReplicatedMergeTree('/test/table
     objects_after = get_objects_in_data_path()
 
     assert objects_before == objects_after
+    node1.query("DROP TABLE test_local SYNC")
+    node1.query("DROP TABLE test_s3 SYNC")
 
 
 def test_drop_complex_columns(started_cluster):
