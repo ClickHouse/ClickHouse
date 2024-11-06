@@ -1548,10 +1548,9 @@ static ColumnWithTypeAndName readColumnWithDateData(
         }
         else
         {
-            /// ORC library doesn't gurantee that orc_int_column->data[i] is initialized to zero when orc_int_column->notNull[i] is false since https://github.com/ClickHouse/ClickHouse/pull/69473
+            /// ORC library doesn't guarantee that orc_int_column->data[i] is initialized to zero when orc_int_column->notNull[i] is false since https://github.com/ClickHouse/ClickHouse/pull/69473
             column_data.push_back(0);
         }
-
     }
 
     return {std::move(internal_column), internal_type, column_name};
