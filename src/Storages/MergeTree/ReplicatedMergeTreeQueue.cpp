@@ -2488,7 +2488,12 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::operator()(
     PreformattedMessage & out_reason) const
 {
     if (left)
-        return canMergeTwoParts(left, right, out_reason);
+    {
+        if (left->info.min_block < right->info.min_block)
+            return canMergeTwoParts(left, right, out_reason);
+        else
+            return canMergeTwoParts(right, left, out_reason);
+    }
     return canMergeSinglePart(right, out_reason);
 }
 
