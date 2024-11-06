@@ -20,7 +20,7 @@ from tee_popen import TeePopen
 
 
 def get_image_name() -> str:
-    return "clickhouse/clickbench"
+    return "altinityinfra/clickbench"
 
 
 def get_run_command(

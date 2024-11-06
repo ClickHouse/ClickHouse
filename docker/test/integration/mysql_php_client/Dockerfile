@@ -1,4 +1,4 @@
-# docker build -t clickhouse/mysql-php-client .
+# docker build -t altinityinfra/mysql-php-client .
 # MySQL PHP client docker container
 
 FROM php:8-cli-alpine

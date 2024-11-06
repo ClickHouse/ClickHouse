@@ -1,7 +1,7 @@
 # rebuild in #33610
-# docker build -t clickhouse/test-base .
+# docker build -t altinityinfra/test-base .
 ARG FROM_TAG=latest
-FROM clickhouse/test-util:$FROM_TAG
+FROM altinityinfra/test-util:$FROM_TAG
 
 RUN apt-get update \
     && apt-get install \

@@ -10,7 +10,7 @@ node1 = cluster.add_instance("node1", stay_alive=True)
 node2 = cluster.add_instance(
     "node2",
     with_zookeeper=True,
-    image="clickhouse/clickhouse-server",
+    image="altinity/clickhouse-server",
     tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
     stay_alive=True,

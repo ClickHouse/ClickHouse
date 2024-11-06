@@ -4,32 +4,42 @@ name: ReleaseBranchCI
 env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
 on: # yamllint disable-line rule:truthy
+  pull_request:
+    types:
+      - synchronize
+      - reopened
+      - opened
+    branches:
+      # Anything/24.8 (e.g customizations/24.8.x)
+      - '**/24.8*'
+  release:
+    types:
+      - published
+      - prereleased
   push:
     branches:
-      # 22.1 and 22.10
-      - '2[1-9].[1-9][0-9]'
-      - '2[1-9].[1-9]'
+      - 'releases/24.8**'
+  workflow_dispatch:
 
 jobs:
   RunConfig:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cax11, altinity-image-arm-snapshot-22.04-arm, altinity-startup-snapshot, altinity-setup-none]
     outputs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
         with:
           clear-repository: true # to ensure correct digests
           fetch-depth: 0 # to get version
           filter: tree:0
       - name: Debug Info
         uses: ./.github/actions/debug
-      - name: Labels check
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 run_check.py
       - name: Python unit tests
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -56,23 +66,26 @@ jobs:
     needs: [RunConfig]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/docker_test_images.yml
+    secrets: inherit
     with:
       data: ${{ needs.RunConfig.outputs.data }}
   CompatibilityCheckX86:
     needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Compatibility check (release)
-      runner_type: style-checker
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
   CompatibilityCheckAarch64:
     needs: [RunConfig, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Compatibility check (aarch64)
-      runner_type: style-checker
+      runner_type: altinity-on-demand, altinity-type-cax41, altinity-image-arm-snapshot-22.04-arm, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
 #########################################################################################
 #################################### ORDINARY BUILDS ####################################
@@ -81,6 +94,7 @@ jobs:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
+    secrets: inherit
     with:
       build_name: package_release
       checkout_depth: 0
@@ -91,6 +105,7 @@ jobs:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
+    secrets: inherit
     with:
       build_name: package_aarch64
       checkout_depth: 0
@@ -101,6 +116,7 @@ jobs:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
+    secrets: inherit
     with:
       build_name: package_asan
       data: ${{ needs.RunConfig.outputs.data }}
@@ -108,6 +124,7 @@ jobs:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
+    secrets: inherit
     with:
       build_name: package_ubsan
       data: ${{ needs.RunConfig.outputs.data }}
@@ -115,6 +132,7 @@ jobs:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
+    secrets: inherit
     with:
       build_name: package_tsan
       data: ${{ needs.RunConfig.outputs.data }}
@@ -122,6 +140,7 @@ jobs:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
+    secrets: inherit
     with:
       build_name: package_msan
       data: ${{ needs.RunConfig.outputs.data }}
@@ -129,29 +148,10 @@ jobs:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
+    secrets: inherit
     with:
       build_name: package_debug
       data: ${{ needs.RunConfig.outputs.data }}
-      force: true
-  BuilderBinDarwin:
-    needs: [RunConfig, BuildDockers]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_build.yml
-    with:
-      build_name: binary_darwin
-      checkout_depth: 0
-      data: ${{ needs.RunConfig.outputs.data }}
-      # always rebuild on release branches to be able to publish from any commit
-      force: true
-  BuilderBinDarwinAarch64:
-    needs: [RunConfig, BuildDockers]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_build.yml
-    with:
-      build_name: binary_darwin_aarch64
-      checkout_depth: 0
-      data: ${{ needs.RunConfig.outputs.data }}
-      # always rebuild on release branches to be able to publish from any commit
       force: true
 ############################################################################################
 ##################################### Docker images  #######################################
@@ -160,17 +160,19 @@ jobs:
     needs: [RunConfig, BuilderDebRelease, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Docker server image
-      runner_type: style-checker
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
   DockerKeeperImage:
     needs: [RunConfig, BuilderDebRelease, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Docker keeper image
-      runner_type: style-checker
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
 ############################################################################################
 ##################################### BUILD REPORTER #######################################
@@ -178,29 +180,29 @@ jobs:
   Builds_Report:
     # run report check for failed builds to indicate the CI error
     if: ${{ !cancelled() && needs.RunConfig.result == 'success' && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Builds') }}
-    needs: [RunConfig, BuilderDebRelease, BuilderDebAarch64, BuilderDebAsan, BuilderDebUBsan, BuilderDebMsan, BuilderDebTsan, BuilderDebDebug, BuilderBinDarwin, BuilderBinDarwinAarch64]
-    runs-on: [self-hosted, style-checker-aarch64]
+    needs: [RunConfig, BuilderDebRelease, BuilderDebAarch64, BuilderDebAsan, BuilderDebUBsan, BuilderDebMsan, BuilderDebTsan, BuilderDebDebug]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cax11, altinity-image-arm-snapshot-22.04-arm, altinity-startup-snapshot, altinity-setup-none]
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
       - name: Download reports
         run: |
           python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(needs.RunConfig.outputs.data) }} --pre --job-name Builds
       - name: Builds report
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 ./build_report_check.py --reports package_release package_aarch64 package_asan package_msan package_ubsan package_tsan package_debug binary_darwin binary_darwin_aarch64
+          python3 ./build_report_check.py --reports package_release package_aarch64 package_asan package_msan package_ubsan package_tsan package_debug
       - name: Set status
+        # NOTE(vnemkov): generate and upload the report even if previous step failed
+        if: success() || failure()
         run: |
           python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(needs.RunConfig.outputs.data) }} --post --job-name Builds
   MarkReleaseReady:
     if: ${{ !failure() && !cancelled() }}
     needs:
-      - BuilderBinDarwin
-      - BuilderBinDarwinAarch64
       - BuilderDebRelease
       - BuilderDebAarch64
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cax11, altinity-image-arm-snapshot-22.04-arm, altinity-startup-snapshot, altinity-setup-none]
     steps:
       - name: Debug
         run: |
@@ -218,7 +220,7 @@ jobs:
         run: exit 1
       - name: Check out repository code
         if: ${{ ! (contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure')) }}
-        uses: ClickHouse/checkout@v1
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
       - name: Mark Commit Release Ready
         if: ${{ ! (contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure')) }}
         run: |
@@ -231,9 +233,10 @@ jobs:
     needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Install packages (release)
-      runner_type: style-checker
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
       run_command: |
         python3 install_check.py "$CHECK_NAME"
@@ -241,9 +244,10 @@ jobs:
     needs: [RunConfig, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Install packages (aarch64)
-      runner_type: style-checker-aarch64
+      runner_type: altinity-on-demand, altinity-type-cax41, altinity-image-arm-snapshot-22.04-arm, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
       run_command: |
         python3 install_check.py "$CHECK_NAME"
@@ -254,57 +258,64 @@ jobs:
     needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateless tests (release)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash,altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatelessTestAarch64:
     needs: [RunConfig, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateless tests (aarch64)
-      runner_type: func-tester-aarch64
+      runner_type: altinity-on-demand, altinity-type-cax41, altinity-image-arm-snapshot-22.04-arm, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatelessTestAsan:
     needs: [RunConfig, BuilderDebAsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateless tests (asan)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatelessTestTsan:
     needs: [RunConfig, BuilderDebTsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateless tests (tsan)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatelessTestMsan:
     needs: [RunConfig, BuilderDebMsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateless tests (msan)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatelessTestUBsan:
     needs: [RunConfig, BuilderDebUBsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateless tests (ubsan)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatelessTestDebug:
     needs: [RunConfig, BuilderDebDebug]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateless tests (debug)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
 ##############################################################################################
 ############################ FUNCTIONAl STATEFUL TESTS #######################################
@@ -313,57 +324,64 @@ jobs:
     needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateful tests (release)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatefulTestAarch64:
     needs: [RunConfig, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateful tests (aarch64)
-      runner_type: func-tester-aarch64
+      runner_type: altinity-on-demand, altinity-type-cax41, altinity-image-arm-snapshot-22.04-arm, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatefulTestAsan:
     needs: [RunConfig, BuilderDebAsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateful tests (asan)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatefulTestTsan:
     needs: [RunConfig, BuilderDebTsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateful tests (tsan)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatefulTestMsan:
     needs: [RunConfig, BuilderDebMsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateful tests (msan)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatefulTestUBsan:
     needs: [RunConfig, BuilderDebUBsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateful tests (ubsan)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
   FunctionalStatefulTestDebug:
     needs: [RunConfig, BuilderDebDebug]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stateful tests (debug)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
 ##############################################################################################
 ######################################### STRESS TESTS #######################################
@@ -372,41 +390,46 @@ jobs:
     needs: [RunConfig, BuilderDebAsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stress test (asan)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
   StressTestTsan:
     needs: [RunConfig, BuilderDebTsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stress test (tsan)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
   StressTestMsan:
     needs: [RunConfig, BuilderDebMsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stress test (msan)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
   StressTestUBsan:
     needs: [RunConfig, BuilderDebUBsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stress test (ubsan)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
   StressTestDebug:
     needs: [RunConfig, BuilderDebDebug]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Stress test (debug)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
 #############################################################################################
 ############################# INTEGRATION TESTS #############################################
@@ -415,33 +438,80 @@ jobs:
     needs: [RunConfig, BuilderDebAsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Integration tests (asan)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
   IntegrationTestsAnalyzerAsan:
     needs: [RunConfig, BuilderDebAsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Integration tests (asan, old analyzer)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
   IntegrationTestsTsan:
     needs: [RunConfig, BuilderDebTsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Integration tests (tsan)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
   IntegrationTestsRelease:
     needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: Integration tests (release)
-      runner_type: func-tester
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
+      data: ${{ needs.RunConfig.outputs.data }}
+#############################################################################################
+##################################### REGRESSION TESTS ######################################
+#############################################################################################
+  RegressionTestsRelease:
+    needs: [BuilderDebRelease]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/regression.yml
+    secrets: inherit
+    with:
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-app-docker-ce, altinity-setup-regression
+      commit: 634042960dd157489199ca0f9d028c7fd1e6adb0
+      arch: release
+      build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout_minutes: 300
+  RegressionTestsAarch64:
+    needs: [BuilderDebAarch64]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/regression.yml
+    secrets: inherit
+    with:
+      runner_type: altinity-on-demand, altinity-type-cax41, altinity-image-arm-app-docker-ce, altinity-setup-regression
+      commit: 634042960dd157489199ca0f9d028c7fd1e6adb0
+      arch: aarch64
+      build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout_minutes: 300
+  SignRelease:
+    needs: [RunConfig, BuilderDebRelease]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_sign.yml
+    secrets: inherit
+    with:
+      test_name: Sign release
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
+      data: ${{ needs.RunConfig.outputs.data }}
+  SignAarch64:
+    needs: [RunConfig, BuilderDebAarch64]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_sign.yml
+    secrets: inherit
+    with:
+      test_name: Sign aarch64
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       data: ${{ needs.RunConfig.outputs.data }}
   FinishCheck:
     if: ${{ !cancelled() }}
@@ -475,10 +545,13 @@ jobs:
       - IntegrationTestsRelease
       - CompatibilityCheckX86
       - CompatibilityCheckAarch64
-    runs-on: [self-hosted, style-checker]
+      - RegressionTestsRelease
+      - RegressionTestsAarch64
+      - SignRelease
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cax11, altinity-image-arm-snapshot-22.04-arm, altinity-startup-snapshot, altinity-setup-none]
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
         with:
           clear-repository: true
       - name: Finish label

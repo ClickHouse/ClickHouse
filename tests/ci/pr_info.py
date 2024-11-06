@@ -80,8 +80,11 @@ def get_pr_for_commit(sha, ref):
             ref,
             sha,
         )
-        first_pr = our_prs[0]
-        return first_pr
+        if len(our_prs) != 0:
+            first_pr = our_prs[0]
+            return first_pr
+        else:
+            return None
     except Exception as ex:
         logging.error(
             "Cannot fetch PR info from commit ref %s, sha %s, exception: %s",
@@ -132,8 +135,9 @@ class PRInfo:
         ref = github_event.get("ref", "refs/heads/master")
         if ref and ref.startswith("refs/heads/"):
             ref = ref[11:]
+        self.ref = ref # type: str e.g. "refs/pull/509/merge" or "refs/tags/v24.3.12.76.altinitystable"
         # Default values
-        self.base_ref = ""  # type: str
+        self.base_ref = github_event.get("base_ref","")  # type: str
         self.base_name = ""  # type: str
         self.head_ref = ""  # type: str
         self.head_name = ""  # type: str

@@ -16,7 +16,7 @@ jobs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f
         with:
           clear-repository: true # to ensure correct digests
           fetch-depth: 0 # to get version
@@ -118,7 +118,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Builds
-      runner_type: style-checker-aarch64
+      runner_type: altinity-on-demand, altinity-type-cax41, altinity-in-hel1, altinity-image-arm-app-docker-ce
       data: ${{ needs.RunConfig.outputs.data }}
 
   FinishCheck:
@@ -127,7 +127,7 @@ jobs:
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f
       - name: Finish label
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
