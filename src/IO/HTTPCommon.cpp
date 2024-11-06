@@ -3,6 +3,7 @@
 
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Poco/Any.h>
+#include <Poco/StreamCopier.h>
 #include <Common/Exception.h>
 
 #include "config.h"
