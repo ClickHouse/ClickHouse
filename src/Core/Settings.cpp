@@ -1912,6 +1912,9 @@ See also:
 For single JOIN in case of identifier ambiguity prefer left table
 )", IMPORTANT) \
     \
+    DECLARE(JoinInnerTableSelectionMode, query_plan_join_inner_table_selection, JoinInnerTableSelectionMode::Auto, R"(
+Select the side of the join to be the inner table in the query plan. Supported only for `ALL` join strictness with `JOIN ON` clause. Possible values: 'auto', 'left', 'right'.
+)", 0) \
     DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(
 This setting adjusts the data block size for query processing and represents additional fine-tuning to the more rough 'max_block_size' setting. If the columns are large and with 'max_block_size' rows the block size is likely to be larger than the specified amount of bytes, its size will be lowered for better CPU cache locality.
 )", 0) \
@@ -2665,8 +2668,9 @@ The maximum amount of data consumed by temporary files on disk in bytes for all 
 The maximum amount of data consumed by temporary files on disk in bytes for all concurrently running queries. Zero means unlimited.
 )", 0)\
     \
-    DECLARE(UInt64, backup_restore_keeper_max_retries, 20, R"(
-Max retries for keeper operations during backup or restore
+    DECLARE(UInt64, backup_restore_keeper_max_retries, 1000, R"(
+Max retries for [Zoo]Keeper operations in the middle of a BACKUP or RESTORE operation.
+Should be big enough so the whole operation won't fail because of a temporary [Zoo]Keeper failure.
 )", 0) \
     DECLARE(UInt64, backup_restore_keeper_retry_initial_backoff_ms, 100, R"(
 Initial backoff timeout for [Zoo]Keeper operations during backup or restore
@@ -2674,20 +2678,34 @@ Initial backoff timeout for [Zoo]Keeper operations during backup or restore
     DECLARE(UInt64, backup_restore_keeper_retry_max_backoff_ms, 5000, R"(
 Max backoff timeout for [Zoo]Keeper operations during backup or restore
 )", 0) \
+    DECLARE(UInt64, backup_restore_failure_after_host_disconnected_for_seconds, 3600, R"(
+If a host during a BACKUP ON CLUSTER or RESTORE ON CLUSTER operation doesn't recreate its ephemeral 'alive' node in ZooKeeper for this amount of time then the whole backup or restore is considered as failed.
+This value should be bigger than any reasonable time for a host to reconnect to ZooKeeper after a failure.
+Zero means unlimited.
+)", 0) \
+    DECLARE(UInt64, backup_restore_keeper_max_retries_while_initializing, 20, R"(
+Max retries for [Zoo]Keeper operations during the initialization of a BACKUP ON CLUSTER or RESTORE ON CLUSTER operation.
+)", 0) \
+    DECLARE(UInt64, backup_restore_keeper_max_retries_while_handling_error, 20, R"(
+Max retries for [Zoo]Keeper operations while handling an error of a BACKUP ON CLUSTER or RESTORE ON CLUSTER operation.
+)", 0) \
+    DECLARE(UInt64, backup_restore_finish_timeout_after_error_sec, 180, R"(
+How long the initiator should wait for other host to react to the 'error' node and stop their work on the current BACKUP ON CLUSTER or RESTORE ON CLUSTER operation.
+)", 0) \
+    DECLARE(UInt64, backup_restore_keeper_value_max_size, 1048576, R"(
+Maximum size of data of a [Zoo]Keeper's node during backup
+)", 0) \
+    DECLARE(UInt64, backup_restore_batch_size_for_keeper_multi, 1000, R"(
+Maximum size of batch for multi request to [Zoo]Keeper during backup or restore
+)", 0) \
+    DECLARE(UInt64, backup_restore_batch_size_for_keeper_multiread, 10000, R"(
+Maximum size of batch for multiread request to [Zoo]Keeper during backup or restore
+)", 0) \
     DECLARE(Float, backup_restore_keeper_fault_injection_probability, 0.0f, R"(
 Approximate probability of failure for a keeper request during backup or restore. Valid value is in interval [0.0f, 1.0f]
 )", 0) \
     DECLARE(UInt64, backup_restore_keeper_fault_injection_seed, 0, R"(
 0 - random seed, otherwise the setting value
-)", 0) \
-    DECLARE(UInt64, backup_restore_keeper_value_max_size, 1048576, R"(
-Maximum size of data of a [Zoo]Keeper's node during backup
-)", 0) \
-    DECLARE(UInt64, backup_restore_batch_size_for_keeper_multiread, 10000, R"(
-Maximum size of batch for multiread request to [Zoo]Keeper during backup or restore
-)", 0) \
-    DECLARE(UInt64, backup_restore_batch_size_for_keeper_multi, 1000, R"(
-Maximum size of batch for multi request to [Zoo]Keeper during backup or restore
 )", 0) \
     DECLARE(UInt64, backup_restore_s3_retry_attempts, 1000, R"(
 Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries. It takes place only for backup/restore.
@@ -5112,6 +5130,15 @@ Only in ClickHouse Cloud. A maximum number of unacknowledged in-flight packets i
     DECLARE(UInt64, distributed_cache_data_packet_ack_window, DistributedCache::ACK_DATA_PACKET_WINDOW, R"(
 Only in ClickHouse Cloud. A window for sending ACK for DataPacket sequence in a single distributed cache read request
 )", 0) \
+    DECLARE(Bool, distributed_cache_discard_connection_if_unread_data, true, R"(
+Only in ClickHouse Cloud. Discard connection if some data is unread.
+)", 0) \
+    DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
+Only in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
+)", 0) \
+    DECLARE(Bool, filesystem_cache_enable_background_download_during_fetch, true, R"(
+Only in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
+)", 0) \
     \
     DECLARE(Bool, parallelize_output_from_storages, true, R"(
 Parallelize output for reading step from storage. It allows parallelization of  query processing right after reading from storage if possible
@@ -5120,6 +5147,7 @@ Parallelize output for reading step from storage. It allows parallelization of  
 The setting allows a user to provide own deduplication semantic in MergeTree/ReplicatedMergeTree
 For example, by providing a unique value for the setting in each INSERT statement,
 user can avoid the same inserted data being deduplicated.
+
 
 Possible values:
 
@@ -5595,7 +5623,7 @@ If true, and JOIN can be executed with parallel replicas algorithm, and all stor
     DECLARE(UInt64, parallel_replicas_mark_segment_size, 0, R"(
 Parts virtually divided into segments to be distributed between replicas for parallel reading. This setting controls the size of these segments. Not recommended to change until you're absolutely sure in what you're doing. Value should be in range [128; 16384]
 )", BETA) \
-    DECLARE(Bool, parallel_replicas_local_plan, false, R"(
+    DECLARE(Bool, parallel_replicas_local_plan, true, R"(
 Build local plan for local replica
 )", BETA) \
     \

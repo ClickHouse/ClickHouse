@@ -15,6 +15,9 @@ public:
     explicit Credentials() = default;
     explicit Credentials(const String & user_name_);
 
+    Credentials(const Credentials &) = default;
+    Credentials(Credentials &&) = default;
+
     virtual ~Credentials() = default;
 
     const String & getUserName() const;
