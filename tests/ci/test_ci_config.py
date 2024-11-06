@@ -39,7 +39,8 @@ class TestCIConfig(unittest.TestCase):
                     CI.BuildNames.PACKAGE_AARCH64_ASAN,
                 ):
                     self.assertTrue(
-                        CI.JOB_CONFIGS[job].runner_type in (CI.Runners.BUILDER_AARCH64,),
+                        CI.JOB_CONFIGS[job].runner_type
+                        in (CI.Runners.BUILDER_AARCH64,),
                         f"Job [{job}] must have [{CI.Runners.BUILDER_AARCH64}] runner",
                     )
                 else:
