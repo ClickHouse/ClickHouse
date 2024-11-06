@@ -110,6 +110,7 @@ def test_rollback_unfinished_on_restart1(start_cluster):
         "1_6_6_0\t0\ttid3\tcsn18446744073709551615_\ttid0\tcsn0_\n"
         "1_6_6_0_7\t0\ttid3\tcsn18446744073709551615_\ttid0\tcsn0_\n"
     )
+    node.query("DROP TABLE mt SYNC")
 
 
 def test_rollback_unfinished_on_restart2(start_cluster):
@@ -193,3 +194,4 @@ def test_rollback_unfinished_on_restart2(start_cluster):
         "1_1_1_0\t0\ttid0\tcsn1_\ttid1\tcsn_1\n"
         "1_3_3_0\t1\ttid2\tcsn_2\t(0,0,'00000000-0000-0000-0000-000000000000')\tcsn0_\n"
     )
+    node.query("DROP TABLE mt2 SYNC")
