@@ -156,12 +156,20 @@ async function minimizeAvgPartCount(parts, chart)
 
 export async function main()
 {
-    const optimal_chart = new Chart(d3.select("body").append("div").attr("id", "opt-container"));
+    const optimal_chart = new Chart(
+        d3.select("body").append("div").attr("id", "opt-container"),
+        "Initial number of parts to merge",
+        "Avg Part Count"
+    );
 
     // For optimal merge tree visualization
     d3.select("body").append("div").attr("id", "viz-container");
 
-    const variants_chart = new Chart(d3.select("body").append("div").attr("id", "var-container"));
+    const variants_chart = new Chart(
+        d3.select("body").append("div").attr("id", "var-container"),
+        "Base (Part count for 1st level merges)",
+        "Avg Part Count"
+    );
     variants_chart.trackMin();
 
     let analytical_series = optimal_chart.addSeries("BaseAnalytical", showSimulation);

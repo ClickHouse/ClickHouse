@@ -1,5 +1,5 @@
 export class Chart {
-    constructor(selection = d3.select("body"))
+    constructor(selection = d3.select("body"), xTitle = "", yTitle = "")
     {
         // Set up dimensions and margins
         this.width = 1000;
@@ -12,24 +12,14 @@ export class Chart {
         this.min_track = false;
 
         this.selection = selection;
+        this.xTitleText = xTitle;
+        this.yTitleText = yTitle;
         this.initChart();
     }
 
     trackMin(value = true)
     {
         this.min_track = value;
-        return this;
-    }
-
-    xTitle(text)
-    {
-        // TODO: implement it, change name for x axis
-        return this;
-    }
-
-    yTitle(text)
-    {
-        // TODO: implement it, change name for y axis
         return this;
     }
 
@@ -71,6 +61,25 @@ export class Chart {
         this.svg.append("g")
             .attr("class", "y-axis")
             .call(d3.axisLeft(this.yScale));
+
+        // Add x-axis title
+        this.svg.append("text")
+            .attr("class", "x-axis-title")
+            .attr("x", this.innerWidth / 2)
+            .attr("y", this.innerHeight + this.margin.bottom - 10)
+            .attr("text-anchor", "middle")
+            .style("font-size", "14px")
+            .text(this.xTitleText);
+
+        // Add y-axis title
+        this.svg.append("text")
+            .attr("class", "y-axis-title")
+            .attr("x", -(this.innerHeight / 2))
+            .attr("y", -this.margin.left + 15)
+            .attr("transform", "rotate(-90)")
+            .attr("text-anchor", "middle")
+            .style("font-size", "14px")
+            .text(this.yTitleText);
 
         // Add legend container inside the chart area (upper right corner)
         this.legend = this.svg.append("g")
@@ -118,30 +127,33 @@ export class Chart {
             this.x.domain([0, d3.max(this.series.flatMap(s => s.data), d => d.x)]);
             this.yScale.domain([0, d3.max(this.series.flatMap(s => s.data), d => d.y)]).nice();
 
-            // Update line
-            newSeries.path.datum(newSeries.data)
-                .attr("d", newSeries.line);
+            // Update all series lines and points
+            this.series.forEach(series => {
+                // Update line
+                series.path.datum(series.data)
+                    .attr("d", series.line);
 
-            // Update points
-            if (newSeries.points)
-                newSeries.points.remove();
+                // Update points
+                if (series.points)
+                    series.points.remove();
 
-            newSeries.points = this.svg.selectAll(`.point-${name.replace(/\s+/g, '-')}`)
-                .data(newSeries.data)
-                .enter()
-                .append("circle")
-                .attr("class", `point-${name.replace(/\s+/g, '-')}`)
-                .attr("cx", d => this.x(d.x))
-                .attr("cy", d => this.yScale(d.y))
-                .attr("r", 2)
-                .attr("fill", this.colors[colorIndex])
-                .on("click", (event, d) => {
-                    // Highlight last clicked point
-                    this.svg.selectAll("circle").attr("stroke", null).attr("stroke-width", null); // Remove highlight from all points
-                    d3.select(event.target).attr("stroke", "black").attr("stroke-width", 2); // Highlight clicked point
-                    if (on_click)
-                        on_click(d);
-                });
+                series.points = this.svg.selectAll(`.point-series-${series.seriesIndex}`)
+                    .data(series.data)
+                    .enter()
+                    .append("circle")
+                    .attr("class", `point-series-${series.seriesIndex}`)
+                    .attr("cx", d => this.x(d.x))
+                    .attr("cy", d => this.yScale(d.y))
+                    .attr("r", 2)
+                    .attr("fill", this.colors[series.seriesIndex % this.colors.length])
+                    .on("click", (event, d) => {
+                        // Highlight last clicked point
+                        this.svg.selectAll("circle").attr("stroke", null).attr("stroke-width", null); // Remove highlight from all points
+                        d3.select(event.target).attr("stroke", "black").attr("stroke-width", 2); // Highlight clicked point
+                        if (on_click)
+                            on_click(d);
+                    });
+            });
 
             // Update axes
             this.svg.select(".x-axis")
@@ -227,7 +239,7 @@ export class Chart {
         import { Chart } from './chart.js';
 
         const chartSelection = d3.select("#chart-container");
-        const chart = new Chart(chartSelection);
+        const chart = new Chart(chartSelection, "Time (s)", "Value"); // Example of setting x and y axis titles
         const series1 = chart.addSeries('Series 1', (data) => console.log('Clicked on:', data));
         const series2 = chart.addSeries('Series 2');
 
