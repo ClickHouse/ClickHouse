@@ -593,7 +593,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
         if (parts_to_merge.empty())
         {
             ProfileEvents::increment(ProfileEvents::MergerMutatorSelectPartsForMergeElapsedMicroseconds, select_parts_from_ranges_timer.elapsedMicroseconds());
-            out_disable_reason = PreformattedMessage::create("Did not find any parts to merge (with usual merge selectors) in {}", select_parts_from_ranges_timer.elapsedMicroseconds() / 1000);
+            out_disable_reason = PreformattedMessage::create("Did not find any parts to merge (with usual merge selectors) in {}ms", select_parts_from_ranges_timer.elapsedMicroseconds() / 1000);
             return SelectPartsDecision::CANNOT_SELECT;
         }
     }
