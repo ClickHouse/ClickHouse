@@ -67,6 +67,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"short_circuit_function_evaluation_for_nulls", false, true, "Allow to execute functions with Nullable arguments only on rows with non-NULL values in all arguments"},
             {"short_circuit_function_evaluation_for_nulls_threshold", 1.0, 1.0, "Ratio threshold of NULL values to execute functions with Nullable arguments only on rows with non-NULL values in all arguments. Applies when setting short_circuit_function_evaluation_for_nulls is enabled."},
             {"distributed_cache_discard_connection_if_unread_data", true, true, "New setting"},
+            {"filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage", true, true, "New setting"},
+            {"filesystem_cache_enable_background_download_during_fetch", true, true, "New setting"},
             {"azure_check_objects_after_upload", false, false, "Check each uploaded object in azure blob storage to be sure that upload was successful"},
             {"backup_restore_keeper_max_retries", 20, 1000, "Should be big enough so the whole operation BACKUP or RESTORE operation won't fail because of a temporary [Zoo]Keeper failure in the middle of it."},
             {"backup_restore_failure_after_host_disconnected_for_seconds", 0, 3600, "New setting."},
@@ -74,6 +76,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"backup_restore_keeper_max_retries_while_handling_error", 0, 20, "New setting."},
             {"backup_restore_finish_timeout_after_error_sec", 0, 180, "New setting."},
             {"query_plan_join_inner_table_selection", "auto", "auto", "New setting."},
+            {"parallel_replicas_local_plan", false, true, "Use local plan for local replica in a query with parallel replicas"},
         }
     },
     {"24.10",

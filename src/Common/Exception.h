@@ -7,6 +7,7 @@
 #include <Common/Logger.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/StackTrace.h>
+#include <Core/LogsLevel.h>
 
 #include <cerrno>
 #include <exception>
@@ -276,10 +277,10 @@ using Exceptions = std::vector<std::exception_ptr>;
   * Can be used in destructors in the catch-all block.
   */
 /// TODO: Logger leak constexpr overload
-void tryLogCurrentException(const char * log_name, const std::string & start_of_message = "");
-void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message = "");
-void tryLogCurrentException(LoggerPtr logger, const std::string & start_of_message = "");
-void tryLogCurrentException(const AtomicLogger & logger, const std::string & start_of_message = "");
+void tryLogCurrentException(const char * log_name, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
+void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
+void tryLogCurrentException(LoggerPtr logger, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
+void tryLogCurrentException(const AtomicLogger & logger, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
 
 
 /** Prints current exception in canonical format.

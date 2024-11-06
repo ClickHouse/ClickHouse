@@ -5133,6 +5133,12 @@ Only in ClickHouse Cloud. A window for sending ACK for DataPacket sequence in a 
     DECLARE(Bool, distributed_cache_discard_connection_if_unread_data, true, R"(
 Only in ClickHouse Cloud. Discard connection if some data is unread.
 )", 0) \
+    DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
+Only in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
+)", 0) \
+    DECLARE(Bool, filesystem_cache_enable_background_download_during_fetch, true, R"(
+Only in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
+)", 0) \
     \
     DECLARE(Bool, parallelize_output_from_storages, true, R"(
 Parallelize output for reading step from storage. It allows parallelization of  query processing right after reading from storage if possible
@@ -5141,6 +5147,7 @@ Parallelize output for reading step from storage. It allows parallelization of  
 The setting allows a user to provide own deduplication semantic in MergeTree/ReplicatedMergeTree
 For example, by providing a unique value for the setting in each INSERT statement,
 user can avoid the same inserted data being deduplicated.
+
 
 Possible values:
 
@@ -5623,7 +5630,7 @@ If true, and JOIN can be executed with parallel replicas algorithm, and all stor
     DECLARE(UInt64, parallel_replicas_mark_segment_size, 0, R"(
 Parts virtually divided into segments to be distributed between replicas for parallel reading. This setting controls the size of these segments. Not recommended to change until you're absolutely sure in what you're doing. Value should be in range [128; 16384]
 )", BETA) \
-    DECLARE(Bool, parallel_replicas_local_plan, false, R"(
+    DECLARE(Bool, parallel_replicas_local_plan, true, R"(
 Build local plan for local replica
 )", BETA) \
     \
