@@ -28,7 +28,7 @@ public:
         const std::string & uri,
         Poco::Net::HTTPResponse::HTTPStatus http_status_,
         const std::string & reason,
-        const std::string_view & body
+        const std::string & body
     )
         : Exception(makeExceptionMessage(code, uri, http_status_, reason, body))
         , http_status(http_status_)
@@ -47,7 +47,7 @@ private:
         const std::string & uri,
         Poco::Net::HTTPResponse::HTTPStatus http_status,
         const std::string & reason,
-        const std::string_view & body);
+        const std::string & body);
 
     const char * name() const noexcept override { return "DB::HTTPException"; }
     const char * className() const noexcept override { return "DB::HTTPException"; }
