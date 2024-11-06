@@ -1653,6 +1653,7 @@ class ClickHouseCluster:
         copy_common_configs=True,
         config_root_name="clickhouse",
         extra_configs=[],
+        extra_args="",
         randomize_settings=True,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
@@ -1740,6 +1741,7 @@ class ClickHouseCluster:
             with_postgres_cluster=with_postgres_cluster,
             with_postgresql_java_client=with_postgresql_java_client,
             clickhouse_start_command=clickhouse_start_command,
+            clickhouse_start_extra_args=extra_args,
             main_config_name=main_config_name,
             users_config_name=users_config_name,
             copy_common_configs=copy_common_configs,
@@ -3368,6 +3370,7 @@ class ClickHouseInstance:
         with_postgres_cluster,
         with_postgresql_java_client,
         clickhouse_start_command=CLICKHOUSE_START_COMMAND,
+        clickhouse_start_extra_args="",
         main_config_name="config.xml",
         users_config_name="users.xml",
         copy_common_configs=True,
@@ -3463,11 +3466,18 @@ class ClickHouseInstance:
         self.users_config_name = users_config_name
         self.copy_common_configs = copy_common_configs
 
-        self.clickhouse_start_command = clickhouse_start_command.replace(
+        clickhouse_start_command_with_conf = clickhouse_start_command.replace(
             "{main_config_file}", self.main_config_name
         )
-        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail' INT TERM; {} --daemon; coproc tail -f /dev/null; wait $$!\"".format(
-            clickhouse_start_command
+
+        self.clickhouse_start_command = "{} -- {}".format(
+            clickhouse_start_command_with_conf, clickhouse_start_extra_args
+        )
+        self.clickhouse_start_command_in_daemon = "{} --daemon -- {}".format(
+            clickhouse_start_command_with_conf, clickhouse_start_extra_args
+        )
+        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail' INT TERM; {}; coproc tail -f /dev/null; wait $$!\"".format(
+            self.clickhouse_start_command_in_daemon
         )
 
         self.path = p.join(self.cluster.instances_dir, name)
@@ -3910,7 +3920,7 @@ class ClickHouseInstance:
             if pid is None:
                 logging.debug("No clickhouse process running. Start new one.")
                 self.exec_in_container(
-                    ["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)],
+                    ["bash", "-c", self.clickhouse_start_command_in_daemon],
                     user=str(os.getuid()),
                 )
                 if expected_to_fail:
@@ -4230,7 +4240,7 @@ class ClickHouseInstance:
             user="root",
         )
         self.exec_in_container(
-            ["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)],
+            ["bash", "-c", self.clickhouse_start_command_in_daemon],
             user=str(os.getuid()),
         )
 
@@ -4311,7 +4321,7 @@ class ClickHouseInstance:
                 ]
             )
         self.exec_in_container(
-            ["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)],
+            ["bash", "-c", self.clickhouse_start_command_in_daemon],
             user=str(os.getuid()),
         )
 
@@ -4704,9 +4714,7 @@ class ClickHouseInstance:
         entrypoint_cmd = self.clickhouse_start_command
 
         if self.stay_alive:
-            entrypoint_cmd = self.clickhouse_stay_alive_command.replace(
-                "{main_config_file}", self.main_config_name
-            )
+            entrypoint_cmd = self.clickhouse_stay_alive_command
         else:
             entrypoint_cmd = (
                 "["
