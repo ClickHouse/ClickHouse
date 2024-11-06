@@ -94,7 +94,8 @@ private:
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
-        LoggerPtr log);
+        LoggerPtr log,
+        const std::optional<ReadFromMergeTree::VectorSimilarityIndexInput> & vec_sim_idx_input);
 
     static MarkRanges filterMarksUsingMergedIndex(
         MergeTreeIndices indices,
@@ -197,7 +198,8 @@ public:
         size_t num_streams,
         ReadFromMergeTree::IndexStats & index_stats,
         bool use_skip_indexes,
-        bool find_exact_ranges);
+        bool find_exact_ranges,
+        const std::optional<ReadFromMergeTree::VectorSimilarityIndexInput> & vec_sim_idx_input);
 
     /// Create expression for sampling.
     /// Also, calculate _sample_factor if needed.

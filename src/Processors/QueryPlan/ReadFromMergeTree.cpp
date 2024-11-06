@@ -1489,7 +1489,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(Merge
         all_column_names,
         log,
         indexes,
-        find_exact_ranges);
+        find_exact_ranges,
+        vec_sim_idx_input);
 }
 
 static void buildIndexes(
@@ -1604,24 +1605,7 @@ static void buildIndexes(
             continue;
         }
 
-        MergeTreeIndexConditionPtr condition;
-
-        if (index_helper->isVectorSimilarityIndex())
-        {
-#if USE_USEARCH
-            if (const auto * vector_similarity_index = typeid_cast<const MergeTreeIndexVectorSimilarity *>(index_helper.get()))
-                condition = vector_similarity_index->createIndexCondition(query_info, context);
-#endif
-            if (const auto * legacy_vector_similarity_index = typeid_cast<const MergeTreeIndexLegacyVectorSimilarity *>(index_helper.get()))
-                condition = legacy_vector_similarity_index->createIndexCondition(query_info, context);
-
-            if (!condition)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown vector search index {}", index_helper->index.name);
-        }
-        else
-        {
-            condition = index_helper->createIndexCondition(filter_actions_dag, context);
-        }
+        MergeTreeIndexConditionPtr condition = index_helper->createIndexCondition(filter_actions_dag, context);
 
         if (!condition->alwaysUnknownOrTrue())
             skip_indexes.useful_indices.emplace_back(index_helper, condition);
@@ -1682,7 +1666,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     const Names & all_column_names,
     LoggerPtr log,
     std::optional<Indexes> & indexes,
-    bool find_exact_ranges)
+    bool find_exact_ranges,
+    const std::optional<VectorSimilarityIndexInput> & vec_sim_idx_input)
 {
     AnalysisResult result;
     const auto & settings = context_->getSettingsRef();
@@ -1775,7 +1760,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             num_streams,
             result.index_stats,
             indexes->use_skip_indexes,
-            find_exact_ranges);
+            find_exact_ranges,
+            vec_sim_idx_input);
     }
 
     size_t sum_marks_pk = total_marks_pk;

@@ -84,8 +84,6 @@ to load and compare. The library also has several hardware-specific SIMD optimiz
 Arm (NEON and SVE) and x86 (AVX2 and AVX-512) CPUs and OS-specific optimizations to allow efficient navigation around immutable persistent
 files, without loading them into RAM.
 
-USearch indexes are currently experimental, to use them you first need to `SET allow_experimental_vector_similarity_index = 1`.
-
 Vector similarity indexes currently support two distance functions:
 - `L2Distance`, also called Euclidean distance, is the length of a line segment between two points in Euclidean space
   ([Wikipedia](https://en.wikipedia.org/wiki/Euclidean_distance)).
