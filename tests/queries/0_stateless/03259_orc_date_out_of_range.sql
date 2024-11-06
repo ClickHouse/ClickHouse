@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-fasttest, no-parallel
 
 SET session_timezone = 'UTC';
 SET engine_file_truncate_on_insert = 1;
