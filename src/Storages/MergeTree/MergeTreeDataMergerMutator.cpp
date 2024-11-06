@@ -51,7 +51,6 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
 
-    extern const Event MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds;
     extern const Event MergerMutatorsGetPartsForMergeElapsedMicroseconds;
     extern const Event MergerMutatorPrepareRangesForMergeElapsedMicroseconds;
     extern const Event MergerMutatorSelectPartsForMergeElapsedMicroseconds;
