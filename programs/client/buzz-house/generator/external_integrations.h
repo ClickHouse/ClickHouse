@@ -366,11 +366,13 @@ class MongoDBIntegration : public ClickHouseIntegration
 {
 private:
     const ServerCredentials & sc;
+
 public:
     MongoDBIntegration(const FuzzConfig & fc) : ClickHouseIntegration(), sc(fc.mongodb_server) { }
 
     bool PerformIntegration(RandomGenerator & rg, const uint32_t tname, std::vector<InsertEntry> & entries) override
     {
+        (void)sc;
         (void)rg;
         (void)tname;
         (void)entries;

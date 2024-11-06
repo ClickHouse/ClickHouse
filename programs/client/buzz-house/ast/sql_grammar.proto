@@ -2572,16 +2572,19 @@ message TypeColumnDef {
     required TopTypeName type_name = 2;
 }
 
-message TupleType {
-    required TypeColumnDef value1 = 1;
-    required TypeColumnDef value2 = 2;
-    repeated TypeColumnDef others = 3;
+message TupleWithColumnNames {
+    repeated TypeColumnDef values = 1;
 }
 
-message VariantType {
-    required TopTypeName value1 = 1;
-    required TopTypeName value2 = 2;
-    repeated TopTypeName others = 3;
+message TupleWithOutColumnNames {
+    repeated TopTypeName values = 1;
+}
+
+message TupleType {
+    oneof tuple_oneof {
+        TupleWithColumnNames with_names = 1;
+        TupleWithOutColumnNames no_names = 2;
+    }
 }
 
 message NestedType {
@@ -2599,7 +2602,7 @@ message TopTypeName {
         MapType map = 6;
         TupleType tuple = 7;
         NestedType nested = 8;
-        VariantType variant = 9;
+        TupleWithOutColumnNames variant = 9;
     }
 }
 

@@ -48,9 +48,9 @@ ASTPtr normalizeCreateWorkloadEntityQuery(const IAST & create_query)
 /// Returns a type of a workload entity `ptr`
 WorkloadEntityType getEntityType(const ASTPtr & ptr)
 {
-    if (auto * res = typeid_cast<ASTCreateWorkloadQuery *>(ptr.get()))
+    if (typeid_cast<ASTCreateWorkloadQuery *>(ptr.get()))
         return WorkloadEntityType::Workload;
-    if (auto * res = typeid_cast<ASTCreateResourceQuery *>(ptr.get()))
+    if (typeid_cast<ASTCreateResourceQuery *>(ptr.get()))
         return WorkloadEntityType::Resource;
     chassert(false);
     return WorkloadEntityType::MAX;
@@ -106,7 +106,7 @@ void forEachReference(
         for (const String & resource : resources)
             func(resource, res->getWorkloadName(), ReferenceType::ForResource);
     }
-    if (auto * res = typeid_cast<ASTCreateResourceQuery *>(source_entity.get()))
+    if (typeid_cast<ASTCreateResourceQuery *>(source_entity.get()))
     {
         // RESOURCE has no references to be validated, we allow mentioned disks to be created later
     }

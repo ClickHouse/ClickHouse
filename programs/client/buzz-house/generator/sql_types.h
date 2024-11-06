@@ -679,10 +679,10 @@ public:
 class SubType
 {
 public:
-    const uint32_t cname;
+    const std::optional<const uint32_t> cname;
     const SQLType * subtype;
 
-    SubType(const uint32_t n, const SQLType * s) : cname(n), subtype(s) { }
+    SubType(const std::optional<const uint32_t> n, const SQLType * s) : cname(n), subtype(s) { }
 };
 
 class TupleType : public SQLType
@@ -696,14 +696,19 @@ public:
         ret += "Tuple(";
         for (uint32_t i = 0; i < subtypes.size(); i++)
         {
+            const SubType & sub = subtypes[i];
+
             if (i != 0)
             {
                 ret += ",";
             }
-            ret += "c";
-            ret += std::to_string(subtypes[i].cname);
-            ret += " ";
-            subtypes[i].subtype->TypeName(ret, escape);
+            if (sub.cname.has_value())
+            {
+                ret += "c";
+                ret += std::to_string(sub.cname.value());
+                ret += " ";
+            }
+            sub.subtype->TypeName(ret, escape);
         }
         ret += ")";
     }
@@ -809,14 +814,16 @@ public:
         ret += "Nested(";
         for (uint32_t i = 0; i < subtypes.size(); i++)
         {
+            const NestedSubType & sub = subtypes[i];
+
             if (i != 0)
             {
                 ret += ",";
             }
             ret += "c";
-            ret += std::to_string(subtypes[i].cname);
+            ret += std::to_string(sub.cname);
             ret += " ";
-            subtypes[i].subtype->TypeName(ret, escape);
+            sub.subtype->TypeName(ret, escape);
         }
         ret += ")";
     }

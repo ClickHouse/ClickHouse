@@ -558,11 +558,8 @@ const SQLType * StatementGenerator::RandomNextType(
                    array_type = 10 * static_cast<uint32_t>((allowed_types & allow_array) != 0 && this->depth < this->fc.max_depth),
                    map_type = 10
         * static_cast<uint32_t>((allowed_types & allow_map) != 0 && this->depth < this->fc.max_depth && this->width < this->fc.max_width),
-                   tuple_type = 10
-        * static_cast<uint32_t>((allowed_types & allow_tuple) != 0 && this->depth < this->fc.max_depth && this->width < this->fc.max_width),
-                   variant_type = 10
-        * static_cast<uint32_t>((allowed_types & allow_variant) != 0 && this->depth < this->fc.max_depth
-                                && this->width < this->fc.max_width),
+                   tuple_type = 10 * static_cast<uint32_t>((allowed_types & allow_tuple) != 0 && this->depth < this->fc.max_depth),
+                   variant_type = 10 * static_cast<uint32_t>((allowed_types & allow_variant) != 0 && this->depth < this->fc.max_depth),
                    nested_type = 10
         * static_cast<uint32_t>((allowed_types & allow_nested) != 0 && this->depth < this->fc.max_depth
                                 && this->width < this->fc.max_width),
@@ -612,24 +609,31 @@ const SQLType * StatementGenerator::RandomNextType(
     else if (tuple_type && nopt < (nullable_type + non_nullable_type + array_type + map_type + tuple_type + 1))
     {
         //tuple
-        sql_query_grammar::TupleType * tt = tp ? tp->mutable_tuple() : nullptr;
-        const uint32_t ncols = (rg.NextMediumNumber() % (std::min<uint32_t>(5, this->fc.max_width - this->width))) + UINT32_C(2);
         std::vector<const SubType> subtypes;
+        const bool with_names = rg.NextBool();
+        sql_query_grammar::TupleType * tt = tp ? tp->mutable_tuple() : nullptr;
+        sql_query_grammar::TupleWithColumnNames * twcn = (tp && with_names) ? tt->mutable_with_names() : nullptr;
+        sql_query_grammar::TupleWithOutColumnNames * twocn = (tp && !with_names) ? tt->mutable_no_names() : nullptr;
+        const uint32_t ncols
+            = this->width >= this->fc.max_width ? 0 : (rg.NextMediumNumber() % std::min<uint32_t>(6, this->fc.max_width - this->width));
 
         this->depth++;
         for (uint32_t i = 0; i < ncols; i++)
         {
-            const uint32_t cname = col_counter++;
-            sql_query_grammar::TypeColumnDef * tcd
-                = tp ? ((i == 0) ? tt->mutable_value1() : ((i == 1) ? tt->mutable_value2() : tt->add_others())) : nullptr;
+            std::optional<uint32_t> opt_cname = std::nullopt;
+            sql_query_grammar::TypeColumnDef * tcd = twcn ? twcn->add_values() : nullptr;
+            sql_query_grammar::TopTypeName * ttn = twocn ? twocn->add_values() : nullptr;
 
             if (tcd)
             {
-                tcd->mutable_col()->set_column("c" + std::to_string(cname));
+                const uint32_t ncname = col_counter++;
+
+                tcd->mutable_col()->set_column("c" + std::to_string(ncname));
+                opt_cname = std::optional<uint32_t>(ncname);
             }
             const SQLType * k
-                = this->RandomNextType(rg, allowed_types & ~(allow_nested), col_counter, tcd ? tcd->mutable_type_name() : nullptr);
-            subtypes.push_back(SubType(cname, k));
+                = this->RandomNextType(rg, allowed_types & ~(allow_nested), col_counter, tcd ? tcd->mutable_type_name() : ttn);
+            subtypes.push_back(SubType(opt_cname, k));
         }
         this->depth--;
         return new TupleType(subtypes);
@@ -637,15 +641,15 @@ const SQLType * StatementGenerator::RandomNextType(
     else if (variant_type && nopt < (nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + 1))
     {
         //variant
-        sql_query_grammar::VariantType * vt = tp ? tp->mutable_variant() : nullptr;
-        const uint32_t ncols = (rg.NextMediumNumber() % (std::min<uint32_t>(5, this->fc.max_width - this->width))) + UINT32_C(2);
         std::vector<const SQLType *> subtypes;
+        sql_query_grammar::TupleWithOutColumnNames * twocn = tp ? tp->mutable_variant() : nullptr;
+        const uint32_t ncols
+            = this->width >= this->fc.max_width ? 0 : (rg.NextMediumNumber() % std::min<uint32_t>(6, this->fc.max_width - this->width));
 
         this->depth++;
         for (uint32_t i = 0; i < ncols; i++)
         {
-            sql_query_grammar::TopTypeName * ttn
-                = tp ? ((i == 0) ? vt->mutable_value1() : ((i == 1) ? vt->mutable_value2() : vt->add_others())) : nullptr;
+            sql_query_grammar::TopTypeName * ttn = tp ? twocn->add_values() : nullptr;
 
             subtypes.push_back(this->RandomNextType(
                 rg, allowed_types & ~(allow_nullable | allow_nested | allow_variant | allow_dynamic), col_counter, ttn));
@@ -657,9 +661,9 @@ const SQLType * StatementGenerator::RandomNextType(
         nested_type && nopt < (nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + nested_type + 1))
     {
         //nested
+        std::vector<const NestedSubType> subtypes;
         sql_query_grammar::NestedType * nt = tp ? tp->mutable_nested() : nullptr;
         const uint32_t ncols = (rg.NextMediumNumber() % (std::min<uint32_t>(5, this->fc.max_width - this->width))) + UINT32_C(1);
-        std::vector<const NestedSubType> subtypes;
 
         this->depth++;
         for (uint32_t i = 0; i < ncols; i++)
@@ -938,7 +942,14 @@ void StatementGenerator::StrAppendTuple(RandomGenerator & rg, std::string & ret,
 
 void StatementGenerator::StrAppendVariant(RandomGenerator & rg, std::string & ret, const VariantType * vtp)
 {
-    StrAppendAnyValueInternal(rg, ret, rg.PickRandomlyFromVector(vtp->subtypes));
+    if (vtp->subtypes.empty())
+    {
+        ret += "NULL";
+    }
+    else
+    {
+        StrAppendAnyValueInternal(rg, ret, rg.PickRandomlyFromVector(vtp->subtypes));
+    }
 }
 
 void StatementGenerator::StrBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidth, std::string & ret)

@@ -968,6 +968,34 @@ CONV_FN_QUOTE(TypeColumnDef, col_def)
     TopTypeNameToString(ret, quote, col_def.type_name());
 }
 
+CONV_FN_QUOTE(TupleWithColumnNames, twcn)
+{
+    ret += "(";
+    for (int i = 0; i < twcn.values_size(); i++)
+    {
+        if (i != 0)
+        {
+            ret += ",";
+        }
+        TypeColumnDefToString(ret, quote, twcn.values(i));
+    }
+    ret += ")";
+}
+
+CONV_FN_QUOTE(TupleWithOutColumnNames, twcn)
+{
+    ret += "(";
+    for (int i = 0; i < twcn.values_size(); i++)
+    {
+        if (i != 0)
+        {
+            ret += ",";
+        }
+        TopTypeNameToString(ret, quote, twcn.values(i));
+    }
+    ret += ")";
+}
+
 CONV_FN_QUOTE(TopTypeName, ttn)
 {
     using TopTypeNameType = TopTypeName::TypeOneofCase;
@@ -1003,18 +1031,24 @@ CONV_FN_QUOTE(TopTypeName, ttn)
             TopTypeNameToString(ret, quote, ttn.map().value());
             ret += ")";
             break;
-        case TopTypeNameType::kTuple:
-            ret += "Tuple(";
-            TypeColumnDefToString(ret, quote, ttn.tuple().value1());
-            ret += ",";
-            TypeColumnDefToString(ret, quote, ttn.tuple().value2());
-            for (int i = 0; i < ttn.tuple().others_size(); i++)
+        case TopTypeNameType::kTuple: {
+            const sql_query_grammar::TupleType & tt = ttn.tuple();
+
+            ret += "Tuple";
+            if (tt.has_with_names())
             {
-                ret += ",";
-                TypeColumnDefToString(ret, quote, ttn.tuple().others(i));
+                TupleWithColumnNamesToString(ret, quote, tt.with_names());
             }
-            ret += ")";
-            break;
+            else if (tt.has_with_names())
+            {
+                TupleWithOutColumnNamesToString(ret, quote, tt.no_names());
+            }
+            else
+            {
+                ret += "()";
+            }
+        }
+        break;
         case TopTypeNameType::kNested:
             ret += "Nested(";
             TypeColumnDefToString(ret, quote, ttn.nested().type1());
@@ -1026,16 +1060,8 @@ CONV_FN_QUOTE(TopTypeName, ttn)
             ret += ")";
             break;
         case TopTypeNameType::kVariant:
-            ret += "Variant(";
-            TopTypeNameToString(ret, quote, ttn.variant().value1());
-            ret += ",";
-            TopTypeNameToString(ret, quote, ttn.variant().value2());
-            for (int i = 0; i < ttn.variant().others_size(); i++)
-            {
-                ret += ",";
-                TopTypeNameToString(ret, quote, ttn.variant().others(i));
-            }
-            ret += ")";
+            ret += "Variant";
+            TupleWithOutColumnNamesToString(ret, quote, ttn.variant());
             break;
         default:
             ret += "Int";
