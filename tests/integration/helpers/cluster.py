@@ -1463,9 +1463,16 @@ class ClickHouseCluster:
         )
         return self.base_minio_cmd
 
-    def setup_iceberg_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
+    def setup_iceberg_catalog_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
         self.base_cmd.extend(
-            ["--file", p.join(docker_compose_yml_dir, "docker_compose_iceberg_rest_catalog.yml")]
+            [
+                "--file",
+                p.join(
+                    docker_compose_yml_dir, "docker_compose_iceberg_rest_catalog.yml"
+                ),
+            ]
         )
         self.base_iceberg_catalog_cmd = self.compose_cmd(
             "--env-file",
@@ -1931,7 +1938,9 @@ class ClickHouseCluster:
                 self.setup_minio_cmd(instance, env_variables, docker_compose_yml_dir)
             )
             cmds.append(
-                self.setup_iceberg_catalog_cmd(instance, env_variables, docker_compose_yml_dir)
+                self.setup_iceberg_catalog_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
             )
 
         if with_azurite and not self.with_azurite:
