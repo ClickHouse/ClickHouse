@@ -15,7 +15,7 @@
 namespace buzzhouse
 {
 
-using IntegrationCall = enum IntegrationCall { MySQL = 1, PostgreSQL = 2, SQLite = 3, Redis = 4, MinIO = 5 };
+using IntegrationCall = enum IntegrationCall { MySQL = 1, PostgreSQL = 2, SQLite = 3, Redis = 4, MongoDB = 5, MinIO = 6 };
 
 class ClickHouseIntegration
 {
@@ -346,6 +346,41 @@ public:
     }
 };
 
+class RedisIntegration : public ClickHouseIntegration
+{
+public:
+    RedisIntegration() : ClickHouseIntegration() { }
+
+    bool PerformIntegration(RandomGenerator & rg, const uint32_t tname, std::vector<InsertEntry> & entries) override
+    {
+        (void)rg;
+        (void)tname;
+        (void)entries;
+        return true;
+    }
+
+    ~RedisIntegration() override = default;
+};
+
+class MongoDBIntegration : public ClickHouseIntegration
+{
+private:
+    const ServerCredentials & sc;
+public:
+    MongoDBIntegration(const FuzzConfig & fc) : ClickHouseIntegration(), sc(fc.mongodb_server) { }
+
+    bool PerformIntegration(RandomGenerator & rg, const uint32_t tname, std::vector<InsertEntry> & entries) override
+    {
+        (void)rg;
+        (void)tname;
+        (void)entries;
+        //TODO
+        return true;
+    }
+
+    ~MongoDBIntegration() override = default;
+};
+
 class MinIOIntegration : public ClickHouseIntegration
 {
 private:
@@ -365,22 +400,6 @@ public:
     ~MinIOIntegration() override = default;
 };
 
-class RedisIntegration : public ClickHouseIntegration
-{
-public:
-    RedisIntegration() : ClickHouseIntegration() { }
-
-    bool PerformIntegration(RandomGenerator & rg, const uint32_t tname, std::vector<InsertEntry> & entries) override
-    {
-        (void)rg;
-        (void)tname;
-        (void)entries;
-        return true;
-    }
-
-    ~RedisIntegration() override = default;
-};
-
 class ExternalIntegrations
 {
 private:
@@ -388,7 +407,9 @@ private:
     PostgreSQLIntegration * postresql = nullptr;
     SQLiteIntegration * sqlite = nullptr;
     RedisIntegration * redis = nullptr;
+    MongoDBIntegration * mongodb = nullptr;
     MinIOIntegration * minio = nullptr;
+
     bool requires_external_call_check = false, next_call_succeeded = false;
 
 public:
@@ -401,6 +422,8 @@ public:
     bool HasPostgreSQLConnection() const { return postresql != nullptr; }
 
     bool HasSQLiteConnection() const { return sqlite != nullptr; }
+
+    bool HasMongoDBConnection() const { return mongodb != nullptr; }
 
     bool HasRedisConnection() const { return redis != nullptr; }
 
@@ -425,6 +448,10 @@ public:
             postresql = new PostgreSQLIntegration(fc);
         }
         sqlite = new SQLiteIntegration(fc);
+        if (fc.mongodb_server.port)
+        {
+            mongodb = new MongoDBIntegration(fc);
+        }
         if (fc.redis_server.port)
         {
             redis = new RedisIntegration();
@@ -450,6 +477,9 @@ public:
             case IntegrationCall::SQLite:
                 next_call_succeeded = sqlite->PerformIntegration(rg, tname, entries);
                 break;
+            case IntegrationCall::MongoDB:
+                next_call_succeeded = mongodb->PerformIntegration(rg, tname, entries);
+                break;
             case IntegrationCall::Redis:
                 next_call_succeeded = redis->PerformIntegration(rg, tname, entries);
                 break;
@@ -464,6 +494,7 @@ public:
         delete mysql;
         delete postresql;
         delete sqlite;
+        delete mongodb;
         delete redis;
         delete minio;
     }

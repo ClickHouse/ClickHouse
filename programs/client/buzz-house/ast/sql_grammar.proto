@@ -2754,12 +2754,13 @@ enum TableEngineValues {
     MySQL = 17;
     PostgreSQL = 18;
     SQLite = 19;
-    Redis = 20;
-    S3 = 21;
-    S3Queue = 22;
-    Hudi = 23;
-    DeltaLake = 24;
-    IcebergS3 = 25;
+    MongoDB = 20;
+    Redis = 21;
+    S3 = 22;
+    S3Queue = 23;
+    Hudi = 24;
+    DeltaLake = 25;
+    IcebergS3 = 26;
 }
 
 enum TableEngineOption {

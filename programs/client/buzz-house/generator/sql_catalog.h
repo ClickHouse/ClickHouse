@@ -107,6 +107,8 @@ public:
 
     bool IsSQLiteEngine() const { return teng == sql_query_grammar::TableEngineValues::SQLite; }
 
+    bool IsMongoDBEngine() const { return teng == sql_query_grammar::TableEngineValues::MongoDB; }
+
     bool IsRedisEngine() const { return teng == sql_query_grammar::TableEngineValues::Redis; }
 
     bool IsS3Engine() const { return teng == sql_query_grammar::TableEngineValues::S3; }
@@ -124,7 +126,7 @@ public:
     bool IsNotTruncableEngine() const
     {
         return IsNullEngine() || IsSetEngine() || IsMySQLEngine() || IsPostgreSQLEngine() || IsSQLiteEngine() || IsRedisEngine()
-            || IsAnyS3Engine() || IsHudiEngine() || IsDeltaLakeEngine() || IsIcebergEngine();
+            || IsMongoDBEngine() || IsAnyS3Engine() || IsHudiEngine() || IsDeltaLakeEngine() || IsIcebergEngine();
     }
 };
 
