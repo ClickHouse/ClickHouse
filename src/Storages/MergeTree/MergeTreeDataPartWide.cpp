@@ -108,7 +108,7 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
         auto mrk_checksum = checksums.files.find(*stream_name + getMarksFileExtension());
         if (mrk_checksum != checksums.files.end())
             size.marks += mrk_checksum->second.file_size;
-    });
+    }, column.type, getColumnSample(column));
 
     return size;
 }
