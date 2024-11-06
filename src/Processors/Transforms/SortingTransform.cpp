@@ -42,7 +42,7 @@ MergeSorter::MergeSorter(const Block & header, Chunks chunks_, SortDescription &
         /// Convert to full column, because some cursors expect non-contant columns
         convertToFullIfConst(chunk);
 
-        cursors.emplace_back(header, chunk.getColumns(), description, chunk_index);
+        cursors.emplace_back(header, chunk.getColumns(), chunk.getNumRows(), description, chunk_index);
         has_collation |= cursors.back().has_collation;
 
         nonempty_chunks.emplace_back(std::move(chunk));
