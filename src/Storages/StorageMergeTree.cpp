@@ -1005,8 +1005,28 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
     CurrentlyMergingPartsTaggerPtr merging_tagger;
     MergeList::EntryPtr merge_entry;
 
-    auto can_merge = [this, &lock](const DataPartPtr & left, const DataPartPtr & right, const MergeTreeTransaction * tx, PreformattedMessage & disable_reason) -> bool
+    auto can_merge = [this, &lock](const DataPartPtr & left_, const DataPartPtr & right_, const MergeTreeTransaction * tx, PreformattedMessage & disable_reason) -> bool
     {
+        DataPartPtr left, right;
+
+        if (left_)
+        {
+            if (left_->info.min_block > right_->info.min_block)
+            {
+                left = right_;
+                right = left_;
+            }
+            else
+            {
+                left = left_;
+                right = right_;
+            }
+        }
+        else
+        {
+            right = right_;
+        }
+
         if (tx)
         {
             /// Cannot merge parts if some of them are not visible in current snapshot
