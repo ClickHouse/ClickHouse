@@ -1277,7 +1277,7 @@ $$)
 
 ### Template {#template}
 
-In Template format ClickHouse first extracts all column values from the row according to the specified template and then tries to infer the 
+In Template format ClickHouse first extracts all column values from the row according to the specified template and then tries to infer the
 data type for each value according to its escaping rule.
 
 **Example**
@@ -1325,7 +1325,7 @@ data type for each value according to the specified escaping rule.
 ```sql
 SET format_regexp = '^Line: value_1=(.+?), value_2=(.+?), value_3=(.+?)',
        format_regexp_escaping_rule = 'CSV'
-       
+
 DESC format(Regexp, $$Line: value_1=42, value_2="Some string 1", value_3="[1, NULL, 3]"
 Line: value_1=2, value_2="Some string 2", value_3="[4, 5, NULL]"$$)
 ```
@@ -1388,10 +1388,13 @@ DESC format(JSONEachRow, '{"id" : 1, "age" : 25, "name" : "Josh", "status" : nul
 
 #### schema_inference_make_columns_nullable
 
-Controls making inferred types `Nullable` in schema inference for formats without information about nullability.
-If the setting is enabled, all inferred type will be `Nullable`, if disabled, the inferred type will never be `Nullable`, if set to `auto`, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference or file metadata contains information about column nullability.
+Controls making inferred types `Nullable` in schema inference for formats without information about nullability. Possible values:
+ * 0 - the inferred type will never be `Nullable`,
+ * 1 - all inferred types will be `Nullable`,
+ * 2 or 'auto' - for text formats, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference; for strongly-typed formats (Parquet, ORC, Arrow), nullability information is taken from file metadata,
+ * 3 - for text formats, use `Nullable`; for strongly-typed formats, use file metadata.
 
-Enabled by default.
+Default: 3.
 
 **Examples**
 
@@ -1779,7 +1782,7 @@ In Parquet format ClickHouse reads its schema from the data and converts it to C
 | `STRUCT`                     | [Tuple](../sql-reference/data-types/tuple.md)           |
 | `MAP`                        | [Map](../sql-reference/data-types/map.md)               |
 
-Other Parquet types are not supported. By default, all inferred types are inside `Nullable`, but it can be changed using the setting `schema_inference_make_columns_nullable`.
+Other Parquet types are not supported.
 
 ### Arrow {#arrow}
 
@@ -1807,7 +1810,7 @@ In Arrow format ClickHouse reads its schema from the data and converts it to Cli
 | `STRUCT`                        | [Tuple](../sql-reference/data-types/tuple.md)           |
 | `MAP`                           | [Map](../sql-reference/data-types/map.md)               |
 
-Other Arrow types are not supported. By default, all inferred types are inside `Nullable`, but it can be changed using the setting `schema_inference_make_columns_nullable`.
+Other Arrow types are not supported.
 
 ### ORC {#orc}
 
@@ -1830,7 +1833,7 @@ In ORC format ClickHouse reads its schema from the data and converts it to Click
 | `Struct`                             | [Tuple](../sql-reference/data-types/tuple.md)           |
 | `Map`                                | [Map](../sql-reference/data-types/map.md)               |
 
-Other ORC types are not supported. By default, all inferred types are inside `Nullable`, but it can be changed using the setting `schema_inference_make_columns_nullable`.
+Other ORC types are not supported.
 
 ### Native {#native}
 
@@ -1983,7 +1986,7 @@ DESC format(JSONAsString, '{"x" : 42, "y" : "Hello, World!"}') SETTINGS allow_ex
 ## Schema inference modes {#schema-inference-modes}
 
 Schema inference from the set of data files can work in 2 different modes: `default` and `union`.
-The mode is controlled by the setting `schema_inference_mode`. 
+The mode is controlled by the setting `schema_inference_mode`.
 
 ### Default mode {#default-schema-inference-mode}
 
@@ -2027,13 +2030,13 @@ Result:
 └────────┴──────────────────┘
 ```
 
-As we can see, we don't have `field3` from file `data3.jsonl`. 
+As we can see, we don't have `field3` from file `data3.jsonl`.
 It happens because ClickHouse first tried to infer schema from file `data1.jsonl`, failed because of only nulls for field `field2`,
 and then tried to infer schema from `data2.jsonl` and succeeded, so data from file `data3.jsonl` wasn't read.
 
 ### Union mode {#default-schema-inference-mode}
 
-In union mode, ClickHouse assumes that files can have different schemas, so it infer schemas of all files and then union them to the common schema. 
+In union mode, ClickHouse assumes that files can have different schemas, so it infer schemas of all files and then union them to the common schema.
 
 Let's say we have 3 files `data1.jsonl`, `data2.jsonl` and `data3.jsonl` with the next content:
 
