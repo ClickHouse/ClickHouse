@@ -1,6 +1,6 @@
-// Exporting the Chart class as a module
 export class Chart {
-    constructor(selection = d3.select("body")) {
+    constructor(selection = d3.select("body"))
+    {
         // Set up dimensions and margins
         this.width = 1000;
         this.height = 300;
@@ -15,11 +15,26 @@ export class Chart {
         this.initChart();
     }
 
-    trackMin(value = true) {
+    trackMin(value = true)
+    {
         this.min_track = value;
+        return this;
     }
 
-    initChart() {
+    xTitle(text)
+    {
+        // TODO: implement it, change name for x axis
+        return this;
+    }
+
+    yTitle(text)
+    {
+        // TODO: implement it, change name for y axis
+        return this;
+    }
+
+    initChart()
+    {
         // Clear
         this.minY = Infinity;
         this.series = [];
@@ -63,16 +78,19 @@ export class Chart {
             .attr("transform", `translate(${this.innerWidth / 2}, 10)`); // Position inside the upper right corner
     }
 
-    removeChart() {
+    removeChart()
+    {
         this.rootSvg.remove();
     }
 
-    clear() {
+    clear()
+    {
         this.removeChart();
         this.initChart();
     }
 
-    addSeries(name, on_click = null) {
+    addSeries(name, on_click = null)
+    {
         const colorIndex = this.series.length % this.colors.length;
         const newSeries = {
             seriesIndex: this.series.length,
@@ -105,9 +123,9 @@ export class Chart {
                 .attr("d", newSeries.line);
 
             // Update points
-            if (newSeries.points) {
+            if (newSeries.points)
                 newSeries.points.remove();
-            }
+
             newSeries.points = this.svg.selectAll(`.point-${name.replace(/\s+/g, '-')}`)
                 .data(newSeries.data)
                 .enter()
@@ -121,9 +139,8 @@ export class Chart {
                     // Highlight last clicked point
                     this.svg.selectAll("circle").attr("stroke", null).attr("stroke-width", null); // Remove highlight from all points
                     d3.select(event.target).attr("stroke", "black").attr("stroke-width", 2); // Highlight clicked point
-                    if (on_click) {
+                    if (on_click)
                         on_click(d);
-                    }
                 });
 
             // Update axes
@@ -133,17 +150,17 @@ export class Chart {
             this.svg.select(".y-axis")
                 .call(d3.axisLeft(this.yScale));
 
-            if (this.min_track) {
+            if (this.min_track)
+            {
                 // Indicate point with minimum y value
                 const minPoint = newSeries.data.reduce((min, d) => d.y < min.y ? d : min, newSeries.data[0]);
-                if (newSeries.arrow) {
+                if (newSeries.arrow)
                     newSeries.arrow.remove();
-                }
 
                 // Add text below the arrow with x-value
-                if (newSeries.arrowText) {
+                if (newSeries.arrowText)
                     newSeries.arrowText.remove();
-                }
+
                 newSeries.arrow = this.svg.append("line")
                     .attr("x2", this.x(minPoint.x))
                     .attr("y2", this.yScale(minPoint.y) + (newSeries.seriesIndex * 15) + 10) // Add a gap of 10 pixels
@@ -160,7 +177,8 @@ export class Chart {
                     .text(`x: ${minPoint.x.toFixed(1)}, y: ${minPoint.y.toFixed(1)}`);
 
                 // Track global min Y value and auto-click it
-                if (on_click && this.minY > newPoint.y) {
+                if (on_click && this.minY > newPoint.y)
+                {
                     this.minY = newPoint.y;
                     on_click(newPoint);
                 }
@@ -192,7 +210,7 @@ export class Chart {
     }
 }
 
-// HTML integration example (in a separate file, e.g., index.html)
+// HTML integration example
 /*
 <!DOCTYPE html>
 <html lang="en">
@@ -201,14 +219,12 @@ export class Chart {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chart Module Example</title>
     <script type="module" src="chart.js"></script>
-    <script type="module" src="fillSin.js"></script>
     <script src="https://d3js.org/d3.v7.min.js"></script>
 </head>
 <body>
     <div id="chart-container"></div>
     <script type="module">
         import { Chart } from './chart.js';
-        import { fillWithSinFunction } from './fillSin.js';
 
         const chartSelection = d3.select("#chart-container");
         const chart = new Chart(chartSelection);
@@ -219,8 +235,6 @@ export class Chart {
         series1.addPoint(2, 15, { info: 'Point B' });
         series2.addPoint(1, 5, { info: 'Point C' });
         series2.addPoint(2, 8, { info: 'Point D' });
-
-        fillWithSinFunction(chart);
     </script>
 </body>
 </html>
