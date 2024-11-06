@@ -70,9 +70,6 @@ IcebergMetadata::IcebergMetadata(
 {
 }
 
-namespace
-{
-
 enum class ManifestEntryStatus : uint8_t
 {
     EXISTING = 0,
@@ -248,7 +245,7 @@ DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & t
 
 }
 
-std::pair<NamesAndTypesList, Int32> parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, int format_version, bool ignore_schema_evolution)
+std::pair<NamesAndTypesList, Int32> IcebergMetadata::parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, int format_version, bool ignore_schema_evolution)
 {
     Poco::JSON::Object::Ptr schema;
     Int32 current_schema_id;
@@ -313,9 +310,9 @@ std::pair<NamesAndTypesList, Int32> parseTableSchema(const Poco::JSON::Object::P
     for (size_t i = 0; i != fields->size(); ++i)
     {
         auto field = fields->getObject(static_cast<UInt32>(i));
-        auto name = field->getValue<String>("name");
+        auto column_name = field->getValue<String>("name");
         bool required = field->getValue<bool>("required");
-        names_and_types.push_back({name, getFieldType(field, "type", required)});
+        names_and_types.push_back({column_name, getFieldType(field, "type", required)});
     }
 
     return {std::move(names_and_types), current_schema_id};
@@ -378,8 +375,6 @@ std::pair<Int32, String> getMetadataFileAndVersion(
 
     /// Get the latest version of metadata file: v<V>.metadata.json
     return *std::max_element(metadata_files_with_versions.begin(), metadata_files_with_versions.end());
-}
-
 }
 
 DataLakeMetadataPtr

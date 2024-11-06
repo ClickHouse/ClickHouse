@@ -96,6 +96,11 @@ public:
 
     static DataLakeMetadataPtr create(ObjectStoragePtr object_storage, ConfigurationObserverPtr configuration, ContextPtr local_context);
 
+    static std::pair<NamesAndTypesList, Int32> parseTableSchema(
+        const Poco::JSON::Object::Ptr & metadata_object,
+        int format_version,
+        bool ignore_schema_evolution);
+
 private:
     size_t getVersion() const { return metadata_version; }
 
