@@ -86,6 +86,7 @@ struct QueryState
     /// Is request cancelled
     bool allow_partial_result_on_first_cancel = false;
     bool stop_read_return_partial_result = false;
+    bool stop_query = false;
 
     /// Data was sent.
     bool sent_all_data = false;
@@ -270,7 +271,7 @@ private:
     std::optional<ParallelReadResponse> receivePartitionMergeTreeReadTaskResponseAssumeLocked(QueryState & state);
 
     //bool receivePacket(std::optional<QueryState> & state);
-    void processCancel(QueryState & state);
+    void processCancel(QueryState & state, bool throw_exception = true);
     void processQuery(std::optional<QueryState> & state);
     void processIgnoredPartUUIDs();
     bool processData(QueryState & state, bool scalar);

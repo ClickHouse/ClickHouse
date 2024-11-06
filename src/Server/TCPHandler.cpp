@@ -910,7 +910,7 @@ bool TCPHandler::receivePacketsExpectQuery(std::optional<QueryState> & state)
             return false;
 
         case Protocol::Client::Cancel:
-            return false;
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Data received from client");
 
         case Protocol::Client::TablesStatusRequest:
             processTablesStatusRequest();
@@ -1876,6 +1876,9 @@ void TCPHandler::processUnexpectedIgnoredPartUUIDs()
 
 String TCPHandler::receiveReadTaskResponseAssumeLocked(QueryState & state)
 {
+    if (state.stop_query)
+        return {};
+
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
 
@@ -1884,7 +1887,7 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked(QueryState & state)
     switch (packet_type)
     {
         case Protocol::Client::Cancel:
-            processCancel(state);
+            processCancel(state, /* throw_exception */ false);
             return {};
 
         case Protocol::Client::ReadTaskResponse:
@@ -2343,7 +2346,7 @@ void TCPHandler::initProfileEventsBlockOutput(QueryState & state, const Block & 
 }
 
 
-void TCPHandler::processCancel(QueryState & state)
+void TCPHandler::processCancel(QueryState & state, bool throw_exception)
 {
     LOG_DEBUG(log, "processCancel");
 
@@ -2355,7 +2358,10 @@ void TCPHandler::processCancel(QueryState & state)
     }
 
     state.read_all_data = true;
-    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.");
+    state.stop_query = true;
+
+    if (throw_exception)
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.");
 }
 
 
