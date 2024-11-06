@@ -16,7 +16,6 @@
 
 #include <Common/logger_useful.h>
 #include <Core/Joins.h>
-#include <ranges>
 
 namespace DB::QueryPlanOptimizations
 {
