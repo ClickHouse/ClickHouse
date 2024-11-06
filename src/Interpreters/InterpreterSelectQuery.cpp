@@ -192,6 +192,7 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsUInt64 max_entries_for_hash_table_stats;
+    extern const ServerSettingsDouble max_bytes_ratio_before_external_group_by_for_server;
 }
 
 static UInt64 getLimitUIntValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr);
@@ -2756,6 +2757,8 @@ static Aggregator::Params getAggregatorParams(
         context.getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
         settings[Setting::max_size_to_preallocate_for_aggregation]);
 
+    const auto & server_settings = context.getServerSettings();
+
     return Aggregator::Params
     {
         keys,
@@ -2767,6 +2770,7 @@ static Aggregator::Params getAggregatorParams(
         group_by_two_level_threshold_bytes,
         settings[Setting::max_bytes_before_external_group_by],
         settings[Setting::max_bytes_ratio_before_external_group_by],
+        server_settings[ServerSetting::max_bytes_ratio_before_external_group_by_for_server],
         settings[Setting::empty_result_for_aggregation_by_empty_set]
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set] && keys.empty()
                 && query_analyzer.hasConstAggregationKeys()),

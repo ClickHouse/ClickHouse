@@ -140,6 +140,7 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsUInt64 max_entries_for_hash_table_stats;
+    extern const ServerSettingsDouble max_bytes_ratio_before_external_group_by_for_server;
 }
 
 namespace ErrorCodes
@@ -423,6 +424,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
 {
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
+    const auto & server_settings = query_context->getServerSettings();
 
     const auto stats_collecting_params = StatsCollectingParams(
         calculateCacheKey(select_query_info.query),
@@ -447,6 +449,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::group_by_two_level_threshold_bytes],
         settings[Setting::max_bytes_before_external_group_by],
         settings[Setting::max_bytes_ratio_before_external_group_by],
+        server_settings[ServerSetting::max_bytes_ratio_before_external_group_by_for_server],
         settings[Setting::empty_result_for_aggregation_by_empty_set]
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set] && aggregation_analysis_result.aggregation_keys.empty()
                 && aggregation_analysis_result.group_by_with_constant_keys),

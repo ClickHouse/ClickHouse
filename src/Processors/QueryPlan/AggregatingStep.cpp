@@ -209,7 +209,10 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     /// Forget about current totals and extremes. They will be calculated again after aggregation if needed.
     pipeline.dropTotalsAndExtremes();
 
-    bool allow_to_use_two_level_group_by = pipeline.getNumStreams() > 1 || params.max_bytes_before_external_group_by != 0 || params.max_bytes_ratio_before_external_group_by > 0.;
+    bool allow_to_use_two_level_group_by = pipeline.getNumStreams() > 1 ||
+        params.max_bytes_before_external_group_by != 0 ||
+        params.max_bytes_ratio_before_external_group_by > 0. ||
+        params.max_bytes_ratio_before_external_group_by_for_server > 0.;
 
     /// optimize_aggregation_in_order
     if (!sort_description_for_merging.empty())
@@ -277,6 +280,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     transform_params->params.group_by_two_level_threshold_bytes,
                     transform_params->params.max_bytes_before_external_group_by,
                     transform_params->params.max_bytes_ratio_before_external_group_by,
+                    transform_params->params.max_bytes_ratio_before_external_group_by_for_server,
                     transform_params->params.empty_result_for_aggregation_by_empty_set,
                     transform_params->params.tmp_data_scope,
                     transform_params->params.max_threads,

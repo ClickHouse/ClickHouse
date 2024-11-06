@@ -117,6 +117,7 @@ public:
         /// Settings to flush temporary data to the filesystem (external aggregation).
         const size_t max_bytes_before_external_group_by;        /// 0 - do not use external aggregation.
         const double max_bytes_ratio_before_external_group_by;  /// 0 - do not fallback to external aggregation in case of not enough memory.
+        const double max_bytes_ratio_before_external_group_by_for_server;
 
         /// Return empty result when aggregating without keys on empty set.
         bool empty_result_for_aggregation_by_empty_set;
@@ -153,6 +154,7 @@ public:
             size_t group_by_two_level_threshold_bytes_,
             size_t max_bytes_before_external_group_by_,
             double max_bytes_ratio_before_external_group_by_,
+            double max_bytes_ratio_before_external_group_by_for_server_,
             bool empty_result_for_aggregation_by_empty_set_,
             TemporaryDataOnDiskScopePtr tmp_data_scope_,
             size_t max_threads_,
@@ -176,6 +178,7 @@ public:
             , group_by_two_level_threshold_bytes(group_by_two_level_threshold_bytes_)
             , max_bytes_before_external_group_by(max_bytes_before_external_group_by_)
             , max_bytes_ratio_before_external_group_by(max_bytes_ratio_before_external_group_by_)
+            , max_bytes_ratio_before_external_group_by_for_server(max_bytes_ratio_before_external_group_by_for_server_)
             , empty_result_for_aggregation_by_empty_set(empty_result_for_aggregation_by_empty_set_)
             , tmp_data_scope(std::move(tmp_data_scope_))
             , max_threads(max_threads_)
@@ -203,6 +206,7 @@ public:
                 /*group_by_two_level_threshold_bytes_=*/0,
                 /*max_bytes_before_external_group_by_=*/0,
                 /*max_bytes_ratio_before_external_group_by_=*/0.,
+                /*max_bytes_ratio_before_external_group_by_for_server_=*/0.,
                 /*empty_result_for_aggregation_by_empty_set_=*/false,
                 /*tmp_data_scope_=*/nullptr,
                 max_threads_,
