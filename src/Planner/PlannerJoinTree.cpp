@@ -1354,13 +1354,13 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             && (right_pre_filters.empty() || FilterStep::canUseType(right_pre_filters[0]->result_type))
             && (left_pre_filters.empty() || FilterStep::canUseType(left_pre_filters[0]->result_type));
 
-        auto add_pre_filter = [&](ActionsDAG & join_expressions_actions, QueryPlan & plan, const auto & pre_filters)
+        auto add_pre_filter = [can_move_out_residuals](ActionsDAG & join_expressions_actions, QueryPlan & plan, UsefulSets & useful_sets, const auto & pre_filters)
         {
-            join_expressions_actions.appendInputsForUnusedColumns(left_plan.getCurrentHeader());
-            appendSetsFromActionsDAG(join_expressions_actions, left_join_tree_query_plan.useful_sets);
+            join_expressions_actions.appendInputsForUnusedColumns(plan.getCurrentHeader());
+            appendSetsFromActionsDAG(join_expressions_actions, useful_sets);
 
             QueryPlanStepPtr join_expressions_actions_step;
-            if (can_move_out_residuals && !left_pre_filters.empty())
+            if (can_move_out_residuals && !pre_filters.empty())
                 join_expressions_actions_step = std::make_unique<FilterStep>(plan.getCurrentHeader(), std::move(join_expressions_actions), pre_filters[0]->result_name, false);
             else
                 join_expressions_actions_step = std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(join_expressions_actions));
@@ -1368,8 +1368,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             join_expressions_actions_step->setStepDescription("JOIN actions");
             plan.addStep(std::move(join_expressions_actions_step));
         };
-        add_pre_filter(join_clauses_and_actions.left_join_expressions_actions, left_plan, left_pre_filters);
-        add_pre_filter(join_clauses_and_actions.right_join_expressions_actions, right_plan, right_pre_filters);
+        add_pre_filter(join_clauses_and_actions.left_join_expressions_actions, left_plan, left_join_tree_query_plan.useful_sets, left_pre_filters);
+        add_pre_filter(join_clauses_and_actions.right_join_expressions_actions, right_plan, right_join_tree_query_plan.useful_sets, right_pre_filters);
     }
 
     std::unordered_map<ColumnIdentifier, DataTypePtr> left_plan_column_name_to_cast_type;
