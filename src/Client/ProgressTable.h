@@ -101,8 +101,6 @@ private:
     /// Track query execution time on client.
     Stopwatch watch;
 
-    bool written_first_block = false;
-
     size_t column_event_name_width = 20;
 
     static constexpr std::string_view COLUMN_EVENT_NAME = "Event name";

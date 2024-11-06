@@ -197,8 +197,7 @@ void ProgressTable::writeTable(WriteBufferFromFileDescriptor & message, bool sho
     std::lock_guard lock{mutex};
     if (!show_table && toggle_enabled)
     {
-        if (written_first_block)
-            message << CLEAR_TO_END_OF_SCREEN;
+        message << CLEAR_TO_END_OF_SCREEN;
 
         message << HIDE_CURSOR;
         message << "\n";
@@ -341,12 +340,7 @@ void ProgressTable::updateTable(const Block & block)
             continue;
 
         auto it = metrics.find(name);
-
-        /// If the table has already been written, then do not add new metrics to avoid jitter.
-        if (it == metrics.end() && written_first_block)
-            continue;
-
-        if (!written_first_block)
+        if (it == metrics.end())
             it = metrics.try_emplace(name).first;
 
         it->second.updateHostValue(host_name, type, value, time_now);
@@ -354,10 +348,7 @@ void ProgressTable::updateTable(const Block & block)
         max_event_name_width = std::max(max_event_name_width, name.size());
     }
 
-    if (!written_first_block)
-        column_event_name_width = max_event_name_width + 1;
-
-    written_first_block = true;
+    column_event_name_width = max_event_name_width + 1;
 }
 
 void ProgressTable::clearTableOutput(WriteBufferFromFileDescriptor & message)
@@ -371,7 +362,6 @@ void ProgressTable::resetTable()
     std::lock_guard lock{mutex};
     watch.restart();
     metrics.clear();
-    written_first_block = false;
 }
 
 size_t ProgressTable::tableSize() const
