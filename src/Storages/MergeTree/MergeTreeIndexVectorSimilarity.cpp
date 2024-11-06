@@ -345,60 +345,57 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
         throw Exception(ErrorCodes::INCORRECT_DATA, "Index granularity is too big: more than {} rows per index granule.", std::numeric_limits<UInt32>::max());
 
     if (index_sample_block.columns() > 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected block with single column");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected that index is build over a single column");
 
-    for (size_t i = 0; i < index_sample_block.columns(); ++i)
-    {
-        const auto & index_column_with_type_and_name = index_sample_block.getByPosition(i);
+    const auto & index_column_with_type_and_name = index_sample_block.getByPosition(0);
 
-        const auto & index_column_name = index_column_with_type_and_name.name;
-        const auto & index_column = block.getByName(index_column_name).column;
-        ColumnPtr column_cut = index_column->cut(*pos, rows_read);
+    const auto & index_column_name = index_column_with_type_and_name.name;
+    const auto & index_column = block.getByName(index_column_name).column;
+    ColumnPtr column_cut = index_column->cut(*pos, rows_read);
 
-        const auto * column_array = typeid_cast<const ColumnArray *>(column_cut.get());
-        if (!column_array)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Array(Float*) column");
+    const auto * column_array = typeid_cast<const ColumnArray *>(column_cut.get());
+    if (!column_array)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Array(Float*) column");
 
-        if (column_array->empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Array is unexpectedly empty");
+    if (column_array->empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Array is unexpectedly empty");
 
-        /// The vector similarity algorithm naturally assumes that the indexed vectors have dimension >= 1. This condition is violated if empty arrays
-        /// are INSERTed into an vector-similarity-indexed column or if no value was specified at all in which case the arrays take on their default
-        /// values which is also empty.
-        if (column_array->isDefaultAt(0))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "The arrays in column '{}' must not be empty. Did you try to INSERT default values?", index_column_name);
+    /// The vector similarity algorithm naturally assumes that the indexed vectors have dimension >= 1. This condition is violated if empty arrays
+    /// are INSERTed into an vector-similarity-indexed column or if no value was specified at all in which case the arrays take on their default
+    /// values which is also empty.
+    if (column_array->isDefaultAt(0))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "The arrays in column '{}' must not be empty. Did you try to INSERT default values?", index_column_name);
 
-        const size_t rows = column_array->size();
+    const size_t rows = column_array->size();
 
-        const auto & column_array_offsets = column_array->getOffsets();
-        const size_t dimensions = column_array_offsets[0];
+    const auto & column_array_offsets = column_array->getOffsets();
+    const size_t dimensions = column_array_offsets[0];
 
-        if (!index)
-            index = std::make_shared<USearchIndexWithSerialization>(dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
+    if (!index)
+        index = std::make_shared<USearchIndexWithSerialization>(dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
 
-        /// Also check that previously inserted blocks have the same size as this block.
-        /// Note that this guarantees consistency of dimension only within parts. We are unable to detect inconsistent dimensions across
-        /// parts - for this, a little help from the user is needed, e.g. CONSTRAINT cnstr CHECK length(array) = 42.
-        if (index->dimensions() != dimensions)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column with vector similarity index must have equal length");
+    /// Also check that previously inserted blocks have the same size as this block.
+    /// Note that this guarantees consistency of dimension only within parts. We are unable to detect inconsistent dimensions across
+    /// parts - for this, a little help from the user is needed, e.g. CONSTRAINT cnstr CHECK length(array) = 42.
+    if (index->dimensions() != dimensions)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column with vector similarity index must have equal length");
 
-        /// We use Usearch's index_dense_t as index type which supports only 4 bio entries according to https://github.com/unum-cloud/usearch/tree/main/cpp
-        if (index->size() + rows > std::numeric_limits<UInt32>::max())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Size of vector similarity index would exceed 4 billion entries");
+    /// We use Usearch's index_dense_t as index type which supports only 4 bio entries according to https://github.com/unum-cloud/usearch/tree/main/cpp
+    if (index->size() + rows > std::numeric_limits<UInt32>::max())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Size of vector similarity index would exceed 4 billion entries");
 
-        DataTypePtr data_type = index_column_with_type_and_name.type;
-        const auto * data_type_array = typeid_cast<const DataTypeArray *>(data_type.get());
-        if (!data_type_array)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float*)");
-        const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
+    DataTypePtr data_type = index_column_with_type_and_name.type;
+    const auto * data_type_array = typeid_cast<const DataTypeArray *>(data_type.get());
+    if (!data_type_array)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float*)");
+    const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
 
-        if (WhichDataType(nested_type_index).isFloat32())
-            updateImpl<ColumnFloat32>(column_array, column_array_offsets, index, dimensions, rows);
-        else if (WhichDataType(nested_type_index).isFloat64())
-            updateImpl<ColumnFloat64>(column_array, column_array_offsets, index, dimensions, rows);
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float*)");
-    }
+    if (WhichDataType(nested_type_index).isFloat32())
+        updateImpl<ColumnFloat32>(column_array, column_array_offsets, index, dimensions, rows);
+    else if (WhichDataType(nested_type_index).isFloat64())
+        updateImpl<ColumnFloat64>(column_array, column_array_offsets, index, dimensions, rows);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float*)");
 
 
     *pos += rows_read;
