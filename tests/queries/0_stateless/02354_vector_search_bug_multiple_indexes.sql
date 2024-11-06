@@ -5,7 +5,6 @@
 SET allow_experimental_vector_similarity_index = 1;
 
 DROP TABLE IF EXISTS tab;
-
 CREATE TABLE tab (id Int32, vec Array(Float32), PRIMARY KEY id, INDEX vec_idx(vec) TYPE vector_similarity('hnsw', 'L2Distance'));
 
 ALTER TABLE tab ADD INDEX idx(vec) TYPE minmax;
