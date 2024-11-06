@@ -1,5 +1,5 @@
 export class Chart {
-    constructor(selection = d3.select("body"), xTitle = "", yTitle = "")
+    constructor(selection = d3.select("body"), xTitle = "", yTitle = "", description = "")
     {
         // Set up dimensions and margins
         this.width = 1000;
@@ -14,6 +14,7 @@ export class Chart {
         this.selection = selection;
         this.xTitleText = xTitle;
         this.yTitleText = yTitle;
+        this.descriptionText = description;
         this.initChart();
     }
 
@@ -80,6 +81,33 @@ export class Chart {
             .attr("text-anchor", "middle")
             .style("font-size", "14px")
             .text(this.yTitleText);
+
+        if (this.descriptionText)
+        {
+            // Add description with an information circle icon using tippy.js for tooltips
+            const infoGroup = this.svg.append("g")
+                .attr("class", "chart-description")
+                .attr("transform", `translate(${this.innerWidth - 30}, -10)`);
+
+            infoGroup.append("circle")
+                .attr("r", 10)
+                .attr("fill", "#1f77b4");
+
+            infoGroup.append("text")
+                .attr("text-anchor", "middle")
+                .attr("y", 4)
+                .attr("fill", "white")
+                .style("font-size", "16px")
+                .text("ℹ");
+
+            // Initialize tippy.js tooltip for description
+            tippy(infoGroup.node(), {
+                content: this.descriptionText,
+                placement: 'right',
+                theme: 'light',
+                arrow: true,
+            });
+        }
 
         // Add legend container inside the chart area (upper right corner)
         this.legend = this.svg.append("g")
@@ -239,7 +267,7 @@ export class Chart {
         import { Chart } from './chart.js';
 
         const chartSelection = d3.select("#chart-container");
-        const chart = new Chart(chartSelection, "Time (s)", "Value"); // Example of setting x and y axis titles
+        const chart = new Chart(chartSelection, "Time (s)", "Value", "This chart shows the relationship between time and value."); // Example of setting x and y axis titles and a description
         const series1 = chart.addSeries('Series 1', (data) => console.log('Clicked on:', data));
         const series2 = chart.addSeries('Series 2');
 

@@ -159,7 +159,11 @@ export async function main()
     const optimal_chart = new Chart(
         d3.select("body").append("div").attr("id", "opt-container"),
         "Initial number of parts to merge",
-        "Avg Part Count"
+        "Avg Part Count",
+        `This chart shows how different Merge Selector are compared according to average count of parts over time.
+        For fair comparison the same time interval is selected for all simulations.
+        So basically we compare time integral of part count against initial number of parts.
+        NOTE: Click a point to see corresponding tree of merges.`
     );
 
     // For optimal merge tree visualization
@@ -168,7 +172,11 @@ export async function main()
     const variants_chart = new Chart(
         d3.select("body").append("div").attr("id", "var-container"),
         "Base (Part count for 1st level merges)",
-        "Avg Part Count"
+        "Avg Part Count",
+        `This chart shows results of multiple simulations with numerical algorithms that explore possible merge tree structures with different parameters.
+        This is done to find the best approach in given scenario. Best (lowest) point is then returned as a "numerical" result and is shown on another chart.
+        It represents best guess we could hope for given optimization goal: minimize avg part count.
+        NOTE: Click a point to see corresponding tree of merges.`
     );
     variants_chart.trackMin();
 
