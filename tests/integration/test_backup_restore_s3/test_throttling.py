@@ -49,7 +49,9 @@ def test_backup_scheduler_settings(
 
     table_name = f"test_s3_storage_class_{storage_policy}_{allow_s3_native_copy}"
 
-    node.query(f"CREATE OR REPLACE RESOURCE network_read (READ DISK {storage_policy})")
+    node.query(
+        f"CREATE OR REPLACE RESOURCE network_read (READ DISK {storage_policy}, WRITE DISK {storage_policy})"
+    )
     node.query(f"CREATE OR REPLACE WORKLOAD backup SETTINGS max_requests = 10")
 
     query_id = f"{storage_policy}_{allow_s3_native_copy}_{random_string(10)}"
@@ -62,20 +64,20 @@ def test_backup_scheduler_settings(
             )
             ENGINE = MergeTree
             ORDER BY id
-            SETTINGS storage_policy='{storage_policy}';
+            SETTINGS storage_policy='{storage_policy}' SETTINGS workload='backup';
         """,
     )
 
     node.query(
         f"""
-            INSERT INTO {table_name} VALUES (1, 'a');
+            INSERT INTO {table_name} SETTINGS workload='backup' VALUES (1, 'a');
         """,
     )
 
     result = node.query(
         f"""
             BACKUP TABLE {table_name} TO S3('http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/data', 'minio', 'minio123')
-            SETTINGS s3_storage_class='STANDARD', allow_s3_native_copy={allow_s3_native_copy}, workload='backup';
+            SETTINGS s3_storage_class='STANDARD', allow_s3_native_copy={allow_s3_native_copy} SETTINGS workload='backup';
         """,
         query_id=query_id,
     )
