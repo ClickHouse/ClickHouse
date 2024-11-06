@@ -1007,7 +1007,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
 
     auto can_merge = [this, &lock](const DataPartPtr & left_, const DataPartPtr & right_, const MergeTreeTransaction * tx, PreformattedMessage & disable_reason) -> bool
     {
-        DataPartPtr left, right;
+        DataPartPtr left{nullptr}, right{nullptr};
 
         if (left_)
         {
