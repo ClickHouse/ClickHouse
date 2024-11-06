@@ -48,9 +48,9 @@ ASTPtr normalizeCreateWorkloadEntityQuery(const IAST & create_query)
 /// Returns a type of a workload entity `ptr`
 WorkloadEntityType getEntityType(const ASTPtr & ptr)
 {
-    if (typeid_cast<ASTCreateWorkloadQuery *>(ptr.get()))
+    if (auto * res = typeid_cast<ASTCreateWorkloadQuery *>(ptr.get()); res)
         return WorkloadEntityType::Workload;
-    if (typeid_cast<ASTCreateResourceQuery *>(ptr.get()))
+    if (auto * res = typeid_cast<ASTCreateResourceQuery *>(ptr.get()); res)
         return WorkloadEntityType::Resource;
     chassert(false);
     return WorkloadEntityType::MAX;
@@ -106,7 +106,7 @@ void forEachReference(
         for (const String & resource : resources)
             func(resource, res->getWorkloadName(), ReferenceType::ForResource);
     }
-    if (typeid_cast<ASTCreateResourceQuery *>(source_entity.get()))
+    if (auto * res = typeid_cast<ASTCreateResourceQuery *>(source_entity.get()); res)
     {
         // RESOURCE has no references to be validated, we allow mentioned disks to be created later
     }
@@ -578,15 +578,15 @@ void WorkloadEntityStorageBase::setAllEntities(const std::vector<std::pair<Strin
             if (!entityEquals(entity, it->second))
             {
                 changes.emplace_back(entity_name, entity, it->second); // Update entities that are present in both `new_entities` and `entities`
-                LOG_TRACE(log, "Entity {} was updated", entity_name);
+                LOG_TRACE(log, "Workload entity {} was updated", entity_name);
             }
             else
-                LOG_TRACE(log, "Entity {} is the same", entity_name);
+                LOG_TRACE(log, "Workload entity {} is the same", entity_name);
         }
         else
         {
             changes.emplace_back(entity_name, entity, ASTPtr{}); // Remove entities that are not present in `new_entities`
-            LOG_TRACE(log, "Entity {} was dropped", entity_name);
+            LOG_TRACE(log, "Workload entity {} was dropped", entity_name);
         }
     }
     for (const auto & [entity_name, entity] : new_entities)
@@ -594,7 +594,7 @@ void WorkloadEntityStorageBase::setAllEntities(const std::vector<std::pair<Strin
         if (!entities.contains(entity_name))
         {
             changes.emplace_back(entity_name, ASTPtr{}, entity); // Create entities that are only present in `new_entities`
-            LOG_TRACE(log, "Entity {} was created", entity_name);
+            LOG_TRACE(log, "Workload entity {} was created", entity_name);
         }
     }
 
