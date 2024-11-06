@@ -254,15 +254,15 @@ std::unique_ptr<WriteBufferFromFileBase> WebObjectStorage::writeObject( /// NOLI
     throwNotAllowed();
 }
 
-void WebObjectStorage::removeObject(const StoredObject &)
-{
-    throwNotAllowed();
-}
+// void WebObjectStorage::removeObject(const StoredObject &)
+// {
+//     throwNotAllowed();
+// }
 
-void WebObjectStorage::removeObjects(const StoredObjects &)
-{
-    throwNotAllowed();
-}
+// void WebObjectStorage::removeObjects(const StoredObjects &)
+// {
+//     throwNotAllowed();
+// }
 
 void WebObjectStorage::removeObjectIfExists(const StoredObject &)
 {
