@@ -1,3 +1,4 @@
+#pragma once
 #include <Databases/Iceberg/ICatalog.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <IO/ReadWriteBufferFromHTTP.h>

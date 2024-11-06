@@ -31,13 +31,18 @@ namespace DatabaseIcebergSetting
     extern const DatabaseIcebergSettingsDatabaseIcebergCatalogType catalog_type;
 }
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace
 {
     std::pair<std::string, std::string> parseTableName(const std::string & name)
     {
         auto pos = name.rfind('.');
         if (pos == std::string::npos)
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Table cannot have empty namespace: {}", name);
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Table cannot have empty namespace: {}", name);
 
         auto table_name = name.substr(pos + 1);
         auto namespace_name = name.substr(0, name.size() - table_name.size() - 1);
