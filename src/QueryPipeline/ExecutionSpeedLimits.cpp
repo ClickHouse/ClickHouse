@@ -86,10 +86,12 @@ void ExecutionSpeedLimits::throttle(
                 if (timeout_overflow_mode == OverflowMode::THROW && estimated_execution_time_seconds > max_estimated_execution_time.totalSeconds())
                     throw Exception(
                         ErrorCodes::TOO_SLOW,
-                        "Estimated query execution time ({} seconds) is too long. Maximum: {}. Estimated rows to process: {}",
+                        "Estimated query execution time ({:.5f} seconds) is too long. Maximum: {}. Estimated rows to process: {} ({} read in {:.5f} seconds).",
                         estimated_execution_time_seconds,
                         max_estimated_execution_time.totalSeconds(),
-                        total_rows_to_read);
+                        total_rows_to_read,
+                        read_rows,
+                        elapsed_seconds);
             }
 
             if (max_execution_rps && rows_per_second >= max_execution_rps)

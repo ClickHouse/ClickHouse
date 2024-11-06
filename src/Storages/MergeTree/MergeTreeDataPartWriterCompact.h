@@ -32,6 +32,8 @@ public:
     void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) override;
     void finish(bool sync) override;
 
+    size_t getNumberOfOpenStreams() const override { return 1; }
+
 private:
     /// Finish serialization of the data. Flush rows in buffer to disk, compute checksums.
     void fillDataChecksums(MergeTreeDataPartChecksums & checksums);
