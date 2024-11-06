@@ -326,20 +326,10 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
                       ProfileEvents::DiskS3DeleteObjects);
 }
 
-// void S3ObjectStorage::removeObject(const StoredObject & object)
-// {
-//     removeObjectImpl(object, false);
-// }
-
 void S3ObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
     removeObjectImpl(object, true);
 }
-
-// void S3ObjectStorage::removeObjects(const StoredObjects & objects)
-// {
-//     removeObjectsImpl(objects, false);
-// }
 
 void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
