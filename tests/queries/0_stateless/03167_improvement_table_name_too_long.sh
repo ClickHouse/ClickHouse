@@ -13,3 +13,5 @@ allowed_table_name=$(openssl rand -base64 $allowed_name_length | tr -dc A-Za-z |
 $CLICKHOUSE_CLIENT -mn --query="CREATE TABLE $long_table_name (id UInt32, long_table_name String) Engine=MergeTree() order by id;" 2>&1 | grep -o -m 1 "ARGUMENT_OUT_OF_BOUND"
 $CLICKHOUSE_CLIENT -mn --query="CREATE TABLE $allowed_table_name (id UInt32, allowed_table_name String) Engine=MergeTree() order by id;"
 $CLICKHOUSE_CLIENT -mn --query="DROP TABLE $allowed_table_name;"
+
+getconf NAME_MAX /fasttest-workspace/db-fasttest/store
