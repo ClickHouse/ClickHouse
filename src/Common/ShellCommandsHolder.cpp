@@ -5,11 +5,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 LoggerPtr ShellCommandsHolder::getLogger()
 {
     return ::getLogger("ShellCommandsHolder");
