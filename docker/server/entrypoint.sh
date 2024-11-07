@@ -57,14 +57,14 @@ function create_directory_and_do_chown() {
     [ -z "$dir" ] && return
     # ensure directories exist
     if [ "$DO_CHOWN" = "1" ]; then
-        mkdir="mkdir"
+        mkdir=( mkdir )
     else
         # if DO_CHOWN=0 it means that the system does not map root user to "admin" permissions
         # it mainly happens on NFS mounts where root==nobody for security reasons
         # thus mkdir MUST run with user id/gid and not from nobody that has zero permissions
-        mkdir="clickhouse su ""${USER}:${GROUP}"" mkdir"
+        mkdir=( clickhouse su "${USER}:${GROUP}" mkdir )
     fi
-    if ! $mkdir -p "$dir"; then
+    if ! "${mkdir[@]}" -p "$dir"; then
         echo "Couldn't create necessary directory: $dir"
         exit 1
     fi
