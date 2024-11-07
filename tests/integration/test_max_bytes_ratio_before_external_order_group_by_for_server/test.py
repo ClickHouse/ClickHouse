@@ -25,6 +25,9 @@ def start_cluster():
 
 
 def test_max_bytes_ratio_before_external_group_by_for_server():
+    if node1.is_built_with_thread_sanitizer():
+        pytest.skip("TSan build is skipped due to memory overhead")
+
     # Peak memory usage: 15-16GiB
     query = """
     SELECT
@@ -43,6 +46,9 @@ def test_max_bytes_ratio_before_external_group_by_for_server():
 
 
 def test_max_bytes_ratio_before_external_sort_for_server():
+    if node1.is_built_with_thread_sanitizer():
+        pytest.skip("TSan build is skipped due to memory overhead")
+
     # Peak memory usage: 12GiB (each column in ORDER BY eats ~2GiB)
     query = """
     SELECT number FROM numbers(100e6) ORDER BY (
