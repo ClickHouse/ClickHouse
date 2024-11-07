@@ -622,6 +622,36 @@ QUERY id: 0
                     LIST id: 15, nodes: 2
                       COLUMN id: 16, column_name: F, result_type: UInt8, source_id: 3
                       COLUMN id: 16, column_name: F, result_type: UInt8, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: or, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
+          FUNCTION id: 7, function_name: and, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 8, nodes: 2
+                COLUMN id: 9, column_name: B, result_type: UInt8, source_id: 3
+                FUNCTION id: 10, function_name: or, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 11, nodes: 2
+                      FUNCTION id: 12, function_name: and, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 13, nodes: 2
+                            COLUMN id: 14, column_name: C, result_type: UInt8, source_id: 3
+                            COLUMN id: 15, column_name: D, result_type: UInt8, source_id: 3
+                      FUNCTION id: 16, function_name: and, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 17, nodes: 2
+                            COLUMN id: 14, column_name: C, result_type: UInt8, source_id: 3
+                            COLUMN id: 18, column_name: E, result_type: UInt8, source_id: 3
 -9220342792229035180	1	1	0	1	0	1	-9218747728814747926	1	1	0	0	0	1
 -9220342792229035180	1	1	0	1	0	1	-9217081065560798881	1	0	0	1	0	1
 -9220342792229035180	1	1	0	1	0	1	-9211856624818647543	1	1	1	0	0	0
@@ -676,3 +706,61 @@ QUERY id: 0
                         LIST id: 19, nodes: 2
                           COLUMN id: 20, column_name: C, result_type: UInt8, source_id: 5
                           CONSTANT id: 21, constant_value: UInt64_1, constant_value_type: UInt8
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    JOIN id: 3, strictness: ALL, kind: INNER
+      LEFT TABLE EXPRESSION
+        TABLE id: 4, alias: __table1, table_name: default.x
+      RIGHT TABLE EXPRESSION
+        TABLE id: 5, alias: __table2, table_name: default.y
+      JOIN EXPRESSION
+        FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
+          ARGUMENTS
+            LIST id: 7, nodes: 2
+              FUNCTION id: 8, function_name: equals, function_type: ordinary, result_type: UInt8
+                ARGUMENTS
+                  LIST id: 9, nodes: 2
+                    COLUMN id: 10, column_name: A, result_type: UInt8, source_id: 4
+                    COLUMN id: 11, column_name: A, result_type: UInt8, source_id: 5
+              FUNCTION id: 12, function_name: and, function_type: ordinary, result_type: UInt8
+                ARGUMENTS
+                  LIST id: 13, nodes: 2
+                    FUNCTION id: 14, function_name: equals, function_type: ordinary, result_type: UInt8
+                      ARGUMENTS
+                        LIST id: 15, nodes: 2
+                          COLUMN id: 16, column_name: B, result_type: UInt8, source_id: 4
+                          COLUMN id: 17, column_name: B, result_type: UInt8, source_id: 5
+                    FUNCTION id: 18, function_name: or, function_type: ordinary, result_type: UInt8
+                      ARGUMENTS
+                        LIST id: 19, nodes: 2
+                          FUNCTION id: 20, function_name: and, function_type: ordinary, result_type: UInt8
+                            ARGUMENTS
+                              LIST id: 21, nodes: 2
+                                FUNCTION id: 22, function_name: equals, function_type: ordinary, result_type: UInt8
+                                  ARGUMENTS
+                                    LIST id: 23, nodes: 2
+                                      COLUMN id: 24, column_name: C, result_type: UInt8, source_id: 4
+                                      COLUMN id: 25, column_name: C, result_type: UInt8, source_id: 5
+                                FUNCTION id: 26, function_name: equals, function_type: ordinary, result_type: UInt8
+                                  ARGUMENTS
+                                    LIST id: 27, nodes: 2
+                                      COLUMN id: 28, column_name: D, result_type: UInt8, source_id: 4
+                                      COLUMN id: 29, column_name: D, result_type: UInt8, source_id: 5
+                          FUNCTION id: 30, function_name: and, function_type: ordinary, result_type: UInt8
+                            ARGUMENTS
+                              LIST id: 31, nodes: 2
+                                FUNCTION id: 32, function_name: equals, function_type: ordinary, result_type: UInt8
+                                  ARGUMENTS
+                                    LIST id: 33, nodes: 2
+                                      COLUMN id: 34, column_name: C, result_type: UInt8, source_id: 4
+                                      COLUMN id: 35, column_name: C, result_type: UInt8, source_id: 5
+                                FUNCTION id: 36, function_name: equals, function_type: ordinary, result_type: UInt8
+                                  ARGUMENTS
+                                    LIST id: 37, nodes: 2
+                                      COLUMN id: 38, column_name: E, result_type: UInt8, source_id: 4
+                                      COLUMN id: 39, column_name: E, result_type: UInt8, source_id: 5
