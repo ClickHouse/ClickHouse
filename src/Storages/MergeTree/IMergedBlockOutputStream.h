@@ -39,6 +39,11 @@ public:
         return writer->releaseCachedMarks();
     }
 
+    size_t getNumberOfOpenStreams() const
+    {
+        return writer->getNumberOfOpenStreams();
+    }
+
 protected:
 
     /// Remove all columns marked expired in data_part. Also, clears checksums
