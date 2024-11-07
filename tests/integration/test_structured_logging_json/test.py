@@ -5,6 +5,7 @@ from xml.etree import ElementTree as ET
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+
 cluster = ClickHouseCluster(__file__)
 node_all_keys = cluster.add_instance(
     "node_all_keys", main_configs=["configs/config_all_keys_json.xml"]
