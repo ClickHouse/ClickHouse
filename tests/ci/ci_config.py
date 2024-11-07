@@ -554,9 +554,11 @@ class CI:
         ),
         JobNames.SIGN_RELEASE: JobConfig(
             required_builds=[BuildNames.PACKAGE_RELEASE],
+            runner_type=Runners.STYLE_CHECKER
         ),
         JobNames.SIGN_AARCH64: JobConfig(
             required_builds=[BuildNames.PACKAGE_RELEASE],
+            runner_type=Runners.STYLE_CHECKER
         ),
     }
 
